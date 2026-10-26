@@ -15,11 +15,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.AbstractFurnaceBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
-import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
-import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.pathfinder.Path;
@@ -27,7 +24,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -43,6 +39,7 @@ public final class CompanionWork {
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
     final CompanionChests chests = new CompanionChests(this);
+    final CompanionFurnaces furnaces = new CompanionFurnaces(this);
     final CompanionHouse house;
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -275,7 +272,7 @@ public final class CompanionWork {
     String currentDescription() {
         return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
                 : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
-                : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + smeltReady() + " из " + smeltCount : "готовит печь для плавки")
+                : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + furnaces.smeltReady() + " из " + smeltCount : "готовит печь для плавки")
                 : "выполняет работу " + job + ", стадия " + phase;
     }
     String taskDescription() {
@@ -509,8 +506,8 @@ public final class CompanionWork {
         owner.allowNewBench(false); benchHere = false; packTarget = null;
         if (job != null && completedId != taskId) {
             completedId = taskId;
-            completedResult = CompanionActionResult.cancelled("Работа прервана. Уже полученные вещи сохранены." + furnaceNote());
-            owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaceNote(), false);
+            completedResult = CompanionActionResult.cancelled("Работа прервана. Уже полученные вещи сохранены." + furnaces.furnaceNote());
+            owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null;
         clearCracks();
@@ -562,8 +559,8 @@ public final class CompanionWork {
             case FIGHT -> hunting.fightNearby(level);
             case CHASE -> hunting.hunt(level);
             case WOOD_DONE -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
-            case FURNACE -> prepareFurnace(level);
-            case COOK -> cook(level);
+            case FURNACE -> furnaces.prepareFurnace(level);
+            case COOK -> furnaces.cook(level);
             case ORE_PICK -> oreMining.prepareOrePickaxe();
             case ORE -> oreMining.mineOre(level);
             case IRON -> oreMining.ironStep(level);
@@ -683,361 +680,10 @@ public final class CompanionWork {
         return true;
     }
 
-    private String furnaceNote() {
-        // Smelting as its own order or as the iron step of a tool: either way the furnaces are ours.
-        if (lots.isEmpty()) return "";
-        List<String> open = lots.stream().filter(lot -> lot.loaded && !lot.emptied).map(lot -> lot.pos.toShortString()).toList();
-        return open.isEmpty() ? "" : " Сырьё и топливо остались в " + (open.size() == 1 ? "печи на " + open.getFirst() : "печах на " + String.join("; ", open))
-                + " — переплавленное можно забрать оттуда.";
-    }
     static String itemName(net.minecraft.world.item.Item item) { return new ItemStack(item).getHoverName().getString(); }
     static String itemName(String id) {
         var key = ResourceLocation.tryParse(id);
         return key == null || !BuiltInRegistries.ITEM.containsKey(key) ? id : itemName(BuiltInRegistries.ITEM.get(key));
-    }
-    private int loadedTotal() { return lots.stream().filter(lot -> lot.loaded).mapToInt(lot -> lot.count).sum(); }
-    private int smeltReady() { return lots.stream().mapToInt(lot -> lot.ready).sum(); }
-
-    /** A big batch goes into several furnaces, about eight items each, as a player with spare furnaces would do. */
-    private int wantedFurnaces() {
-        int remaining = smeltCount - loadedTotal();
-        if (remaining <= 0) return lots.size();
-        int loaded = (int) lots.stream().filter(lot -> lot.loaded).count();
-        return Math.min(MAX_FURNACES, loaded + Math.max(1, (remaining + ITEMS_PER_FURNACE - 1) / ITEMS_PER_FURNACE));
-    }
-
-    /**
-     * Free furnaces nearby are used like a player would; furnaces from the bag are set down beside them for a big batch.
-     * With no furnace at all, one is made from real stone and set down.
-     */
-    private void prepareFurnace(ServerLevel level) {
-        if (!owner.onGround()) return;
-        int wanted = wantedFurnaces();
-        while (lots.size() < wanted) {
-            BlockPos free = findFurnace(level);
-            if (free == null) break;
-            lots.add(new Lot(free, false));
-        }
-        boolean carriesFurnace = items.carriedItems().stream().anyMatch(stack -> stack.is(Items.FURNACE));
-        if (lots.size() < wanted && carriesFurnace && furnacesPlaced < MAX_FURNACES + 2) {
-            BlockPos group = lots.isEmpty() ? null : lots.getFirst().pos;
-            if (group != null && owner.distanceToSqr(group.getCenter()) > 4.5 * 4.5) {
-                // Set the new furnaces down next to the free one, not where he happens to stand.
-                if (!group.equals(heading)) { heading = group; resetApproach(); }
-                owner.movementIntent(group);
-                if (approach(level, group, 2.8D)) { owner.workStatus("Иду к печи на " + group.toShortString() + "."); return; }
-            } else {
-                if (furnaceRoom != null && owner.distanceToSqr(furnaceRoom.getCenter()) > 2.5 * 2.5) {
-                    owner.movementIntent(furnaceRoom);
-                    if (approach(level, furnaceRoom, 2.5D)) { owner.workStatus("Здесь тесно для печи, выхожу туда, где есть место."); return; }
-                }
-                CompanionActionResult placed = owner.placeBlockNearResult("minecraft:furnace", owner.blockPosition());
-                if (placed.success() && owner.lastPlacedPosition() != null) {
-                    furnacesPlaced++;
-                    lots.add(new Lot(owner.lastPlacedPosition(), true));
-                    owner.workStatus(lots.size() > 1 ? "Ставлю ещё печь, чтобы плавить быстрее: печей " + lots.size() + "." : "Ставлю печь.");
-                    cooldown = 10; return;
-                }
-                // Like a player in a narrow cut: out to where the order came, and the furnace is set down there (marathon 23.10,
-                // «долина»: down the slope for the stone, the bench took the one free cell of the cut, and the meat stayed raw).
-                if (lots.isEmpty() && furnaceRoom == null && placementAnchor != null && owner.distanceToSqr(placementAnchor.getCenter()) > 3 * 3) {
-                    furnaceRoom = placementAnchor; resetApproach(); return;
-                }
-                if (lots.isEmpty()) { finish(false, placed.message()); return; }
-            }
-        }
-        if (lots.isEmpty()) {
-            if (ownFurnaceFailed) { finish(false, "Свою печь поставил, но подойти к ней и заложить сырьё не получилось. Сырьё у меня."); return; }
-            if (!crafting.approachCraftingTable() && items.moveHandMaterialsToBag()) craftFurnace();
-            return;
-        }
-        // Every furnace taken is loaded and still more raw material is left: no room for more furnaces, say so at the end.
-        if (lots.stream().allMatch(lot -> lot.loaded)) { smeltCount = loadedTotal(); furnacesShort = true; }
-        phase = Phase.COOK; heading = null; resetApproach();
-    }
-
-    private void craftFurnace() {
-        // Smelting cobblestone itself: the new furnace must not eat the stone that was to go inside it.
-        int reserved = new ItemStack(smelt.input()).is(ItemTags.STONE_CRAFTING_MATERIALS) ? smeltCount : 0;
-        int missing = stoneCost("minecraft:furnace") + reserved - items.countStoneMaterials();
-        if (missing > 0) {
-            if (++craftAttempts > 3) { finish(false, "Для печи не хватает камня, а добыть его не вышло. Сырьё у меня."); return; }
-            owner.workStatus("Свободной печи рядом нет. Добуду камня и сделаю свою.");
-            wantedStone = missing; stoneCollectedBefore = owner.collectedStone(); gathered = 0; phase = Phase.PICKAXE; afterStone = Phase.FURNACE;
-            stoneSearch = null; stoneCandidates = null; rejected.clear(); dryAnchor = null; resetTarget();
-            return;
-        }
-        CompanionActionResult crafted = owner.craftFromBag("minecraft:furnace", 1);
-        if (!crafted.success()) {
-            if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) finish(false, crafted.message());
-            else crafting.requestWood(Phase.FURNACE);
-        }
-        // On success the crafting gesture finishes first; the furnace is set down on the next stage.
-    }
-
-    private BlockPos findFurnace(ServerLevel level) {
-        BlockPos center = owner.blockPosition();
-        BlockPos group = lots.isEmpty() ? null : lots.getFirst().pos;
-        return chests.blockEntitiesNear(level).stream().filter(pos -> !triedFurnaces.contains(pos)
-                        && (!owner.ownPlacesOnly() || owner.placedByMe(pos) && owner.leashAllows(pos))
-                        && lots.stream().noneMatch(lot -> lot.pos.equals(pos))
-                        && (group == null || pos.distSqr(group) <= FURNACE_GROUP * FURNACE_GROUP)
-                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven))
-                .min(Comparator.comparingDouble(pos -> pos.distSqr(center))).map(BlockPos::immutable).orElse(null);
-    }
-
-    /** Someone else's furnace at work stays theirs: only an empty input slot, and an output our product can join. */
-    private boolean freeFor(AbstractFurnaceBlockEntity oven) { return oven.getItem(0).isEmpty() && outputRoom(oven) > 0; }
-
-    private int outputRoom(AbstractFurnaceBlockEntity oven) {
-        ItemStack out = oven.getItem(2);
-        if (out.isEmpty()) return 64;
-        return ItemStack.isSameItemSameComponents(out, smelt.result()) ? (out.getMaxStackSize() - out.getCount()) / smelt.result().getCount() : 0;
-    }
-
-    private void dropLot(Lot lot) {
-        triedFurnaces.add(lot.pos);
-        if (lot.placed) ownFurnaceFailed = true;
-        lots.remove(lot);
-        heading = null; resetApproach();
-    }
-
-    private AbstractFurnaceBlockEntity oven(ServerLevel level, Lot lot) {
-        return level.hasChunkAt(lot.pos) && level.getBlockEntity(lot.pos) instanceof FurnaceBlockEntity oven ? oven : null;
-    }
-
-    private void cook(ServerLevel level) {
-        if (!owner.onGround() && !owner.isInWater()) return;
-        for (Lot lot : List.copyOf(lots)) {
-            if (oven(level, lot) != null) continue;
-            if (!lot.loaded) dropLot(lot);
-            else if (lot.open()) { lot.gaveUp = true; owner.workStatus("Печь на " + lot.pos.toShortString() + " пропала или выгрузилась, пока плавилось."); }
-        }
-        int remaining = smeltCount - loadedTotal();
-        Lot next;
-        if (remaining > 0) {
-            next = lots.stream().filter(lot -> !lot.loaded).findFirst().orElse(null);
-            if (next == null) { phase = Phase.FURNACE; heading = null; return; }
-        } else {
-            lots.removeIf(lot -> !lot.loaded); // spare furnaces are not needed any more
-            for (Lot lot : lots) if (lot.open()) watch(level, lot);
-            if (lots.stream().noneMatch(Lot::open)) { finishSmelt(level); return; }
-            next = lots.stream().filter(lot -> lot.open() && needsHands(level, lot))
-                    .min(Comparator.comparingDouble(lot -> owner.distanceToSqr(lot.pos.getCenter()))).orElse(null);
-            if (next == null) { waitAtFurnaces(level); return; }
-        }
-        if (!next.pos.equals(heading)) { heading = next.pos; resetApproach(); }
-        owner.movementIntent(next.pos);
-        owner.getLookControl().setLookAt(next.pos.getX() + .5D, next.pos.getY() + .5D, next.pos.getZ() + .5D);
-        if (owner.distanceToSqr(next.pos.getCenter()) > 3.2D * 3.2D || !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), next.pos)) {
-            if (approach(level, next.pos, 2.8D)) { owner.workStatus(next.loaded ? "Иду к печи на " + next.pos.toShortString() + "." : "Иду к печи на " + next.pos.toShortString() + " закладывать."); return; }
-            // A cow at the furnace or a crowd on the way blocks for a moment, not for good: once more, then another furnace.
-            if (!next.loaded && ++next.misses < 2) { resetApproach(); owner.workStatus("К печи на " + next.pos.toShortString() + " не подойти, попробую ещё раз."); return; }
-            if (!next.loaded) dropLot(next);
-            else { next.gaveUp = true; heading = null; owner.workStatus("Не могу снова подойти к печи на " + next.pos.toShortString() + "."); }
-            return;
-        }
-        owner.getNavigation().stop();
-        AbstractFurnaceBlockEntity oven = oven(level, next);
-        if (!next.loaded) loadLot(level, next, oven, remaining); else serviceLot(level, next, oven);
-    }
-
-    /** Raw material into the top slot, fuel under it: the same two slots a player fills. */
-    private void loadLot(ServerLevel level, Lot lot, AbstractFurnaceBlockEntity oven, int remaining) {
-        if (!freeFor(oven)) { dropLot(lot); return; }
-        int carried = CompanionSmelting.count(items.carriedItems(), smelt.input());
-        if (carried <= 0) {
-            smeltCount = loadedTotal();
-            if (smeltCount == 0) finish(false, "Сырья для печи у меня не осталось.");
-            return;
-        }
-        int unloaded = (int) lots.stream().filter(other -> !other.loaded).count();
-        int amount = Math.min(Math.min((remaining + unloaded - 1) / unloaded, 64), Math.min(outputRoom(oven), carried));
-        ItemStack fuelSlot = oven.getItem(1);
-        int need = amount * smelt.cookTicks() - fuelSlot.getCount() * CompanionSmelting.burnTicks(fuelSlot);
-        planksForFuel(need);
-        var fuel = CompanionSmelting.chooseFuel(items.carriedItems(), smelt.input(), Math.min(remaining, carried), need, fuelSlot);
-        if (need > 0 && fuel == null && fuelSlot.isEmpty()) {
-            // Nothing to burn: chop wood first, the raw material stays in the bag meanwhile.
-            owner.workStatus("Нечем топить печь. Схожу за дровами.");
-            crafting.requestWood(Phase.COOK, CompanionSmelting.logsFor(need)); return;
-        }
-        ItemStack input = items.takeCarried(smelt.input(), amount);
-        if (input.isEmpty()) return;
-        lot.count = input.getCount();
-        lot.outputBefore = oven.getItem(2).getCount();
-        oven.setItem(0, input);
-        if (fuel != null) addFuel(lot, oven, fuel);
-        oven.setChanged();
-        lot.loaded = true; lot.progressTick = level.getGameTime();
-        // The recipe's own cooking time: ten seconds an item for ordinary smelting.
-        deadline = Math.max(deadline, level.getGameTime() + (long) lot.count * smelt.cookTicks() + 20 * 120);
-        if (!lot.placed) owner.rememberObserved(lot.pos);
-        owner.animateAction(3, lot.pos, new ItemStack(smelt.input()));
-        dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "furnace_loaded", "entity", owner.getUUID(), "position", lot.pos,
-                "input", BuiltInRegistries.ITEM.getKey(smelt.input()), "count", lot.count, "fuel", fuel == null ? "none" : BuiltInRegistries.ITEM.getKey(fuel.item()) + " x" + fuel.count(),
-                "fuelSlot", BuiltInRegistries.ITEM.getKey(oven.getItem(1).getItem()) + " x" + oven.getItem(1).getCount(), "placedByCompanion", lot.placed,
-                "furnace", lots.indexOf(lot) + 1, "furnaces", lots.size());
-        owner.workStatus("Заложил в печь " + lot.count + " «" + itemName(smelt.input()) + "»"
-                + (fuel == null ? "" : " и " + fuel.count() + " «" + itemName(fuel.item()) + "» на растопку")
-                + (lots.size() > 1 ? " (печь " + (lots.indexOf(lot) + 1) + " из " + lots.size() + ")" : "") + ".");
-        cooldown = 10;
-    }
-
-    /**
-     * Like a player short of fuel: logs into planks first. A log burns for one and a half items, its four planks for six
-     * (marathon 23.10: three logs went under eight pieces of meat, and he walked off for more wood halfway).
-     */
-    private void planksForFuel(int needTicks) {
-        if (needTicks <= 0) return;
-        long have = 0;
-        for (ItemStack stack : items.carriedItems()) if (!stack.isEmpty() && !stack.is(smelt.input()) && CompanionSmelting.fuelRank(stack) >= 0) have += (long) stack.getCount() * CompanionSmelting.burnTicks(stack);
-        for (ItemStack stack : items.carriedItems()) {
-            if (have >= needTicks) return;
-            if (stack.isEmpty() || !stack.is(ItemTags.LOGS) || stack.is(smelt.input())) continue;
-            String type = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().replaceFirst("^stripped_", "").replaceFirst("_(log|wood|stem|hyphae)$", "");
-            int burn = CompanionSmelting.burnTicks(stack);
-            int logs = (int) Math.min(stack.getCount(), (needTicks - have + 4L * 300 - 1) / (4L * 300));
-            if (logs <= 0 || !owner.craftFromBag("minecraft:" + type + "_planks", logs * 4).success()) continue;
-            have += (long) logs * (4 * 300 - burn);
-        }
-    }
-
-    private void addFuel(Lot lot, AbstractFurnaceBlockEntity oven, CompanionSmelting.Fuel fuel) {
-        ItemStack slot = oven.getItem(1);
-        int theirs = slot.getCount();
-        ItemStack added = items.takeCarried(fuel.item(), fuel.count());
-        if (added.isEmpty()) return;
-        if (slot.isEmpty()) oven.setItem(1, added);
-        else if (ItemStack.isSameItemSameComponents(slot, added)) slot.grow(added.getCount());
-        else { owner.storeLoot(added); return; }
-        // Fuel is added only to an empty slot or once at loading, so what lay there before is someone else's.
-        lot.fuelPut = fuel.item(); lot.fuelOurs = added.getCount(); lot.fuelTheirs = theirs;
-    }
-
-    /** Reads a loaded furnace: new product counts as progress. */
-    private void watch(ServerLevel level, Lot lot) {
-        int ready = product(lot, oven(level, lot)) / smelt.result().getCount();
-        if (ready > lot.ready) { lot.ready = ready; lot.progressTick = level.getGameTime(); }
-    }
-
-    private int left(Lot lot, AbstractFurnaceBlockEntity oven) { return oven.getItem(0).is(smelt.input()) ? oven.getItem(0).getCount() : 0; }
-    private boolean lit(ServerLevel level, Lot lot) { return level.getBlockState(lot.pos).getValue(AbstractFurnaceBlock.LIT); }
-    private boolean stalled(ServerLevel level, Lot lot) { return level.getGameTime() - lot.progressTick > smelt.cookTicks() * 2L + 20 * 30; }
-
-    /** Done, out of fuel or stuck: the furnace needs him standing at it. */
-    private boolean needsHands(ServerLevel level, Lot lot) {
-        AbstractFurnaceBlockEntity oven = oven(level, lot);
-        int left = left(lot, oven);
-        return left == 0 || lot.ready >= lot.count || stalled(level, lot) || !lit(level, lot) && oven.getItem(1).isEmpty();
-    }
-
-    private void serviceLot(ServerLevel level, Lot lot, AbstractFurnaceBlockEntity oven) {
-        int left = left(lot, oven);
-        if (left == 0 || lot.ready >= lot.count) { emptyLot(level, lot, oven, "done"); return; }
-        // Out of fire and fuel is no stuck furnace (marathon 23.10: back from the wood with fuel, the minute of his walk counted as
-        // «печь перестала плавить», and half the meat came back raw). It gets fuel; stuck is only a furnace that has fuel and makes nothing.
-        boolean outOfFuel = !lit(level, lot) && oven.getItem(1).isEmpty();
-        if (!outOfFuel && stalled(level, lot)) { emptyLot(level, lot, oven, "stalled"); return; }
-        if (!outOfFuel) return;
-        planksForFuel(left * smelt.cookTicks());
-        var fuel = CompanionSmelting.chooseFuel(items.carriedItems(), null, 0, left * smelt.cookTicks(), ItemStack.EMPTY);
-        if (fuel == null) {
-            owner.workStatus("Топливо кончилось, схожу за дровами. Сырьё пока в печи.");
-            crafting.requestWood(Phase.COOK, CompanionSmelting.logsFor(left * smelt.cookTicks())); return;
-        }
-        addFuel(lot, oven, fuel); oven.setChanged();
-        owner.animateAction(3, lot.pos, new ItemStack(fuel.item()));
-        owner.workStatus("Подбросил в печь " + fuel.count() + " «" + itemName(fuel.item()) + "».");
-        lot.progressTick = level.getGameTime(); cooldown = 10;
-    }
-
-    /** Nothing to do right now: stand by the furnaces and look at the one with the most left. */
-    private void waitAtFurnaces(ServerLevel level) {
-        Lot nearest = lots.stream().filter(Lot::open).min(Comparator.comparingDouble(lot -> owner.distanceToSqr(lot.pos.getCenter()))).orElseThrow();
-        if (owner.distanceToSqr(nearest.pos.getCenter()) > 4.5 * 4.5) {
-            if (!nearest.pos.equals(heading)) { heading = nearest.pos; resetApproach(); }
-            owner.movementIntent(nearest.pos);
-            if (approach(level, nearest.pos, 2.8D)) return;
-        }
-        // Waiting is no failed approach: the walk to take the product starts its own progress clock (test 23.10: after the
-        // ten seconds of cooking the old clock had run out, and «не могу снова подойти» left the meat in the furnace).
-        resetApproach();
-        owner.getNavigation().stop();
-        Lot busiest = lots.stream().filter(Lot::open).max(Comparator.comparingInt(lot -> lot.count - lot.ready)).orElse(nearest);
-        owner.getLookControl().setLookAt(busiest.pos.getX() + .5D, busiest.pos.getY() + .5D, busiest.pos.getZ() + .5D);
-        int furnaces = (int) lots.stream().filter(lot -> lot.loaded).count();
-        owner.workStatus("Плавлю «" + itemName(smelt.input()) + "»" + (furnaces > 1 ? " в " + furnaces + " печах" : "") + ": готово " + smeltReady() + " из " + smeltCount + ".");
-    }
-
-    /** Our product: what the output slot gained since loading. */
-    private int product(Lot lot, AbstractFurnaceBlockEntity oven) {
-        ItemStack out = oven.getItem(2);
-        return ItemStack.isSameItemSameComponents(out, smelt.result()) ? Math.max(0, out.getCount() - lot.outputBefore) : 0;
-    }
-
-    /** Like a player at the furnace: the product, raw material still left and his own unburnt fuel go back into the bag. */
-    private void emptyLot(ServerLevel level, Lot lot, AbstractFurnaceBlockEntity oven, String reason) {
-        int product = product(lot, oven);
-        lot.taken = items.takeFromSlot(oven, 2, product);
-        int raw = left(lot, oven);
-        lot.rawBack = items.takeFromSlot(oven, 0, raw);
-        int fuelBack = lot.fuelPut != null && oven.getItem(1).is(lot.fuelPut)
-                ? items.takeFromSlot(oven, 1, Math.min(lot.fuelOurs, oven.getItem(1).getCount() - lot.fuelTheirs)) : 0;
-        oven.setChanged();
-        lot.emptied = true; lot.ready = lot.taken / smelt.result().getCount();
-        lot.stuck = lot.taken < product || lot.rawBack < raw; lot.stalled = "stalled".equals(reason);
-        owner.animateAction(3, lot.pos, smelt.result());
-        level.playSound(null, lot.pos, SoundEvents.ITEM_PICKUP, SoundSource.BLOCKS, .4F, 1F);
-        dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "furnace_emptied", "entity", owner.getUUID(), "position", lot.pos,
-                "reason", reason, "product", product, "taken", lot.taken, "rawBack", lot.rawBack, "rawLeft", raw - lot.rawBack, "fuelBack", fuelBack);
-        owner.workStatus("Забрал из печи " + lot.taken + " «" + itemName(smelt.result().getItem()) + "».");
-        cooldown = 5;
-    }
-
-    private void finishSmelt(ServerLevel level) {
-        int per = smelt.result().getCount();
-        int taken = lots.stream().mapToInt(lot -> lot.taken).sum(), rawBack = lots.stream().mapToInt(lot -> lot.rawBack).sum();
-        List<Lot> used = lots.stream().filter(lot -> lot.loaded).toList();
-        String inName = itemName(smelt.input()), outName = itemName(smelt.result().getItem());
-        String where = used.size() == 1 ? " Печь на " + used.getFirst().pos.toShortString() + "."
-                : " Печи: " + String.join("; ", used.stream().map(lot -> lot.pos.toShortString()).toList()) + ".";
-        String stuck = used.stream().anyMatch(lot -> lot.stuck) ? " Часть не влезла в сумку и осталась в печи." : "";
-        int more = CompanionSmelting.count(items.carriedItems(), smelt.input()) - rawBack;
-        String rest = smeltAll && more > 0 ? " В сумке ещё " + more + " «" + inName + "» — больше стопки за раз не беру." : "";
-        if (ironPrep && taken > 0) {
-            // Iron for a tool: the ingots are counted from the bag in the next step; furnaces stay where they are.
-            owner.noteDeed("Для «" + itemName(ironTool) + "» переплавил " + taken / per + " «" + inName + "» и забрал " + taken + " «" + outName + "»." + where + stuck, true);
-            oreMining.ironStageDone(); return;
-        }
-        if (stuck.isEmpty() && used.stream().noneMatch(lot -> lot.gaveUp) && smeltCount == requestedCount && taken >= smeltCount * per) {
-            if (mixedMeat) {
-                mixedCooked += taken; mixedKinds++;
-                mixedInputs.add(smelt.input());
-                var next = CompanionSmelting.resolve(level, CompanionGame.ANY_MEAT,
-                        items.carriedItems().stream().filter(stack -> !mixedInputs.contains(stack.getItem())).toList());
-                if (next != null && mixedKinds < CompanionGame.Kind.values().length) {
-                    // One verified load at a time, one workId for the whole request. Never burn someone else's input.
-                    smelt = next; smeltCount = requestedCount = Math.min(64, CompanionSmelting.count(items.carriedItems(), next.input()));
-                    lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null;
-                    ownFurnaceFailed = furnacesShort = false; furnacesPlaced = 0; benchClimbs = 0;
-                    phase = Phase.FURNACE; resetTarget();
-                    owner.workStatus("Пожарил одну часть мяса, готовлю остальное.");
-                    return;
-                }
-                String excess = CompanionSmelting.resolve(level, CompanionGame.ANY_MEAT, items.carriedItems()) == null ? ""
-                        : " Сырьё сверх стопки каждого вида осталось в сумке.";
-                finish(true, "Пожарил и забрал " + mixedCooked + " порций мяса (видов: " + mixedKinds + ")." + excess + " В сумке: " + owner.getStoredItemsSummary() + ".");
-                return;
-            }
-            finish(true, "Переплавил " + smeltCount + " «" + inName + "»" + (used.size() > 1 ? " в " + used.size() + " печах" : "") + " и забрал " + taken
-                    + " «" + outName + "»." + where + rest + " В сумке: " + owner.getStoredItemsSummary() + "."); return;
-        }
-        String why = used.stream().anyMatch(lot -> lot.stalled) ? " Печь перестала плавить."
-                : furnacesShort ? " Свободных печей на всё не хватило, остальное сырьё у меня."
-                : smeltCount < requestedCount ? " Сырья было только " + smeltCount + " — на остальное не хватает." : "";
-        finish(false, "Переплавил " + taken / per + " из " + requestedCount + " «" + inName + "», забрал из печи " + taken + " «" + outName + "»." + why
-                + (rawBack > 0 ? " Непереплавленное сырьё (" + rawBack + ") забрал обратно." : "") + stuck);
     }
 
     private boolean giftMatches(ItemStack stack) {
@@ -1186,7 +832,7 @@ public final class CompanionWork {
         owner.allowNewBench(false);
         boolean returning = job == Job.COME;
         if (!success && job == Job.STORE && transferred > 0) message = "Сложил " + transferred + " предметов. " + message + " Остальное осталось в моей сумке.";
-        message += furnaceNote();
+        message += furnaces.furnaceNote();
         completedId = taskId;
         completedResult = new CompanionActionResult(success, message, result.status(), result.evidence());
         cancel();
