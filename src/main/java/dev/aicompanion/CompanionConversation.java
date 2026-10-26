@@ -13,10 +13,19 @@ public final class CompanionConversation {
     private boolean awaitingAnswer;
     private long revision;
     private int observation;
+    private int urgentSerial;
+    private long urgentSince;
     private final Deque<String> recent = new ArrayDeque<>();
 
+    /** Prefix the server puts on a HIGH event so the client can tell it from ordinary observations; it never reaches the model. */
+    public static final String URGENT_MARK = "[!]";
+    /** How long an urgent remark may wait for the player to be able to hear it, and how old one may be when first seen. */
+    public static final int URGENT_TTL = 20 * 60, URGENT_FRESH = 400;
+
+    public static boolean isUrgent(String text) { return text != null && text.startsWith(URGENT_MARK); }
+    public static String stripUrgent(String text) { return isUrgent(text) ? text.substring(URGENT_MARK.length()).stripLeading() : text; }
     public static int gap(int jitter) { return MIN_GAP + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1); }
-    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; observation = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
+    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; observation = 0; urgentSerial = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
     // Normal conversation needs a short pause, not another full initiative interval after every answer.
     public void activity(long now, int jitter) { revision++; quietUntil = now + 20 * 45 + Math.floorMod(jitter, 601); }
     public void playerMessage(long now, int jitter) { awaitingAnswer = false; activity(now, jitter); }
@@ -34,8 +43,33 @@ public final class CompanionConversation {
         if (age < -20 || age > 400 || !safe || busy || !ready(now)) return false;
         nextOpportunity = now + gap(jitter); activity(now, jitter); return true;
     }
+    /** An urgent remark ignores the quiet window and an open question, and stays pending until it can be spoken or expires. */
+    public boolean takeObservation(int serial, long age, long now, boolean safe, boolean busy, int jitter, boolean urgent) {
+        if (!urgent) return takeObservation(serial, age, now, safe, busy, jitter);
+        if (!newObservation(serial)) return false;
+        observation = serial;
+        if (age < -20 || age > URGENT_TTL) return false;
+        urgentSerial = serial; urgentSince = now - age;
+        return takePendingUrgent(now, safe, busy, jitter);
+    }
+    public int urgentPending() { return urgentSerial; }
+    /** Never touches awaitingAnswer: an open question stays open while the urgent line is spoken. */
+    public boolean takePendingUrgent(long now, boolean safe, boolean busy, int jitter) {
+        if (urgentSerial == 0) return false;
+        if (now - urgentSince > URGENT_TTL) { urgentSerial = 0; return false; }
+        if (!safe || busy) return false;
+        urgentSerial = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); return true;
+    }
+    /** The first snapshot after entering the world is not replayed, except a fresh urgent remark. */
+    public void firstSight(int serial, long age, long now, boolean urgent) {
+        observation = serial;
+        if (urgent && serial != 0 && age >= -20 && age <= URGENT_FRESH) { urgentSerial = serial; urgentSince = now - age; }
+    }
     public boolean acceptReply(long capturedRevision, String text, boolean safe, boolean busy) {
-        return revision == capturedRevision && safe && !busy && !awaitingAnswer && text != null
+        return acceptReply(capturedRevision, text, safe, busy, false);
+    }
+    public boolean acceptReply(long capturedRevision, String text, boolean safe, boolean busy, boolean urgent) {
+        return revision == capturedRevision && safe && !busy && (urgent || !awaitingAnswer) && text != null
                 && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1 && fresh(text);
     }
 
