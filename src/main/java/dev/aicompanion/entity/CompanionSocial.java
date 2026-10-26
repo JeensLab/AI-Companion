@@ -1,0 +1,89 @@
+package dev.aicompanion.entity;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.block.Blocks;
+import dev.aicompanion.CompanionConversation;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/** Actual observations only. A chance, per-event deduplication and a global cooldown limit chatter. */
+final class CompanionSocial {
+    private final CompanionEntity owner;
+    private final Map<String, Long> seen = new LinkedHashMap<>();
+    private long nextSpeech;
+    private boolean initialized;
+    private int timeBand = -1;
+    private boolean rain;
+    CompanionSocial(CompanionEntity owner) { this.owner = owner; }
+    private long next(long now) { return now + CompanionConversation.gap(owner.getRandom().nextInt(2401)); }
+    void observe(String key, String fact) {
+        long now = owner.level().getGameTime();
+        if (!initialized) { initialized = true; nextSpeech = next(now); }
+        if (!owner.talksOnOwn() || !owner.conversationAvailable() || !owner.sociallySafe() || now < nextSpeech) return;
+        if (seen.containsKey(key) && now - seen.get(key) < 20 * 60 * 20) return;
+        // A missed random chance must not silence this topic for the next twenty minutes.
+        if (owner.getRandom().nextFloat() > .65F) return;
+        seen.put(key, now);
+        while (seen.size() > 32) seen.remove(seen.keySet().iterator().next());
+        emit(fact);
+    }
+    private void emit(String fact) {
+        nextSpeech = next(owner.level().getGameTime());
+        owner.socialEvent(fact);
+    }
+    void tick() {
+        if (owner.tickCount % 40 != 0 || !owner.talksOnOwn() || !owner.isAlive()) return;
+        long now = owner.level().getGameTime();
+        if (!initialized) { initialized = true; nextSpeech = next(now); }
+        int band = owner.level().isDay() ? 0 : 1;
+        if (timeBand >= 0 && band != timeBand) observe("time:" + band, band == 1 ? "В мире наступает ночь." : "В мире наступило утро.");
+        timeBand = band;
+        if (owner.level().isRaining() && !rain) observe("rain", "Начался дождь.");
+        rain = owner.level().isRaining();
+        var threats = owner.level().getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(8),
+                monster -> CompanionHostiles.observed(owner, monster, 8));
+        // Threats are for actions and facial state, not a paid conversation opportunity.
+        if (!threats.isEmpty()) return;
+        if (owner.tickCount % 100 == 0) {
+            BlockPos feet = owner.blockPosition();
+            for (BlockPos pos : BlockPos.betweenClosed(feet.offset(-4, -2, -4), feet.offset(4, 2, 4))) {
+                if (!owner.level().hasChunkAt(pos)) continue;
+                var state = owner.level().getBlockState(pos);
+                if ((state.is(Blocks.COAL_ORE) || state.is(Blocks.IRON_ORE) || state.is(Blocks.COPPER_ORE))
+                        && CompanionMiningNavigation.visible(owner, owner.getEyePosition(), pos)) { observe("ore", "Видна руда: " + state.getBlock().getName().getString() + ". Я её пока не добывал."); break; }
+            }
+        }
+        var player = owner.getOwnerPlayer();
+        if (player != null && owner.distanceToSqr(player) < 12 * 12
+                && owner.tickCount > 20 * 180 && owner.getRandom().nextFloat() < .10F) {
+            String activity = owner.getActivityForAi();
+            if (activity.length() > 180) activity = activity.substring(0, 180);
+            if (owner.hasActiveWorkOrder()) observe("working_together", "Товарищ рядом, я продолжаю работу: " + activity
+                    + ". Можно коротко перекинуться словом о нашем занятии или планах; завершение дела не подтверждено.");
+            else observe("plans", "Мы сейчас рядом. Я не выполняю работу. Можно спросить товарища о дальнейших планах, если это не повтор разговора.");
+        }
+    }
+
+    void save(CompoundTag tag) {
+        if (!initialized) return;
+        CompoundTag social = new CompoundTag(); social.putLong("Next", nextSpeech);
+        ListTag entries = new ListTag();
+        seen.forEach((key, tick) -> { CompoundTag entry = new CompoundTag(); entry.putString("Key", key); entry.putLong("Tick", tick); entries.add(entry); });
+        social.put("Seen", entries); tag.put("SocialCadence", social);
+    }
+    void load(CompoundTag tag) {
+        seen.clear(); initialized = tag.contains("SocialCadence");
+        if (!initialized) { nextSpeech = 0; return; }
+        CompoundTag social = tag.getCompound("SocialCadence");
+        long now = owner.level().getGameTime();
+        nextSpeech = Math.max(now, Math.min(now + CompanionConversation.MAX_GAP, social.getLong("Next")));
+        ListTag entries = social.getList("Seen", 10);
+        for (int i = Math.max(0, entries.size() - 32); i < entries.size(); i++) {
+            CompoundTag entry = entries.getCompound(i); String key = entry.getString("Key");
+            if (key.length() <= 80) seen.put(key, Math.min(now, entry.getLong("Tick")));
+        }
+    }
+}

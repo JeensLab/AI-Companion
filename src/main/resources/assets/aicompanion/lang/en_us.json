@@ -1,0 +1,14 @@
+{
+  "mod.aicompanion.title": "AI Companion",
+  "entity.aicompanion.companion": "Companion",
+  "key.aicompanion.open_chat": "Open companion chat and history (C)",
+  "key.aicompanion.open_interface": "Open companion interface and tasks",
+  "key.aicompanion.push_to_talk": "Talk without opening chat (V)",
+  "key.aicompanion.toggle_marker": "Companion outline through walls on/off (G)",
+  "key.categories.aicompanion": "AI Companion",
+  "config.aicompanion.api_key": "OpenRouter API key",
+  "config.aicompanion.model": "OpenRouter model",
+  "config.aicompanion.personality": "Companion personality",
+  "config.aicompanion.inworld_api_key": "Inworld Basic credential",
+  "config.aicompanion.inworld_voice_id": "Inworld voice ID"
+}

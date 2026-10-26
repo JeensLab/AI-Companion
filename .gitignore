@@ -1,0 +1,62 @@
+### Gradle ###
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/**/build/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/**/out/
+
+.run/
+
+### Eclipse ###
+.apt_generated
+.classpath
+.eclipse/
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/**/bin/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### Project archives (handoff packages, release copies) ###
+dist/
+
+### Minecraft Modding ###
+run/
+!**/src/**/run/
+**/src/generated/**/.cache/
+repo/
+!**/src/**/repo/
+
+### Local credentials and private game/development data ###
+.env
+.env.*
+!.env.example
+**/config/
+**/logs/
+**/saves/
+**/screenshots/
+**/crash-reports/
+**/aicompanion-client*.toml*
+*.bak
+*.pem
+*.key
+*.p12
+*.pfx
+.codex/
+.agents/
+handoff/
