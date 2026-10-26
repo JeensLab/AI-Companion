@@ -11,6 +11,7 @@ import java.util.List;
 public final class CompanionHappenings {
     public static final int KEEP = 12;
     public static final int TEXT = 160;
+    public static final int KEY = 64;
 
     public enum Importance { LOW, NORMAL, HIGH }
 
@@ -62,10 +63,12 @@ public final class CompanionHappenings {
             CompoundTag item = list.getCompound(i);
             Importance importance = Importance.NORMAL;
             for (Importance candidate : Importance.values()) if (candidate.name().equals(item.getString("Importance"))) importance = candidate;
-            happenings.add(item.getString("Key"), item.getString("Text"), item.getLong("Time"), importance);
+            happenings.add(cut(item.getString("Key")), item.getString("Text"), item.getLong("Time"), importance);
         }
         return happenings;
     }
+
+    private static String cut(String key) { return key.length() > KEY ? key.substring(0, KEY) : key; }
 
     public CompanionHappenings copy() { return load(save()); }
 }

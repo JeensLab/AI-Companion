@@ -127,6 +127,8 @@ public final class CompanionMemoryFlow {
             if (bonds.remember(t.owner(), memory.kind(), memory.text()) != CompanionMemory.Outcome.REJECTED) accepted++;
         }
         if (!parsed.callMe().isEmpty()) bonds.setCallMe(t.owner(), parsed.callMe());
+        parsed.likes().forEach(like -> bonds.addLike(t.owner(), like));
+        parsed.dislikes().forEach(dislike -> bonds.addDislike(t.owner(), dislike));
         CompanionDiagnostics.event(trace, "memory_compression_stored", "accepted", accepted,
                 "rejectedByCodec", parsed.rejected(), "rejectedByServer", parsed.memories().size() - accepted);
     }
@@ -136,8 +138,9 @@ public final class CompanionMemoryFlow {
         synchronized (LOCK) { return epoch != batchEpoch; }
     }
 
-    /** «Забудь всё»: facts, preferences and talk go from the world and from the client view; the bond and the deeds stay. */
+    /** «Забудь всё»: facts, preferences and talk go from the world, the client view and the chat history; the bond and the deeds stay. */
     public static void forget() {
+        OpenRouterClient.forgetTalk();
         synchronized (LOCK) { clearBuffer(); epoch++; }
         CompanionMemoryView.forgetMemory();
         Target t = target;

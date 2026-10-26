@@ -65,7 +65,10 @@ public final class CompanionBondTests {
         List<String> bad = List.of(
                 "Мой ключ sk-abcdef1234567890abcdef", "Пароль: hunter2", "my password = hunter2", "token=abc123", "Токен — abcdef",
                 "Дом на x: 120 y: 64 z: -300", "Дом на 120 64 -300", "Ходит с minecraft:diamond_sword", "Любит aicompanion:companion",
-                "Ключ QWxhZGRpbjpvcGVuIHNlc2FtZQ==QWxhZGRpbjpvcGVu", "Хеш 0123456789abcdef0123456789abcdef", "Bearer abcdefgh12345678", "Координаты базы секретные");
+                "Ключ QWxhZGRpbjpvcGVuIHNlc2FtZQ==QWxhZGRpbjpvcGVu", "Хеш 0123456789abcdef0123456789abcdef", "Bearer abcdefgh12345678", "Координаты базы секретные",
+                "мой пароль hunter2", "password is hunter2", "пароль – qwerty", "пароль это correct horse battery", "my api key abc123xyz",
+                "ASIAabcdefgh12345678", "ghs_abcdefgh12345678", "github_pat_11ABCDEFG0abcdefgh", "pass​word: hunter2",
+                "sk-­abcdef1234567890abcdef", "ｐａｓｓｗｏｒｄ = hunter2");
         for (String text : bad) {
             var m = new CompanionMemory();
             h.assertTrue(m.remember(CompanionMemory.PLAYER_FACT, text) == CompanionMemory.Outcome.REJECTED && m.entries().isEmpty(), "Stored: " + text);
@@ -75,7 +78,7 @@ public final class CompanionBondTests {
         h.assertTrue(m.remember("secret_kind", "Любит арбузы") == CompanionMemory.Outcome.REJECTED, "Unknown kind accepted");
         h.assertTrue(m.remember(CompanionMemory.PLAYER_FACT, "   ") == CompanionMemory.Outcome.REJECTED, "Blank accepted");
         h.assertTrue(!m.setCallMe("sk-abcdef1234567890abcdef") && !m.addLike("minecraft:stone") && m.callMe().isEmpty() && m.likes().isEmpty(), "Secret got in as a name or preference");
-        for (String text : List.of("Любит строить дома у воды", "Просил разбудить в 10:30", "Зовёт меня Шефом, а дом назвал Берлогой", "Ходим втроём: он, я и пёс"))
+        for (String text : List.of("Любит строить дома у воды", "Просил разбудить в 10:30", "Зовёт меня Шефом, а дом назвал Берлогой", "Ходим втроём: он, я и пёс", "Ключевой момент был в постройке моста"))
             h.assertTrue(m.remember(CompanionMemory.PLAYER_FACT, text) == CompanionMemory.Outcome.ADDED, "Harmless text refused: " + text);
         h.succeed();
     }
@@ -89,13 +92,24 @@ public final class CompanionBondTests {
         m.recordTalk(true, "Привет, Олег");
         String saved = m.save().toString();
         for (String leaked : List.of("hunter2", "sk-abcdef", "120 64 -300")) h.assertTrue(!saved.contains(leaked), "Saved talk leaks " + leaked + ": " + saved);
-        h.assertTrue(m.recentTalk().get(0).text().contains(CompanionMemory.MASK) && m.recentTalk().get(0).text().contains("и всё"), "Secret not replaced in place: " + m.recentTalk().get(0));
+        h.assertTrue(m.recentTalk().get(0).text().contains(CompanionMemory.MASK) && m.recentTalk().get(0).text().startsWith("Запомни мой"), "Secret not replaced in place: " + m.recentTalk().get(0));
         h.assertTrue(m.recentTalk().get(3).text().equals("Привет, Олег") && m.recentTalk().get(3).fromPlayer() && !m.recentTalk().get(2).fromPlayer(), "Ordinary line or speaker changed");
 
         for (int i = 0; i < 10; i++) m.recordTalk(i % 2 == 0, "Реплика номер " + i);
         h.assertTrue(m.recentTalk().size() == CompanionMemory.TALK_KEEP && m.recentTalk().getLast().text().equals("Реплика номер 9"), "Talk not trimmed to the last six");
         m.recordTalk(true, "слово ".repeat(60));
         h.assertTrue(m.recentTalk().getLast().text().length() <= CompanionMemory.TALK_TEXT, "Long line not cut to 180");
+
+        var phrases = new CompanionMemory();
+        phrases.recordTalk(true, "мой пароль hunter2 вот так");
+        phrases.recordTalk(true, "пароль: correct horse battery staple. Дальше привет");
+        phrases.recordTalk(true, "pass​word is zebra9 ok");
+        phrases.recordTalk(true, "токен ghs_abcdefgh12345678 ок");
+        phrases.recordTalk(true, "а".repeat(5000) + " пароль: late");
+        String kept = phrases.save().toString();
+        for (String leaked : List.of("hunter2", "horse", "battery", "staple", "zebra9", "ghs_abcdefgh"))
+            h.assertTrue(!kept.contains(leaked), "Saved talk leaks " + leaked + ": " + kept);
+        h.assertTrue(phrases.recentTalk().get(1).text().contains("Дальше привет") && phrases.recentTalk().getLast().text().length() <= CompanionMemory.TALK_TEXT, "Clause end or length cut wrong: " + phrases.recentTalk());
 
         var bonds = new CompanionBonds();
         var owner = UUID.randomUUID();
@@ -253,6 +267,27 @@ public final class CompanionBondTests {
         var damaged = CompanionBonds.load(tag, registries(h));
         h.assertTrue(damaged.memory(damagedOwner).entries().size() == 1 && damaged.memory(damagedOwner).entries().getFirst().text().equals("Обещал помочь"), "Damaged memory not filtered on load");
         h.assertTrue(damaged.bond(damagedOwner).score() == CompanionBond.MAX, "Damaged score not clamped");
+
+        var weighted = new ListTag();
+        for (int weight : new int[] {Integer.MAX_VALUE, Integer.MAX_VALUE, -5}) {
+            var item = entry(CompanionMemory.JOKE, weight < 0 ? "Шутка про лаву" : "Шутка про воду");
+            item.putInt("Weight", weight);
+            weighted.add(item);
+        }
+        var weights = new CompoundTag();
+        weights.put("Memories", weighted);
+        var clamped = CompanionMemory.load(weights).entries();
+        h.assertTrue(clamped.size() == 2 && clamped.stream().allMatch(e -> e.weight() >= 1 && e.weight() <= CompanionMemory.MAX_WEIGHT)
+                && clamped.getFirst().weight() == CompanionMemory.MAX_WEIGHT && clamped.getLast().weight() == 1, "Damaged weights not clamped: " + clamped);
+
+        var longKey = new CompoundTag();
+        longKey.putString("Key", "k".repeat(300)); longKey.putString("Text", "Что-то было"); longKey.putLong("Time", 1);
+        var events = new ListTag();
+        events.add(longKey);
+        var eventsTag = new CompoundTag();
+        eventsTag.put("Events", events);
+        var loadedEvents = CompanionHappenings.load(eventsTag).all();
+        h.assertTrue(loadedEvents.size() == 1 && loadedEvents.getFirst().key().length() == CompanionHappenings.KEY, "Damaged key not capped: " + loadedEvents);
         h.succeed();
     }
 

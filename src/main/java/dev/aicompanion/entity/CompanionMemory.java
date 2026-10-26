@@ -5,6 +5,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -41,9 +42,14 @@ public final class CompanionMemory {
     public record Talk(boolean fromPlayer, String text) { }
 
     // Each pattern is one family of things that must not be stored; order matters for masking (password words first).
+    // The first one is the secret keyword followed by anything (a separator, «это», «is» or nothing at all): the value is
+    // not known to be one word, so everything up to the end of the clause goes. The second needs a separator, because
+    // «ключ»/«key» alone are ordinary words.
     private static final List<Pattern> SENSITIVE = List.of(
-            Pattern.compile("(?iu)(?<![\\p{L}\\d])(?:парол\\p{L}*|токен\\p{L}*|ключ\\p{L}*|password|passwd|pwd|token|secret|api[ _-]?key|key)\\s*(?:[:=]|—|-{1,2})\\s*\\S+"),
-            Pattern.compile("\\b(?:sk-|ghp_|gho_|xox[abp]-|AKIA)[A-Za-z0-9_-]{8,}"),
+            Pattern.compile("(?imu)(?<![\\p{L}\\d])(?:парол(?:ь|я|ю|ем|е)|токен(?:а|у|ом|е)?|password|passwd|pwd|token|secret|api[ _-]?(?:key|ключ)|ключ\\s+api)(?![\\p{L}\\d])"
+                    + "[\\s:=–—-]*(?:(?:это|есть|is|was|are)\\s+)?[^\\s.!?;].*?(?=[.!?;]+(?:\\s|$)|$)"),
+            Pattern.compile("(?iu)(?<![\\p{L}\\d])(?:ключ\\p{L}*|key)\\s*(?:[:=]|[–—]|-{1,2})\\s*\\S+"),
+            Pattern.compile("\\b(?:sk-|ghp_|gho_|ghs_|github_pat_|xox[abp]-|AKIA|ASIA)[A-Za-z0-9_-]{8,}"),
             Pattern.compile("(?i)\\bbearer\\s+[A-Za-z0-9._~+/=-]{8,}"),
             Pattern.compile("[A-Za-z0-9+/_=-]{24,}"),
             Pattern.compile("\\b[0-9a-fA-F]{16,}\\b"),
@@ -51,6 +57,8 @@ public final class CompanionMemory {
             Pattern.compile("(?iu)координат\\p{L}*"),
             Pattern.compile("-?\\d+(?:\\.\\d+)?[\\s,;]+-?\\d+(?:\\.\\d+)?[\\s,;]+-?\\d+(?:\\.\\d+)?"),
             Pattern.compile("(?i)\\b[a-z][a-z0-9_]*:[a-z0-9_][a-z0-9_./-]*"));
+    private static final Pattern INVISIBLE = Pattern.compile("\\p{Cf}");
+    private static final int MASK_INPUT = TALK_TEXT * 4;
     private static final Pattern WORD = Pattern.compile("\\p{L}{3,}");
     private static final int STEM = 5;
 
@@ -63,15 +71,22 @@ public final class CompanionMemory {
     /** True when the text carries something that must not be remembered or stored. */
     public static boolean isSensitive(String text) {
         if (text == null) return false;
-        for (Pattern pattern : SENSITIVE) if (pattern.matcher(text).find()) return true;
+        String seen = unobscured(text);
+        for (Pattern pattern : SENSITIVE) if (pattern.matcher(seen).find()) return true;
         return false;
     }
 
     /** The text with every sensitive fragment replaced by {@link #MASK}. */
     public static String mask(String text) {
-        String masked = text == null ? "" : text;
+        String masked = unobscured(text);
+        if (masked.length() > MASK_INPUT) masked = masked.substring(0, MASK_INPUT);
         for (Pattern pattern : SENSITIVE) masked = pattern.matcher(masked).replaceAll(MASK);
         return masked;
+    }
+
+    /** Compatibility forms (full-width letters) fold to plain ones and invisible format characters go, so neither hides a secret. */
+    private static String unobscured(String text) {
+        return text == null ? "" : INVISIBLE.matcher(Normalizer.normalize(text, Normalizer.Form.NFKC)).replaceAll("");
     }
 
     /** Rejects (never trims) a memory that is too long, of an unknown kind, or sensitive; a duplicate raises the weight. */
@@ -220,7 +235,7 @@ public final class CompanionMemory {
         for (int i = 0; i < list.size(); i++) {
             CompoundTag item = list.getCompound(i);
             String text = flatten(item.getString("Text"));
-            if (KINDS.contains(item.getString("Kind")) && isStorable(text, MAX_TEXT)) memory.put(item.getString("Kind"), text, item.getInt("Weight"));
+            if (KINDS.contains(item.getString("Kind")) && isStorable(text, MAX_TEXT)) memory.put(item.getString("Kind"), text, Math.max(1, Math.min(MAX_WEIGHT, item.getInt("Weight"))));
         }
         ListTag lines = tag.getList("Talk", Tag.TAG_COMPOUND);
         for (int i = 0; i < lines.size(); i++) memory.recordTalk(lines.getCompound(i).getBoolean("Player"), lines.getCompound(i).getString("Text"));

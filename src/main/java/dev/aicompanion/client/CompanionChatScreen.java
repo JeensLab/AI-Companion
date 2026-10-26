@@ -218,7 +218,7 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private static void addVoiceReply(String text, String trace, String source) {
-        CompanionMemoryFlow.talk(false, text);
+        if (!"local_memory".equals(source)) CompanionMemoryFlow.talk(false, text);
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
         if ("autonomous".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
         else CompanionAmbientClient.replyDelivered(text);

@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /** What the client knows about the player's memory, bond and happenings; refreshed by every sync from the server. */
@@ -14,6 +15,7 @@ public final class CompanionMemoryView {
     private static final int RECALL_MEMORIES = 5;
 
     private static volatile Digest current = Digest.EMPTY;
+    private static final AtomicLong forgets = new AtomicLong();
 
     private CompanionMemoryView() { }
 
@@ -21,15 +23,24 @@ public final class CompanionMemoryView {
 
     static void clear() { current = Digest.EMPTY; }
 
-    static void forgetMemory() { current = current.withoutMemory(); }
+    static void forgetMemory() {
+        forgets.incrementAndGet();
+        current = current.withoutMemory();
+    }
+
+    /** Taken before a digest is pulled; a digest pulled before a later «забудь всё» must not bring the memory back. */
+    public static long forgetEpoch() { return forgets.get(); }
 
     /** Runs on the server thread: reads the digest from the world. */
     public static void pull(ServerPlayer player, boolean longTerm, Consumer<Digest> to) {
         to.accept(CompanionMemoryDigest.of(player.getServer(), player.getUUID(), longTerm, player.level().getGameTime()));
     }
 
-    /** Runs on the client thread; a digest made for an earlier session is not restored into the talk. */
-    public static void deliver(long session, Digest digest, boolean enabled) {
+    public static void deliver(long session, Digest digest, boolean enabled) { deliver(session, forgetEpoch(), digest, enabled); }
+
+    /** Runs on the client thread; a digest of an earlier session, or pulled before the last forgetting, is dropped. */
+    public static void deliver(long session, long pulledAtEpoch, Digest digest, boolean enabled) {
+        if (session != OpenRouterClient.generation() || pulledAtEpoch < forgets.get()) return;
         current = digest;
         if (enabled) OpenRouterClient.restoreTalk(session, digest.talk());
     }
