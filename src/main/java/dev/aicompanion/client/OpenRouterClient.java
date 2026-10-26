@@ -105,6 +105,11 @@ public final class OpenRouterClient {
         synchronized (HISTORY) { return HISTORY.size(); }
     }
 
+    /** «Забудь всё»: only the system prompt stays; nothing said so far is sent again or condensed into memory later. */
+    static void forgetTalk() {
+        synchronized (HISTORY) { HISTORY.removeIf(entry -> !"system".equals(entry.get("role").getAsString())); }
+    }
+
     /** Adds the answer to a request begun in {@code requestGeneration}; false when the session was reset since. */
     public static boolean recordReply(long requestGeneration, String text) {
         synchronized (HISTORY) {

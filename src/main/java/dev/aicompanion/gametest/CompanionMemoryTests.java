@@ -69,6 +69,11 @@ public final class CompanionMemoryTests {
         for (int i = 0; i < 7; i++) many.append(i > 0 ? "," : "").append("{\"kind\":\"joke\",\"text\":\"Шутка про лаву ").append(i).append("\"}");
         var trimmed = CompanionMemoryCodec.parse(many.append("]}").toString());
         h.assertTrue(trimmed.valid() && trimmed.memories().size() == CompanionMemoryCodec.MAX_MEMORIES, "More than five kept: " + trimmed.memories().size());
+
+        h.assertTrue(plain.likes().isEmpty() && plain.dislikes().isEmpty(), "Preferences invented: " + plain);
+        var liked = CompanionMemoryCodec.parse("{\"memories\":[],\"likes\":[\"арбузы\",\"  строить  дома \",\"арбузы\"],\"dislikes\":[\"крипер\"]}");
+        h.assertTrue(liked.valid() && liked.likes().equals(List.of("арбузы", "строить дома")) && liked.dislikes().equals(List.of("крипер")), "Preferences lost: " + liked);
+        h.assertTrue(CompanionMemoryCodec.request(List.of(new CompanionMemory.Talk(true, "Люблю арбузы"))).toString().contains("\\\"likes\\\""), "Prompt does not ask for likes");
         h.succeed();
     }
 
@@ -101,6 +106,11 @@ public final class CompanionMemoryTests {
                 "Only the clean entry should survive: " + parsed.memories());
         h.assertTrue(parsed.rejected() == 6, "Rejected count is wrong: " + parsed.rejected());
         h.assertTrue(parsed.callMe().isEmpty(), "Sensitive call_me accepted: " + parsed.callMe());
+
+        var prefs = CompanionMemoryCodec.parse("{\"memories\":[],\"likes\":[\"sk-abcdefgh12345678\",\"minecraft:stone\",\"" + "я".repeat(41) + "\",5,null,\"пароль: abc\","
+                + "\"л1\",\"л2\",\"л3\",\"л4\",\"л5\",\"л6\",\"л7\"],\"dislikes\":\"паук\"}");
+        h.assertTrue(prefs.valid() && prefs.likes().equals(List.of("л1", "л2", "л3", "л4", "л5", "л6")) && prefs.dislikes().isEmpty(),
+                "Dangerous or surplus preferences survived: " + prefs);
 
         JsonArray request = CompanionMemoryCodec.request(List.of(new CompanionMemory.Talk(true, "мой ключ sk-abcdefgh1234567890XYZ"),
                 new CompanionMemory.Talk(false, "Принял")));
@@ -281,6 +291,7 @@ public final class CompanionMemoryTests {
         var server = h.getLevel().getServer();
         UUID owner = UUID.randomUUID();
         List<CompletableFuture<String>> futures = new CopyOnWriteArrayList<>();
+        List<String> sent = new CopyOnWriteArrayList<>();
         try {
             var bonds = CompanionBonds.get(server);
             bonds.rescued(owner, 3);
@@ -299,17 +310,24 @@ public final class CompanionMemoryTests {
             CompanionMemoryFlow.useCompleter((messages, maxTokens, trace) -> {
                 var future = new CompletableFuture<String>();
                 futures.add(future);
+                sent.add(messages.toString());
                 return future;
             });
             OpenRouterClient.resetSession();
             CompanionMemoryFlow.bind(server, owner, true);
-            CompanionMemoryView.deliver(OpenRouterClient.generation(), CompanionMemoryDigest.of(server, owner, true, 2000), false);
+            long pulledAt = CompanionMemoryView.forgetEpoch();
+            var pulled = CompanionMemoryDigest.of(server, owner, true, 2000);
+            CompanionMemoryView.deliver(OpenRouterClient.generation(), pulled, false);
             h.assertTrue(!CompanionMemoryView.current().memories().isEmpty(), "View did not take the digest");
+            h.assertTrue(OpenRouterClient.restoreTalk(OpenRouterClient.generation(), List.of(new CompanionMemory.Talk(true, "Мой секрет про арбузы"),
+                    new CompanionMemory.Talk(false, "Запомнила про арбузы")), () -> "system"), "History fixture was not restored");
             CompanionMemoryFlow.dropped("user", "Старый вопрос");
             for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Реплика " + i);
             h.assertTrue(futures.size() == 1, "In-flight compression was not started: " + futures.size());
 
             CompanionMemoryFlow.forget();
+            h.assertTrue(OpenRouterClient.historySnapshot().stream().noneMatch(m -> !"system".equals(m.get("role").getAsString())),
+                    "History kept the forgotten talk: " + OpenRouterClient.historySnapshot());
             futures.getFirst().complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Боится пауков\"}],\"call_me\":\"Бро\"}");
 
             h.runAfterDelay(5, () -> {
@@ -323,6 +341,14 @@ public final class CompanionMemoryTests {
                     var view = CompanionMemoryView.current();
                     h.assertTrue(view.memories().isEmpty() && view.callMe().isEmpty() && view.score() == scoreBefore && !view.happenings().isEmpty(),
                             "Client view kept the memory or lost the bond: " + view);
+                    CompanionMemoryView.deliver(OpenRouterClient.generation(), pulledAt, pulled, false);
+                    CompanionMemoryView.deliver(OpenRouterClient.generation() - 1, CompanionMemoryView.forgetEpoch(), pulled, false);
+                    h.assertTrue(CompanionMemoryView.current().memories().isEmpty(), "A digest pulled before forgetting or for another session restored the memory");
+
+                    for (int i = 0; i < 13; i++) OpenRouterClient.recordLocalExchange("Новый вопрос " + i, "Новый ответ " + i);
+                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Ещё реплика " + i);
+                    h.assertTrue(futures.size() == 2 && sent.get(1).contains("Новый вопрос 0") && !sent.get(1).contains("арбуз"),
+                            "Trimming after forgetting refilled the buffer with forgotten talk: " + sent);
 
                     h.assertTrue("companion memory forget".equals(CompanionLocalCommands.route("Олег, забудь всё", "Олег")), "«забудь всё» not routed");
                     h.assertTrue("companion memory show".equals(CompanionLocalCommands.route("что ты обо мне помнишь", "Олег")), "«что ты обо мне помнишь» not routed");
