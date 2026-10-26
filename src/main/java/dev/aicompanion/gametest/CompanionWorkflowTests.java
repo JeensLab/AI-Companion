@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -83,6 +84,14 @@ public final class CompanionWorkflowTests {
         CompanionEntity companion = pit(helper, true); boolean[] animated = {false}, drop = {false};
         helper.onEachTick(() -> { animated[0] |= companion.isMiningAnimation(); drop[0] |= !items(helper, companion).isEmpty(); });
         helper.succeedWhen(() -> helper.assertTrue(animated[0] && drop[0] && companion.getY() >= helper.absolutePos(new BlockPos(16, 5, 16)).getY(), diagnostic(companion)));
+    }
+
+    /** The escape itself walks him out: the steps lead within reach of the player, where only a random stroll would move him on. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesSoilPitWithoutRandomStroll(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, true);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        helper.succeedWhen(() -> helper.assertTrue(companion.getY() >= helper.absolutePos(new BlockPos(16, 5, 16)).getY(), diagnostic(companion)));
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 700)
