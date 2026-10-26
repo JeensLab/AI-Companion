@@ -32,6 +32,18 @@ final class CompanionDiagnosticState {
             snapshot("stationary_observed");
     }
 
+    String diagnosticState() {
+        return "wood=" + owner.gatheringLogs + ",dirt=" + owner.gatheringDirt + ",remaining=" + owner.logsRemaining
+                + ",following=" + owner.following + ",protecting=" + owner.protecting + ",roaming=" + owner.roaming
+                + ",inventoryViewers=" + owner.inventoryViewers + ",supportSoil=" + owner.supportSoilTask
+                + ",pillar=" + owner.temporaryPillar.isActive() + ",cleanup=" + owner.temporaryPillar.isRecovering()
+                + ",recovery=" + owner.recovery.active() + ",loot=" + owner.loot.diagnosticState() + ",movementIntent=" + owner.movementIntent
+                + ",target=" + (owner.getTarget() == null ? "none" : owner.getTarget().getType().toString() + ":" + owner.getTarget().getId())
+                + ",goals=" + owner.goalSelector().getAvailableGoals().stream().filter(goal -> goal.isRunning()).map(goal -> goal.getGoal().getClass().getSimpleName()).toList()
+                + ",woodBreaking=" + owner.woodBreaking.diagnosticState() + ",dirtBreaking=" + owner.dirtBreaking.diagnosticState()
+                + ",work=" + owner.work.diagnosticState();
+    }
+
     void snapshot(String event) {
         var path = owner.getNavigation().getPath();
         var player = owner.getOwnerPlayer();
