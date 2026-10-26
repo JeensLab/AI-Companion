@@ -5,6 +5,8 @@ import dev.aicompanion.client.CompanionPlanRunner.State;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.schematic.CompanionSchematic;
+import dev.aicompanion.CompanionDiagnostics;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -23,13 +25,23 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals");
+            "build_house", "build_schematic", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals");
+    /** build_house items: the next round of an order already running, and «дострой» of the saved house without placing it again. */
+    public static final String HOUSE_ROUND = "continue", HOUSE_RESUME = "resume";
+
+    /** Where the schematic goes: chosen by the player in the game (CompanionSchematicPlacement); GameTests pass their own. */
+    public interface Placer {
+        CompletableFuture<Choice> choose(String hint, CompanionSchematic.Placement current, BooleanSupplier cancelled);
+        Placer NONE = (hint, current, cancelled) -> CompletableFuture.completedFuture(new Choice(null, "Место для схемы выбирается в игре."));
+    }
+    public record Choice(CompanionSchematic.Placement placement, String refusal) { }
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
     private final UUID playerId;
     private final String trace;
     private final BooleanSupplier cancelled;
     private final java.util.function.BiConsumer<java.util.List<PlannedAction>, Integer> progress;
+    private final Placer placer;
     private long ownedWorkId;
 
     public CompanionServerPlanPort(MinecraftServer server, UUID playerId, String trace, BooleanSupplier cancelled) {
@@ -38,8 +50,13 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
 
     public CompanionServerPlanPort(MinecraftServer server, UUID playerId, String trace, BooleanSupplier cancelled,
             java.util.function.BiConsumer<java.util.List<PlannedAction>, Integer> progress) {
+        this(server, playerId, trace, cancelled, progress, Placer.NONE);
+    }
+
+    public CompanionServerPlanPort(MinecraftServer server, UUID playerId, String trace, BooleanSupplier cancelled,
+            java.util.function.BiConsumer<java.util.List<PlannedAction>, Integer> progress, Placer placer) {
         this.server = server; this.playerId = playerId; this.trace = trace; this.cancelled = cancelled;
-        this.progress = progress;
+        this.progress = progress; this.placer = placer;
     }
 
     @Override public void progress(java.util.List<PlannedAction> plan, int index) { progress.accept(plan, index); }
@@ -100,6 +117,57 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         });
     }
 
+    @Override public CompletableFuture<CompanionPlanRunner.Expansion> house(PlannedAction action) {
+        if (HOUSE_ROUND.equals(action.item())) return onServer(this::round);
+        boolean resume = HOUSE_RESUME.equals(action.item());
+        return onServer(player -> {
+            CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            if (companion == null) return new HouseStart(null, false, "Компаньон выгружен из мира.");
+            var unfinished = companion.unfinishedHouse();
+            // «Дострой дом»: the saved house as it stands; a new «построй» is placed by the player, an unfinished one offered first.
+            return new HouseStart(unfinished, resume && unfinished != null, null);
+        }).thenCompose(start -> {
+            if (start.refusal() != null) return CompletableFuture.completedFuture(new CompanionPlanRunner.Expansion(java.util.List.of(), start.refusal()));
+            CompletableFuture<Choice> choice = start.resume() ? CompletableFuture.completedFuture(new Choice(start.current(), null))
+                    : placer.choose(resume ? "" : action.item(), start.current(), this::cancelled);
+            return choice.thenCompose(chosen -> {
+                if (chosen.refusal() != null) return CompletableFuture.completedFuture(new CompanionPlanRunner.Expansion(java.util.List.of(), chosen.refusal()));
+                if (cancelled()) return CompletableFuture.completedFuture(new CompanionPlanRunner.Expansion(java.util.List.of(), "План отменён."));
+                return onServer(player -> {
+                    CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+                    if (companion == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Компаньон выгружен из мира.");
+                    CompanionActionResult placed = companion.chooseHouse(chosen.placement());
+                    CompanionDiagnostics.event(trace, "house_placed", "placement", chosen.placement(), "success", placed.success(), "message", placed.message());
+                    if (!placed.success()) return new CompanionPlanRunner.Expansion(java.util.List.of(), placed.message());
+                    say(player, companion, placed.message());
+                    return round(player);
+                });
+            });
+        });
+    }
+
+    /** The next round of the house order, from the world and the bag as they are now. */
+    private CompanionPlanRunner.Expansion round(ServerPlayer player) {
+        CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+        if (companion == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Компаньон выгружен из мира.");
+        var round = companion.houseRound();
+        CompanionDiagnostics.event(trace, "house_round", "needs", round.needs(), "batch", round.batch(), "done", round.done(), "refusal", round.refusal(), "note", round.note());
+        if (round.note() != null && !round.note().isBlank()) say(player, companion, round.note());
+        if (round.refusal() != null) return new CompanionPlanRunner.Expansion(java.util.List.of(), round.refusal());
+        if (round.done()) return new CompanionPlanRunner.Expansion(java.util.List.of(new PlannedAction("verify_house", 0, 1)), null);
+        java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
+        for (var need : round.needs()) steps.add(new PlannedAction("obtain_item", 0, need.count(), need.item()));
+        steps.add(new PlannedAction("build_schematic", 0, round.batch()));
+        steps.add(new PlannedAction("build_house", 0, 1, HOUSE_ROUND));
+        return new CompanionPlanRunner.Expansion(java.util.List.copyOf(steps), null);
+    }
+
+    /** Said in chat at once, not only in the final report: where the house goes, which wood replaces which. */
+    private static void say(ServerPlayer player, CompanionEntity companion, String text) {
+        player.sendSystemMessage(net.minecraft.network.chat.Component.literal(companion.getName().getString() + ": " + text)
+                .withStyle(net.minecraft.ChatFormatting.AQUA));
+    }
+
     /** Pauses count server ticks: they stop while singleplayer is paused and follow the GameTest tick rate. */
     @Override public CompletableFuture<Void> pause(int seconds) {
         CompletableFuture<Void> wake = new CompletableFuture<>();
@@ -133,6 +201,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static int limitSeconds(PlannedAction action) {
         int items = action.count() == PlannedAction.ALL_CARRIED ? 64 : action.count();
         if ("smelt_items".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * items + 120;
+        // A batch of a house: the server gives it four seconds a block on top of the usual time, the client waits a little longer.
+        if ("build_schematic".equals(action.type())) return WORK_LIMIT_SECONDS + 4 * Math.max(1, action.count()) + 60;
         // Iron tools and gold or diamonds without an iron pickaxe: ore, furnace and bench in one order, each stage with its
         // own time on the server (review 22.10, М5); the client waits for all of them.
         var kind = "mine_ore".equals(action.type()) ? dev.aicompanion.entity.CompanionOre.Kind.of(action.item()) : null;
@@ -197,6 +267,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     }
 
     private record Sleeper(MinecraftServer server, int wakeTick, CompletableFuture<Void> wake) { }
+    private record HouseStart(CompanionSchematic.Placement current, boolean resume, String refusal) { }
     private record Dispatch(CompanionActionResult result, long workId, long tick) { }
     private record GatherState(boolean active, CompanionActionResult result) { }
 }

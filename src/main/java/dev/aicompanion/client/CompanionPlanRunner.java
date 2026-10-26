@@ -21,7 +21,7 @@ public final class CompanionPlanRunner {
     public static final int IDLE_WAIT_SECONDS = 20;
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals");
+            "build_house", "build_schematic", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_stone");
 
     public interface Port {
@@ -37,9 +37,18 @@ public final class CompanionPlanRunner {
         default CompletableFuture<Expansion> expand(PlannedAction action) {
             return CompletableFuture.completedFuture(new Expansion(List.of(), "Не умею добывать этот предмет."));
         }
+        /**
+         * build_house turned into its next round: the materials of the next batch, the batch itself, and build_house again —
+         * or verify_house once the last block stands, or the reason it cannot go on. The first round lets the player place it.
+         */
+        default CompletableFuture<Expansion> house(PlannedAction action) {
+            return CompletableFuture.completedFuture(new Expansion(List.of(), "Стройка по схеме здесь недоступна."));
+        }
     }
-    /** steps end with verify_item, so the order succeeds only by the bag. */
-    public record Expansion(List<PlannedAction> steps, String refusal) { }
+    /** steps end with verify_item (verify_house), so the order succeeds only by the bag (the world). note: said to the player. */
+    public record Expansion(List<PlannedAction> steps, String refusal, String note) {
+        public Expansion(List<PlannedAction> steps, String refusal) { this(steps, refusal, ""); }
+    }
     /** busy: an earlier order is still finishing. progress: physical pickups for gather steps, -1 if not measured. */
     public record State(boolean busy, int progress) { }
     /** started: the server accepted the order, so the result comes from real work. */
@@ -99,6 +108,26 @@ public final class CompanionPlanRunner {
             run.plan.addAll(index, expansion.steps());
             return step(run, index, run.plan.get(index), false);
         });
+        // «Построй дом»: placed by the player, then round after round of materials and building, each planned from the world as it is.
+        if ("build_house".equals(action.type())) {
+            boolean settleHouse = index > 0 || retried;
+            return (settleHouse ? idle(port, action, IDLE_WAIT_SECONDS) : port.state(action)).thenCompose(ignored -> port.house(action)).thenCompose(expansion -> {
+                CompanionDiagnostics.event(port.trace(), "house_planned", "step", number, "action", action, "steps", expansion.steps(), "refusal", expansion.refusal());
+                if (expansion.note() != null && !expansion.note().isBlank()) run.reports.add(expansion.note());
+                if (expansion.refusal() != null) {
+                    run.reports.add("План остановлен: " + expansion.refusal());
+                    return CompletableFuture.completedFuture(index + 1);
+                }
+                if (port.cancelled()) {
+                    run.reports.add("План отменён командой остановки.");
+                    run.cancelled = true;
+                    return CompletableFuture.completedFuture(index);
+                }
+                run.plan.remove(index);
+                run.plan.addAll(index, expansion.steps());
+                return step(run, index, run.plan.get(index), false);
+            });
+        }
         // Pillar descent, loot pickup and similar tails of the previous step end before the next order.
         boolean settle = WORK.contains(action.type()) && (index > 0 || retried);
         return (settle ? idle(port, action, IDLE_WAIT_SECONDS) : port.state(action)).thenCompose(before -> {

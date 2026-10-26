@@ -61,6 +61,7 @@ public final class GameContext {
                 + ", время суток=" + (minecraft.level.dimensionType().hasSkyLight() ? timeOfDay(minecraft.level.getDayTime()) : "обычного цикла дня и ночи нет")
                 + ", дождь=" + minecraft.level.isRaining()
                 + ", ближайшие монстры=" + (threats.isEmpty() ? "не замечены" : String.join(", ", threats))
+                + ", схемы построек в " + dev.aicompanion.schematic.CompanionSchematics.FOLDER + "=" + schematics()
                 + ", состояние компаньона=" + (companions.isEmpty() ? (remoteWorld == minecraft.level && System.nanoTime() - remoteAt < 10_000_000_000L ? remoteState : "не найден рядом") : companions.getFirst().getActivityForAi())
                 + (companions.isEmpty() ? "" : ", его сумка=" + companions.getFirst().getStoredItemsForAi()
                         + ", его имя=" + companions.getFirst().getName().getString()
@@ -73,6 +74,12 @@ public final class GameContext {
                         ? "пока нет" : companions.getFirst().getLastTaskResult())
                         + ", журнал его недавних дел (старые первыми, настоящие итоги)=" + companions.getFirst().getDeedsForAi())
                 + ". Это только видимые клиенту сведения; не додумывай неизвестное.";
+    }
+
+    private static String schematics() {
+        var files = dev.aicompanion.schematic.CompanionSchematics.list();
+        if (files.isEmpty()) return "нет ни одной";
+        return String.join(", ", files.subList(0, Math.min(12, files.size()))) + (files.size() > 12 ? " и ещё " + (files.size() - 12) : "");
     }
 
     public static String timeOfDay(long dayTime) {

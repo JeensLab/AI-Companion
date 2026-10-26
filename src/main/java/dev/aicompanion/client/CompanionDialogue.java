@@ -52,7 +52,7 @@ public final class CompanionDialogue {
             case "gather_stone" -> "Ага, возьму кирку и добуду камня.";
             case "store_items" -> "Сейчас сложу в сундук.";
             case "take_items" -> "Сейчас заберу из сундука.";
-            case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
+            case "build_house" -> "resume".equals(actions.getFirst().item()) ? "Окей, дострою дом." : "Окей, выбери, где поставить дом по схеме.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";
             case "unequip_item" -> "Ага, уберу.";
@@ -95,7 +95,9 @@ public final class CompanionDialogue {
             case "unequip_item" -> "убрать предмет из руки";
             case "store_items" -> "сложить вещи в сундук";
             case "take_items" -> "забрать вещи из сундука";
-            case "build_house" -> "построить дом";
+            case "build_house" -> "continue".equals(action.item()) ? "решить, что нужно стройке дальше" : "построить дом по схеме";
+            case "build_schematic" -> "строить дом (" + action.count() + " бл.)";
+            case "verify_house" -> "проверить, что дом стоит целиком";
             case "hunt_mobs" -> "разобраться с монстрами";
             case "give_wood" -> "отдать тебе дерево";
             case "give_items" -> "отдать тебе «" + itemName(action.item()) + "»";
@@ -168,6 +170,8 @@ public final class CompanionDialogue {
         String last = stoppedAt >= 0 ? report.substring(stoppedAt) : report.substring(report.lastIndexOf('\n') + 1);
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
+            // A house order ends with its own words: how far it got and what is missing (no schematics, a chest in the way…).
+            if (actions.stream().anyMatch(action -> "build_house".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);
             if (partial != null) return partial;
             if (failure.contains("Для подъёма не хватает земли")) return "До верхушки без опоры не достану. Дай мне немного земли.";

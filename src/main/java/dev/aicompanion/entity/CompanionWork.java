@@ -300,7 +300,7 @@ public final class CompanionWork {
             case STORE -> "складывание вещей в сундук";
             case TAKE -> "взятие вещей из сундука";
             case PLACE_CHEST -> "установку" + item;
-            case HOUSE -> "стройку дома";
+            case HOUSE -> "стройку «" + house.title() + "»";
             case DIRT -> "добычу земли";
             case COME -> "путь к тебе";
             case HUNT -> "бой с монстрами";
@@ -319,6 +319,7 @@ public final class CompanionWork {
                 + ",transferred=" + transferred + ",target=" + target + ",craftingStation=" + craftingStation
                 + ",woodAttempts=" + woodAttempts + ",craftAttempts=" + craftAttempts
                 + ",origin=" + workOrigin + ",returnBlocked=" + returnRouteBlocked + ",deadline=" + deadline + ",breaking=" + breaking.diagnosticState()
+                + (job == Job.HOUSE ? ",house=" + house.diagnosticState() : "")
                 + (job == Job.SMELT && smelt != null ? ",smelt=" + BuiltInRegistries.ITEM.getKey(smelt.input()) + "x" + smeltCount + ",furnaces="
                         + lots.stream().map(lot -> lot.pos.toShortString() + ":" + lot.count + "/" + lot.ready + (lot.loaded ? "L" : "") + (lot.emptied ? "E" : "") + (lot.gaveUp ? "G" : "")).toList() : "");
     }
@@ -381,7 +382,9 @@ public final class CompanionWork {
     public CompanionActionResult start(String action, String item, int count, String location) {
         cancel();
         if (!(owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для работы нужен загруженный мир.");
-        if (count < 1 && !("smelt_items".equals(action) && count == ALL_CARRIED) || count > 64) return CompanionActionResult.failed("За раз можно добыть от 1 до 64 блоков.");
+        boolean building = "build_house".equals(action) || "build_schematic".equals(action);
+        // A building order counts the blocks of its batch, which may be more than a stack.
+        if (count < 1 && !("smelt_items".equals(action) && count == ALL_CARRIED) || count > 64 && !building) return CompanionActionResult.failed("За раз можно добыть от 1 до 64 блоков.");
         insideHouse = "inside_house".equals(location);
         if (!insideHouse && !"near_player".equals(location)) return CompanionActionResult.failed("Неизвестное место выполнения.");
         if (insideHouse && !house.interiorAvailable(level)) return CompanionActionResult.blocked("Не могу подтвердить, где сейчас наш дом. Снаружи вместо этого ставить не буду.");
@@ -434,8 +437,8 @@ public final class CompanionWork {
                 smeltCount = Math.min(count, carried);
                 job = Job.SMELT; phase = Phase.FURNACE;
             }
-            case "build_house" -> {
-                if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
+            case "build_house", "build_schematic" -> {
+                if (house.placement() == null) return CompanionActionResult.failed("Сначала нужно выбрать место для дома по схеме из папки " + dev.aicompanion.schematic.CompanionSchematics.FOLDER + ".");
                 job = Job.HOUSE; phase = Phase.BUILD; house.begin();
             }
             case "mine_ore" -> {
@@ -471,7 +474,7 @@ public final class CompanionWork {
         stoneCollectedBefore = owner.collectedStone(); lastHarvestStand = null;
         // Gathering wood, finishing its crown, collecting drops, returning and crafting are
         // real prerequisite stages. A single three-minute budget used to expire before mining began.
-        deadline = level.getGameTime() + 20 * 600;
+        deadline = level.getGameTime() + 20 * 600 + (job == Job.HOUSE ? 20L * 4 * count : 0);
         rejected.clear(); triedChests.clear(); stoneCandidates = null; stoneLootRetried = false;
         lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = false; furnacesPlaced = 0; benchClimbs = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
@@ -632,18 +635,30 @@ public final class CompanionWork {
     void watchChase() { hunting.watchChase(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
+    /** Materials are got by the steps of the order before this one (CompanionHouse.round); here only clearing and building. */
     private void buildHouse(ServerLevel level) {
-        if (!owner.onGround()) return;
-        var site = house.ensureSite(level);
-        if (site != null) { finish(false, site.message()); return; }
-        if (house.needsPreparation() && crafting.approachCraftingTable()) return;
         CompanionHouse.Result result = house.tick(level);
         switch (result.state()) {
-            case NEED_WOOD -> crafting.requestWood(Phase.BUILD, result.logs());
-            case DONE -> finish(true, result.message());
+            case DONE, NEED_MATERIALS -> finish(true, result.message());
             case FAILED -> finish(false, result.message());
             default -> { }
         }
+    }
+
+    public CompanionActionResult chooseHouse(dev.aicompanion.schematic.CompanionSchematic.Placement placement) {
+        if (!(owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для стройки нужен загруженный мир.");
+        if (isActive()) return CompanionActionResult.failed("Сначала нужно завершить или отменить текущую работу.");
+        return house.choose(level, placement);
+    }
+    public dev.aicompanion.schematic.CompanionSchematic.Placement housePlacement() { return house.placement(); }
+    public dev.aicompanion.schematic.CompanionSchematic.Placement unfinishedHouse() { return house.unfinished(); }
+    public CompanionHouse.Round houseRound() {
+        if (!(owner.level() instanceof ServerLevel level)) return new CompanionHouse.Round(List.of(), 0, false, "Для стройки нужен загруженный мир.", "");
+        return house.round(level);
+    }
+    public CompanionActionResult houseCheck() {
+        if (!(owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для стройки нужен загруженный мир.");
+        return house.check(level);
     }
 
     public static boolean isStone(BlockState state) { return CompanionStoneMining.isStone(state); }

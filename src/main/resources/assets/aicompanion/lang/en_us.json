@@ -10,5 +10,18 @@
   "config.aicompanion.model": "OpenRouter model",
   "config.aicompanion.personality": "Companion personality",
   "config.aicompanion.inworld_api_key": "Inworld Basic credential",
-  "config.aicompanion.inworld_voice_id": "Inworld voice ID"
+  "config.aicompanion.inworld_voice_id": "Inworld voice ID",
+  "key.aicompanion.schematic_confirm": "House schematic: build here",
+  "key.aicompanion.schematic_cancel": "House schematic: cancel",
+  "key.aicompanion.schematic_rotate": "House schematic: rotate",
+  "key.aicompanion.schematic_mirror": "House schematic: mirror",
+  "key.aicompanion.schematic_next": "House schematic: next",
+  "key.aicompanion.schematic_previous": "House schematic: previous",
+  "key.aicompanion.schematic_forward": "House schematic: move forward",
+  "key.aicompanion.schematic_back": "House schematic: move back",
+  "key.aicompanion.schematic_left": "House schematic: move left",
+  "key.aicompanion.schematic_right": "House schematic: move right",
+  "key.aicompanion.schematic_up": "House schematic: move up",
+  "key.aicompanion.schematic_down": "House schematic: move down",
+  "key.aicompanion.schematic_follow": "House schematic: follow crosshair"
 }

@@ -1,6 +1,11 @@
 package dev.aicompanion.gametest;
 
+import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionPlanCodec;
+import dev.aicompanion.client.CompanionPlanRunner;
+import dev.aicompanion.client.CompanionServerPlanPort;
+import dev.aicompanion.schematic.CompanionSchematic;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
@@ -12,8 +17,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Game log 22.10 (build f21ae3e) and Tolik's screenshot: «Нужно подойти к известному верстаку. Известные места: minecraft:furnace
@@ -29,12 +38,21 @@ public final class CompanionBenchTests {
         BlockPos far = new BlockPos(1, 1, 1);
         h.setBlock(far, Blocks.CRAFTING_TABLE);
         companion.rememberPlaced(h.absolutePos(far));
-        companion.setItem(0, new ItemStack(Items.OAK_LOG, 32));
-        h.assertTrue(companion.startWork("build_house", "", 1).success(), "House work rejected");
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 8));
+        // A row of stairs: their recipe is 3×3, so the house order needs a bench.
+        String file = "test_bench_stairs.schem";
+        CompanionHouseTests.write(file, CompanionHouseTests.sponge(4, 1, 1, (x, y, z) -> Blocks.OAK_STAIRS.defaultBlockState()));
+        BlockPos origin = h.absolutePos(new BlockPos(20, 1, 12));
+        CompanionServerPlanPort.Placer placer = (hint, current, cancelled) -> CompletableFuture.completedFuture(
+                new CompanionServerPlanPort.Choice(new CompanionSchematic.Placement(file, origin, Rotation.NONE, Mirror.NONE), null));
+        var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"build_house\"}]"));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-bench", () -> false, (p, i) -> { }, placer));
         h.succeedWhen(() -> {
-            h.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
-            h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().startsWith("Дом готов"), companion.getLastTaskResult());
+            h.assertTrue(future.isDone() && !companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("готов") && !report.contains("План остановлен") && !report.contains("Известные места"), report);
             h.assertTrue(h.getBlockState(far).is(Blocks.CRAFTING_TABLE), "The remembered bench was taken");
+            CompanionHouseTests.delete(file);
         });
     }
 

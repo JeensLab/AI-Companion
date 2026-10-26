@@ -59,6 +59,7 @@ public final class AICompanionClient {
         modEventBus.addListener(this::registerMenuScreens);
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForge.EVENT_BUS.addListener(CompanionSchematicPlacement::render);
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -66,6 +67,7 @@ public final class AICompanionClient {
         event.register(OPEN_INTERFACE);
         event.register(PUSH_TO_TALK);
         event.register(TOGGLE_MARKER);
+        CompanionSchematicPlacement.KEYS.forEach(event::register);
     }
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -90,6 +92,7 @@ public final class AICompanionClient {
         CompanionAmbientClient.tick();
         CompanionAmbientClient.autonomyLines();
         CompanionMarker.tick();
+        CompanionSchematicPlacement.tick();
         if (minecraft.level != null && preferenceSyncTicks-- <= 0) { preferenceSyncTicks = 40; CompanionPreferences.sync(); }
         boolean gameplay = minecraft.level != null && minecraft.screen == null;
         boolean pushToTalkDown = gameplay && PUSH_TO_TALK.isDown();

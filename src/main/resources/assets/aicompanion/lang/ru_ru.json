@@ -10,5 +10,18 @@
   "config.aicompanion.model": "Модель OpenRouter",
   "config.aicompanion.personality": "Характер компаньона",
   "config.aicompanion.inworld_api_key": "Ключ Inworld (Basic)",
-  "config.aicompanion.inworld_voice_id": "ID голоса Inworld"
+  "config.aicompanion.inworld_voice_id": "ID голоса Inworld",
+  "key.aicompanion.schematic_confirm": "Схема дома: строить здесь",
+  "key.aicompanion.schematic_cancel": "Схема дома: отменить",
+  "key.aicompanion.schematic_rotate": "Схема дома: повернуть",
+  "key.aicompanion.schematic_mirror": "Схема дома: отразить",
+  "key.aicompanion.schematic_next": "Схема дома: следующая",
+  "key.aicompanion.schematic_previous": "Схема дома: предыдущая",
+  "key.aicompanion.schematic_forward": "Схема дома: сдвинуть вперёд",
+  "key.aicompanion.schematic_back": "Схема дома: сдвинуть назад",
+  "key.aicompanion.schematic_left": "Схема дома: сдвинуть влево",
+  "key.aicompanion.schematic_right": "Схема дома: сдвинуть вправо",
+  "key.aicompanion.schematic_up": "Схема дома: поднять",
+  "key.aicompanion.schematic_down": "Схема дома: опустить",
+  "key.aicompanion.schematic_follow": "Схема дома: снова за прицелом"
 }

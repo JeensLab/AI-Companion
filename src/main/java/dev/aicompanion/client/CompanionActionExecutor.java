@@ -36,7 +36,7 @@ public final class CompanionActionExecutor {
                 return CompletableFuture.failedFuture(new IllegalStateException("Для действий компаньона нужен открытый одиночный мир."));
             long started = System.nanoTime();
             CompanionServerPlanPort port = new CompanionServerPlanPort(server, playerId, trace,
-                    () -> task.cancelled() || generation != planGeneration.get(), task::progress);
+                    () -> task.cancelled() || generation != planGeneration.get(), task::progress, CompanionSchematicPlacement::choose);
             task.onCancel(port::cancelWork);
             return CompanionPlanRunner.run(actions, port).thenApply(outcome -> {
                 CompanionDiagnostics.event(trace, "plan_outcome", "recoveries", outcome.recoveries(), "skipped", outcome.skipped());

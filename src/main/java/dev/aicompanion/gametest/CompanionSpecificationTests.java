@@ -78,21 +78,19 @@ public final class CompanionSpecificationTests {
     @GameTest(template = "tall_tree", timeoutTicks = 500)
     public static void chestGoesInsideSavedHouseThroughDoor(GameTestHelper h) {
         var c = setup(h);
+        // The house of a schematic, already standing: the chest goes inside it, through its door.
+        String file = "test_inside_house.schem";
+        CompanionHouseTests.write(file, CompanionHouseTests.sponge(5, 4, 5, CompanionHouseTests::house));
         BlockPos base = new BlockPos(20,0,20);
-        for (int x=0;x<5;x++) for (int z=0;z<5;z++) {
-            h.setBlock(base.offset(x,0,z), Blocks.OAK_PLANKS); h.setBlock(base.offset(x,4,z), Blocks.OAK_SLAB);
-            if (x==0 || x==4 || z==0 || z==4) for(int y=1;y<=3;y++) h.setBlock(base.offset(x,y,z), Blocks.OAK_PLANKS);
-        }
-        h.setBlock(base.offset(2,1,0), Blocks.AIR); h.setBlock(base.offset(2,2,0), Blocks.AIR);
-        var door = Blocks.OAK_DOOR.defaultBlockState().setValue(net.minecraft.world.level.block.DoorBlock.FACING, net.minecraft.core.Direction.NORTH);
-        h.setBlock(base.offset(2,1,0), door); h.setBlock(base.offset(2,2,0), door.setValue(net.minecraft.world.level.block.DoorBlock.HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER));
-        CompoundTag saved = new CompoundTag(); c.addAdditionalSaveData(saved);
-        CompoundTag house = new CompoundTag(); house.putLong("Base", h.absolutePos(base).asLong()); house.putString("Wood", "oak");
-        house.putString("Dimension", h.getLevel().dimension().location().toString()); saved.put("SmallHouse", house); c.readAdditionalSaveData(saved);
+        for (int x=0;x<5;x++) for (int y=0;y<4;y++) for (int z=0;z<5;z++) h.setBlock(base.offset(x,y,z), CompanionHouseTests.house(x,y,z));
+        var placed = c.chooseHouse(new dev.aicompanion.schematic.CompanionSchematic.Placement(file, h.absolutePos(base),
+                net.minecraft.world.level.block.Rotation.NONE, net.minecraft.world.level.block.Mirror.NONE));
+        h.assertTrue(placed.success(), placed.message());
         c.setItem(0, new ItemStack(Items.CHEST)); c.startWork("place_block", "minecraft:chest", 1, "inside_house");
         h.succeedWhen(() -> { done(h,c); h.assertTrue(c.didLastTaskSucceed(), c.getLastTaskResult());
-            int inside=0; for (BlockPos p:BlockPos.betweenClosed(base.offset(1,1,1),base.offset(3,1,3))) if(h.getBlockState(p).is(Blocks.CHEST)) inside++;
-            h.assertTrue(inside==1 && blocks(h, Blocks.CHEST)==1, "Chest placed outside"); });
+            int inside=0; for (BlockPos p:BlockPos.betweenClosed(base.offset(1,1,1),base.offset(3,2,3))) if(h.getBlockState(p).is(Blocks.CHEST)) inside++;
+            h.assertTrue(inside==1 && blocks(h, Blocks.CHEST)==1, "Chest placed outside");
+            CompanionHouseTests.delete(file); });
     }
     @GameTest(template = "tall_tree")
     public static void hiddenCreeperIsNotAnObservation(GameTestHelper h) {

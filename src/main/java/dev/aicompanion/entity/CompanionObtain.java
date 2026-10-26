@@ -58,6 +58,14 @@ public final class CompanionObtain {
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
         CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)));
         String target = key(item);
+        // Only a plain log, planks or cobblestone stand for their family. Oak wood, a stripped log or cobbled deepslate is that
+        // exact item: logs in the bag do not make it (game log 27.10: «Stripped Oak Wood 0 из 7» after a plan of nothing).
+        if (target.startsWith("#") && !standsForFamily(item)) {
+            int carriedExact = carried.stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum();
+            if (carriedExact >= count) return new Plan(List.of(), null);
+            target = id.toString();
+            count -= carriedExact;
+        }
         if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
         // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
@@ -157,7 +165,8 @@ public final class CompanionObtain {
         for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.SMELTING)) {
             var recipe = holder.value();
             if (!recipe.getResultItem(level.registryAccess()).is(item)) continue;
-            for (ItemStack option : recipe.getIngredients().getFirst().getItems()) { String key = key(option.getItem()); if (!options.contains(key)) options.add(key); }
+            // Recycling a tool or armour in the furnace is no way to get nuggets: a shovel is not crafted to be melted down.
+            for (ItemStack option : recipe.getIngredients().getFirst().getItems()) { if (option.isDamageableItem()) continue; String key = key(option.getItem()); if (!options.contains(key)) options.add(key); }
         }
         // What he carries first, then raw materials before blocks (the ore block itself is not what a pickaxe gives).
         options.sort(java.util.Comparator.comparing((String key) -> !key.contains("raw_")));
@@ -218,6 +227,13 @@ public final class CompanionObtain {
         if (stack.is(ItemTags.PLANKS)) return PLANKS;
         if (stack.is(ItemTags.STONE_CRAFTING_MATERIALS) || stack.is(ItemTags.STONE_TOOL_MATERIALS)) return STONE;
         return BuiltInRegistries.ITEM.getKey(item).toString();
+    }
+    private static boolean standsForFamily(Item item) {
+        ItemStack stack = new ItemStack(item);
+        if (stack.is(ItemTags.PLANKS)) return true;
+        String path = BuiltInRegistries.ITEM.getKey(item).getPath();
+        if (stack.is(ItemTags.LOGS)) return !path.startsWith("stripped_") && (path.endsWith("_log") || path.endsWith("_stem"));
+        return item == Items.COBBLESTONE;
     }
     private static String label(String key) {
         return switch (key) { case LOGS -> "брёвна"; case PLANKS -> "доски"; case STONE -> "булыжник"; default -> name(BuiltInRegistries.ITEM.get(ResourceLocation.parse(key))); };

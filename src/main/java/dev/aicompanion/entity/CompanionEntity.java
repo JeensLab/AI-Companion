@@ -597,6 +597,19 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean didLastTaskSucceed() { return lastTaskSucceeded; }
 
     public CompanionObtain.Plan obtainPlan(String item, int count) { return bag.obtainPlan(item, count); }
+    /** build_house: the schematic the player set down in the world (CompanionHouse). */
+    public CompanionActionResult chooseHouse(dev.aicompanion.schematic.CompanionSchematic.Placement placement) {
+        CompanionActionResult result = work.chooseHouse(placement);
+        if (result.success()) syncWorkState();
+        return result;
+    }
+    public dev.aicompanion.schematic.CompanionSchematic.Placement housePlacement() { return work.housePlacement(); }
+    /** The chosen house while its last block is not confirmed: the client shows what is left of it. */
+    public dev.aicompanion.schematic.CompanionSchematic.Placement unfinishedHouse() { return work.unfinishedHouse(); }
+    /** The next round of a house order, planned from the world and the bag as they are now. */
+    public CompanionHouse.Round houseRound() { return work.houseRound(); }
+    /** The end of a house order: success only by the blocks standing in the world. */
+    public CompanionActionResult houseCheck() { return recordActionResult(work.houseCheck()); }
     public CompanionActionResult carriedCheck(String item, int count) { return bag.carriedCheck(item, count); }
     public String getStoredItemsSummary() { return bag.getStoredItemsSummary(); }
     public String getStoredItemsForAi() { return bag.getStoredItemsForAi(); }

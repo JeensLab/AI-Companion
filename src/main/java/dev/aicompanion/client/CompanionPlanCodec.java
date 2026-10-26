@@ -89,6 +89,8 @@ public final class CompanionPlanCodec {
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
                 if ("place_block".equals(type) && !"minecraft:chest".equals(item) && count != 1) throw invalid();
+                // build_house: empty, «resume» (finish the saved house) or the name of a schematic file the player mentioned.
+                if ("build_house".equals(type) && (item.length() > 64 || item.contains("/") || item.contains("\\") || item.contains("..") || "continue".equals(item))) throw invalid();
                 if (("store_items".equals(type) || "take_items".equals(type)) && !item.isEmpty() && !Set.of("resources", "all", "logs", "stone").contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if ("give_items".equals(type) && !"logs".equals(item) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();

@@ -3,10 +3,10 @@
 ## Цель и текущие границы
 
 Олег — компаньон для одиночного Minecraft Java 1.21.1: общается по-русски,
-помогает добывать и переносить ресурсы, создавать предметы, строить небольшой
-дом и сражаться. Важен наблюдаемый результат в настоящем мире: нужные материалы
+помогает добывать и переносить ресурсы, создавать предметы, строить дома по схемам
+из `mods/oleh_ai_schemas` и сражаться. Важен наблюдаемый результат в настоящем мире: нужные материалы
 в инвентаре, достижимый маршрут, выполненный рецепт, полученный игроком предмет.
-Произвольное строительство и полностью самостоятельная игра пока вне реализованных возможностей.
+Полностью самостоятельная игра пока вне реализованных возможностей.
 
 OpenRouter отвечает за свободный диалог и предложения планов; Inworld — за голос.
 Прямые команды и многие проверки доступны без этих сервисов. Долговременная
@@ -61,6 +61,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
+| Постройки по схемам | `schematic/` (форматы и папка), `entity/CompanionHouse.java`, `CompanionScaffold.java`, `client/CompanionSchematicPlacement.java`, `CompanionSchematicGhost.java`; тесты `gametest/CompanionHouseTests.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
 | Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java` |
 | Локальные настройки и диагностика | `OpenRouterConfig.java`, `CompanionDiagnostics.java`, [SECURITY.md](../SECURITY.md) |

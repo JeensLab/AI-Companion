@@ -43,6 +43,9 @@ public final class CompanionSettingsScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Поведение"), b -> {
             saveAndClose(); minecraft.setScreen(new CompanionBehaviorScreen(this));
         }).bounds(width - 94, 8, 88, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Клавиши схем"), b -> {
+            saveAndClose(); minecraft.setScreen(new CompanionSchematicKeysScreen(this));
+        }).bounds(6, 8, 96, 20).build());
         int fieldWidth = Math.min(380, this.width - 80);
         int left = (this.width - fieldWidth) / 2;
         firstY = 36;

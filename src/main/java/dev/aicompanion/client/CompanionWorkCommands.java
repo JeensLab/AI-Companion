@@ -11,8 +11,9 @@ public final class CompanionWorkCommands {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
         value = value.replaceAll("[.!]+$", "").trim();
-        if (value.matches("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1);
-        if (value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$")) return new PlannedAction("build_house", 0, 1);
+        if (value.matches("^(?:построй|сделай)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: по схеме)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1);
+        if (value.matches("^дострой(?: мне| нам)? (?:дом|домик)$") || value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$"))
+            return new PlannedAction("build_house", 0, 1, CompanionServerPlanPort.HOUSE_RESUME);
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;
