@@ -19,24 +19,18 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PathfinderMob;
-import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
-import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
-import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.ContainerHelper;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.pathfinder.Path;
-import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -46,11 +40,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 /** The player's persistent in-world companion. */
@@ -69,9 +60,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             CompanionEntity.class, EntityDataSerializers.INT);
     static final EntityDataAccessor<String> DATA_LAST_TASK_RESULT = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.STRING);
-    private static final EntityDataAccessor<String> DATA_INVENTORY_SUMMARY = SynchedEntityData.defineId(
+    static final EntityDataAccessor<String> DATA_INVENTORY_SUMMARY = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.STRING);
-    private static final EntityDataAccessor<String> DATA_INVENTORY_AI = SynchedEntityData.defineId(
+    static final EntityDataAccessor<String> DATA_INVENTORY_AI = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_STORAGE_CHEST = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.STRING);
@@ -95,11 +86,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean nearbySocialThreat;
     private boolean nearbyExplosiveThreat;
     static final double LOG_INTERACTION_RANGE_SQR = 16.0D;
-    private UUID ownerId;
+    UUID ownerId;
     boolean following = true;
     boolean protecting;
     boolean roaming;
-    private BlockPos roamOrigin;
+    BlockPos roamOrigin;
     int searchRadius = 64;
     boolean gatheringLogs;
     boolean gatheringDirt;
@@ -118,10 +109,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionGathering gathering = new CompanionGathering(this);
     final CompanionEquipment equipment = new CompanionEquipment(this);
     final CompanionPlacement placement = new CompanionPlacement(this);
+    private final CompanionSwimming swimming = new CompanionSwimming(this);
+    final CompanionCombat combat = new CompanionCombat(this);
+    private final CompanionEating meals = new CompanionEating(this);
+    private final CompanionBag bag = new CompanionBag(this);
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
-    private final CompanionRecovery recovery = new CompanionRecovery(this);
+    final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     private BlockPos movementIntent;
@@ -280,7 +275,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.setCustomNameVisible(true);
         this.setPersistenceRequired();
         this.setCanPickUpLoot(false);
-        this.moveControl = new SwimmingMoveControl();
+        this.moveControl = new CompanionSwimming.SwimmingMoveControl(this);
         if (getNavigation() instanceof net.minecraft.world.entity.ai.navigation.GroundPathNavigation ground) ground.setCanOpenDoors(true);
         // Water like a player: wading and swimming are slower, not something to avoid at eight times the cost, and a shore is no
         // danger (marathon 23.10, «берег»: back from the island the route over the sandbar did not fit into one search at the
@@ -289,15 +284,15 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
         this.goalSelector.addGoal(0, new FloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
-        this.goalSelector.addGoal(1, new RecoverSupportsGoal());
-        this.goalSelector.addGoal(1, new RecoverRouteGoal());
-        this.goalSelector.addGoal(2, new PlayerPaceAttackGoal());
-        this.goalSelector.addGoal(2, new PickupLootGoal());
+        this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
+        this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
+        this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
+        this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherDirtGoal(this));
-        this.goalSelector.addGoal(3, new WorkGoal());
-        this.goalSelector.addGoal(4, new FollowPlayerGoal(this));
-        this.goalSelector.addGoal(4, new RoamGoal());
+        this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
+        this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
+        this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
         this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F));
         this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.65D) {
             @Override public boolean canUse() { return following && !protecting && !autonomy.staysAtWork() && inventoryViewers == 0 && super.canUse(); }
@@ -314,9 +309,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this) {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
         });
-        this.targetSelector.addGoal(1, new OwnerDefenseGoal());
+        this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Monster.class, 10,
-                true, false, target -> protecting ? isThreateningOwner(target) : comesForOwner(target)));
+                true, false, target -> protecting ? combat.isThreateningOwner(target) : combat.comesForOwner(target)));
     }
 
     @Override
@@ -655,36 +650,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         carried.add(getMainHandItem()); carried.add(getOffhandItem());
         return carried;
     }
-    public String getStoredItemsSummary() {
-        return entityData.get(DATA_INVENTORY_SUMMARY);
-    }
-
-    public String getStoredItemsForAi() {
-        return entityData.get(DATA_INVENTORY_AI);
-    }
-
-    public void mergeStoredItemsFrom(CompanionEntity other) {
-        if (other == this || level().isClientSide) return;
-        for (ItemStack stack : other.companionInventory) {
-            if (stack.isEmpty()) continue;
-            ItemStack remaining = stack.copy();
-            if (!storeInCompanionInventory(remaining) && level() instanceof ServerLevel serverLevel) {
-                Block.popResource(serverLevel, blockPosition(), remaining);
-            }
-        }
-        other.companionInventory.clear();
-        for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) {
-            ItemStack equipment = other.getItemBySlot(slot);
-            if (equipment.isEmpty()) continue;
-            if (getItemBySlot(slot).isEmpty()) setItemSlot(slot, equipment.copy());
-            else {
-                ItemStack remaining = equipment.copy();
-                if (!storeInCompanionInventory(remaining) && level() instanceof ServerLevel serverLevel) Block.popResource(serverLevel, blockPosition(), remaining);
-            }
-            other.setItemSlot(slot, ItemStack.EMPTY);
-        }
-        other.refreshInventorySummary();
-    }
+    public String getStoredItemsSummary() { return bag.getStoredItemsSummary(); }
+    public String getStoredItemsForAi() { return bag.getStoredItemsForAi(); }
+    public void mergeStoredItemsFrom(CompanionEntity other) { bag.mergeStoredItemsFrom(other); }
 
     public String getEquipmentForAi() { return equipment.getEquipmentForAi(); }
     public CompanionActionResult equipItem(String requested, String slotName) { return equipment.equipItem(requested, slotName); }
@@ -698,62 +666,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void selectWeaponForCombat() { equipment.selectWeaponForCombat(); }
     public void setEquipmentByPlayer(EquipmentSlot slot, ItemStack stack) { equipment.setEquipmentByPlayer(slot, stack); }
 
-    /**
-     * At a bank a block over the water, like a player: hold the jump while pressing against it, until out (marathon 23.10,
-     * «берег»: the game's float stops pushing once the head is out, the lift of the water reached half a block short of the bank,
-     * and he bobbed at the island's edge for minutes). Only while the route really goes up onto that bank.
-     */
-    private void climbOutOfWater() {
-        if (isInWater()) lastInWaterTick = tickCount;
-        // In the water, or just lifted out of it at the bank by the water's own push (a few ticks ago).
-        if (tickCount - lastInWaterTick > 3) return;
-        var path = getNavigation().getPath();
-        boolean routed = path != null && !path.isDone();
-        // With a route he must be pressing on the bank; without one (see below) he is turned to press on it.
-        if (routed && !horizontalCollision) return;
-        // The bank a node or two ahead counts too: along an island's edge the route often keeps one more cell of water first
-        // (marathon 23.10: he bobbed along the shore of the island and never got out).
-        boolean bank = false;
-        if (routed)
-            for (int index = path.getNextNodeIndex(); index < Math.min(path.getNodeCount(), path.getNextNodeIndex() + 3) && !bank; index++) {
-                BlockPos node = path.getNodePos(index);
-                bank = node.getY() > getY() + .5 && Math.abs(node.getX() + .5 - getX()) < 1.6 && Math.abs(node.getZ() + .5 - getZ()) < 1.6;
-            }
-        // Bobbing at the bank, the game's navigation gives the route up as «stuck»: then the bank in front of him, if where he is
-        // going (the player, the work) lies higher than the water.
-        if (!bank && !routed) {
-            BlockPos destination = recoveryDestination();
-            if (destination == null || destination.getY() <= getY() + .5) return;
-            BlockPos front = blockPosition().relative(getDirection());
-            for (int up = 1; up <= 2 && !bank; up++) bank = CompanionMiningNavigation.standable(this, front.above(up));
-            // Pressing on towards it, as the route would have.
-            if (bank) getMoveControl().setWantedPosition(front.getX() + .5, front.getY() + 1, front.getZ() + .5, 1.0);
-        }
-        if (!bank) return;
-        if (isInWater()) { getJumpControl().jump(); return; }
-        if (!horizontalCollision) return;
-        // Lifted out at the edge, the push off is a player's ordinary jump: the water's push alone stops some way short of a block.
-        if (getDeltaMovement().y < .2 && tickCount >= nextWaterJump) {
-            nextWaterJump = tickCount + 10;
-            setDeltaMovement(getDeltaMovement().x, getJumpPower(), getDeltaMovement().z);
-        }
-    }
-    private int nextWaterJump, lastInWaterTick = -100;
-
-    /**
-     * The game's movement control «jumps» at a point higher than a step and then holds the stroke forward, deaf to the route,
-     * until the feet touch ground — in deep water never (marathon 23.10, «берег»: at the island's bank he swam straight on past
-     * it, through «стой», forty blocks into the corner). In the water the jump is a stroke up and over at once: the next tick he
-     * steers by his route again, or stops if there is none.
-     */
-    private final class SwimmingMoveControl extends net.minecraft.world.entity.ai.control.MoveControl {
-        SwimmingMoveControl() { super(CompanionEntity.this); }
-        @Override public void tick() {
-            if (operation == Operation.JUMPING && (isInWater() || isInLava()) && !onGround()) operation = getNavigation().isDone() ? Operation.WAIT : Operation.MOVE_TO;
-            super.tick();
-        }
-    }
-
+    int nextWaterJump, lastInWaterTick = -100;
+    /** Widened from protected for CompanionSwimming. */
+    @Override public float getJumpPower() { return super.getJumpPower(); }
     /**
      * In the water a mob's stroke is its walking speed (0.3), a player's the whole push of the key (0.98): in water to the knee,
      * where no bobbing helps, he waded a block in two seconds and fell behind the player swimming to the island (marathon
@@ -776,8 +691,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "left_vehicle", "entity", getUUID(), "vehicle", getVehicle().getType().toShortString());
             stopRiding();
         }
-        climbOutOfWater();
-        tickEating();
+        swimming.climbOutOfWater();
+        meals.tickEating();
         loot.tickNearby();
         recovery.observe();
         work.watchChase();
@@ -857,10 +772,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     /** Food in the bag heals, like a player who eats: nothing is conjured, the food is eaten (review 22.10: he never healed). */
-    private int satiety;
-    private int eatTicks;
-    private ItemStack eating = ItemStack.EMPTY;
-    private int lastHurtTick = -1000;
+    int satiety;
+    int eatTicks;
+    ItemStack eating = ItemStack.EMPTY;
+    int lastHurtTick = -1000;
     static final int EAT_TICKS = 32;
 
     @Override public boolean hurt(net.minecraft.world.damagesource.DamageSource source, float amount) {
@@ -872,59 +787,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         return hurt;
     }
 
-    private void tickEating() {
-        if (!(level() instanceof ServerLevel serverLevel)) return;
-        if (eatTicks > 0) {
-            eatTicks--;
-            if (eatTicks % 4 == 0) {
-                playSound(net.minecraft.sounds.SoundEvents.GENERIC_EAT, .5F, .9F + getRandom().nextFloat() * .2F);
-                var mouth = getEyePosition().add(getLookAngle().scale(.3)).add(0, -.15, 0);
-                serverLevel.sendParticles(new net.minecraft.core.particles.ItemParticleOption(net.minecraft.core.particles.ParticleTypes.ITEM, eating),
-                        mouth.x, mouth.y, mouth.z, 4, .08, .08, .08, .04);
-            }
-            if (eatTicks == 0) finishEating();
-            return;
-        }
-        if (inventoryViewers > 0 || !isAlive()) return;
-        float missing = getMaxHealth() - getHealth();
-        // Fed, out of a fight for ten seconds: slowly better, as a player with a full stomach.
-        if (missing >= 1 && satiety > 0 && tickCount - lastHurtTick > 200 && tickCount % 80 == 0) { heal(1); satiety--; }
-        if (tickCount % 20 != 0 || missing < 4 && getHealth() > getMaxHealth() / 2) return;
-        if (getTarget() != null && getTarget().isAlive() && distanceToSqr(getTarget()) < 16 && getHealth() > 6) return;
-        ItemStack food = bestFood(missing);
-        if (food.isEmpty()) return;
-        eating = food.copyWithCount(1); eatTicks = EAT_TICKS;
-        animateAction(4, blockPosition(), eating);
-    }
-
-    private void finishEating() {
-        var properties = eating.get(net.minecraft.core.component.DataComponents.FOOD);
-        for (ItemStack stack : companionInventory) if (ItemStack.isSameItemSameComponents(stack, eating)) {
-            stack.shrink(1); setChanged();
-            if (properties != null) { heal(properties.nutrition()); satiety = Math.min(40, satiety + Math.round(properties.saturation())); }
-            playSound(net.minecraft.sounds.SoundEvents.PLAYER_BURP, .4F, 1F);
-            dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "companion_ate", "entity", getUUID(),
-                    "item", BuiltInRegistries.ITEM.getKey(eating.getItem()), "health", getHealth());
-            observeEvent("eat", "Перекусил: " + eating.getHoverName().getString() + ", стало лучше.");
-            break;
-        }
-        eating = ItemStack.EMPTY;
-    }
-
-    /** Safe food only (no rotten flesh, spider eyes, poison, chorus fruit); the one that best fits the missing health. */
-    private ItemStack bestFood(float missing) {
-        ItemStack best = ItemStack.EMPTY;
-        int bestScore = Integer.MIN_VALUE;
-        for (ItemStack stack : companionInventory) {
-            var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
-            if (stack.isEmpty() || food == null || stack.is(net.minecraft.world.item.Items.CHORUS_FRUIT) || stack.is(net.minecraft.world.item.Items.SUSPICIOUS_STEW)) continue;
-            if (food.effects().stream().anyMatch(effect -> !effect.effect().getEffect().value().isBeneficial())) continue;
-            int score = Math.round(Math.min(missing, food.nutrition()) * 10 + food.saturation());
-            if (score > bestScore) { bestScore = score; best = stack; }
-        }
-        return best;
-    }
-
     @Override public boolean doHurtTarget(Entity target) {
         boolean hit = super.doHurtTarget(target);
         if (hit && target instanceof LivingEntity living) work.hitEnemy(living);
@@ -933,15 +795,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             weapon.getItem().postHurtEnemy(weapon, living, this);
         }
         return hit;
-    }
-
-    private String buildInventorySummary() {
-        java.util.Map<String, Integer> counts = new java.util.LinkedHashMap<>();
-        for (ItemStack stack : companionInventory) {
-            if (!stack.isEmpty()) counts.merge(stack.getHoverName().getString(), stack.getCount(), Integer::sum);
-        }
-        return counts.isEmpty() ? "пусто" : counts.entrySet().stream()
-                .map(entry -> entry.getValue() + " " + entry.getKey()).collect(java.util.stream.Collectors.joining(", "));
     }
 
     public boolean benchWalkNeeded(String requestedItemId, int requestedCount) { return placement.benchWalkNeeded(requestedItemId, requestedCount); }
@@ -970,92 +823,16 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean canStoreDrops(List<ItemStack> drops) { return gathering.canStoreDrops(drops); }
 
 
-    boolean storeInCompanionInventory(ItemStack stack) {
-        ItemStack remaining = stack.copy();
-        for (ItemStack stored : companionInventory) {
-            if (stored.isEmpty() || !ItemStack.isSameItemSameComponents(stored, remaining)) continue;
-            int move = Math.min(remaining.getCount(), stored.getMaxStackSize() - stored.getCount());
-            if (move > 0) {
-                stored.grow(move);
-                remaining.shrink(move);
-            }
-            if (remaining.isEmpty()) {
-                refreshInventorySummary();
-                stack.setCount(0);
-                return true;
-            }
-        }
-        for (int slot = 0; slot < companionInventory.size() && !remaining.isEmpty(); slot++) {
-            if (companionInventory.get(slot).isEmpty()) {
-                companionInventory.set(slot, remaining.copy());
-                remaining.setCount(0);
-            }
-        }
-        refreshInventorySummary();
-        stack.setCount(remaining.getCount());
-        return remaining.isEmpty();
-    }
-
-    void refreshInventorySummary() {
-        entityData.set(DATA_INVENTORY_SUMMARY, buildInventorySummary());
-        java.util.Map<String, Integer> items = new java.util.LinkedHashMap<>();
-        for (ItemStack stack : companionInventory) {
-            if (!stack.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
-        }
-        entityData.set(DATA_INVENTORY_AI, items.isEmpty() ? "пусто" : items.entrySet().stream()
-                .map(entry -> entry.getValue() + "x " + entry.getKey()).collect(java.util.stream.Collectors.joining(", ")));
-    }
-
-    /**
-     * Who may be fought (review 22.10, В1–В2): never the player, his pets or another companion; never the warden. Neutral mobs
-     * — endermen, (zombified) piglins, spiders — only once they attack (provoked): hitting a zombified piglin raises the whole group.
-     */
-    boolean fairTarget(LivingEntity entity, boolean provoked) {
-        if (entity == null || !entity.isAlive() || entity == this || entity instanceof Player || entity instanceof CompanionEntity) return false;
-        if (ownerId != null && entity instanceof net.minecraft.world.entity.OwnableEntity pet && ownerId.equals(pet.getOwnerUUID())) return false;
-        if (entity instanceof net.minecraft.world.entity.monster.warden.Warden) return false;
-        boolean neutral = entity instanceof net.minecraft.world.entity.NeutralMob || entity instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin
-                || entity instanceof net.minecraft.world.entity.monster.Spider;
-        return !neutral || provoked;
-    }
-
-    /** The neutral mob is going for the player or for Oleg himself. */
-    boolean provokes(LivingEntity entity) {
-        if (!(entity instanceof net.minecraft.world.entity.Mob mob) || mob.getTarget() == null) return false;
-        return mob.getTarget() == this || ownerId != null && ownerId.equals(mob.getTarget().getUUID());
-    }
+    boolean storeInCompanionInventory(ItemStack stack) { return bag.storeInCompanionInventory(stack); }
+    void refreshInventorySummary() { bag.refreshInventorySummary(); }
+    boolean fairTarget(LivingEntity entity, boolean provoked) { return combat.fairTarget(entity, provoked); }
+    boolean provokes(LivingEntity entity) { return combat.provokes(entity); }
 
     /** A last guard: whatever goal picked them, the player and his pets are never a target. */
     @Override public void setTarget(LivingEntity target) {
         if (target != null && !level().isClientSide && (target instanceof Player || target instanceof CompanionEntity
                 || ownerId != null && target instanceof net.minecraft.world.entity.OwnableEntity pet && ownerId.equals(pet.getOwnerUUID()))) target = null;
         super.setTarget(target);
-    }
-
-    /**
-     * Without a guard order, like a friend (Толик 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня
-     * напал»): a monster at the player's side, or one going for the player or for Oleg, is met first. Only while Oleg is near the
-     * player; never a creeper (a hit beside the player may end in its blast — wolves leave them alone too), never his own hunt.
-     */
-    private boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
-        if (!(level() instanceof ServerLevel serverLevel) || ownerId == null || inventoryViewers != 0 || work.isHunting()
-                || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
-        if (!fairTarget(monster, provokes(monster))) return false;
-        ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerId);
-        if (owner == null || owner.level() != level() || owner.isSpectator() || distanceToSqr(owner) > GUARD_RANGE * GUARD_RANGE) return false;
-        return monster.distanceToSqr(owner) <= 6 * 6 || monster.distanceToSqr(this) <= 4 * 4
-                || (monster.getTarget() == owner || monster.getTarget() == this) && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
-    }
-    /** How far from the player Oleg still steps in for him, and how far a fight may take him. */
-    private static final int GUARD_RANGE = 16;
-
-    private boolean isThreateningOwner(net.minecraft.world.entity.LivingEntity target) {
-        if (!(level() instanceof ServerLevel serverLevel) || ownerId == null || !(target instanceof Monster monster)) return false;
-        if (work.isHunting()) return work.isHuntTarget(target.getUUID());
-        if (!fairTarget(monster, provokes(monster))) return false;
-        ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerId);
-        return owner != null && owner.level() == level()
-                && (monster.getTarget() == owner || monster.getTarget() == this || monster.distanceToSqr(owner) <= 100.0D || monster.distanceToSqr(this) < 36);
     }
 
     @Override
@@ -1151,21 +928,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     /**
-     * Swings as often as the weapon in hand lets a player (a stone sword 1.6 a second, an axe 0.8), not the mob's once a second
-     * (marathon 23.10, night: a zombie and a skeleton killed him with a stone sword — the zombie struck as often as he did and
-     * he fell a single swing short). The damage is the weapon's, as before.
-     */
-    private final class PlayerPaceAttackGoal extends MeleeAttackGoal {
-        PlayerPaceAttackGoal() { super(CompanionEntity.this, 1.15D, true); }
-        private int nextSwing;
-        @Override protected void checkAndPerformAttack(LivingEntity target) {
-            if (tickCount < nextSwing || !isWithinMeleeAttackRange(target) || !getSensing().hasLineOfSight(target)) return;
-            nextSwing = tickCount + weaponCooldownTicks();
-            swing(InteractionHand.MAIN_HAND);
-            doHurtTarget(target);
-        }
-    }
-    /**
      * A player's reach for a blow: three blocks from the eyes to the nearest point of the body (marathon 23.10: with a zombie's
      * arm's length every hit knocked it out of reach, he had to step in again, and the zombie struck as often as he did).
      */
@@ -1173,187 +935,5 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         var box = target.getBoundingBox();
         var eye = getEyePosition();
         return eye.distanceToSqr(Math.clamp(eye.x, box.minX, box.maxX), Math.clamp(eye.y, box.minY, box.maxY), Math.clamp(eye.z, box.minZ, box.maxZ)) <= 3.0 * 3.0;
-    }
-
-    int weaponCooldownTicks() {
-        double speed = 4.0;
-        for (var entry : getMainHandItem().getAttributeModifiers().modifiers())
-            if (entry.attribute().is(Attributes.ATTACK_SPEED) && entry.slot().test(EquipmentSlot.MAINHAND)
-                    && entry.modifier().operation() == net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_VALUE) speed += entry.modifier().amount();
-        return Math.max(6, Math.min(40, (int) Math.ceil(20 / Math.max(.5, speed))));
-    }
-
-    /** A visible recent attacker of the owner interrupts work without waiting for an LLM. */
-    private final class OwnerDefenseGoal extends Goal {
-        private int handledTimestamp = Integer.MIN_VALUE;
-        private LivingEntity attacker;
-        private int timestamp;
-        OwnerDefenseGoal() { setFlags(EnumSet.of(Flag.TARGET)); }
-        @Override public boolean canUse() {
-            ServerPlayer player = getOwnerPlayer();
-            if (player == null || inventoryViewers != 0) return false;
-            timestamp = player.getLastHurtByMobTimestamp();
-            attacker = player.getLastHurtByMob();
-            return timestamp != handledTimestamp && player.tickCount - timestamp < 100
-                    && attacker instanceof Monster && fairTarget(attacker, true) && distanceToSqr(attacker) <= 18 * 18 && hasLineOfSight(attacker);
-        }
-        @Override public void start() {
-            handledTimestamp = timestamp; setTarget(attacker); selectWeaponForCombat();
-            dev.aicompanion.CompanionDiagnostics.event(diagnosticTrace(), "owner_defense", "entity", getUUID(), "attacker", attacker.getUUID(), "reason", "recent_visible_attack");
-        }
-        @Override public boolean canContinueToUse() {
-            var player = getOwnerPlayer();
-            return player != null && attacker != null && attacker.isAlive() && getTarget() == attacker
-                    && distanceToSqr(player) <= 24 * 24 && attacker.distanceToSqr(player) <= 18 * 18;
-        }
-        @Override public void stop() { if (getTarget() == attacker) setTarget(null); attacker = null; }
-    }
-
-    /** Descent survives command changes, interrupted mining and world reloads. */
-    private final class RecoverSupportsGoal extends Goal {
-        private RecoverSupportsGoal() { setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
-        @Override public boolean canUse() { return temporaryPillar.isRecovering() && inventoryViewers == 0; }
-        @Override public boolean canContinueToUse() { return canUse(); }
-        @Override public boolean requiresUpdateEveryTick() { return true; }
-        @Override public void start() { getNavigation().stop(); }
-        @Override public void tick() {
-            if (temporaryPillar.tickCleanup()) syncWorkState();
-        }
-    }
-
-    private final class WorkGoal extends Goal {
-        private WorkGoal() { setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
-        @Override public boolean canUse() { return work.isActive() && !gatheringLogs && !gatheringDirt && canWorkNow(); }
-        @Override public boolean canContinueToUse() { return canUse(); }
-        @Override public boolean requiresUpdateEveryTick() { return true; }
-        @Override public void tick() { if (canUse()) work.tick(); }
-        @Override public void stop() { work.pause(); getNavigation().stop(); }
-    }
-
-    private final class PickupLootGoal extends Goal {
-        private PickupLootGoal() { setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
-        @Override public boolean canUse() { return loot.canChase(); }
-        @Override public boolean canContinueToUse() { return canUse(); }
-        @Override public boolean requiresUpdateEveryTick() { return true; }
-        @Override public void tick() { loot.tickChase(); }
-        @Override public void stop() { loot.pause(); getNavigation().stop(); }
-    }
-
-    private final class RecoverRouteGoal extends Goal {
-        private RecoverRouteGoal() { setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
-        @Override public boolean canUse() { return recovery.canStart(); }
-        @Override public boolean canContinueToUse() { return recovery.active() && canCollectItems(); }
-        @Override public boolean requiresUpdateEveryTick() { return true; }
-        @Override public void start() { recovery.begin(); }
-        @Override public void tick() { recovery.tick(); }
-        @Override public void stop() { recovery.cancel(); getNavigation().stop(); }
-    }
-
-    private final class RoamGoal extends Goal {
-        private int nextAttempt;
-        private RoamGoal() { setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
-        @Override public boolean canUse() { return roaming && inventoryViewers == 0; }
-        @Override public boolean canContinueToUse() { return canUse(); }
-        @Override public void start() { nextAttempt = 0; }
-        @Override public void tick() {
-            if (!(level() instanceof ServerLevel serverLevel)) return;
-            if (!onGround() && !isInWater()) return;
-            if (!getNavigation().isDone() && !getNavigation().isStuck()) return;
-            if (tickCount < nextAttempt) return;
-            nextAttempt = tickCount + 60;
-            if (roamOrigin == null) roamOrigin = blockPosition();
-            Set<BlockPos> destinations = new HashSet<>();
-            Set<BlockPos> nearbyDestinations = new HashSet<>();
-            double preferredDistance = Math.max(8.0D, searchRadius * 0.7D);
-            for (int attempt = 0; attempt < 12; attempt++) {
-                int x = roamOrigin.getX() + random.nextInt(searchRadius * 2 + 1) - searchRadius;
-                int z = roamOrigin.getZ() + random.nextInt(searchRadius * 2 + 1) - searchRadius;
-                if (serverLevel.getChunkSource().getChunkNow(x >> 4, z >> 4) == null) continue;
-                BlockPos feet = findStandingPosition(serverLevel, x, z);
-                if (feet == null) continue;
-                if (feet.distSqr(blockPosition()) < 64 || feet.distSqr(roamOrigin) > (double) searchRadius * searchRadius) continue;
-                nearbyDestinations.add(feet);
-                if (feet.distSqr(blockPosition()) >= preferredDistance * preferredDistance) destinations.add(feet);
-            }
-            Path path = getNavigation().createPath(destinations, 0);
-            if (path == null || !path.canReach()) path = getNavigation().createPath(nearbyDestinations, 0);
-            if (path != null && path.canReach()) getNavigation().moveTo(path, 0.9D);
-        }
-
-        private BlockPos findStandingPosition(ServerLevel serverLevel, int x, int z) {
-            // Prefer the current ground level. A heightmap can point to an inaccessible
-            // tree canopy or a roof while there is a perfectly walkable route underneath.
-            for (int dy = 0; dy <= 12; dy++) {
-                BlockPos above = new BlockPos(x, blockPosition().getY() + dy, z);
-                if (isWalkable(serverLevel, above)) return above;
-                if (dy > 0) {
-                    BlockPos below = new BlockPos(x, blockPosition().getY() - dy, z);
-                    if (isWalkable(serverLevel, below)) return below;
-                }
-            }
-            return null;
-        }
-
-        private boolean isWalkable(ServerLevel serverLevel, BlockPos feet) {
-            return serverLevel.getFluidState(feet).isEmpty() && serverLevel.getFluidState(feet.above()).isEmpty()
-                    && serverLevel.getBlockState(feet.below()).isFaceSturdy(serverLevel, feet.below(), Direction.UP)
-                    && serverLevel.getBlockState(feet).getCollisionShape(serverLevel, feet).isEmpty()
-                    && serverLevel.getBlockState(feet.above()).getCollisionShape(serverLevel, feet.above()).isEmpty();
-        }
-        @Override public void stop() { getNavigation().stop(); }
-    }
-
-    private static final class FollowPlayerGoal extends Goal {
-        private final CompanionEntity companion;
-        private ServerPlayer owner;
-
-        private FollowPlayerGoal(CompanionEntity companion) {
-            this.companion = companion;
-            setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
-        }
-
-        @Override
-        public boolean canUse() {
-            if (companion.autonomy.staysAtWork() || (!companion.following && !companion.protecting) || companion.inventoryViewers > 0 || companion.ownerId == null || !(companion.level() instanceof ServerLevel serverLevel)) {
-                return false;
-            }
-            owner = serverLevel.getServer().getPlayerList().getPlayer(companion.ownerId);
-            return owner != null && owner.level() == companion.level()
-                    && companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64);
-        }
-
-        @Override
-        public boolean canContinueToUse() {
-            return !companion.autonomy.staysAtWork() && (companion.following || companion.protecting) && companion.inventoryViewers == 0 && owner != null && owner.isAlive()
-                    && owner.level() == companion.level() && companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D);
-        }
-
-        @Override
-        public void tick() {
-            if (owner == null) return;
-            companion.getLookControl().setLookAt(owner, 20.0F, 30.0F);
-            // Far off, like a player who lost sight of a friend: walked to in legs, round walls and over ridges, never a teleport
-            // (marathon 23.10: beyond 128 blocks he used to appear beside the player). Near, the game's own following.
-            if (companion.distanceToSqr(owner) > FAR_FOLLOW * FAR_FOLLOW) {
-                if (!companion.onGround() && !companion.isInWater()) return;
-                var step = companion.travel().follow(owner.blockPosition(), FAR_FOLLOW - 8);
-                // Half a minute without coming closer: start the walk anew (the self-rescue takes over where he is stuck).
-                if (step != CompanionTravel.Step.WALKING) companion.travel().reset();
-                travelling = step == CompanionTravel.Step.WALKING;
-                return;
-            }
-            if (travelling) { companion.travel().reset(); travelling = false; }
-            companion.getNavigation().moveTo(owner, 1.15D);
-        }
-
-        @Override
-        public void stop() {
-            owner = null;
-            if (travelling) { companion.travel().reset(); travelling = false; }
-            companion.getNavigation().stop();
-        }
-        private boolean travelling;
-        /** Farther than this the following goes in legs (CompanionTravel). */
-        private static final int FAR_FOLLOW = 32;
     }
 }
