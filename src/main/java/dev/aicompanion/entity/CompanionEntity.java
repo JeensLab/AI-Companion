@@ -615,8 +615,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void setEquipmentByPlayer(EquipmentSlot slot, ItemStack stack) { equipment.setEquipmentByPlayer(slot, stack); }
 
     int nextWaterJump, lastInWaterTick = -100;
-    /** Widened from protected for CompanionSwimming. */
-    @Override public float getJumpPower() { return super.getJumpPower(); }
+    float jumpPower() { return getJumpPower(); }
     /**
      * In the water a mob's stroke is its walking speed (0.3), a player's the whole push of the key (0.98): in water to the knee,
      * where no bobbing helps, he waded a block in two seconds and fell behind the player swimming to the island (marathon

@@ -44,7 +44,7 @@ final class CompanionSwimming {
         // Lifted out at the edge, the push off is a player's ordinary jump: the water's push alone stops some way short of a block.
         if (c.getDeltaMovement().y < .2 && c.tickCount >= c.nextWaterJump) {
             c.nextWaterJump = c.tickCount + 10;
-            c.setDeltaMovement(c.getDeltaMovement().x, c.getJumpPower(), c.getDeltaMovement().z);
+            c.setDeltaMovement(c.getDeltaMovement().x, c.jumpPower(), c.getDeltaMovement().z);
         }
     }
 
