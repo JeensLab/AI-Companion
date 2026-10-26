@@ -30,7 +30,6 @@ import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.monster.Monster;
-import net.minecraft.tags.ItemTags;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -44,9 +43,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
@@ -119,6 +116,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
     final CompanionWork work = new CompanionWork(this);
     final CompanionGathering gathering = new CompanionGathering(this);
+    final CompanionEquipment equipment = new CompanionEquipment(this);
+    final CompanionPlacement placement = new CompanionPlacement(this);
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
@@ -128,10 +127,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private BlockPos movementIntent;
     private boolean chunkLoading = true;
     private boolean autonomousSpeech = true;
-    private String preferredWeapon = "";
+    String preferredWeapon = "";
     private net.minecraft.world.phys.Vec3 previousActivityPosition;
     private boolean activityMoved;
-    private BlockPos lastPlacedPosition;
+    BlockPos lastPlacedPosition;
     BlockPos lastPlacedPosition() { return lastPlacedPosition; }
     private final CompanionSocial social = new CompanionSocial(this);
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
@@ -215,7 +214,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     java.util.List<BlockPos> knownCraftingTables() { places.discoverTables(); refreshPlaces(); return places.tables(true); }
     boolean hasKnownCraftingTable() { return !places.tables(false).isEmpty(); }
     /** When each item was last crafted. A request repeated while the first answer was slow must not make a second tool. */
-    private final java.util.Map<String, Long> madeAt = new java.util.HashMap<>();
+    final java.util.Map<String, Long> madeAt = new java.util.HashMap<>();
     static final long REPEAT_WINDOW = 20 * 120;
     /** A single tool or armour piece that was just made and is still carried: a repeat of the same order is not a new one. */
     public CompanionActionResult alreadyMade(String itemId) {
@@ -232,14 +231,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 + "» я только что сделал, она у меня. Ещё одну не делаю — если нужна вторая, попроси отдельно чуть позже."));
     }
     /** Benches set down away from the base during work; the work order picks them up again. Not saved: a reload leaves them standing. */
-    private final java.util.List<BlockPos> fieldBenches = new java.util.ArrayList<>();
+    final java.util.List<BlockPos> fieldBenches = new java.util.ArrayList<>();
     BlockPos takeFieldBenchNear(double blocks) {
         fieldBenches.removeIf(pos -> !level().hasChunkAt(pos) || !level().getBlockState(pos).is(Blocks.CRAFTING_TABLE));
         for (BlockPos pos : fieldBenches) if (pos.distSqr(blockPosition()) <= blocks * blocks) { fieldBenches.remove(pos); return pos; }
         return null;
     }
     /** Set by a work order whose remembered bench could not be reached on foot; never saved. */
-    private boolean newBenchAllowed;
+    boolean newBenchAllowed;
     void allowNewBench(boolean allowed) { newBenchAllowed = allowed; }
     boolean hasKnownCraftingTableWithin(int blocks) {
         return places.tables(false).stream().anyMatch(pos -> pos.distSqr(blockPosition()) <= (double) blocks * blocks);
@@ -687,186 +686,17 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         other.refreshInventorySummary();
     }
 
-    public String getEquipmentForAi() {
-        List<String> equipment = new java.util.ArrayList<>();
-        for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) {
-            ItemStack stack = getItemBySlot(slot);
-            equipment.add(slot.getName() + "=" + (stack.isEmpty() ? "пусто" : BuiltInRegistries.ITEM.getKey(stack.getItem())
-                    + " x" + stack.getCount() + (stack.isDamageableItem() ? " (прочность " + (stack.getMaxDamage() - stack.getDamageValue()) + ")" : "")));
-        }
-        return String.join(", ", equipment);
-    }
-
-    public CompanionActionResult equipItem(String requested, String slotName) {
-        var result = equipItemInternal(requested, slotName);
-        if (result.success() && ("mainhand".equals(slotName) || "auto".equals(slotName) && matchesEquipment(getMainHandItem(), requested)))
-            preferCurrentWeapon();
-        if (result.success()) animateAction(4, blockPosition(), getMainHandItem());
-        return recordActionResult(result);
-    }
-
-    CompanionActionResult equipForSupport(String itemId) {
-        return equipItemInternal(itemId, "mainhand");
-    }
-
-    CompanionActionResult equipForWork(String itemId) { return equipItemInternal(itemId, "mainhand"); }
-
-    private CompanionActionResult equipItemInternal(String requested, String slotName) {
-        if (level().isClientSide) return CompanionActionResult.failed("Экипировка меняется на сервере мира.");
-        EquipmentSlot explicit = "auto".equals(slotName) ? null : equipmentSlot(slotName);
-        if (explicit == null && !"auto".equals(slotName)) return CompanionActionResult.failed("Неизвестный слот экипировки.");
-        for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) {
-            if ((explicit == null || explicit == slot) && matchesEquipment(getItemBySlot(slot), requested)) {
-                return CompanionActionResult.ok("Уже экипирован: " + getItemBySlot(slot).getHoverName().getString() + ".");
-            }
-        }
-        int source = -1;
-        double best = -Double.MAX_VALUE;
-        for (int index = 0; index < companionInventory.size(); index++) {
-            ItemStack stack = companionInventory.get(index);
-            if (!matchesEquipment(stack, requested)) continue;
-            EquipmentSlot destination = explicit == null ? getEquipmentSlotForItem(stack) : explicit;
-            if (!java.util.Arrays.asList(CompanionEquipmentContainer.SLOTS).contains(destination)) continue;
-            if (destination.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && !stack.canEquip(destination, this)) continue;
-            double score = equipmentScore(stack, destination);
-            if (score > best) { source = index; best = score; }
-        }
-        if (source < 0) return CompanionActionResult.failed("В моей сумке нет подходящего предмета «" + requested + "» для этого слота.");
-        ItemStack selected = companionInventory.get(source);
-        EquipmentSlot destination = explicit == null ? getEquipmentSlotForItem(selected) : explicit;
-        ItemStack previous = getItemBySlot(destination);
-        if (destination.getType() == EquipmentSlot.Type.HUMANOID_ARMOR
-                && net.minecraft.world.item.enchantment.EnchantmentHelper.has(previous,
-                net.minecraft.world.item.enchantment.EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)) {
-            return CompanionActionResult.failed("Не могу снять предмет с проклятием несъёмности.");
-        }
-        NonNullList<ItemStack> before = copyBag();
-        ItemStack incoming = selected.split(1);
-        ItemStack toStore = previous.copy();
-        if (!toStore.isEmpty() && !storeInCompanionInventory(toStore)) {
-            restoreBag(before);
-            return CompanionActionResult.failed("В сумке нет места для прежнего предмета. Освободи ячейку.");
-        }
-        setItemSlot(destination, incoming);
-        dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "equipment_changed", "entity", getUUID(), "slot", destination.getName(),
-                "before", previous.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(previous.getItem()),
-                "after", BuiltInRegistries.ITEM.getKey(incoming.getItem()), "requested", requested);
-        refreshInventorySummary();
-        return CompanionActionResult.ok((destination.getType() == EquipmentSlot.Type.HUMANOID_ARMOR ? "Надел: " : "Взял в "
-                + (destination == EquipmentSlot.OFFHAND ? "левую" : "правую") + " руку: ") + incoming.getHoverName().getString() + ".");
-    }
-
-    public CompanionActionResult unequipItem(String slotName) {
-        var result = unequipForSupport(slotName);
-        if (result.success() && (slotName.equals("mainhand") || slotName.equals("auto"))) preferredWeapon = "";
-        if (result.success()) animateAction(4, blockPosition(), ItemStack.EMPTY);
-        return recordActionResult(result);
-    }
-
-    CompanionActionResult unequipForSupport(String slotName) {
-        EquipmentSlot slot = equipmentSlot(slotName);
-        if (slot == null) return CompanionActionResult.failed("Укажи слот: mainhand, offhand, head, chest, legs или feet.");
-        ItemStack equipped = getItemBySlot(slot);
-        if (equipped.isEmpty()) return CompanionActionResult.ok("Эта ячейка уже пуста.");
-        if (slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && net.minecraft.world.item.enchantment.EnchantmentHelper.has(equipped,
-                net.minecraft.world.item.enchantment.EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)) {
-            return CompanionActionResult.failed("Не могу снять предмет с проклятием несъёмности.");
-        }
-        NonNullList<ItemStack> before = copyBag();
-        ItemStack offered = equipped.copy();
-        if (!storeInCompanionInventory(offered)) {
-            restoreBag(before);
-            return CompanionActionResult.failed("В сумке нет места для снятого предмета.");
-        }
-        setItemSlot(slot, ItemStack.EMPTY);
-        return CompanionActionResult.ok("Убрал в сумку: " + equipped.getHoverName().getString() + ".");
-    }
-
-    NonNullList<ItemStack> copyBag() {
-        NonNullList<ItemStack> copy = NonNullList.withSize(companionInventory.size(), ItemStack.EMPTY);
-        for (int index = 0; index < copy.size(); index++) copy.set(index, companionInventory.get(index).copy());
-        return copy;
-    }
-
-    private void restoreBag(List<ItemStack> bag) {
-        for (int index = 0; index < bag.size(); index++) companionInventory.set(index, bag.get(index).copy());
-        refreshInventorySummary();
-    }
-
-    public static EquipmentSlot equipmentSlot(String name) {
-        return switch (name) {
-            case "mainhand", "auto" -> EquipmentSlot.MAINHAND;
-            case "offhand" -> EquipmentSlot.OFFHAND;
-            case "head" -> EquipmentSlot.HEAD;
-            case "chest" -> EquipmentSlot.CHEST;
-            case "legs" -> EquipmentSlot.LEGS;
-            case "feet" -> EquipmentSlot.FEET;
-            default -> null;
-        };
-    }
-
-    private boolean matchesEquipment(ItemStack stack, String requested) {
-        if (stack.isEmpty()) return false;
-        return switch (requested) {
-            case "sword" -> stack.is(ItemTags.SWORDS);
-            case "axe" -> stack.is(ItemTags.AXES);
-            case "pickaxe" -> stack.is(ItemTags.PICKAXES);
-            case "shovel" -> stack.is(ItemTags.SHOVELS);
-            case "hoe" -> stack.is(ItemTags.HOES);
-            case "shield" -> stack.canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK);
-            case "helmet" -> getEquipmentSlotForItem(stack) == EquipmentSlot.HEAD;
-            case "chestplate" -> getEquipmentSlotForItem(stack) == EquipmentSlot.CHEST;
-            case "leggings" -> getEquipmentSlotForItem(stack) == EquipmentSlot.LEGS;
-            case "boots" -> getEquipmentSlotForItem(stack) == EquipmentSlot.FEET;
-            default -> requested.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        };
-    }
-
-    private double equipmentScore(ItemStack stack, EquipmentSlot slot) {
-        boolean armor = slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR;
-        var relevant = stack.getAttributeModifiers().modifiers().stream()
-                .filter(entry -> entry.attribute().equals(armor ? Attributes.ARMOR : Attributes.ATTACK_DAMAGE)).toList();
-        double score = new net.minecraft.world.item.component.ItemAttributeModifiers(relevant, true).compute(armor ? 0 : 1, slot);
-        return score * 10000 + (stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0);
-    }
-
-    public void selectToolForBlock(BlockState state) {
-        if (state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_SHOVEL)) {
-            if (!CompanionTools.equip(this, ItemTags.SHOVELS, state) && !getMainHandItem().isEmpty()) unequipForSupport("mainhand");
-            return;
-        }
-        double best = getMainHandItem().getDestroySpeed(state);
-        ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : companionInventory) if (!stack.isEmpty() && stack.getDestroySpeed(state) > best) {
-            best = stack.getDestroySpeed(state);
-            choice = stack;
-        }
-        if (!choice.isEmpty()) equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
-    }
-
-    public void selectWeaponForCombat() {
-        if (!preferredWeapon.isEmpty()) {
-            if (matchesEquipment(getMainHandItem(), preferredWeapon)) return;
-            if (equipItemInternal(preferredWeapon, "mainhand").success()) return;
-        }
-        double best = equipmentScore(getMainHandItem(), EquipmentSlot.MAINHAND);
-        ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : companionInventory) if ((stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES))
-                && equipmentScore(stack, EquipmentSlot.MAINHAND) > best) {
-            best = equipmentScore(stack, EquipmentSlot.MAINHAND);
-            choice = stack;
-        }
-        if (!choice.isEmpty()) equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
-    }
-
-    private void preferCurrentWeapon() {
-        ItemStack hand = getMainHandItem();
-        preferredWeapon = hand.is(ItemTags.SWORDS) || hand.is(ItemTags.AXES) ? BuiltInRegistries.ITEM.getKey(hand.getItem()).toString() : "";
-    }
-    public void setEquipmentByPlayer(EquipmentSlot slot, ItemStack stack) {
-        setItemSlot(slot, stack);
-        if (!level().isClientSide && slot == EquipmentSlot.MAINHAND) preferCurrentWeapon();
-    }
+    public String getEquipmentForAi() { return equipment.getEquipmentForAi(); }
+    public CompanionActionResult equipItem(String requested, String slotName) { return equipment.equipItem(requested, slotName); }
+    CompanionActionResult equipForSupport(String itemId) { return equipment.equipForSupport(itemId); }
+    CompanionActionResult equipForWork(String itemId) { return equipment.equipForWork(itemId); }
+    public CompanionActionResult unequipItem(String slotName) { return equipment.unequipItem(slotName); }
+    CompanionActionResult unequipForSupport(String slotName) { return equipment.unequipForSupport(slotName); }
+    NonNullList<ItemStack> copyBag() { return equipment.copyBag(); }
+    public static EquipmentSlot equipmentSlot(String name) { return CompanionEquipment.equipmentSlot(name); }
+    public void selectToolForBlock(BlockState state) { equipment.selectToolForBlock(state); }
+    public void selectWeaponForCombat() { equipment.selectWeaponForCombat(); }
+    public void setEquipmentByPlayer(EquipmentSlot slot, ItemStack stack) { equipment.setEquipmentByPlayer(slot, stack); }
 
     /**
      * At a bank a block over the water, like a player: hold the jump while pressing against it, until out (marathon 23.10,
@@ -1114,178 +944,15 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 .map(entry -> entry.getValue() + " " + entry.getKey()).collect(java.util.stream.Collectors.joining(", "));
     }
 
-    /** The recipe needs a bench and one is a few steps away: walk there first, like a player (any recipe, not only the known chains). */
-    public boolean benchWalkNeeded(String requestedItemId, int requestedCount) {
-        if (!(level() instanceof ServerLevel serverLevel) || hasCraftingTableNearby() || !hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK)) return false;
-        var atBench = CompanionCrafting.plan(serverLevel, companionInventory, requestedItemId, requestedCount, true);
-        if (!atBench.success()) return false;
-        // Possible at a bench, and here it either needs one set down or is impossible without one.
-        var here = CompanionCrafting.plan(serverLevel, companionInventory, requestedItemId, requestedCount, false);
-        return here.placeTable() || !here.success();
-    }
-
-    public CompanionActionResult craftItemResult(String requestedItemId, int requestedCount) {
-        if (hasActiveWorkOrder()) return CompanionActionResult.failed("Сначала нужно завершить или отменить текущую добычу.");
-        return craftFromBag(requestedItemId, requestedCount);
-    }
-
-    CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) {
-        if (!(level() instanceof ServerLevel serverLevel)) return CompanionActionResult.failed("Крафт доступен только в загруженном мире.");
-        CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, companionInventory, requestedItemId,
-                requestedCount, hasCraftingTableNearby());
-        dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "craft_decision", "entity", getUUID(),
-                "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(), "message", plan.message());
-        if (!plan.success()) return recordActionResult(CompanionActionResult.failed(plan.message()));
-        // A remembered bench far away is not worth the walk: a player would set down another one from own wood.
-        if (plan.placeTable() && !newBenchAllowed && hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK))
-            return recordActionResult(CompanionActionResult.failed("Верстак рядом, но я сейчас не у него. Попроси ещё раз — дойду до него и сделаю."));
-        // With a bench already at the base, a bench set down out here is a travelling one: taken along after use.
-        boolean fieldBench = plan.placeTable() && hasKnownCraftingTable();
-        BlockPos tablePosition = plan.placeTable() ? findPlacementPosition(serverLevel, Blocks.CRAFTING_TABLE) : null;
-        if (plan.placeTable() && (tablePosition == null
-                || !serverLevel.setBlock(tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState(), 3))) {
-            return recordActionResult(CompanionActionResult.failed("Не нашёл свободное безопасное место для верстака. Материалы сохранены."));
-        }
-        if (tablePosition != null) rememberPlaced(tablePosition);
-        if (tablePosition != null && fieldBench) fieldBenches.add(tablePosition.immutable());
-        for (int slot = 0; slot < companionInventory.size(); slot++) companionInventory.set(slot, plan.inventory().get(slot).copy());
-        if (tablePosition != null) dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "block_placed",
-                "entity", getUUID(), "block", "minecraft:crafting_table", "position", tablePosition, "reason", "craft_prerequisite");
-        refreshInventorySummary();
-        animateAction(tablePosition == null ? 2 : 1, tablePosition == null ? blockPosition() : tablePosition,
-                tablePosition == null ? new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(requestedItemId))) : new ItemStack(net.minecraft.world.item.Items.CRAFTING_TABLE));
-        if (tablePosition != null) {
-            var table = Blocks.CRAFTING_TABLE.defaultBlockState(); var sound = table.getSoundType();
-            serverLevel.playSound(null, tablePosition, sound.getPlaceSound(), net.minecraft.sounds.SoundSource.BLOCKS, .7F, 1F);
-        }
-        madeAt.put(requestedItemId, level().getGameTime());
-        return recordActionResult(CompanionActionResult.ok((plan.placeTable() ? "Сделал и поставил верстак. " : "")
-                + plan.message() + " В сумке: " + getStoredItemsSummary() + "."));
-    }
-
-    public CompanionActionResult placeBlockResult(String requestedBlockId) {
-        return placeBlockNearResult(requestedBlockId, blockPosition());
-    }
-
-    CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin) {
-        return placeBlockNearResult(requestedBlockId, origin, pos -> true);
-    }
-
-    CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
-        if (!(level() instanceof ServerLevel serverLevel)) return CompanionActionResult.failed("Не могу поставить блок без загруженного мира.");
-        ResourceLocation blockId = ResourceLocation.tryParse(requestedBlockId.trim());
-        if (blockId == null) return recordActionResult(CompanionActionResult.failed("Не понял ID блока."));
-        Block block = BuiltInRegistries.BLOCK.getOptional(blockId).orElse(null);
-        if (block == null || block == Blocks.AIR) return recordActionResult(CompanionActionResult.failed("Неизвестный или пустой блок: " + blockId + "."));
-        ItemStack item = findBlockItem(block);
-        if (item == null) return recordActionResult(CompanionActionResult.failed("У меня в сумке нет блока " + blockId + "."));
-        BlockPos position = findPlacementPosition(serverLevel, block, origin, allowed);
-        if (position == null || !serverLevel.setBlock(position, block.defaultBlockState(), 3)) {
-            return recordActionResult(CompanionActionResult.failed("Не нашёл безопасное место для " + blockId + " рядом со мной."));
-        }
-        animateAction(1, position, item);
-        lastPlacedPosition = position.immutable();
-        rememberPlaced(position);
-        dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "block_placed", "entity", getUUID(),
-                "block", blockId, "position", position, "reason", "place_block");
-        item.shrink(1);
-        refreshInventorySummary();
-        var placedSound = block.defaultBlockState().getSoundType();
-        serverLevel.playSound(null, position, placedSound.getPlaceSound(), net.minecraft.sounds.SoundSource.BLOCKS, .7F, 1F);
-        return recordActionResult(CompanionActionResult.ok("Поставил " + blockId + ". В сумке: " + getStoredItemsSummary() + "."));
-    }
-
-    public CompanionActionResult recordActionResult(CompanionActionResult result) {
-        lastTaskSucceeded = result.success();
-        entityData.set(DATA_LAST_TASK_RESULT, result.message());
-        if (result.status() != CompanionActionResult.Status.ACCEPTED) noteDeed(result.message(), result.success());
-        dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "engine_result", "entity", getUUID(),
-                "success", result.success(), "status", result.status(), "message", result.message());
-        return result;
-    }
-
-    public boolean hasCraftingTableNearby() {
-        BlockPos origin = blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, -2, -4), origin.offset(4, 2, 4))) {
-            if (level().hasChunkAt(pos) && level().getBlockState(pos).is(Blocks.CRAFTING_TABLE)
-                    && distanceToSqr(pos.getCenter()) <= 3.2 * 3.2) {
-                // Walking targets are chosen by the view from a cell's centre. Standing a few hundredths off it
-                // must not turn "I am at the bench" into "cannot reach the bench" (game log 22.10, a step beside the bench).
-                Vec3 centredEye = Vec3.atBottomCenterOf(blockPosition()).add(0, getEyeHeight(), 0);
-                if (seesBlock(getEyePosition(), pos) || onGround() && seesBlock(centredEye, pos)) {
-                    if (!level().isClientSide) rememberObserved(pos);
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-    private boolean seesBlock(Vec3 eye, BlockPos pos) { return seesBlock(this, eye, pos); }
-
-    /** Like a player: a bench or chest is usable when any face turned to the eye can be looked at, not only its exact centre. */
-    static boolean seesBlock(net.minecraft.world.entity.Entity viewer, Vec3 eye, BlockPos pos) {
-        Vec3 center = pos.getCenter();
-        Vec3[] points = {center, center.add(0, .45, 0), center.add(Math.signum(eye.x - center.x) * .45, 0, 0),
-                center.add(0, 0, Math.signum(eye.z - center.z) * .45), center.add(0, -.45, 0)};
-        for (Vec3 point : points) {
-            var hit = viewer.level().clip(new net.minecraft.world.level.ClipContext(eye, point,
-                    net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, viewer));
-            if (hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK && hit.getBlockPos().equals(pos)) return true;
-        }
-        return false;
-    }
-    private ItemStack findBlockItem(Block block) {
-        for (ItemStack stack : companionInventory) {
-            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() == block) return stack;
-        }
-        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) {
-            ItemStack stack = getItemBySlot(slot);
-            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() == block) return stack;
-        }
-        return null;
-    }
-
-    private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block) {
-        return findPlacementPosition(serverLevel, block, blockPosition());
-    }
-
-    private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin) {
-        return findPlacementPosition(serverLevel, block, origin, pos -> true);
-    }
-
-    private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
-        BlockState state = block.defaultBlockState();
-        int returnHeight = CompanionMiningNavigation.provenReturnHeight(this);
-        // Where he stands and a block up or down first; only then as high or as low as a player reaches (marathon 23.10, «долина»:
-        // in a crack of the ravine the bench took the one cell beside him, the furnace found no room, though the top of the bench
-        // was right in front of his face).
-        for (int dy : new int[]{0, -1, 1, 2, -2}) for (int radius = 1; radius <= 3; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
-                if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
-                BlockPos pos = origin.offset(dx, dy, dz);
-                if (!allowed.test(pos)) continue;
-                if (!serverLevel.hasChunkAt(pos) || !serverLevel.getBlockState(pos).canBeReplaced()) continue;
-                if (!serverLevel.getFluidState(pos).isEmpty() || !serverLevel.getWorldBorder().isWithinBounds(pos)) continue;
-                if (!serverLevel.getBlockState(pos.below()).isFaceSturdy(serverLevel, pos.below(), Direction.UP)) continue;
-                if (!state.canSurvive(serverLevel, pos)) continue;
-                if (distanceToSqr(pos.getCenter()) > (Math.abs(dy) == 2 ? 3.2 * 3.2 : 16)) continue;
-                var hit = serverLevel.clip(new net.minecraft.world.level.ClipContext(getEyePosition(), pos.getCenter(),
-                        net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, this));
-                if (hit.getType() != net.minecraft.world.phys.HitResult.Type.MISS && !hit.getBlockPos().equals(pos)) continue;
-                if (block instanceof net.minecraft.world.level.block.ChestBlock) {
-                    if (!serverLevel.getBlockState(pos.above()).getCollisionShape(serverLevel, pos.above()).isEmpty()) continue;
-                    boolean adjacentChest = false;
-                    for (Direction direction : Direction.Plane.HORIZONTAL) if (serverLevel.getBlockState(pos.relative(direction)).getBlock() instanceof net.minecraft.world.level.block.ChestBlock) adjacentChest = true;
-                    if (adjacentChest) continue;
-                }
-                AABB collision = new AABB(pos);
-                if (getBoundingBox().intersects(collision) || !serverLevel.getEntities(this, collision).isEmpty()) continue;
-                if (!CompanionMiningNavigation.preservesReturnOnPlacement(this, pos, returnHeight)) continue;
-                return pos.immutable();
-            }
-        }
-        return null;
-    }
+    public boolean benchWalkNeeded(String requestedItemId, int requestedCount) { return placement.benchWalkNeeded(requestedItemId, requestedCount); }
+    public CompanionActionResult craftItemResult(String requestedItemId, int requestedCount) { return placement.craftItemResult(requestedItemId, requestedCount); }
+    CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount); }
+    public CompanionActionResult placeBlockResult(String requestedBlockId) { return placement.placeBlockResult(requestedBlockId); }
+    CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin) { return placement.placeBlockNearResult(requestedBlockId, origin); }
+    CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) { return placement.placeBlockNearResult(requestedBlockId, origin, allowed); }
+    public CompanionActionResult recordActionResult(CompanionActionResult result) { return placement.recordActionResult(result); }
+    public boolean hasCraftingTableNearby() { return placement.hasCraftingTableNearby(); }
+    static boolean seesBlock(net.minecraft.world.entity.Entity viewer, Vec3 eye, BlockPos pos) { return CompanionPlacement.seesBlock(viewer, eye, pos); }
 
     public void startGatheringLogs(int count) { gathering.startGatheringLogs(count); }
     void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count); }
@@ -1303,7 +970,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean canStoreDrops(List<ItemStack> drops) { return gathering.canStoreDrops(drops); }
 
 
-    private boolean storeInCompanionInventory(ItemStack stack) {
+    boolean storeInCompanionInventory(ItemStack stack) {
         ItemStack remaining = stack.copy();
         for (ItemStack stored : companionInventory) {
             if (stored.isEmpty() || !ItemStack.isSameItemSameComponents(stored, remaining)) continue;
@@ -1329,7 +996,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         return remaining.isEmpty();
     }
 
-    private void refreshInventorySummary() {
+    void refreshInventorySummary() {
         entityData.set(DATA_INVENTORY_SUMMARY, buildInventorySummary());
         java.util.Map<String, Integer> items = new java.util.LinkedHashMap<>();
         for (ItemStack stack : companionInventory) {
