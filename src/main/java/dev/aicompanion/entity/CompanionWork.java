@@ -43,6 +43,7 @@ public final class CompanionWork {
     enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
+    final CompanionHunting hunting = new CompanionHunting(this);
     final CompanionHouse house;
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -162,7 +163,7 @@ public final class CompanionWork {
     public static final String NOTHING_HUNTED = "Никого не добыл";
     static final int CHASE_TICKS = 20 * 15;
     /** Hunting ground: his search radius, at least 32 (game log 22.10: «пускай ищет даже если еда далеко»); a chase goes 16 further. */
-    private int huntRadius() { return owner.autonomy().running() ? CompanionAutonomy.LEASH : Math.clamp(owner.getSearchRadius(), 32, CompanionEntity.MAX_SEARCH_RADIUS); }
+    int huntRadius() { return owner.autonomy().running() ? CompanionAutonomy.LEASH : Math.clamp(owner.getSearchRadius(), 32, CompanionEntity.MAX_SEARCH_RADIUS); }
     CompanionGame.Kind game, gameLastKind;
     int gameWanted, gameKills;
     java.util.UUID gameTarget;
@@ -559,8 +560,8 @@ public final class CompanionWork {
             case SHOVEL -> prepareShovel();
             case DIGGING -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
             case RETURN -> returnToPlayer(level);
-            case FIGHT -> fightNearby(level);
-            case CHASE -> hunt(level);
+            case FIGHT -> hunting.fightNearby(level);
+            case CHASE -> hunting.hunt(level);
             case WOOD_DONE -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
             case FURNACE -> prepareFurnace(level);
             case COOK -> cook(level);
@@ -604,7 +605,7 @@ public final class CompanionWork {
         return hash;
     }
 
-    private boolean orderHasStalled(ServerLevel level, int limit) {
+    boolean orderHasStalled(ServerLevel level, int limit) {
         if (orderProgressPosition == null || owner.position().distanceToSqr(orderProgressPosition) > .25) {
             orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime();
         }
@@ -634,157 +635,8 @@ public final class CompanionWork {
         else if (owner.onGround() && !owner.isInWater()) owner.getNavigation().stop();
     }
 
-    private void fightNearby(ServerLevel level) {
-        java.util.List<net.minecraft.world.entity.monster.Monster> remaining = new ArrayList<>();
-        boolean unavailable = false;
-        for (java.util.UUID id : huntTargets) {
-            if (huntDead.contains(id)) continue;
-            var entity = level.getEntity(id);
-            if (entity == null) { unavailable = true; continue; }
-            if (entity instanceof net.minecraft.world.entity.monster.Monster monster && monster.isAlive()) remaining.add(monster);
-            else huntDead.add(id);
-        }
-        if (remaining.isEmpty()) {
-            // Removed entities may have died or unloaded; only our hits give an exact kill count.
-            finish(!unavailable, unavailable ? "Часть целей исчезла или выгрузилась. Их гибель не подтверждаю. Моих добивающих ударов: " + huntKills + "."
-                    : "С выбранными ближайшими монстрами закончил. Моих добивающих ударов: " + huntKills + "."); return;
-        }
-        if (orderHasStalled(level, 200)) { finish(false, "Не смог добраться до оставшихся монстров. Убил: " + huntKills + "."); return; }
-        var target = remaining.stream().min(Comparator.comparingDouble(owner::distanceToSqr)).orElseThrow();
-        owner.selectWeaponForCombat(); owner.setTarget(target); owner.movementIntent(target.blockPosition());
-        owner.workStatus("Разбираюсь с ближайшими монстрами, осталось целей: " + remaining.size() + ".");
-        Path route = owner.getNavigation().createPath(target, 1);
-        if (route != null && route.canReach()) CompanionMiningNavigation.walk(owner, route);
-    }
-
-    /**
-     * hunt_animals, like a player: the nearest grown animal on foot, chased and hit with the best weapon; the meat, leather,
-     * wool and feathers fall into the world and are picked up. With «any» the herd of the first kill is kept to while it lasts,
-     * so the meat goes into one furnace. Calves and somebody's animals (named, leashed) are spared, and the report says so.
-     */
-    private void hunt(ServerLevel level) {
-        if (gameKills >= gameWanted) { finish(true, gameReport(true)); return; }
-        var current = level.getEntity(gameTarget == null ? NO_ID : gameTarget) instanceof net.minecraft.world.entity.animal.Animal animal && animal.isAlive() ? animal : null;
-        if (current == null) {
-            if (owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal) owner.setTarget(null);
-            // Vanilla builds no route at all while he is in the air: that is no evidence against any animal.
-            if (!owner.onGround() && !owner.isInWater()) return;
-            if (gameTravel != null && travelToGame(level)) return;
-            List<net.minecraft.world.entity.animal.Animal> game = huntable(level);
-            if (!game.isEmpty()) current = nearestGameOnFoot(game);
-            if (current == null) {
-                // None within one route: walk towards the nearest in legs (game log 23.10: «пускай ищет даже если еда далеко»).
-                gameSkipped.clear();
-                List<net.minecraft.world.entity.animal.Animal> any = huntable(level);
-                if (any.isEmpty()) { finishHunt(level); return; }
-                if (gameTravels >= 3) { finish(false, gameReport(false) + " К остальным животным не нашёл пути."); return; }
-                gameTravel = any.stream().min(Comparator.comparingDouble(owner::distanceToSqr)).orElseThrow().blockPosition();
-                travelToGame(level);
-                return;
-            }
-            gameTarget = current.getUUID(); gameSince = level.getGameTime(); gameBest = Double.MAX_VALUE; gameHealth = current.getHealth();
-        }
-        owner.selectWeaponForCombat(); owner.setTarget(current); owner.movementIntent(current.blockPosition());
-        var kind = CompanionGame.Kind.of(current);
-        owner.workStatus("Охочусь на " + (kind == null ? "животное" : kind.one) + ", добыл " + gameKills + " из " + gameWanted + ".");
-    }
+    void watchChase() { hunting.watchChase(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
-
-    /** The walk to game far off; true while walking. On arrival the nearest is chosen again; a failed walk skips them for a while. */
-    private boolean travelToGame(ServerLevel level) {
-        var step = owner.travel().toward(gameTravel, 10);
-        if (step == CompanionTravel.Step.WALKING) { owner.workStatus("Иду к животным подальше, добыл " + gameKills + " из " + gameWanted + "."); return true; }
-        owner.travel().reset();
-        // Each trip counts, arrived or not: an animal near but unreachable (in water) must not send him back and forth.
-        gameTravels++;
-        if (step == CompanionTravel.Step.FAILED) {
-            for (var animal : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, new AABB(gameTravel).inflate(12)))
-                gameSkipped.put(animal.getUUID(), level.getGameTime() + 20 * 30);
-        }
-        gameTravel = null;
-        return false;
-    }
-
-    /**
-     * Every tick, also while the melee goal has taken the legs: a chase that brings him no closer and no hit for 15 seconds,
-     * or that runs off further than the hunting ground, lets that animal go for half a minute (it ran into water, onto a cliff).
-     */
-    void watchChase() {
-        if (job != Job.GAME || gameTarget == null || !(owner.level() instanceof ServerLevel level)) return;
-        if (!(level.getEntity(gameTarget) instanceof net.minecraft.world.entity.animal.Animal animal) || !animal.isAlive()) return;
-        double distance = owner.distanceToSqr(animal);
-        if (distance + .5 < gameBest || animal.getHealth() < gameHealth) { gameBest = distance; gameHealth = animal.getHealth(); gameSince = level.getGameTime(); }
-        boolean tooFar = !owner.leashAllows(animal.blockPosition()) || animal.distanceToSqr(gameAnchor.getCenter()) > Math.pow(huntRadius() + 16, 2);
-        if (level.getGameTime() - gameSince <= CHASE_TICKS && !tooFar) return;
-        gameSkipped.put(animal.getUUID(), level.getGameTime() + 20 * 30);
-        dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "hunt_target_dropped", "entity", owner.getUUID(), "animal", animal.getUUID(),
-                "reason", tooFar ? "too_far" : "no_progress", "position", animal.blockPosition());
-        gameTarget = null;
-        if (owner.getTarget() == animal) owner.setTarget(null);
-        owner.getNavigation().stop();
-    }
-
-    private List<net.minecraft.world.entity.animal.Animal> huntable(ServerLevel level) {
-        long now = level.getGameTime();
-        gameSkipped.values().removeIf(until -> until < now);
-        int radius = huntRadius();
-        List<net.minecraft.world.entity.animal.Animal> found = level.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class,
-                new AABB(owner.autonomy().running() ? gameAnchor : owner.blockPosition()).inflate(radius, 12, radius), animal -> {
-                    var kind = CompanionGame.Kind.of(animal);
-                    return kind != null && (game == null || kind == game) && !gameSkipped.containsKey(animal.getUUID())
-                            && owner.leashAllows(animal.blockPosition()) && owner.fairTarget(animal, false) && CompanionGame.huntable(animal, kind);
-                });
-        // A food run accepts every kind. An unreachable member of the previous herd must not hide reachable food.
-        // Keep the herd preference only for the ordinary «any» hunt.
-        if (!gameForFood && game == null && gameLastKind != null && found.stream().anyMatch(animal -> CompanionGame.Kind.of(animal) == gameLastKind))
-            return found.stream().filter(animal -> CompanionGame.Kind.of(animal) == gameLastKind).toList();
-        return found;
-    }
-
-    /** One route search to all of them at once: the animal nearest on foot, not across the river by the straight line. */
-    private net.minecraft.world.entity.animal.Animal nearestGameOnFoot(List<net.minecraft.world.entity.animal.Animal> game) {
-        java.util.Map<BlockPos, net.minecraft.world.entity.animal.Animal> at = new java.util.HashMap<>();
-        for (var animal : game) at.putIfAbsent(animal.blockPosition(), animal);
-        Path route = owner.getNavigation().createPath(at.keySet(), 1);
-        if (route != null && route.canReach() && at.containsKey(route.getTarget())) return at.get(route.getTarget());
-        // That search may spend its steps on one it cannot reach: the nearest few on their own.
-        var nearest = game.stream().sorted(Comparator.comparingDouble(owner::distanceToSqr)).limit(3).toList();
-        for (var animal : nearest) {
-            Path single = owner.getNavigation().createPath(animal, 1);
-            if (single != null && single.canReach()) return animal;
-            gameSkipped.put(animal.getUUID(), owner.level().getGameTime() + 20 * 10);
-        }
-        return null;
-    }
-
-    /** Nothing more to take here: an honest account of who was left and why. */
-    private void finishHunt(ServerLevel level) {
-        int radius = huntRadius();
-        int young = 0, others = 0;
-        for (var animal : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, new AABB(owner.blockPosition()).inflate(radius, 12, radius),
-                animal -> animal.isAlive() && CompanionGame.Kind.of(animal) != null && (game == null || CompanionGame.Kind.of(animal) == game))) {
-            if (animal.isBaby()) young++;
-            else if (animal.hasCustomName() || animal.isLeashed()) others++;
-        }
-        String why = young + others == 0 ? " В пределах " + radius + " блоков " + (game == null ? "животных" : game.many) + " больше не нашёл."
-                : " Больше брать не стал:" + (young > 0 ? " " + young + " — детёныши" : "")
-                + (others > 0 ? (young > 0 ? "," : "") + " " + others + " — с именем или на поводке, чьи-то" : "") + ".";
-        finish(gameKills >= gameWanted || gameForFood && gameKills > 0, gameReport(false) + why);
-    }
-
-    /** «Добыл 3 коровы: в сумке прибавилось 5 «Сырая говядина», 2 «Кожа».» — counted in the bag, not promised. */
-    private String gameReport(boolean all) {
-        int last = gameKills % 10, tens = gameKills % 100;
-        // «Любые», but all of one kind: say which («добыл 1 свинью», not «1 животное»).
-        var named = game != null ? game : gameKinds.size() == 1 ? gameKinds.iterator().next() : null;
-        String animals = named != null ? named.count(gameKills) : gameKills + " " + (last == 1 && tens != 11 ? "животное" : "животных");
-        if (gameKills == 0) return NOTHING_HUNTED + " из " + gameWanted + ".";
-        java.util.Map<net.minecraft.world.item.Item, Integer> now = new java.util.LinkedHashMap<>();
-        for (ItemStack stack : items.carriedItems()) if (!stack.isEmpty()) now.merge(stack.getItem(), stack.getCount(), Integer::sum);
-        List<String> gained = new ArrayList<>();
-        now.forEach((item, count) -> { int more = count - gameBagBefore.getOrDefault(item, 0); if (more > 0) gained.add(more + " «" + new ItemStack(item).getHoverName().getString() + "»"); });
-        return (all ? "Готово, добыл " : "Добыл ") + animals + (all ? "" : " из " + gameWanted) + (gained.isEmpty() ? "." : ": в сумке прибавилось " + String.join(", ", gained) + ".");
-    }
 
     private void prepareShovel() {
         if (CompanionTools.equip(owner, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState())) {
