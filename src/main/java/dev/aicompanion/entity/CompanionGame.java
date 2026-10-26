@@ -9,9 +9,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Game animals for meat (Толик 22.10: «чтобы он сам мог охотиться и убивать животных, жарить их мясо»). A player's rules:
+ * Game animals for meat (the player 22.10: «чтобы он сам мог охотиться и убивать животных, жарить их мясо»). A player's rules:
  * grown animals only, never a named or leashed one (somebody's). A lone animal is game too (game log 22.10: one pig nearby was
- * spared as «the last pair», and Толик asked for exactly that pig); the ones to keep get a name tag.
+ * spared as «the last pair», and the player asked for exactly that pig); the ones to keep get a name tag.
  */
 public final class CompanionGame {
     private CompanionGame() { }

@@ -9,12 +9,12 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Marathon of ordinary requests, arena «долина»: a piece of Толик's own world (copy of «Новый мир», x -100..-5, y 52..91,
+ * Marathon of ordinary requests, arena «долина»: a recorded terrain fixture (x -100..-5, y 52..91,
  * z -100..-21; cut by scripts/arena/ArenaTool.java, bedrock floor and walls added). Forest in the north and west, a quarry pit
  * with a cliff on its west side and water at the bottom, open plains in the east and south, and the ravine of game log 23.10
  * (session 05cdd3a7) at x 58..68, z 42..52. Relative height 17–19 is the plain.
  *
- * Толик: «самая большая проблема, что он начинает делать задачу и потом теряется на самых простых вещах».
+ * the player: «самая большая проблема, что он начинает делать задачу и потом теряется на самых простых вещах».
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)

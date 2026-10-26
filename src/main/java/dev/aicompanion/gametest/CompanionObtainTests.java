@@ -23,7 +23,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 
 /**
- * Толик 23.10: one general «добыть» instead of code for every item («не поставь факел, а просто функции — поставить, добыть…»).
+ * the player 23.10: one general «добыть» instead of code for every item («не поставь факел, а просто функции — поставить, добыть…»).
  * obtain_item plans the item down to the skills Oleg has, from the game's recipes and drops, and succeeds only by the bag.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)

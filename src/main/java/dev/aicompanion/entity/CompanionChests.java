@@ -179,7 +179,7 @@ final class CompanionChests {
         BlockPos center = w.owner.blockPosition();
         for (BlockPos pos : blockEntitiesNear(level)) {
             if (w.triedChests.contains(pos) || w.insideHouse && !w.house.inside(pos)) continue;
-            // A deed of his own: only a chest he set down himself, near the player (Толик: «не трогает мои сундуки»).
+            // A deed of his own: only a chest he set down himself, near the player (the player: «не трогает мои сундуки»).
             if (w.owner.ownPlacesOnly() && (!w.owner.placedByMe(pos) || !w.owner.leashAllows(pos))) continue;
             Container chest = chestAt(level, pos);
             if (chest != null && (w.job == CompanionWork.Job.TAKE ? containsRequested(chest) : w.job == CompanionWork.Job.PLACE_CHEST || hasCapacity(chest))) found.add(pos.immutable());

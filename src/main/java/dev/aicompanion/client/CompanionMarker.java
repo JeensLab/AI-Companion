@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * Where Oleg is, at a glance: a golden outline through walls and ground once he is out of sight or farther than a few steps.
- * Only for his owner, only on this client. Толик 23.10: «стрелка где он не нужна, оставь только контур, и сделай возможность
+ * Only for his owner, only on this client. the player 23.10: «стрелка где он не нужна, оставь только контур, и сделай возможность
  * включить и отключать его по кнопке» — the key G (changeable in the controls), also in «Поведение».
  */
 final class CompanionMarker {

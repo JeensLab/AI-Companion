@@ -17,7 +17,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Толик 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня напал». Like a friend, Oleg goes for a
+ * the player 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня напал». Like a friend, Oleg goes for a
  * monster at the player's side or on its way to him without a guard order; a creeper is left alone (a hit beside the player
  * may end in its blast, the way wolves leave creepers), and a monster far away is no reason to leave.
  */

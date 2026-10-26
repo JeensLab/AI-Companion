@@ -9,7 +9,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
  * Marathon arena «далеко»: a long valley (48 × 192) of rolling hills, crossed at z 96..101 by a rocky ridge twelve blocks high with
- * a single pass at x 30..34. Толик: «нужно, чтобы он в любой ситуации понимал, как до меня добраться». The player goes 150–170
+ * a single pass at x 30..34. the player: «нужно, чтобы он в любой ситуации понимал, как до меня добраться». The player goes 150–170
  * blocks away over the ridge; Oleg comes on foot, not by a teleport (FollowPlayerGoal teleported him beyond 128 blocks).
  */
 @GameTestHolder(AICompanionMod.MOD_ID)

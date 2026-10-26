@@ -116,7 +116,7 @@ public final class CompanionPlanRequirements {
     }
 
     /**
-     * «Добудь мяса и пожарь» (Толик 22.10): the meat of the hunt goes into the furnace even when the model forgot that step.
+     * «Добудь мяса и пожарь» (the player 22.10): the meat of the hunt goes into the furnace even when the model forgot that step.
      * A named kind cooks its meat; «any» cooks the raw meat he carries most of.
      */
     static CompanionReply cookAfterHunt(String text, CompanionReply decoded) {

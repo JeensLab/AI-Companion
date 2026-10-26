@@ -8,7 +8,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
- * Requests one after another, the way Толик plays: say something, wait till it is done (or for a moment in the game), look at
+ * Requests one after another, the way the player plays: say something, wait till it is done (or for a moment in the game), look at
  * what happened, say the next thing. Each stage has a time limit in ticks; a stage over time fails the test with the observer's
  * trail. The checks of a stage run once, right after it.
  */

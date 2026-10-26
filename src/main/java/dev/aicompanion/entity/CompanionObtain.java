@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * «Добудь предмет» like a player thinks it through (Толик 22.10: one general «добыть» instead of code for every item): from the
+ * «Добудь предмет» like a player thinks it through (the player 22.10: one general «добыть» instead of code for every item): from the
  * game's own data — what a block drops, what an animal drops, what a furnace makes, what a recipe needs — down to the skills Oleg
  * already has (wood, stone, soil, ore, hunting, furnace, crafting). The result is an ordinary list of those steps, run and checked
  * one by one; nothing is handed out, everything is mined, hunted, smelted and crafted for real.

@@ -15,7 +15,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.List;
 
 /**
- * One marathon arena in a test: its size, Oleg and Толик on its ground, the observer, the chat and the script.
+ * One marathon arena in a test: its size, Oleg and the player on its ground, the observer, the chat and the script.
  * Positions are relative to the arena, like everything a GameTestHelper does.
  */
 final class MarathonArena {

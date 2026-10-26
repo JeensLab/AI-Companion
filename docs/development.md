@@ -25,6 +25,19 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 в корне репозитория. Ссылки на это руководство в AGENTS.md обычные: нужный раздел
 читается по задаче, а весь документ не импортируется автоматически.
 
+При переходе со старого `CLAUDE.md` сначала перенесите актуальные ограничения
+в общий файл: публикация только по отдельной команде, запрет платных проверок
+без разрешения, согласованные предел ответа OpenRouter и история диалога.
+Частные имена, локальные пути, переписку и отчёты переносить в публичные правила не нужно.
+
+Публикация исходников, выпуск JAR и установка в Minecraft — отдельные действия.
+Исправление или одобрение результата не разрешает отправку на GitHub.
+Без нового номера версии по прямой команде владельца сохраняйте `mod_version`;
+для нескольких выпусков одной версии используйте различимые названия/теги с датой.
+Локальный `GITHUB_PUBLICATION.md`, если он есть, содержит порядок безопасной
+публикации и не отправляется в репозиторий. Новый JAR собирайте из конкретного
+публикуемого коммита; не берите оставшийся файл от прежних исходников.
+
 Сами принципы работы — в разделе «Как работать» AGENTS.md; здесь они не повторяются.
 Подход адаптирован из [Karpathy-Inspired Claude Code Guidelines](https://github.com/multica-ai/andrej-karpathy-skills):
 это интерпретация наблюдений Карпатого сообществом, а не инструкция его авторства.
@@ -43,6 +56,9 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Допустимые действия и параметры | `client/CompanionPlanCodec.java`, `CompanionPlanRequirements.java`, `PlannedAction.java` |
 | Очередь, приоритеты, отмена, восстановление плана | `client/CompanionTaskQueue.java`, `CompanionActionExecutor.java`, `CompanionPlanRunner.java`, `CompanionServerPlanPort.java` |
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |
+| Компоненты после разделения больших классов | `entity/CompanionGathering.java`, `CompanionGatherGoals.java`, `CompanionStoneMining.java`, `CompanionOreMining.java`, `CompanionWorkCrafting.java`, `CompanionHunting.java` |
+| Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
+| Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
@@ -84,7 +100,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Полный набор с итоговым JSON | `.\scripts\verify-scenarios.ps1 -Repetitions 1` |
 | Экран задач | `.\scripts\verify-task-ui.ps1` и просмотр созданных снимков |
 | Прочие экраны, рендер, клавиши | `.\gradlew.bat runClient`, ручная проверка изменённого сценария |
-| Живой диалог, STT/TTS | Ручная проверка с собственными ключами; локальные GameTest не доказывают работу провайдера |
+| Живой диалог, STT/TTS | Ручная проверка с собственными ключами только по отдельному разрешению на платные запросы; локальные GameTest не доказывают работу провайдера |
 
 Для проверки перезапуска заранее выполните `New-Item -ItemType Directory -Force build/diagnostics | Out-Null`:
 сам скрипт создаёт отдельный тестовый мир, но не создаёт каталог журналов.

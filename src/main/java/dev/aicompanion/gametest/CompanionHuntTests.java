@@ -30,7 +30,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 
 /**
- * Толик 22.10: «чтобы он сам мог охотиться и убивать животных, жарить их мясо» (and in the game: «А ты можешь сам добыть нам
+ * the player 22.10: «чтобы он сам мог охотиться и убивать животных, жарить их мясо» (and in the game: «А ты можешь сам добыть нам
  * мясо?» — «Пока не выйдет»). Like a player: grown animals, chased and hit, the drops picked up from the ground, the last pair
  * left, calves and somebody's animals spared, the nearest on foot first.
  */
