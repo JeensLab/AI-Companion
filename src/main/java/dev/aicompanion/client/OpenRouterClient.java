@@ -1,11 +1,13 @@
 package dev.aicompanion.client;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.CompanionIdentity;
 import dev.aicompanion.CompanionDiagnostics;
+import dev.aicompanion.entity.CompanionMemory;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -13,9 +15,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 /** Chat completion client with a constrained tool-calling loop for in-game plans. */
 public final class OpenRouterClient {
@@ -30,15 +34,70 @@ public final class OpenRouterClient {
     private static CompletableFuture<Void> pendingRequests = CompletableFuture.completedFuture(null);
     private static CompletableFuture<?> ambientRequest = CompletableFuture.completedFuture(null);
     private static long generation;
+    private static long restoredGeneration = -1;
+    private static final int MAX_HISTORY = 25;
     public static synchronized boolean isBusy() { return !pendingRequests.isDone(); }
 
     /** A new world is a new conversation: history is dropped and every request begun earlier loses the right to write into it. */
     public static void resetSession() {
-        synchronized (HISTORY) { HISTORY.clear(); generation++; }
+        synchronized (HISTORY) { HISTORY.clear(); generation++; CompanionMemoryFlow.reset(); }
+    }
+
+    /**
+     * Puts the talk saved in the world in front of what was already said in this session, once per session. Lines already
+     * in the history are skipped, so a reply that arrived before the first sync is neither duplicated nor pushed out.
+     */
+    public static boolean restoreTalk(long gen, List<CompanionMemory.Talk> talk) {
+        return restoreTalk(gen, talk, OpenRouterClient::systemPrompt);
+    }
+
+    public static boolean restoreTalk(long gen, List<CompanionMemory.Talk> talk, Supplier<String> system) {
+        synchronized (HISTORY) {
+            if (gen != generation || restoredGeneration == generation) return false;
+            restoredGeneration = generation;
+            Set<String> said = new HashSet<>();
+            for (JsonObject entry : HISTORY) {
+                String role = entry.get("role").getAsString();
+                if ("user".equals(role) || "assistant".equals(role)) said.add(role + "\n" + CompanionMemory.talkLine(entry.get("content").getAsString()));
+            }
+            List<JsonObject> older = new ArrayList<>();
+            for (CompanionMemory.Talk line : talk) {
+                String role = line.fromPlayer() ? "user" : "assistant";
+                if (said.contains(role + "\n" + CompanionMemory.talkLine(line.text()))) continue;
+                if (older.isEmpty() && !line.fromPlayer()) continue;
+                older.add(message(role, line.text()));
+            }
+            int room = Math.max(0, MAX_HISTORY - Math.max(1, HISTORY.size()));
+            if (older.size() > room) older = new ArrayList<>(older.subList(older.size() - room, older.size()));
+            while (!older.isEmpty() && !"user".equals(older.get(0).get("role").getAsString())) older.remove(0);
+            if (older.isEmpty()) return true;
+            if (HISTORY.isEmpty() || !"system".equals(HISTORY.get(0).get("role").getAsString())) HISTORY.add(0, message("system", system.get()));
+            HISTORY.addAll(1, older);
+            return true;
+        }
+    }
+
+    /** One plain completion without tools, for background work such as condensing talk into memories. */
+    static CompletableFuture<String> complete(JsonArray messages, int maxTokens, String trace) {
+        if (OpenRouterConfig.API_KEY.get().trim().isEmpty()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Нет ключа OpenRouter"));
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("model", OpenRouterConfig.MODEL.get().trim().isEmpty() ? "openrouter/auto" : OpenRouterConfig.MODEL.get().trim());
+        body.add("messages", messages);
+        body.addProperty("max_tokens", maxTokens);
+        return post(body, false, trace).thenApply(parsed -> {
+            JsonObject reply = parsed.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message");
+            return reply != null && reply.has("content") && !reply.get("content").isJsonNull() ? reply.get("content").getAsString() : "";
+        });
     }
 
     public static long generation() {
         synchronized (HISTORY) { return generation; }
+    }
+
+    public static List<JsonObject> historySnapshot() {
+        synchronized (HISTORY) { return HISTORY.stream().map(JsonObject::deepCopy).toList(); }
     }
 
     public static int historySize() {
@@ -281,7 +340,14 @@ public final class OpenRouterClient {
                 + "Не вызывай план самовольно. Перечисленные действия — твои реальные игровые возможности, "
                 + "даже если в сохранённом пользовательском описании характера осталась старая фраза о том, что ты только разговариваешь. "
                 + "Не выдумывай завершённый результат: после крафта, установки или добычи сообщай только результат команды/статус. "
-                + "После вызова инструмента можно коротко ответить по-человечески, без перечисления всех действий. Никогда не повторяй служебные данные из контекста дословно.";
+                + "После вызова инструмента можно коротко ответить по-человечески, без перечисления всех действий. Никогда не повторяй служебные данные из контекста дословно."
+                + memoryRule();
+    }
+
+    private static String memoryRule() {
+        if (!OpenRouterConfig.LONG_TERM_MEMORY.get()) return "";
+        return " Это твоя настоящая память о товарище. Чего в ней нет — не помнишь, не выдумывай. "
+                + "Вспоминай из неё к месту, а одно и то же воспоминание — не чаще раза за сессию.";
     }
 
     private static CompletableFuture<JsonObject> request(boolean withTools, boolean forcePlan, String trace, JsonObject current, String context) {
@@ -450,10 +516,16 @@ public final class OpenRouterClient {
     }
 
     private static void trimHistory() {
-        while (HISTORY.size() > 25) {
-            HISTORY.remove(1);
-            while (HISTORY.size() > 1 && !"user".equals(HISTORY.get(1).get("role").getAsString())) HISTORY.remove(1);
+        while (HISTORY.size() > MAX_HISTORY) {
+            dropOldest();
+            while (HISTORY.size() > 1 && !"user".equals(HISTORY.get(1).get("role").getAsString())) dropOldest();
         }
+    }
+
+    private static void dropOldest() {
+        JsonObject gone = HISTORY.remove(1);
+        JsonElement content = gone.get("content");
+        CompanionMemoryFlow.dropped(gone.get("role").getAsString(), content == null || content.isJsonNull() ? "" : content.getAsString());
     }
 
     private static String readError(String body, int statusCode) {

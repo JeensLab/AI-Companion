@@ -55,9 +55,11 @@ public final class CompanionChatScreen extends Screen {
         // and «ещё отвечает на прошлую просьбу… сделает следом» says so, as for voice.
         input.setValue("");
         addLine(Component.literal("Ты: " + text).withStyle(ChatFormatting.WHITE));
+        CompanionMemoryFlow.talk(true, text);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         String action = companionAction(text);
+        if (answerMemoryCommand(action, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
             runLocalCommand(action, trace);
@@ -76,6 +78,7 @@ public final class CompanionChatScreen extends Screen {
                     return;
                 }
                 replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
+                CompanionMemoryFlow.talk(false, reply.text());
                 CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", reply.text());
                 CompanionAmbientClient.replyDelivered(reply.text());
                 if (!reply.actions().isEmpty()) {
@@ -142,9 +145,11 @@ public final class CompanionChatScreen extends Screen {
     private static void sendVoiceMessage(String text, String trace) {
         Minecraft minecraft = Minecraft.getInstance();
         CompanionAmbientClient.playerMessage();
+        CompanionMemoryFlow.talk(true, text);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         String action = companionAction(text);
+        if (answerMemoryCommand(action, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
             runLocalCommand(action, trace);
@@ -213,6 +218,7 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private static void addVoiceReply(String text, String trace, String source) {
+        CompanionMemoryFlow.talk(false, text);
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
         if ("autonomous".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
         else CompanionAmbientClient.replyDelivered(text);
@@ -240,6 +246,20 @@ public final class CompanionChatScreen extends Screen {
     public static void autonomousReply(String text, String trace) {
         OpenRouterClient.recordSpokenLine(text);
         addVoiceReply(text, trace, "autonomous");
+    }
+
+    private static boolean answerMemoryCommand(String action, String trace) {
+        boolean forget = "companion memory forget".equals(action);
+        if (!forget && !"companion memory show".equals(action)) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_memory", "command", action);
+        String answer;
+        if (!OpenRouterConfig.LONG_TERM_MEMORY.get()) answer = "Долговременная память выключена в настройках, так что я ничего не храню.";
+        else if (forget) {
+            CompanionMemoryFlow.forget();
+            answer = "Всё, что ты мне рассказывал, я забыл. Наши общие дела и отношения остаются.";
+        } else answer = CompanionMemoryView.recall(CompanionMemoryView.current());
+        addVoiceReply(answer, trace, "local_memory");
+        return true;
     }
 
     private static void replyWithName(String userText, String trace) {

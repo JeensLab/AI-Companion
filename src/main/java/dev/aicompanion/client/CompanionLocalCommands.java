@@ -10,6 +10,8 @@ public final class CompanionLocalCommands {
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
     public static String route(String text, String companionName) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        String memory = memoryCommand(normalized, companionName);
+        if (memory != null) return memory;
         // «Порядок и запас» on and off (CompanionAutonomy). Before «стоп»: «хватит, просто будь рядом» is not a stop of an order.
         if (normalized.contains("просто будь рядом") || normalized.contains("просто держись рядом") || normalized.matches("(?sU).*\\bне будь самостоятельн.*")
                 || normalized.matches("(?sU).*\\b(хватит|перестань|прекрати|выключи|отключи)\\b.{0,12}самостоятельн.*")) return "companion autonomy off";
@@ -86,10 +88,25 @@ public final class CompanionLocalCommands {
         };
     }
 
+    /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
+    private static String memoryCommand(String normalized, String companionName) {
+        String rest = normalized.strip();
+        String name = companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').strip();
+        if (!name.isEmpty() && rest.startsWith(name)) rest = rest.substring(name.length()).replaceFirst("(?sU)^[\\s\\p{Punct}—]+", "");
+        rest = rest.replaceFirst("(?sU)^(а|ну)\\s+", "");
+        if (rest.matches("(?sU)(забудь|забывай)\\s+(все|всю память|все обо мне|обо мне все)\\W*")
+                || rest.matches("(?sU)(очисти|сотри|стери)\\s+(свою\\s+)?память\\W*")) return "companion memory forget";
+        if (rest.matches("(?sU)что ты (обо мне|про меня) (помнишь|знаешь)\\W*")
+                || rest.matches("(?sU)что ты (помнишь|знаешь) (обо мне|про меня)\\W*")
+                || rest.matches("(?sU)что ты помнишь\\W*")) return "companion memory show";
+        return null;
+    }
+
     /** Every local command but a work request, and the model's plans that start with these, replace the plans in the queue. */
     public static boolean cancelsPlans(String command) {
         // The mode of his own deeds is no order to drop the plans the player gave.
         if (command.equals("companion goal status")) return false;
+        if (command.startsWith("companion memory ")) return false;
         return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ");
     }
 
