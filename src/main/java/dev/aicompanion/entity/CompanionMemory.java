@@ -71,31 +71,61 @@ public final class CompanionMemory {
     /** True when the text carries something that must not be remembered or stored. */
     public static boolean isSensitive(String text) {
         if (text == null) return false;
-        String seen = unobscured(text);
-        for (Pattern pattern : SENSITIVE) if (pattern.matcher(seen).find()) return true;
-        return false;
+        return matchesAny(unobscured(text)) || matchesAny(text) || matchesAny(separated(text));
     }
 
     /**
-     * The text with every sensitive fragment replaced by {@link #MASK}. The folded text is only for matching: when nothing matched,
-     * the original comes back as it was (emoji joiners and direction marks included).
+     * The text with every sensitive fragment replaced by {@link #MASK}. The folded text is scanned only up to {@link #MASK_INPUT}
+     * and is what comes back when it was cut, because the unscanned rest must not survive. When the whole of it was scanned and
+     * nothing matched, the original comes back as it was (emoji joiners and direction marks included). Folding can glue a letter
+     * onto a keyword or turn a symbol into a digit, so the fold alone misses some matches: when the raw text or the text with
+     * hidden and compatibility characters turned into separators has more matches than the fold, the whole line goes.
      */
     public static String mask(String text) {
         if (text == null) return "";
-        String masked = unobscured(text);
-        if (masked.length() > MASK_INPUT) masked = masked.substring(0, MASK_INPUT);
-        boolean found = false;
+        String folded = unobscured(text);
+        boolean whole = folded.length() <= MASK_INPUT;
+        String masked = whole ? folded : folded.substring(0, MASK_INPUT);
+        String capped = cut(text);
+        int foldedHits = countMatches(masked);
+        if (Math.max(countMatches(capped), countMatches(cut(separated(capped)))) > foldedHits) return MASK;
+        if (foldedHits == 0) return whole ? capped : masked;
+        for (Pattern pattern : SENSITIVE) masked = pattern.matcher(masked).replaceAll(MASK);
+        return masked;
+    }
+
+    private static String cut(String text) {
+        return text.length() > MASK_INPUT ? text.substring(0, MASK_INPUT) : text;
+    }
+
+    private static int countMatches(String seen) {
+        int hits = 0;
         for (Pattern pattern : SENSITIVE) {
-            if (!pattern.matcher(masked).find()) continue;
-            found = true;
-            masked = pattern.matcher(masked).replaceAll(MASK);
+            var matcher = pattern.matcher(seen);
+            while (matcher.find()) hits++;
         }
-        return found ? masked : text.length() > MASK_INPUT ? text.substring(0, MASK_INPUT) : text;
+        return hits;
+    }
+
+    private static boolean matchesAny(String seen) {
+        for (Pattern pattern : SENSITIVE) if (pattern.matcher(seen).find()) return true;
+        return false;
     }
 
     /** Compatibility forms (full-width letters) fold to plain ones and invisible format characters go, so neither hides a secret. */
     private static String unobscured(String text) {
         return text == null ? "" : INVISIBLE.matcher(Normalizer.normalize(text, Normalizer.Form.NFKC)).replaceAll("");
+    }
+
+    /** Like {@link #unobscured}, but a hidden character or a non-letter that folds into something else becomes a space, so it cannot glue onto a keyword. */
+    private static String separated(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        text.codePoints().forEach(codePoint -> {
+            boolean hidden = Character.getType(codePoint) == Character.FORMAT;
+            boolean folds = !Character.isLetter(codePoint) && !Normalizer.isNormalized(new String(Character.toChars(codePoint)), Normalizer.Form.NFKC);
+            if (hidden || folds) out.append(' '); else out.appendCodePoint(codePoint);
+        });
+        return Normalizer.normalize(out, Normalizer.Form.NFKC);
     }
 
     /** Rejects (never trims) a memory that is too long, of an unknown kind, or sensitive; a duplicate raises the weight. */

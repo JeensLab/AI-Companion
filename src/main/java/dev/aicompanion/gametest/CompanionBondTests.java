@@ -13,6 +13,7 @@ import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -120,6 +121,22 @@ public final class CompanionBondTests {
         for (String leaked : List.of("hunter2", "horse", "battery", "staple", "zebra9", "ghs_abcdefgh"))
             h.assertTrue(!kept.contains(leaked), "Saved talk leaks " + leaked + ": " + kept);
         h.assertTrue(phrases.recentTalk().get(1).text().contains("Дальше привет") && phrases.recentTalk().getLast().text().length() <= CompanionMemory.TALK_TEXT, "Clause end or length cut wrong: " + phrases.recentTalk());
+
+        String expanded = "\uFDFA".repeat(41) + " \u043F\u0430\u0440\u043E\u043B\u044C: hunter2";
+        String glued = "x\u200Bpassword: hunter2";
+        String circled = "\u2460password: hunter2";
+        String circledSpaced = "\u2460 password: hunter2";
+        String twoKeywords = "x\u200Bpassword: hunter2. \u043F\u0430\u0440\u043E\u043B\u044C: hunter3";
+        List<String> leaks = new ArrayList<>();
+        for (String attack : List.of(expanded, glued, circled, circledSpaced, twoKeywords)) {
+            var attacked = new CompanionMemory();
+            attacked.recordTalk(true, attack);
+            if (!CompanionMemory.isSensitive(attack) || attacked.save().toString().contains("hunter")
+                    || CompanionMemory.mask(attack).contains("hunter"))
+                leaks.add(attack);
+        }
+        h.assertTrue(leaks.isEmpty(), "Secrets survived folding: " + leaks);
+        h.assertTrue(CompanionMemory.mask(glued).equals(CompanionMemory.MASK) && CompanionMemory.mask(circled).equals(CompanionMemory.MASK), "A line that matched only unfolded was not masked whole");
 
         var bonds = new CompanionBonds();
         var owner = UUID.randomUUID();
