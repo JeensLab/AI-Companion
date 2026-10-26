@@ -44,6 +44,7 @@ public final class CompanionWork {
     final CompanionHunting hunting = new CompanionHunting(this);
     final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
+    final CompanionOreMining oreMining = new CompanionOreMining(this);
     final CompanionHouse house;
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -565,9 +566,9 @@ public final class CompanionWork {
             case WOOD_DONE -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
             case FURNACE -> prepareFurnace(level);
             case COOK -> cook(level);
-            case ORE_PICK -> prepareOrePickaxe();
-            case ORE -> mineOre(level);
-            case IRON -> ironStep(level);
+            case ORE_PICK -> oreMining.prepareOrePickaxe();
+            case ORE -> oreMining.mineOre(level);
+            case IRON -> oreMining.ironStep(level);
             default -> { }
         }
     }
@@ -650,334 +651,6 @@ public final class CompanionWork {
             case FAILED -> finish(false, result.message());
             default -> { }
         }
-    }
-
-    /** The pickaxe this ore needs: the best carried one that really drops it, otherwise made the usual way. */
-    private void prepareOrePickaxe() {
-        if (pickaxeSense.tick()) return;
-        BlockState sample = ore.sampleIn(owner.level()).defaultBlockState();
-        ItemStack best = ItemStack.EMPTY;
-        float speed = -1;
-        for (ItemStack stack : items.carriedItems())
-            if (stack.is(ItemTags.PICKAXES) && stack.isCorrectToolForDrops(sample) && stack.getDestroySpeed(sample) > speed) { best = stack; speed = stack.getDestroySpeed(sample); }
-        if (!best.isEmpty()) {
-            if (owner.getOffhandItem() == best) owner.unequipForSupport("offhand");
-            CompanionActionResult equipped = owner.equipForWork(BuiltInRegistries.ITEM.getKey(best.getItem()).toString());
-            if (!equipped.success()) { finish(false, equipped.message()); return; }
-            owner.workStatus("Кирка готова, ищу «" + ore.oreName + "».");
-            phase = Phase.ORE; resetTarget();
-            return;
-        }
-        if (++orePickaxeAttempts > 3) { finish(false, "Не получилось подготовить кирку для «" + ore.oreName + "». Вещи у меня."); return; }
-        if (ore.pickaxeIn(owner.level()) == Items.IRON_PICKAXE && items.countCarried(Items.IRON_INGOT) < ingotCost("minecraft:iron_pickaxe")) {
-            // Like a player: iron first, smelted, then the pickaxe, then back to this ore.
-            if (ironPrep || ironMines > 0) { finish(false, "Не получилось подготовить железную кирку для «" + ore.oreName + "». Вещи у меня."); return; }
-            owner.workStatus("Для «" + ore.oreName + "» нужна железная кирка. Сначала добуду и переплавлю железо.");
-            ironTool = "minecraft:iron_pickaxe"; ironToolCount = 1; ironNeeded = ingotCost(ironTool); phase = Phase.IRON;
-            return;
-        }
-        owner.workStatus("Для «" + ore.oreName + "» нужна " + itemName(ore.pickaxeIn(owner.level())).toLowerCase(java.util.Locale.ROOT) + ", сначала сделаю её.");
-        requestedItem = BuiltInRegistries.ITEM.getKey(ore.pickaxeIn(owner.level())).toString(); requestedCount = 1; craftAttempts = 0;
-        phase = Phase.CRAFT;
-    }
-
-    /**
-     * Iron for a tool, recounted from the bag at every step: enough ingots — the tool; raw iron — the furnace;
-     * nothing — iron ore first. Each stage reports back here instead of ending the work.
-     */
-    private void ironStep(ServerLevel level) {
-        // Each stage of the chain gets its own five minutes; one ten-minute budget for ore, furnace, bench and goal was too tight.
-        deadline = Math.max(deadline, level.getGameTime() + 20 * 300);
-        int ingots = items.countCarried(Items.IRON_INGOT), missing = ironNeeded - ingots;
-        String tool = "«" + itemName(ironTool) + "»";
-        if (missing <= 0) {
-            requestedItem = ironTool; requestedCount = ironToolCount; craftAttempts = 0;
-            owner.workStatus("Железа хватает, делаю " + tool + ".");
-            phase = Phase.CRAFT; resetTarget();
-            return;
-        }
-        int raw = items.countCarried(Items.RAW_IRON);
-        if (raw > 0) {
-            if (++ironSmelts > 3) { finish(false, "Для " + tool + " не хватает железных слитков: печь не отдала нужное. Вещи у меня."); return; }
-            smelt = CompanionSmelting.resolve(level, "minecraft:raw_iron", items.carriedItems());
-            if (smelt == null) { finish(false, "В этом мире нет рецепта плавки сырого железа."); return; }
-            smeltCount = Math.min(raw, missing); requestedCount = smeltCount; smeltAll = false;
-            lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = false; furnacesPlaced = 0; craftAttempts = 0;
-            ironPrep = true; phase = Phase.FURNACE; resetTarget();
-            owner.workStatus("Для " + tool + " переплавлю " + smeltCount + " сырого железа.");
-            return;
-        }
-        if (++ironMines > 2) { finish(false, "Для " + tool + " нужно ещё " + missing + " железных слитков, а железной руды больше не набрал. Вещи у меня."); return; }
-        if (job == Job.ORE && goalOre == null) {
-            goalOre = ore; goalOreWanted = oreWanted; goalOreMined = oreMined; goalOreDropsBefore = oreDropsBefore; goalOreExit = oreExit;
-        }
-        ore = CompanionOre.Kind.IRON; oreWanted = missing; oreMined = oreFound = oreLiquid = oreUnreachable = orePickaxeAttempts = 0;
-        oreDone = oreChoosing = oreLootRetried = false; oreSearch = null; oreCandidates = null; oreRejected.clear(); oreOffFoot.clear(); oreNoTunnel.clear(); oreTunnel.clear(); oreExit = null;
-        oreDropsBefore = items.countCarried(Items.RAW_IRON);
-        ironPrep = true; phase = Phase.ORE_PICK; resetTarget();
-        owner.workStatus("Для " + tool + " нужно " + ironNeeded + " железных слитков. Иду за железной рудой.");
-    }
-
-    /** The preparation stage is over: the ore the order is about comes back, and the iron is recounted. */
-    private void ironStageDone() {
-        ironPrep = false;
-        if (goalOre != null) {
-            ore = goalOre; oreWanted = goalOreWanted; oreMined = goalOreMined; oreDropsBefore = goalOreDropsBefore;
-            oreFound = oreLiquid = oreUnreachable = orePickaxeAttempts = 0; oreDone = oreChoosing = oreLootRetried = false;
-            oreSearch = null; oreCandidates = null; oreRejected.clear(); oreOffFoot.clear(); oreNoTunnel.clear(); oreTunnel.clear(); oreExit = goalOreExit; goalOre = null;
-        }
-        phase = Phase.IRON; resetTarget();
-    }
-
-    private void mineOre(ServerLevel level) {
-        if (oreDone || oreMined >= oreWanted) {
-            oreDone = true;
-            // A drop that fell into a pocket while the rest of the vein still closed it is reachable now: one more round.
-            if (!oreLootRetried) { oreLootRetried = true; owner.retryHarvestPickup(); return; }
-            climbOutOfOre(level); return;
-        }
-        if (!owner.onGround() && !owner.isInWater()) return;
-        if (oreCandidates == null) {
-            if (oreSearch == null) oreSearch = new CompanionOre.Search(level, owner.blockPosition(), owner.getSearchRadius(), ore);
-            if (!oreSearch.scan(level)) { owner.workStatus("Ищу «" + ore.oreName + "» в пределах " + oreSearch.radius() + " блоков."); return; }
-            oreCandidates = new ArrayList<>(oreSearch.results(level)); oreFound = oreCandidates.size();
-        }
-        if (!oreTunnel.isEmpty()) { digOreTunnel(level); return; }
-        if (target == null) {
-            target = nextOre(level);
-            if (target == null) {
-                if (oreChoosing) { owner.workStatus("Ищу подход к «" + ore.oreName + "»."); return; }
-                oreDone = true; climbOutOfOre(level); return;
-            }
-            if (!oreTunnel.isEmpty()) return;
-        }
-        BlockState state = level.getBlockState(target);
-        if (!ore.is(state)) { resetTarget(); return; }
-        if (CompanionOre.liquidNear(level, target)) { oreLiquid++; rejectOre(); return; }
-        if (!safeOreSwing(level, target)) return;
-        if (items.prepareMiningTool(state)) return;
-        if (!owner.getMainHandItem().isCorrectToolForDrops(state)) {
-            owner.selectToolForBlock(state);
-            if (!owner.getMainHandItem().isCorrectToolForDrops(state)) { resetTarget(); phase = Phase.ORE_PICK; return; }
-        }
-        // Ore at the feet in a wall leaves a one-high pocket: its drop and the rest of the vein would be out of sight and reach.
-        // Like a player's 1x2, the block above goes first.
-        BlockPos head = target.above();
-        BlockState above = level.getBlockState(head);
-        if (target.getY() <= owner.getBlockY() && head.getY() >= owner.getBlockY() && level.getBlockState(target.below()).isFaceSturdy(level, target.below(), Direction.UP)
-                && !above.isAir() && !ore.is(above) && CompanionOre.tunnelable(above) && CompanionOre.safeTunnelCell(level, head)) {
-            oreTunnel.addFirst(head.immutable()); return;
-        }
-        int reach = items.reachBlock(level, target, true);
-        if (reach < 0) { oreUnreachable++; rejectOre(); return; }
-        if (reach == 0) return;
-        owner.workStatus("Добываю «" + ore.oreName + "»: " + oreMined + " из " + oreWanted + ".");
-        if (!breaking.tick(level, target)) return;
-        if (harvestOreCell(level, target)) resetTarget();
-    }
-
-    /** The next ore that can really be reached: in sight from a standing place, or behind a short safe tunnel. A few per tick. */
-    /**
-     * Like stone: ore he can hit from here first, then the ore nearest on foot (one route search for the nearest ones in
-     * sight), and a short tunnel only when walking plus digging it is less than the walk to the nearest ore in sight.
-     */
-    private BlockPos nextOre(ServerLevel level) {
-        oreChoosing = false;
-        for (var iterator = oreCandidates.iterator(); iterator.hasNext(); ) {
-            BlockPos candidate = iterator.next();
-            if (oreRejected.contains(candidate) || !owner.leashAllows(candidate)
-                    || owner.autonomy().running() && candidate.getY() < owner.autonomy().center().getY() - CompanionOre.MAX_DROP
-                    || !level.hasChunkAt(candidate) || !ore.is(level.getBlockState(candidate))) { iterator.remove(); continue; }
-            if (CompanionOre.liquidNear(level, candidate)) { oreLiquid++; oreRejected.add(candidate); iterator.remove(); continue; }
-            // Neither on foot nor by a tunnel from here.
-            if (oreOffFoot.contains(candidate) && oreNoTunnel.contains(candidate)) { oreUnreachable++; oreRejected.add(candidate); iterator.remove(); }
-        }
-        List<BlockPos> sorted = oreCandidates.stream().sorted(Comparator.comparingDouble(pos -> owner.distanceToSqr(pos.getCenter()))).toList();
-        for (BlockPos candidate : sorted) {
-            if (owner.distanceToSqr(candidate.getCenter()) > 3.8 * 3.8) break;
-            if (CompanionMiningNavigation.visible(owner, owner.getEyePosition(), candidate)
-                    && CompanionMiningNavigation.dropCollectable(level, candidate, owner.blockPosition())) return chosenOre(candidate, null);
-        }
-        List<BlockPos> group = sorted.stream().filter(pos -> !oreOffFoot.contains(pos)).limit(STONE_GROUP).toList();
-        CompanionMiningNavigation.Choice walk = group.isEmpty() ? null : CompanionMiningNavigation.nearestOnFoot(owner, group, 3.5, false, true, true);
-        if (walk != null && !safeOreApproach(walk.path())) { oreOffFoot.add(walk.block()); walk = null; }
-        int budget = 2;
-        java.util.Map<BlockPos, Double> keys = new java.util.HashMap<>();
-        for (BlockPos candidate : sorted) keys.put(candidate, oreDigKey(candidate));
-        for (BlockPos candidate : sorted.stream().sorted(Comparator.comparingDouble(keys::get)).toList()) {
-            if (walk != null && keys.get(candidate) >= walk.length()) break;
-            if (oreNoTunnel.contains(candidate)) continue;
-            if (budget-- <= 0) { oreChoosing = true; return null; }
-            if (!oreOffFoot.contains(candidate) && (walk == null || !group.contains(candidate))) {
-                // Its own walk: beyond the compared group, or the group search spent its steps on an ore it cannot reach.
-                Path route = CompanionMiningNavigation.pathTo(owner, candidate, 3.5, false, true, true);
-                boolean safe = safeOreApproach(route);
-                if (safe && (walk == null || CompanionMiningNavigation.length(owner, route) < walk.length())) return chosenOre(candidate, route);
-                if (!safe) oreOffFoot.add(candidate);
-            }
-            int tries = 0;
-            for (BlockPos stand : CompanionOre.stands(owner, candidate)) {
-                if (tries >= 6) break;
-                List<BlockPos> cells = CompanionOre.tunnel(level, stand, candidate);
-                if (cells == null || cells.stream().anyMatch(cell -> blockedOreCell(level, cell))) continue;
-                tries++;
-                if (owner.autonomy().running() && oreExit != null && !CompanionMiningNavigation.canWalkBackUp(owner, stand, oreExit.getY())) continue;
-                Path way = owner.blockPosition().equals(stand) ? null : owner.getNavigation().createPath(stand, 0);
-                if (way != null && !way.canReach()) continue;
-                // Each cell is a few swings; a walk to the ore in sight that is shorter wins.
-                if (walk != null && (way == null ? 0 : CompanionMiningNavigation.length(owner, way)) + cells.size() * 2 >= walk.length()) continue;
-                oreTunnel.addAll(cells);
-                if (oreExit == null && stand.getY() > candidate.getY()) oreExit = stand;
-                dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "ore_tunnel_planned", "entity", owner.getUUID(),
-                        "ore", candidate, "stand", stand, "cells", cells.size());
-                return chosenOre(candidate, null);
-            }
-            oreNoTunnel.add(candidate);
-            if (oreOffFoot.contains(candidate)) { oreUnreachable++; oreRejected.add(candidate); oreCandidates.remove(candidate); }
-        }
-        return walk == null ? null : chosenOre(walk.block(), walk.path());
-    }
-    private boolean safeOreApproach(Path route) {
-        if (route == null || !route.canReach() || route.getEndNode() == null) return false;
-        return !owner.autonomy().running() || oreExit == null
-                || CompanionMiningNavigation.canWalkBackUp(owner, route.getEndNode().asBlockPos(), oreExit.getY());
-    }
-    /** Straight distance, and a hidden ore costs the digging to it: the order in which tunnels are worth a look. */
-    private double oreDigKey(BlockPos pos) {
-        return Math.sqrt(owner.distanceToSqr(pos.getCenter())) + (exposedOre(pos) ? 0 : 6);
-    }
-    private boolean exposedOre(BlockPos pos) {
-        for (Direction side : Direction.values())
-            if (owner.level().getBlockState(pos.relative(side)).getCollisionShape(owner.level(), pos.relative(side)).isEmpty()) return true;
-        return false;
-    }
-    private BlockPos chosenOre(BlockPos candidate, Path route) {
-        oreCandidates.remove(candidate); oreOffFoot.clear(); oreNoTunnel.clear();
-        resetApproach(); path = route;
-        return candidate;
-    }
-
-    private void digOreTunnel(ServerLevel level) {
-        BlockPos cell = oreTunnel.peekFirst();
-        if (!owner.leashAllows(cell)) { rejectOre(); return; }
-        BlockState state = level.getBlockState(cell);
-        if (state.isAir() || state.canBeReplaced() && state.getFluidState().isEmpty()) { oreTunnel.removeFirst(); resetApproach(); return; }
-        // The world may have changed since planning: never dig into liquid, under sand or into something built.
-        if (!CompanionOre.tunnelable(state) || !CompanionOre.safeTunnelCell(level, cell)) { oreUnreachable++; rejectOre(); return; }
-        if (!safeOreSwing(level, cell)) return;
-        if (items.prepareMiningTool(state)) return;
-        owner.selectToolForBlock(state);
-        // Another ore on the way that this pickaxe would only destroy is not dug through.
-        if (state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && !owner.getMainHandItem().isCorrectToolForDrops(state)) { oreUnreachable++; rejectOre(); return; }
-        int reach = items.reachBlock(level, cell, false);
-        if (reach < 0) { oreUnreachable++; rejectOre(); return; }
-        if (reach == 0) return;
-        owner.workStatus("Прокладываю ход к «" + ore.oreName + "».");
-        if (!breaking.tick(level, cell)) return;
-        if (harvestOreCell(level, cell)) { oreTunnel.removeFirst(); resetApproach(); cooldown = 2; }
-    }
-
-    /** Breaks a block like a player: real drops for the tool in hand, wear, the drops fall into the world to be picked up. */
-    private boolean harvestOreCell(ServerLevel level, BlockPos pos) {
-        // Leave the step used to get back up, as in stone mining. A vein can contain that very step.
-        if (!safeOreSwing(level, pos)) return false;
-        BlockState state = level.getBlockState(pos);
-        ItemStack tool = owner.getMainHandItem();
-        var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), owner, tool);
-        if (!drops.isEmpty() && !items.canStore(drops)) { finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return false; }
-        if (!level.destroyBlock(pos, false, owner, 512)) { blockOreCell(level, pos, "destroy_rejected"); return false; }
-        tool.getItem().mineBlock(tool, level, state, pos, owner);
-        owner.dropHarvest(pos, drops);
-        if (ore.is(state)) {
-            oreMined++;
-            owner.observeEvent("ore", "Добыл блок руды «" + ore.oreName + "», подбираю выпавшее. Работа ещё может продолжаться.");
-            // The rest of the vein first: same kind touching the mined block.
-            for (Direction side : Direction.values()) {
-                BlockPos next = pos.relative(side);
-                if (level.hasChunkAt(next) && ore.is(level.getBlockState(next)) && !oreRejected.contains(next)) { oreCandidates.remove(next); oreCandidates.addFirst(next.immutable()); }
-            }
-        }
-        return true;
-    }
-
-    private void rejectOre() {
-        if (target != null) oreRejected.add(target);
-        oreTunnel.clear(); resetTarget();
-    }
-
-    /** No cracks until a block is safe. A shared stair must not be swung at again for every ore behind it. */
-    private boolean safeOreSwing(ServerLevel level, BlockPos pos) {
-        if (blockedOreCell(level, pos)) { oreUnreachable++; rejectOre(); return false; }
-        if (CompanionLighting.supportsLight(level, pos)) { blockOreCell(level, pos, "path_light"); return false; }
-        if (!owner.autonomy().running() && !owner.autonomy().protectsReturn()) return true;
-        if (CompanionMiningNavigation.supportsLivingEntity(owner, pos)) {
-            breaking.reset();
-            if (level.getGameTime() - lastProgressTick > 160) { blockOreCell(level, pos, "occupied_support"); return false; }
-            if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck())
-                path = CompanionMiningNavigation.pathTo(owner, pos, 3.5, false, true);
-            if (path == null || !safeOreApproach(path)) { blockOreCell(level, pos, "occupied_support"); return false; }
-            owner.movementIntent(pos); CompanionMiningNavigation.walk(owner, path); return false;
-        }
-        if (!CompanionMiningNavigation.preservesAutonomousReturn(owner, pos) || oreExit != null && owner.getY() < oreExit.getY() - .5
-                && !CompanionMiningNavigation.canWalkBackUp(owner, owner.blockPosition(), oreExit.getY(), pos)) {
-            blockOreCell(level, pos, "return_stair"); return false;
-        }
-        return true;
-    }
-    private boolean blockedOreCell(ServerLevel level, BlockPos pos) {
-        BlockState blocked = oreBlockedCells.get(pos);
-        if (blocked == null) return false;
-        if (blocked.equals(level.getBlockState(pos))) return true;
-        oreBlockedCells.remove(pos); return false;
-    }
-    private void blockOreCell(ServerLevel level, BlockPos pos, String reason) {
-        oreBlockedCells.put(pos.immutable(), level.getBlockState(pos));
-        dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "ore_cell_skipped", "entity", owner.getUUID(), "pos", pos, "reason", reason);
-        oreUnreachable++; rejectOre();
-    }
-
-    /** Back up the own stairs before reporting, like after stone. */
-    private void climbOutOfOre(ServerLevel level) {
-        if (oreExit == null || owner.getY() >= oreExit.getY() - .5) { finishOre(); return; }
-        if (!owner.onGround() && !owner.isInWater()) return;
-        if (orderHasStalled(level, 300)) { finishOre(); return; }
-        owner.movementIntent(oreExit);
-        owner.workStatus("Поднимаюсь по своему ходу наверх.");
-        if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
-            if (!owner.autonomy().running()) path = owner.getNavigation().createPath(oreExit, 0);
-            else {
-                // The exact start cell may have been a temporary support; another safe cell at the same height is an exit too.
-                Set<BlockPos> exits = new HashSet<>();
-                for (BlockPos cell : BlockPos.betweenClosed(oreExit.offset(-3,0,-3), oreExit.offset(3,1,3)))
-                    if (CompanionMiningNavigation.standable(owner, cell)) exits.add(cell.immutable());
-                path = exits.isEmpty() ? null : owner.getNavigation().createPath(exits, 0);
-            }
-        }
-        if (path != null && path.canReach()) CompanionMiningNavigation.walk(owner, path);
-    }
-
-    private void finishOre() {
-        int gained = Math.max(0, items.countCarried(ore.drop) - oreDropsBefore);
-        String got = "«" + ore.oreName + "»: в сумке прибавилось " + gained + " «" + itemName(ore.drop) + "».";
-        String below = oreExit != null && owner.getY() < oreExit.getY() - .5
-                ? " Наверх пока не выбрался: стою на " + owner.blockPosition().toShortString() + "." : "";
-        String bag = " В сумке: " + owner.getStoredItemsSummary() + ".";
-        if (ironPrep && gained > 0) {
-            owner.noteDeed("Для «" + itemName(ironTool) + "» добыл " + CompanionWorkItems.blocks(oreMined) + " " + got, true);
-            ironStageDone(); return;
-        }
-        if (oreMined >= oreWanted) { finish(true, "Добыл " + CompanionWorkItems.blocks(oreMined) + " " + got + below + bag); return; }
-        int radius = oreSearch == null ? owner.getSearchRadius() : oreSearch.radius(), depth = oreSearch == null ? CompanionOre.MAX_DROP : oreSearch.depth();
-        String why = oreFound == 0 ? " Руды «" + ore.oreName + "» не нашёл в пределах " + radius + " блоков и до " + depth + " блоков вниз."
-                : " Больше доступной руды «" + ore.oreName + "» рядом нет.";
-        if (oreLiquid > 0) why += " У " + CompanionWorkItems.blocks(oreLiquid) + " рядом вода или лава — их не трогал.";
-        if (oreUnreachable > 0) why += " К " + oreUnreachable + " не нашёл безопасного хода: не глубже " + CompanionOre.MAX_DROP
-                + " блоков, без гравия, песка и жидкостей рядом.";
-        if (ironPrep) {
-            String goal = goalOre != null ? "Для «" + goalOre.oreName + "» нужна железная кирка, а на неё нужно " : "Для «" + itemName(ironTool) + "» нужно ";
-            finish(CompanionActionResult.blocked(goal + ironNeeded + " железных слитков, и железа я не набрал." + why + below + bag)); return;
-        }
-        finish(false, "Добыл " + oreMined + " из " + CompanionWorkItems.blocks(oreWanted) + " " + got + why + below + bag);
     }
 
     public static boolean isStone(BlockState state) { return CompanionStoneMining.isStone(state); }
@@ -1311,8 +984,8 @@ public final class CompanionWork {
         return open.isEmpty() ? "" : " Сырьё и топливо остались в " + (open.size() == 1 ? "печи на " + open.getFirst() : "печах на " + String.join("; ", open))
                 + " — переплавленное можно забрать оттуда.";
     }
-    private static String itemName(net.minecraft.world.item.Item item) { return new ItemStack(item).getHoverName().getString(); }
-    private static String itemName(String id) {
+    static String itemName(net.minecraft.world.item.Item item) { return new ItemStack(item).getHoverName().getString(); }
+    static String itemName(String id) {
         var key = ResourceLocation.tryParse(id);
         return key == null || !BuiltInRegistries.ITEM.containsKey(key) ? id : itemName(BuiltInRegistries.ITEM.get(key));
     }
@@ -1629,7 +1302,7 @@ public final class CompanionWork {
         if (ironPrep && taken > 0) {
             // Iron for a tool: the ingots are counted from the bag in the next step; furnaces stay where they are.
             owner.noteDeed("Для «" + itemName(ironTool) + "» переплавил " + taken / per + " «" + inName + "» и забрал " + taken + " «" + outName + "»." + where + stuck, true);
-            ironStageDone(); return;
+            oreMining.ironStageDone(); return;
         }
         if (stuck.isEmpty() && used.stream().noneMatch(lot -> lot.gaveUp) && smeltCount == requestedCount && taken >= smeltCount * per) {
             if (mixedMeat) {
