@@ -15,6 +15,11 @@ public final class CompanionConversation {
     private int observation;
     private final Deque<String> recent = new ArrayDeque<>();
 
+    /** Prefix the server puts on a HIGH event so the client can tell it from ordinary observations; it never reaches the model. */
+    public static final String URGENT_MARK = "[!]";
+
+    public static boolean isUrgent(String text) { return text != null && text.startsWith(URGENT_MARK); }
+    public static String stripUrgent(String text) { return isUrgent(text) ? text.substring(URGENT_MARK.length()).stripLeading() : text; }
     public static int gap(int jitter) { return MIN_GAP + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1); }
     public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; observation = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
     // Normal conversation needs a short pause, not another full initiative interval after every answer.
