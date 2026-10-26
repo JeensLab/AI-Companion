@@ -26,6 +26,10 @@ public final class CompanionBonds extends SavedData {
         CompanionBond bond = new CompanionBond();
         CompanionHappenings happenings = new CompanionHappenings();
         long lastSeen = -1;
+        /** Real-time millis when the slot was made; a fresh slot is the newest until its owner is seen, so it is not the first to go. */
+        long created = System.currentTimeMillis();
+
+        long recency() { return Math.max(lastSeen, created); }
     }
 
     public static final int MAX_OWNERS = 64;
@@ -56,7 +60,7 @@ public final class CompanionBonds extends SavedData {
             UUID oldest = null;
             for (var entry : slots.entrySet()) {
                 if (entry.getKey().equals(keep)) continue;
-                if (oldest == null || entry.getValue().lastSeen < slots.get(oldest).lastSeen) oldest = entry.getKey();
+                if (oldest == null || entry.getValue().recency() < slots.get(oldest).recency()) oldest = entry.getKey();
             }
             slots.remove(oldest);
         }
@@ -193,6 +197,7 @@ public final class CompanionBonds extends SavedData {
             slot.bond = CompanionBond.load(owner.getCompound("Bond"));
             slot.happenings = CompanionHappenings.load(owner.getCompound("Happenings"));
             slot.lastSeen = owner.contains("LastSeen") ? owner.getLong("LastSeen") : -1;
+            slot.created = 0;
             bonds.slots.put(owner.getUUID("Owner"), slot);
         }
         bonds.trim(null);

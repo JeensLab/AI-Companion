@@ -46,7 +46,7 @@ public final class CompanionMemory {
     // not known to be one word, so everything up to the end of the clause goes. The second needs a separator, because
     // «ключ»/«key» alone are ordinary words.
     private static final List<Pattern> SENSITIVE = List.of(
-            Pattern.compile("(?imu)(?<![\\p{L}\\d])(?:парол(?:ь|я|ю|ем|е)|токен(?:а|у|ом|е)?|password|passwd|pwd|token|secret|api[ _-]?(?:key|ключ)|ключ\\s+api)(?![\\p{L}\\d])"
+            Pattern.compile("(?imu)(?<![\\p{L}\\d])(?:парол\\p{L}{0,3}|токен\\p{L}{0,3}|passwords?|passwd|pwd|tokens?|secrets?|passphrases?|passcodes?|pin|api[ _-]?(?:keys?|ключ)|ключ\\s+api)(?![\\p{L}\\d])"
                     + "[\\s:=–—-]*(?:(?:это|есть|is|was|are)\\s+)?[^\\s.!?;].*?(?=[.!?;]+(?:\\s|$)|$)"),
             Pattern.compile("(?iu)(?<![\\p{L}\\d])(?:ключ\\p{L}*|key)\\s*(?:[:=]|[–—]|-{1,2})\\s*\\S+"),
             Pattern.compile("\\b(?:sk-|ghp_|gho_|ghs_|github_pat_|xox[abp]-|AKIA|ASIA)[A-Za-z0-9_-]{8,}"),
@@ -76,12 +76,21 @@ public final class CompanionMemory {
         return false;
     }
 
-    /** The text with every sensitive fragment replaced by {@link #MASK}. */
+    /**
+     * The text with every sensitive fragment replaced by {@link #MASK}. The folded text is only for matching: when nothing matched,
+     * the original comes back as it was (emoji joiners and direction marks included).
+     */
     public static String mask(String text) {
+        if (text == null) return "";
         String masked = unobscured(text);
         if (masked.length() > MASK_INPUT) masked = masked.substring(0, MASK_INPUT);
-        for (Pattern pattern : SENSITIVE) masked = pattern.matcher(masked).replaceAll(MASK);
-        return masked;
+        boolean found = false;
+        for (Pattern pattern : SENSITIVE) {
+            if (!pattern.matcher(masked).find()) continue;
+            found = true;
+            masked = pattern.matcher(masked).replaceAll(MASK);
+        }
+        return found ? masked : text.length() > MASK_INPUT ? text.substring(0, MASK_INPUT) : text;
     }
 
     /** Compatibility forms (full-width letters) fold to plain ones and invisible format characters go, so neither hides a secret. */

@@ -74,11 +74,16 @@ public final class CompanionBondTests {
             h.assertTrue(m.remember(CompanionMemory.PLAYER_FACT, text) == CompanionMemory.Outcome.REJECTED && m.entries().isEmpty(), "Stored: " + text);
             h.assertTrue(CompanionMemory.isSensitive(text), "Not flagged: " + text);
         }
+        for (String text : List.of("Пароли: abc, def", "паролей 12345", "Токены: abc123", "my passwords are abc", "tokens: abc123", "passphrase: fox jumps",
+                "passcode 4821", "pin: 4821", "api keys: abc")) {
+            var forms = new CompanionMemory();
+            h.assertTrue(forms.remember(CompanionMemory.PLAYER_FACT, text) == CompanionMemory.Outcome.REJECTED && CompanionMemory.isSensitive(text), "Word form not flagged: " + text);
+        }
         var m = new CompanionMemory();
         h.assertTrue(m.remember("secret_kind", "Любит арбузы") == CompanionMemory.Outcome.REJECTED, "Unknown kind accepted");
         h.assertTrue(m.remember(CompanionMemory.PLAYER_FACT, "   ") == CompanionMemory.Outcome.REJECTED, "Blank accepted");
         h.assertTrue(!m.setCallMe("sk-abcdef1234567890abcdef") && !m.addLike("minecraft:stone") && m.callMe().isEmpty() && m.likes().isEmpty(), "Secret got in as a name or preference");
-        for (String text : List.of("Любит строить дома у воды", "Просил разбудить в 10:30", "Зовёт меня Шефом, а дом назвал Берлогой", "Ходим втроём: он, я и пёс", "Ключевой момент был в постройке моста"))
+        for (String text : List.of("Любит строить дома у воды", "Просил разбудить в 10:30", "Зовёт меня Шефом, а дом назвал Берлогой", "Ходим втроём: он, я и пёс", "Ключевой момент был в постройке моста", "Любит pinned заметки и spin-off сериалы"))
             h.assertTrue(m.remember(CompanionMemory.PLAYER_FACT, text) == CompanionMemory.Outcome.ADDED, "Harmless text refused: " + text);
         h.succeed();
     }
@@ -99,6 +104,11 @@ public final class CompanionBondTests {
         h.assertTrue(m.recentTalk().size() == CompanionMemory.TALK_KEEP && m.recentTalk().getLast().text().equals("Реплика номер 9"), "Talk not trimmed to the last six");
         m.recordTalk(true, "слово ".repeat(60));
         h.assertTrue(m.recentTalk().getLast().text().length() <= CompanionMemory.TALK_TEXT, "Long line not cut to 180");
+
+        var emoji = new CompanionMemory();
+        String family = "Мы \uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67 дома \u200Fок";
+        emoji.recordTalk(true, family);
+        h.assertTrue(emoji.recentTalk().getFirst().text().equals(family) && CompanionMemory.mask(family).equals(family), "Ordinary talk was mangled by masking: " + emoji.recentTalk());
 
         var phrases = new CompanionMemory();
         phrases.recordTalk(true, "мой пароль hunter2 вот так");
@@ -213,6 +223,9 @@ public final class CompanionBondTests {
         var stamp = new CompanionBond().save();
         stamp.putLong("LastHit", Long.MIN_VALUE);
         h.assertTrue(CompanionBond.load(stamp).hitByPlayer(1, DAY + 1000, false) == -6, "A damaged LastHit stamp stopped hits from counting");
+        stamp.putLong("LastHit", Long.MAX_VALUE);
+        var future = CompanionBond.load(stamp);
+        h.assertTrue(future.hitByPlayer(1, DAY + 1000, false) == -6 && future.hitByPlayer(1, DAY + 2000, false) == -6, "A huge LastHit stamp stopped hits from counting");
         h.succeed();
     }
 
@@ -309,7 +322,12 @@ public final class CompanionBondTests {
         }
         var crowdTag = new CompoundTag();
         crowdTag.put("Owners", crowd);
-        h.assertTrue(CompanionBonds.load(crowdTag, registries(h)).ownerCount() == CompanionBonds.MAX_OWNERS, "Owners not capped on load");
+        var crowded = CompanionBonds.load(crowdTag, registries(h));
+        h.assertTrue(crowded.ownerCount() == CompanionBonds.MAX_OWNERS, "Owners not capped on load");
+        var newcomer = UUID.randomUUID();
+        crowded.remember(newcomer, CompanionMemory.JOKE, "Шутка про лаву");
+        crowded.remember(UUID.randomUUID(), CompanionMemory.JOKE, "Шутка про воду");
+        h.assertTrue(crowded.ownerCount() == CompanionBonds.MAX_OWNERS && crowded.knows(newcomer), "A just-created owner was evicted by the next new owner");
         h.succeed();
     }
 

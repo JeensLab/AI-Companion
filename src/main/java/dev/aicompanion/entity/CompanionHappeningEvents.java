@@ -178,7 +178,7 @@ public final class CompanionHappeningEvents {
     public static void checkAbandoned(ServerPlayer player, long now) {
         UUID id = player.getUUID();
         CompanionEntity companion = loadedCompanion(player);
-        boolean idleFar = companion != null && companion.isAlive() && !companion.isFollowing() && !companion.hasActiveWorkOrder()
+        boolean idleFar = companion != null && companion.isAlive() && !companion.isFollowing() && !companion.hasActiveWorkOrder() && !companion.autonomy().running()
                 && (companion.level() != player.level() || companion.distanceToSqr(player) > (double) FAR_BLOCKS * FAR_BLOCKS);
         if (!idleFar) { FAR_SINCE.remove(id); return; }
         long since = FAR_SINCE.computeIfAbsent(id, key -> now);

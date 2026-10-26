@@ -325,9 +325,13 @@ public final class CompanionMemoryTests {
             for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Реплика " + i);
             h.assertTrue(futures.size() == 1, "In-flight compression was not started: " + futures.size());
 
+            long preForget = OpenRouterClient.generation();
             CompanionMemoryFlow.forget();
             h.assertTrue(OpenRouterClient.historySnapshot().stream().noneMatch(m -> !"system".equals(m.get("role").getAsString())),
                     "History kept the forgotten talk: " + OpenRouterClient.historySnapshot());
+            h.assertTrue(!OpenRouterClient.recordReply(preForget, "Ответ на забытый вопрос")
+                    && OpenRouterClient.historySnapshot().stream().allMatch(m -> "system".equals(m.get("role").getAsString())),
+                    "A reply to a request begun before forgetting was stored again: " + OpenRouterClient.historySnapshot());
             futures.getFirst().complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Боится пауков\"}],\"call_me\":\"Бро\"}");
 
             h.runAfterDelay(5, () -> {

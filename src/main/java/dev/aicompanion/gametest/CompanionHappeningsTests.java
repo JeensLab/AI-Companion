@@ -144,7 +144,7 @@ public final class CompanionHappeningsTests {
         });
     }
 
-    @GameTest(template="tall_tree", batch="happen_hit", timeoutTicks=60)
+    @GameTest(template="tall_tree", batch="happen_hit", timeoutTicks=400)
     public static void hitDuringMonsterFightKeepsBond(GameTestHelper h) {
         CompanionHappeningEvents.clear();
         var rig = rig(h); var p = rig.player(); var c = rig.companion();
@@ -167,7 +167,29 @@ public final class CompanionHappeningsTests {
         boolean left = bonds(h).bond(p.getUUID()).reasons().contains(CompanionBond.Reason.ABANDONED) && bonds(h).happenings(p.getUUID()).has("abandoned");
         CompanionHappeningEvents.clear();
         h.assertTrue(!early && left, "Leaving the companion idle far away for over 20 minutes was not counted once: early=" + early + " left=" + left);
-        h.succeed();
+
+        int before = bonds(h).bond(p.getUUID()).score();
+        c.setItem(25, new ItemStack(Items.OAK_LOG, 32));
+        c.setItem(24, new ItemStack(Items.STONE_PICKAXE));
+        h.spawn(EntityType.COW, 18, 1, 16);
+        p.teleportTo(c.getX() - 3, c.getY(), c.getZ() - 3);
+        c.setNoAi(false); c.setFollowing(true);
+        c.autonomy().setEnabled(true);
+        boolean[] checked = {false};
+        h.onEachTick(() -> {
+            if (checked[0] || !c.autonomy().running()) return;
+            checked[0] = true;
+            c.setFollowing(false);
+            h.assertTrue(c.autonomy().running() && !c.isFollowing() && !c.hasActiveWorkOrder(), "Setup: the deed should be running without a work order");
+            p.teleportTo(c.getX() + 100, c.getY(), c.getZ());
+            long later = start + CompanionBond.DAY_TICKS;
+            CompanionHappeningEvents.checkAbandoned(p, later);
+            CompanionHappeningEvents.checkAbandoned(p, later + CompanionBond.ABANDON_AFTER_TICKS + 1);
+            CompanionHappeningEvents.clear();
+            int after = bonds(h).bond(p.getUUID()).score();
+            h.assertTrue(after >= before, "A companion busy with his own deed was counted as left idle: " + before + " -> " + after);
+            h.succeed();
+        });
     }
 
     @GameTest(template="tall_tree", batch="happen_gift", timeoutTicks=60)
@@ -188,6 +210,15 @@ public final class CompanionHappeningsTests {
         menu.quickMoveStack(p, CompanionMenu.PLAYER_START);
         menu.removed(p);
         h.assertTrue(bonds(h).bond(p.getUUID()).score() == put, "Put and take back in one session paid");
+        inventory.setItem(9, new ItemStack(Items.IRON_INGOT, 8));
+        session(p, c, CompanionMenu.PLAYER_START);
+        h.assertTrue(bonds(h).bond(p.getUUID()).score() == put, "Refilling the bag with the same iron paid");
+        var thrown = new CompanionMenu(4, inventory, c);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.IRON_INGOT)) c.setItem(slot, ItemStack.EMPTY);
+        thrown.removed(p);
+        inventory.setItem(9, new ItemStack(Items.IRON_INGOT, 8));
+        session(p, c, CompanionMenu.PLAYER_START);
+        h.assertTrue(bonds(h).bond(p.getUUID()).score() == put, "Iron taken out and thrown away, then given again, paid twice");
         var looting = new CompanionMenu(3, inventory, c);
         c.setItem(26, new ItemStack(Items.DIAMOND, 5));
         looting.removed(p);

@@ -92,7 +92,8 @@ public final class CompanionMenu extends AbstractContainerMenu {
 
     /**
      * What the owner left in or took from the companion's equipment and bag while this menu was open, as one net change per kind.
-     * Only what also left or arrived in the owner's own slots counts: loot the companion picked up meanwhile is not a gift.
+     * What the companion lost is always debited in full, so taking something out and throwing it away is not a free refill; only the
+     * credit is capped by what the owner lost, because loot the companion picked up meanwhile is not a gift.
      */
     private void reportGift() {
         if (beforeCompanion == null) return;
@@ -104,7 +105,7 @@ public final class CompanionMenu extends AbstractContainerMenu {
         for (String kind : kinds) {
             int companionDelta = afterCompanion.getOrDefault(kind, 0) - beforeCompanion.getOrDefault(kind, 0);
             int playerDelta = afterPlayer.getOrDefault(kind, 0) - beforePlayer.getOrDefault(kind, 0);
-            int delta = companionDelta > 0 ? Math.min(companionDelta, Math.max(0, -playerDelta)) : -Math.min(-companionDelta, Math.max(0, playerDelta));
+            int delta = companionDelta > 0 ? Math.min(companionDelta, Math.max(0, -playerDelta)) : companionDelta;
             if (delta == 0) continue;
             changes.add(CompanionBond.change(samples.get(kind), delta));
             if (delta > 0 && added.size() < 3) added.add(delta + " × " + samples.get(kind).getItem().getDescription().getString());
