@@ -105,9 +105,16 @@ public final class OpenRouterClient {
         synchronized (HISTORY) { return HISTORY.size(); }
     }
 
-    /** «Забудь всё»: only the system prompt stays; nothing said so far is sent again or condensed into memory later. */
+    /**
+     * «Забудь всё»: only the system prompt stays; nothing said so far is sent again or condensed into memory later. A new generation
+     * keeps the reply to a request begun before from being stored again, and the saved talk is gone too, so it is not restored.
+     */
     static void forgetTalk() {
-        synchronized (HISTORY) { HISTORY.removeIf(entry -> !"system".equals(entry.get("role").getAsString())); }
+        synchronized (HISTORY) {
+            HISTORY.removeIf(entry -> !"system".equals(entry.get("role").getAsString()));
+            generation++;
+            restoredGeneration = generation;
+        }
     }
 
     /** Adds the answer to a request begun in {@code requestGeneration}; false when the session was reset since. */

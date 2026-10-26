@@ -175,7 +175,7 @@ public final class CompanionBond {
     /** Not during a fight with a monster nearby (the player may be swinging at it), at most once per 30 s and 12 points a day. */
     public int hitByPlayer(long today, long gameTime, boolean fightingMonster) {
         advanceTo(today);
-        if (fightingMonster || hasHit && gameTime - lastHit < HIT_GAP_TICKS || hitToday + HIT_POINTS > HIT_DAILY_CAP) return 0;
+        if (fightingMonster || hasHit && lastHit <= gameTime && gameTime - lastHit < HIT_GAP_TICKS || hitToday + HIT_POINTS > HIT_DAILY_CAP) return 0;
         hasHit = true;
         lastHit = gameTime;
         hitToday += HIT_POINTS;
