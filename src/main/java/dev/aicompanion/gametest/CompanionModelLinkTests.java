@@ -47,6 +47,35 @@ public final class CompanionModelLinkTests {
         h.succeed();
     }
 
+    /** Issue #2: any OpenAI-compatible server instead of OpenRouter, the address completed as OpenAI clients do; a local one needs no key. */
+    @GameTest(template = "empty")
+    public static void anyCompatibleServerTakesTheModelRequests(GameTestHelper h) {
+        var openRouter = OpenRouterClient.endpoint("");
+        var ollama = OpenRouterClient.endpoint(" http://localhost:11434/v1/ ");
+        h.assertTrue(openRouter.toString().equals("https://openrouter.ai/api/v1/chat/completions"), "Empty is not OpenRouter: " + openRouter);
+        h.assertTrue(ollama.toString().equals("http://localhost:11434/v1/chat/completions"), "Base address not completed: " + ollama);
+        h.assertTrue(OpenRouterClient.endpoint("http://127.0.0.1:1234/v1/chat/completions").toString()
+                .equals("http://127.0.0.1:1234/v1/chat/completions"), "A full address was changed");
+        h.assertTrue(OpenRouterClient.keyRequired(openRouter) && !OpenRouterClient.keyRequired(ollama), "Key required for the wrong server");
+        h.assertTrue(OpenRouterClient.service(openRouter).equals("OpenRouter") && OpenRouterClient.service(ollama).equals("localhost:11434"),
+                "Errors name the wrong server");
+        h.assertTrue(OpenRouterClient.keyRequired(OpenRouterClient.endpoint("https://OpenRouter.ai/api/v1"))
+                && OpenRouterClient.endpoint("HTTP://localhost:11434/v1").getHost().equals("localhost"), "The address case matters");
+        // The key goes to OpenRouter, any https server and this computer; never over plain http across a network.
+        h.assertTrue(OpenRouterClient.sendsKey(openRouter) && OpenRouterClient.sendsKey(ollama)
+                && OpenRouterClient.sendsKey(OpenRouterClient.endpoint("https://api.groq.com/openai/v1"))
+                && !OpenRouterClient.sendsKey(OpenRouterClient.endpoint("http://192.168.1.20:11434/v1")), "The key goes to the wrong servers");
+        h.assertTrue(OpenRouterClient.service(OpenRouterClient.endpoint("http://user:secret@localhost:11434/v1")).equals("localhost:11434"),
+                "Credentials from the address reach errors and logs");
+        try {
+            OpenRouterClient.endpoint("localhost:11434");
+            h.fail("An address without http:// was taken");
+        } catch (IllegalStateException expected) {
+            h.assertTrue(expected.getMessage().startsWith("Адрес сервера модели"), "Unclear message: " + expected.getMessage());
+        }
+        h.succeed();
+    }
+
     private static JsonObject message(String role, String content) {
         JsonObject message = new JsonObject();
         message.addProperty("role", role); message.addProperty("content", content);

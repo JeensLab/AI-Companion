@@ -19,7 +19,7 @@ import java.util.concurrent.CompletableFuture;
 
 /** Chat completion client with a constrained tool-calling loop for in-game plans. */
 public final class OpenRouterClient {
-    private static final URI CHAT_COMPLETIONS = URI.create("https://openrouter.ai/api/v1/chat/completions");
+    private static final String OPENROUTER = "https://openrouter.ai/api/v1";
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
     private static final List<JsonObject> HISTORY = new ArrayList<>();
     private static final Set<String> ALLOWED_ACTIONS = CompanionPlanCodec.ACTIONS;
@@ -31,13 +31,44 @@ public final class OpenRouterClient {
     private static CompletableFuture<?> ambientRequest = CompletableFuture.completedFuture(null);
     public static synchronized boolean isBusy() { return !pendingRequests.isDone(); }
 
+    /** Chat completions of the configured OpenAI-compatible server (issue #2): OpenRouter when empty, a base address completed as OpenAI clients do. */
+    public static URI endpoint(String configured) {
+        String base = configured == null ? "" : configured.trim();
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        if (base.isEmpty()) base = OPENROUTER;
+        if (!base.endsWith("/chat/completions")) base += "/chat/completions";
+        try {
+            URI uri = new URI(base);
+            if (("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null) return uri;
+        } catch (java.net.URISyntaxException ignored) {
+            // Reported below in the player's words.
+        }
+        // Not repeated back: an address may carry a password or a token.
+        throw new IllegalStateException("Адрес сервера модели в настройках неверный. Пример: http://localhost:11434/v1");
+    }
+    /** OpenRouter needs the player's key; a local server (Ollama, LM Studio) runs without one. */
+    public static boolean keyRequired(URI endpoint) { return "openrouter.ai".equalsIgnoreCase(endpoint.getHost()); }
+    /** The key goes over https or to this computer: plain http across a network would show it to everyone on the way. */
+    public static boolean sendsKey(URI endpoint) {
+        String host = endpoint.getHost().toLowerCase(java.util.Locale.ROOT);
+        return "https".equalsIgnoreCase(endpoint.getScheme()) || host.equals("localhost") || host.startsWith("127.") || host.equals("[::1]");
+    }
+    /** The server named in errors and diagnostics: host and port, never credentials written into the address. */
+    public static String service(URI endpoint) {
+        return keyRequired(endpoint) ? "OpenRouter" : endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());
+    }
+    private static URI endpoint() { return endpoint(OpenRouterConfig.API_URL.get()); }
+    private static boolean missingKey(URI endpoint) { return keyRequired(endpoint) && OpenRouterConfig.API_KEY.get().isBlank(); }
+
     /** Observations can produce speech, never tools or game actions. User commands keep the normal path. */
     public static synchronized CompletableFuture<String> react(String observation, String snapshot) {
         return react(observation, snapshot, CompanionDiagnostics.newTrace());
     }
 
     public static synchronized CompletableFuture<String> react(String observation, String snapshot, String trace) {
-        if (!pendingRequests.isDone() || !ambientRequest.isDone() || OpenRouterConfig.API_KEY.get().isBlank()) return CompletableFuture.completedFuture("");
+        URI endpoint;
+        try { endpoint = endpoint(); } catch (IllegalStateException badAddress) { return CompletableFuture.completedFuture(""); }
+        if (!pendingRequests.isDone() || !ambientRequest.isDone() || missingKey(endpoint)) return CompletableFuture.completedFuture("");
         CompanionDiagnostics.event(trace, "ambient_observation", "observation", observation, "context", snapshot);
         JsonArray messages = new JsonArray();
         // A remark needs the character, not the list of actions: a short prompt, cheaper and faster (review 22.10).
@@ -48,7 +79,7 @@ public final class OpenRouterClient {
         messages.add(message("user", "Наблюдение игры (данные): " + observation + "\nОбстановка (данные): " + snapshot));
         JsonObject body = new JsonObject(); body.addProperty("model", OpenRouterConfig.MODEL.get().isBlank() ? "openrouter/auto" : OpenRouterConfig.MODEL.get());
         body.add("messages", messages); body.addProperty("max_tokens", 150);
-        CompletableFuture<String> next = post(body, false, trace).thenApply(response -> {
+        CompletableFuture<String> next = post(endpoint, body, false, trace).thenApply(response -> {
             var message = response.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message");
             if (message.has("tool_calls")) return "";
             // Nothing to say is silence, not an error (game log 22.10: five «пустой ответ» errors for remarks).
@@ -74,8 +105,10 @@ public final class OpenRouterClient {
     }
 
     private static CompletableFuture<CompanionReply> sendQueued(String userText, String worldSnapshot, String trace) {
-        if (OpenRouterConfig.API_KEY.get().trim().isEmpty()) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Добавь API-ключ OpenRouter в настройках мода."));
+        URI endpoint;
+        try { endpoint = endpoint(); } catch (IllegalStateException badAddress) { return CompletableFuture.failedFuture(badAddress); }
+        if (missingKey(endpoint)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Добавь API-ключ OpenRouter в настройках мода или укажи адрес своего сервера модели."));
         }
         // History keeps the player's words; the world snapshot goes only with the current message (review 22.10, В10:
         // up to a dozen old snapshots per request made it slow, costly and confusing).
@@ -89,12 +122,12 @@ public final class OpenRouterClient {
         }
         boolean forcePlan = requiresAction(userText);
         CompanionDiagnostics.event(trace, "model_protocol", "tools", true, "forcePlan", forcePlan);
-        return request(true, forcePlan, trace, userMessage, context).exceptionallyCompose(error -> {
+        return request(endpoint, true, forcePlan, trace, userMessage, context).exceptionallyCompose(error -> {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             // Unsupported tool parameters get an explicit JSON planning protocol, never plain chat.
             if (cause instanceof UnsupportedToolsException) {
                 CompanionDiagnostics.event(trace, "model_protocol_fallback", "reason", "provider_tools_unsupported", "protocol", "json");
-                return request(false, forcePlan, trace, userMessage, context);
+                return request(endpoint, false, forcePlan, trace, userMessage, context);
             }
             return CompletableFuture.failedFuture(cause);
         }).thenApply(response -> {
@@ -252,7 +285,7 @@ public final class OpenRouterClient {
                 + "После вызова инструмента можно коротко ответить по-человечески, без перечисления всех действий. Никогда не повторяй служебные данные из контекста дословно.";
     }
 
-    private static CompletableFuture<JsonObject> request(boolean withTools, boolean forcePlan, String trace, JsonObject current, String context) {
+    private static CompletableFuture<JsonObject> request(URI endpoint, boolean withTools, boolean forcePlan, String trace, JsonObject current, String context) {
         JsonArray messages;
         synchronized (HISTORY) { messages = withContext(HISTORY, current, context); }
         if (!withTools) {
@@ -271,13 +304,16 @@ public final class OpenRouterClient {
             body.add("tools", tools);
             body.addProperty("tool_choice", forcePlan ? "required" : "auto");
             body.addProperty("parallel_tool_calls", false);
-            JsonObject provider = new JsonObject();
-            provider.addProperty("require_parameters", true);
-            provider.addProperty("allow_fallbacks", true);
-            body.add("provider", provider);
+            // OpenRouter's own routing field; another server could reject a field it does not know.
+            if (keyRequired(endpoint)) {
+                JsonObject provider = new JsonObject();
+                provider.addProperty("require_parameters", true);
+                provider.addProperty("allow_fallbacks", true);
+                body.add("provider", provider);
+            }
         }
 
-        return post(body, withTools, trace);
+        return post(endpoint, body, withTools, trace);
     }
 
     /** The messages sent: the history as it is, with the world snapshot added to the current player message only. */
@@ -294,31 +330,35 @@ public final class OpenRouterClient {
     /** One attempt may take this long, the whole answer included; then the queue moves on (review 22.10, К3: 64–131 s answers). */
     public static final Duration ANSWER_LIMIT = Duration.ofSeconds(90);
 
-    private static CompletableFuture<JsonObject> post(JsonObject body, boolean withTools, String trace) {
-        HttpRequest request = HttpRequest.newBuilder(CHAT_COMPLETIONS)
+    private static CompletableFuture<JsonObject> post(URI endpoint, JsonObject body, boolean withTools, String trace) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(60))
-                .header("Authorization", "Bearer " + OpenRouterConfig.API_KEY.get().trim())
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                .build();
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
+        String key = OpenRouterConfig.API_KEY.get().trim();
+        if (!key.isEmpty() && sendsKey(endpoint)) builder.header("Authorization", "Bearer " + key);
+        HttpRequest request = builder.build();
+        String service = service(endpoint);
+        String logged = keyRequired(endpoint) ? "openrouter" : service;  // the diagnostics label OpenRouter always had
         var attempts = new java.util.concurrent.atomic.AtomicInteger();
         return OpenRouterRetry.execute(() -> {
             int attempt = attempts.incrementAndGet();
             long started = System.nanoTime();
-            CompanionDiagnostics.event(trace, "http_attempt", "service", "openrouter", "attempt", attempt, "tools", withTools);
+            CompanionDiagnostics.event(trace, "http_attempt", "service", logged, "attempt", attempt, "tools", withTools);
             // The request timeout above ends at the response headers; the body could keep the queue waiting for ever.
             return OpenRouterRetry.bounded(HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofString()), ANSWER_LIMIT,
                     "Модель не ответила за " + ANSWER_LIMIT.toSeconds() + " секунд. Попробуй ещё раз или выбери модель побыстрее в настройках.").whenComplete((response, error) -> {
                 if (error != null) CompanionDiagnostics.failure(trace, "openrouter_transport_attempt_" + attempt, error);
-                else CompanionDiagnostics.event(trace, "http_result", "service", "openrouter", "attempt", attempt,
+                else CompanionDiagnostics.event(trace, "http_result", "service", logged, "attempt", attempt,
                         "status", response.statusCode(), "elapsedMs", (System.nanoTime() - started) / 1_000_000,
                         "retryAfter", response.headers().firstValue("Retry-After").orElse(""));
             });
         },
                 HttpResponse::statusCode, response -> response.headers().firstValue("Retry-After").orElse("")).thenApply(response -> {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String error = readError(response.body(), response.statusCode());
-                String lower = error.toLowerCase(java.util.Locale.ROOT);
+                String error = readError(service, response.body(), response.statusCode());
+                // The server's own words decide, not its name (tools.lan, function-gw…).
+                String lower = error.toLowerCase(java.util.Locale.ROOT).replace(service.toLowerCase(java.util.Locale.ROOT), "");
                 if (withTools && (response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422)
                         && (lower.contains("tool") || lower.contains("parameter") || lower.contains("function"))) {
                     throw new UnsupportedToolsException(error);
@@ -327,9 +367,14 @@ public final class OpenRouterClient {
             }
             JsonObject parsed = JsonParser.parseString(response.body()).getAsJsonObject();
             if (!parsed.has("choices") || !parsed.get("choices").isJsonArray() || parsed.getAsJsonArray("choices").isEmpty()) {
-                throw new IllegalStateException("OpenRouter вернул ответ без сообщения модели. " + readError(response.body(), response.statusCode()));
+                throw new IllegalStateException(service + " вернул ответ без сообщения модели. " + readError(service, response.body(), response.statusCode()));
             }
             return parsed;
+        }).exceptionallyCompose(error -> {
+            // A local server that is not running is the usual failure there; the bare exception says nothing to a player.
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            return CompletableFuture.failedFuture(!keyRequired(endpoint) && cause instanceof java.net.ConnectException
+                    ? new IllegalStateException("Сервер модели " + service + " не отвечает: проверь, что он запущен и адрес в настройках верный.") : error);
         });
     }
 
@@ -424,15 +469,16 @@ public final class OpenRouterClient {
         }
     }
 
-    private static String readError(String body, int statusCode) {
-        if (statusCode == 429) return "OpenRouter временно ограничил запросы (429). Два автоповтора не помогли. Подожди немного или выбери другую модель в настройках мода.";
-        if (statusCode == 402) return "На OpenRouter недостаточно средств для запроса. Проверь баланс API.";
+    private static String readError(String service, String body, int statusCode) {
+        if (statusCode == 429) return service + " временно ограничил запросы (429). Два автоповтора не помогли. Подожди немного или выбери другую модель в настройках мода.";
+        if (statusCode == 402) return "На " + service + " недостаточно средств для запроса. Проверь баланс API.";
         try {
             JsonObject error = JsonParser.parseString(body).getAsJsonObject().getAsJsonObject("error");
-            if (error != null && error.has("message")) return "OpenRouter (" + statusCode + "): " + error.get("message").getAsString();
+            if (error != null && error.has("message")) return service + " (" + statusCode + "): " + error.get("message").getAsString();
         } catch (RuntimeException ignored) {
             // Fall back to a concise status message if the service returns non-JSON data.
         }
-        return "OpenRouter вернул ошибку HTTP " + statusCode + ". Проверь ключ, модель и баланс.";
+        return service + " вернул ошибку HTTP " + statusCode + (service.equals("OpenRouter")
+                ? ". Проверь ключ, модель и баланс." : ". Проверь адрес сервера и модель в настройках.");
     }
 }

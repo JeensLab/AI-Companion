@@ -25,6 +25,7 @@ public final class CompanionSettingsScreen extends Screen {
     private int firstY;
     private int rowGap;
     private EditBox model;
+    private EditBox apiUrl;
     private EditBox inworldKey;
     private EditBox voiceId;
     private EditBox personality;
@@ -55,9 +56,14 @@ public final class CompanionSettingsScreen extends Screen {
         searchRadius.setWidth(fieldWidth / 2 - 8);
         searchRadius.setMaxLength(3);
         searchRadius.setFilter(value -> value.matches("\\d{0,3}"));
-        openRouterKey = addField(left, firstY + rowGap, "Ключ OpenRouter API", OpenRouterConfig.API_KEY.get(), true);
+        openRouterKey = addField(left, firstY + rowGap, "Ключ API", OpenRouterConfig.API_KEY.get(), true);
+        openRouterKey.setHint(Component.literal("для OpenRouter; локальному серверу не нужен").withStyle(ChatFormatting.GRAY));
         addVisibilityToggle(openRouterKey, left, firstY + rowGap, true);
-        model = addField(left, firstY + rowGap * 2, "Модель OpenRouter", OpenRouterConfig.MODEL.get(), false);
+        // The server shares the model's row: one more full row would push the last field under the buttons at small heights.
+        model = addField(left, firstY + rowGap * 2, "openrouter/auto", OpenRouterConfig.MODEL.get(), false);
+        model.setWidth(fieldWidth / 2 - 8);
+        apiUrl = addField(left + fieldWidth / 2 + 8, firstY + rowGap * 2, "OpenRouter", OpenRouterConfig.API_URL.get(), false);
+        apiUrl.setWidth(fieldWidth / 2 - 8);
         inworldKey = addField(left, firstY + rowGap * 3, "Inworld Basic credential", OpenRouterConfig.INWORLD_API_KEY.get(), true);
         addVisibilityToggle(inworldKey, left, firstY + rowGap * 3, false);
         voiceId = addField(left, firstY + rowGap * 4, "ID голоса Inworld", OpenRouterConfig.INWORLD_VOICE_ID.get(), false);
@@ -111,6 +117,8 @@ public final class CompanionSettingsScreen extends Screen {
         OpenRouterConfig.API_KEY.save();
         OpenRouterConfig.MODEL.set(model.getValue().trim());
         OpenRouterConfig.MODEL.save();
+        OpenRouterConfig.API_URL.set(apiUrl.getValue().trim());
+        OpenRouterConfig.API_URL.save();
         OpenRouterConfig.INWORLD_API_KEY.set(inworldKey.getValue().trim());
         OpenRouterConfig.INWORLD_API_KEY.save();
         OpenRouterConfig.INWORLD_VOICE_ID.set(voiceId.getValue().trim());
@@ -128,11 +136,12 @@ public final class CompanionSettingsScreen extends Screen {
         int left = (this.width - fieldWidth) / 2;
         firstY = 36;
         rowGap = Math.min(48, Math.max(28, (this.height - 110) / 6));
-        String[] labels = {"Имя компаньона", "Ключ OpenRouter API", "Модель OpenRouter", "Inworld Basic credential", "ID голоса Inworld", "Характер компаньона"};
+        String[] labels = {"Имя компаньона", "Ключ API", "Модель", "Inworld Basic credential", "ID голоса Inworld", "Характер компаньона"};
         for (int i = 0; i < labels.length; i++) {
             graphics.drawString(font, labels[i], left, firstY + i * rowGap, 0xFFFFFF);
         }
         graphics.drawString(font, "Дальность поиска (16–" + MAX_RADIUS + ")", left + fieldWidth / 2 + 8, firstY, 0xFFFFFF);
+        graphics.drawString(font, "Адрес сервера модели", left + fieldWidth / 2 + 8, firstY + rowGap * 2, 0xFFFFFF);
         graphics.drawCenteredString(font, "Ключи скрыты по умолчанию. Нажми «Показать» рядом с полем; данные хранятся локально.",
                 this.width / 2, this.height - 62, 0xB8C3D1);
     }
