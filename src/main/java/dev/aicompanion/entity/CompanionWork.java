@@ -9,12 +9,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -40,6 +37,7 @@ public final class CompanionWork {
     final CompanionOreMining oreMining = new CompanionOreMining(this);
     final CompanionChests chests = new CompanionChests(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
+    final CompanionHandOver handOver = new CompanionHandOver(this);
     final CompanionHouse house;
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -548,8 +546,8 @@ public final class CompanionWork {
             case PICKAXE -> crafting.preparePickaxe();
             case MINE -> stoneMining.mine(level);
             case EXIT -> stoneMining.exitMine(level);
-            case PACK -> packBench(level);
-            case HAND -> handOver(level);
+            case PACK -> handOver.packBench(level);
+            case HAND -> handOver.handOver(level);
             case STORE -> chests.store(level);
             case CLOSE -> chests.afterClose();
             case BUILD -> buildHouse(level);
@@ -684,104 +682,6 @@ public final class CompanionWork {
     static String itemName(String id) {
         var key = ResourceLocation.tryParse(id);
         return key == null || !BuiltInRegistries.ITEM.containsKey(key) ? id : itemName(BuiltInRegistries.ITEM.get(key));
-    }
-
-    private boolean giftMatches(ItemStack stack) {
-        if (stack.isEmpty()) return false;
-        if (owner.goals().ownsWork(taskId) && !CompanionGoals.usable(stack)) return false;
-        if ("logs".equals(requestedItem)) return stack.is(ItemTags.LOGS);
-        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(requestedItem);
-    }
-
-    /** Walk up to the player and toss the items at their feet: a real item on the ground, picked up by the player. */
-    private void handOver(ServerLevel level) {
-        var player = owner.getOwnerPlayer();
-        if (player == null) { finish(false, "Не вижу тебя рядом, отдать не могу."); return; }
-        int carried = 0;
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (giftMatches(owner.getItem(slot))) carried += owner.getItem(slot).getCount();
-        if (giftMatches(owner.getMainHandItem())) carried += owner.getMainHandItem().getCount();
-        if (carried == 0) { finish(false, "У меня нет того, что нужно отдать."); return; }
-        owner.movementIntent(player.blockPosition());
-        owner.getLookControl().setLookAt(player, 30, 30);
-        if (owner.distanceToSqr(player) > 3.2 * 3.2 || !owner.hasLineOfSight(player)) {
-            if (orderHasStalled(level, 240)) { finish(false, "Не смог к тебе подойти, вещи остались у меня."); return; }
-            owner.workStatus("Несу тебе вещи.");
-            Path route = owner.getNavigation().createPath(player, 1);
-            if (route != null && route.getNodeCount() > 1) CompanionMiningNavigation.walk(owner, route); else if (owner.onGround() && !owner.isInWater()) owner.getNavigation().stop();
-            return;
-        }
-        owner.getNavigation().stop();
-        int left = Math.min(requestedCount, carried), given = 0;
-        ItemStack shown = ItemStack.EMPTY;
-        // Give from the bag first; the tool in his own hand goes only if nothing else is left.
-        for (int index = 0; index <= owner.getContainerSize() && left > 0; index++) {
-            int slot = index == owner.getContainerSize() ? -1 : index;
-            ItemStack stack = slot < 0 ? owner.getMainHandItem() : owner.getItem(slot);
-            if (!giftMatches(stack)) continue;
-            ItemStack gift = stack.split(Math.min(left, stack.getCount()));
-            if (slot < 0 && stack.isEmpty()) owner.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, ItemStack.EMPTY);
-            var operation = owner.goals().prepareGift(taskId, gift);
-            shown = gift.copyWithCount(1);
-            var eye = owner.getEyePosition();
-            var toward = player.position().add(0, .3, 0).subtract(eye).normalize().scale(.3);
-            var entity = new net.minecraft.world.entity.item.ItemEntity(level, eye.x, eye.y - .3, eye.z, gift);
-            entity.setDeltaMovement(toward.x, .2, toward.z);
-            entity.setPickUpDelay(10);
-            entity.setTarget(player.getUUID()); // only the player can pick it up
-            entity.getPersistentData().putBoolean("aicompanion:gift", true);
-            if (!level.addFreshEntity(entity)) {
-                // Spawn refusal must not consume the real item or acknowledge delivery.
-                stack.grow(gift.getCount());
-                if (slot < 0) owner.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, stack);
-                finish(false, "Не удалось бросить предмет. Он остался у меня."); return;
-            }
-            left -= gift.getCount(); given += gift.getCount();
-            owner.goals().giftSpawned(operation, entity.getUUID());
-        }
-        owner.setChanged();
-        owner.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
-        owner.animateAction(3, player.blockPosition(), shown);
-        level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .4F, .8F);
-        finish(CompanionActionResult.ok("Бросил тебе " + given + " «" + shown.getHoverName().getString() + "» — подбери у ног.")
-                .withEvidence(new CompanionActionResult.Evidence(taskId, "give_items", requestedItem, given, player.getUUID(),
-                        owner.goals().ownsWork(taskId) ? owner.goals().operation() : null, owner.goals().ownsWork(taskId) ? owner.goals().giftEntity() : null)));
-    }
-
-    private void packBench(ServerLevel level) {
-        if (packTarget == null) {
-            boolean pickedUp = items.countCarried(Items.CRAFTING_TABLE) > packedBenchBefore;
-            String note = pickedUp ? " Походный верстак забрал с собой."
-                    : " Разобранный верстак пока не подобрал" + (packedBenchFrom == null ? "." : " на " + packedBenchFrom.toShortString() + ".");
-            finish(new CompanionActionResult(packResult.success(), packResult.message() + note, packResult.status(), packResult.evidence())); return;
-        }
-        if (!level.hasChunkAt(packTarget) || !level.getBlockState(packTarget).is(Blocks.CRAFTING_TABLE)) { packTarget = null; finish(packResult); return; }
-        if (!owner.onGround()) return;
-        String left = " Походный верстак оставил на " + packTarget.toShortString() + ".";
-        if (orderHasStalled(level, 300)) { BlockPos at = packTarget; packTarget = null;
-            finish(new CompanionActionResult(packResult.success(), packResult.message() + " Походный верстак оставил на " + at.toShortString() + ".", packResult.status(), packResult.evidence())); return; }
-        owner.movementIntent(packTarget);
-        owner.getLookControl().setLookAt(packTarget.getX() + .5D, packTarget.getY() + .5D, packTarget.getZ() + .5D);
-        int reach = items.reachBlock(level, packTarget, true);
-        if (reach < 0) { packTarget = null; finish(new CompanionActionResult(packResult.success(), packResult.message() + left, packResult.status(), packResult.evidence())); return; }
-        if (reach == 0) return;
-        if (!CompanionMiningNavigation.preservesAutonomousReturn(owner, packTarget)) {
-            packTarget = null; finish(new CompanionActionResult(packResult.success(), packResult.message() + left + " Он нужен для обратного хода.", packResult.status(), packResult.evidence())); return;
-        }
-        owner.getNavigation().stop();
-        BlockState state = level.getBlockState(packTarget);
-        owner.selectToolForBlock(state);
-        owner.workStatus("Забираю свой походный верстак.");
-        if (!breaking.tick(level, packTarget)) return;
-        ItemStack tool = owner.getMainHandItem();
-        var drops = Block.getDrops(state, level, packTarget, level.getBlockEntity(packTarget), owner, tool);
-        if (!items.canStore(drops)) { packTarget = null;
-            finish(new CompanionActionResult(packResult.success(), packResult.message() + left + " В сумке нет места.", packResult.status(), packResult.evidence())); return; }
-        if (!level.destroyBlock(packTarget, false, owner, 512)) return;
-        tool.getItem().mineBlock(tool, level, state, packTarget, owner);
-        owner.dropHarvest(packTarget, drops);
-        breaking.reset();
-        packedBenchFrom = packTarget;
-        packTarget = null; // finished on the next tick, once the dropped bench has been picked up
     }
 
     void rejectTarget() { if (target != null) rejected.add(target); clearCracks(); resetTarget(); }

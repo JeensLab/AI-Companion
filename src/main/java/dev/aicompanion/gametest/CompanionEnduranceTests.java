@@ -249,11 +249,11 @@ public final class CompanionEnduranceTests {
         set(work,"packTarget",bench);set(work,"packResult",CompanionActionResult.ok("Основное дело закончено."));
         var phase=work.getClass().getDeclaredField("phase");phase.setAccessible(true);
         for(Object value:phase.getType().getEnumConstants())if(value.toString().equals("PACK"))phase.set(work,value);
-        var pack=work.getClass().getDeclaredMethod("packBench",net.minecraft.server.level.ServerLevel.class);pack.setAccessible(true);
-        h.startSequence().thenExecuteFor(40,()->{try{pack.invoke(work,h.getLevel());}catch(Exception e){throw new IllegalStateException(e);}})
+        Object handOver=field(work,"handOver");var pack=handOver.getClass().getDeclaredMethod("packBench",net.minecraft.server.level.ServerLevel.class);pack.setAccessible(true);
+        h.startSequence().thenExecuteFor(40,()->{try{pack.invoke(handOver,h.getLevel());}catch(Exception e){throw new IllegalStateException(e);}})
                 .thenExecute(()->{
                     h.assertTrue(h.getLevel().getBlockState(bench).is(Blocks.CRAFTING_TABLE),"Bench was broken two levels below before a safe pickup approach");
-                    try{set(work,"packTarget",null);pack.invoke(work,h.getLevel());}catch(Exception e){throw new IllegalStateException(e);}
+                    try{set(work,"packTarget",null);pack.invoke(handOver,h.getLevel());}catch(Exception e){throw new IllegalStateException(e);}
                     h.assertTrue(!a.oleg.getLastTaskResult().contains("верстак забрал"),"Claims a bench that was never picked up");
                 }).thenSucceed();
     }
@@ -383,8 +383,8 @@ public final class CompanionEnduranceTests {
         h.getLevel().setBlock(step,Blocks.CRAFTING_TABLE.defaultBlockState(),2);
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_AXE));
         Object work=field(a.oleg,"work");set(work,"packTarget",step);set(work,"packResult",CompanionActionResult.ok("Готово."));
-        var pack=work.getClass().getDeclaredMethod("packBench",net.minecraft.server.level.ServerLevel.class);pack.setAccessible(true);
-        h.startSequence().thenExecuteFor(100,()->{try{pack.invoke(work,h.getLevel());}catch(Exception e){throw new IllegalStateException(e);}})
+        Object handOver=field(work,"handOver");var pack=handOver.getClass().getDeclaredMethod("packBench",net.minecraft.server.level.ServerLevel.class);pack.setAccessible(true);
+        h.startSequence().thenExecuteFor(100,()->{try{pack.invoke(handOver,h.getLevel());}catch(Exception e){throw new IllegalStateException(e);}})
                 .thenExecute(()->h.assertTrue(h.getLevel().getBlockState(step).is(Blocks.CRAFTING_TABLE)&&returnable(a),"Packing a travelling bench removed the only return step")).thenSucceed();
     }
     private static MarathonArena returnStair(GameTestHelper h)throws Exception {
