@@ -3,7 +3,6 @@ package dev.aicompanion.entity;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.CompanionIdentity;
 import dev.aicompanion.inventory.CompanionMenu;
-import dev.aicompanion.inventory.CompanionEquipmentContainer;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
@@ -46,7 +45,7 @@ import java.util.UUID;
 
 /** The player's persistent in-world companion. */
 public final class CompanionEntity extends PathfinderMob implements Container {
-    private static final EntityDataAccessor<Optional<UUID>> DATA_OWNER = SynchedEntityData.defineId(
+    static final EntityDataAccessor<Optional<UUID>> DATA_OWNER = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.OPTIONAL_UUID);
     static final EntityDataAccessor<Boolean> DATA_FOLLOWING = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.BOOLEAN);
@@ -73,18 +72,18 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<Integer> DATA_ACTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Long> DATA_ACTION_UNTIL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     private static final EntityDataAccessor<ItemStack> DATA_ACTION_ITEM = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.ITEM_STACK);
-    private static final EntityDataAccessor<String> DATA_SOCIAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
-    private static final EntityDataAccessor<Integer> DATA_SOCIAL_SERIAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
-    private static final EntityDataAccessor<Long> DATA_SOCIAL_TIME = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
+    static final EntityDataAccessor<String> DATA_SOCIAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
+    static final EntityDataAccessor<Integer> DATA_SOCIAL_SERIAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+    static final EntityDataAccessor<Long> DATA_SOCIAL_TIME = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     private static final EntityDataAccessor<Boolean> DATA_AUTONOMY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<String> DATA_SAY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Integer> DATA_SAY_SERIAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Long> DATA_SAY_TIME = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
-    private static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
-    private static final EntityDataAccessor<Boolean> DATA_SOCIAL_SAFE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
-    private final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
-    private boolean nearbySocialThreat;
-    private boolean nearbyExplosiveThreat;
+    static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+    static final EntityDataAccessor<Boolean> DATA_SOCIAL_SAFE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
+    boolean nearbySocialThreat;
+    boolean nearbyExplosiveThreat;
     static final double LOG_INTERACTION_RANGE_SQR = 16.0D;
     UUID ownerId;
     boolean following = true;
@@ -119,20 +118,21 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
-    private BlockPos movementIntent;
-    private boolean chunkLoading = true;
-    private boolean autonomousSpeech = true;
+    BlockPos movementIntent;
+    boolean chunkLoading = true;
+    boolean autonomousSpeech = true;
     String preferredWeapon = "";
     private net.minecraft.world.phys.Vec3 previousActivityPosition;
     private boolean activityMoved;
     BlockPos lastPlacedPosition;
     BlockPos lastPlacedPosition() { return lastPlacedPosition; }
-    private final CompanionSocial social = new CompanionSocial(this);
+    final CompanionSocial social = new CompanionSocial(this);
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
-    private final CompanionPlaces places = new CompanionPlaces(this);
-    private final CompanionDeeds deeds = new CompanionDeeds();
+    private final CompanionEntityNbt nbt = new CompanionEntityNbt(this);
+    final CompanionPlaces places = new CompanionPlaces(this);
+    final CompanionDeeds deeds = new CompanionDeeds();
     final CompanionAutonomy autonomy = new CompanionAutonomy(this);
-    private final CompanionGoals goals = new CompanionGoals(this);
+    final CompanionGoals goals = new CompanionGoals(this);
     public CompanionGoals goals() { return goals; }
     private final CompanionLighting lighting = new CompanionLighting(this);
     public CompanionLighting lighting() { return lighting; }
@@ -242,17 +242,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void diagnosticBind(String trace) { diagnostics.bind(trace); }
     public String diagnosticTrace() { return diagnostics.trace(); }
     public void diagnosticSnapshot(String event) { if (dev.aicompanion.CompanionDiagnostics.enabled()) diagnostics.snapshot(event); }
-    String diagnosticState() {
-        return "wood=" + gatheringLogs + ",dirt=" + gatheringDirt + ",remaining=" + logsRemaining
-                + ",following=" + following + ",protecting=" + protecting + ",roaming=" + roaming
-                + ",inventoryViewers=" + inventoryViewers + ",supportSoil=" + supportSoilTask
-                + ",pillar=" + temporaryPillar.isActive() + ",cleanup=" + temporaryPillar.isRecovering()
-                + ",recovery=" + recovery.active() + ",loot=" + loot.diagnosticState() + ",movementIntent=" + movementIntent
-                + ",target=" + (getTarget() == null ? "none" : getTarget().getType().toString() + ":" + getTarget().getId())
-                + ",goals=" + goalSelector.getAvailableGoals().stream().filter(goal -> goal.isRunning()).map(goal -> goal.getGoal().getClass().getSimpleName()).toList()
-                + ",woodBreaking=" + woodBreaking.diagnosticState() + ",dirtBreaking=" + dirtBreaking.diagnosticState()
-                + ",work=" + work.diagnosticState();
-    }
+    String diagnosticState() { return diagnostics.diagnosticState(); }
+    net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
     /** The game's ground navigation, with the walking search that also climbs out of water onto a bank (CompanionNodeEvaluator). */
     @Override protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
@@ -526,36 +517,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void setConversationAvailable(boolean available) { conversationAvailable = available; }
     boolean conversationAvailable() { return conversationAvailable; }
     public dev.aicompanion.CompanionExpression expression() { return dev.aicompanion.CompanionExpression.fromId(entityData.get(DATA_EXPRESSION)); }
-    public boolean sociallySafe() { return entityData.get(DATA_SOCIAL_SAFE); }
-    public void reactToSpeech(String text) {
-        if (!level().isClientSide) expressions.react(dev.aicompanion.CompanionExpression.speech(text), level().getGameTime(), 120);
-    }
-    private void updateExpression() {
-        if (tickCount % 20 == 0) {
-            var player = getOwnerPlayer();
-            var threats = level().getEntitiesOfClass(Monster.class, getBoundingBox().inflate(12),
-                    monster -> CompanionHostiles.observed(this, monster, 12)
-                            || player != null && CompanionHostiles.observed(player, monster, 12));
-            nearbySocialThreat = !threats.isEmpty() || player != null && player.level() == level()
-                    && !level().getEntitiesOfClass(Monster.class, player.getBoundingBox().inflate(12),
-                            monster -> CompanionHostiles.observed(player, monster, 12)).isEmpty();
-            nearbyExplosiveThreat = threats.stream().anyMatch(monster -> monster instanceof net.minecraft.world.entity.monster.Creeper creeper
-                    && (creeper.getSwellDir() > 0 || creeper.distanceToSqr(this) < 36));
-        }
-        boolean danger = getHealth() <= getMaxHealth() * .35F || isOnFire() || isInLava() || isUnderWater() && getAirSupply() < 40
-                || recovery.active() || nearbyExplosiveThreat;
-        boolean combat = getTarget() != null && getTarget().isAlive();
-        var expression = expressions.update(level().getGameTime(), danger, combat,
-                hasActiveWorkOrder() || isMiningAnimation() || actionAnimation() != 0);
-        entityData.set(DATA_EXPRESSION, expression.ordinal());
-        entityData.set(DATA_SOCIAL_SAFE, !danger && !combat && !nearbySocialThreat && tickCount - lastHurtTick > 200
-                && (getOwnerPlayer() == null || getOwnerPlayer().getHealth() > 8 && getOwnerPlayer().hurtTime == 0));
-    }
+    public boolean sociallySafe() { return social.sociallySafe(); }
+    public void reactToSpeech(String text) { social.reactToSpeech(text); }
     public void setLifestyle(boolean chunks, boolean speech) { chunkLoading = chunks; autonomousSpeech = speech; }
-    public String socialObservation() { return entityData.get(DATA_SOCIAL); }
-    public int socialSequence() { return entityData.get(DATA_SOCIAL_SERIAL); }
-    public long socialTime() { return entityData.get(DATA_SOCIAL_TIME); }
-    void socialEvent(String fact) { entityData.set(DATA_SOCIAL, fact); entityData.set(DATA_SOCIAL_SERIAL, socialSequence() + 1); entityData.set(DATA_SOCIAL_TIME, level().getGameTime()); }
+    public String socialObservation() { return social.socialObservation(); }
+    public int socialSequence() { return social.socialSequence(); }
+    public long socialTime() { return social.socialTime(); }
+    void socialEvent(String fact) { social.socialEvent(fact); }
     public void observeEvent(String key, String fact) { social.observe(key, fact); }
     void finishFollowing() { setFollowing(true, true); loot.resumeCollection(); syncWorkState(); }
     boolean canCollectItems() { return inventoryViewers == 0; }
@@ -628,28 +596,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     public boolean didLastTaskSucceed() { return lastTaskSucceeded; }
 
-    /** obtain_item: the chain of his own skills that gets the item, planned from what he carries now (CompanionObtain). */
-    public CompanionObtain.Plan obtainPlan(String item, int count) {
-        if (!(level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
-        return CompanionObtain.plan(serverLevel, carriedForPlan(), hasCraftingTableNearby() || hasKnownCraftingTableWithin(16), item, count);
-    }
-    /** The end of obtain_item: success only by the bag, never by the plan. */
-    public CompanionActionResult carriedCheck(String item, int count) {
-        var id = net.minecraft.resources.ResourceLocation.tryParse(item);
-        var wanted = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
-        if (wanted == null) return CompanionActionResult.failed("Не понял, какой предмет проверить.");
-        int have = 0;
-        for (ItemStack stack : carriedForPlan()) if (stack.is(wanted)) have += stack.getCount();
-        String name = new ItemStack(wanted).getHoverName().getString();
-        return have >= count ? CompanionActionResult.ok("Готово: «" + name + "» у меня, " + have + " шт.")
-                : CompanionActionResult.failed("Добыл не всё: «" + name + "» у меня " + have + " из " + count + ".");
-    }
-    private List<ItemStack> carriedForPlan() {
-        List<ItemStack> carried = new java.util.ArrayList<>();
-        for (int slot = 0; slot < getContainerSize(); slot++) carried.add(getItem(slot));
-        carried.add(getMainHandItem()); carried.add(getOffhandItem());
-        return carried;
-    }
+    public CompanionObtain.Plan obtainPlan(String item, int count) { return bag.obtainPlan(item, count); }
+    public CompanionActionResult carriedCheck(String item, int count) { return bag.carriedCheck(item, count); }
     public String getStoredItemsSummary() { return bag.getStoredItemsSummary(); }
     public String getStoredItemsForAi() { return bag.getStoredItemsForAi(); }
     public void mergeStoredItemsFrom(CompanionEntity other) { bag.mergeStoredItemsFrom(other); }
@@ -696,7 +644,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         loot.tickNearby();
         recovery.observe();
         work.watchChase();
-        updateExpression();
+        social.updateExpression();
         social.tick();
         lighting.tick();
         goals.tick();
@@ -732,44 +680,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
-            boolean dropped = dropBelongings();
+            boolean dropped = bag.dropBelongings();
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
-            CompanionEvents.companionDied(this, memory(), where, dropped);
+            CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
         }
         super.die(source);
     }
 
-    private boolean dropBelongings() {
-        boolean any = false;
-        java.util.List<ItemStack> belongings = new java.util.ArrayList<>();
-        for (int slot = 0; slot < companionInventory.size(); slot++) { belongings.add(companionInventory.get(slot)); companionInventory.set(slot, ItemStack.EMPTY); }
-        for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) { belongings.add(getItemBySlot(slot)); setItemSlot(slot, ItemStack.EMPTY); }
-        for (ItemStack stack : belongings) if (!stack.isEmpty()) {
-            var item = spawnAtLocation(stack.copy(), 0.5F);
-            if (item != null) { item.setUnlimitedLifetime(); any = true; }
-        }
-        refreshInventorySummary();
-        return any;
-    }
-
-    /** What the companion who comes back remembers: name, settings, journal of deeds, places, the house and the chest. */
-    CompoundTag memory() {
-        CompoundTag full = new CompoundTag(), memory = new CompoundTag();
-        addAdditionalSaveData(full);
-        for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "Deeds",
-                "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
-        return memory;
-    }
-
-    void inheritMemory(CompoundTag memory) {
-        if (memory.contains("CompanionName")) setCompanionName(memory.getString("CompanionName"));
-        if (memory.contains("SearchRadius")) setSearchRadius(memory.getInt("SearchRadius"));
-        chunkLoading = !memory.contains("ChunkLoading") || memory.getBoolean("ChunkLoading");
-        autonomousSpeech = !memory.contains("AutonomousSpeech") || memory.getBoolean("AutonomousSpeech");
-        deeds.load(memory); places.load(memory); work.load(memory); autonomy.load(memory); refreshPlaces();
-        goals.load(memory);
-        noteDeed("Вернулся к тебе после гибели. Вещи, что были при мне, остались там, где я погиб.", true);
-    }
 
     /** Food in the bag heals, like a player who eats: nothing is conjured, the food is eaten (review 22.10: he never healed). */
     int satiety;
@@ -835,97 +752,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         super.setTarget(target);
     }
 
-    @Override
-    public void addAdditionalSaveData(CompoundTag tag) {
-        super.addAdditionalSaveData(tag);
-        if (ownerId != null) tag.putUUID("Owner", ownerId);
-        tag.putBoolean("Following", following);
-        tag.putBoolean("Protecting", protecting);
-        tag.putBoolean("ChunkLoading", chunkLoading); tag.putBoolean("AutonomousSpeech", autonomousSpeech);
-        tag.putString("PreferredWeapon", preferredWeapon);
-        tag.putString("CompanionName", getName().getString());
-        tag.putInt("SearchRadius", searchRadius);
-        tag.putBoolean("Roaming", roaming);
-        if (roamOrigin != null) tag.putLong("RoamOrigin", roamOrigin.asLong());
-        tag.putBoolean("GatheringLogs", gatheringLogs);
-        tag.putBoolean("GatheringDirt", gatheringDirt);
-        tag.putBoolean("SupportSoilTask", supportSoilTask);
-        tag.putInt("LogsRemaining", logsRemaining);
-        tag.putInt("RequestedLogs", requestedLogs);
-        tag.putString("LastTaskResult", getLastTaskResult());
-        tag.putInt("Satiety", satiety);
-        ContainerHelper.saveAllItems(tag, companionInventory, level().registryAccess());
-        temporaryPillar.save(tag);
-        work.save(tag);
-        places.save(tag);
-        deeds.save(tag);
-        autonomy.save(tag);
-        goals.save(tag);
-        social.save(tag);
-    }
-
-    @Override
-    public void readAdditionalSaveData(CompoundTag tag) {
-        super.readAdditionalSaveData(tag);
-        chunkLoading = !tag.contains("ChunkLoading") || tag.getBoolean("ChunkLoading");
-        autonomousSpeech = !tag.contains("AutonomousSpeech") || tag.getBoolean("AutonomousSpeech");
-        preferredWeapon = tag.getString("PreferredWeapon");
-        if (tag.contains("CompanionName")) setCompanionName(tag.getString("CompanionName"));
-        setSearchRadius(tag.contains("SearchRadius") ? tag.getInt("SearchRadius") : 64);
-        roaming = tag.getBoolean("Roaming");
-        roamOrigin = tag.contains("RoamOrigin") ? BlockPos.of(tag.getLong("RoamOrigin")) : blockPosition();
-        entityData.set(DATA_ROAMING, roaming);
-        if (tag.hasUUID("Owner")) ownerId = tag.getUUID("Owner");
-        entityData.set(DATA_OWNER, Optional.ofNullable(ownerId));
-        following = !tag.contains("Following") || tag.getBoolean("Following");
-        entityData.set(DATA_FOLLOWING, following);
-        protecting = tag.getBoolean("Protecting");
-        entityData.set(DATA_PROTECTING, protecting);
-        gatheringLogs = tag.getBoolean("GatheringLogs");
-        gatheringDirt = tag.getBoolean("GatheringDirt");
-        entityData.set(DATA_GATHERING_LOGS, gatheringLogs || gatheringDirt);
-        logsRemaining = Math.max(0, Math.min(64, tag.getInt("LogsRemaining")));
-        entityData.set(DATA_LOGS_REMAINING, logsRemaining);
-        requestedLogs = Math.max(0, Math.min(64, tag.getInt("RequestedLogs")));
-        satiety = Math.max(0, Math.min(40, tag.getInt("Satiety"))); // absent in older saves: 0
-        ContainerHelper.loadAllItems(tag, companionInventory, level().registryAccess());
-        deeds.load(tag); places.load(tag); autonomy.load(tag); refreshPlaces();
-        social.load(tag);
-        entityData.set(DATA_LAST_TASK_RESULT, tag.getString("LastTaskResult"));
-        refreshInventorySummary();
-        if (protecting || roaming) following = false;
-        if (gatheringLogs || gatheringDirt) {
-            following = false;
-            protecting = false;
-        }
-        entityData.set(DATA_FOLLOWING, following);
-        entityData.set(DATA_PROTECTING, protecting);
-        entityData.set(DATA_GATHERING_LOGS, gatheringLogs || gatheringDirt);
-        temporaryPillar.load(tag);
-        work.load(tag);
-        setCanPickUpLoot(false);
-        if (temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {
-            setFollowing(true);
-            lastTaskSucceeded = false;
-            entityData.set(DATA_LAST_TASK_RESULT, temporaryPillar.isRecovering()
-                    ? "Добыча была прервана выходом из мира. Сначала спущусь и уберу свою опору."
-                    : "Работа прервалась выходом из мира. Вещи остались у меня.");
-            // Pickup/navigation statuses soon replace the visible line. Keep the interruption in saved factual memory too.
-            noteDeed(entityData.get(DATA_LAST_TASK_RESULT), false);
-        }
-        // His own harvest still lying round him (it carries his UUID) is picked up after the world is entered again, like a player
-        // who comes back to the tree he was cutting (marathon 23.10: a log stayed on the ground after the reload).
-        if (following || tag.getBoolean("WorkActive") || gatheringLogs) loot.resumeCollection();
-        goals.load(tag);
-        // Interrupted gathering belongs to the outcome now: old remaining counts are not a new order.
-        if (goals.outstanding()) {
-            boolean savedFollowing = tag.getBoolean("Following"), savedProtecting = tag.getBoolean("Protecting");
-            setFollowing(savedFollowing);
-            if (savedProtecting) setProtecting(true);
-            goals.restorePlayerBehavior();
-        }
-        if (!level().isClientSide) updateExpression();
-    }
+    @Override public void addAdditionalSaveData(CompoundTag tag) { super.addAdditionalSaveData(tag); nbt.save(tag); }
+    @Override public void readAdditionalSaveData(CompoundTag tag) { super.readAdditionalSaveData(tag); nbt.load(tag); }
+    void inheritMemory(CompoundTag memory) { nbt.inheritMemory(memory); }
 
     /**
      * A player's reach for a blow: three blocks from the eyes to the nearest point of the body (marathon 23.10: with a zombie's

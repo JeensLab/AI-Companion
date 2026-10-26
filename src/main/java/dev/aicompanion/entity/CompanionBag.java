@@ -7,6 +7,8 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 
+import java.util.List;
+
 final class CompanionBag {
     final CompanionEntity c;
 
@@ -86,5 +88,41 @@ final class CompanionBag {
         }
         c.getEntityData().set(CompanionEntity.DATA_INVENTORY_AI, items.isEmpty() ? "пусто" : items.entrySet().stream()
                 .map(entry -> entry.getValue() + "x " + entry.getKey()).collect(java.util.stream.Collectors.joining(", ")));
+    }
+
+    boolean dropBelongings() {
+        boolean any = false;
+        java.util.List<ItemStack> belongings = new java.util.ArrayList<>();
+        for (int slot = 0; slot < c.companionInventory.size(); slot++) { belongings.add(c.companionInventory.get(slot)); c.companionInventory.set(slot, ItemStack.EMPTY); }
+        for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) { belongings.add(c.getItemBySlot(slot)); c.setItemSlot(slot, ItemStack.EMPTY); }
+        for (ItemStack stack : belongings) if (!stack.isEmpty()) {
+            var item = c.spawnAtLocation(stack.copy(), 0.5F);
+            if (item != null) { item.setUnlimitedLifetime(); any = true; }
+        }
+        refreshInventorySummary();
+        return any;
+    }
+
+    /** obtain_item: the chain of his own skills that gets the item, planned from what he carries now (CompanionObtain). */
+    public CompanionObtain.Plan obtainPlan(String item, int count) {
+        if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
+        return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count);
+    }
+    /** The end of obtain_item: success only by the bag, never by the plan. */
+    public CompanionActionResult carriedCheck(String item, int count) {
+        var id = net.minecraft.resources.ResourceLocation.tryParse(item);
+        var wanted = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+        if (wanted == null) return CompanionActionResult.failed("Не понял, какой предмет проверить.");
+        int have = 0;
+        for (ItemStack stack : carriedForPlan()) if (stack.is(wanted)) have += stack.getCount();
+        String name = new ItemStack(wanted).getHoverName().getString();
+        return have >= count ? CompanionActionResult.ok("Готово: «" + name + "» у меня, " + have + " шт.")
+                : CompanionActionResult.failed("Добыл не всё: «" + name + "» у меня " + have + " из " + count + ".");
+    }
+    List<ItemStack> carriedForPlan() {
+        List<ItemStack> carried = new java.util.ArrayList<>();
+        for (int slot = 0; slot < c.getContainerSize(); slot++) carried.add(c.getItem(slot));
+        carried.add(c.getMainHandItem()); carried.add(c.getOffhandItem());
+        return carried;
     }
 }
