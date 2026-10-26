@@ -73,7 +73,7 @@ try {
             $fullLog=Join-Path $reports "$Tag-full-$attempt.txt"
             $null=Invoke-Gradle @('runGameTestServer') $fullLog
             if(Select-String -LiteralPath $fullLog -Pattern "All $Full required tests passed" -Quiet){$passed=$true;Write-Output "PASS full (attempt $attempt): All $Full required tests passed";break}
-            $failed=@(Select-String -LiteralPath $fullLog -Pattern '\[LogTestReporter\]: (\S+) failed at' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique)
+            $failed=@(Select-String -LiteralPath $fullLog -Pattern 'LogTestReporter\]: (\S+) failed at' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique)
             $oneRequired=Select-String -LiteralPath $fullLog -Pattern '\b1 required tests failed' -Quiet
             Write-Output "full attempt ${attempt}: failed [$($failed -join ', ')] (see $fullLog)"
             if($attempt -eq 1 -and $oneRequired -and $failed.Count -eq 1 -and $knownFlaky -contains $failed[0]){
