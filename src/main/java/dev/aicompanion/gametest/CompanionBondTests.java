@@ -148,6 +148,12 @@ public final class CompanionBondTests {
         var top = new CompanionBond();
         for (int i = 0; i < 30; i++) top.rescued(1);
         h.assertTrue(top.score() == CompanionBond.MAX && top.tier() == CompanionBond.Tier.BEST_FRIEND && top.reasons().equals(List.of(CompanionBond.Reason.RESCUE)), "Score not clamped or reasons repeat");
+
+        var server = h.getLevel().getServer();
+        var friend = UUID.randomUUID();
+        for (int i = 0; i < 15; i++) CompanionBonds.get(server).rescued(friend, 0);
+        var digest = CompanionMemoryDigest.of(server, friend, true, 20 * DAY);
+        h.assertTrue(digest.score() == 60 && digest.tier().equals(CompanionBond.Tier.PAL.label()), "The digest shows a bond that has not decayed: " + digest.score() + " " + digest.tier());
         h.succeed();
     }
 
@@ -159,7 +165,9 @@ public final class CompanionBondTests {
                 && CompanionBond.classify(new ItemStack(Items.IRON_PICKAXE)) == CompanionBond.GiftClass.METAL
                 && CompanionBond.classify(new ItemStack(Items.GOLD_INGOT)) == CompanionBond.GiftClass.METAL
                 && CompanionBond.classify(new ItemStack(Items.BREAD)) == CompanionBond.GiftClass.FOOD
-                && CompanionBond.classify(new ItemStack(Items.COBBLESTONE)) == CompanionBond.GiftClass.MATERIAL, "Gift classes wrong");
+                && CompanionBond.classify(new ItemStack(Items.COBBLESTONE)) == CompanionBond.GiftClass.MATERIAL
+                && CompanionBond.classify(new ItemStack(Items.IRON_NUGGET)) == CompanionBond.GiftClass.MATERIAL
+                && CompanionBond.classify(new ItemStack(Items.GOLD_NUGGET)) == CompanionBond.GiftClass.MATERIAL, "Gift classes wrong");
         var b = new CompanionBond();
         String diamond = CompanionBond.kindOf(new ItemStack(Items.DIAMOND));
         h.assertTrue(b.gift(1, List.of(give(Items.DIAMOND, 10))) == 8 && b.score() == 28, "First diamonds should pay 8");
@@ -167,7 +175,9 @@ public final class CompanionBondTests {
         h.assertTrue(b.gift(2, List.of(give(Items.DIAMOND, 10))) == 0, "Put-take-put paid twice across a day");
         h.assertTrue(b.gift(2, List.of(give(Items.DIAMOND, 3))) == 8 && b.peak(diamond) == 13, "Growth above the old peak not paid");
         int before = b.score();
+        int kinds = b.ledgerKinds();
         h.assertTrue(b.gift(2, List.of(give(Items.IRON_INGOT, -5))) == 0 && b.balance(CompanionBond.kindOf(new ItemStack(Items.IRON_INGOT))) == 0 && b.score() == before, "Taking items never put changed the balance");
+        h.assertTrue(b.ledgerKinds() == kinds, "Taking out a kind never put created a ledger entry");
 
         var daily = new CompanionBond();
         int first = daily.gift(5, List.of(give(Items.DIAMOND_PICKAXE, 1)));
@@ -175,7 +185,7 @@ public final class CompanionBondTests {
         int third = daily.gift(5, List.of(give(Items.DIAMOND_SWORD, 1)));
         h.assertTrue(first == 8 && second == 7 && third == 0, "Daily cap of +15 broken: " + first + "," + second + "," + third);
         h.assertTrue(daily.gift(6, List.of(give(Items.BREAD, 10), give(Items.IRON_INGOT, 2), give(Items.COBBLESTONE, 20))) == 5, "One closed inventory should pay its highest class only");
-        h.assertTrue(daily.gift(7, List.of(give(Items.BREAD, 7), give(Items.COBBLESTONE, 15))) == 0, "Below the pieces threshold still paid");
+        h.assertTrue(daily.gift(7, List.of(give(Items.BREAD, 7), give(Items.COBBLESTONE, 15), give(Items.GOLD_NUGGET, 1))) == 0, "Below the pieces threshold still paid");
 
         var many = new CompanionBond();
         for (int i = 0; i < 70; i++) many.gift(10 + i, List.of(new CompanionBond.ItemChange("test:kind_" + i, 1, CompanionBond.GiftClass.METAL)));
@@ -200,6 +210,9 @@ public final class CompanionBondTests {
         h.assertTrue(fight.hitByPlayer(4, 4 * DAY, false) == -6 && fight.hitByPlayer(4, 4 * DAY + 300, true) == 0, "Setup of the fight case failed");
         h.assertTrue(fight.hitByPlayer(4, 4 * DAY + 650, false) == -6, "A refused hit in a fight must not restart the 30 s pause");
         h.assertTrue(CompanionBond.dayOf(DAY * 3 + 5) == 3, "Day boundary wrong");
+        var stamp = new CompanionBond().save();
+        stamp.putLong("LastHit", Long.MIN_VALUE);
+        h.assertTrue(CompanionBond.load(stamp).hitByPlayer(1, DAY + 1000, false) == -6, "A damaged LastHit stamp stopped hits from counting");
         h.succeed();
     }
 
@@ -288,6 +301,15 @@ public final class CompanionBondTests {
         eventsTag.put("Events", events);
         var loadedEvents = CompanionHappenings.load(eventsTag).all();
         h.assertTrue(loadedEvents.size() == 1 && loadedEvents.getFirst().key().length() == CompanionHappenings.KEY, "Damaged key not capped: " + loadedEvents);
+        var crowd = new ListTag();
+        for (int i = 0; i < CompanionBonds.MAX_OWNERS + 6; i++) {
+            var crowded = new CompoundTag();
+            crowded.putUUID("Owner", UUID.randomUUID()); crowded.putLong("LastSeen", 1000 + i);
+            crowd.add(crowded);
+        }
+        var crowdTag = new CompoundTag();
+        crowdTag.put("Owners", crowd);
+        h.assertTrue(CompanionBonds.load(crowdTag, registries(h)).ownerCount() == CompanionBonds.MAX_OWNERS, "Owners not capped on load");
         h.succeed();
     }
 

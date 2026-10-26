@@ -33,7 +33,7 @@ public final class CompanionMenu extends AbstractContainerMenu {
     private final Container bag;
     private final ServerPlayer giver;
     private final Map<String, ItemStack> samples = new LinkedHashMap<>();
-    private Map<String, Integer> before;
+    private Map<String, Integer> beforeCompanion, beforePlayer;
 
     public static CompanionMenu fromNetwork(int id, Inventory inventory, RegistryFriendlyByteBuf data) {
         var entity = inventory.player.level().getEntity(data.readVarInt());
@@ -75,12 +75,12 @@ public final class CompanionMenu extends AbstractContainerMenu {
         }
         for (int column = 0; column < 9; column++) addSlot(new Slot(inventory, column, 12 + column * 18, 222));
         giver = inventory.player instanceof ServerPlayer owner && companion != null && owner.getUUID().equals(companion.getOwnerId()) ? owner : null;
-        if (giver != null) before = tally();
+        if (giver != null) { beforeCompanion = tally(0, PLAYER_START); beforePlayer = tally(PLAYER_START, PLAYER_END); }
     }
 
-    private Map<String, Integer> tally() {
+    private Map<String, Integer> tally(int from, int to) {
         Map<String, Integer> counts = new LinkedHashMap<>();
-        for (int index = 0; index < PLAYER_START; index++) {
+        for (int index = from; index < to; index++) {
             ItemStack stack = slots.get(index).getItem();
             if (stack.isEmpty()) continue;
             String kind = CompanionBond.kindOf(stack);
@@ -90,21 +90,27 @@ public final class CompanionMenu extends AbstractContainerMenu {
         return counts;
     }
 
-    /** What the owner left in or took from the companion's equipment and bag while this menu was open, as one net change per kind. */
+    /**
+     * What the owner left in or took from the companion's equipment and bag while this menu was open, as one net change per kind.
+     * Only what also left or arrived in the owner's own slots counts: loot the companion picked up meanwhile is not a gift.
+     */
     private void reportGift() {
-        if (before == null) return;
-        Map<String, Integer> after = tally();
+        if (beforeCompanion == null) return;
+        Map<String, Integer> afterCompanion = tally(0, PLAYER_START), afterPlayer = tally(PLAYER_START, PLAYER_END);
         List<CompanionBond.ItemChange> changes = new ArrayList<>();
         List<String> added = new ArrayList<>();
-        Set<String> kinds = new LinkedHashSet<>(before.keySet());
-        kinds.addAll(after.keySet());
+        Set<String> kinds = new LinkedHashSet<>(beforeCompanion.keySet());
+        kinds.addAll(afterCompanion.keySet());
         for (String kind : kinds) {
-            int delta = after.getOrDefault(kind, 0) - before.getOrDefault(kind, 0);
+            int companionDelta = afterCompanion.getOrDefault(kind, 0) - beforeCompanion.getOrDefault(kind, 0);
+            int playerDelta = afterPlayer.getOrDefault(kind, 0) - beforePlayer.getOrDefault(kind, 0);
+            int delta = companionDelta > 0 ? Math.min(companionDelta, Math.max(0, -playerDelta)) : -Math.min(-companionDelta, Math.max(0, playerDelta));
             if (delta == 0) continue;
             changes.add(CompanionBond.change(samples.get(kind), delta));
-            if (delta > 0 && added.size() < 3) added.add(delta + " × " + samples.get(kind).getHoverName().getString());
+            if (delta > 0 && added.size() < 3) added.add(delta + " × " + samples.get(kind).getItem().getDescription().getString());
         }
-        before = null;
+        beforeCompanion = null;
+        beforePlayer = null;
         CompanionHappeningEvents.gift(giver, changes, String.join(", ", added));
     }
 

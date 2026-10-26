@@ -19,11 +19,16 @@ public final class CompanionHappenings {
 
     private final List<Happening> events = new ArrayList<>();
 
+    /** Event texts embed names and titles other players control, so they are masked, flattened and cut before they are stored or spoken. */
+    public static String clean(String text) {
+        String flat = CompanionMemory.mask(text).replaceAll("\\s+", " ").strip();
+        return flat.length() <= TEXT ? flat : flat.substring(0, TEXT - 1).strip() + "…";
+    }
+
     /** An event with a key already in the ring replaces the older one: the same thing is not told twice. */
     public void add(String key, String text, long gameTime, Importance importance) {
-        String clean = text == null ? "" : text.replaceAll("\\s+", " ").strip();
+        String clean = clean(text);
         if (clean.isEmpty()) return;
-        if (clean.length() > TEXT) clean = clean.substring(0, TEXT - 1).strip() + "…";
         String id = key == null ? "" : key;
         if (!id.isEmpty()) events.removeIf(old -> old.key.equals(id));
         events.add(new Happening(id, clean, gameTime, importance == null ? Importance.NORMAL : importance));

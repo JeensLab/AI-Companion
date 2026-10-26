@@ -36,6 +36,7 @@ public final class CompanionBond {
     public static final int MAX_KINDS = 64;
     public static final int MAX_REASONS = 3;
     private static final int MAX_DECAY_DAYS = 400;
+    private static final long MAX_STAMP = 1L << 50;
     private static final int FOOD_PIECES = 8;
     private static final int MATERIAL_PIECES = 16;
     private static final Pattern METAL = Pattern.compile("(^|_)(iron|gold|golden)(_|$)");
@@ -106,6 +107,7 @@ public final class CompanionBond {
     public static GiftClass classify(ItemStack stack) {
         String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
         if (stack.isEnchanted() || stack.getRarity().ordinal() >= Rarity.RARE.ordinal() || path.contains("diamond") || path.contains("netherite")) return GiftClass.PRECIOUS;
+        if (path.endsWith("_nugget")) return GiftClass.MATERIAL;
         if (METAL.matcher(path).find()) return GiftClass.METAL;
         return stack.has(DataComponents.FOOD) ? GiftClass.FOOD : GiftClass.MATERIAL;
     }
@@ -142,7 +144,10 @@ public final class CompanionBond {
         for (ItemChange item : changes) {
             if (item.delta() == 0 || item.kind() == null || item.kind().isEmpty()) continue;
             int[] entry = ledger.remove(item.kind());
-            if (entry == null) entry = new int[2];
+            if (entry == null) {
+                if (item.delta() < 0) continue;
+                entry = new int[2];
+            }
             entry[0] = Math.max(0, entry[0] + item.delta());
             int growth = Math.max(0, entry[0] - entry[1]);
             entry[1] += growth;
@@ -237,7 +242,7 @@ public final class CompanionBond {
         bond.giftToday = Math.max(0, tag.getInt("GiftToday")); bond.deedToday = Math.max(0, tag.getInt("DeedToday")); bond.hitToday = Math.max(0, tag.getInt("HitToday"));
         bond.abandonedToday = tag.getBoolean("AbandonedToday");
         bond.hasHit = tag.contains("LastHit");
-        bond.lastHit = tag.getLong("LastHit");
+        bond.lastHit = Math.max(0, Math.min(MAX_STAMP, tag.getLong("LastHit")));
         for (Tag name : tag.getList("Reasons", Tag.TAG_STRING)) {
             for (Reason reason : Reason.values()) if (reason.name().equals(name.getAsString()) && !bond.reasons.contains(reason)) bond.reasons.add(reason);
         }

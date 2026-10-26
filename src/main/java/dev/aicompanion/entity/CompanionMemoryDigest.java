@@ -49,6 +49,7 @@ public final class CompanionMemoryDigest {
         CompanionBonds bonds = CompanionBonds.get(server);
         CompanionMemory memory = bonds.memory(owner);
         CompanionBond bond = bonds.bond(owner);
+        bond.advanceTo(CompanionBond.dayOf(now));
 
         List<String> reasons = new ArrayList<>();
         for (CompanionBond.Reason reason : bond.reasons()) reasons.add(reason.label());
