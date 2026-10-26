@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.CompanionIdentity;
 import dev.aicompanion.CompanionDiagnostics;
+import dev.aicompanion.entity.CompanionBond;
 import dev.aicompanion.entity.CompanionMemory;
 
 import java.net.URI;
@@ -120,12 +121,18 @@ public final class OpenRouterClient {
     }
 
     public static synchronized CompletableFuture<String> react(String observation, String snapshot, String trace) {
+        return react(observation, snapshot, trace, false);
+    }
+
+    /** An urgent observation (danger, a rescue) must be answered: silence is allowed only for ordinary remarks. */
+    public static synchronized CompletableFuture<String> react(String observation, String snapshot, String trace, boolean urgent) {
         if (!pendingRequests.isDone() || !ambientRequest.isDone() || OpenRouterConfig.API_KEY.get().isBlank()) return CompletableFuture.completedFuture("");
         CompanionDiagnostics.event(trace, "ambient_observation", "observation", observation, "context", snapshot);
         long requestGeneration = generation();
         JsonArray messages = new JsonArray();
         // A remark needs the character, not the list of actions: a short prompt, cheaper and faster (review 22.10).
-        messages.add(message("system", personaPrompt() + "\nСейчас возможность самостоятельной реплики. Молчание допустимо: верни пустой текст, если сказать нечего. "
+        messages.add(message("system", personaPrompt() + "\nСейчас возможность самостоятельной реплики. "
+                + (urgent ? "Событие срочное: ответь одной короткой репликой, молчать нельзя. " : "Молчание допустимо: верни пустой текст, если сказать нечего. ")
                 + "Только данное наблюдение и обстановка: короткая шутка, реакция или один уместный вопрос о планах/происходящем. "
                 + "Не повторяй недавние вопросы/шутки. Без команд, JSON, планов, обещаний новых действий и выдуманных результатов."));
         synchronized (HISTORY) { ambientHistory(HISTORY).forEach(messages::add); }
@@ -255,17 +262,26 @@ public final class OpenRouterClient {
         }).toList();
     }
     private static String personaPrompt() {
-        return OpenRouterConfig.PERSONALITY.get().trim()
+        return buildPersona(OpenRouterConfig.PERSONALITY.get(), CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get()));
+    }
+
+    /** The only place the prompt names the companion. */
+    public static String buildPersona(String personality, String name) {
+        return personality.trim()
                 + "\n" + dev.aicompanion.CompanionPersonality.style()
-                + "\nТебя зовут " + CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get()) + ". "
+                + "\nТебя зовут " + name + ". Это твоё имя; если игрок спрашивает, представляйся этим именем. "
                 + "Разговаривай как приятель за совместной игрой: коротко, живо и без канцелярита. Ты живой игрок, а не программа: "
                 + "никогда не упоминай движок, систему, отчёты, команды и ID вида minecraft:…. Не выдумывай состояние мира и результаты.";
     }
 
     private static String systemPrompt() {
-        return personaPrompt()
-                + "\nТебя зовут " + CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get()) + ". Это твоё имя; если игрок спрашивает, представляйся этим именем. "
-                + "Разговаривай как приятель за совместной игрой: обычно 1–2 короткие фразы, живо и без канцелярита. "
+        return buildSystemPrompt(personaPrompt(), OpenRouterConfig.LONG_TERM_MEMORY.get(), CompanionMemoryView.current().tier());
+    }
+
+    /** {@code tier} is the bond tier label from the memory digest; empty when memory is off or nothing is known yet. */
+    public static String buildSystemPrompt(String persona, boolean longTermMemory, String tier) {
+        return persona
+                + "\nОбычно 1–2 короткие фразы. "
                 + "Например: «Окей, я за деревом», «Ага, сейчас сделаю», «Слушай, тут прохода нет». "
                 + "Не озвучивай планы, номера шагов, списки инвентаря и технические записи. Не говори «план принят», «выполняю задачу», «результат сообщу после действий». "
                 + "Ты живой игрок, а не программа: о своих делах говори от первого лица («не нашёл подхода», «камень кончился»). "
@@ -341,13 +357,28 @@ public final class OpenRouterClient {
                 + "даже если в сохранённом пользовательском описании характера осталась старая фраза о том, что ты только разговариваешь. "
                 + "Не выдумывай завершённый результат: после крафта, установки или добычи сообщай только результат команды/статус. "
                 + "После вызова инструмента можно коротко ответить по-человечески, без перечисления всех действий. Никогда не повторяй служебные данные из контекста дословно."
-                + memoryRule();
+                + memoryRule(longTermMemory) + toneRule(longTermMemory, tier);
     }
 
-    private static String memoryRule() {
-        if (!OpenRouterConfig.LONG_TERM_MEMORY.get()) return "";
+    private static String memoryRule(boolean longTermMemory) {
+        if (!longTermMemory) return "";
         return " Это твоя настоящая память о товарище. Чего в ней нет — не помнишь, не выдумывай. "
                 + "Вспоминай из неё к месту, а одно и то же воспоминание — не чаще раза за сессию.";
+    }
+
+    private static String toneRule(boolean longTermMemory, String tier) {
+        CompanionBond.Tier known = longTermMemory ? CompanionBond.Tier.ofLabel(tier) : null;
+        if (known == null) return "";
+        String tone = switch (known) {
+            case OFFENDED -> "сухо и коротко, без шуток и тепла";
+            case WARY -> "настороженно, без панибратства";
+            case ACQUAINTANCE -> "ровно и вежливо, как со знакомым";
+            case PAL -> "дружелюбно, как с приятелем";
+            case BUDDY -> "тепло и с подколками, как с корешем";
+            case BEST_FRIEND -> "очень тепло и по-свойски, как с лучшим другом";
+        };
+        return " Тон общения по ступени связи «" + tier + "»: " + tone + ". Ступень меняет только тон, а не послушание: "
+                + "приказы игрока ты выполняешь при любой ступени. Обиды бери только из причин, названных в снимке; не выдумывай новых и не припоминай обиду без повода.";
     }
 
     private static CompletableFuture<JsonObject> request(boolean withTools, boolean forcePlan, String trace, JsonObject current, String context) {

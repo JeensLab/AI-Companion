@@ -92,7 +92,7 @@ final class CompanionAmbientClient {
         Object capturedWorld = world; UUID capturedCompanion = companion;
         long activity = conversation.revision(); boolean wasUrgent = urgent;
         String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
-        OpenRouterClient.react(observation, GameContext.ambientSnapshot(speaker), trace).whenComplete((text, error) -> client.execute(() -> {
+        OpenRouterClient.react(observation, GameContext.ambientSnapshot(speaker), trace, wasUrgent).whenComplete((text, error) -> client.execute(() -> {
             if (world != capturedWorld || client.level != capturedWorld) {
                 dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", "world_changed"); return;
             }
