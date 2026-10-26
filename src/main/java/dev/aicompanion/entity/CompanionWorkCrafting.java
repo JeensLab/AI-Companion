@@ -91,7 +91,7 @@ final class CompanionWorkCrafting {
             w.stoneSearch = new CompanionStoneSearch(level, w.owner.blockPosition(), w.owner.getSearchRadius());
             // Game log 22.10 (efc17045): the place of the order, 54 blocks back up the hill before the wood trip, stood for
             // «where mining started»; no route back there ended the work without a stone. The way back is from where mining starts.
-            w.workOrigin = w.miningOrigin(); w.returnRouteBlocked = false; w.nextReturnCheck = w.returnBlockedSince = 0; w.returnMisses = 0;
+            w.workOrigin = w.stoneMining.miningOrigin(); w.returnRouteBlocked = false; w.nextReturnCheck = w.returnBlockedSince = 0; w.returnMisses = 0;
         }
         w.phase = CompanionWork.Phase.MINE;
         w.resetTarget();
