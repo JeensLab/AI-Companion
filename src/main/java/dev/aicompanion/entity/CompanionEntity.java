@@ -6,7 +6,6 @@ import dev.aicompanion.inventory.CompanionMenu;
 import dev.aicompanion.inventory.CompanionEquipmentContainer;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.BlockPos.MutableBlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -15,7 +14,6 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -52,9 +50,6 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
-import java.util.ArrayDeque;
-import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -65,17 +60,17 @@ import java.util.UUID;
 public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<Optional<UUID>> DATA_OWNER = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.OPTIONAL_UUID);
-    private static final EntityDataAccessor<Boolean> DATA_FOLLOWING = SynchedEntityData.defineId(
+    static final EntityDataAccessor<Boolean> DATA_FOLLOWING = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Boolean> DATA_PROTECTING = SynchedEntityData.defineId(
+    static final EntityDataAccessor<Boolean> DATA_PROTECTING = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Boolean> DATA_ROAMING = SynchedEntityData.defineId(
+    static final EntityDataAccessor<Boolean> DATA_ROAMING = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Boolean> DATA_GATHERING_LOGS = SynchedEntityData.defineId(
+    static final EntityDataAccessor<Boolean> DATA_GATHERING_LOGS = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Integer> DATA_LOGS_REMAINING = SynchedEntityData.defineId(
+    static final EntityDataAccessor<Integer> DATA_LOGS_REMAINING = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.INT);
-    private static final EntityDataAccessor<String> DATA_LAST_TASK_RESULT = SynchedEntityData.defineId(
+    static final EntityDataAccessor<String> DATA_LAST_TASK_RESULT = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_INVENTORY_SUMMARY = SynchedEntityData.defineId(
             CompanionEntity.class, EntityDataSerializers.STRING);
@@ -102,32 +97,33 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
     private boolean nearbySocialThreat;
     private boolean nearbyExplosiveThreat;
-    private static final double LOG_INTERACTION_RANGE_SQR = 16.0D;
+    static final double LOG_INTERACTION_RANGE_SQR = 16.0D;
     private UUID ownerId;
-    private boolean following = true;
-    private boolean protecting;
-    private boolean roaming;
+    boolean following = true;
+    boolean protecting;
+    boolean roaming;
     private BlockPos roamOrigin;
-    private int searchRadius = 64;
-    private boolean gatheringLogs;
-    private boolean gatheringDirt;
-    private int logsRemaining;
-    private int requestedLogs;
-    private int woodTaskVersion;
-    private int dirtTaskVersion;
-    private boolean supportSoilTask;
-    private int savedWoodRequested;
-    private int savedWoodRemaining;
-    private boolean lastTaskSucceeded;
-    private int inventoryViewers;
-    private final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
-    private final CompanionPillar temporaryPillar = new CompanionPillar(this);
-    private final CompanionWork work = new CompanionWork(this);
-    private final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
-    private final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
-    private final CompanionLoot loot = new CompanionLoot(this);
+    int searchRadius = 64;
+    boolean gatheringLogs;
+    boolean gatheringDirt;
+    int logsRemaining;
+    int requestedLogs;
+    int woodTaskVersion;
+    int dirtTaskVersion;
+    boolean supportSoilTask;
+    int savedWoodRequested;
+    int savedWoodRemaining;
+    boolean lastTaskSucceeded;
+    int inventoryViewers;
+    final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
+    final CompanionPillar temporaryPillar = new CompanionPillar(this);
+    final CompanionWork work = new CompanionWork(this);
+    final CompanionGathering gathering = new CompanionGathering(this);
+    final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
+    final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
+    final CompanionLoot loot = new CompanionLoot(this);
     private final CompanionRecovery recovery = new CompanionRecovery(this);
-    private final CompanionTravel travel = new CompanionTravel(this);
+    final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     private BlockPos movementIntent;
     private boolean chunkLoading = true;
@@ -138,10 +134,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private BlockPos lastPlacedPosition;
     BlockPos lastPlacedPosition() { return lastPlacedPosition; }
     private final CompanionSocial social = new CompanionSocial(this);
-    private final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
+    final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
     private final CompanionPlaces places = new CompanionPlaces(this);
     private final CompanionDeeds deeds = new CompanionDeeds();
-    private final CompanionAutonomy autonomy = new CompanionAutonomy(this);
+    final CompanionAutonomy autonomy = new CompanionAutonomy(this);
     private final CompanionGoals goals = new CompanionGoals(this);
     public CompanionGoals goals() { return goals; }
     private final CompanionLighting lighting = new CompanionLighting(this);
@@ -298,8 +294,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new RecoverRouteGoal());
         this.goalSelector.addGoal(2, new PlayerPaceAttackGoal());
         this.goalSelector.addGoal(2, new PickupLootGoal());
-        this.goalSelector.addGoal(3, new GatherLogsGoal(this));
-        this.goalSelector.addGoal(3, new GatherDirtGoal(this));
+        this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
+        this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherDirtGoal(this));
         this.goalSelector.addGoal(3, new WorkGoal());
         this.goalSelector.addGoal(4, new FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new RoamGoal());
@@ -786,7 +782,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         return CompanionActionResult.ok("Убрал в сумку: " + equipped.getHoverName().getString() + ".");
     }
 
-    private NonNullList<ItemStack> copyBag() {
+    NonNullList<ItemStack> copyBag() {
         NonNullList<ItemStack> copy = NonNullList.withSize(companionInventory.size(), ItemStack.EMPTY);
         for (int index = 0; index < copy.size(); index++) copy.set(index, companionInventory.get(index).copy());
         return copy;
@@ -1291,67 +1287,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         return null;
     }
 
-    public void startGatheringLogs(int count) {
-        work.cancel();
-        startGatheringLogsForWork(count);
-    }
-
-    void startGatheringLogsForWork(int count) {
-        loot.beginCollection();
-        woodTaskVersion++;
-        temporaryPillar.requestCleanup();
-        roaming = false;
-        entityData.set(DATA_ROAMING, false);
-        lastTaskSucceeded = false;
-        gatheringDirt = false;
-        following = false;
-        entityData.set(DATA_FOLLOWING, false);
-        protecting = false;
-        entityData.set(DATA_PROTECTING, false);
-        gatheringLogs = true;
-        logsRemaining = Math.max(1, Math.min(64, count));
-        requestedLogs = logsRemaining;
-        entityData.set(DATA_GATHERING_LOGS, true);
-        entityData.set(DATA_LOGS_REMAINING, logsRemaining);
-        entityData.set(DATA_LAST_TASK_RESULT, "Ищу дерево, нужно собрать " + requestedLogs + " брёвен.");
-        getNavigation().stop();
-    }
-
-    void startGatheringDirtForWork(int count) {
-        loot.beginCollection();
-        dirtTaskVersion++;
-        temporaryPillar.requestCleanup();
-        roaming = false;
-        entityData.set(DATA_ROAMING, false);
-        lastTaskSucceeded = false;
-        gatheringLogs = false;
-        gatheringDirt = true;
-        following = false;
-        protecting = false;
-        entityData.set(DATA_FOLLOWING, false);
-        entityData.set(DATA_PROTECTING, false);
-        logsRemaining = Math.max(1, Math.min(64, count));
-        requestedLogs = logsRemaining;
-        entityData.set(DATA_GATHERING_LOGS, true);
-        entityData.set(DATA_LOGS_REMAINING, logsRemaining);
-        entityData.set(DATA_LAST_TASK_RESULT, "Ищу землю, нужно добыть " + requestedLogs + " блоков.");
-        getNavigation().stop();
-    }
-
-    public void stopGathering() {
-        if (gatheringLogs && !work.isActive()) noteDeed("Прервал рубку дерева: брёвен было нужно ещё " + logsRemaining + ".", false);
-        if (gatheringDirt && !work.isActive()) noteDeed("Прервал добычу земли: было нужно ещё " + logsRemaining + ".", false);
-        lastTaskSucceeded = false;
-        gatheringLogs = false;
-        gatheringDirt = false;
-        logsRemaining = 0;
-        requestedLogs = 0;
-        entityData.set(DATA_GATHERING_LOGS, false);
-        entityData.set(DATA_LOGS_REMAINING, 0);
-        entityData.set(DATA_LAST_TASK_RESULT, "Предыдущую задачу остановил. В сумке: " + getStoredItemsSummary() + ".");
-        getNavigation().stop();
-        setFollowing(true);
-    }
+    public void startGatheringLogs(int count) { gathering.startGatheringLogs(count); }
+    void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count); }
+    void startGatheringDirtForWork(int count) { gathering.startGatheringDirtForWork(count); }
+    public void stopGathering() { gathering.stopGathering(); }
 
     ServerPlayer getOwnerPlayer() {
         if (!(level() instanceof ServerLevel serverLevel) || ownerId == null) return null;
@@ -1360,635 +1299,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     static final String FULL_BAG_FOR_LOGS = "В сумке нет места для брёвен: все ячейки заняты. Освободи место или попроси сложить вещи в сундук.";
-    /** Room for one more log: an empty slot, or a stack of logs not yet full. */
-    boolean hasRoomForLogs() {
-        for (ItemStack stack : companionInventory) if (stack.isEmpty() || stack.is(ItemTags.LOGS) && stack.getCount() < stack.getMaxStackSize()) return true;
-        return false;
-    }
+    boolean hasRoomForLogs() { return gathering.hasRoomForLogs(); }
+    boolean canStoreDrops(List<ItemStack> drops) { return gathering.canStoreDrops(drops); }
 
-    private boolean mineLog(BlockPos pos) {
-        if (!(level() instanceof ServerLevel serverLevel)) return false;
-        BlockState state = serverLevel.getBlockState(pos);
-        if (!state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)) return false;
-        ItemStack tool = getMainHandItem();
-        var drops = Block.getDrops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), this, tool);
-        if (!canStoreDrops(drops)) return false;
-        if (!serverLevel.destroyBlock(pos, false, this, 512)) return false;
-        tool.getItem().mineBlock(tool, serverLevel, state, pos, this);
-        swing(InteractionHand.MAIN_HAND);
-        dropHarvest(pos, drops);
-        if (state.is(BlockTags.LOGS)) observeEvent("wood", "Срубил и увидел выпавшее бревно. Добыча дерева ещё может продолжаться.");
-        return true;
-    }
-
-    private boolean mineDirt(BlockPos pos) {
-        if (!(level() instanceof ServerLevel serverLevel)) return false;
-        BlockState state = serverLevel.getBlockState(pos);
-        if (!isDirtBlock(state) || CompanionMiningNavigation.supportsLivingEntity(this, pos) || !CompanionQuarry.safeCell(serverLevel, pos)) return false;
-        if (!CompanionMiningNavigation.preservesAutonomousReturn(this, pos)) return false;
-        selectToolForBlock(state);
-        ItemStack tool = getMainHandItem();
-        var drops = Block.getDrops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), this, tool);
-        if (!canStoreDrops(drops)) return false;
-        if (!serverLevel.destroyBlock(pos, false, this, 512)) return false;
-        tool.getItem().mineBlock(tool, serverLevel, state, pos, this);
-        swing(InteractionHand.MAIN_HAND);
-        dropHarvest(pos, drops);
-        return true;
-    }
-
-    boolean canStoreDrops(List<ItemStack> drops) {
-        var bag = copyBag();
-        for (ItemStack offered : drops) {
-            ItemStack remaining = offered.copy();
-            for (ItemStack stored : bag) if (!stored.isEmpty() && ItemStack.isSameItemSameComponents(stored, remaining)) {
-                int moved = Math.min(remaining.getCount(), stored.getMaxStackSize() - stored.getCount());
-                if (moved > 0) { stored.grow(moved); remaining.shrink(moved); }
-            }
-            for (int slot = 0; slot < bag.size() && !remaining.isEmpty(); slot++) if (bag.get(slot).isEmpty()) {
-                int moved = Math.min(remaining.getCount(), remaining.getMaxStackSize());
-                bag.set(slot, remaining.copyWithCount(moved)); remaining.shrink(moved);
-            }
-            if (!remaining.isEmpty()) return false;
-        }
-        return true;
-    }
-
-    private static boolean isDirtBlock(BlockState state) {
-        return CompanionQuarry.soil(state); // one definition of natural soil for digging
-    }
-
-    private final class GatherLogsGoal extends Goal {
-        private BlockPos target;
-        private Path approachPath;
-        private int retryDelay;
-        private int noLogsTicks;
-        private int elapsedTicks;
-        private int gathered;
-        private int inventoryTarget;
-        private final CompanionToolSense axeSense = new CompanionToolSense(CompanionEntity.this, "axe", ItemTags.AXES, Blocks.OAK_LOG.defaultBlockState());
-        private int soilAttempts;
-        private int pathFailTicks;
-        private int lastProgressTick;
-        private int targetStartedTick;
-        private double bestTargetDistance;
-        private boolean resumeAfterCleanup;
-        private int taskVersion;
-        private String accessIssue = "";
-        private static final int CROWN_ATTEMPTS = 2;
-        /** Farther than this a tree with no route yet is walked to, nearer it is climbed or skipped as before. */
-        private static final int FAR_TREE = 12;
-        private int crownFailures;
-        private final Set<BlockPos> unreachableLogs = new HashSet<>();
-        /** Logs of a player's building (no living crown, touching planks, doors, glass…): never chopped. */
-        private final Set<BlockPos> builtLogs = new HashSet<>();
-        private final Set<BlockPos> currentTreeLogs = new HashSet<>();
-        /** Trunks no walk reached from where he stood: not compared on foot again during this request. */
-        private final Set<BlockPos> walkTried = new HashSet<>();
-        private List<BlockPos> searchCandidates;
-        private BlockPos searchOrigin;
-        /** The trees round the player were looked at too (once per request). */
-        private boolean searchedByPlayer;
-
-        private GatherLogsGoal(CompanionEntity ignored) {
-            setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP));
-        }
-
-        @Override public boolean requiresUpdateEveryTick() { return true; }
-
-        @Override
-        public boolean canUse() {
-            return gatheringLogs && inventoryViewers == 0 && !temporaryPillar.isRecovering();
-        }
-
-        @Override
-        public boolean canContinueToUse() {
-            return gatheringLogs && taskVersion == woodTaskVersion && inventoryViewers == 0 && !temporaryPillar.isRecovering();
-        }
-
-        @Override
-        public void start() {
-            woodBreaking.reset();
-            target = null;
-            approachPath = null;
-            retryDelay = 0;
-            if (resumeAfterCleanup && taskVersion == woodTaskVersion) {
-                resumeAfterCleanup = false;
-                return;
-            }
-            taskVersion = woodTaskVersion;
-            resumeAfterCleanup = false;
-            accessIssue = "";
-            noLogsTicks = 0;
-            elapsedTicks = 0;
-            gathered = Math.max(0, requestedLogs - logsRemaining);
-            // What is still missing: after a reload the logs already chopped are not asked for again (review 22.10, М1).
-            inventoryTarget = CompanionTools.count(CompanionEntity.this, ItemTags.LOGS) + logsRemaining;
-            axeSense.reset(); soilAttempts = 0;
-            pathFailTicks = 0;
-            unreachableLogs.clear(); builtLogs.clear(); walkTried.clear();
-            currentTreeLogs.clear();
-            searchOrigin = blockPosition();
-            searchCandidates = null; searchedByPlayer = false;
-        }
-
-        @Override
-        public void tick() {
-            if (!gatheringLogs) return;
-            elapsedTicks++;
-            if (actionAnimation() != 0 && !temporaryPillar.isActive() && !temporaryPillar.isRecovering()) return;
-            if (elapsedTicks > 20 * 180) {
-                finish("Не успел закончить сбор древесины, попробуем позже.");
-                return;
-            }
-            ServerPlayer owner = getOwnerPlayer();
-            if (owner == null) {
-                finish("Я потерял связь с тобой и остановил сбор.");
-                return;
-            }
-            // A just-spawned or falling mob cannot build a ground path yet; this is temporary, not an unreachable tree.
-            if (!onGround() && !isInWater() && !temporaryPillar.isActive()) return;
-            // Marathon 23.10: with the bag full to the last slot he went from log to log, «не удалось сломать, пропускаю», and never
-            // said why. A player sees the full bag first: said at once, nothing thrown away.
-            if (!hasRoomForLogs()) { finish(FULL_BAG_FOR_LOGS); return; }
-            if (retryDelay > 0) {
-                retryDelay--;
-                return;
-            }
-            logsRemaining = Math.max(0, inventoryTarget - CompanionTools.count(CompanionEntity.this, ItemTags.LOGS));
-            entityData.set(DATA_LOGS_REMAINING, logsRemaining);
-            // On a pillar the hand alternates soil and axe per jump/swing by itself; forcing the axe every tick only flickered.
-            if (logsRemaining > 0 && !temporaryPillar.isActive() && axeSense.tick()) { woodBreaking.reset(); return; }
-            if (logsRemaining > 0 && !temporaryPillar.isActive()) CompanionTools.equip(CompanionEntity.this, ItemTags.AXES, Blocks.OAK_LOG.defaultBlockState());
-            if (target == null || !level().getBlockState(target).is(BlockTags.LOGS)) {
-                woodBreaking.reset();
-                if (target != null) currentTreeLogs.remove(target);
-                target = selectNextLog();
-                approachPath = null;
-                pathFailTicks = 0;
-                lastProgressTick = targetStartedTick = tickCount;
-                bestTargetDistance = Double.MAX_VALUE;
-            }
-            if (target == null) {
-                if (temporaryPillar.isRecovering()) return;
-                if (loot.hasPending()) return;
-                if (logsRemaining == 0 && currentTreeLogs.isEmpty()) {
-                    String accessNote = unreachableLogs.isEmpty() ? "Текущее дерево закончил." : "До части брёвен не удалось добраться, поэтому оставил их.";
-                    finish("Закончил сбор: срубил " + gathered + " брёвен (цель была " + requestedLogs + "). "
-                            + accessNote + " У меня в сумке: " + getStoredItemsSummary() + ".");
-                } else if (++noLogsTicks >= 100) finish(gathered == 0
-                        ? autonomy.running() ? "В " + CompanionAutonomy.LEASH + " блоках от рабочего места не нашёл доступных деревьев."
-                        : "Сбор завершён: в пределах " + searchRadius + " блоков не нашёл доступных деревьев."
-                        : "Сбор завершён раньше цели: срубил " + gathered + " из " + requestedLogs + " брёвен; "
-                        + (unreachableLogs.isEmpty() ? "рядом больше нет доступных брёвен. "
-                        : "оставшиеся брёвна не удалось достать по пути. ")
-                        + "У меня в сумке: " + getStoredItemsSummary() + ".");
-                return;
-            }
-            noLogsTicks = 0;
-            getLookControl().setLookAt(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
-            movementIntent(target);
-            if (temporaryPillar.isActive()) {
-                CompanionPillar.Outcome outcome = temporaryPillar.tickToward(target);
-                if (switchToBranch()) return;
-                if (outcome == CompanionPillar.Outcome.FAILED) {
-                    rejectTarget(true);
-                    return;
-                }
-                if (outcome == CompanionPillar.Outcome.WORKING) return;
-            }
-            double distance = distanceToSqr(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
-            BlockPos leaves = CompanionMiningNavigation.obstructingLeaves(CompanionEntity.this, target);
-            if (leaves != null && distanceToSqr(leaves.getCenter()) <= LOG_INTERACTION_RANGE_SQR) {
-                getNavigation().stop();
-                if (woodBreaking.tick((ServerLevel)level(), leaves)) {
-                    mineLog(leaves); woodBreaking.reset();
-                }
-                return;
-            }
-            if (distance <= LOG_INTERACTION_RANGE_SQR && CompanionMiningNavigation.visible(CompanionEntity.this, getEyePosition(), target)) {
-                getNavigation().stop();
-                // With no axe, put away held building supplies and use a real empty hand.
-                if (getOffhandItem().is(ItemTags.AXES)) unequipForSupport("offhand");
-                selectToolForBlock(level().getBlockState(target));
-                if (!getMainHandItem().isEmpty() && !getMainHandItem().is(ItemTags.AXES)) {
-                    CompanionActionResult emptyHand = unequipForSupport("mainhand");
-                    if (!emptyHand.success()) { finish("В сумке нет места, чтобы освободить руку для рубки."); return; }
-                }
-                if (!woodBreaking.tick((ServerLevel)level(), target)) return;
-                if (mineLog(target)) {
-                    gathered++;
-                    logsRemaining = Math.max(0, inventoryTarget - CompanionTools.count(CompanionEntity.this, ItemTags.LOGS));
-                    entityData.set(DATA_LOGS_REMAINING, logsRemaining);
-                    entityData.set(DATA_LAST_TASK_RESULT, gathered >= requestedLogs
-                            ? "Цель по брёвнам выполнена; заканчиваю текущее дерево."
-                            : "Срубил " + gathered + " из " + requestedLogs + " брёвен.");
-                } else {
-                    unreachableLogs.add(target.immutable());
-                    currentTreeLogs.remove(target);
-                    entityData.set(DATA_LAST_TASK_RESULT, "Не удалось сломать это бревно, пропускаю его и ищу доступное.");
-                }
-                woodBreaking.reset();
-                currentTreeLogs.remove(target);
-                target = null;
-                approachPath = null;
-                retryDelay = 4;
-                pathFailTicks = 0;
-            } else {
-                woodBreaking.reset();
-                if (distance + 0.1D < bestTargetDistance) {
-                    bestTargetDistance = distance;
-                    lastProgressTick = tickCount;
-                }
-                // Accepting a path is not evidence that the mob is actually getting closer.
-                if (tickCount - targetStartedTick > 20 * 30) { rejectTarget(false); return; }
-                boolean noProgress = tickCount - lastProgressTick >= 60;
-                // Navigation considers a waypoint reached before the mob is exactly centered.
-                // Give the movement controller time to line up a visible face before trying a pillar.
-                if (approachPath != null && (getNavigation().isStuck() || noProgress)) {
-                    tryClimbing();
-                    return;
-                }
-                if (approachPath == null) approachPath = findApproachPath(target);
-                // A tree far off over hills: walked to in legs first, not declared out of reach (game log 23.10, aa07e605).
-                if (approachPath == null && Math.hypot(target.getX() + .5 - getX(), target.getZ() + .5 - getZ()) > FAR_TREE) {
-                    // To the foot of the trunk, as a player walks to a tree: a route to a log up in the crown is never found, and its parts
-                    // led him off swimming round an island (marathon 23.10, «берег»).
-                    BlockPos foot = target;
-                    while (foot.getY() > level().getMinBuildHeight() && level().getBlockState(foot.below()).is(BlockTags.LOGS)) foot = foot.below();
-                    var step = travel.toward(foot, FAR_TREE - 4);
-                    if (step == CompanionTravel.Step.WALKING) {
-                        targetStartedTick = lastProgressTick = tickCount;
-                        entityData.set(DATA_LAST_TASK_RESULT, "Иду к дереву подальше.");
-                        return;
-                    }
-                    travel.reset();
-                    if (step == CompanionTravel.Step.FAILED) { rejectTarget(false); return; }
-                    approachPath = findApproachPath(target);
-                }
-                if (approachPath == null) { tryClimbing(); return; }
-                CompanionMiningNavigation.walk(CompanionEntity.this, approachPath);
-            }
-        }
-
-        private void tryClimbing() {
-            CompanionPillar.Outcome outcome = temporaryPillar.tickToward(target);
-            if (switchToBranch()) return;
-            if (outcome == CompanionPillar.Outcome.FAILED && temporaryPillar.failureReason().contains("земли") && soilAttempts++ < 2) {
-                savedWoodRequested = requestedLogs; savedWoodRemaining = logsRemaining;
-                supportSoilTask = true;
-                startGatheringDirtForWork(Math.max(1, 6 - CompanionTools.soil(CompanionEntity.this)));
-                workStatus("Для верхушки нужна опора. Сначала добуду немного земли.");
-            }
-            else if (outcome == CompanionPillar.Outcome.FAILED) rejectTarget(true);
-            else if (outcome == CompanionPillar.Outcome.READY && !CompanionMiningNavigation.visible(CompanionEntity.this, getEyePosition(), target)) rejectTarget(false);
-            else entityData.set(DATA_LAST_TASK_RESULT, "Поднимаюсь на временной опоре, чтобы достать верхние брёвна.");
-        }
-
-        /** A crown log over the pillar is chopped from where Oleg already stands, instead of abandoning the crown. */
-        private boolean switchToBranch() {
-            BlockPos branch = temporaryPillar.takeBranch();
-            if (branch == null || unreachableLogs.contains(branch)) return false;
-            woodBreaking.reset();
-            currentTreeLogs.add(branch);
-            target = branch;
-            approachPath = null;
-            lastProgressTick = targetStartedTick = tickCount;
-            bestTargetDistance = Double.MAX_VALUE;
-            entityData.set(DATA_LAST_TASK_RESULT, "Над опорой ветка, срублю её отсюда.");
-            return true;
-        }
-
-        private void rejectTarget(boolean skipHigherCrown) {
-            woodBreaking.reset();
-            // One failed climb is not proof that the whole crown is out of reach: try another log of it once more.
-            // A crown that is simply too tall, or a second failure on the same tree, still ends with the honest skip.
-            String reason = temporaryPillar.failureReason();
-            if (skipHigherCrown && ++crownFailures < CROWN_ATTEMPTS && !reason.contains("слишком высокая")) skipHigherCrown = false;
-            if (skipHigherCrown) accessIssue = reason;
-            if (target != null) {
-                unreachableLogs.add(target.immutable());
-                if (skipHigherCrown) {
-                    for (BlockPos log : currentTreeLogs) if (log.getY() >= target.getY()) unreachableLogs.add(log);
-                }
-                currentTreeLogs.removeIf(unreachableLogs::contains);
-            }
-            temporaryPillar.requestCleanup();
-            entityData.set(DATA_GATHERING_LOGS, true);
-            entityData.set(DATA_LAST_TASK_RESULT, "До этой части дерева безопасно не добраться, ищу другую.");
-            target = null;
-            approachPath = null;
-            getNavigation().stop();
-            retryDelay = 2;
-        }
-
-        @Override
-        public void stop() {
-            woodBreaking.reset();
-            getNavigation().stop();
-            target = null;
-            temporaryPillar.requestCleanup();
-            resumeAfterCleanup = gatheringLogs || supportSoilTask;
-        }
-
-        private BlockPos findNearestLog() {
-            if (!(level() instanceof ServerLevel serverLevel)) return null;
-            if (searchCandidates == null) searchCandidates = CompanionLogSearch.find(serverLevel, searchOrigin, searchRadius);
-            List<BlockPos> nearest = searchCandidates.stream().filter(candidate -> !unreachableLogs.contains(candidate) && !builtLogs.contains(candidate)
-                    && leashAllows(candidate) && level().hasChunkAt(candidate) && level().getBlockState(candidate).is(BlockTags.LOGS))
-                    .sorted(Comparator.comparingDouble(candidate -> candidate.distSqr(blockPosition()) + Math.max(0, candidate.getY() - getY()) * 4))
-                    .limit(64).toList();
-            // Marathon 23.10, «берег»: the trees were looked for once, from the mainland; on the island the two farther ones were beyond
-            // that radius and «рядом больше нет доступных брёвен» with them in sight. Walked far from where he looked: look again here.
-            if (nearest.isEmpty() && searchOrigin != null && searchOrigin.distSqr(blockPosition()) > 4 * 4) {
-                // What was seen from the first place stays on the list; what is seen from here is added.
-                searchOrigin = blockPosition();
-                Set<BlockPos> merged = new java.util.LinkedHashSet<>(searchCandidates);
-                merged.addAll(CompanionLogSearch.find(serverLevel, searchOrigin, searchRadius));
-                searchCandidates = new java.util.ArrayList<>(merged);
-                return findNearestLog();
-            }
-            // The order was «near the player»: the trees round him count too (marathon 23.10, night in «долина»: driving monsters off
-            // he had gone twelve blocks from the player, and from there the forest by the player was two blocks beyond the radius).
-            var player = getOwnerPlayer();
-            if (nearest.isEmpty() && !searchedByPlayer && !autonomy.running() && player != null && player.level() == level() && player.blockPosition().distSqr(blockPosition()) > 4 * 4) {
-                searchedByPlayer = true;
-                Set<BlockPos> merged = new java.util.LinkedHashSet<>(searchCandidates);
-                merged.addAll(CompanionLogSearch.find(serverLevel, player.blockPosition(), searchRadius));
-                searchCandidates = new java.util.ArrayList<>(merged);
-                return findNearestLog();
-            }
-            if (nearest.isEmpty()) return null;
-            // Like stone (game log 22.10): of the nearest trunks, the one nearest on foot, not across a ravine by the straight line.
-            // None reachable on foot: the nearest, for the climbing and support logic, as before.
-            Set<Long> trunks = new HashSet<>();
-            List<BlockPos> group = nearest.stream().filter(candidate -> !walkTried.contains(candidate)
-                    && trunks.add(BlockPos.asLong(candidate.getX(), 0, candidate.getZ()))).limit(8).toList();
-            var walk = group.isEmpty() ? null : CompanionMiningNavigation.nearestOnFoot(CompanionEntity.this, group, 3.7, true, false);
-            if (walk == null) walkTried.addAll(group);
-            return walk == null ? nearest.get(0) : walk.block();
-        }
-        /** Keep working on the connected tree after the requested minimum is reached. */
-        private BlockPos selectNextLog() {
-            currentTreeLogs.removeIf(pos -> unreachableLogs.contains(pos) || !level().hasChunkAt(pos)
-                    || !level().getBlockState(pos).is(BlockTags.LOGS));
-            if (currentTreeLogs.isEmpty()) {
-                if (temporaryPillar.hasSupports()) { temporaryPillar.requestCleanup(); return null; }
-                // Do not start another tree and its climbing prerequisites while the last
-                // already harvested log is still waiting for its ground pickup delay.
-                if (logsRemaining > 0 && loot.incomingLogs() >= logsRemaining) return null;
-                if (CompanionTools.count(CompanionEntity.this, ItemTags.LOGS) >= inventoryTarget) return null;
-                // Review 22.10, К2: a log cabin is not a tree. A few groups a tick, nearest first.
-                for (int tries = 0; tries < 8 && currentTreeLogs.isEmpty(); tries++) {
-                    BlockPos seed = findNearestLog();
-                    if (seed == null) return null;
-                    collectConnectedLogs(seed);
-                    if (!CompanionBuildings.builtLogs((ServerLevel) level(), currentTreeLogs)
-                            && !(ownPlacesOnly() && CompanionBuildings.decorated((ServerLevel) level(), currentTreeLogs))) break;
-                    dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "building_logs_skipped", "entity", getUUID(), "seed", seed, "logs", currentTreeLogs.size());
-                    builtLogs.addAll(currentTreeLogs); currentTreeLogs.clear();
-                }
-                if (currentTreeLogs.isEmpty()) return null;
-            }
-            BlockPos best = null;
-            double bestScore = Double.MAX_VALUE;
-            BlockPos origin = blockPosition();
-            for (BlockPos log : currentTreeLogs) {
-                double score = distanceToSqr(log.getX() + 0.5D, log.getY() + 0.5D, log.getZ() + 0.5D)
-                        + Math.max(0, log.getY() - origin.getY()) * 4.0D;
-                if (score < bestScore) { bestScore = score; best = log; }
-            }
-            return best;
-        }
-
-        private void collectConnectedLogs(BlockPos seed) {
-            crownFailures = 0;
-            Deque<BlockPos> queue = new ArrayDeque<>();
-            Set<BlockPos> visited = new HashSet<>();
-            queue.add(seed.immutable());
-            visited.add(seed.immutable());
-            while (!queue.isEmpty() && currentTreeLogs.size() < 512) {
-                BlockPos pos = queue.removeFirst();
-                if (!level().hasChunkAt(pos) || !level().getBlockState(pos).is(BlockTags.LOGS)) continue;
-                currentTreeLogs.add(pos.immutable());
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dy = -1; dy <= 1; dy++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            if (dx == 0 && dy == 0 && dz == 0) continue;
-                            BlockPos next = pos.offset(dx, dy, dz);
-                            if (Math.abs(next.getX() - seed.getX()) > 12 || Math.abs(next.getZ() - seed.getZ()) > 12
-                                    || Math.abs(next.getY() - seed.getY()) > 24 || !visited.add(next)) continue;
-                            if (level().hasChunkAt(next) && level().getBlockState(next).is(BlockTags.LOGS)) queue.addLast(next);
-                        }
-                    }
-                }
-            }
-        }
-
-        /** Find a reachable standing spot next to the log; never path into the solid log itself. */
-        private Path findApproachPath(BlockPos log) {
-            Path path = CompanionMiningNavigation.pathTo(CompanionEntity.this, log, 3.7, true);
-            return path != null && path.canReach() ? path : null;
-        }
-
-        private void finish(String message) {
-            woodBreaking.reset();
-            if (!accessIssue.isBlank()) message += " " + accessIssue + ".";
-            lastTaskSucceeded = CompanionTools.count(CompanionEntity.this, ItemTags.LOGS) >= inventoryTarget;
-            gatheringLogs = false;
-            logsRemaining = 0;
-            entityData.set(DATA_GATHERING_LOGS, false);
-            entityData.set(DATA_LOGS_REMAINING, 0);
-            entityData.set(DATA_LAST_TASK_RESULT, message);
-            target = null;
-            // As a step of a work the work's own result is the deed.
-            if (work.isActive()) syncWorkState();
-            else { noteDeed(message, lastTaskSucceeded); finishFollowing(); }
-        }
-    }
-
-    private final class GatherDirtGoal extends Goal {
-        private BlockPos dirtOrigin;
-        private BlockPos target;
-        private Path approachPath;
-        private final Set<BlockPos> unreachable = new HashSet<>();
-        private int retryDelay;
-        private int noDirtTicks;
-        private int elapsedTicks;
-        private int gathered;
-        private int pathFailTicks;
-        private int inventoryTarget;
-        private int taskVersion;
-        private boolean resume;
-        private final CompanionToolSense shovelSense = new CompanionToolSense(CompanionEntity.this, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
-        private int targetSince, targetProgress;
-        private double targetBest;
-
-        private GatherDirtGoal(CompanionEntity ignored) { setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
-        @Override public boolean requiresUpdateEveryTick() { return true; }
-        @Override public boolean canUse() { return gatheringDirt && inventoryViewers == 0; }
-        @Override public boolean canContinueToUse() { return gatheringDirt && inventoryViewers == 0; }
-
-        @Override public void start() {
-            dirtBreaking.reset();
-            target = null;
-            approachPath = null;
-            if (resume && taskVersion == dirtTaskVersion) { resume = false; return; }
-            resume = false; taskVersion = dirtTaskVersion;
-            dirtOrigin = blockPosition();
-            retryDelay = noDirtTicks = elapsedTicks = pathFailTicks = 0;
-            gathered = Math.max(0, requestedLogs - logsRemaining);
-            inventoryTarget = CompanionTools.soil(CompanionEntity.this) + logsRemaining;
-            shovelSense.reset();
-            unreachable.clear();
-        }
-
-        @Override public void tick() {
-            if (!gatheringDirt) return;
-            if (actionAnimation() != 0) return;
-            if (++elapsedTicks > 20 * 180) { finish("Остановил добычу земли по тайм-ауту."); return; }
-            if (getOwnerPlayer() == null) { finish("Я потерял связь с тобой и остановил добычу земли."); return; }
-            logsRemaining = Math.max(0, inventoryTarget - CompanionTools.soil(CompanionEntity.this));
-            entityData.set(DATA_LOGS_REMAINING, logsRemaining);
-            if (logsRemaining <= 0 && !loot.hasPending()) { finish("Добыча земли завершена: добыл " + gathered + " блоков. В сумке: " + getStoredItemsSummary() + "."); return; }
-            if (logsRemaining > 0 && loot.incomingSoil() >= logsRemaining) { dirtBreaking.reset(); getNavigation().stop(); return; }
-            // Soil for a support under a crown: by hand, a shovel would eat the wood just cut (marathon 23.10: «добудь дерева» ended
-            // with fewer logs than asked, one gone into a shovel for six blocks of dirt).
-            if (!supportSoilTask && shovelSense.tick()) { dirtBreaking.reset(); approachPath = null; return; }
-            CompanionTools.equip(CompanionEntity.this, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
-            if (retryDelay > 0) { retryDelay--; return; }
-
-            if (target != null && (CompanionMiningNavigation.supportsLivingEntity(CompanionEntity.this, target)
-                    || !CompanionQuarry.safeCell((ServerLevel)level(), target))) {
-                unreachable.add(target); dirtBreaking.reset(); target = null;
-            }
-            if (target == null || !level().hasChunkAt(target) || !isDirtBlock(level().getBlockState(target))) {
-                dirtBreaking.reset();
-                target = findNearestDirt();
-                approachPath = null;
-                pathFailTicks = 0;
-                targetSince = targetProgress = tickCount; targetBest = Double.MAX_VALUE;
-            }
-            if (target == null) {
-                if (++noDirtTicks >= 80) finish("Нашёл только " + gathered + " из " + requestedLogs
-                        + " блоков земли поблизости. Поставь меня у открытого участка земли и попроси снова.");
-                return;
-            }
-            noDirtTicks = 0;
-            movementIntent(target);
-            getLookControl().setLookAt(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
-            double distance = distanceToSqr(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
-            if (!CompanionMiningNavigation.preservesAutonomousReturn(CompanionEntity.this, target)) {
-                unreachable.add(target.immutable()); dirtBreaking.reset(); target = null; approachPath = null; getNavigation().stop(); return;
-            }
-            if (distance + .05 < targetBest) { targetBest = distance; targetProgress = tickCount; }
-            if (tickCount - targetSince > 20 * 30 || tickCount - targetProgress > 160) {
-                unreachable.add(target.immutable()); dirtBreaking.reset(); target = null; approachPath = null; getNavigation().stop(); return;
-            }
-            if (distance <= LOG_INTERACTION_RANGE_SQR && CompanionMiningNavigation.visible(CompanionEntity.this, getEyePosition(), target)
-                    && CompanionMiningNavigation.dropCollectable((ServerLevel)level(), target, blockPosition())) {
-                getNavigation().stop();
-                selectToolForBlock(level().getBlockState(target));
-                if (!dirtBreaking.tick((ServerLevel)level(), target)) return;
-                if (mineDirt(target)) {
-                    gathered++;
-                    logsRemaining = Math.max(0, inventoryTarget - CompanionTools.soil(CompanionEntity.this));
-                    entityData.set(DATA_LOGS_REMAINING, logsRemaining);
-                    entityData.set(DATA_LAST_TASK_RESULT, "Добыл " + gathered + " из " + requestedLogs + " блоков земли.");
-                } else {
-                    unreachable.add(target.immutable());
-                    entityData.set(DATA_LAST_TASK_RESULT, "Не удалось сломать этот блок земли, ищу другой.");
-                }
-                dirtBreaking.reset();
-                target = null;
-                approachPath = null;
-                retryDelay = 8;
-                pathFailTicks = 0;
-                return;
-            }
-
-            dirtBreaking.reset();
-
-            if (getNavigation().isStuck()) {
-                unreachable.add(target.immutable());
-                target = null;
-                approachPath = null;
-                getNavigation().stop();
-                retryDelay = 10;
-                pathFailTicks = 0;
-                return;
-            }
-            if (approachPath == null || getNavigation().isDone()) approachPath = findDirtApproachPath(target);
-            if (approachPath == null || !getNavigation().moveTo(approachPath, 1.0D)) {
-                if (++pathFailTicks >= 20) {
-                    unreachable.add(target.immutable());
-                    target = null;
-                    approachPath = null;
-                    getNavigation().stop();
-                    retryDelay = 10;
-                    pathFailTicks = 0;
-                } else approachPath = null;
-            } else pathFailTicks = 0;
-        }
-
-        private BlockPos findNearestDirt() {
-            BlockPos origin = blockPosition();
-            BlockPos best = null;
-            double bestScore = Double.MAX_VALUE;
-            MutableBlockPos cursor = new MutableBlockPos();
-            for (int x = origin.getX() - 12; x <= origin.getX() + 12; x++) {
-                for (int z = origin.getZ() - 12; z <= origin.getZ() + 12; z++) {
-                    for (int y = Math.max(origin.getY() - 1, dirtOrigin.getY() - 1); y <= origin.getY() + 5; y++) {
-                        cursor.set(x, y, z);
-                        if (!level().hasChunkAt(cursor) || !isDirtBlock(level().getBlockState(cursor)) || !leashAllows(cursor)
-                                || unreachable.contains(cursor) || (x == origin.getX() && z == origin.getZ() && y <= origin.getY())) continue;
-                        double score = distanceToSqr(x + 0.5D, y + 0.5D, z + 0.5D);
-                        if (score >= bestScore) continue;
-                        boolean exposed = false;
-                        for (Direction direction : Direction.values()) {
-                            BlockPos adjacent = cursor.relative(direction);
-                            if (level().hasChunkAt(adjacent)
-                                    && level().getBlockState(adjacent).getCollisionShape(level(), adjacent).isEmpty()) {
-                                exposed = true;
-                                break;
-                            }
-                        }
-                        if (!exposed) continue;
-                        if (CompanionMiningNavigation.supportsLivingEntity(CompanionEntity.this, cursor)
-                                || !CompanionQuarry.safeCell((ServerLevel)level(), cursor)) continue;
-                        if (score < bestScore) { bestScore = score; best = cursor.immutable(); }
-                    }
-                }
-            }
-            return best;
-        }
-
-        private Path findDirtApproachPath(BlockPos block) {
-            // The previous adjacent-cell search could end behind a ledge with no view of the block, endlessly alternating
-            // a single swing and the same walk. Use the common visible approach with a collectable physical drop.
-            return CompanionMiningNavigation.pathTo(CompanionEntity.this, block, 3.5, false, true, true);
-        }
-
-        private void finish(String message) {
-            lastTaskSucceeded = CompanionTools.soil(CompanionEntity.this) >= inventoryTarget;
-            if (supportSoilTask) {
-                supportSoilTask = false; gatheringDirt = false; gatheringLogs = true;
-                requestedLogs = savedWoodRequested; logsRemaining = savedWoodRemaining;
-                workStatus(lastTaskSucceeded ? "Земля для опоры есть, возвращаюсь к дереву." : "Доступной земли не нашёл, попробую другое дерево.");
-                getNavigation().stop(); return;
-            }
-            gatheringDirt = false;
-            gatheringLogs = false;
-            logsRemaining = 0;
-            entityData.set(DATA_GATHERING_LOGS, false);
-            entityData.set(DATA_LOGS_REMAINING, 0);
-            entityData.set(DATA_LAST_TASK_RESULT, message);
-            target = null;
-            if (work.isActive()) syncWorkState(); else { noteDeed(message, lastTaskSucceeded); finishFollowing(); }
-        }
-
-        @Override public void stop() { resume = gatheringDirt; dirtBreaking.reset(); getNavigation().stop(); target = null; }
-    }
 
     private boolean storeInCompanionInventory(ItemStack stack) {
         ItemStack remaining = stack.copy();
