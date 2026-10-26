@@ -8,6 +8,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.AbstractFurnaceBlock;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
@@ -247,8 +248,10 @@ final class CompanionFurnaces {
         lot.fuelPut = fuel.item(); lot.fuelOurs = added.getCount(); lot.fuelTheirs = theirs;
     }
 
-    /** Reads a loaded furnace: new product counts as progress. */
+    /** Reads a loaded furnace: new product counts as progress. Ticks in which the furnace could not run don't count towards a stall. */
     private void watch(ServerLevel level, CompanionWork.Lot lot) {
+        long chunk = ChunkPos.asLong(lot.pos);
+        if (!level.shouldTickBlocksAt(chunk) || !level.areEntitiesLoaded(chunk)) { lot.progressTick = level.getGameTime(); return; }
         int ready = product(lot, oven(level, lot)) / w.smelt.result().getCount();
         if (ready > lot.ready) { lot.ready = ready; lot.progressTick = level.getGameTime(); }
     }
