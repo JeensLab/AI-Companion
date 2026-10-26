@@ -44,6 +44,7 @@ public final class CompanionWork {
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
+    final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionHouse house;
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -548,8 +549,8 @@ public final class CompanionWork {
             phase = afterWood; resetTarget();
         }
         switch (phase) {
-            case CRAFT -> craftRequested();
-            case PICKAXE -> preparePickaxe();
+            case CRAFT -> crafting.craftRequested();
+            case PICKAXE -> crafting.preparePickaxe();
             case MINE -> mine(level);
             case EXIT -> exitMine(level);
             case PACK -> packBench(level);
@@ -557,7 +558,7 @@ public final class CompanionWork {
             case STORE -> store(level);
             case CLOSE -> afterClose();
             case BUILD -> buildHouse(level);
-            case SHOVEL -> prepareShovel();
+            case SHOVEL -> crafting.prepareShovel();
             case DIGGING -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
             case RETURN -> returnToPlayer(level);
             case FIGHT -> hunting.fightNearby(level);
@@ -638,111 +639,14 @@ public final class CompanionWork {
     void watchChase() { hunting.watchChase(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
-    private void prepareShovel() {
-        if (CompanionTools.equip(owner, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState())) {
-            phase = Phase.DIGGING; owner.startGatheringDirtForWork(requestedCount); return;
-        }
-        if (approachCraftingTable()) return;
-        if (!items.moveHandMaterialsToBag()) return;
-        if (CompanionTools.craft(owner, "shovel", Blocks.DIRT.defaultBlockState(), ItemTags.SHOVELS)) {
-            phase = Phase.DIGGING; owner.startGatheringDirtForWork(requestedCount);
-        } else requestWood(Phase.SHOVEL, 2);
-    }
-
-    private void craftRequested() {
-        if (needsWorkbench(requestedItem) && approachCraftingTable()) return;
-        if (!items.moveHandMaterialsToBag()) return;
-        int remainder = owner.goals().craftRemainder(taskId);
-        if (remainder == 0) { finish(true, "Нужные пригодные кирки уже есть."); return; }
-        if (remainder > 0) requestedCount = remainder;
-        if (++craftAttempts > 6) { finish(false, "Для этой вещи пока не хватает доступных материалов."); return; }
-        CompanionActionResult result = owner.craftFromBag(requestedItem, requestedCount);
-        if (result.success()) {
-            String report = result.message().split(" В сумке:")[0];
-            // The pickaxe was only preparation for ore: take it and go on to the ore.
-            if (job == Job.ORE || ironPrep) { owner.equipForWork(requestedItem); phase = Phase.ORE_PICK; resetTarget(); return; }
-            if (requestedItem.matches(".*_(pickaxe|axe|shovel|hoe|sword)")) report += " " + owner.equipForWork(requestedItem).message();
-            finish(CompanionActionResult.ok(report + " В сумке: " + owner.getStoredItemsSummary() + ".")
-                    .withEvidence(new CompanionActionResult.Evidence(taskId, "craft_item", requestedItem, requestedCount, owner.getUUID(), null, null)));
-            return;
-        }
-        if (craftOnly || result.message().contains("места") || result.message().contains("безопасное место")) { finish(false, result.message()); return; }
-        int required = stoneCost(requestedItem) * requestedCount;
-        if (required > 0 && items.countStoneMaterials() < required) {
-            wantedStone = Math.min(64, required - items.countStoneMaterials());
-            if (required - items.countStoneMaterials() > 64) { finish(false, "Слишком большой заказ, давай сделаем меньше предметов за раз."); return; }
-            gathered = 0; afterStone = Phase.CRAFT;
-            phase = Phase.PICKAXE;
-            return;
-        }
-        requestWood(Phase.CRAFT);
-    }
-
-    private void preparePickaxe() {
-        if ((job == Job.STONE || job == Job.ORE) && pickaxeSense.tick(items.reservedStone())) return;
-        ItemStack best = ItemStack.EMPTY;
-        double score = -1;
-        for (ItemStack stack : items.carriedItems()) {
-            if (!items.usablePickaxe(stack)) continue;
-            double speed = stack.getDestroySpeed(Blocks.STONE.defaultBlockState());
-            if (speed > score) { score = speed; best = stack; }
-        }
-        if (best.isEmpty()) {
-            if (approachCraftingTable()) return;
-            if (!items.moveHandMaterialsToBag()) return;
-            // A worn-out pickaxe with mined cobblestone in the bag is replaced by the better stone one.
-            String replacement = items.countStoneMaterials() >= 3 && owner.craftFromBag("minecraft:stone_pickaxe", 1).success()
-                    ? "minecraft:stone_pickaxe" : "minecraft:wooden_pickaxe";
-            CompanionActionResult crafted = replacement.equals("minecraft:stone_pickaxe")
-                    ? CompanionActionResult.ok("") : owner.craftFromBag(replacement, 1);
-            if (!crafted.success()) {
-                if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) finish(false, crafted.message());
-                else requestWood(Phase.PICKAXE);
-                return;
-            }
-            owner.equipForWork(replacement);
-        } else {
-            String id = BuiltInRegistries.ITEM.getKey(best.getItem()).toString();
-            if (owner.getOffhandItem() == best) owner.unequipForSupport("offhand");
-            CompanionActionResult equipped = owner.equipForWork(id);
-            if (!equipped.success()) { finish(false, equipped.message()); return; }
-        }
-        if (!items.usablePickaxe(owner.getMainHandItem())) {
-            finish(false, "Не получилось взять подходящую кирку."); return;
-        }
-        owner.workStatus("Кирка готова, ищу доступный камень.");
-        if (stoneSearch == null && owner.level() instanceof ServerLevel level) {
-            stoneSearch = new CompanionStoneSearch(level, owner.blockPosition(), owner.getSearchRadius());
-            // Game log 22.10 (efc17045): the place of the order, 54 blocks back up the hill before the wood trip, stood for
-            // «where mining started»; no route back there ended the work without a stone. The way back is from where mining starts.
-            workOrigin = miningOrigin(); returnRouteBlocked = false; nextReturnCheck = returnBlockedSince = 0; returnMisses = 0;
-        }
-        phase = Phase.MINE;
-        resetTarget();
-    }
-
-    private void requestWood(Phase resume) {
-        requestWood(resume, 4);
-    }
-
-    private void requestWood(Phase resume, int count) {
-        if (++woodAttempts > (job == Job.HOUSE ? 4 : 2)) {
-            finish(false, "Не хватает доступного дерева для подготовки. Вещи сохранил." + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : "")); return;
-        }
-        afterWood = resume;
-        phase = Phase.WOOD;
-        woodBeforeRequest = owner.collectedLogs();
-        owner.startGatheringLogsForWork(count);
-    }
-
     private void buildHouse(ServerLevel level) {
         if (!owner.onGround()) return;
         var site = house.ensureSite(level);
         if (site != null) { finish(false, site.message()); return; }
-        if (house.needsPreparation() && approachCraftingTable()) return;
+        if (house.needsPreparation() && crafting.approachCraftingTable()) return;
         CompanionHouse.Result result = house.tick(level);
         switch (result.state()) {
-            case NEED_WOOD -> requestWood(Phase.BUILD, result.logs());
+            case NEED_WOOD -> crafting.requestWood(Phase.BUILD, result.logs());
             case DONE -> finish(true, result.message());
             case FAILED -> finish(false, result.message());
             default -> { }
@@ -1479,7 +1383,7 @@ public final class CompanionWork {
     }
 
     /** A failed return must not make a previous batch's pit floor the next batch's surface. */
-    private BlockPos miningOrigin() {
+    BlockPos miningOrigin() {
         return owner.autonomy().running() ? owner.autonomy().center() : owner.blockPosition();
     }
     private boolean withinWorkDepth(BlockPos pos) {
@@ -1489,7 +1393,7 @@ public final class CompanionWork {
         return CompanionMiningNavigation.preservesAutonomousReturn(owner, pos);
     }
 
-    private boolean approach(ServerLevel level, BlockPos block, double reach) {
+    boolean approach(ServerLevel level, BlockPos block, double reach) {
         double distance = owner.distanceToSqr(block.getCenter());
         if (distance + 0.05D < bestDistance) { bestDistance = distance; lastProgressTick = level.getGameTime(); }
         // A path up a slope or around a hill can lead away from the target for a while. Walking is progress too.
@@ -1529,12 +1433,12 @@ public final class CompanionWork {
             if (target == null) {
                 if (newChests >= 1) { finish(false, "Сложил " + transferred + " предметов, но оставшиеся вещи не помещаются. Они остались в сумке."); return; }
                 if (!hasChestItem()) {
-                    if (approachCraftingTable()) return;
+                    if (crafting.approachCraftingTable()) return;
                     if (!items.moveHandMaterialsToBag()) return;
                     CompanionActionResult crafted = owner.craftFromBag("minecraft:chest", 1);
                     if (!crafted.success()) {
                         if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) finish(false, crafted.message());
-                        else requestWood(Phase.STORE);
+                        else crafting.requestWood(Phase.STORE);
                         return;
                     }
                     return; // Let the crafting/table gesture finish before placing the chest.
@@ -1579,7 +1483,7 @@ public final class CompanionWork {
         boolean hasItem = items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(requestedItem) && !stack.isEmpty());
         if (!hasItem) {
             if (!supportsCraft(requestedItem, 1)) { finish(false, "Нет блока " + requestedItem + " в сумке, его подготовку пока не умею."); return; }
-            if (needsWorkbench(requestedItem) && approachCraftingTable()) return;
+            if (crafting.needsWorkbench(requestedItem) && crafting.approachCraftingTable()) return;
             if (!items.moveHandMaterialsToBag()) return;
             CompanionActionResult crafted = owner.craftFromBag(requestedItem, 1);
             if (!crafted.success()) {
@@ -1589,7 +1493,7 @@ public final class CompanionWork {
                     wantedStone = stoneCost(requestedItem) - items.countStoneMaterials();
                     stoneCollectedBefore = owner.collectedStone(); gathered = 0; phase = Phase.PICKAXE;
                     stoneSearch = null; stoneCandidates = null; rejected.clear(); dryAnchor = null; resetTarget();
-                } else requestWood(Phase.STORE);
+                } else crafting.requestWood(Phase.STORE);
             }
             return;
         }
@@ -1811,69 +1715,6 @@ public final class CompanionWork {
 
     private boolean hasChestItem() { return items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
 
-    /** Reuse a reachable workbench before spending more wood on another one. */
-    private boolean needsWorkbench(String item) {
-        if (!(owner.level() instanceof ServerLevel level)) return true;
-        var id = ResourceLocation.tryParse(item);
-        if (id == null) return true;
-        var targetItem = BuiltInRegistries.ITEM.get(id);
-        return level.getRecipeManager().getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING).stream()
-                .filter(holder -> holder.value().getResultItem(level.registryAccess()).is(targetItem))
-                .noneMatch(holder -> holder.value().canCraftInDimensions(2, 2));
-    }
-
-    private boolean approachCraftingTable() {
-        if (!owner.onGround()) return true;
-        if (!(owner.level() instanceof ServerLevel level) || owner.hasCraftingTableNearby() || benchHere) return false;
-        if (craftingStation == null || !level.hasChunkAt(craftingStation) || !level.getBlockState(craftingStation).is(Blocks.CRAFTING_TABLE)) {
-            craftingStation = null;
-            for (BlockPos pos : owner.knownCraftingTables()) {
-                // Farther than a short trip, the travelling bench is set down here instead of a long walk back.
-                if (pos.distSqr(owner.blockPosition()) > BENCH_TRIP * BENCH_TRIP) continue;
-                Path route = CompanionMiningNavigation.pathTo(owner, pos, 2.8, false);
-                if (route != null && route.canReach()) { craftingStation = pos; break; }
-            }
-            resetApproach();
-        }
-        if (craftingStation == null) {
-            if (owner.hasKnownCraftingTableWithin(BENCH_TRIP)) {
-                if (canMakeBench()) return useOwnBench("к известному верстаку сейчас нет пути");
-                finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый у меня нет."); return true;
-            }
-            return false;
-        }
-        owner.movementIntent(craftingStation);
-        if (!approach(level, craftingStation, 2.8D)) {
-            // Down in a cut below the bench with no walk up: first out, the way a player cuts steps up the wall, then the bench
-            // (marathon 23.10, «долина»: back down the quarry for more stone, the order ended «не смог добраться до верстака»
-            // seven blocks from it, before the self-rescue had a chance to begin).
-            if (owner.isSelfRescuing()) { owner.workStatus("Выбираюсь наверх, к верстаку."); return true; }
-            if (craftingStation.getY() > owner.getY() + 1.5 && benchClimbs++ < 2) {
-                resetApproach(); owner.workStatus("Выбираюсь наверх, к верстаку."); return true;
-            }
-            if (canMakeBench()) return useOwnBench("до верстака на " + craftingStation.toShortString() + " не дошёл");
-            finish(false, "Не смог добраться до верстака на " + craftingStation.toShortString() + ". Вещи сохранил."); return true;
-        }
-        owner.workStatus("Возвращаюсь к верстаку на " + craftingStation.toShortString() + ".");
-        return true;
-    }
-
-    /** Like a player far down a slope from his bench: one log buys a new bench here instead of giving up the order. */
-    private boolean canMakeBench() {
-        // A bench a few steps away is never replaced: it is walked to, or the order honestly stops.
-        if (owner.hasKnownCraftingTableWithin(NEAR_BENCH)) return false;
-        return CompanionTools.count(owner, ItemTags.LOGS) * 4 + CompanionTools.count(owner, ItemTags.PLANKS) >= 4;
-    }
-
-    private boolean useOwnBench(String why) {
-        dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "bench_replaced", "entity", owner.getUUID(),
-                "remembered", craftingStation, "reason", why);
-        benchHere = true; craftingStation = null; resetApproach();
-        owner.allowNewBench(true);
-        owner.workStatus("Ладно, " + why + " — поставлю новый верстак здесь.");
-        return false;
-    }
-
     private String furnaceNote() {
         // Smelting as its own order or as the iron step of a tool: either way the furnaces are ours.
         if (lots.isEmpty()) return "";
@@ -1939,7 +1780,7 @@ public final class CompanionWork {
         }
         if (lots.isEmpty()) {
             if (ownFurnaceFailed) { finish(false, "Свою печь поставил, но подойти к ней и заложить сырьё не получилось. Сырьё у меня."); return; }
-            if (!approachCraftingTable() && items.moveHandMaterialsToBag()) craftFurnace();
+            if (!crafting.approachCraftingTable() && items.moveHandMaterialsToBag()) craftFurnace();
             return;
         }
         // Every furnace taken is loaded and still more raw material is left: no room for more furnaces, say so at the end.
@@ -1961,7 +1802,7 @@ public final class CompanionWork {
         CompanionActionResult crafted = owner.craftFromBag("minecraft:furnace", 1);
         if (!crafted.success()) {
             if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) finish(false, crafted.message());
-            else requestWood(Phase.FURNACE);
+            else crafting.requestWood(Phase.FURNACE);
         }
         // On success the crafting gesture finishes first; the furnace is set down on the next stage.
     }
@@ -2051,7 +1892,7 @@ public final class CompanionWork {
         if (need > 0 && fuel == null && fuelSlot.isEmpty()) {
             // Nothing to burn: chop wood first, the raw material stays in the bag meanwhile.
             owner.workStatus("Нечем топить печь. Схожу за дровами.");
-            requestWood(Phase.COOK, CompanionSmelting.logsFor(need)); return;
+            crafting.requestWood(Phase.COOK, CompanionSmelting.logsFor(need)); return;
         }
         ItemStack input = items.takeCarried(smelt.input(), amount);
         if (input.isEmpty()) return;
@@ -2135,7 +1976,7 @@ public final class CompanionWork {
         var fuel = CompanionSmelting.chooseFuel(items.carriedItems(), null, 0, left * smelt.cookTicks(), ItemStack.EMPTY);
         if (fuel == null) {
             owner.workStatus("Топливо кончилось, схожу за дровами. Сырьё пока в печи.");
-            requestWood(Phase.COOK, CompanionSmelting.logsFor(left * smelt.cookTicks())); return;
+            crafting.requestWood(Phase.COOK, CompanionSmelting.logsFor(left * smelt.cookTicks())); return;
         }
         addFuel(lot, oven, fuel); oven.setChanged();
         owner.animateAction(3, lot.pos, new ItemStack(fuel.item()));
@@ -2340,7 +2181,7 @@ public final class CompanionWork {
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "work_replanned", "entity", owner.getUUID(),
                 "reason", "terrain_changed_after_route_recovery", "attempt", recoveryReplans, "collected", gathered, "requested", wantedStone);
     }
-    private void resetTarget() {
+    void resetTarget() {
         clearCracks(); target = null; resetApproach();
         // The old target is no destination any more: a self-rescue must not take it for one while he looks for the next.
         owner.movementIntent(null);
