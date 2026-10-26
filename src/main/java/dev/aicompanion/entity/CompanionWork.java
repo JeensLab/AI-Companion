@@ -9,14 +9,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
-import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.ArmorItem;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.AbstractFurnaceBlock;
 import net.minecraft.world.level.block.Blocks;
@@ -45,6 +42,7 @@ public final class CompanionWork {
     final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
+    final CompanionChests chests = new CompanionChests(this);
     final CompanionHouse house;
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -555,8 +553,8 @@ public final class CompanionWork {
             case EXIT -> stoneMining.exitMine(level);
             case PACK -> packBench(level);
             case HAND -> handOver(level);
-            case STORE -> store(level);
-            case CLOSE -> afterClose();
+            case STORE -> chests.store(level);
+            case CLOSE -> chests.afterClose();
             case BUILD -> buildHouse(level);
             case SHOVEL -> crafting.prepareShovel();
             case DIGGING -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
@@ -654,6 +652,7 @@ public final class CompanionWork {
     }
 
     public static boolean isStone(BlockState state) { return CompanionStoneMining.isStone(state); }
+    static int surplusCount(CompanionEntity owner) { return CompanionChests.surplusCount(owner); }
 
     boolean approach(ServerLevel level, BlockPos block, double reach) {
         double distance = owner.distanceToSqr(block.getCenter());
@@ -683,299 +682,6 @@ public final class CompanionWork {
         owner.getMoveControl().setWantedPosition(here.getX() + .5D, here.getY(), here.getZ() + .5D, .5D);
         return true;
     }
-
-    private void store(ServerLevel level) {
-        if (job == Job.TAKE) { retrieve(level); return; }
-        if (job == Job.PLACE_CHEST) { placeRequestedChests(); return; }
-        if (!owner.onGround() && !owner.isInWater()) return;
-        if (job == Job.STORE && (eligibleCount() == 0 || storeQuota() <= 0)) { finish(true, transferred > 0 ? "Сложил " + transferred + " предметов в сундук." : "Лишних вещей для сундука сейчас нет."); return; }
-        if (target == null) {
-            target = findChest(level);
-            resetApproach();
-            if (target == null) {
-                if (newChests >= 1) { finish(false, "Сложил " + transferred + " предметов, но оставшиеся вещи не помещаются. Они остались в сумке."); return; }
-                if (!hasChestItem()) {
-                    if (crafting.approachCraftingTable()) return;
-                    if (!items.moveHandMaterialsToBag()) return;
-                    CompanionActionResult crafted = owner.craftFromBag("minecraft:chest", 1);
-                    if (!crafted.success()) {
-                        if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) finish(false, crafted.message());
-                        else crafting.requestWood(Phase.STORE);
-                        return;
-                    }
-                    return; // Let the crafting/table gesture finish before placing the chest.
-                }
-                CompanionActionResult placed = owner.placeBlockNearResult("minecraft:chest", insideHouse ? placementAnchor : owner.blockPosition(),
-                        pos -> !insideHouse || house.inside(pos));
-                if (!placed.success()) { finish(false, placed.message()); return; }
-                newChests++;
-                target = findChest(level);
-                resetApproach();
-                if (target == null) { finish(false, "Сундук поставил, но не могу его открыть. Вещи остались в сумке."); return; }
-                return; // Open on the next work stage, after the placement gesture.
-            }
-        }
-        Container chest = chestAt(level, target);
-        if (chest == null) { triedChests.add(target); resetTarget(); return; }
-        if (owner.distanceToSqr(target.getCenter()) > 3.2D * 3.2D || !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), target)) {
-            if (!approach(level, target, 2.8D)) { triedChests.add(target); resetTarget(); }
-            return;
-        }
-        owner.getNavigation().stop();
-        owner.getLookControl().setLookAt(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
-        openedChest = target.immutable();
-        animateChest(level, openedChest, 1);
-        level.playSound(null, openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
-        owner.animateAction(3, target, ItemStack.EMPTY);
-        transferred += transfer(chest);
-        chest.setChanged();
-        rememberedChest = target.immutable();
-        owner.rememberObserved(target);
-        owner.storageStatus(storageForAi());
-        triedChests.add(target);
-        phase = Phase.CLOSE;
-        cooldown = 10;
-        owner.workStatus("Складываю вещи в сундук.");
-    }
-
-    /** An explicit placement order always places new blocks, even if storage already exists. */
-    private void placeRequestedChests() {
-        if (!owner.onGround()) return;
-        if (newChests >= requestedCount) { finishPlacedChests(); return; }
-        boolean hasItem = items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(requestedItem) && !stack.isEmpty());
-        if (!hasItem) {
-            if (!supportsCraft(requestedItem, 1)) { finish(false, "Нет блока " + requestedItem + " в сумке, его подготовку пока не умею."); return; }
-            if (crafting.needsWorkbench(requestedItem) && crafting.approachCraftingTable()) return;
-            if (!items.moveHandMaterialsToBag()) return;
-            CompanionActionResult crafted = owner.craftFromBag(requestedItem, 1);
-            if (!crafted.success()) {
-                if (crafted.message().contains("места") || crafted.message().contains("безопасное место"))
-                    finish(false, "Поставил " + newChests + " из " + requestedCount + ". " + crafted.message());
-                else if (stoneCost(requestedItem) > items.countStoneMaterials()) {
-                    wantedStone = stoneCost(requestedItem) - items.countStoneMaterials();
-                    stoneCollectedBefore = owner.collectedStone(); gathered = 0; phase = Phase.PICKAXE;
-                    stoneSearch = null; stoneCandidates = null; rejected.clear(); dryAnchor = null; resetTarget();
-                } else crafting.requestWood(Phase.STORE);
-            }
-            return;
-        }
-        if (owner.distanceToSqr(placementAnchor.getCenter()) > 3 * 3 || insideHouse && !house.inside(owner.blockPosition())) {
-            if (!placementMoving) { resetApproach(); placementMoving = true; }
-            owner.movementIntent(placementAnchor);
-            double distance = owner.distanceToSqr(placementAnchor.getCenter());
-            if (distance + .05 < bestDistance) { bestDistance = distance; lastProgressTick = owner.level().getGameTime(); }
-            if (owner.level().getGameTime() - lastProgressTick > 160) {
-                finish(false, "Блок есть в сумке, но не смог вернуться к месту установки на " + placementAnchor.toShortString() + "."); return;
-            }
-            Path route = owner.getNavigation().createPath(placementAnchor, insideHouse ? 0 : 1);
-            if (route == null || !route.canReach()) { owner.getNavigation().stop(); return; }
-            CompanionMiningNavigation.walk(owner, route); return;
-        }
-        if (insideHouse && !house.interiorAvailable((ServerLevel)owner.level())) { finish(false, "Дом изменился, место внутри больше не подтверждено."); return; }
-        CompanionActionResult placed = owner.placeBlockNearResult(requestedItem, placementAnchor, pos -> !insideHouse || house.inside(pos));
-        if (!placed.success()) { finish(false, "Поставил " + newChests + " из " + requestedCount + ". " + placed.message()); return; }
-        if (owner.lastPlacedPosition() != null) placedChests.add(owner.lastPlacedPosition());
-        newChests++;
-        if (newChests >= requestedCount) finishPlacedChests();
-        else owner.workStatus("Поставил " + newChests + " из " + requestedCount + " блоков " + requestedItem + ".");
-    }
-
-    private void finishPlacedChests() {
-        var block = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(requestedItem));
-        long present = placedChests.stream().filter(pos -> owner.level().hasChunkAt(pos) && owner.level().getBlockState(pos).is(block)
-                && (!insideHouse || house.inside(pos))).count();
-        if (present != requestedCount) {
-            finish(false, "На месте установки сейчас " + present + " из " + requestedCount + " блоков " + requestedItem + ". Часть блоков исчезла или недоступна для проверки."); return;
-        }
-        finish(true, "Поставил " + requestedItem + ": " + newChests + (insideHouse ? " внутри дома" : "") + ". Координаты: " + placedChests.stream().map(BlockPos::toShortString).toList() + ".");
-    }
-
-    private void afterClose() {
-        closeChest();
-        resetTarget();
-        if (job == Job.TAKE) {
-            if (transferred >= requestedCount) finish(true, "Забрал " + transferred + " предметов из сундука. В сумке: " + owner.getStoredItemsSummary() + ".");
-            else phase = Phase.STORE;
-        }
-        else if (eligibleCount() == 0) finish(true, "Сложил " + transferred + " предметов в сундук.");
-        else phase = Phase.STORE;
-    }
-
-    private void retrieve(ServerLevel level) {
-        if (!owner.onGround()) return;
-        if (target == null) { target = findChest(level); resetApproach(); }
-        if (target == null) {
-            finish(transferred > 0 && (requestedItem.equals("all") || transferred >= requestedCount),
-                    "Забрал " + transferred + (requestedItem.equals("all") ? " предметов" : " из " + requestedCount) + ". В доступных сундуках больше нужных вещей нет. В сумке: " + owner.getStoredItemsSummary() + "."); return;
-        }
-        Container chest = chestAt(level, target);
-        if (chest == null) { triedChests.add(target); resetTarget(); return; }
-        owner.movementIntent(target);
-        if (owner.distanceToSqr(target.getCenter()) > 3.2 * 3.2 || !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), target)) {
-            if (!approach(level, target, 2.8)) { triedChests.add(target); resetTarget(); }
-            return;
-        }
-        owner.getNavigation().stop();
-        openedChest = target.immutable(); animateChest(level, target, 1);
-        level.playSound(null, target, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, .5F, 1);
-        owner.observeEvent("chest", "Открыл сундук, чтобы взять нужные вещи.");
-        ItemStack shown = ItemStack.EMPTY; int movedHere = 0;
-        for (int slot = 0; slot < chest.getContainerSize() && transferred < requestedCount; slot++) {
-            ItemStack stack = chest.getItem(slot); if (!eligible(stack)) continue;
-            ItemStack offered = stack.copyWithCount(Math.min(stack.getCount(), requestedCount - transferred));
-            int offeredCount = offered.getCount(); owner.storeLoot(offered);
-            int moved = offeredCount - offered.getCount();
-            if (moved > 0) { shown = stack.copyWithCount(1); stack.shrink(moved); chest.setItem(slot, stack.isEmpty() ? ItemStack.EMPTY : stack); transferred += moved; movedHere += moved; }
-        }
-        owner.animateAction(3, target, shown); chest.setChanged(); owner.setChanged();
-        rememberedChest = target.immutable(); owner.rememberObserved(target); owner.storageStatus(storageForAi()); triedChests.add(target);
-        if (movedHere == 0) { closeChest(); finish(false, "В сумке нет места для вещей из сундука. Предметы оставил на месте."); return; }
-        phase = Phase.CLOSE; cooldown = 10; owner.workStatus("Забираю вещи из сундука.");
-    }
-
-    private BlockPos findChest(ServerLevel level) {
-        List<BlockPos> found = new ArrayList<>();
-        BlockPos center = owner.blockPosition();
-        for (BlockPos pos : blockEntitiesNear(level)) {
-            if (triedChests.contains(pos) || insideHouse && !house.inside(pos)) continue;
-            // A deed of his own: only a chest he set down himself, near the player (Толик: «не трогает мои сундуки»).
-            if (owner.ownPlacesOnly() && (!owner.placedByMe(pos) || !owner.leashAllows(pos))) continue;
-            Container chest = chestAt(level, pos);
-            if (chest != null && (job == Job.TAKE ? containsRequested(chest) : job == Job.PLACE_CHEST || hasCapacity(chest))) found.add(pos.immutable());
-        }
-        // The chest Oleg already uses is "ours": fill it before any other one nearby.
-        found.sort(Comparator.comparing((BlockPos pos) -> !pos.equals(rememberedChest)).thenComparingDouble(pos -> pos.distSqr(center)));
-        return found.isEmpty() ? null : found.getFirst();
-    }
-
-    /** Block entities of loaded chunks within the container search radius (at most 32 blocks). */
-    private List<BlockPos> blockEntitiesNear(ServerLevel level) {
-        List<BlockPos> found = new ArrayList<>();
-        int radius = Math.min(32, owner.getSearchRadius());
-        BlockPos center = owner.blockPosition();
-        for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++) {
-            for (int cz = (center.getZ() - radius) >> 4; cz <= (center.getZ() + radius) >> 4; cz++) {
-                var chunk = level.getChunkSource().getChunkNow(cx, cz);
-                if (chunk == null) continue;
-                for (BlockPos pos : chunk.getBlockEntities().keySet()) if (pos.distSqr(center) <= radius * radius) found.add(pos);
-            }
-        }
-        return found;
-    }
-
-    private Container chestAt(ServerLevel level, BlockPos pos) {
-        if (!level.hasChunkAt(pos)) return null;
-        BlockState state = level.getBlockState(pos);
-        return state.getBlock() instanceof ChestBlock chest ? ChestBlock.getContainer(chest, state, level, pos, false) : null;
-    }
-
-    private int transfer(Container destination) {
-        int moved = 0;
-        int[] reserves = reserves(requestedItem);
-        for (int source = 0; source < owner.getContainerSize(); source++) {
-            ItemStack stack = owner.getItem(source);
-            if (!eligible(stack)) continue;
-            int keep = kept(stack, reserves, SURPLUS.equals(requestedItem));
-            int available = Math.min(stack.getCount() - keep, storeQuota() - moved);
-            for (int pass = 0; pass < 2 && available > 0; pass++) {
-                for (int slot = 0; slot < destination.getContainerSize() && available > 0; slot++) {
-                    if (!destination.canPlaceItem(slot, stack)) continue;
-                    ItemStack existing = destination.getItem(slot);
-                    if (pass == 0 && existing.isEmpty() || pass == 1 && !existing.isEmpty()) continue;
-                    if (!existing.isEmpty() && !ItemStack.isSameItemSameComponents(existing, stack)) continue;
-                    int maximum = Math.min(destination.getMaxStackSize(), stack.getMaxStackSize());
-                    int amount = Math.min(available, maximum - existing.getCount());
-                    if (amount <= 0) continue;
-                    ItemStack inserted = existing.isEmpty() ? stack.copyWithCount(amount) : existing.copyWithCount(existing.getCount() + amount);
-                    destination.setItem(slot, inserted);
-                    stack.shrink(amount); available -= amount; moved += amount;
-                }
-            }
-            owner.setItem(source, stack.isEmpty() ? ItemStack.EMPTY : stack);
-        }
-        owner.setChanged(); destination.setChanged();
-        return moved;
-    }
-
-    private boolean hasCapacity(Container chest) {
-        for (int source = 0; source < owner.getContainerSize(); source++) {
-            ItemStack stack = owner.getItem(source);
-            if (!eligible(stack)) continue;
-            for (int slot = 0; slot < chest.getContainerSize(); slot++) {
-                ItemStack existing = chest.getItem(slot);
-                if (chest.canPlaceItem(slot, stack) && (existing.isEmpty() || ItemStack.isSameItemSameComponents(existing, stack)
-                        && existing.getCount() < Math.min(stack.getMaxStackSize(), chest.getMaxStackSize()))) return true;
-            }
-        }
-        return false;
-    }
-
-    private int eligibleCount() {
-        int count = 0;
-        int[] reserves = reserves(requestedItem);
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) {
-            ItemStack stack = owner.getItem(slot);
-            if (eligible(stack)) count += stack.getCount() - kept(stack, reserves, SURPLUS.equals(requestedItem));
-        }
-        return count;
-    }
-    /** What stays in the bag on a store order: soil for supports (8) and, for SURPLUS, his stock of logs and stone. */
-    private static int[] reserves(String requested) {
-        boolean surplus = SURPLUS.equals(requested);
-        return new int[]{requested.isBlank() || requested.equals("resources") || surplus ? 8 : 0,
-                surplus ? CompanionAutonomy.WOOD_STOCK : 0, surplus ? CompanionAutonomy.STONE_STOCK : 0,
-                surplus ? CompanionAutonomy.COAL_STOCK : 0, surplus ? 16 : 0, surplus ? 8 : 0, surplus ? 8 : 0};
-    }
-    /** How much of this stack stays, counting the reserves down. */
-    private static int kept(ItemStack stack, int[] reserves, boolean surplus) {
-        int kind = CompanionTools.soilItem(stack) ? 0 : !surplus ? -1 : stack.is(ItemTags.LOGS) ? 1 : stack.is(ItemTags.STONE_TOOL_MATERIALS) ? 2
-                : stack.is(ItemTags.COALS) ? 3 : stack.is(Items.TORCH) ? 4 : stack.is(Items.IRON_INGOT) ? 5 : stack.is(Items.RAW_IRON) ? 6 : -1;
-        if (kind < 0) return 0;
-        int keep = Math.min(stack.getCount(), reserves[kind]);
-        reserves[kind] -= keep;
-        return keep;
-    }
-    /** Not a tool, armour, food, bench or chest: a resource a store order of «resources» puts away. */
-    private static boolean resource(ItemStack stack) {
-        return stack.getMaxDamage() == 0 && !(stack.getItem() instanceof ArmorItem) && !stack.has(DataComponents.FOOD)
-                && !stack.is(Items.CRAFTING_TABLE) && !stack.is(Items.CHEST);
-    }
-    /** What a SURPLUS store order would put away from his bag now (CompanionAutonomy: is the order worth giving). */
-    static int surplusCount(CompanionEntity owner) {
-        int count = 0;
-        int[] reserves = reserves(SURPLUS);
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) {
-            ItemStack stack = owner.getItem(slot);
-            if (!stack.isEmpty() && resource(stack)) count += stack.getCount() - kept(stack, reserves, true);
-        }
-        return count;
-    }
-    private boolean containsRequested(Container chest) {
-        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (eligible(chest.getItem(slot))) return true;
-        return false;
-    }
-
-    /**
-     * "Put the stone sword in the chest" means one sword, not every sword he carries: for a named tool, weapon or
-     * armour piece only the requested count goes in (game log 22.10 put away his own sword too). Resources move whole.
-     */
-    private int storeQuota() {
-        if (job != Job.STORE || requestedItem.isBlank() || List.of("all", "logs", "stone", "resources", SURPLUS).contains(requestedItem)) return Integer.MAX_VALUE;
-        var id = ResourceLocation.tryParse(requestedItem);
-        if (id == null || !BuiltInRegistries.ITEM.containsKey(id) || new ItemStack(BuiltInRegistries.ITEM.get(id)).getMaxStackSize() != 1) return Integer.MAX_VALUE;
-        return Math.max(1, requestedCount) - transferred;
-    }
-
-    private boolean eligible(ItemStack stack) {
-        if (stack.isEmpty()) return false;
-        if (requestedItem.equals("all")) return true;
-        if (requestedItem.equals("logs")) return stack.is(ItemTags.LOGS);
-        if (requestedItem.equals("stone")) return stack.is(ItemTags.STONE_TOOL_MATERIALS) || stack.is(Items.STONE);
-        if (!requestedItem.isBlank() && !requestedItem.equals("resources") && !requestedItem.equals(SURPLUS)) return requestedItem.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        return resource(stack);
-    }
-
-    private boolean hasChestItem() { return items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
 
     private String furnaceNote() {
         // Smelting as its own order or as the iron step of a tool: either way the furnaces are ours.
@@ -1072,7 +778,7 @@ public final class CompanionWork {
     private BlockPos findFurnace(ServerLevel level) {
         BlockPos center = owner.blockPosition();
         BlockPos group = lots.isEmpty() ? null : lots.getFirst().pos;
-        return blockEntitiesNear(level).stream().filter(pos -> !triedFurnaces.contains(pos)
+        return chests.blockEntitiesNear(level).stream().filter(pos -> !triedFurnaces.contains(pos)
                         && (!owner.ownPlacesOnly() || owner.placedByMe(pos) && owner.leashAllows(pos))
                         && lots.stream().noneMatch(lot -> lot.pos.equals(pos))
                         && (group == null || pos.distSqr(group) <= FURNACE_GROUP * FURNACE_GROUP)
@@ -1450,7 +1156,7 @@ public final class CompanionWork {
     }
     void resetApproach() { path = null; standCells = Set.of(); approachMoved = null; bestDistance = Double.MAX_VALUE; lastProgressTick = owner.level().getGameTime(); }
     void clearCracks() { breaking.reset(); }
-    private void closeChest() {
+    void closeChest() {
         if (openedChest != null && owner.level() instanceof ServerLevel level && level.hasChunkAt(openedChest)
                 && level.getBlockState(openedChest).getBlock() instanceof ChestBlock) {
             animateChest(level, openedChest, 0);
@@ -1458,7 +1164,7 @@ public final class CompanionWork {
         }
         openedChest = null;
     }
-    private void animateChest(ServerLevel level, BlockPos pos, int open) {
+    void animateChest(ServerLevel level, BlockPos pos, int open) {
         BlockState state = level.getBlockState(pos);
         level.blockEvent(pos, state.getBlock(), 1, open);
         if (state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
