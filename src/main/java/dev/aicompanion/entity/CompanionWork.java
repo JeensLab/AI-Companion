@@ -39,161 +39,162 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    private enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME }
-    private enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE }
-    private final CompanionEntity owner;
-    private final CompanionHouse house;
-    private final CompanionBlockBreaking breaking;
-    private final CompanionToolSense pickaxeSense, shovelSense;
-    private CompanionStoneSearch stoneSearch;
-    private final java.util.Deque<BlockPos> quarrySoil = new java.util.ArrayDeque<>();
-    private final Set<BlockPos> quarrySupports = new HashSet<>();
-    private int recoveryReplans;
-    private BlockPos blockedStair;
-    private long blockedStairSince;
-    private int blockedStairReplans;
-    private boolean quarryTried;
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE }
+    final CompanionEntity owner;
+    final CompanionWorkItems items = new CompanionWorkItems(this);
+    final CompanionHouse house;
+    final CompanionBlockBreaking breaking;
+    final CompanionToolSense pickaxeSense, shovelSense;
+    CompanionStoneSearch stoneSearch;
+    final java.util.Deque<BlockPos> quarrySoil = new java.util.ArrayDeque<>();
+    final Set<BlockPos> quarrySupports = new HashSet<>();
+    int recoveryReplans;
+    BlockPos blockedStair;
+    long blockedStairSince;
+    int blockedStairReplans;
+    boolean quarryTried;
     /** Top of the own staircase: the way back out once the stone is collected. Null while mining on the surface. */
-    private BlockPos exitCell;
-    private int stairs;
-    private static final int MAX_STAIRS = 3;
-    private static final int MAX_MINE_DEPTH = 14;
-    private boolean selectingStone;
-    private Job job;
-    private Phase phase;
-    private Phase afterWood;
-    private String requestedItem = "";
-    private int requestedCount;
-    private int wantedStone;
-    private int gathered;
-    private int stoneCollectedBefore;
-    private BlockPos lastHarvestStand;
-    private int woodAttempts;
-    private int woodBeforeRequest;
-    private int craftAttempts;
-    private int transferred;
-    private int newChests;
-    private int cooldown;
-    private long deadline;
-    private long lastProgressTick;
-    private double bestDistance;
-    private net.minecraft.world.phys.Vec3 approachMoved;
-    private BlockPos target;
-    private Path path;
-    private Set<BlockPos> standCells = Set.of();
-    private List<BlockPos> stoneCandidates;
+    BlockPos exitCell;
+    int stairs;
+    static final int MAX_STAIRS = 3;
+    static final int MAX_MINE_DEPTH = 14;
+    boolean selectingStone;
+    Job job;
+    Phase phase;
+    Phase afterWood;
+    String requestedItem = "";
+    int requestedCount;
+    int wantedStone;
+    int gathered;
+    int stoneCollectedBefore;
+    BlockPos lastHarvestStand;
+    int woodAttempts;
+    int woodBeforeRequest;
+    int craftAttempts;
+    int transferred;
+    int newChests;
+    int cooldown;
+    long deadline;
+    long lastProgressTick;
+    double bestDistance;
+    net.minecraft.world.phys.Vec3 approachMoved;
+    BlockPos target;
+    Path path;
+    Set<BlockPos> standCells = Set.of();
+    List<BlockPos> stoneCandidates;
     /** The last stone checked for being a step of his way back up (see mine). */
-    private BlockPos stepChecked;
-    private final Set<BlockPos> rejected = new HashSet<>();
-    private final Set<BlockPos> triedChests = new HashSet<>();
-    private BlockPos rememberedChest;
-    private BlockPos packTarget;
-    private CompanionActionResult packResult;
-    private int packedBenchBefore;
-    private BlockPos packedBenchFrom;
-    private BlockPos openedChest;
-    private BlockPos craftingStation;
+    BlockPos stepChecked;
+    final Set<BlockPos> rejected = new HashSet<>();
+    final Set<BlockPos> triedChests = new HashSet<>();
+    BlockPos rememberedChest;
+    BlockPos packTarget;
+    CompanionActionResult packResult;
+    int packedBenchBefore;
+    BlockPos packedBenchFrom;
+    BlockPos openedChest;
+    BlockPos craftingStation;
     /** The remembered bench turned out unreachable on foot: this job sets down its own from the bag instead. */
-    private boolean benchHere;
-    private static final int NEAR_BENCH = 8;
-    private static final int BENCH_TRIP = 20;
-    private BlockPos placementAnchor;
-    private boolean placementMoving;
-    private boolean insideHouse;
-    private final List<BlockPos> placedChests = new ArrayList<>();
-    private BlockPos workOrigin;
-    private boolean returnRouteBlocked;
-    private long nextReturnCheck;
-    private long returnBlockedSince;
-    private int returnMisses;
-    private final Set<java.util.UUID> huntTargets = new HashSet<>();
-    private final Set<java.util.UUID> huntDead = new HashSet<>();
-    private int huntKills;
-    private net.minecraft.world.phys.Vec3 orderProgressPosition;
-    private long orderProgressTime;
+    boolean benchHere;
+    static final int NEAR_BENCH = 8;
+    static final int BENCH_TRIP = 20;
+    BlockPos placementAnchor;
+    boolean placementMoving;
+    boolean insideHouse;
+    final List<BlockPos> placedChests = new ArrayList<>();
+    BlockPos workOrigin;
+    boolean returnRouteBlocked;
+    long nextReturnCheck;
+    long returnBlockedSince;
+    int returnMisses;
+    final Set<java.util.UUID> huntTargets = new HashSet<>();
+    final Set<java.util.UUID> huntDead = new HashSet<>();
+    int huntKills;
+    net.minecraft.world.phys.Vec3 orderProgressPosition;
+    long orderProgressTime;
     /**
      * Watchdog for every work (game log 21.10: two minutes on one spot with «Проверяю подход к камню», then a faceless
      * timeout). Counted in work ticks, so paused work, wood gathering and an open bag do not age it.
      */
     public static final int STALL_TICKS = 20 * 90;
-    private int stallTicks;
-    private net.minecraft.world.phys.Vec3 stallAnchor;
-    private long stallSignature;
-    private final Set<String> stallSeen = new HashSet<>();
+    int stallTicks;
+    net.minecraft.world.phys.Vec3 stallAnchor;
+    long stallSignature;
+    final Set<String> stallSeen = new HashSet<>();
     /** Surface stone that is never reached: this long without stone and without walking anywhere new, then the own stairs. */
     public static final int SURFACE_STONE_TICKS = 20 * 20;
     /** Walking from face to face without a single new stone: this long, then the own stairs too. */
     public static final int SURFACE_WALK_TICKS = 20 * 60;
-    private int dryWalkTicks;
+    int dryWalkTicks;
     /** Cells this stone order has dug: a block under one of them is never dug (no pit, no shaft). */
-    private final Set<BlockPos> dug = new HashSet<>();
+    final Set<BlockPos> dug = new HashSet<>();
     /** Faces whose walk failed, with where he stood then: tried again only once he has moved a few blocks. */
-    private final java.util.Map<BlockPos, BlockPos> offFoot = new java.util.HashMap<>();
-    private static final int OFF_FOOT_MOVE = 4;
+    final java.util.Map<BlockPos, BlockPos> offFoot = new java.util.HashMap<>();
+    static final int OFF_FOOT_MOVE = 4;
     /** Choosing a face over a few ticks: the nearest on foot so far and the faces already compared. */
-    private CompanionMiningNavigation.Choice stoneChoice;
-    private final Set<BlockPos> stoneCompared = new HashSet<>();
-    private final List<BlockPos> stoneSingles = new ArrayList<>();
-    private static final int STONE_GROUP = 8;
+    CompanionMiningNavigation.Choice stoneChoice;
+    final Set<BlockPos> stoneCompared = new HashSet<>();
+    final List<BlockPos> stoneSingles = new ArrayList<>();
+    static final int STONE_GROUP = 8;
     /** Farther than this a face with no route is walked to in legs (CompanionTravel). */
-    private static final int FAR_STONE = 12;
-    private static final int TRAVEL_SPOT = 10;
-    private BlockPos stoneTravel;
-    private int stoneTravels;
-    private final Set<BlockPos> travelFailed = new HashSet<>();
-    private int dryTicks;
-    private int dryGathered;
-    private net.minecraft.world.phys.Vec3 dryAnchor;
+    static final int FAR_STONE = 12;
+    static final int TRAVEL_SPOT = 10;
+    BlockPos stoneTravel;
+    int stoneTravels;
+    final Set<BlockPos> travelFailed = new HashSet<>();
+    int dryTicks;
+    int dryGathered;
+    net.minecraft.world.phys.Vec3 dryAnchor;
     /** mine_ore: one kind, counted in ore blocks broken; the drop gained is reported from the bag. */
     public static final int MAX_ORE = 16;
-    private CompanionOre.Kind ore;
-    private int oreWanted, oreMined, oreDropsBefore, oreFound, oreLiquid, oreUnreachable, orePickaxeAttempts;
-    private boolean oreDone, oreChoosing, oreLootRetried, stoneLootRetried;
-    private CompanionOre.Search oreSearch;
-    private List<BlockPos> oreCandidates;
-    private final Set<BlockPos> oreRejected = new HashSet<>();
+    CompanionOre.Kind ore;
+    int oreWanted, oreMined, oreDropsBefore, oreFound, oreLiquid, oreUnreachable, orePickaxeAttempts;
+    boolean oreDone, oreChoosing, oreLootRetried, stoneLootRetried;
+    CompanionOre.Search oreSearch;
+    List<BlockPos> oreCandidates;
+    final Set<BlockPos> oreRejected = new HashSet<>();
     /** Shared obstructions across different veins. Keep their state so a changed block can be reconsidered. */
-    private final java.util.Map<BlockPos, BlockState> oreBlockedCells = new java.util.HashMap<>();
+    final java.util.Map<BlockPos, BlockState> oreBlockedCells = new java.util.HashMap<>();
     /** hunt_animals: the kind (null — any), how many, kills by his own blows, the chase, and the bag before for the report. */
     public static final int MAX_GAME = 16;
-    private boolean gameForFood;
+    boolean gameForFood;
     /** How a hunt without a single animal begins its report; the plan then does not go on to the furnace. */
     public static final String NOTHING_HUNTED = "Никого не добыл";
-    private static final int CHASE_TICKS = 20 * 15;
+    static final int CHASE_TICKS = 20 * 15;
     /** Hunting ground: his search radius, at least 32 (game log 22.10: «пускай ищет даже если еда далеко»); a chase goes 16 further. */
     private int huntRadius() { return owner.autonomy().running() ? CompanionAutonomy.LEASH : Math.clamp(owner.getSearchRadius(), 32, CompanionEntity.MAX_SEARCH_RADIUS); }
-    private CompanionGame.Kind game, gameLastKind;
-    private int gameWanted, gameKills;
-    private java.util.UUID gameTarget;
-    private long gameSince;
-    private double gameBest;
-    private float gameHealth;
-    private BlockPos gameAnchor;
-    private final java.util.Map<java.util.UUID, Long> gameSkipped = new java.util.HashMap<>();
-    private final Set<CompanionGame.Kind> gameKinds = new HashSet<>();
-    private BlockPos gameTravel;
-    private int gameTravels;
-    private final java.util.Map<net.minecraft.world.item.Item, Integer> gameBagBefore = new java.util.HashMap<>();
+    CompanionGame.Kind game, gameLastKind;
+    int gameWanted, gameKills;
+    java.util.UUID gameTarget;
+    long gameSince;
+    double gameBest;
+    float gameHealth;
+    BlockPos gameAnchor;
+    final java.util.Map<java.util.UUID, Long> gameSkipped = new java.util.HashMap<>();
+    final Set<CompanionGame.Kind> gameKinds = new HashSet<>();
+    BlockPos gameTravel;
+    int gameTravels;
+    final java.util.Map<net.minecraft.world.item.Item, Integer> gameBagBefore = new java.util.HashMap<>();
     /** While choosing the next ore: those no walk from here reaches, and those no tunnel from here reaches. */
-    private final Set<BlockPos> oreOffFoot = new HashSet<>(), oreNoTunnel = new HashSet<>();
+    final Set<BlockPos> oreOffFoot = new HashSet<>(), oreNoTunnel = new HashSet<>();
     /** Cells of the own tunnel still to dig, in order; the top of its stairs is the way back out. */
-    private final java.util.Deque<BlockPos> oreTunnel = new java.util.ArrayDeque<>();
-    private BlockPos oreExit;
+    final java.util.Deque<BlockPos> oreTunnel = new java.util.ArrayDeque<>();
+    BlockPos oreExit;
     /**
      * Iron for a tool, inside one work: ingots needed, the tool, and whether the running ore or furnace stage is only
      * this preparation. The ore the order itself is about waits in the saved fields until the tool is made.
      */
-    private int ironNeeded, ironMines, ironSmelts;
-    private String ironTool = "";
-    private int ironToolCount;
-    private boolean ironPrep;
-    private CompanionOre.Kind goalOre;
-    private int goalOreWanted, goalOreMined, goalOreDropsBefore;
-    private BlockPos goalOreExit;
+    int ironNeeded, ironMines, ironSmelts;
+    String ironTool = "";
+    int ironToolCount;
+    boolean ironPrep;
+    CompanionOre.Kind goalOre;
+    int goalOreWanted, goalOreMined, goalOreDropsBefore;
+    BlockPos goalOreExit;
     /** Where the work goes on after stone was mined for something else (a pickaxe, a furnace). */
-    private Phase afterStone;
+    Phase afterStone;
     /** bench_craft: only walk to the bench and craft, nothing is gathered for it. */
-    private boolean craftOnly;
+    boolean craftOnly;
     /** smelt_items without a number: everything of the raw material carried, at most a stack (client PlannedAction.ALL_CARRIED). */
     public static final int ALL_CARRIED = 0;
     /**
@@ -201,28 +202,28 @@ public final class CompanionWork {
      * stock he keeps stays too — logs and stone up to his stock, soil for supports. Never sent by the model.
      */
     public static final String SURPLUS = "surplus";
-    private static final int MAX_FURNACES = 8;
+    static final int MAX_FURNACES = 8;
     /** One coal smelts eight items: a player splits a big batch into furnaces of about that much. */
-    private static final int ITEMS_PER_FURNACE = 8;
-    private static final int FURNACE_GROUP = 10;
+    static final int ITEMS_PER_FURNACE = 8;
+    static final int FURNACE_GROUP = 10;
     /** Smelting: the raw material and the real furnaces in use; each lot remembers what in its furnace is ours. */
-    private CompanionSmelting.Recipe smelt;
-    private int smeltCount;
-    private boolean smeltAll;
-    private boolean mixedMeat;
-    private int mixedCooked, mixedKinds;
-    private final Set<net.minecraft.world.item.Item> mixedInputs = new HashSet<>();
-    private final List<Lot> lots = new ArrayList<>();
-    private final Set<BlockPos> triedFurnaces = new HashSet<>();
-    private BlockPos heading;
-    private boolean ownFurnaceFailed;
+    CompanionSmelting.Recipe smelt;
+    int smeltCount;
+    boolean smeltAll;
+    boolean mixedMeat;
+    int mixedCooked, mixedKinds;
+    final Set<net.minecraft.world.item.Item> mixedInputs = new HashSet<>();
+    final List<Lot> lots = new ArrayList<>();
+    final Set<BlockPos> triedFurnaces = new HashSet<>();
+    BlockPos heading;
+    boolean ownFurnaceFailed;
     /** Tries to get out of a cut below the bench before the order gives up on it. */
-    private int benchClimbs;
+    int benchClimbs;
     /** Where the furnace goes when there was no room for it where he stood: the place of the order. */
-    private BlockPos furnaceRoom;
-    private boolean furnacesShort;
-    private int furnacesPlaced;
-    private static final class Lot {
+    BlockPos furnaceRoom;
+    boolean furnacesShort;
+    int furnacesPlaced;
+    static final class Lot {
         final BlockPos pos;
         final boolean placed;
         int count, outputBefore, ready, taken, rawBack, fuelOurs, fuelTheirs, misses;
@@ -244,9 +245,9 @@ public final class CompanionWork {
             if (!animal.isAlive() && huntDead.add(animal.getUUID())) { gameKills++; gameTravels = 0; gameLastKind = CompanionGame.Kind.of(animal); gameKinds.add(gameLastKind); }
         }
     }
-    private long taskId;
-    private long completedId = -1;
-    private CompanionActionResult completedResult;
+    long taskId;
+    long completedId = -1;
+    CompanionActionResult completedResult;
 
     public long activeTaskId() { return isActive() ? taskId : 0; }
     public CompanionActionResult taskResult(long id) {
@@ -424,10 +425,10 @@ public final class CompanionWork {
                 gameForFood = CompanionGame.foodRun(item);
             }
             case "smelt_items" -> {
-                smelt = CompanionSmelting.resolve(level, item, carriedItems());
+                smelt = CompanionSmelting.resolve(level, item, items.carriedItems());
                 if (smelt == null && CompanionGame.ANY_MEAT.equals(item)) return CompanionActionResult.failed("У меня нет сырого мяса, жарить нечего.");
                 if (smelt == null) return CompanionActionResult.failed("Это в печи не переплавляется: в рецептах мира такой плавки нет.");
-                int carried = CompanionSmelting.count(carriedItems(), smelt.input());
+                int carried = CompanionSmelting.count(items.carriedItems(), smelt.input());
                 if (carried == 0) return CompanionActionResult.failed("У меня нет «" + new ItemStack(smelt.input()).getHoverName().getString() + "» для печи.");
                 // Like a player: what is in the bag goes in; a shortfall is said at the end, not hidden.
                 smeltAll = count == ALL_CARRIED;
@@ -487,13 +488,13 @@ public final class CompanionWork {
         oreMined = oreFound = oreLiquid = oreUnreachable = orePickaxeAttempts = 0; oreDone = oreChoosing = oreLootRetried = false;
         oreSearch = null; oreCandidates = null; oreRejected.clear(); oreTunnel.clear(); oreExit = null;
         if (job == Job.ORE) {
-            oreDropsBefore = countCarried(ore.drop);
+            oreDropsBefore = items.countCarried(ore.drop);
             // A second vein must not turn the first descent into the next job's surface.
             oreExit = owner.autonomy().running() ? owner.autonomy().center() : null;
         }
         gameKills = 0; gameTarget = null; gameLastKind = null; gameKinds.clear(); gameTravel = null; gameTravels = 0; owner.travel().reset(); gameSkipped.clear(); gameBagBefore.clear();
         gameAnchor = owner.autonomy().running() ? owner.autonomy().center() : owner.blockPosition();
-        if (job == Job.GAME) for (ItemStack stack : carriedItems()) if (!stack.isEmpty()) gameBagBefore.merge(stack.getItem(), stack.getCount(), Integer::sum);
+        if (job == Job.GAME) for (ItemStack stack : items.carriedItems()) if (!stack.isEmpty()) gameBagBefore.merge(stack.getItem(), stack.getCount(), Integer::sum);
         ironMines = ironSmelts = 0; ironPrep = false; goalOre = null; goalOreExit = null; afterStone = null; ironTool = ""; ironNeeded = 0;
         if (job == Job.CRAFT && ingotCost(requestedItem) > 0) {
             ironTool = requestedItem; ironToolCount = requestedCount; ironNeeded = ingotCost(requestedItem) * requestedCount; phase = Phase.IRON;
@@ -598,7 +599,7 @@ public final class CompanionWork {
     /** What the work has to show: the bag and hands item by item, and its own counters. */
     private long progressSignature() {
         long hash = 17;
-        for (ItemStack stack : carriedItems()) hash = hash * 31 + (stack.isEmpty() ? 0 : BuiltInRegistries.ITEM.getId(stack.getItem()) * 131L + stack.getCount());
+        for (ItemStack stack : items.carriedItems()) hash = hash * 31 + (stack.isEmpty() ? 0 : BuiltInRegistries.ITEM.getId(stack.getItem()) * 131L + stack.getCount());
         for (int counter : new int[]{gathered, transferred, newChests, huntKills, furnacesPlaced, owner.collectedStone(), oreMined, gameKills}) hash = hash * 31 + counter;
         return hash;
     }
@@ -687,7 +688,7 @@ public final class CompanionWork {
         var kind = CompanionGame.Kind.of(current);
         owner.workStatus("Охочусь на " + (kind == null ? "животное" : kind.one) + ", добыл " + gameKills + " из " + gameWanted + ".");
     }
-    private static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
+    static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /** The walk to game far off; true while walking. On arrival the nearest is chosen again; a failed walk skips them for a while. */
     private boolean travelToGame(ServerLevel level) {
@@ -779,7 +780,7 @@ public final class CompanionWork {
         String animals = named != null ? named.count(gameKills) : gameKills + " " + (last == 1 && tens != 11 ? "животное" : "животных");
         if (gameKills == 0) return NOTHING_HUNTED + " из " + gameWanted + ".";
         java.util.Map<net.minecraft.world.item.Item, Integer> now = new java.util.LinkedHashMap<>();
-        for (ItemStack stack : carriedItems()) if (!stack.isEmpty()) now.merge(stack.getItem(), stack.getCount(), Integer::sum);
+        for (ItemStack stack : items.carriedItems()) if (!stack.isEmpty()) now.merge(stack.getItem(), stack.getCount(), Integer::sum);
         List<String> gained = new ArrayList<>();
         now.forEach((item, count) -> { int more = count - gameBagBefore.getOrDefault(item, 0); if (more > 0) gained.add(more + " «" + new ItemStack(item).getHoverName().getString() + "»"); });
         return (all ? "Готово, добыл " : "Добыл ") + animals + (all ? "" : " из " + gameWanted) + (gained.isEmpty() ? "." : ": в сумке прибавилось " + String.join(", ", gained) + ".");
@@ -790,7 +791,7 @@ public final class CompanionWork {
             phase = Phase.DIGGING; owner.startGatheringDirtForWork(requestedCount); return;
         }
         if (approachCraftingTable()) return;
-        if (!moveHandMaterialsToBag()) return;
+        if (!items.moveHandMaterialsToBag()) return;
         if (CompanionTools.craft(owner, "shovel", Blocks.DIRT.defaultBlockState(), ItemTags.SHOVELS)) {
             phase = Phase.DIGGING; owner.startGatheringDirtForWork(requestedCount);
         } else requestWood(Phase.SHOVEL, 2);
@@ -798,7 +799,7 @@ public final class CompanionWork {
 
     private void craftRequested() {
         if (needsWorkbench(requestedItem) && approachCraftingTable()) return;
-        if (!moveHandMaterialsToBag()) return;
+        if (!items.moveHandMaterialsToBag()) return;
         int remainder = owner.goals().craftRemainder(taskId);
         if (remainder == 0) { finish(true, "Нужные пригодные кирки уже есть."); return; }
         if (remainder > 0) requestedCount = remainder;
@@ -815,9 +816,9 @@ public final class CompanionWork {
         }
         if (craftOnly || result.message().contains("места") || result.message().contains("безопасное место")) { finish(false, result.message()); return; }
         int required = stoneCost(requestedItem) * requestedCount;
-        if (required > 0 && countStoneMaterials() < required) {
-            wantedStone = Math.min(64, required - countStoneMaterials());
-            if (required - countStoneMaterials() > 64) { finish(false, "Слишком большой заказ, давай сделаем меньше предметов за раз."); return; }
+        if (required > 0 && items.countStoneMaterials() < required) {
+            wantedStone = Math.min(64, required - items.countStoneMaterials());
+            if (required - items.countStoneMaterials() > 64) { finish(false, "Слишком большой заказ, давай сделаем меньше предметов за раз."); return; }
             gathered = 0; afterStone = Phase.CRAFT;
             phase = Phase.PICKAXE;
             return;
@@ -826,19 +827,19 @@ public final class CompanionWork {
     }
 
     private void preparePickaxe() {
-        if ((job == Job.STONE || job == Job.ORE) && pickaxeSense.tick(reservedStone())) return;
+        if ((job == Job.STONE || job == Job.ORE) && pickaxeSense.tick(items.reservedStone())) return;
         ItemStack best = ItemStack.EMPTY;
         double score = -1;
-        for (ItemStack stack : carriedItems()) {
-            if (!usablePickaxe(stack)) continue;
+        for (ItemStack stack : items.carriedItems()) {
+            if (!items.usablePickaxe(stack)) continue;
             double speed = stack.getDestroySpeed(Blocks.STONE.defaultBlockState());
             if (speed > score) { score = speed; best = stack; }
         }
         if (best.isEmpty()) {
             if (approachCraftingTable()) return;
-            if (!moveHandMaterialsToBag()) return;
+            if (!items.moveHandMaterialsToBag()) return;
             // A worn-out pickaxe with mined cobblestone in the bag is replaced by the better stone one.
-            String replacement = countStoneMaterials() >= 3 && owner.craftFromBag("minecraft:stone_pickaxe", 1).success()
+            String replacement = items.countStoneMaterials() >= 3 && owner.craftFromBag("minecraft:stone_pickaxe", 1).success()
                     ? "minecraft:stone_pickaxe" : "minecraft:wooden_pickaxe";
             CompanionActionResult crafted = replacement.equals("minecraft:stone_pickaxe")
                     ? CompanionActionResult.ok("") : owner.craftFromBag(replacement, 1);
@@ -854,7 +855,7 @@ public final class CompanionWork {
             CompanionActionResult equipped = owner.equipForWork(id);
             if (!equipped.success()) { finish(false, equipped.message()); return; }
         }
-        if (!usablePickaxe(owner.getMainHandItem())) {
+        if (!items.usablePickaxe(owner.getMainHandItem())) {
             finish(false, "Не получилось взять подходящую кирку."); return;
         }
         owner.workStatus("Кирка готова, ищу доступный камень.");
@@ -1015,7 +1016,7 @@ public final class CompanionWork {
                 finish(false, "Добыл " + gathered + " из " + wantedStone + ". Проверил доступные выходы камня в пределах " + owner.getSearchRadius() + " блоков; безопасного подхода или неглубокого спуска не нашёл."); return;
             }
         }
-        if (prepareMiningTool(level.getBlockState(target))) return;
+        if (items.prepareMiningTool(level.getBlockState(target))) return;
         boolean soil = !quarrySoil.isEmpty() && target.equals(quarrySoil.peekFirst()); // a stair cell, soil or stone
         boolean stairStone = soil && isStone(level.getBlockState(target));
         // Pickup/movement can put our feet over a queued stair between ticks. Its old queue membership is not permission
@@ -1033,9 +1034,9 @@ public final class CompanionWork {
         }
         owner.movementIntent(target);
         if (!soil && !isStone(level.getBlockState(target))) { rejectTarget(); return; }
-        if ((!soil || stairStone) && !usablePickaxe(owner.getMainHandItem())) {
+        if ((!soil || stairStone) && !items.usablePickaxe(owner.getMainHandItem())) {
             owner.selectToolForBlock(level.getBlockState(target));
-            if (!usablePickaxe(owner.getMainHandItem())) { resetTarget(); phase = Phase.PICKAXE; return; }
+            if (!items.usablePickaxe(owner.getMainHandItem())) { resetTarget(); phase = Phase.PICKAXE; return; }
         }
         if (soil && !stairStone) {
             owner.selectToolForBlock(level.getBlockState(target));
@@ -1102,7 +1103,7 @@ public final class CompanionWork {
                 : soil ? "Убираю землю для спуска к камню." : "Добываю камень: " + gathered + " из " + wantedStone + ".");
         if (!breaking.tick(level, target)) return;
         var drops = Block.getDrops(state, level, target, level.getBlockEntity(target), owner, pickaxe);
-        if (drops.isEmpty() || !canStore(drops)) { finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return; }
+        if (drops.isEmpty() || !items.canStore(drops)) { finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return; }
         lastHarvestStand = owner.blockPosition();
         if (!autonomousReturnAllows(target)) { if (soil) finish(CompanionActionResult.blocked("Дальнейшая добыча разрушит обратные ступеньки. Остановился, вещи сохранил.")); else rejectTarget(); return; }
         if (!safeToMine(level, target) || !level.destroyBlock(target, false, owner, 512)) { rejectTarget(); return; }
@@ -1129,7 +1130,7 @@ public final class CompanionWork {
         BlockState sample = ore.sampleIn(owner.level()).defaultBlockState();
         ItemStack best = ItemStack.EMPTY;
         float speed = -1;
-        for (ItemStack stack : carriedItems())
+        for (ItemStack stack : items.carriedItems())
             if (stack.is(ItemTags.PICKAXES) && stack.isCorrectToolForDrops(sample) && stack.getDestroySpeed(sample) > speed) { best = stack; speed = stack.getDestroySpeed(sample); }
         if (!best.isEmpty()) {
             if (owner.getOffhandItem() == best) owner.unequipForSupport("offhand");
@@ -1140,7 +1141,7 @@ public final class CompanionWork {
             return;
         }
         if (++orePickaxeAttempts > 3) { finish(false, "Не получилось подготовить кирку для «" + ore.oreName + "». Вещи у меня."); return; }
-        if (ore.pickaxeIn(owner.level()) == Items.IRON_PICKAXE && countCarried(Items.IRON_INGOT) < ingotCost("minecraft:iron_pickaxe")) {
+        if (ore.pickaxeIn(owner.level()) == Items.IRON_PICKAXE && items.countCarried(Items.IRON_INGOT) < ingotCost("minecraft:iron_pickaxe")) {
             // Like a player: iron first, smelted, then the pickaxe, then back to this ore.
             if (ironPrep || ironMines > 0) { finish(false, "Не получилось подготовить железную кирку для «" + ore.oreName + "». Вещи у меня."); return; }
             owner.workStatus("Для «" + ore.oreName + "» нужна железная кирка. Сначала добуду и переплавлю железо.");
@@ -1159,7 +1160,7 @@ public final class CompanionWork {
     private void ironStep(ServerLevel level) {
         // Each stage of the chain gets its own five minutes; one ten-minute budget for ore, furnace, bench and goal was too tight.
         deadline = Math.max(deadline, level.getGameTime() + 20 * 300);
-        int ingots = countCarried(Items.IRON_INGOT), missing = ironNeeded - ingots;
+        int ingots = items.countCarried(Items.IRON_INGOT), missing = ironNeeded - ingots;
         String tool = "«" + itemName(ironTool) + "»";
         if (missing <= 0) {
             requestedItem = ironTool; requestedCount = ironToolCount; craftAttempts = 0;
@@ -1167,10 +1168,10 @@ public final class CompanionWork {
             phase = Phase.CRAFT; resetTarget();
             return;
         }
-        int raw = countCarried(Items.RAW_IRON);
+        int raw = items.countCarried(Items.RAW_IRON);
         if (raw > 0) {
             if (++ironSmelts > 3) { finish(false, "Для " + tool + " не хватает железных слитков: печь не отдала нужное. Вещи у меня."); return; }
-            smelt = CompanionSmelting.resolve(level, "minecraft:raw_iron", carriedItems());
+            smelt = CompanionSmelting.resolve(level, "minecraft:raw_iron", items.carriedItems());
             if (smelt == null) { finish(false, "В этом мире нет рецепта плавки сырого железа."); return; }
             smeltCount = Math.min(raw, missing); requestedCount = smeltCount; smeltAll = false;
             lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = false; furnacesPlaced = 0; craftAttempts = 0;
@@ -1184,7 +1185,7 @@ public final class CompanionWork {
         }
         ore = CompanionOre.Kind.IRON; oreWanted = missing; oreMined = oreFound = oreLiquid = oreUnreachable = orePickaxeAttempts = 0;
         oreDone = oreChoosing = oreLootRetried = false; oreSearch = null; oreCandidates = null; oreRejected.clear(); oreOffFoot.clear(); oreNoTunnel.clear(); oreTunnel.clear(); oreExit = null;
-        oreDropsBefore = countCarried(Items.RAW_IRON);
+        oreDropsBefore = items.countCarried(Items.RAW_IRON);
         ironPrep = true; phase = Phase.ORE_PICK; resetTarget();
         owner.workStatus("Для " + tool + " нужно " + ironNeeded + " железных слитков. Иду за железной рудой.");
     }
@@ -1226,7 +1227,7 @@ public final class CompanionWork {
         if (!ore.is(state)) { resetTarget(); return; }
         if (CompanionOre.liquidNear(level, target)) { oreLiquid++; rejectOre(); return; }
         if (!safeOreSwing(level, target)) return;
-        if (prepareMiningTool(state)) return;
+        if (items.prepareMiningTool(state)) return;
         if (!owner.getMainHandItem().isCorrectToolForDrops(state)) {
             owner.selectToolForBlock(state);
             if (!owner.getMainHandItem().isCorrectToolForDrops(state)) { resetTarget(); phase = Phase.ORE_PICK; return; }
@@ -1239,7 +1240,7 @@ public final class CompanionWork {
                 && !above.isAir() && !ore.is(above) && CompanionOre.tunnelable(above) && CompanionOre.safeTunnelCell(level, head)) {
             oreTunnel.addFirst(head.immutable()); return;
         }
-        int reach = reachBlock(level, target, true);
+        int reach = items.reachBlock(level, target, true);
         if (reach < 0) { oreUnreachable++; rejectOre(); return; }
         if (reach == 0) return;
         owner.workStatus("Добываю «" + ore.oreName + "»: " + oreMined + " из " + oreWanted + ".");
@@ -1336,35 +1337,16 @@ public final class CompanionWork {
         // The world may have changed since planning: never dig into liquid, under sand or into something built.
         if (!CompanionOre.tunnelable(state) || !CompanionOre.safeTunnelCell(level, cell)) { oreUnreachable++; rejectOre(); return; }
         if (!safeOreSwing(level, cell)) return;
-        if (prepareMiningTool(state)) return;
+        if (items.prepareMiningTool(state)) return;
         owner.selectToolForBlock(state);
         // Another ore on the way that this pickaxe would only destroy is not dug through.
         if (state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && !owner.getMainHandItem().isCorrectToolForDrops(state)) { oreUnreachable++; rejectOre(); return; }
-        int reach = reachBlock(level, cell, false);
+        int reach = items.reachBlock(level, cell, false);
         if (reach < 0) { oreUnreachable++; rejectOre(); return; }
         if (reach == 0) return;
         owner.workStatus("Прокладываю ход к «" + ore.oreName + "».");
         if (!breaking.tick(level, cell)) return;
         if (harvestOreCell(level, cell)) { oreTunnel.removeFirst(); resetApproach(); cooldown = 2; }
-    }
-
-    /**
-     * 1: in reach and in sight; 0: walking there; -1: no way or no progress for eight seconds. forTheDrop: the ore itself is
-     * mined only from where its drop can then be picked up (a tunnel cell is not).
-     */
-    private int reachBlock(ServerLevel level, BlockPos block, boolean forTheDrop) {
-        owner.movementIntent(block);
-        owner.getLookControl().setLookAt(block.getX() + .5D, block.getY() + .5D, block.getZ() + .5D);
-        double distance = owner.distanceToSqr(block.getCenter());
-        if (distance <= 3.8D * 3.8D && CompanionMiningNavigation.visible(owner, owner.getEyePosition(), block)
-                && (!forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, owner.blockPosition()))) { owner.getNavigation().stop(); return 1; }
-        breaking.reset();
-        if (distance + .05 < bestDistance) { bestDistance = distance; lastProgressTick = level.getGameTime(); }
-        if (level.getGameTime() - lastProgressTick > 160) return -1;
-        if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) path = CompanionMiningNavigation.pathTo(owner, block, 3.5, false, true, forTheDrop);
-        if (path == null || !path.canReach()) return -1;
-        CompanionMiningNavigation.walk(owner, path);
-        return 0;
     }
 
     /** Breaks a block like a player: real drops for the tool in hand, wear, the drops fall into the world to be picked up. */
@@ -1374,7 +1356,7 @@ public final class CompanionWork {
         BlockState state = level.getBlockState(pos);
         ItemStack tool = owner.getMainHandItem();
         var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), owner, tool);
-        if (!drops.isEmpty() && !canStore(drops)) { finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return false; }
+        if (!drops.isEmpty() && !items.canStore(drops)) { finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return false; }
         if (!level.destroyBlock(pos, false, owner, 512)) { blockOreCell(level, pos, "destroy_rejected"); return false; }
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         owner.dropHarvest(pos, drops);
@@ -1425,13 +1407,6 @@ public final class CompanionWork {
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "ore_cell_skipped", "entity", owner.getUUID(), "pos", pos, "reason", reason);
         oreUnreachable++; rejectOre();
     }
-    private boolean prepareMiningTool(BlockState state) {
-        boolean busy = state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_SHOVEL) ? shovelSense.tick(reservedStone())
-                : (job == Job.STONE || job == Job.ORE) && state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE) && pickaxeSense.tick(reservedStone());
-        if (busy) { breaking.reset(); resetApproach(); }
-        return busy;
-    }
-    private int reservedStone() { return phase == Phase.MINE || phase == Phase.PICKAXE ? Math.max(0, owner.collectedStone() - stoneCollectedBefore) : 0; }
 
     /** Back up the own stairs before reporting, like after stone. */
     private void climbOutOfOre(ServerLevel level) {
@@ -1454,37 +1429,27 @@ public final class CompanionWork {
     }
 
     private void finishOre() {
-        int gained = Math.max(0, countCarried(ore.drop) - oreDropsBefore);
+        int gained = Math.max(0, items.countCarried(ore.drop) - oreDropsBefore);
         String got = "«" + ore.oreName + "»: в сумке прибавилось " + gained + " «" + itemName(ore.drop) + "».";
         String below = oreExit != null && owner.getY() < oreExit.getY() - .5
                 ? " Наверх пока не выбрался: стою на " + owner.blockPosition().toShortString() + "." : "";
         String bag = " В сумке: " + owner.getStoredItemsSummary() + ".";
         if (ironPrep && gained > 0) {
-            owner.noteDeed("Для «" + itemName(ironTool) + "» добыл " + blocks(oreMined) + " " + got, true);
+            owner.noteDeed("Для «" + itemName(ironTool) + "» добыл " + CompanionWorkItems.blocks(oreMined) + " " + got, true);
             ironStageDone(); return;
         }
-        if (oreMined >= oreWanted) { finish(true, "Добыл " + blocks(oreMined) + " " + got + below + bag); return; }
+        if (oreMined >= oreWanted) { finish(true, "Добыл " + CompanionWorkItems.blocks(oreMined) + " " + got + below + bag); return; }
         int radius = oreSearch == null ? owner.getSearchRadius() : oreSearch.radius(), depth = oreSearch == null ? CompanionOre.MAX_DROP : oreSearch.depth();
         String why = oreFound == 0 ? " Руды «" + ore.oreName + "» не нашёл в пределах " + radius + " блоков и до " + depth + " блоков вниз."
                 : " Больше доступной руды «" + ore.oreName + "» рядом нет.";
-        if (oreLiquid > 0) why += " У " + blocks(oreLiquid) + " рядом вода или лава — их не трогал.";
+        if (oreLiquid > 0) why += " У " + CompanionWorkItems.blocks(oreLiquid) + " рядом вода или лава — их не трогал.";
         if (oreUnreachable > 0) why += " К " + oreUnreachable + " не нашёл безопасного хода: не глубже " + CompanionOre.MAX_DROP
                 + " блоков, без гравия, песка и жидкостей рядом.";
         if (ironPrep) {
             String goal = goalOre != null ? "Для «" + goalOre.oreName + "» нужна железная кирка, а на неё нужно " : "Для «" + itemName(ironTool) + "» нужно ";
             finish(CompanionActionResult.blocked(goal + ironNeeded + " железных слитков, и железа я не набрал." + why + below + bag)); return;
         }
-        finish(false, "Добыл " + oreMined + " из " + blocks(oreWanted) + " " + got + why + below + bag);
-    }
-
-    private static String blocks(int count) {
-        int last = count % 10, tens = count % 100;
-        return count + (last == 1 && tens != 11 ? " блок" : last >= 2 && last <= 4 && (tens < 12 || tens > 14) ? " блока" : " блоков");
-    }
-    private int countCarried(net.minecraft.world.item.Item item) {
-        int count = 0;
-        for (ItemStack stack : carriedItems()) if (stack.is(item)) count += stack.getCount();
-        return count;
+        finish(false, "Добыл " + oreMined + " из " + CompanionWorkItems.blocks(oreWanted) + " " + got + why + below + bag);
     }
 
     /**
@@ -1529,7 +1494,7 @@ public final class CompanionWork {
      * straight line. Faces are compared in groups by one route search each; a farther group only while it could still be shorter.
      */
     /** A deed of his own: stone and the place to stand for it at most this much below where the stone work began. */
-    private static final int KEEP_UP = 2;
+    static final int KEEP_UP = 2;
     private BlockPos nextStone(ServerLevel level) {
         selectingStone = false;
         BlockPos here = owner.blockPosition();
@@ -1686,7 +1651,7 @@ public final class CompanionWork {
                 if (!level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty()) continue;
                 if (!level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) continue;
                 if (!level.getBlockState(pos).getCollisionShape(level, pos).isEmpty() || !level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()) continue;
-                if (!visibleFrom(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), block)) continue;
+                if (!items.visibleFrom(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), block)) continue;
                 feet.add(pos);
             }
             path = owner.getNavigation().createPath(feet, 0);
@@ -1713,7 +1678,7 @@ public final class CompanionWork {
                 if (newChests >= 1) { finish(false, "Сложил " + transferred + " предметов, но оставшиеся вещи не помещаются. Они остались в сумке."); return; }
                 if (!hasChestItem()) {
                     if (approachCraftingTable()) return;
-                    if (!moveHandMaterialsToBag()) return;
+                    if (!items.moveHandMaterialsToBag()) return;
                     CompanionActionResult crafted = owner.craftFromBag("minecraft:chest", 1);
                     if (!crafted.success()) {
                         if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) finish(false, crafted.message());
@@ -1759,17 +1724,17 @@ public final class CompanionWork {
     private void placeRequestedChests() {
         if (!owner.onGround()) return;
         if (newChests >= requestedCount) { finishPlacedChests(); return; }
-        boolean hasItem = carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(requestedItem) && !stack.isEmpty());
+        boolean hasItem = items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(requestedItem) && !stack.isEmpty());
         if (!hasItem) {
             if (!supportsCraft(requestedItem, 1)) { finish(false, "Нет блока " + requestedItem + " в сумке, его подготовку пока не умею."); return; }
             if (needsWorkbench(requestedItem) && approachCraftingTable()) return;
-            if (!moveHandMaterialsToBag()) return;
+            if (!items.moveHandMaterialsToBag()) return;
             CompanionActionResult crafted = owner.craftFromBag(requestedItem, 1);
             if (!crafted.success()) {
                 if (crafted.message().contains("места") || crafted.message().contains("безопасное место"))
                     finish(false, "Поставил " + newChests + " из " + requestedCount + ". " + crafted.message());
-                else if (stoneCost(requestedItem) > countStoneMaterials()) {
-                    wantedStone = stoneCost(requestedItem) - countStoneMaterials();
+                else if (stoneCost(requestedItem) > items.countStoneMaterials()) {
+                    wantedStone = stoneCost(requestedItem) - items.countStoneMaterials();
                     stoneCollectedBefore = owner.collectedStone(); gathered = 0; phase = Phase.PICKAXE;
                     stoneSearch = null; stoneCandidates = null; rejected.clear(); dryAnchor = null; resetTarget();
                 } else requestWood(Phase.STORE);
@@ -1992,44 +1957,7 @@ public final class CompanionWork {
         return resource(stack);
     }
 
-    private boolean hasChestItem() { return carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
-    private boolean usablePickaxe(ItemStack stack) {
-        if (stack.isEmpty() || !stack.is(ItemTags.PICKAXES) || !stack.isCorrectToolForDrops(Blocks.STONE.defaultBlockState())
-                || !(owner.level() instanceof ServerLevel level)) return false;
-        // Silk Touch stone is not a material for stone tools. Use a normal pickaxe for this job.
-        return Block.getDrops(Blocks.STONE.defaultBlockState(), level, owner.blockPosition(), null, owner, stack)
-                .stream().anyMatch(drop -> drop.is(ItemTags.STONE_TOOL_MATERIALS));
-    }
-    private int countStoneMaterials() {
-        int result = 0;
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(ItemTags.STONE_TOOL_MATERIALS)) result += owner.getItem(slot).getCount();
-        return result;
-    }
-    private List<ItemStack> carriedItems() {
-        List<ItemStack> items = new ArrayList<>();
-        items.add(owner.getMainHandItem()); items.add(owner.getOffhandItem());
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) items.add(owner.getItem(slot));
-        return items;
-    }
-
-    private boolean canStore(List<ItemStack> drops) {
-        return owner.canStoreDrops(drops);
-    }
-
-    private boolean visibleFrom(ServerLevel level, Vec3 eye, BlockPos block) {
-        return CompanionEntity.seesBlock(owner, eye, block);
-    }
-
-    private boolean moveHandMaterialsToBag() {
-        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) {
-            ItemStack stack = owner.getItemBySlot(slot);
-            if (stack.is(ItemTags.LOGS) || stack.is(ItemTags.PLANKS) || stack.is(ItemTags.STONE_TOOL_MATERIALS) || stack.is(Items.STICK)) {
-                CompanionActionResult result = owner.unequipForSupport(slot.getName());
-                if (!result.success()) { finish(false, result.message()); return false; }
-            }
-        }
-        return true;
-    }
+    private boolean hasChestItem() { return items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
 
     /** Reuse a reachable workbench before spending more wood on another one. */
     private boolean needsWorkbench(String item) {
@@ -2129,7 +2057,7 @@ public final class CompanionWork {
             if (free == null) break;
             lots.add(new Lot(free, false));
         }
-        boolean carriesFurnace = carriedItems().stream().anyMatch(stack -> stack.is(Items.FURNACE));
+        boolean carriesFurnace = items.carriedItems().stream().anyMatch(stack -> stack.is(Items.FURNACE));
         if (lots.size() < wanted && carriesFurnace && furnacesPlaced < MAX_FURNACES + 2) {
             BlockPos group = lots.isEmpty() ? null : lots.getFirst().pos;
             if (group != null && owner.distanceToSqr(group.getCenter()) > 4.5 * 4.5) {
@@ -2159,7 +2087,7 @@ public final class CompanionWork {
         }
         if (lots.isEmpty()) {
             if (ownFurnaceFailed) { finish(false, "Свою печь поставил, но подойти к ней и заложить сырьё не получилось. Сырьё у меня."); return; }
-            if (!approachCraftingTable() && moveHandMaterialsToBag()) craftFurnace();
+            if (!approachCraftingTable() && items.moveHandMaterialsToBag()) craftFurnace();
             return;
         }
         // Every furnace taken is loaded and still more raw material is left: no room for more furnaces, say so at the end.
@@ -2170,7 +2098,7 @@ public final class CompanionWork {
     private void craftFurnace() {
         // Smelting cobblestone itself: the new furnace must not eat the stone that was to go inside it.
         int reserved = new ItemStack(smelt.input()).is(ItemTags.STONE_CRAFTING_MATERIALS) ? smeltCount : 0;
-        int missing = stoneCost("minecraft:furnace") + reserved - countStoneMaterials();
+        int missing = stoneCost("minecraft:furnace") + reserved - items.countStoneMaterials();
         if (missing > 0) {
             if (++craftAttempts > 3) { finish(false, "Для печи не хватает камня, а добыть его не вышло. Сырьё у меня."); return; }
             owner.workStatus("Свободной печи рядом нет. Добуду камня и сделаю свою.");
@@ -2256,7 +2184,7 @@ public final class CompanionWork {
     /** Raw material into the top slot, fuel under it: the same two slots a player fills. */
     private void loadLot(ServerLevel level, Lot lot, AbstractFurnaceBlockEntity oven, int remaining) {
         if (!freeFor(oven)) { dropLot(lot); return; }
-        int carried = CompanionSmelting.count(carriedItems(), smelt.input());
+        int carried = CompanionSmelting.count(items.carriedItems(), smelt.input());
         if (carried <= 0) {
             smeltCount = loadedTotal();
             if (smeltCount == 0) finish(false, "Сырья для печи у меня не осталось.");
@@ -2267,13 +2195,13 @@ public final class CompanionWork {
         ItemStack fuelSlot = oven.getItem(1);
         int need = amount * smelt.cookTicks() - fuelSlot.getCount() * CompanionSmelting.burnTicks(fuelSlot);
         planksForFuel(need);
-        var fuel = CompanionSmelting.chooseFuel(carriedItems(), smelt.input(), Math.min(remaining, carried), need, fuelSlot);
+        var fuel = CompanionSmelting.chooseFuel(items.carriedItems(), smelt.input(), Math.min(remaining, carried), need, fuelSlot);
         if (need > 0 && fuel == null && fuelSlot.isEmpty()) {
             // Nothing to burn: chop wood first, the raw material stays in the bag meanwhile.
             owner.workStatus("Нечем топить печь. Схожу за дровами.");
             requestWood(Phase.COOK, CompanionSmelting.logsFor(need)); return;
         }
-        ItemStack input = takeCarried(smelt.input(), amount);
+        ItemStack input = items.takeCarried(smelt.input(), amount);
         if (input.isEmpty()) return;
         lot.count = input.getCount();
         lot.outputBefore = oven.getItem(2).getCount();
@@ -2302,8 +2230,8 @@ public final class CompanionWork {
     private void planksForFuel(int needTicks) {
         if (needTicks <= 0) return;
         long have = 0;
-        for (ItemStack stack : carriedItems()) if (!stack.isEmpty() && !stack.is(smelt.input()) && CompanionSmelting.fuelRank(stack) >= 0) have += (long) stack.getCount() * CompanionSmelting.burnTicks(stack);
-        for (ItemStack stack : carriedItems()) {
+        for (ItemStack stack : items.carriedItems()) if (!stack.isEmpty() && !stack.is(smelt.input()) && CompanionSmelting.fuelRank(stack) >= 0) have += (long) stack.getCount() * CompanionSmelting.burnTicks(stack);
+        for (ItemStack stack : items.carriedItems()) {
             if (have >= needTicks) return;
             if (stack.isEmpty() || !stack.is(ItemTags.LOGS) || stack.is(smelt.input())) continue;
             String type = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().replaceFirst("^stripped_", "").replaceFirst("_(log|wood|stem|hyphae)$", "");
@@ -2317,7 +2245,7 @@ public final class CompanionWork {
     private void addFuel(Lot lot, AbstractFurnaceBlockEntity oven, CompanionSmelting.Fuel fuel) {
         ItemStack slot = oven.getItem(1);
         int theirs = slot.getCount();
-        ItemStack added = takeCarried(fuel.item(), fuel.count());
+        ItemStack added = items.takeCarried(fuel.item(), fuel.count());
         if (added.isEmpty()) return;
         if (slot.isEmpty()) oven.setItem(1, added);
         else if (ItemStack.isSameItemSameComponents(slot, added)) slot.grow(added.getCount());
@@ -2352,7 +2280,7 @@ public final class CompanionWork {
         if (!outOfFuel && stalled(level, lot)) { emptyLot(level, lot, oven, "stalled"); return; }
         if (!outOfFuel) return;
         planksForFuel(left * smelt.cookTicks());
-        var fuel = CompanionSmelting.chooseFuel(carriedItems(), null, 0, left * smelt.cookTicks(), ItemStack.EMPTY);
+        var fuel = CompanionSmelting.chooseFuel(items.carriedItems(), null, 0, left * smelt.cookTicks(), ItemStack.EMPTY);
         if (fuel == null) {
             owner.workStatus("Топливо кончилось, схожу за дровами. Сырьё пока в печи.");
             requestWood(Phase.COOK, CompanionSmelting.logsFor(left * smelt.cookTicks())); return;
@@ -2390,11 +2318,11 @@ public final class CompanionWork {
     /** Like a player at the furnace: the product, raw material still left and his own unburnt fuel go back into the bag. */
     private void emptyLot(ServerLevel level, Lot lot, AbstractFurnaceBlockEntity oven, String reason) {
         int product = product(lot, oven);
-        lot.taken = takeFromSlot(oven, 2, product);
+        lot.taken = items.takeFromSlot(oven, 2, product);
         int raw = left(lot, oven);
-        lot.rawBack = takeFromSlot(oven, 0, raw);
+        lot.rawBack = items.takeFromSlot(oven, 0, raw);
         int fuelBack = lot.fuelPut != null && oven.getItem(1).is(lot.fuelPut)
-                ? takeFromSlot(oven, 1, Math.min(lot.fuelOurs, oven.getItem(1).getCount() - lot.fuelTheirs)) : 0;
+                ? items.takeFromSlot(oven, 1, Math.min(lot.fuelOurs, oven.getItem(1).getCount() - lot.fuelTheirs)) : 0;
         oven.setChanged();
         lot.emptied = true; lot.ready = lot.taken / smelt.result().getCount();
         lot.stuck = lot.taken < product || lot.rawBack < raw; lot.stalled = "stalled".equals(reason);
@@ -2414,7 +2342,7 @@ public final class CompanionWork {
         String where = used.size() == 1 ? " Печь на " + used.getFirst().pos.toShortString() + "."
                 : " Печи: " + String.join("; ", used.stream().map(lot -> lot.pos.toShortString()).toList()) + ".";
         String stuck = used.stream().anyMatch(lot -> lot.stuck) ? " Часть не влезла в сумку и осталась в печи." : "";
-        int more = CompanionSmelting.count(carriedItems(), smelt.input()) - rawBack;
+        int more = CompanionSmelting.count(items.carriedItems(), smelt.input()) - rawBack;
         String rest = smeltAll && more > 0 ? " В сумке ещё " + more + " «" + inName + "» — больше стопки за раз не беру." : "";
         if (ironPrep && taken > 0) {
             // Iron for a tool: the ingots are counted from the bag in the next step; furnaces stay where they are.
@@ -2426,17 +2354,17 @@ public final class CompanionWork {
                 mixedCooked += taken; mixedKinds++;
                 mixedInputs.add(smelt.input());
                 var next = CompanionSmelting.resolve(level, CompanionGame.ANY_MEAT,
-                        carriedItems().stream().filter(stack -> !mixedInputs.contains(stack.getItem())).toList());
+                        items.carriedItems().stream().filter(stack -> !mixedInputs.contains(stack.getItem())).toList());
                 if (next != null && mixedKinds < CompanionGame.Kind.values().length) {
                     // One verified load at a time, one workId for the whole request. Never burn someone else's input.
-                    smelt = next; smeltCount = requestedCount = Math.min(64, CompanionSmelting.count(carriedItems(), next.input()));
+                    smelt = next; smeltCount = requestedCount = Math.min(64, CompanionSmelting.count(items.carriedItems(), next.input()));
                     lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null;
                     ownFurnaceFailed = furnacesShort = false; furnacesPlaced = 0; benchClimbs = 0;
                     phase = Phase.FURNACE; resetTarget();
                     owner.workStatus("Пожарил одну часть мяса, готовлю остальное.");
                     return;
                 }
-                String excess = CompanionSmelting.resolve(level, CompanionGame.ANY_MEAT, carriedItems()) == null ? ""
+                String excess = CompanionSmelting.resolve(level, CompanionGame.ANY_MEAT, items.carriedItems()) == null ? ""
                         : " Сырьё сверх стопки каждого вида осталось в сумке.";
                 finish(true, "Пожарил и забрал " + mixedCooked + " порций мяса (видов: " + mixedKinds + ")." + excess + " В сумке: " + owner.getStoredItemsSummary() + ".");
                 return;
@@ -2449,34 +2377,6 @@ public final class CompanionWork {
                 : smeltCount < requestedCount ? " Сырья было только " + smeltCount + " — на остальное не хватает." : "";
         finish(false, "Переплавил " + taken / per + " из " + requestedCount + " «" + inName + "», забрал из печи " + taken + " «" + outName + "»." + why
                 + (rawBack > 0 ? " Непереплавленное сырьё (" + rawBack + ") забрал обратно." : "") + stuck);
-    }
-
-    private int takeFromSlot(Container container, int slot, int max) {
-        ItemStack stack = container.getItem(slot);
-        if (max <= 0 || stack.isEmpty()) return 0;
-        ItemStack offered = stack.copyWithCount(Math.min(max, stack.getCount()));
-        int before = offered.getCount();
-        owner.storeLoot(offered);
-        int moved = before - offered.getCount();
-        if (moved > 0) { stack.shrink(moved); container.setItem(slot, stack.isEmpty() ? ItemStack.EMPTY : stack); }
-        return moved;
-    }
-
-    /** Takes up to count of one kind (identical stacks only) from the bag, then the hands. */
-    private ItemStack takeCarried(net.minecraft.world.item.Item item, int count) {
-        ItemStack taken = ItemStack.EMPTY;
-        for (int index = 0; index < owner.getContainerSize() + 2 && taken.getCount() < count; index++) {
-            EquipmentSlot hand = index == owner.getContainerSize() ? EquipmentSlot.MAINHAND : index == owner.getContainerSize() + 1 ? EquipmentSlot.OFFHAND : null;
-            ItemStack stack = hand == null ? owner.getItem(index) : owner.getItemBySlot(hand);
-            if (!stack.is(item) || !taken.isEmpty() && !ItemStack.isSameItemSameComponents(stack, taken)) continue;
-            int amount = Math.min(count - taken.getCount(), stack.getCount());
-            if (taken.isEmpty()) taken = stack.copyWithCount(amount); else taken.grow(amount);
-            stack.shrink(amount);
-            if (hand == null) owner.setItem(index, stack.isEmpty() ? ItemStack.EMPTY : stack);
-            else if (stack.isEmpty()) owner.setItemSlot(hand, ItemStack.EMPTY);
-        }
-        owner.setChanged();
-        return taken;
     }
 
     private boolean giftMatches(ItemStack stack) {
@@ -2542,7 +2442,7 @@ public final class CompanionWork {
 
     private void packBench(ServerLevel level) {
         if (packTarget == null) {
-            boolean pickedUp = countCarried(Items.CRAFTING_TABLE) > packedBenchBefore;
+            boolean pickedUp = items.countCarried(Items.CRAFTING_TABLE) > packedBenchBefore;
             String note = pickedUp ? " Походный верстак забрал с собой."
                     : " Разобранный верстак пока не подобрал" + (packedBenchFrom == null ? "." : " на " + packedBenchFrom.toShortString() + ".");
             finish(new CompanionActionResult(packResult.success(), packResult.message() + note, packResult.status(), packResult.evidence())); return;
@@ -2554,7 +2454,7 @@ public final class CompanionWork {
             finish(new CompanionActionResult(packResult.success(), packResult.message() + " Походный верстак оставил на " + at.toShortString() + ".", packResult.status(), packResult.evidence())); return; }
         owner.movementIntent(packTarget);
         owner.getLookControl().setLookAt(packTarget.getX() + .5D, packTarget.getY() + .5D, packTarget.getZ() + .5D);
-        int reach = reachBlock(level, packTarget, true);
+        int reach = items.reachBlock(level, packTarget, true);
         if (reach < 0) { packTarget = null; finish(new CompanionActionResult(packResult.success(), packResult.message() + left, packResult.status(), packResult.evidence())); return; }
         if (reach == 0) return;
         if (!CompanionMiningNavigation.preservesAutonomousReturn(owner, packTarget)) {
@@ -2567,7 +2467,7 @@ public final class CompanionWork {
         if (!breaking.tick(level, packTarget)) return;
         ItemStack tool = owner.getMainHandItem();
         var drops = Block.getDrops(state, level, packTarget, level.getBlockEntity(packTarget), owner, tool);
-        if (!canStore(drops)) { packTarget = null;
+        if (!items.canStore(drops)) { packTarget = null;
             finish(new CompanionActionResult(packResult.success(), packResult.message() + left + " В сумке нет места.", packResult.status(), packResult.evidence())); return; }
         if (!level.destroyBlock(packTarget, false, owner, 512)) return;
         tool.getItem().mineBlock(tool, level, state, packTarget, owner);
@@ -2593,7 +2493,7 @@ public final class CompanionWork {
         // The old target is no destination any more: a self-rescue must not take it for one while he looks for the next.
         owner.movementIntent(null);
     }
-    private void resetApproach() { path = null; standCells = Set.of(); approachMoved = null; bestDistance = Double.MAX_VALUE; lastProgressTick = owner.level().getGameTime(); }
+    void resetApproach() { path = null; standCells = Set.of(); approachMoved = null; bestDistance = Double.MAX_VALUE; lastProgressTick = owner.level().getGameTime(); }
     private void clearCracks() { breaking.reset(); }
     private void closeChest() {
         if (openedChest != null && owner.level() instanceof ServerLevel level && level.hasChunkAt(openedChest)
@@ -2611,15 +2511,15 @@ public final class CompanionWork {
             if (level.hasChunkAt(other) && level.getBlockState(other).getBlock() == state.getBlock()) level.blockEvent(other, state.getBlock(), 1, open);
         }
     }
-    private void finish(boolean success, String message) {
+    void finish(boolean success, String message) {
         finish(new CompanionActionResult(success, message));
     }
-    private void finish(CompanionActionResult result) {
+    void finish(CompanionActionResult result) {
         owner.goals().skillCompleted(result.evidence());
         // A travelling bench is not left behind: pick it up first, then report the original result.
         if (phase != Phase.PACK && job != null && job != Job.COME && job != Job.HUNT) {
             BlockPos bench = owner.takeFieldBenchNear(16);
-            if (bench != null) { packTarget = bench; packedBenchBefore = countCarried(Items.CRAFTING_TABLE); packedBenchFrom = null; packResult = result; phase = Phase.PACK; resetTarget(); return; }
+            if (bench != null) { packTarget = bench; packedBenchBefore = items.countCarried(Items.CRAFTING_TABLE); packedBenchFrom = null; packResult = result; phase = Phase.PACK; resetTarget(); return; }
         }
         boolean success = result.success(); String message = result.message();
         owner.allowNewBench(false);
