@@ -3,3 +3,8 @@
 # are changed when only line endings change.
 src/generated/**/.cache/* text eol=lf
 src/generated/**/*.json text eol=lf
+
+# The Unix launcher must keep LF line endings on every platform.
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
