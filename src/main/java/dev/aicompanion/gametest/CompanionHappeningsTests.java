@@ -256,6 +256,65 @@ public final class CompanionHappeningsTests {
         h.succeed();
     }
 
+    @GameTest(template="empty")
+    public static void urgentSurvivesQuietWindowAndOpenQuestion(GameTestHelper h) {
+        var talk = new dev.aicompanion.CompanionConversation();
+        talk.reset(0, 0);
+        talk.delivered("Что скажешь?", 10_000, 0);
+        h.assertTrue(talk.awaitingAnswer() && !talk.ready(10_050), "The open question did not close the quiet window");
+        h.assertTrue(!talk.takeObservation(1, 0, 10_050, true, false, 0), "An ordinary event broke the quiet window");
+        h.assertTrue(talk.takeObservation(2, 0, 10_050, true, false, 0, true), "Urgent remark not admitted during the quiet window");
+        h.assertTrue(talk.awaitingAnswer(), "The urgent remark closed the open question");
+        long revision = talk.revision();
+        h.assertTrue(talk.acceptReply(revision, "Товарищ погиб, держись", true, false, true), "Urgent reply refused while a question is open");
+        h.assertTrue(!talk.acceptReply(revision, "Товарищ погиб, держись", true, false), "An ordinary reply was accepted while a question is open");
+        h.assertTrue(!talk.takeObservation(3, 0, 10_060, true, false, 0), "An ordinary event was admitted after the urgent one");
+        h.assertTrue(!talk.takeObservation(4, 0, 10_060, false, false, 0, true) && talk.urgentPending() == 4, "Unsafe urgent remark was not kept pending");
+        h.assertTrue(!talk.takePendingUrgent(10_100, true, true, 0) && talk.urgentPending() == 4, "Busy client dropped the pending urgent remark");
+        h.assertTrue(!talk.takePendingUrgent(10_060 + dev.aicompanion.CompanionConversation.URGENT_TTL + 1, true, false, 0)
+                && talk.urgentPending() == 0, "Expired urgent remark was spoken or kept");
+        talk.reset(20_000, 0);
+        talk.takeObservation(5, 0, 20_000, false, false, 0, true);
+        talk.reset(20_100, 0);
+        h.assertTrue(talk.urgentPending() == 0, "A pending urgent remark survived reset");
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
+    public static void firstSightDoesNotSwallowFreshUrgent(GameTestHelper h) {
+        var talk = new dev.aicompanion.CompanionConversation();
+        talk.reset(0, 0);
+        talk.firstSight(5, dev.aicompanion.CompanionConversation.URGENT_FRESH, 5000, true);
+        h.assertTrue(talk.urgentPending() == 5 && !talk.newObservation(5), "Fresh urgent remark lost at first sight");
+        h.assertTrue(talk.takePendingUrgent(5000, true, false, 0), "Fresh urgent remark not spoken");
+        talk.firstSight(6, dev.aicompanion.CompanionConversation.URGENT_FRESH + 1, 5000, true);
+        h.assertTrue(talk.urgentPending() == 0 && !talk.newObservation(6), "Stale urgent remark replayed at first sight");
+        talk.firstSight(7, 10, 5000, false);
+        h.assertTrue(talk.urgentPending() == 0 && !talk.newObservation(7), "Ordinary observation replayed at first sight");
+        h.succeed();
+    }
+
+    @GameTest(template="tall_tree", batch="happen_welcome", timeoutTicks=260)
+    public static void welcomeBackNotEatenByFirstSnapshot(GameTestHelper h) {
+        var rig = rig(h); var p = rig.player(); var c = rig.companion();
+        CompanionHappeningEvents.clear();
+        long now = System.currentTimeMillis(), old = now - 40 * 60_000L;
+        bonds(h).markSeen(p.getUUID(), old);
+        CompanionHappeningEvents.stampPresent(h.getLevel().getServer(), now);
+        h.assertTrue(bonds(h).lastSeen(p.getUUID()).getAsLong() == old, "A stamp pass before login handling overwrote the old stamp");
+        CompanionHappeningEvents.welcome(p, now);
+        h.assertTrue(bonds(h).happenings(p.getUUID()).has("return"), "The long absence was not recorded");
+        h.runAfterDelay(140, () -> {
+            CompanionHappeningEvents.clear();
+            h.assertTrue(c.socialSequence() == 1 && c.socialObservation().startsWith(URGENT), "The companion did not release the return: " + c.socialObservation());
+            var talk = new dev.aicompanion.CompanionConversation();
+            long time = h.getLevel().getGameTime();
+            talk.firstSight(c.socialSequence(), time - c.socialTime(), time, dev.aicompanion.CompanionConversation.isUrgent(c.socialObservation()));
+            h.assertTrue(talk.urgentPending() == c.socialSequence(), "The first snapshot swallowed the return");
+            h.succeed();
+        });
+    }
+
     private static void session(ServerPlayer player, CompanionEntity companion, int slot) {
         var menu = new CompanionMenu(1, player.getInventory(), companion);
         menu.quickMoveStack(player, slot);
