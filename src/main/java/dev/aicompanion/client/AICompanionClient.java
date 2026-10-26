@@ -10,6 +10,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
@@ -59,6 +60,11 @@ public final class AICompanionClient {
         modEventBus.addListener(this::registerMenuScreens);
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForge.EVENT_BUS.addListener(this::onLoggingOut);
+    }
+
+    private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        OpenRouterClient.resetSession();
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
