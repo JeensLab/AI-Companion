@@ -19,6 +19,8 @@ import net.minecraft.world.phys.Vec3;
 
 /** Bounded assistance for a genuinely blocked route. Supports remain as real terrain after escape. */
 final class CompanionRecovery {
+    /** FollowPlayerGoal starts only beyond eight blocks. */
+    private static final double HOLD_REACH_SQR = 8 * 8;
     private final CompanionEntity owner;
     private final CompanionBlockBreaking breaking;
     private Vec3 observed;
@@ -106,6 +108,10 @@ final class CompanionRecovery {
         Path exit = owner.getNavigation().createPath(destination, 1);
         if (exit != null && exit.canReach()) {
             CompanionMiningNavigation.walk(owner, exit);
+            // Below a near way out the route is walked up here: yielding stops the navigation, and within the follow distance
+            // nothing else walks him on (he was left on a cut step two blocks under the player until a random stroll came).
+            // A far one is left to following and the task, so a long climb never runs into the time limit as a failure.
+            if (belowExit(exit) && owner.distanceToSqr(destination.getCenter()) < HOLD_REACH_SQR) return;
             double dx = owner.getX() - start.x, dz = owner.getZ() - start.z;
             // Gaining height on a pillar is not yet an exit. Walk off the column before
             // yielding movement back to the task, otherwise a short route is cancelled mid-jump.
@@ -141,6 +147,13 @@ final class CompanionRecovery {
         // An item just dislodged above the mob may still be falling toward pickup range.
         if (owner.hasPendingLoot() && elapsed < 150) return;
         stop(false);
+    }
+
+    /** Still lower than the route leads: the destination's height, or the path's end when the destination is a block to stand by. */
+    private boolean belowExit(Path exit) {
+        var end = exit.getEndNode();
+        int height = end == null ? destination.getY() : Math.min(destination.getY(), end.y);
+        return owner.getY() < height - .5;
     }
 
     /**
