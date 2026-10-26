@@ -51,6 +51,12 @@ public final class CompanionBond {
 
         public String label() { return label; }
 
+        /** The tier with this label, or null for a label that is not one of them. */
+        public static Tier ofLabel(String label) {
+            for (Tier tier : values()) if (tier.label.equals(label)) return tier;
+            return null;
+        }
+
         public static Tier of(int score) {
             Tier found = OFFENDED;
             for (Tier tier : values()) if (score >= tier.from) found = tier;

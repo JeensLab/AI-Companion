@@ -2,9 +2,12 @@ package dev.aicompanion.inventory;
 
 import com.mojang.datafixers.util.Pair;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.entity.CompanionBond;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionHappeningEvents;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -17,10 +20,20 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 public final class CompanionMenu extends AbstractContainerMenu {
     public static final int EQUIPMENT_COUNT = 6, BAG_START = 6, PLAYER_START = 33, PLAYER_END = 69;
     private final CompanionEntity companion;
     private final Container bag;
+    private final ServerPlayer giver;
+    private final Map<String, ItemStack> samples = new LinkedHashMap<>();
+    private Map<String, Integer> before;
 
     public static CompanionMenu fromNetwork(int id, Inventory inventory, RegistryFriendlyByteBuf data) {
         var entity = inventory.player.level().getEntity(data.readVarInt());
@@ -61,6 +74,38 @@ public final class CompanionMenu extends AbstractContainerMenu {
             addSlot(new Slot(inventory, 9 + column + row * 9, 12 + column * 18, 164 + row * 18));
         }
         for (int column = 0; column < 9; column++) addSlot(new Slot(inventory, column, 12 + column * 18, 222));
+        giver = inventory.player instanceof ServerPlayer owner && companion != null && owner.getUUID().equals(companion.getOwnerId()) ? owner : null;
+        if (giver != null) before = tally();
+    }
+
+    private Map<String, Integer> tally() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < PLAYER_START; index++) {
+            ItemStack stack = slots.get(index).getItem();
+            if (stack.isEmpty()) continue;
+            String kind = CompanionBond.kindOf(stack);
+            counts.merge(kind, stack.getCount(), Integer::sum);
+            samples.putIfAbsent(kind, stack.copyWithCount(1));
+        }
+        return counts;
+    }
+
+    /** What the owner left in or took from the companion's equipment and bag while this menu was open, as one net change per kind. */
+    private void reportGift() {
+        if (before == null) return;
+        Map<String, Integer> after = tally();
+        List<CompanionBond.ItemChange> changes = new ArrayList<>();
+        List<String> added = new ArrayList<>();
+        Set<String> kinds = new LinkedHashSet<>(before.keySet());
+        kinds.addAll(after.keySet());
+        for (String kind : kinds) {
+            int delta = after.getOrDefault(kind, 0) - before.getOrDefault(kind, 0);
+            if (delta == 0) continue;
+            changes.add(CompanionBond.change(samples.get(kind), delta));
+            if (delta > 0 && added.size() < 3) added.add(delta + " × " + samples.get(kind).getHoverName().getString());
+        }
+        before = null;
+        CompanionHappeningEvents.gift(giver, changes, String.join(", ", added));
     }
 
     public CompanionEntity getCompanion() { return companion; }
@@ -96,5 +141,5 @@ public final class CompanionMenu extends AbstractContainerMenu {
         return -1;
     }
 
-    @Override public void removed(Player player) { super.removed(player); bag.stopOpen(player); }
+    @Override public void removed(Player player) { super.removed(player); bag.stopOpen(player); reportGift(); }
 }

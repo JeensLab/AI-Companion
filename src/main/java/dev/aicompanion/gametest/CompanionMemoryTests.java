@@ -8,6 +8,7 @@ import dev.aicompanion.client.CompanionMemoryCodec;
 import dev.aicompanion.client.CompanionMemoryFlow;
 import dev.aicompanion.client.CompanionMemoryView;
 import dev.aicompanion.client.OpenRouterClient;
+import dev.aicompanion.client.PromptMemory;
 import dev.aicompanion.entity.CompanionBond;
 import dev.aicompanion.entity.CompanionBonds;
 import dev.aicompanion.entity.CompanionEvents;
@@ -392,6 +393,48 @@ public final class CompanionMemoryTests {
     private static String text(List<JsonObject> history, int index) { return history.get(index).get("content").getAsString(); }
 
     /** A companion that was never spawned, loaded from a save with two crafted deeds. */
+    @GameTest(template="empty")
+    public static void snapshotWithinLimitWhenMemoryAndBufferFull(GameTestHelper h) {
+        List<CompanionMemory.Entry> memories = new ArrayList<>();
+        for (int i = 0; i < CompanionMemory.MAX_MEMORIES; i++) {
+            memories.add(new CompanionMemory.Entry(CompanionMemory.PLAYER_FACT, ("Факт " + i + " ").repeat(40).substring(0, CompanionMemory.MAX_TEXT), 1 + i % 5));
+        }
+        List<CompanionMemory.Talk> talk = new ArrayList<>();
+        for (int i = 0; i < 6; i++) talk.add(new CompanionMemory.Talk(i % 2 == 0, "Реплика номер " + i));
+        List<String> happenings = new ArrayList<>();
+        for (int i = 0; i < 6; i++) happenings.add(("Давно: событие " + i + " ").repeat(20).substring(0, 170));
+        happenings.add("только что: поделились едой");
+        List<String> likes = new ArrayList<>(), dislikes = new ArrayList<>();
+        for (int i = 0; i < CompanionMemory.MAX_PREFERENCES; i++) {
+            likes.add(("нравится " + i + " ").repeat(30).substring(0, CompanionMemory.MAX_TEXT));
+            dislikes.add(("не нравится " + i + " ").repeat(30).substring(0, CompanionMemory.MAX_TEXT));
+        }
+        var digest = new CompanionMemoryDigest.Digest(memories, "Шеф", likes, dislikes, talk, 90, "лучший друг", List.of("подарок", "общее дело"), happenings);
+
+        String section = PromptMemory.section(digest, "факт");
+        h.assertTrue(section.length() <= 2500,
+                "Section is " + section.length() + " chars, over the limit");
+        h.assertTrue(section.contains("ваши отношения=лучший друг") && section.contains("подарок"), "Relationship lost: " + section);
+        h.assertTrue(section.contains("только что: поделились едой"), "Latest happening lost: " + section);
+        h.assertTrue(section.contains("что ты помнишь о товарище=") && section.contains("Факт"), "Memories lost entirely: " + section);
+        h.assertTrue(PromptMemory.section(CompanionMemoryDigest.Digest.EMPTY, "").isEmpty(), "Empty digest adds text");
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
+    public static void systemPromptNamesCompanionOnce(GameTestHelper h) {
+        String persona = OpenRouterClient.buildPersona("Весёлый напарник.", "Гоша");
+        String prompt = OpenRouterClient.buildSystemPrompt(persona, true, "лучший друг");
+        int names = prompt.split("Тебя зовут", -1).length - 1;
+        h.assertTrue(names == 1, "«Тебя зовут» appears " + names + " times");
+        h.assertTrue(prompt.contains("Тебя зовут Гоша"), "Name missing");
+        h.assertTrue(prompt.contains("Тон общения по ступени связи «лучший друг»"), "Tier tone missing");
+        h.assertTrue(prompt.contains("приказы игрока ты выполняешь при любой ступени"), "Orders-at-any-tier rule missing");
+        String quiet = OpenRouterClient.buildSystemPrompt(persona, false, "лучший друг");
+        h.assertTrue(!quiet.contains("Тон общения") && !quiet.contains("память о товарище"), "Memory rules leak while memory is off");
+        h.succeed();
+    }
+
     private record CompanionEntityFixture(dev.aicompanion.entity.CompanionEntity companion) {
         static CompanionEntityFixture withDeeds(GameTestHelper h) {
             var companion = AICompanionMod.COMPANION.get().create(h.getLevel());

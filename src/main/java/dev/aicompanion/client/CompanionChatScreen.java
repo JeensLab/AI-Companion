@@ -70,7 +70,7 @@ public final class CompanionChatScreen extends Screen {
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
 
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
-        OpenRouterClient.send(text, GameContext.snapshot(), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
+        OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
             if (error == null) {
                 if (planGeneration != CompanionActionExecutor.currentPlanGeneration()) {
                     CompanionDiagnostics.event(trace, "reply_discarded", "reason", "generation_changed");
@@ -159,7 +159,7 @@ public final class CompanionChatScreen extends Screen {
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
         announceThinking(OpenRouterClient.isBusy());
-        OpenRouterClient.send(text, GameContext.snapshot(), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
+        OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
             if (error != null) {
                 CompanionDiagnostics.failure(trace, "voice_chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
