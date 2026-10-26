@@ -110,11 +110,17 @@ public final class CompanionMemory {
 
     /** Keeps the last lines of the talk; a secret is replaced by {@link #MASK} before the line is stored. */
     public void recordTalk(boolean fromPlayer, String text) {
-        String clean = flatten(mask(flatten(text)));
+        String clean = talkLine(text);
         if (clean.isEmpty()) return;
-        if (clean.length() > TALK_TEXT) clean = clean.substring(0, TALK_TEXT - 1).strip() + "…";
         talk.add(new Talk(fromPlayer, clean));
         while (talk.size() > TALK_KEEP) talk.removeFirst();
+    }
+
+    /** A talk line the way it is stored: masked, flattened and cut to {@link #TALK_TEXT}. */
+    public static String talkLine(String text) {
+        String clean = flatten(mask(flatten(text)));
+        if (clean.length() > TALK_TEXT) clean = clean.substring(0, TALK_TEXT - 1).strip() + "…";
+        return clean;
     }
 
     public boolean setCallMe(String name) {
@@ -140,15 +146,17 @@ public final class CompanionMemory {
     }
 
     /** Memories that share words with the query come first; the rest are ranked by weight, promises ahead, newest ahead. */
-    public List<Entry> relevant(String query, int limit) {
+    public List<Entry> relevant(String query, int limit) { return rank(memories, query, limit); }
+
+    public static List<Entry> rank(List<Entry> entries, String query, int limit) {
         Set<String> wanted = stems(query);
         List<Integer> order = new ArrayList<>();
-        for (int i = 0; i < memories.size(); i++) order.add(i);
-        order.sort(Comparator.<Integer>comparingInt(i -> score(memories.get(i), i, wanted)).reversed());
+        for (int i = 0; i < entries.size(); i++) order.add(i);
+        order.sort(Comparator.<Integer>comparingInt(i -> score(entries.get(i), i, wanted)).reversed());
         List<Entry> chosen = new ArrayList<>();
         for (int i : order) {
             if (chosen.size() >= Math.max(0, limit)) break;
-            chosen.add(memories.get(i));
+            chosen.add(entries.get(i));
         }
         return List.copyOf(chosen);
     }

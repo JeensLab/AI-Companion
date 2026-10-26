@@ -65,6 +65,7 @@ public final class AICompanionClient {
 
     private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         OpenRouterClient.resetSession();
+        CompanionMemoryFlow.unbind();
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
