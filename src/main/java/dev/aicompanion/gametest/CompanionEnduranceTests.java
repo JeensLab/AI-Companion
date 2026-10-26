@@ -378,7 +378,7 @@ public final class CompanionEnduranceTests {
     @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=200)
     public static void soilAndPackedBenchesKeepTheOnlyReturnStep(GameTestHelper h)throws Exception {
         var a=returnStair(h);BlockPos step=h.absolutePos(a.cell(47,12,48));h.getLevel().setBlock(step,Blocks.DIRT.defaultBlockState(),2);
-        var mine=CompanionEntity.class.getDeclaredMethod("mineDirt",BlockPos.class);mine.setAccessible(true);mine.invoke(a.oleg,step);
+        var gathering=field(a.oleg,"gathering");var mine=gathering.getClass().getDeclaredMethod("mineDirt",BlockPos.class);mine.setAccessible(true);mine.invoke(gathering,step);
         h.assertTrue(h.getLevel().getBlockState(step).is(Blocks.DIRT)&&returnable(a),"Soil gathering destroyed the only return step");
         h.getLevel().setBlock(step,Blocks.CRAFTING_TABLE.defaultBlockState(),2);
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_AXE));
@@ -455,7 +455,7 @@ public final class CompanionEnduranceTests {
         var gather=CompanionEntity.class.getDeclaredMethod("startGatheringDirtForWork",int.class);gather.setAccessible(true);gather.invoke(a.oleg,1);
         BlockPos step=h.absolutePos(a.cell(47,12,48));h.getLevel().setBlock(step,Blocks.DIRT.defaultBlockState(),2);
         h.assertTrue(!a.oleg.autonomy().running()&&a.oleg.autonomy().enabled(),"Fixture is not a player's interruption of the enabled workplace");
-        var mine=CompanionEntity.class.getDeclaredMethod("mineDirt",BlockPos.class);mine.setAccessible(true);mine.invoke(a.oleg,step);
+        var gathering=field(a.oleg,"gathering");var mine=gathering.getClass().getDeclaredMethod("mineDirt",BlockPos.class);mine.setAccessible(true);mine.invoke(gathering,step);
         h.assertTrue(h.getLevel().getBlockState(step).is(Blocks.DIRT)&&returnable(a),"Temporary explicit soil order destroyed the saved workplace's exit");h.succeed();
     }
     @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)

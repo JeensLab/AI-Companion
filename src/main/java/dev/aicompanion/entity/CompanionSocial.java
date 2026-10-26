@@ -67,6 +67,36 @@ final class CompanionSocial {
         }
     }
 
+    void reactToSpeech(String text) {
+        if (!owner.level().isClientSide) owner.expressions.react(dev.aicompanion.CompanionExpression.speech(text), owner.level().getGameTime(), 120);
+    }
+    void updateExpression() {
+        if (owner.tickCount % 20 == 0) {
+            var player = owner.getOwnerPlayer();
+            var threats = owner.level().getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(12),
+                    monster -> CompanionHostiles.observed(owner, monster, 12)
+                            || player != null && CompanionHostiles.observed(player, monster, 12));
+            owner.nearbySocialThreat = !threats.isEmpty() || player != null && player.level() == owner.level()
+                    && !owner.level().getEntitiesOfClass(Monster.class, player.getBoundingBox().inflate(12),
+                            monster -> CompanionHostiles.observed(player, monster, 12)).isEmpty();
+            owner.nearbyExplosiveThreat = threats.stream().anyMatch(monster -> monster instanceof net.minecraft.world.entity.monster.Creeper creeper
+                    && (creeper.getSwellDir() > 0 || creeper.distanceToSqr(owner) < 36));
+        }
+        boolean danger = owner.getHealth() <= owner.getMaxHealth() * .35F || owner.isOnFire() || owner.isInLava() || owner.isUnderWater() && owner.getAirSupply() < 40
+                || owner.recovery.active() || owner.nearbyExplosiveThreat;
+        boolean combat = owner.getTarget() != null && owner.getTarget().isAlive();
+        var expression = owner.expressions.update(owner.level().getGameTime(), danger, combat,
+                owner.hasActiveWorkOrder() || owner.isMiningAnimation() || owner.actionAnimation() != 0);
+        owner.getEntityData().set(CompanionEntity.DATA_EXPRESSION, expression.ordinal());
+        owner.getEntityData().set(CompanionEntity.DATA_SOCIAL_SAFE, !danger && !combat && !owner.nearbySocialThreat && owner.tickCount - owner.lastHurtTick > 200
+                && (owner.getOwnerPlayer() == null || owner.getOwnerPlayer().getHealth() > 8 && owner.getOwnerPlayer().hurtTime == 0));
+    }
+    boolean sociallySafe() { return owner.getEntityData().get(CompanionEntity.DATA_SOCIAL_SAFE); }
+    String socialObservation() { return owner.getEntityData().get(CompanionEntity.DATA_SOCIAL); }
+    int socialSequence() { return owner.getEntityData().get(CompanionEntity.DATA_SOCIAL_SERIAL); }
+    long socialTime() { return owner.getEntityData().get(CompanionEntity.DATA_SOCIAL_TIME); }
+    void socialEvent(String fact) { owner.getEntityData().set(CompanionEntity.DATA_SOCIAL, fact); owner.getEntityData().set(CompanionEntity.DATA_SOCIAL_SERIAL, socialSequence() + 1); owner.getEntityData().set(CompanionEntity.DATA_SOCIAL_TIME, owner.level().getGameTime()); }
+
     void save(CompoundTag tag) {
         if (!initialized) return;
         CompoundTag social = new CompoundTag(); social.putLong("Next", nextSpeech);
