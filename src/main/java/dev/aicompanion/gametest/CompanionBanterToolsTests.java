@@ -148,16 +148,17 @@ public final class CompanionBanterToolsTests {
         c.startWork("mine_ore","coal",4);set(c.autonomy(),"starting",true);
         Object work=field(c,"work");set(work,"oreExit",h.absolutePos(new BlockPos(21,6,16)));
         BlockPos stair=h.absolutePos(new BlockPos(17,1,16));
-        var safe=work.getClass().getDeclaredMethod("safeOreSwing",net.minecraft.server.level.ServerLevel.class,BlockPos.class);safe.setAccessible(true);
-        var blocked=work.getClass().getDeclaredMethod("blockedOreCell",net.minecraft.server.level.ServerLevel.class,BlockPos.class);blocked.setAccessible(true);
+        Object oreMining=field(work,"oreMining");
+        var safe=oreMining.getClass().getDeclaredMethod("safeOreSwing",net.minecraft.server.level.ServerLevel.class,BlockPos.class);safe.setAccessible(true);
+        var blocked=oreMining.getClass().getDeclaredMethod("blockedOreCell",net.minecraft.server.level.ServerLevel.class,BlockPos.class);blocked.setAccessible(true);
         for(int ore=0;ore<12;ore++) {
             set(work,"target",h.absolutePos(new BlockPos(22,1,12+ore%8)));
-            h.assertTrue(!(boolean)safe.invoke(work,h.getLevel(),stair),"Essential return stair allowed");
+            h.assertTrue(!(boolean)safe.invoke(oreMining,h.getLevel(),stair),"Essential return stair allowed");
         }
         Object breaking=field(work,"breaking");h.assertTrue((int)field(breaking,"ticks")==0&&field(breaking,"target")==null,"Unsafe swings began");
-        h.assertTrue((boolean)blocked.invoke(work,h.getLevel(),stair)&&h.getLevel().getBlockState(stair).is(Blocks.STONE),"Shared obstruction not remembered");
+        h.assertTrue((boolean)blocked.invoke(oreMining,h.getLevel(),stair)&&h.getLevel().getBlockState(stair).is(Blocks.STONE),"Shared obstruction not remembered");
         h.getLevel().setBlockAndUpdate(stair,Blocks.AIR.defaultBlockState());
-        h.assertTrue(!(boolean)blocked.invoke(work,h.getLevel(),stair),"Changed world stayed blacklisted");h.succeed();
+        h.assertTrue(!(boolean)blocked.invoke(oreMining,h.getLevel(),stair),"Changed world stayed blacklisted");h.succeed();
     }
     private static CompanionEntity coalWall(GameTestHelper h,Item tool) {
         var c=flat(h,1);bench(h,c,new BlockPos(14,1,16));
