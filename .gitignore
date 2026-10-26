@@ -60,3 +60,7 @@ repo/
 .codex/
 .agents/
 handoff/
+
+### Personal Claude Code settings ###
+CLAUDE.local.md
+.claude/settings.local.json
