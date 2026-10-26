@@ -1,7 +1,6 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.block.Blocks;
 import dev.aicompanion.CompanionConversation;
 import net.minecraft.nbt.CompoundTag;
@@ -43,8 +42,8 @@ final class CompanionSocial {
         timeBand = band;
         if (owner.level().isRaining() && !rain) observe("rain", "Начался дождь.");
         rain = owner.level().isRaining();
-        var threats = owner.level().getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(8),
-                monster -> CompanionHostiles.observed(owner, monster, 8));
+        var threats = owner.level().getEntitiesOfClass(net.minecraft.world.entity.Mob.class, owner.getBoundingBox().inflate(8),
+                monster -> CompanionHostiles.hostile(monster) && CompanionHostiles.observed(owner, monster, 8));
         // Threats are for actions and facial state, not a paid conversation opportunity.
         if (!threats.isEmpty()) return;
         if (owner.tickCount % 100 == 0) {
@@ -73,12 +72,12 @@ final class CompanionSocial {
     void updateExpression() {
         if (owner.tickCount % 20 == 0) {
             var player = owner.getOwnerPlayer();
-            var threats = owner.level().getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(12),
-                    monster -> CompanionHostiles.observed(owner, monster, 12)
-                            || player != null && CompanionHostiles.observed(player, monster, 12));
+            var threats = owner.level().getEntitiesOfClass(net.minecraft.world.entity.Mob.class, owner.getBoundingBox().inflate(12),
+                    monster -> CompanionHostiles.hostile(monster) && (CompanionHostiles.observed(owner, monster, 12)
+                            || player != null && CompanionHostiles.observed(player, monster, 12)));
             owner.nearbySocialThreat = !threats.isEmpty() || player != null && player.level() == owner.level()
-                    && !owner.level().getEntitiesOfClass(Monster.class, player.getBoundingBox().inflate(12),
-                            monster -> CompanionHostiles.observed(player, monster, 12)).isEmpty();
+                    && !owner.level().getEntitiesOfClass(net.minecraft.world.entity.Mob.class, player.getBoundingBox().inflate(12),
+                            monster -> CompanionHostiles.hostile(monster) && CompanionHostiles.observed(player, monster, 12)).isEmpty();
             owner.nearbyExplosiveThreat = threats.stream().anyMatch(monster -> monster instanceof net.minecraft.world.entity.monster.Creeper creeper
                     && (creeper.getSwellDir() > 0 || creeper.distanceToSqr(owner) < 36));
         }

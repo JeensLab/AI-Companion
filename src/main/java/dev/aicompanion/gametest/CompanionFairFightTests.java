@@ -67,6 +67,19 @@ public final class CompanionFairFightTests {
         });
     }
 
+    /** Game screenshot 27.10: «убей слаймов» beside two slimes, «моих добивающих ударов: 0». A slime is hostile, though no Monster. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void slimesAreHuntedLikeMonsters(GameTestHelper h) {
+        var companion = setup(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        var slime = h.spawn(EntityType.SLIME, 13, 1, 16); slime.setSize(1, true); slime.setNoAi(true);
+        h.assertTrue(companion.startWork("hunt_mobs", "", 1).success(), "Hunt refused");
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isWorking(), "Still hunting: " + companion.getLastTaskResult());
+            h.assertTrue(!slime.isAlive() && companion.getLastTaskResult().contains("ударов: 1"), "The slime was not hunted: " + companion.getLastTaskResult());
+        });
+    }
+
     private static CompanionEntity setup(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);

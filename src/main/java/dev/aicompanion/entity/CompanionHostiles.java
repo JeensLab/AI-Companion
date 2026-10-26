@@ -5,7 +5,14 @@ import net.minecraft.world.entity.monster.Creeper;
 
 public final class CompanionHostiles {
     private CompanionHostiles() { }
-    public static boolean observed(net.minecraft.world.entity.LivingEntity observer, net.minecraft.world.entity.monster.Monster monster, double radius) {
+    /**
+     * A hostile mob: every Monster, and also the slimes, magma cubes, phantoms, ghasts and shulkers, which are hostile without
+     * being Monsters (game screenshot 27.10: «убей слаймов» beside two slimes — «моих добивающих ударов: 0»).
+     */
+    public static boolean hostile(net.minecraft.world.entity.Entity entity) {
+        return entity instanceof net.minecraft.world.entity.Mob && entity instanceof net.minecraft.world.entity.monster.Enemy;
+    }
+    public static boolean observed(net.minecraft.world.entity.LivingEntity observer, net.minecraft.world.entity.LivingEntity monster, double radius) {
         return monster.isAlive() && observer.distanceToSqr(monster) <= radius * radius && observer.hasLineOfSight(monster);
     }
     public static void join(Creeper creeper) {

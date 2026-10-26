@@ -2,7 +2,6 @@ package dev.aicompanion.client;
 
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
@@ -42,8 +41,9 @@ public final class GameContext {
         }
         if (inventory.isEmpty()) inventory.add("пусто");
 
-        List<String> threats = minecraft.level.getEntitiesOfClass(Monster.class,
-                        player.getBoundingBox().inflate(18.0D), monster -> dev.aicompanion.entity.CompanionHostiles.observed(player, monster, 18)).stream()
+        List<String> threats = minecraft.level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
+                        player.getBoundingBox().inflate(18.0D), monster -> dev.aicompanion.entity.CompanionHostiles.hostile(monster)
+                                && dev.aicompanion.entity.CompanionHostiles.observed(player, monster, 18)).stream()
                 .limit(5)
                 .map(entity -> entity.getName().getString() + " (" + Math.round(entity.distanceTo(player)) + " блоков)")
                 .toList();
@@ -78,7 +78,7 @@ public final class GameContext {
 
     private static String schematics() {
         var files = dev.aicompanion.schematic.CompanionSchematics.list();
-        if (files.isEmpty()) return "нет ни одной";
+        if (files.isEmpty()) return "нет ни одной (build_house строит стандартный дом 5×5)";
         return String.join(", ", files.subList(0, Math.min(12, files.size()))) + (files.size() > 12 ? " и ещё " + (files.size() - 12) : "");
     }
 

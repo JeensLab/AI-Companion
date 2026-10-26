@@ -97,7 +97,9 @@ public final class CompanionSchematicPlacement {
         if (minecraft.level == null || minecraft.player == null) { result.complete(new CompanionServerPlanPort.Choice(null, "Мир закрыт, место для дома не выбрано.")); return; }
         if (session != null) session.finish(new CompanionServerPlanPort.Choice(null, "Выбор места отменён: началась другая стройка."));
         List<String> files = CompanionSchematics.list();
-        if (files.isEmpty()) { result.complete(new CompanionServerPlanPort.Choice(null, CompanionSchematics.noneFound())); return; }
+        // An empty folder is no refusal: the mod's own small house, placed like any schematic.
+        boolean builtIn = files.isEmpty();
+        if (builtIn) files = List.of(CompanionSchematics.DEFAULT_HOUSE);
         Session opened = new Session(files, result, cancelled);
         String named = CompanionSchematics.match(files, hint);
         int first = named != null ? files.indexOf(named) : current != null && files.contains(current.file()) ? files.indexOf(current.file()) : 0;
@@ -115,7 +117,7 @@ public final class CompanionSchematicPlacement {
         session = opened;
         opened.bake();
         String missing = hint != null && !hint.isBlank() && !"resume".equals(hint) && named == null ? "Схему «" + hint + "» не нашёл, показываю «" + opened.schematic.title() + "». " : "";
-        message(missing + "Выбери место для «" + opened.schematic.describe() + "»" + (files.size() > 1 ? " (схем в папке: " + files.size() + ")" : "") + ". "
+        message((builtIn ? CompanionSchematics.noneFound() + " " : "") + missing + "Выбери место для «" + opened.schematic.describe() + "»" + (files.size() > 1 ? " (схем в папке: " + files.size() + ")" : "") + ". "
                 + keyName(CONFIRM) + " — строить здесь, " + keyName(ROTATE) + " — повернуть, " + keyName(MIRROR) + " — отразить, "
                 + "клавиши " + keyName(PREVIOUS) + " и " + keyName(NEXT) + " — другая схема, стрелки, " + keyName(RAISE) + " и " + keyName(LOWER) + " — сдвинуть, "
                 + keyName(FOLLOW) + " — снова за прицелом, " + keyName(CANCEL) + " — отмена.");

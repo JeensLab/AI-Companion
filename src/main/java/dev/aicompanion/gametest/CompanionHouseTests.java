@@ -176,19 +176,30 @@ public final class CompanionHouseTests {
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 300)
-    public static void withoutSchematicsNothingIsBuilt(GameTestHelper h) {
+    /** No schematic in the folder: the 5×5 house of the first versions, built like any schematic. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void withoutSchematicsTheDefaultHouseIsBuilt(GameTestHelper h) {
         ground(h);
+        CompanionSchematic house;
+        try { house = CompanionSchematics.load(CompanionSchematics.DEFAULT_HOUSE); } catch (IOException broken) { throw new UncheckedIOException(broken); }
+        h.assertTrue(house.sizeX() == 7 && house.sizeY() == 5 && house.sizeZ() == 7 && house.blocks() == 68 + 49 + 1 + 2, "Default house changed: " + house.describe());
         CompanionEntity companion = spawn(h);
-        companion.setItem(0, new ItemStack(Items.OAK_PLANKS, 64));
-        CompanionServerPlanPort.Placer empty = (hint, current, cancelled) -> CompletableFuture.completedFuture(new CompanionServerPlanPort.Choice(null, CompanionSchematics.noneFound()));
-        var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"build_house\"}]"));
-        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-house", () -> false, (p, i) -> { }, empty));
+        companion.setItem(0, new ItemStack(Items.OAK_PLANKS, 64)); companion.setItem(1, new ItemStack(Items.OAK_PLANKS, 4));
+        companion.setItem(2, new ItemStack(Items.OAK_SLAB, 49)); companion.setItem(3, new ItemStack(Items.OAK_STAIRS, 1));
+        companion.setItem(4, new ItemStack(Items.OAK_DOOR, 1));
+        var future = run(h, companion, "[{\"action\":\"build_house\"}]", CompanionSchematics.DEFAULT_HOUSE, Rotation.NONE);
         h.succeedWhen(() -> {
-            h.assertTrue(future.isDone(), "Plan still running");
+            finished(h, companion, future);
             String report = future.join().report();
-            h.assertTrue(report.contains("Схем в папке " + CompanionSchematics.FOLDER + " не найдено"), report);
-            h.assertTrue(count(companion, Items.OAK_PLANKS) == 64 && companion.housePlacement() == null && !companion.isWorking(), "Something was started without a schematic");
+            h.assertTrue(report.contains("готов") && !report.contains("План остановлен"), report);
+            BlockPos base = SITE.offset(1, 0, 1);
+            for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) h.assertTrue(h.getBlockState(base.offset(x, 0, z)).is(Blocks.OAK_PLANKS), "Floor is incomplete");
+            for (int x = 1; x <= 3; x++) for (int z = 1; z <= 3; z++) for (int y = 1; y <= 3; y++) h.assertTrue(h.getBlockState(base.offset(x, y, z)).isAir(), "Interior was filled in");
+            h.assertTrue(h.getBlockState(base.offset(0, 2, 2)).isAir() && h.getBlockState(base.offset(4, 2, 2)).isAir() && h.getBlockState(base.offset(2, 2, 4)).isAir(), "Windows blocked");
+            var door = h.getBlockState(base.offset(2, 1, 0));
+            h.assertTrue(door.getBlock() instanceof DoorBlock && door.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER && h.getBlockState(base.offset(2, 2, 0)).is(Blocks.OAK_DOOR), "Door is incomplete");
+            h.assertTrue(h.getBlockState(base.offset(2, 0, -1)).is(Blocks.OAK_STAIRS) && countBlocks(h, Blocks.OAK_PLANKS) == 68 && countBlocks(h, Blocks.OAK_SLAB) == 49, "Walls, step or roof incomplete");
+            h.assertTrue(count(companion, Items.OAK_PLANKS) == 0 && count(companion, Items.OAK_SLAB) == 0, "Materials not spent honestly: " + companion.getStoredItemsSummary());
         });
     }
 

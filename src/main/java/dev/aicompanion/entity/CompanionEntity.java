@@ -25,7 +25,6 @@ import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -301,7 +300,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
-        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Monster.class, 10,
+        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
                 true, false, target -> protecting ? combat.isThreateningOwner(target) : combat.comesForOwner(target)));
     }
 
@@ -668,7 +667,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
         // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.isHunting() && getTarget() instanceof Monster ? getOwnerPlayer() : null;
+        var guardedOwner = protecting || !work.isHunting() && CompanionHostiles.hostile(getTarget()) ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && distanceToSqr(guardedOwner) > 16 * 16
                 && getTarget().distanceToSqr(guardedOwner) > 14 * 14) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();

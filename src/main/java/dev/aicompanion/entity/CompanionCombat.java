@@ -8,7 +8,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 
 import java.util.EnumSet;
@@ -56,7 +55,7 @@ final class CompanionCombat {
             timestamp = player.getLastHurtByMobTimestamp();
             attacker = player.getLastHurtByMob();
             return timestamp != handledTimestamp && player.tickCount - timestamp < 100
-                    && attacker instanceof Monster && c.combat.fairTarget(attacker, true) && c.distanceToSqr(attacker) <= 18 * 18 && c.hasLineOfSight(attacker);
+                    && CompanionHostiles.hostile(attacker) && c.combat.fairTarget(attacker, true) && c.distanceToSqr(attacker) <= 18 * 18 && c.hasLineOfSight(attacker);
         }
         @Override public void start() {
             handledTimestamp = timestamp; c.setTarget(attacker); c.selectWeaponForCombat();
@@ -96,7 +95,7 @@ final class CompanionCombat {
      */
     boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
-                || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
+                || !(target instanceof net.minecraft.world.entity.Mob monster) || !CompanionHostiles.hostile(monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
         if (owner == null || owner.level() != c.level() || owner.isSpectator() || c.distanceToSqr(owner) > GUARD_RANGE * GUARD_RANGE) return false;
@@ -107,7 +106,7 @@ final class CompanionCombat {
     private static final int GUARD_RANGE = 16;
 
     boolean isThreateningOwner(net.minecraft.world.entity.LivingEntity target) {
-        if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || !(target instanceof Monster monster)) return false;
+        if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || !(target instanceof net.minecraft.world.entity.Mob monster) || !CompanionHostiles.hostile(monster)) return false;
         if (c.work.isHunting()) return c.work.isHuntTarget(target.getUUID());
         if (!fairTarget(monster, provokes(monster))) return false;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);

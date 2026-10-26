@@ -60,6 +60,7 @@ public final class AICompanionClient {
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
         NeoForge.EVENT_BUS.addListener(CompanionSchematicPlacement::render);
+        NeoForge.EVENT_BUS.addListener(this::onGameChat);
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -76,6 +77,17 @@ public final class AICompanionClient {
 
     private void registerMenuScreens(RegisterMenuScreensEvent event) {
         event.register(AICompanionMod.COMPANION_MENU.get(), CompanionInventoryScreen::new);
+    }
+
+    /**
+     * The game's own chat is a way to talk to him too: in singleplayer nobody else reads it. The line stays in the chat as typed;
+     * commands (/…) are left to the game.
+     */
+    private void onGameChat(net.neoforged.neoforge.client.event.ClientChatEvent event) {
+        String text = event.getMessage().trim();
+        Minecraft minecraft = Minecraft.getInstance();
+        if (text.isEmpty() || text.startsWith("/") || !OpenRouterConfig.GAME_CHAT.get() || minecraft.getSingleplayerServer() == null || minecraft.level == null) return;
+        CompanionChatScreen.processGameChat(text);
     }
 
     private void onClientTick(ClientTickEvent.Post event) {

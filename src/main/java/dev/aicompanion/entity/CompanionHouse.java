@@ -205,7 +205,11 @@ public final class CompanionHouse {
                 partner = pos.relative(state.getValue(BlockStateProperties.HORIZONTAL_FACING)); partnerState = state.setValue(BlockStateProperties.BED_PART, BedPart.HEAD);
             }
             boolean full = state.isCollisionShapeFullBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
-            list.add(new Step(pos.immutable(), state, item, items(state), partner, partnerState, (pos.getY() - box.minY()) * 2 + (full ? 0 : 1), stripped));
+            // In each layer what rests on the building goes before what spans or overhangs: the tile capping a wall, once its
+            // neighbours are down, can no longer be seen from anywhere (the order the first 5×5 house was built in).
+            BlockState under = y > 0 ? schematic.get(x, y - 1, z) : null;
+            boolean spans = y > 0 && (under == null || under.isAir());
+            list.add(new Step(pos.immutable(), state, item, items(state), partner, partnerState, (pos.getY() - box.minY()) * 4 + (spans ? 2 : 0) + (full ? 0 : 1), stripped));
         });
         list.sort(Comparator.comparingInt(Step::stage));
         steps = List.copyOf(list);
@@ -843,20 +847,25 @@ public final class CompanionHouse {
                 if (!standable(level, feet)) continue;
                 double horizontal = Math.sqrt(dx * dx + dz * dz);
                 double vertical = Math.sqrt(Math.max(0, (REACH - .4) * (REACH - .4) - horizontal * horizontal));
-                int levels = (int) Math.ceil(focus.getY() + .5 - (feet.getY() + owner.getEyeHeight()) - vertical);
-                if (levels < 1 || levels > CompanionScaffold.MAX_HEIGHT || levels > CompanionScaffold.supply(owner, this::stillNeeded)) continue;
-                boolean clear = true;
-                for (int up = 0; up <= levels + 1 && clear; up++) {
-                    BlockPos cell = feet.above(up);
-                    BlockState state = level.getBlockState(cell);
-                    if (!level.hasChunkAt(cell) || !state.getCollisionShape(level, cell).isEmpty() || !level.getFluidState(cell).isEmpty()
-                            || cell.equals(step.pos) || cell.equals(step.partner)) clear = false;
+                int least = Math.max(1, (int) Math.ceil(focus.getY() + .5 - (feet.getY() + owner.getEyeHeight()) - vertical));
+                int most = Math.min(CompanionScaffold.MAX_HEIGHT, CompanionScaffold.supply(owner, this::stillNeeded));
+                // The lowest top from which the cell is in reach and in sight: a tile hidden at the sides is seen from above.
+                boolean added = false;
+                for (int levels = least; levels <= most && !added; levels++) {
+                    boolean clear = true;
+                    for (int up = 0; up <= levels + 1 && clear; up++) {
+                        BlockPos cell = feet.above(up);
+                        BlockState state = level.getBlockState(cell);
+                        if (!level.hasChunkAt(cell) || !state.getCollisionShape(level, cell).isEmpty() || !level.getFluidState(cell).isEmpty()
+                                || cell.equals(step.pos) || cell.equals(step.partner)) clear = false;
+                    }
+                    if (!clear) break;
+                    Vec3 eye = Vec3.atBottomCenterOf(feet.above(levels)).add(0, owner.getEyeHeight(), 0);
+                    if (!visible(level, eye, focus)) continue;
+                    options.add(new Option(feet.immutable(), levels, levels * 4D + feet.distSqr(owner.blockPosition()) * .25D + (insideBox(feet) ? 6 : 0)));
+                    added = true;
                 }
-                if (!clear) continue;
-                Vec3 eye = Vec3.atBottomCenterOf(feet.above(levels)).add(0, owner.getEyeHeight(), 0);
-                if (!visible(level, eye, focus)) continue;
-                options.add(new Option(feet.immutable(), levels, levels * 4D + feet.distSqr(owner.blockPosition()) * .25D + (insideBox(feet) ? 6 : 0)));
-                break;
+                if (added) break;
             }
         }
         options.sort(Comparator.comparingDouble(Option::score));

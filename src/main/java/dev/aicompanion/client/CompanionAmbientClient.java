@@ -35,8 +35,8 @@ final class CompanionAmbientClient {
         var client = Minecraft.getInstance(); var player = client.player;
         return speaker.sociallySafe() && player != null && client.level != null && player.getHealth() > 8
                 && player.hurtTime == 0 && !player.isOnFire() && !player.isInLava()
-                && client.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, player.getBoundingBox().inflate(12),
-                        monster -> dev.aicompanion.entity.CompanionHostiles.observed(player, monster, 12)).isEmpty();
+                && client.level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class, player.getBoundingBox().inflate(12),
+                        monster -> dev.aicompanion.entity.CompanionHostiles.hostile(monster) && dev.aicompanion.entity.CompanionHostiles.observed(player, monster, 12)).isEmpty();
     }
     private static Object lineWorld;
     private static UUID lineCompanion;

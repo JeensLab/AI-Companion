@@ -462,8 +462,8 @@ public final class CompanionWork {
         placedChests.clear();
         orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); huntTargets.clear(); huntDead.clear(); huntKills = 0;
         if (job == Job.HUNT) {
-            for (var monster : level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
-                    new AABB(placementAnchor).inflate(18), monster -> monster.isAlive() && monster.distanceToSqr(placementAnchor.getCenter()) <= 18 * 18
+            for (var monster : level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
+                    new AABB(placementAnchor).inflate(18), monster -> CompanionHostiles.hostile(monster) && monster.isAlive() && monster.distanceToSqr(placementAnchor.getCenter()) <= 18 * 18
                             && owner.fairTarget(monster, owner.provokes(monster)))) huntTargets.add(monster.getUUID());
             owner.enableProtectionForWork();
         }
