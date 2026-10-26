@@ -7,7 +7,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
@@ -28,13 +28,39 @@ public final class CompanionBonds extends SavedData {
         long lastSeen = -1;
     }
 
-    private final Map<UUID, Slot> slots = new HashMap<>();
+    public static final int MAX_OWNERS = 64;
+
+    private final Map<UUID, Slot> slots = new LinkedHashMap<>();
 
     public static CompanionBonds get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, "aicompanion_bonds");
     }
 
-    private Slot slot(UUID owner) { return slots.computeIfAbsent(owner, id -> new Slot()); }
+    /** True when the player already has an entry; reading never creates one. */
+    public boolean knows(UUID owner) { return slots.containsKey(owner); }
+
+    public int ownerCount() { return slots.size(); }
+
+    private Slot slot(UUID owner) {
+        Slot slot = slots.get(owner);
+        if (slot != null) return slot;
+        slot = new Slot();
+        slots.put(owner, slot);
+        trim(owner);
+        return slot;
+    }
+
+    /** Keeps the entries of the most recently seen owners, so a busy server cannot grow the save without bound. */
+    private void trim(UUID keep) {
+        while (slots.size() > MAX_OWNERS) {
+            UUID oldest = null;
+            for (var entry : slots.entrySet()) {
+                if (entry.getKey().equals(keep)) continue;
+                if (oldest == null || entry.getValue().lastSeen < slots.get(oldest).lastSeen) oldest = entry.getKey();
+            }
+            slots.remove(oldest);
+        }
+    }
 
     public CompanionMemory memory(UUID owner) {
         Slot slot = slots.get(owner);
@@ -169,6 +195,7 @@ public final class CompanionBonds extends SavedData {
             slot.lastSeen = owner.contains("LastSeen") ? owner.getLong("LastSeen") : -1;
             bonds.slots.put(owner.getUUID("Owner"), slot);
         }
+        bonds.trim(null);
         return bonds;
     }
 }

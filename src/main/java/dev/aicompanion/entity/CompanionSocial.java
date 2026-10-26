@@ -52,7 +52,7 @@ final class CompanionSocial {
         if (!urgent.pending()) return;
         var player = owner.getOwnerPlayer();
         double voice = CompanionHappeningEvents.voiceBlocks();
-        boolean heard = player != null && owner.talksOnOwn() && owner.conversationAvailable() && owner.distanceToSqr(player) < voice * voice;
+        boolean heard = player != null && owner.talksOnOwn() && owner.distanceToSqr(player) < voice * voice;
         String fact = urgent.step(now, heard, sociallySafe());
         if (fact == null) return;
         CompanionDiagnostics.event("", "urgent_released", "key", urgentKey);
