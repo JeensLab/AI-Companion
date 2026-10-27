@@ -138,7 +138,7 @@ final class CompanionStoneMining {
                 }
                 // No stairs possible here (rock or bedrock under him, the stairs done): the far faces, walked to in legs.
                 if (startStoneTravel(level)) return;
-                w.finish(false, "Добыл " + w.gathered + " из " + w.wantedStone + ". Проверил доступные выходы камня в пределах " + w.owner.getSearchRadius() + " блоков; безопасного подхода или неглубокого спуска не нашёл."); return;
+                w.finish(false, "Добыл " + w.gathered + " из " + w.wantedStone + (madeUp() > 0 ? " (" + orderAndMadeUp() + ")" : "") + ". Проверил доступные выходы камня в пределах " + w.owner.getSearchRadius() + " блоков; безопасного подхода или неглубокого спуска не нашёл."); return;
             }
         }
         if (w.items.prepareMiningTool(level.getBlockState(w.target))) return;
@@ -268,9 +268,11 @@ final class CompanionStoneMining {
 
     /** More than ordered only to make up for the stone a tool took from the bag: said, so the larger number is no surprise. */
     private String mined() {
-        int extra = w.wantedStone - w.requestedCount;
-        return "Добыл " + w.gathered + " блоков камня" + (extra > 0 ? ": " + w.requestedCount + " по заказу и " + extra + " взамен ушедших на инструмент" : "");
+        return "Добыл " + w.gathered + " блоков камня" + (madeUp() > 0 ? ": " + orderAndMadeUp() : "");
     }
+    /** Stone added to a stone order for the tools it took; other jobs reuse wantedStone for their own needs. */
+    private int madeUp() { return w.job == CompanionWork.Job.STONE ? w.wantedStone - w.requestedCount : 0; }
+    private String orderAndMadeUp() { return w.requestedCount + " по заказу и " + madeUp() + " взамен ушедших на инструмент"; }
 
     void exitMine(ServerLevel level) {
         if (!w.owner.onGround() && !w.owner.isInWater()) return;

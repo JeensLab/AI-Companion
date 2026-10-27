@@ -158,6 +158,20 @@ public final class CompanionBanterToolsTests {
         });
     }
     @GameTest(template="tall_tree",timeoutTicks=900)
+    public static void stoneOrderShortOfTheMadeUpStoneSaysWhyItWantedMore(GameTestHelper h) {
+        // Five stones in reach, three ordered, three carried ones went into the pickaxe: «5 из 6» alone reads as a miscount.
+        var c=flat(h,1);bench(h,c,new BlockPos(14,1,16));
+        for(int z=14;z<=18;z++)h.setBlock(new BlockPos(20,1,z),Blocks.STONE);
+        c.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.WOODEN_PICKAXE));
+        c.setItem(0,new ItemStack(Items.COBBLESTONE,6));c.setItem(1,new ItemStack(Items.STICK,2));
+        h.runAtTickTime(10,()->{h.assertTrue(c.onGround(),"Not landed");c.startWork("gather_stone","",3);});
+        h.succeedWhen(()->{
+            h.assertTrue(h.getTick()>10,"Wait for the order");done(h,c);
+            h.assertTrue(!c.didLastTaskSucceed()&&count(c,Items.COBBLESTONE)==8,"Not the short order: "+count(c,Items.COBBLESTONE)+" cobblestone: "+c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().startsWith("Добыл 5 из 6 (3 по заказу и 3 взамен ушедших на инструмент)."),"Shortfall not explained: "+c.getLastTaskResult());
+        });
+    }
+    @GameTest(template="tall_tree",timeoutTicks=900)
     public static void stoneOrderMinesBackTheStoneOfAReplacedBrokenPickaxe(GameTestHelper h) {
         var c=coalWall(h,Items.STONE_PICKAXE);c.getMainHandItem().setDamageValue(c.getMainHandItem().getMaxDamage()-1);
         c.setItem(0,new ItemStack(Items.COBBLESTONE,6));c.setItem(1,new ItemStack(Items.STICK,2));
