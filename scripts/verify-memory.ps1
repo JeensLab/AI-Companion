@@ -5,7 +5,6 @@ param(
     [string]$Tag='memory'
 )
 $ErrorActionPreference='Stop'
-$env:JAVA_HOME='D:\Program Files\Java\jdk-22'
 $projectRoot=Split-Path -Parent $PSScriptRoot
 $namespace='aicompanion_memory'
 $testClasses=@('CompanionMemoryTests','CompanionBondTests','CompanionHappeningsTests')

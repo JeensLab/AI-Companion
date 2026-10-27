@@ -1,5 +1,9 @@
-param([string]$ConfigPath)
+param([string]$ConfigPath,[switch]$AllowPaidRequests)
 $ErrorActionPreference='Stop'
+if(!$AllowPaidRequests){
+    Write-Output 'SKIP: memory-live makes paid OpenRouter requests; pass -AllowPaidRequests explicitly to run it'
+    exit 0
+}
 $projectRoot=Split-Path -Parent $PSScriptRoot
 if(!$ConfigPath){$ConfigPath=Join-Path $projectRoot 'run\config\aicompanion-client.toml'}
 $namespace='aicompanion_memlive'
@@ -26,7 +30,6 @@ if(!$key){
 }
 $model=(Read-TomlString $ConfigPath 'model').Trim()
 
-$env:JAVA_HOME='D:\Program Files\Java\jdk-22'
 $utf8=[Text.UTF8Encoding]::new($false)
 $reports=Join-Path $projectRoot 'build\diagnostics'
 New-Item -ItemType Directory -Path $reports -Force | Out-Null
