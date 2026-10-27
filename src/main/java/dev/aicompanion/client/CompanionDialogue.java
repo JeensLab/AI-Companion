@@ -140,7 +140,7 @@ public final class CompanionDialogue {
         return String.join(", ", parts);
     }
 
-    private static String itemName(String id) {
+    public static String itemName(String id) {
         var key = net.minecraft.resources.ResourceLocation.tryParse(id);
         if (key == null) return id;
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key)
@@ -155,16 +155,35 @@ public final class CompanionDialogue {
             skipped = report.substring(marker + SKIPPED_PREFIX.length()).trim();
             report = report.substring(0, marker).trim();
         }
-        int partial = report.lastIndexOf(PARTIAL_PREFIX);
-        if (partial >= 0 && !report.contains("План остановлен:") && (partial == 0 || report.charAt(partial - 1) == '\n')
-                && actions.stream().noneMatch(action -> action.type().startsWith("goal_"))) {
-            // The rest of the plan was done; the player hears why this part was not, and which steps went with it.
-            String why = dev.aicompanion.CompanionFailureMessages.primary(report.substring(partial + PARTIAL_PREFIX.length()).split("\n", 2)[0]);
-            return "Остальное сделал, а это не вышло: " + why + (skipped.isEmpty() ? "" : " Пропустил: " + skipped);
+        String failed = actions.stream().anyMatch(action -> action.type().startsWith("goal_")) ? "" : failedParts(report);
+        if (!failed.isEmpty()) {
+            // Parts given up while the rest went on: the player hears what was not made and why, once, not the steps that went with it.
+            if (!report.contains("План остановлен:")) return "Остальное сделал. " + failed;
+            String lower = report.toLowerCase(java.util.Locale.ROOT);
+            String stopped = summarizeSteps(actions, report);
+            return lower.contains("отменён") || lower.contains("остановки") ? stopped : stopped + " " + failed;
         }
         String spoken = summarizeSteps(actions, report);
         // Unstarted steps remain visible in Tasks. Reading them aloud turns one problem into a roll call.
         return spoken.isBlank() && !skipped.isEmpty() ? "Пока получилось выполнить только часть поручения." : spoken;
+    }
+
+    /** «Не вышло: «A», «B» — причина.» from the give-up lines of the report; empty if there are none. */
+    private static String failedParts(String report) {
+        List<String> names = new java.util.ArrayList<>(), whys = new java.util.ArrayList<>();
+        for (String line : report.split("\n")) {
+            if (!line.startsWith(PARTIAL_PREFIX)) continue;
+            String rest = line.substring(PARTIAL_PREFIX.length());
+            int end = rest.startsWith("«") ? rest.indexOf("»: ") : -1;
+            if (end > 0) { String name = rest.substring(0, end + 1); if (!names.contains(name)) names.add(name); rest = rest.substring(end + 3); }
+            // Only ore digging speaks of ore: an unsafe route to it is said as ore out of reach, not as a lost way (game 27.10).
+            String why = dev.aicompanion.CompanionFailureMessages.explain(rest.contains("руд") ? "mine_ore" : "", rest);
+            if (!whys.contains(why)) whys.add(why);
+        }
+        if (whys.isEmpty()) return "";
+        if (names.isEmpty()) return "Часть не вышла: " + String.join(" ", whys);
+        String why = String.join(" ", whys);
+        return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
     private static String summarizeSteps(List<PlannedAction> actions, String report) {

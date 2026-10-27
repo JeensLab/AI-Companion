@@ -209,10 +209,10 @@ public final class CompanionPlanRecoveryTests {
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
             h.assertTrue(port.calls.equals(List.of("mine_ore:2", "follow:1")) && outcome.skipped().equals(List.of(OBTAIN_HELMET, equip))
-                    && outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX + "Руды рядом нет.") && !outcome.report().contains("План остановлен")
+                    && outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: Руды рядом нет.") && !outcome.report().contains("План остановлен")
                     && outcome.report().endsWith(CompanionDialogue.SKIPPED_PREFIX + CompanionDialogue.describeAll(List.of(OBTAIN_HELMET, equip))), port.calls + " " + outcome);
             String said = CompanionDialogue.summarize(List.of(OBTAIN_HELMET, equip, follow), outcome.report());
-            h.assertTrue(said.contains("Остальное сделал") && said.contains("Руды рядом нет") && said.contains("Пропустил"), said);
+            h.assertTrue(said.contains("Остальное сделал") && said.contains(CompanionDialogue.itemName("minecraft:iron_helmet")) && said.contains("руды") && !said.contains("Пропустил"), said);
         });
     }
 
@@ -244,16 +244,111 @@ public final class CompanionPlanRecoveryTests {
         });
     }
 
-    /** Steps that succeed without ever changing the bag cannot loop: one obtain_item has a ceiling. */
+    /** A step that succeeds and changes nothing is not repeated: the plan is the same as before it, so the order stops with its message. */
     @GameTest(template = "empty", timeoutTicks = 100)
-    public static void obtainStepsHaveACeiling(GameTestHelper h) {
+    public static void obtainStopsWhenASuccessfulStepChangesNothing(GameTestHelper h) {
         var port = new BagPort();
         port.mineChangesNothing = true;
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.size() == CompanionPlanRunner.MAX_OBTAIN_STEPS && outcome.report().contains("План остановлен"), port.calls.size() + " " + outcome);
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2")) && outcome.report().contains("План остановлен: Ничего."), port.calls.size() + " " + outcome);
         });
+    }
+
+    /** The plan changes after every step but the bag never gets what is needed: the ceiling still ends the order. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainStepsHaveACeiling(GameTestHelper h) {
+        var port = new BagPort();
+        port.mineChangesNothing = true;
+        port.layoutDrifts = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.size() == CompanionPlanRunner.MAX_OBTAIN_STEPS && outcome.report().contains("План остановлен: слишком много шагов"), port.calls.size() + " " + outcome);
+        });
+    }
+
+    /** Ore over 16 is dug in pieces: a failed piece that gained something changes the plan, so the order goes on. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainGoesOnAfterAPartialPieceOfBigOre(GameTestHelper h) {
+        var port = new BagPort();
+        port.need = 20;
+        port.mineFailsOnce = true;
+        port.failGain = 3;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:16", "mine_ore:16", "mine_ore:1", "gather_wood:1", "craft_item:1", "verify_item:1")) && port.helmets == 1
+                    && outcome.skipped().isEmpty() && !outcome.report().contains("План остановлен"), port.calls + " " + outcome);
+        });
+    }
+
+    /** A blocked step inside «get it» gives up that part only; an independent step after it still runs. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void blockedStepInObtainSkipsOnlyThatPart(GameTestHelper h) {
+        var port = new BagPort();
+        port.mineBlocked = true;
+        var follow = new PlannedAction("follow", 0, 1);
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET, follow), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "follow:1")) && outcome.skipped().contains(OBTAIN_HELMET)
+                    && outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX) && !outcome.report().contains("План остановлен"), port.calls + " " + outcome);
+        });
+    }
+
+    /** A craft inside the chain refused for shortage is not turned into «get it» again: the chain is bounded by the no-gain stop. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void craftShortageInsideObtainIsNotSubstituted(GameTestHelper h) {
+        var port = new BagPort();
+        port.craftShortage = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1", "craft_item:1")) && port.expands == 4
+                    && outcome.report().contains("План остановлен: Не хватает материалов."), port.calls + " expands=" + port.expands + " " + outcome);
+        });
+    }
+
+    /** Two parts given up and a later stop: both things named once, a short reason, no steps and no coordinates. */
+    @GameTest(template = "empty")
+    public static void summaryNamesEveryGivenUpPartWithAShortReason(GameTestHelper h) {
+        var plan = List.of(new PlannedAction("obtain_item", 0, 1, "minecraft:iron_chestplate"), new PlannedAction("obtain_item", 0, 1, "minecraft:iron_leggings"),
+                new PlannedAction("obtain_item", 0, 1, "minecraft:iron_boots"), new PlannedAction("follow", 0, 1));
+        String ore = "Руды рядом больше нет. Известные места: x=10 y=20 z=30. Цепочка: mine_ore 3, craft_item 1.";
+        String chest = CompanionDialogue.itemName("minecraft:iron_chestplate"), legs = CompanionDialogue.itemName("minecraft:iron_leggings");
+        String report = CompanionDialogue.PARTIAL_PREFIX + "«" + chest + "»: " + ore + "\n" + CompanionDialogue.PARTIAL_PREFIX + "«" + legs + "»: " + ore
+                + "\n" + CompanionDialogue.SKIPPED_PREFIX + "достать железные ботинки, получить «Железные поножи»";
+        String rest = CompanionDialogue.summarize(plan, report);
+        h.assertTrue(rest.startsWith("Остальное сделал.") && rest.contains("«" + chest + "»") && rest.contains("«" + legs + "»")
+                && rest.contains(" — больше доступной руды поблизости не нашёл.") && !rest.contains("x=10") && !rest.contains("Пропустил") && !rest.contains("Цепочка")
+                && rest.length() <= 200, rest);
+        String late = CompanionDialogue.summarize(plan, report.replace("\n" + CompanionDialogue.SKIPPED_PREFIX, "\nПлан остановлен: Не хватает материалов.\n" + CompanionDialogue.SKIPPED_PREFIX));
+        h.assertTrue(late.startsWith("На всё пока не хватает материалов.") && late.indexOf("Не вышло") > 0 && late.indexOf("Не вышло") < late.indexOf("«" + chest + "»") && late.contains("«" + legs + "»")
+                && !late.contains("x=10") && !late.contains("Пропустил") && late.length() <= 200, late);
+        h.succeed();
+    }
+
+    /** The give-up lines of the game run 27.10 word for word: three things named, the reason is ore out of safe reach. */
+    @GameTest(template = "empty")
+    public static void summaryOfTheArmourRunNamesThePartsAndTheOre(GameTestHelper h) {
+        String bag = " В сумке: 3 Доски из тёмного дуба, 31 Бревно тёмного дуба, 1 Деревянная кирка, 2 Железный шлем, 32 Булыжник, 2 Палка.";
+        var parts = List.of("minecraft:iron_chestplate", "minecraft:iron_leggings", "minecraft:iron_boots");
+        int[] ore = { 16, 14, 8 };
+        List<PlannedAction> plan = new ArrayList<>(List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet")));
+        StringBuilder report = new StringBuilder("Готово: «Железный шлем» у меня, 2 шт.");
+        for (int i = 0; i < parts.size(); i++) {
+            plan.add(new PlannedAction("obtain_item", 0, 2, parts.get(i)));
+            report.append("\n").append(CompanionDialogue.PARTIAL_PREFIX).append("«").append(CompanionDialogue.itemName(parts.get(i))).append("»: ")
+                    .append("Добыл 0 из ").append(ore[i]).append(" блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет. ")
+                    .append("У 3 блока рядом вода или лава — их не трогал. К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и жидкостей рядом.").append(bag);
+        }
+        report.append("\nНадел: Железный шлем.\nОтдал тебе 1 «Железный шлем».");
+        String said = CompanionDialogue.summarize(plan, report.toString());
+        h.assertTrue(said.equals("Остальное сделал. Не вышло: «" + CompanionDialogue.itemName(parts.get(0)) + "», «" + CompanionDialogue.itemName(parts.get(1))
+                + "», «" + CompanionDialogue.itemName(parts.get(2)) + "» — до оставшейся руды безопасно не добраться."), said);
+        h.succeed();
     }
 
     /** A shortage refusal of a craft becomes «get it» on (carried + asked); any other refusal of a craft stays a stop. */
@@ -305,15 +400,19 @@ public final class CompanionPlanRecoveryTests {
     private static final class BagPort implements CompanionPlanRunner.Port {
         final List<String> calls = new ArrayList<>();
         int logs, ingots, helmets;
-        boolean logsAppearAfterOre, pickaxeEatsIngot, mineFailsOnce, neverMines, mineChangesNothing, noTrees, followFails;
+        int need = 2, failGain = 1, expands;
+        boolean logsAppearAfterOre, pickaxeEatsIngot, mineFailsOnce, neverMines, mineChangesNothing, noTrees, followFails, layoutDrifts, mineBlocked, craftShortage;
         @Override public String trace() { return "gametest-bag"; }
         @Override public boolean cancelled() { return false; }
         @Override public CompletableFuture<State> state(PlannedAction action) { return CompletableFuture.completedFuture(IDLE); }
         @Override public CompletableFuture<Void> pause(int seconds) { return CompletableFuture.completedFuture(null); }
         @Override public CompletableFuture<CompanionPlanRunner.Expansion> expand(PlannedAction action) {
+            expands++;
             List<PlannedAction> steps = new ArrayList<>();
             if (helmets < 1) {
-                if (ingots < 2) steps.add(new PlannedAction("mine_ore", 0, 2 - ingots, "minecraft:iron_ore"));
+                // Ore over 16 is planned in pieces, as CompanionObtain does.
+                int left = need - ingots + (layoutDrifts ? calls.size() : 0);
+                for (; left > 0; left -= 16) steps.add(new PlannedAction("mine_ore", 0, Math.min(16, left), "minecraft:iron_ore"));
                 if (logs < 1) steps.add(new PlannedAction("gather_wood", 0, 1));
                 steps.add(new PlannedAction("craft_item", 0, 1, action.item()));
             }
@@ -329,19 +428,23 @@ public final class CompanionPlanRecoveryTests {
                     logs++; yield CompanionActionResult.ok("Дерево.");
                 }
                 case "craft_item" -> {
-                    if (ingots < 2 || logs < 1) yield CompanionActionResult.failed("Не хватает материалов.");
-                    ingots -= 2; logs--; helmets++;
+                    if (craftShortage) { shortageRefused = true; yield CompanionActionResult.shortage("Не хватает материалов."); }
+                    if (ingots < need || logs < 1) yield CompanionActionResult.failed("Не хватает материалов.");
+                    ingots -= need; logs--; helmets++;
                     yield CompanionActionResult.ok("Скрафтил.");
                 }
                 case "follow" -> followFails ? CompanionActionResult.failed("Не пошёл.") : CompanionActionResult.ok("Иду.");
                 default -> helmets >= 1 ? CompanionActionResult.ok("Готово.") : CompanionActionResult.failed("Добыл не всё.");
             };
-            return CompletableFuture.completedFuture(new Attempt(result, true));
+            boolean refused = shortageRefused; shortageRefused = false;
+            return CompletableFuture.completedFuture(new Attempt(result, !refused));
         }
+        private boolean shortageRefused;
         private CompanionActionResult mine(int count) {
+            if (mineBlocked) return CompanionActionResult.blocked("Дальше не пройти.");
             if (neverMines) return CompanionActionResult.failed("Руды рядом нет.");
             if (mineChangesNothing) return CompanionActionResult.ok("Ничего.");
-            if (mineFailsOnce) { mineFailsOnce = false; ingots++; return CompanionActionResult.failed("Руды рядом больше нет."); }
+            if (mineFailsOnce) { mineFailsOnce = false; ingots += failGain; return CompanionActionResult.failed("Руды рядом больше нет."); }
             ingots += count;
             if (logsAppearAfterOre) logs += 3;
             if (pickaxeEatsIngot) { pickaxeEatsIngot = false; ingots--; }
