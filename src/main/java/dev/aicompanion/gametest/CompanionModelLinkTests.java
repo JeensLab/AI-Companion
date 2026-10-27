@@ -109,6 +109,18 @@ public final class CompanionModelLinkTests {
         h.succeed();
     }
 
+    /** The model field still says openrouter/auto by default: with an own server its «model not found» must say what to change. */
+    @GameTest(template = "empty")
+    public static void ownServerWithTheOpenRouterModelSaysWhatToChange(GameTestHelper h) {
+        var ollama = OpenRouterClient.endpoint("http://localhost:11434/v1");
+        h.assertTrue(OpenRouterClient.modelNote(ollama, "openrouter/auto").contains("«Модель»")
+                && !OpenRouterClient.modelNote(ollama, " ").isEmpty() && !OpenRouterClient.modelNote(ollama, "OpenRouter/free").isEmpty(),
+                "The OpenRouter model for an own server is not explained");
+        h.assertTrue(OpenRouterClient.modelNote(ollama, "llama3.1:8b").isEmpty()
+                && OpenRouterClient.modelNote(OpenRouterClient.endpoint(""), "openrouter/auto").isEmpty(), "A fitting model is questioned");
+        h.succeed();
+    }
+
     private static JsonObject message(String role, String content) {
         JsonObject message = new JsonObject();
         message.addProperty("role", role); message.addProperty("content", content);

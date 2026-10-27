@@ -66,6 +66,12 @@ public final class OpenRouterClient {
                 ? "Ключ OpenRouter мод отправляет только в OpenRouter: для этого сервера впиши его собственный ключ."
                 : "Ключ не отправлен: по обычному http через сеть мод его не передаёт — нужен адрес https или сервер на этом компьютере.";
     }
+    /** The model field defaults to openrouter/auto: an own server answers «model not found», which alone does not say what to change. */
+    public static String modelNote(URI endpoint, String model) {
+        String id = model == null ? "" : model.trim().toLowerCase(java.util.Locale.ROOT);
+        return !keyRequired(endpoint) && (id.isEmpty() || id.startsWith("openrouter/"))
+                ? "В поле «Модель» стоит модель OpenRouter: для своего сервера впиши название загруженной в него модели." : "";
+    }
     /** The server named in errors and diagnostics: host and port, never credentials written into the address. */
     public static String service(URI endpoint) {
         return keyRequired(endpoint) ? "OpenRouter" : endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());
@@ -390,7 +396,9 @@ public final class OpenRouterClient {
                     throw new UnsupportedToolsException(error);
                 }
                 boolean refused = response.statusCode() == 401 || response.statusCode() == 403;
-                throw new IllegalStateException(refused && !withheld.isEmpty() ? error + " " + withheld : error);
+                boolean rejected = response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422;
+                String note = refused ? withheld : rejected ? modelNote(endpoint, OpenRouterConfig.MODEL.get()) : "";
+                throw new IllegalStateException(note.isEmpty() ? error : error + " " + note);
             }
             JsonObject parsed = JsonParser.parseString(response.body()).getAsJsonObject();
             if (!parsed.has("choices") || !parsed.get("choices").isJsonArray() || parsed.getAsJsonArray("choices").isEmpty()) {
