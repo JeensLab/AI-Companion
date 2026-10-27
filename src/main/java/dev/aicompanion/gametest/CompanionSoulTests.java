@@ -5,7 +5,10 @@ import dev.aicompanion.*;
 import dev.aicompanion.CompanionConversation.Scene;
 import dev.aicompanion.CompanionPersonality.Trait;
 import dev.aicompanion.client.CompanionLocalCommands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.*;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.HashSet;
@@ -77,7 +80,9 @@ public final class CompanionSoulTests {
     public static void characterShiftsTowardsThePlayerStepByStepButTonesDownAtOnce(GameTestHelper h) {
         var soul=new CompanionSoul();
         String original=CompanionPersonality.style(soul.character());
-        h.assertTrue(original.contains("Ты дерзкий")&&original.contains("Уместны «бля»")&&original.contains("Краткость — сестра таланта")&&original.contains("Twitch"),"Original Oleg changed");
+        for(String rule:new String[]{"Ты язвительный","Мат — привычная часть твоей речи","на содержательный вопрос отвечай подробнее","ценишь запас факелов",
+                "Молчание не означает согласия","принятие поручения не означает его завершения","Не выдумывай биографию","зумерским сленгом","Twitch"})
+            h.assertTrue(original.contains(rule),"Oleg without the soul model changed: "+rule);
         var wanted=JsonParser.parseString("{\"character\":{\"swearing\":2,\"humor\":2,\"tease\":-2,\"warmth\":\"много\",\"energy\":7,\"slang\":1.5,\"curiosity\":-1,\"rudeness\":2}}").getAsJsonObject();
         h.assertTrue(soul.absorb(wanted,1),"Character alone is not a usable analysis");
         var c=soul.character();
@@ -87,8 +92,9 @@ public final class CompanionSoulTests {
         soul.absorb(wanted,2); c=soul.character();
         h.assertTrue(c.get(Trait.SWEARING)==2&&c.get(Trait.HUMOR)==2,"Second talk did not continue the shift: "+c);
         String adapted=CompanionPersonality.style(c);
-        h.assertTrue(adapted.contains("Мат — обычная часть речи")&&adapted.contains("Без подколов")&&!adapted.contains("Ты дерзкий")
-                &&adapted.contains("Краткость — сестра таланта")&&adapted.contains("зумерским сленгом")&&adapted.contains("Twitch"),"Adapted text wrong or fixed rules lost");
+        h.assertTrue(adapted.contains("Мат — обычная часть почти каждой реплики")&&adapted.contains("Без подколов")&&!adapted.contains("Ты язвительный")
+                &&adapted.contains("Молчание не означает согласия")&&adapted.contains("принятие поручения не означает его завершения")
+                &&adapted.contains("зумерским сленгом")&&adapted.contains("Twitch"),"Adapted text wrong or fixed rules lost");
         soul.absorb(JsonParser.parseString("{\"character\":{\"swearing\":-2}}").getAsJsonObject(),3);
         h.assertTrue(soul.character().get(Trait.SWEARING)==-2&&CompanionPersonality.style(soul.character()).contains("Не матерись совсем"),"Asked to stop swearing, still swears");
         h.assertTrue(CompanionSoul.load(soul.save()).character().equals(soul.character()),"Character lost on restart");
@@ -114,6 +120,17 @@ public final class CompanionSoulTests {
             now+=CompanionSoul.RETRY;
         }
         h.assertTrue(soul.takeTalk(now,true)==null,"A failing analysis is retried for ever");
+        // Restarts: the attempts and the pause stay with the talk, and so does a talk that began meanwhile.
+        soul.heard("Как дела?",now); soul.talked(); now+=CompanionSoul.QUIET;
+        h.assertTrue(soul.takeTalk(now,true)!=null&&!soul.absorb(null,now),"First attempt");
+        soul.heard("А у меня кот",now+1); soul.talked(); soul=CompanionSoul.load(soul.save());
+        h.assertTrue(soul.save().getAsJsonArray("talk").toString().contains("А у меня кот"),"A new talk lost behind the one under analysis");
+        h.assertTrue(soul.takeTalk(now+CompanionSoul.RETRY-1,true)==null,"Pause between attempts lost on restart");
+        h.assertTrue(soul.takeTalk(now+CompanionSoul.RETRY,true)!=null,"Talk under analysis lost on restart");
+        soul=CompanionSoul.load(soul.save());
+        h.assertTrue(soul.takeTalk(now+CompanionSoul.RETRY,true)!=null&&!soul.absorb(null,now+CompanionSoul.RETRY),"Attempt cut short by a restart was not counted");
+        String next=soul.takeTalk(now+2*CompanionSoul.RETRY,true);
+        h.assertTrue(next!=null&&next.contains("А у меня кот")&&!next.contains("Как дела?"),"A failing analysis is retried after restarts: "+next);
         h.succeed();
     }
     @GameTest(template="empty")
@@ -128,8 +145,16 @@ public final class CompanionSoulTests {
         h.assertTrue(loaded.takeTalk(4+CompanionSoul.QUIET,true).contains("Ещё я рисую"),"Unfinished talk lost on restart");
         java.nio.file.Files.writeString(file,"{ сломано");
         var broken=CompanionSoulFiles.read(file);
-        h.assertTrue(broken.promptContext().isEmpty()&&java.nio.file.Files.exists(folder.resolve("soul.broken.json"))&&!java.nio.file.Files.exists(file),"Broken memory overwritten");
-        java.nio.file.Files.delete(folder.resolve("soul.broken.json")); java.nio.file.Files.delete(folder);
+        h.assertTrue(broken!=null&&broken.promptContext().isEmpty()&&java.nio.file.Files.exists(folder.resolve("soul.broken.json"))&&!java.nio.file.Files.exists(file),"Broken memory overwritten");
+        java.nio.file.Files.createDirectory(file);
+        h.assertTrue(CompanionSoulFiles.read(file)==null&&java.nio.file.Files.isDirectory(file),"Memory out of reach replaced by an empty one");
+        java.nio.file.Files.delete(file);
+        var emoji=new CompanionSoul(); emoji.heard("😀".repeat(200),5); emoji.talked();
+        emoji.absorb(JsonParser.parseString("{\"facts\":[\"Любит \\ud83d\"]}").getAsJsonObject(),6);
+        CompanionSoulFiles.write(file,emoji.save().toString());
+        var saved=CompanionSoulFiles.read(file);
+        h.assertTrue(saved!=null&&saved.promptContext().contains("Любит ?")&&saved.takeTalk(5+CompanionSoul.QUIET,true).endsWith("😀"),"Emoji cut in half or a lone surrogate stopped saving");
+        java.nio.file.Files.delete(file); java.nio.file.Files.delete(folder.resolve("soul.broken.json")); java.nio.file.Files.delete(folder);
         var edited=CompanionSoul.load(JsonParser.parseString("{\"profile\":\"Любит политику и выборы\",\"facts\":[1,{},\"ok факт\"],\"ownTopics\":[\"Го в казино?\",\"Как жизнь, бро?\"],\"taste\":{\"music\":99}}").getAsJsonObject());
         h.assertTrue(!edited.promptContext().contains("политик")&&edited.promptContext().contains("ok факт")&&edited.nextTopic(FIRST).text().equals("Как жизнь, бро?")&&edited.taste("music")==4,"Hand-edited file not checked");
         h.succeed();
@@ -140,33 +165,45 @@ public final class CompanionSoulTests {
         h.assertTrue(CompanionConversation.scene(false,true,true,true,0)==Scene.MINE,"Mine not recognised");
         h.assertTrue(CompanionConversation.scene(false,false,true,true,0)==Scene.TRAVEL,"Road not recognised");
         h.assertTrue(CompanionConversation.scene(false,false,false,false,20*59)==Scene.WORK&&CompanionConversation.scene(false,false,false,false,20*60)==Scene.IDLE,"Idle threshold");
-        for(int j=0;j<=2400;j++) {
+        for(int j=0;j<=1200;j++) {
             h.assertTrue(CompanionConversation.topicGap(Scene.TRAVEL,j)>=1200&&CompanionConversation.topicGap(Scene.TRAVEL,j)<=2400,"Road pace");
-            h.assertTrue(CompanionConversation.topicGap(Scene.MINE,j)>=1500&&CompanionConversation.topicGap(Scene.MINE,j)<=3000,"Mine pace");
-            h.assertTrue(CompanionConversation.topicGap(Scene.IDLE,j)>=1800&&CompanionConversation.topicGap(Scene.IDLE,j)<=3600,"Idle pace");
-            h.assertTrue(CompanionConversation.topicGap(Scene.WORK,j)>=3600&&CompanionConversation.topicGap(Scene.WORK,j)<=6000,"Work pace");
+            h.assertTrue(CompanionConversation.topicGap(Scene.MINE,j)>=1500&&CompanionConversation.topicGap(Scene.MINE,j)<=2700,"Mine pace");
+            h.assertTrue(CompanionConversation.topicGap(Scene.IDLE,j)>=1800&&CompanionConversation.topicGap(Scene.IDLE,j)<=3000,"Idle pace");
+            h.assertTrue(CompanionConversation.topicGap(Scene.WORK,j)>=3600&&CompanionConversation.topicGap(Scene.WORK,j)<=4800,"Work pace");
         }
         var c=new CompanionConversation(); c.reset(0,0);
         h.assertTrue(!c.topicReady(1199,Scene.TRAVEL)&&c.topicReady(1200,Scene.TRAVEL),"Road topic not after a minute");
         h.assertTrue(!c.topicReady(3599,Scene.WORK)&&c.topicReady(3600,Scene.WORK),"Work topic too soon");
         h.assertTrue(!c.topicReady(1_000_000,Scene.FIGHT),"Topic in a fight");
-        c.initiativeDelivered("Что слушаешь, бро?",2000,0);
-        h.assertTrue(!c.topicReady(2000+CompanionConversation.ANSWER_WAIT-1,Scene.TRAVEL),"New topic over an open question");
-        h.assertTrue(c.topicReady(2000+CompanionConversation.ANSWER_WAIT,Scene.TRAVEL),"Ignored question silenced him");
-        c.initiativeDelivered("Прикинь, у осьминога три сердца.",6000,0);
-        h.assertTrue(!c.topicReady(6000+2*1200-1,Scene.TRAVEL)&&c.topicReady(6000+2*1200,Scene.TRAVEL),"Ignored question did not double the next pause");
-        c.initiativeDelivered("Шаурма или бургер?",9000,0);
-        h.assertTrue(!c.topicReady(9000+3*1800-1,Scene.IDLE)&&c.topicReady(9000+3*1800,Scene.IDLE),"Second ignored question did not triple the pause");
+        c.initiativeDelivered("Прикинь, у осьминога три сердца.",2000,0);
+        h.assertTrue(!c.topicReady(3199,Scene.TRAVEL)&&c.topicReady(3200,Scene.TRAVEL),"A topic without a question held up the next one");
+        // Silence is no answer and no consent (main): no new topic of his own until the player speaks; remarks on events go on.
+        c.initiativeDelivered("Что слушаешь, бро?",4000,0);
+        h.assertTrue(!c.topicReady(4000+CompanionConversation.ANSWER_WAIT,Scene.TRAVEL)&&!c.topicReady(1_000_000,Scene.IDLE)&&!c.canAskQuestion(),"New topic over an unanswered question");
+        h.assertTrue(c.ready(1_000_000),"Unanswered question silenced remarks on events");
         c.playerMessage(20000,0);
-        h.assertTrue(!c.topicReady(21199,Scene.TRAVEL)&&c.topicReady(21200,Scene.TRAVEL),"An answer did not reset the pause");
+        h.assertTrue(c.canAskQuestion()&&!c.topicReady(21199,Scene.TRAVEL)&&c.topicReady(21200,Scene.TRAVEL),"An answer did not reset the pause");
         h.succeed();
     }
     @GameTest(template="empty")
     public static void inAFightSmallTalkIsHushedButOrdersPass(GameTestHelper h) {
         h.assertTrue(CompanionLocalCommands.hushed(true,"Как дела, бро?")&&CompanionLocalCommands.hushed(true,"Что слушаешь?"),"Small talk in a fight");
         h.assertTrue(!CompanionLocalCommands.hushed(false,"Как дела, бро?"),"Hushed without a fight");
-        for(String order:new String[]{"убей зомби","помоги!","беги ко мне","сзади крипер","построй дом","добудь камня"})
+        for(String order:new String[]{"убей зомби","помоги!","беги ко мне","сзади крипер","построй дом","добудь камня","стой и жди","Стой! И не двигайся","жди 10 секунд","подожди тут","постой, крафчу"})
             h.assertTrue(!CompanionLocalCommands.hushed(true,order),"Order hushed: "+order);
         h.assertTrue(CompanionLocalCommands.FIGHT_HUSH.equals("Помолчи, я тут занят мобом."),"Phrase changed"); h.succeed();
+    }
+    @GameTest(template="tall_tree",timeoutTicks=100)
+    public static void onlyAMonsterAfterOneOfThemIsAFight(GameTestHelper h) {
+        for(int x=0;x<32;x++) for(int z=0;z<32;z++) h.setBlock(new BlockPos(x,0,z),Blocks.BEDROCK);
+        var c=h.spawn(AICompanionMod.COMPANION.get(),16,1,16); c.setFollowing(false);
+        var player=h.makeMockServerPlayerInLevel(); var spot=h.absolutePos(new BlockPos(14,1,16));
+        player.teleportTo(spot.getX()+.5,spot.getY(),spot.getZ()+.5); c.setOwnerId(player.getUUID());
+        var piglin=h.spawn(EntityType.ZOMBIFIED_PIGLIN,20,1,16); piglin.setNoAi(true); piglin.setInvulnerable(true);
+        h.runAtTickTime(40,()->{
+            h.assertTrue(!c.fighting()&&!c.sociallySafe(),"A peaceful zombified piglin in sight became a fight, or chatter safe beside it");
+            piglin.setTarget(player);
+        });
+        h.runAtTickTime(80,()->{h.assertTrue(c.fighting(),"A monster after the player is no fight");h.succeed();});
     }
 }

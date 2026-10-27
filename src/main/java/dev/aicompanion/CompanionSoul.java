@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  */
 public final class CompanionSoul {
     public record Topic(String key, String category, String text) { }
-    /** A talk is over after this much silence; a failed analysis is retried after RETRY, three times at most. */
+    /** A talk is over after this much silence; a failed analysis is retried after RETRY, three attempts at most, restarts included. */
     public static final long QUIET = 3 * 60_000L, RETRY = 5 * 60_000L;
     static final int FACTS = 20, OWN_TOPICS = 30, TALK = 24, USED = 1000;
     /**
@@ -47,7 +47,7 @@ public final class CompanionSoul {
     private boolean talked, reviewing, changed;
     private long lastLine, retryAt;
     private String opened = "";
-    private int answers, talks, failures;
+    private int answers, talks, attempts;
 
     /** A topic he has not raised yet: often one of his own from past talks, otherwise from the bank by the player's taste. */
     public synchronized Topic nextTopic(RandomGenerator random) {
@@ -105,7 +105,8 @@ public final class CompanionSoul {
             review = new ArrayList<>(talk); talk.clear(); talked = false;
         }
         if (!possible) return null;
-        reviewing = true;
+        // Counted when sent, not when failed: closing the game during the request must not make another one free.
+        reviewing = true; attempts++; changed = true;
         return String.join("\n", review);
     }
     /** What he already knows and has raised, so that the analysis keeps it and does not repeat old topics. */
@@ -143,12 +144,12 @@ public final class CompanionSoul {
             own.add(new Topic("own:" + normalized, "own", topic));
         }
         while (own.size() > OWN_TOPICS) own.removeFirst();
-        review = null; failures = 0; talks++; changed = true;
+        review = null; attempts = 0; talks++; changed = true;
         return true;
     }
     public synchronized void failed(long now) {
         reviewing = false; changed = true;
-        if (++failures >= 3) { review = null; failures = 0; retryAt = 0; } else retryAt = now + RETRY;
+        if (attempts >= 3) { review = null; attempts = 0; retryAt = 0; } else retryAt = now + RETRY;
     }
 
     /** For every model request: who the player is and how to talk to him. Empty before the first analysed talk. */
@@ -181,8 +182,8 @@ public final class CompanionSoul {
         JsonObject traits = new JsonObject();
         for (CompanionPersonality.Trait trait : CompanionPersonality.Trait.values()) traits.addProperty(trait.key, character.getOrDefault(trait, 0));
         json.add("character", traits);
-        List<String> pending = new ArrayList<>(review == null ? List.of() : review); pending.addAll(talk);
-        json.add("talk", array(pending)); json.addProperty("talked", talked || review != null);
+        json.add("talk", array(talk)); json.addProperty("talked", talked);
+        if (review != null) { json.add("review", array(review)); json.addProperty("attempts", attempts); json.addProperty("retryAt", retryAt); }
         json.addProperty("lastLine", lastLine); json.addProperty("talks", talks);
         return json;
     }
@@ -204,6 +205,9 @@ public final class CompanionSoul {
         soul.character.putAll(levels(json.get("character")));
         soul.talk.addAll(texts(json, "talk", TALK, 240));
         soul.talked = !soul.talk.isEmpty() && json.has("talked") && json.get("talked").isJsonPrimitive() && json.get("talked").getAsBoolean();
+        List<String> review = texts(json, "review", TALK, 240);
+        int attempts = (int) Math.min(3, number(json, "attempts"));
+        if (!review.isEmpty() && attempts < 3) { soul.review = review; soul.attempts = attempts; soul.retryAt = number(json, "retryAt"); }
         soul.lastLine = number(json, "lastLine"); soul.talks = (int) number(json, "talks");
         return soul;
     }
@@ -242,6 +246,9 @@ public final class CompanionSoul {
         return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber() ? Math.max(0, value.getAsLong()) : 0;
     }
     private static String clean(String text, int limit) { return clip(text.replaceAll("\\p{Cntrl}+", " ").replaceAll("\\s+", " ").strip(), limit); }
-    private static String clip(String text, int limit) { return text.length() <= limit ? text : text.substring(0, limit); }
+    /** Never half an emoji: a lone surrogate cannot be written as UTF-8. */
+    private static String clip(String text, int limit) {
+        return text.length() <= limit ? text : text.substring(0, Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit);
+    }
     private static JsonArray array(List<String> values) { JsonArray array = new JsonArray(); values.forEach(array::add); return array; }
 }

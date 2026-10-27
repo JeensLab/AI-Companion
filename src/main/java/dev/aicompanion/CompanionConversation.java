@@ -7,16 +7,16 @@ import java.util.Set;
 
 /** Local admission/deduplication policy, shared by the client and deterministic tests. No model call to decide to talk. */
 public final class CompanionConversation {
-    public static final int MIN_GAP = 20 * 180, MAX_GAP = 20 * 300;
-    /** An open question waits this long for an answer; then he lets it go, and the next topic of his own waits longer. */
-    public static final int ANSWER_WAIT = 20 * 180;
+    public static final int MIN_GAP = 20 * 60, MAX_GAP = 20 * 120;
+    public static final int MIN_PAUSE = 20 * 15, MAX_PAUSE = 20 * 30;
+    public static final int ANSWER_WAIT = 20 * 90;
     /** What is going on sets how soon he opens a topic of his own: never in a fight, soon on the road or in a mine. */
     public enum Scene { FIGHT, TRAVEL, MINE, IDLE, WORK }
     private long nextOpportunity;
     private long quietUntil;
     private boolean awaitingAnswer;
-    private long askedAt;
-    private int ignored;
+    private long answerUntil;
+    private boolean unansweredQuestion;
     private long lastActivity;
     private int windowJitter;
     private long revision;
@@ -31,32 +31,32 @@ public final class CompanionConversation {
         // Idle for a long while is when a friend starts talking; a minute of standing still is not yet.
         return working || idleTicks < 20 * 60 ? Scene.WORK : Scene.IDLE;
     }
-    /** Silence before a topic of his own, from the last word of anyone: the scene's minimum up to twice that. */
+    /** Silence before a topic of his own, from the last word of anyone: the scene's minimum and up to a minute more. */
     public static int topicGap(Scene scene, int jitter) {
         int minimum = switch (scene) {
             case FIGHT -> Integer.MAX_VALUE;
             case TRAVEL -> 20 * 60;
             case MINE -> 20 * 75;
             case IDLE -> 20 * 90;
-            case WORK -> MIN_GAP;
+            // At work the work itself gives remarks every one to two minutes; a topic of his own comes rarely.
+            case WORK -> 20 * 180;
         };
-        return scene == Scene.FIGHT ? minimum : minimum + Math.floorMod(jitter, Math.min(minimum, MAX_GAP - MIN_GAP) + 1);
+        return scene == Scene.FIGHT ? minimum : minimum + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1);
     }
-    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; ignored = 0; observation = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
+    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; unansweredQuestion = false; answerUntil = 0; observation = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
     // Normal conversation needs a short pause, not another full initiative interval after every answer.
-    public void activity(long now, int jitter) { revision++; quietUntil = now + 20 * 45 + Math.floorMod(jitter, 601); lastActivity = now; windowJitter = jitter; }
-    public void playerMessage(long now, int jitter) { awaitingAnswer = false; ignored = 0; activity(now, jitter); }
-    public boolean ready(long now) { return now >= nextOpportunity && now >= quietUntil && !awaiting(now); }
-    public boolean awaitingAnswer() { return awaitingAnswer; }
-    private boolean awaiting(long now) { return awaitingAnswer && now - askedAt < ANSWER_WAIT; }
-    /** Each topic left without an answer stretches the pause before the next one, up to three times; any answer resets it. */
-    public boolean topicReady(long now, Scene scene) {
-        if (scene == Scene.FIGHT || awaiting(now) || now < quietUntil) return false;
-        int unanswered = Math.min(2, ignored + (awaitingAnswer ? 1 : 0));
-        return now >= lastActivity + (long) topicGap(scene, windowJitter) * (1 + unanswered);
+    public void activity(long now, int jitter) { revision++; quietUntil = now + MIN_PAUSE + Math.floorMod(jitter, MAX_PAUSE - MIN_PAUSE + 1); lastActivity = now; windowJitter = jitter; }
+    public void playerMessage(long now, int jitter) { awaitingAnswer = false; unansweredQuestion = false; activity(now, jitter); }
+    public boolean ready(long now) {
+        if (awaitingAnswer && now >= answerUntil) awaitingAnswer = false;
+        return now >= nextOpportunity && now >= quietUntil && !awaitingAnswer;
     }
-    /** A question nobody answered in time is let go and counted, so that he does not stay silent until the player speaks. */
-    private void settle(long now) { if (awaitingAnswer && !awaiting(now)) { awaitingAnswer = false; ignored = Math.min(2, ignored + 1); } }
+    public boolean awaitingAnswer() { return awaitingAnswer; }
+    public boolean canAskQuestion() { return !unansweredQuestion; }
+    /** His own topic waits for the scene's silence; never in a fight, nor over a question the player has not answered. */
+    public boolean topicReady(long now, Scene scene) {
+        return scene != Scene.FIGHT && canAskQuestion() && now >= lastActivity + topicGap(scene, windowJitter);
+    }
     public long nextOpportunity() { return nextOpportunity; }
     public long revision() { return revision; }
     public void trackObservation(int serial) { observation = serial; }
@@ -67,7 +67,7 @@ public final class CompanionConversation {
         observation = serial;
         // Entity metadata can arrive a few client ticks ahead of the next world-time update.
         if (age < -20 || age > 400 || !safe || busy || !ready(now)) return false;
-        settle(now); nextOpportunity = now + gap(jitter); activity(now, jitter); return true;
+        nextOpportunity = now + gap(jitter); activity(now, jitter); return true;
     }
     public boolean acceptReply(long capturedRevision, String text, boolean safe, boolean busy) {
         return revision == capturedRevision && safe && !busy && !awaitingAnswer && text != null
@@ -92,12 +92,12 @@ public final class CompanionConversation {
         if (text == null || text.isBlank()) return;
         recent.addLast(normalize(text));
         while (recent.size() > 12) recent.removeFirst();
-        // A question remains open until an actual player message, or until he lets it go after ANSWER_WAIT.
-        if (text.contains("?")) { awaitingAnswer = true; askedAt = now; }
+        // Silence abandons the topic, never grants consent or invites another question.
+        if (text.contains("?")) { awaitingAnswer = true; unansweredQuestion = true; answerUntil = now + ANSWER_WAIT; }
         activity(now, jitter);
     }
     public void initiativeDelivered(String text, long now, int jitter) {
-        settle(now); delivered(text, now, jitter); nextOpportunity = now + gap(jitter);
+        delivered(text, now, jitter); nextOpportunity = now + gap(jitter);
     }
     static String normalize(String text) {
         return text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').replaceAll("[^\\p{L}\\p{N}]+", " ").strip();

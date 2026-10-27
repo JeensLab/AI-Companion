@@ -97,9 +97,10 @@ public final class CompanionLocalCommands {
     /** In a fight he does not chat: small talk gets FIGHT_HUSH, while orders and calls for help still reach him. */
     public static boolean hushed(boolean fighting, String text) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        // «Стой и жди» and «жди 10 секунд» are no local commands (« и », a digit), yet they are orders for the model.
         return fighting && !OpenRouterClient.requiresAction(text)
                 && !normalized.matches("(?sU).*(убей|убива|бей\\b|атак|мочи\\b|защищ|прикр|помоги|помогай|спаси|беги|отойди|отступ|назад|уходи|сюда|ко мне|за мной|"
-                        + "лечись|поешь|съешь|осторожн|сзади|крипер|скелет|зомби|паук|\\bмоб|монстр).*");
+                        + "\\b(по)?стой\\b|\\b(подо)?жди\\b|не двигайся|замри|останься|лечись|поешь|съешь|осторожн|сзади|крипер|скелет|зомби|паук|\\bмоб|монстр).*");
     }
 
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {

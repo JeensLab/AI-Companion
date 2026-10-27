@@ -79,6 +79,7 @@ public final class CompanionChatScreen extends Screen {
                 }
                 replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
                 CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", reply.text());
+                dev.aicompanion.CompanionSoulFiles.said(reply.text());
                 CompanionAmbientClient.replyDelivered(reply.text());
                 if (reply.actions().isEmpty()) dev.aicompanion.CompanionSoulFiles.soul().talked();
                 if (!reply.actions().isEmpty()) {

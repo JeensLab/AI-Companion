@@ -103,7 +103,7 @@ final class CompanionAmbientClient {
     static void tick() {
         var client = Minecraft.getInstance();
         if (client.level != world) {
-            world = client.level; companion = null; pending = false; lastSpot = null; idleSince = now();
+            world = client.level; companion = null; pending = false; lastSpot = null; travelUntil = 0; idleSince = now();
             conversation.reset(now(), jitter());
         }
         reflect();
@@ -120,6 +120,8 @@ final class CompanionAmbientClient {
             if (conversation.topicReady(now(), scene) && !busy() && safe(speaker) && !OpenRouterConfig.API_KEY.get().isBlank()) raiseTopic(scene);
             return;
         }
+        // The analysis of a talk holds the background slot: an event waits for it instead of being taken and lost.
+        if (reflecting) return;
         if (!conversation.takeObservation(current, now() - speaker.socialTime(), now(), safe(speaker),
                 busy(), jitter())) return;
         pending = true;

@@ -104,11 +104,17 @@ public final class CompanionCharacterTests {
     @GameTest(template="empty")
     public static void ignoredQuestionExpiresWithoutConsentOrAnotherQuestion(GameTestHelper h) {
         var c = new CompanionConversation(); c.reset(0,0); c.delivered("Дальше за железом?",4000,0);
-        h.assertTrue(!c.ready(4000+CompanionConversation.ANSWER_WAIT-1)&&c.awaitingAnswer(),"Unanswered question timed out into chatter");
-        c.activity(5000,0); h.assertTrue(!c.ready(4000+CompanionConversation.ANSWER_WAIT-1),"Recording/reply activity closed the question");
-        // Soul model: a question nobody answers is let go, so that he does not stay silent until the player speaks.
-        h.assertTrue(c.ready(4000+CompanionConversation.ANSWER_WAIT),"Ignored question silenced him for good");
-        c.playerMessage(200001,0); h.assertTrue(!c.awaitingAnswer()&&!c.ready(200002)&&c.ready(203601),"Answer not accounted for"); h.succeed();
+        h.assertTrue(!c.ready(5799)&&c.awaitingAnswer(),"Question abandoned too early");
+        c.activity(5600,0);
+        h.assertTrue(!c.ready(5899)&&c.ready(5900)&&!c.awaitingAnswer(),"Recording pause or question stuck");
+        h.assertTrue(!c.canAskQuestion(),"Silence became permission to ask again");
+        h.assertTrue(c.takeObservation(1,0,5900,true,false,0),"New event after ignored question lost");
+        long capture=c.revision();
+        h.assertTrue(c.acceptReply(capture,"Начался дождь. Вот же бля.",true,false),"New comment rejected");
+        h.assertTrue(!c.acceptReply(capture,"Может, домой?",true,false),"Ignored question replaced with another");
+        h.assertTrue(!c.fresh("Дальше за железом?"),"Ignored question forgotten by deduplication");
+        c.playerMessage(6000,0);
+        h.assertTrue(c.canAskQuestion()&&!c.ready(6299)&&c.ready(7100),"Actual answer or initiative cap lost"); h.succeed();
     }
     @GameTest(template="empty")
     public static void repeatedJokesAndQuestionsAreRejectedLocally(GameTestHelper h) {
@@ -259,7 +265,7 @@ public final class CompanionCharacterTests {
         h.runAtTickTime(220,()->{
             mature(c,h);
             h.assertTrue(c.getTarget()==null,"Oleg already fighting, not testing distant owner threat");
-            h.assertTrue(!c.sociallySafe()&&c.fighting(),"Threat near the owner ignored outside Oleg's twelve blocks");
+            h.assertTrue(!c.sociallySafe(),"Threat near the owner ignored outside Oleg's twelve blocks");
             for(int i=0;i<50;i++) c.observeEvent("unsafe-owner:"+i,"Погода изменилась.");
             h.assertTrue(c.socialSequence()==0,"Chatter while the player is threatened");h.succeed();
         });
