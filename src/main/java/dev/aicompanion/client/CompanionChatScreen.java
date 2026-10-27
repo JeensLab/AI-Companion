@@ -55,6 +55,7 @@ public final class CompanionChatScreen extends Screen {
         // and «ещё отвечает на прошлую просьбу… сделает следом» says so, as for voice.
         input.setValue("");
         addLine(Component.literal("Ты: " + text).withStyle(ChatFormatting.WHITE));
+        dev.aicompanion.CompanionSoulFiles.heard(text);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         String action = companionAction(text);
@@ -63,6 +64,7 @@ public final class CompanionChatScreen extends Screen {
             runLocalCommand(action, trace);
             return;
         }
+        if (hushInFight(text, trace)) return;
         addLine(Component.literal("...").withStyle(ChatFormatting.GRAY));
         announceThinking(OpenRouterClient.isBusy());
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
@@ -78,6 +80,7 @@ public final class CompanionChatScreen extends Screen {
                 replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
                 CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", reply.text());
                 CompanionAmbientClient.replyDelivered(reply.text());
+                if (reply.actions().isEmpty()) dev.aicompanion.CompanionSoulFiles.soul().talked();
                 if (!reply.actions().isEmpty()) {
                     long executionGeneration = actionGeneration(reply.actions(), planGeneration, trace);
                     CompanionActionExecutor.execute(reply.actions(), executionGeneration, trace).whenComplete((actionReport, actionError) ->
@@ -142,6 +145,7 @@ public final class CompanionChatScreen extends Screen {
     private static void sendVoiceMessage(String text, String trace) {
         Minecraft minecraft = Minecraft.getInstance();
         CompanionAmbientClient.playerMessage();
+        dev.aicompanion.CompanionSoulFiles.heard(text);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         String action = companionAction(text);
@@ -150,6 +154,7 @@ public final class CompanionChatScreen extends Screen {
             runLocalCommand(action, trace);
             return;
         }
+        if (hushInFight(text, trace)) return;
 
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
@@ -168,6 +173,7 @@ public final class CompanionChatScreen extends Screen {
                 return;
             }
             addVoiceReply(reply.text(), trace, "model");
+            if (reply.actions().isEmpty()) dev.aicompanion.CompanionSoulFiles.soul().talked();
             if (!reply.actions().isEmpty()) {
                 long executionGeneration = actionGeneration(reply.actions(), planGeneration, trace);
                 CompanionActionExecutor.execute(reply.actions(), executionGeneration, trace).whenComplete((report, actionError) -> minecraft.execute(() -> {
@@ -214,6 +220,7 @@ public final class CompanionChatScreen extends Screen {
 
     private static void addVoiceReply(String text, String trace, String source) {
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
+        dev.aicompanion.CompanionSoulFiles.said(text);
         if ("autonomous".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
         else CompanionAmbientClient.replyDelivered(text);
         Minecraft minecraft = Minecraft.getInstance();
@@ -240,6 +247,16 @@ public final class CompanionChatScreen extends Screen {
     public static void autonomousReply(String text, String trace) {
         OpenRouterClient.recordSpokenLine(text);
         addVoiceReply(text, trace, "autonomous");
+    }
+
+    /** A fight is no time to chat: small talk gets a short brush-off without a model request; orders still go through. */
+    private static boolean hushInFight(String text, String trace) {
+        var speaker = CompanionVoiceAudio.speaker();
+        if (!CompanionLocalCommands.hushed(speaker != null && speaker.fighting(), text)) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_fight_hush");
+        OpenRouterClient.recordLocalExchange(text, CompanionLocalCommands.FIGHT_HUSH);
+        addVoiceReply(CompanionLocalCommands.FIGHT_HUSH, trace, "fight_hush");
+        return true;
     }
 
     private static void replyWithName(String userText, String trace) {

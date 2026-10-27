@@ -88,6 +88,8 @@ final class CompanionSocial {
         var expression = owner.expressions.update(owner.level().getGameTime(), danger, combat,
                 owner.hasActiveWorkOrder() || owner.isMiningAnimation() || owner.actionAnimation() != 0);
         owner.getEntityData().set(CompanionEntity.DATA_EXPRESSION, expression.ordinal());
+        // A hunt for meat is no fight; a monster he fights or one in sight of either of them is.
+        owner.getEntityData().set(CompanionEntity.DATA_FIGHTING, combat && owner.getTarget() instanceof Monster || owner.nearbySocialThreat);
         owner.getEntityData().set(CompanionEntity.DATA_SOCIAL_SAFE, !danger && !combat && !owner.nearbySocialThreat && owner.tickCount - owner.lastHurtTick > 200
                 && (owner.getOwnerPlayer() == null || owner.getOwnerPlayer().getHealth() > 8 && owner.getOwnerPlayer().hurtTime == 0));
     }
