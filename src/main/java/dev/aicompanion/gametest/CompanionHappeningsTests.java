@@ -411,14 +411,15 @@ public final class CompanionHappeningsTests {
                 long captured = (bits & 8) != 0 ? asked : asked + 1;
                 h.assertTrue(say.acceptReply(captured, text, safe, busy, urgent) == acceptedBeforeRejection(say, true, captured, text, safe, busy, urgent)
                         && say.acceptReply(captured, text, safe, busy) == acceptedBeforeRejection(say, true, captured, text, safe, busy, false),
-                        "acceptReply differs from the rule it had before rejection(): " + bits + " " + text);
+                        "acceptReply differs from the written-out admission rule: " + bits + " " + text);
             }
         }
         // Silence ends the wait for an answer, never the ban on asking again.
         say.ready(200 + dev.aicompanion.CompanionConversation.ANSWER_WAIT);
         h.assertTrue(!say.awaitingAnswer() && !say.canAskQuestion(), "Silence did not end the wait, or it reopened the question");
         h.assertTrue("unanswered_question".equals(say.rejection(say.revision(), "Ты где?", true, false, false))
-                && say.rejection(say.revision(), "Идём дальше", true, false, false).isEmpty(), "An unanswered question must refuse only a new question");
+                && say.rejection(say.revision(), "Идём дальше", true, false, false).isEmpty()
+                && say.rejection(say.revision(), "Ты где?", true, false, true).isEmpty(), "An unanswered question must refuse only a new ordinary question");
         h.succeed();
     }
 
@@ -443,12 +444,12 @@ public final class CompanionHappeningsTests {
         });
     }
 
-    /** The admission rule as it was written out before {@code rejection()} existed: the reference {@code acceptReply} must keep agreeing with. */
+    /** The admission rule written out as one condition, apart from the order of checks in {@code rejection()}: {@code acceptReply} must keep agreeing with it. */
     private static boolean acceptedBeforeRejection(dev.aicompanion.CompanionConversation say, boolean awaitingAnswer, long capturedRevision,
                                                    String text, boolean safe, boolean busy, boolean urgent) {
         return capturedRevision == say.revision() && safe && !busy && (urgent || !awaitingAnswer) && text != null
                 && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1
-                && (say.canAskQuestion() || !text.contains("?")) && say.fresh(text);
+                && (urgent || say.canAskQuestion() || !text.contains("?")) && say.fresh(text);
     }
 
     private static void session(ServerPlayer player, CompanionEntity companion, int slot) {

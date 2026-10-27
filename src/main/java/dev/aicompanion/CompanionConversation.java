@@ -100,7 +100,8 @@ public final class CompanionConversation {
         if (text == null || normalize(text).isBlank()) return "empty";
         if (text.length() > 260) return "too_long";
         if (text.chars().filter(c -> c == '?').count() > 1) return "too_many_questions";
-        if (!canAskQuestion() && text.contains("?")) return "unanswered_question";
+        // An ignored question must not silence an urgent line either; its prompt still asks it to ask none.
+        if (!urgent && !canAskQuestion() && text.contains("?")) return "unanswered_question";
         return fresh(text) ? "" : "repeat";
     }
 

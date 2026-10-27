@@ -62,7 +62,8 @@ final class CompanionSocial {
         String fact = urgent.step(now, heard, sociallySafe());
         if (fact == null) return;
         CompanionDiagnostics.event("", "urgent_released", "key", urgentKey);
-        socialEvent(CompanionConversation.URGENT_MARK + fact);
+        // Through emit(): the ordinary pacing restarts, so no ordinary topic overwrites this line within the same tick.
+        emit(CompanionConversation.URGENT_MARK + fact);
     }
     void tick() {
         tickUrgent();
