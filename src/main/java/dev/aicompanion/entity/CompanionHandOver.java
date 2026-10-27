@@ -15,9 +15,11 @@ import net.minecraft.world.level.pathfinder.Path;
 
 final class CompanionHandOver {
     final CompanionWork w;
-    /** Where the walk in legs last gave up, and in which order: a new walk is tried only from elsewhere. */
+    /** Where a walk in legs gave up without a single leg, and in which order: a new walk is tried only from elsewhere. */
     private BlockPos legsFailedAt;
-    private long legsFailedTask;
+    private long legsTask = -1;
+    /** The walk in legs went at least one leg in this order since it was last reset. */
+    private boolean legsWalked;
 
     CompanionHandOver(CompanionWork w) { this.w = w; }
 
@@ -36,25 +38,36 @@ final class CompanionHandOver {
         for (int slot = 0; slot < w.owner.getContainerSize(); slot++) if (giftMatches(w.owner.getItem(slot))) carried += w.owner.getItem(slot).getCount();
         if (giftMatches(w.owner.getMainHandItem())) carried += w.owner.getMainHandItem().getCount();
         if (carried == 0) { w.finish(false, "У меня нет того, что нужно отдать."); return; }
+        if (legsTask != w.taskId) { legsTask = w.taskId; legsFailedAt = null; legsWalked = false; }
         w.owner.movementIntent(player.blockPosition());
         w.owner.getLookControl().setLookAt(player, 30, 30);
         if (w.owner.distanceToSqr(player) > 3.2 * 3.2 || !w.owner.hasLineOfSight(player)) {
-            // Down a mine the pathfinder has no way up (game 28.10: no leg at all, the hand-over gave up in a second): the self-rescue
-            // cuts steps up first, as it did there the day before, and the walk goes on from where it ends.
-            if (w.owner.isSelfRescuing()) { w.owner.workStatus("Выбираюсь наверх, несу тебе вещи."); return; }
+            boolean walking = w.owner.travel().goal() != null;
+            // In a jump the leg stays as it is: the direct path below would replace it (CompanionEntityGoals, FollowPlayerGoal).
+            if (walking && !w.owner.onGround() && !w.owner.isInWater()) return;
             // Far off, or no whole way to him from here (a wall between): in legs round walls and ridges, like «иди ко мне»
             // (CompanionWork.returnToPlayer). A short search would give up while the way round is longer than it walks.
+            // While the legs go, the direct path is not searched for every tick.
             boolean far = w.owner.distanceToSqr(player) > 32 * 32;
-            Path route = far ? null : w.owner.getNavigation().createPath(player, 1);
-            boolean elsewhere = legsFailedAt == null || legsFailedTask != w.taskId || !legsFailedAt.closerThan(w.owner.blockPosition(), 3);
-            if (elsewhere && (far || route == null || !route.canReach()) && (w.owner.onGround() || w.owner.isInWater())) {
+            Path route = far || walking ? null : w.owner.getNavigation().createPath(player, 1);
+            boolean elsewhere = legsFailedAt == null || !legsFailedAt.closerThan(w.owner.blockPosition(), 3);
+            if ((walking || elsewhere && (far || route == null || !route.canReach())) && (w.owner.onGround() || w.owner.isInWater())) {
                 var step = w.owner.travel().follow(player.blockPosition(), far ? 24 : 3);
-                if (step == CompanionTravel.Step.WALKING) { w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
+                if (step == CompanionTravel.Step.WALKING) { legsWalked = true; w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
                 w.owner.travel().reset();
                 w.owner.movementIntent(player.blockPosition());
-                // No leg from here, or half a minute without coming closer: the direct try below, with the self-rescue, and the stop
-                // only when he stands still.
-                if (step == CompanionTravel.Step.FAILED) { legsFailedAt = w.owner.blockPosition(); legsFailedTask = w.taskId; }
+                boolean walked = legsWalked;
+                legsWalked = false;
+                // Legs that went and then stood half a minute without coming closer: the end (the player is out of reach, like behind
+                // a closed wall); circling «legs, direct, legs» to the deadline helped no one.
+                if (step == CompanionTravel.Step.FAILED && walked) {
+                    w.finish(false, "Не смог к тебе подойти: полминуты не мог подойти ближе, остановился на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
+                    return;
+                }
+                // No leg at all from here (down a mine, game 28.10): the direct try below, where the self-rescue cuts steps up first
+                // (it takes the walk over while the work waits: the hand-over does not give up at once without a leg); new legs only
+                // from another spot.
+                if (step == CompanionTravel.Step.FAILED) legsFailedAt = w.owner.blockPosition();
             }
             if (w.orderHasStalled(level, 240)) { w.finish(false, "Не смог к тебе подойти, вещи остались у меня."); return; }
             w.owner.workStatus("Несу тебе вещи.");
@@ -62,6 +75,7 @@ final class CompanionHandOver {
             if (route != null && route.getNodeCount() > 1) CompanionMiningNavigation.walk(w.owner, route); else if (w.owner.onGround() && !w.owner.isInWater()) w.owner.getNavigation().stop();
             return;
         }
+        if (w.owner.travel().goal() != null) w.owner.travel().reset();
         w.owner.getNavigation().stop();
         int left = Math.min(w.requestedCount, carried), given = 0;
         ItemStack shown = ItemStack.EMPTY;

@@ -185,7 +185,7 @@ public final class CompanionPlanRecoveryTests {
         });
     }
 
-    /** A step that fails and is planned again without any gain stops the order with its own reason. */
+    /** A step that fails twice in a row without any gain stops the order with its own reason. */
     @GameTest(template = "empty", timeoutTicks = 100)
     public static void obtainStopsWhenTheSameStepFailsWithoutGain(GameTestHelper h) {
         var port = new BagPort();
@@ -193,7 +193,7 @@ public final class CompanionPlanRecoveryTests {
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.equals(List.of("mine_ore:2")) && outcome.report().contains("План остановлен: Руды рядом нет.")
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "mine_ore:2")) && outcome.report().contains("План остановлен: Руды рядом нет.")
                     && outcome.skipped().stream().noneMatch(a -> a.type().equals("mine_ore")), port.calls + " " + outcome);
         });
     }
@@ -208,7 +208,7 @@ public final class CompanionPlanRecoveryTests {
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET, equip, follow), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "follow:1")) && outcome.skipped().equals(List.of(OBTAIN_HELMET, equip))
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "mine_ore:2", "follow:1")) && outcome.skipped().equals(List.of(OBTAIN_HELMET, equip))
                     && outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: Руды рядом нет.") && !outcome.report().contains("План остановлен")
                     && outcome.report().endsWith(CompanionDialogue.SKIPPED_PREFIX + CompanionDialogue.describeAll(List.of(OBTAIN_HELMET, equip))), port.calls + " " + outcome);
             String said = CompanionDialogue.summarize(List.of(OBTAIN_HELMET, equip, follow), outcome.report());
@@ -226,7 +226,7 @@ public final class CompanionPlanRecoveryTests {
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET, follow, later, later), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "follow:1")) && outcome.report().contains("План остановлен: Не пошёл.")
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "mine_ore:2", "follow:1")) && outcome.report().contains("План остановлен: Не пошёл.")
                     && outcome.skipped().contains(later), port.calls + " " + outcome);
         });
     }
@@ -239,12 +239,12 @@ public final class CompanionPlanRecoveryTests {
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1")) && outcome.report().contains("План остановлен: Деревьев рядом нет."),
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1", "gather_wood:1")) && outcome.report().contains("План остановлен: Деревьев рядом нет."),
                     port.calls + " " + outcome);
         });
     }
 
-    /** A step that succeeds and changes nothing is not repeated: the plan is the same as before it, so the order stops with its message. */
+    /** A step that succeeds and changes nothing twice in a row stops the order, with a reason of its own, not the success message. */
     @GameTest(template = "empty", timeoutTicks = 100)
     public static void obtainStopsWhenASuccessfulStepChangesNothing(GameTestHelper h) {
         var port = new BagPort();
@@ -252,7 +252,64 @@ public final class CompanionPlanRecoveryTests {
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.equals(List.of("mine_ore:2")) && outcome.report().contains("План остановлен: Ничего."), port.calls.size() + " " + outcome);
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "mine_ore:2")) && outcome.report().contains("План остановлен: Два раза подряд ничего не прибавилось."), port.calls.size() + " " + outcome);
+        });
+    }
+
+    /** Game 28.10 idea: a cow that drops no leather is a successful step with an unchanged bag; one such step must not give the part up. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainGoesOnAfterOneStepThatGainedNothing(GameTestHelper h) {
+        var port = new BagPort();
+        port.mineGainsNothingOnce = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.size() >= 2 && port.calls.subList(0, 2).equals(List.of("mine_ore:2", "mine_ore:2")) && port.helmets == 1 && outcome.skipped().isEmpty()
+                    && !outcome.report().contains("План остановлен"), port.calls + " " + outcome);
+        });
+    }
+
+    /** A step that gains nothing, a step that gains, and a step that gains nothing again are not «twice in a row». */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void aGainBetweenTwoEmptyStepsResetsTheCount(GameTestHelper h) {
+        var port = new BagPort();
+        port.need = 4;
+        port.emptyHalfEmpty = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.helmets == 1 && port.calls.subList(0, 4).equals(List.of("mine_ore:4", "mine_ore:4", "mine_ore:2", "mine_ore:2")) && outcome.skipped().isEmpty()
+                    && !outcome.report().contains("План остановлен"), port.calls + " " + outcome);
+        });
+    }
+
+    /** The last part given up is named too, with the reason once: no stop line, no «rest done». */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void theLastGivenUpPartIsNamedAndTheReasonSaidOnce(GameTestHelper h) {
+        var port = new BagPort();
+        port.neverMines = true;
+        var chest = new PlannedAction("obtain_item", 0, 1, "minecraft:iron_chestplate");
+        var plan = List.of(OBTAIN_HELMET, chest);
+        var future = CompanionPlanRunner.run(plan, port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            String said = CompanionDialogue.summarize(plan, outcome.report());
+            h.assertTrue(said.equals("Не вышло: «" + CompanionDialogue.itemName("minecraft:iron_helmet") + "», «" + CompanionDialogue.itemName("minecraft:iron_chestplate")
+                    + "» — больше доступной руды поблизости не нашёл."), port.calls + " " + outcome + " | " + said);
+            // A single obtain that fails stays the old stop line.
+            h.assertTrue(!outcome.report().startsWith("План остановлен"), outcome.report());
+        });
+    }
+
+    /** One obtain alone that fails is the old single stop line, without a given-up line before it. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void aSingleFailedObtainIsStillOneStopLine(GameTestHelper h) {
+        var port = new BagPort();
+        port.neverMines = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(!outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX) && outcome.report().contains("План остановлен: Руды рядом нет."), outcome.report());
         });
     }
 
@@ -306,7 +363,7 @@ public final class CompanionPlanRecoveryTests {
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1", "craft_item:1")) && port.expands == 4
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1", "craft_item:1", "craft_item:1")) && port.expands == 5
                     && outcome.report().contains("План остановлен: Не хватает материалов."), port.calls + " expands=" + port.expands + " " + outcome);
         });
     }
@@ -327,6 +384,26 @@ public final class CompanionPlanRecoveryTests {
         String late = CompanionDialogue.summarize(plan, report.replace("\n" + CompanionDialogue.SKIPPED_PREFIX, "\nПлан остановлен: Не хватает материалов.\n" + CompanionDialogue.SKIPPED_PREFIX));
         h.assertTrue(late.startsWith("На всё пока не хватает материалов.") && late.indexOf("Не вышло") > 0 && late.indexOf("Не вышло") < late.indexOf("«" + chest + "»") && late.contains("«" + legs + "»")
                 && !late.contains("x=10") && !late.contains("Пропустил") && late.length() <= 200, late);
+        h.succeed();
+    }
+
+    /** A refusal of the planner is said in the engine's own words, not as «С этим пока не справился»; at most two reasons, 200 characters. */
+    @GameTest(template = "empty")
+    public static void summarySaysThePlannersOwnRefusal(GameTestHelper h) {
+        var plan = List.of(new PlannedAction("obtain_item", 0, 1, "minecraft:iron_helmet"), new PlannedAction("follow", 0, 1));
+        String helmet = CompanionDialogue.itemName("minecraft:iron_helmet");
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: Не знаю, где взять «Нить».");
+        h.assertTrue(said.equals("Остальное сделал. Не вышло: «" + helmet + "» — не знаю, где взять «Нить»."), said);
+        String many = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: слишком много шагов ради одного предмета.");
+        h.assertTrue(many.contains("слишком много шагов ради одного предмета.") && !many.contains("не справился"), many);
+        String long_ = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: " + "Очень длинное объяснение без ключевых слов. ".repeat(4));
+        h.assertTrue(long_.contains("не справился"), long_);
+        String[] items = {"minecraft:iron_helmet", "minecraft:iron_chestplate", "minecraft:iron_leggings", "minecraft:iron_boots"};
+        String[] whys = {"Руды рядом больше нет.", "Не хватает материалов.", "Не знаю, где взять «Нить».", "Руды рядом больше нет."};
+        StringBuilder report = new StringBuilder();
+        for (int i = 0; i < items.length; i++) report.append(i > 0 ? "\n" : "").append(CompanionDialogue.PARTIAL_PREFIX).append("«").append(CompanionDialogue.itemName(items[i])).append("»: ").append(whys[i]);
+        String four = CompanionDialogue.summarize(plan, report.toString());
+        h.assertTrue(four.length() <= 200 && four.contains("руды") && four.contains("материалов") && !four.contains("Нить") && four.contains(CompanionDialogue.itemName(items[3])), four.length() + " " + four);
         h.succeed();
     }
 
@@ -401,6 +478,8 @@ public final class CompanionPlanRecoveryTests {
         final List<String> calls = new ArrayList<>();
         int logs, ingots, helmets;
         int need = 2, failGain = 1, expands;
+        boolean mineGainsNothingOnce, emptyHalfEmpty;
+        int mines;
         boolean logsAppearAfterOre, pickaxeEatsIngot, mineFailsOnce, neverMines, mineChangesNothing, noTrees, followFails, layoutDrifts, mineBlocked, craftShortage;
         @Override public String trace() { return "gametest-bag"; }
         @Override public boolean cancelled() { return false; }
@@ -444,6 +523,12 @@ public final class CompanionPlanRecoveryTests {
             if (mineBlocked) return CompanionActionResult.blocked("Дальше не пройти.");
             if (neverMines) return CompanionActionResult.failed("Руды рядом нет.");
             if (mineChangesNothing) return CompanionActionResult.ok("Ничего.");
+            if (mineGainsNothingOnce) { mineGainsNothingOnce = false; return CompanionActionResult.ok("Ничего не выпало."); }
+            if (emptyHalfEmpty) {
+                int n = mines++;
+                if (n == 0 || n == 2) return CompanionActionResult.ok("Ничего не выпало.");
+                if (n == 1) { ingots += count / 2; return CompanionActionResult.ok("Добыл часть."); }
+            }
             if (mineFailsOnce) { mineFailsOnce = false; ingots += failGain; return CompanionActionResult.failed("Руды рядом больше нет."); }
             ingots += count;
             if (logsAppearAfterOre) logs += 3;

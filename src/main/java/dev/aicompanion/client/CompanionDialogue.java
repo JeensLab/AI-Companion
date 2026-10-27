@@ -159,6 +159,8 @@ public final class CompanionDialogue {
         if (!failed.isEmpty()) {
             // Parts given up while the rest went on: the player hears what was not made and why, once, not the steps that went with it.
             if (!report.contains("План остановлен:")) return "Остальное сделал. " + failed;
+            // The plan stopped on the last part given up (same reason on the line before the stop): it is one «Не вышло», said once.
+            if (stoppedOnLastPart(report)) return failed;
             String lower = report.toLowerCase(java.util.Locale.ROOT);
             String stopped = summarizeSteps(actions, report);
             return lower.contains("отменён") || lower.contains("остановки") ? stopped : stopped + " " + failed;
@@ -166,6 +168,18 @@ public final class CompanionDialogue {
         String spoken = summarizeSteps(actions, report);
         // Unstarted steps remain visible in Tasks. Reading them aloud turns one problem into a roll call.
         return spoken.isBlank() && !skipped.isEmpty() ? "Пока получилось выполнить только часть поручения." : spoken;
+    }
+
+    private static boolean stoppedOnLastPart(String report) {
+        String[] lines = report.split("\n");
+        for (int i = lines.length - 1; i > 0; i--) {
+            if (!lines[i].startsWith("План остановлен:")) continue;
+            String part = lines[i - 1];
+            String rest = part.startsWith(PARTIAL_PREFIX) ? part.substring(PARTIAL_PREFIX.length()) : "";
+            int end = rest.startsWith("«") ? rest.indexOf("»: ") : -1;
+            return end > 0 && rest.substring(end + 3).strip().equals(lines[i].substring("План остановлен:".length()).strip());
+        }
+        return false;
     }
 
     /** «Не вышло: «A», «B» — причина.» from the give-up lines of the report; empty if there are none. */
@@ -178,7 +192,11 @@ public final class CompanionDialogue {
             if (end > 0) { String name = rest.substring(0, end + 1); if (!names.contains(name)) names.add(name); rest = rest.substring(end + 3); }
             // Only ore digging speaks of ore: an unsafe route to it is said as ore out of reach, not as a lost way (game 27.10).
             String why = dev.aicompanion.CompanionFailureMessages.explain(rest.contains("руд") ? "mine_ore" : "", rest);
-            if (!whys.contains(why)) whys.add(why);
+            // The engine's own words for a reason that has no kind (a planner's refusal, «Два раза подряд ничего не прибавилось.»), if short.
+            String own = dev.aicompanion.CompanionFailureMessages.primary(rest);
+            if (dev.aicompanion.CompanionFailureMessages.kind(rest) == dev.aicompanion.CompanionFailureMessages.Kind.OTHER && !own.isEmpty() && own.length() <= 100) why = own;
+            // Two reasons at most: four parts with three reasons ran over two hundred characters.
+            if (!whys.contains(why) && whys.size() < 2) whys.add(why);
         }
         if (whys.isEmpty()) return "";
         if (names.isEmpty()) return "Часть не вышла: " + String.join(" ", whys);

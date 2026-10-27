@@ -154,6 +154,51 @@ public final class CompanionHandOverTests {
         h.succeed();
     }
 
+    /** Every stop of a hand-over says the things are still with him: «can't see you» and the stall in «Несу тебе вещи» included. */
+    @GameTest(template = "empty")
+    public static void everyHandOverStopSaysItemsAreStillWithHim(GameTestHelper h) {
+        var steps = List.of(new PlannedAction("give_items", 0, 2, "minecraft:iron_helmet"));
+        String seen = dev.aicompanion.client.CompanionDialogue.summarize(steps, "План остановлен: Не вижу тебя рядом, отдать не могу.");
+        h.assertTrue(seen.equals("Не вижу тебя рядом, вещи остались у меня."), seen);
+        String stalled = dev.aicompanion.client.CompanionDialogue.summarize(steps,
+                "План остановлен: Полторы минуты стоял без продвижения: «Несу тебе вещи». Остановился, вещи у меня.");
+        h.assertTrue(stalled.contains("вещи остались у меня") && !stalled.contains("не справился"), stalled);
+        // Other messages keep their kind.
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind("Не вижу тебя в этом измерении.") == dev.aicompanion.CompanionFailureMessages.Kind.OTHER, "dimension");
+        h.succeed();
+    }
+
+    /**
+     * The player is shut in a bedrock box 50 blocks off. The walk in legs gets up to the wall and stands there: that is the end, not a
+     * reason to start the walk again from another spot until the ten-minute deadline (review of 28.10).
+     */
+    @GameTest(template = "large_search", timeoutTicks = 2400)
+    public static void handOverToAnUnreachablePlayerEndsAfterTheLegsGiveUp(GameTestHelper h) {
+        for (int x = 0; x < 128; x++) for (int z = 0; z < 128; z++) {
+            h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+            boolean wall = x >= 59 && x <= 69 && z >= 109 && z <= 119 && !(x >= 60 && x <= 68 && z >= 110 && z <= 118);
+            boolean roof = x >= 59 && x <= 69 && z >= 109 && z <= 119;
+            for (int y = 1; y <= 4; y++) if (wall) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
+            if (roof) h.setBlock(new BlockPos(x, 5, z), Blocks.BEDROCK);
+        }
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 64, 1, 64);
+        var player = h.makeMockServerPlayerInLevel();
+        BlockPos stand = h.absolutePos(new BlockPos(64, 1, 114));
+        player.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        companion.setOwnerId(player.getUUID());
+        player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
+        CompanionEvents.getOwnedCompanion(player);
+        companion.setSearchRadius(60);
+        companion.setItem(0, new ItemStack(Items.IRON_HELMET, 2));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "give_items", "minecraft:iron_helmet", 2).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isWorking(), "Still walking: " + companion.getLastTaskResult());
+            h.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Не смог к тебе подойти"), companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.IRON_HELMET) == 2, "Helmets left him");
+        });
+    }
+
     /** Game log 22.10: "put the stone sword in the chest" also put away the sword Oleg uses himself. */
     @GameTest(template = "tall_tree", timeoutTicks = 500)
     public static void storingANamedToolMovesOnlyTheRequestedOne(GameTestHelper h) {

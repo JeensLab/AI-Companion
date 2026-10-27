@@ -19,6 +19,8 @@ import java.util.concurrent.CompletableFuture;
 public final class CompanionPlanRunner {
     public static final int MAX_RECOVERIES = 2;
     public static final int IDLE_WAIT_SECONDS = 20;
+    /** In a row, steps of one obtain_item after which the bag layout is unchanged: the second one gives the part up. */
+    private static final int NO_GAIN_LIMIT = 2;
     /** Steps run for one obtain_item, replans included: twice the longest chain the planner gives (CompanionObtain.MAX_STEPS). */
     public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
@@ -103,7 +105,7 @@ public final class CompanionPlanRunner {
             }
             run.plan.remove(index);
             run.plan.addAll(index, expansion.steps());
-            run.obtain = action; run.obtainEnd = index + expansion.steps().size(); run.obtainSteps = 0;
+            run.obtain = action; run.obtainEnd = index + expansion.steps().size(); run.obtainSteps = 0; run.noGain = 0; run.noGainFailure = null;
             return step(run, index, run.plan.get(index), false);
         });
         // Pillar descent, loot pickup and similar tails of the previous step end before the next order.
@@ -173,8 +175,12 @@ public final class CompanionPlanRunner {
         return port.expand(run.obtain).thenCompose(expansion -> {
             CompanionDiagnostics.event(port.trace(), "obtain_replanned", "step", index + 1, "action", run.obtain, "steps", expansion.steps(), "refusal", expansion.refusal());
             if (expansion.refusal() != null) return giveUpObtain(run, index, expansion.refusal());
-            // The same steps as before the one that just ran: it gained nothing, success or not.
-            if (before != null && before.equals(expansion.steps())) return giveUpObtain(run, index, message);
+            // The same steps as before the one that just ran: it gained nothing, success or not. One such step may be chance (a cow that
+            // dropped no leather); the same twice in a row is given up, with the failure's own message or, if both succeeded, a reason of ours.
+            if (before != null && before.equals(expansion.steps())) {
+                if (failed) run.noGainFailure = message;
+                if (++run.noGain >= NO_GAIN_LIMIT) return giveUpObtain(run, index, run.noGainFailure != null ? run.noGainFailure : "Два раза подряд ничего не прибавилось.");
+            } else { run.noGain = 0; run.noGainFailure = null; }
             if (run.obtainSteps >= MAX_OBTAIN_STEPS)
                 return giveUpObtain(run, index, failed ? message : "слишком много шагов ради одного предмета.");
             run.plan.subList(Math.min(index, run.plan.size()), Math.min(run.obtainEnd, run.plan.size())).clear();
@@ -196,10 +202,13 @@ public final class CompanionPlanRunner {
         List<PlannedAction> same = new ArrayList<>();
         for (int i = run.plan.size() - 1; i >= from; i--)
             if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item())) same.addFirst(run.plan.remove(i));
+        boolean earlier = !run.dropped.isEmpty();
         run.dropped.add(obtain);
         run.dropped.addAll(same);
         boolean goesOn = from < run.plan.size();
         String name = obtain.item() == null ? "" : "«" + CompanionDialogue.itemName(obtain.item()) + "»: ";
+        // The last part of a plan that gave parts up before is named too (the stop line follows with the same reason, said once by CompanionDialogue).
+        if (!goesOn && earlier) run.reports.add(CompanionDialogue.PARTIAL_PREFIX + name + reason);
         run.reports.add((goesOn ? CompanionDialogue.PARTIAL_PREFIX + name : "План остановлен: ") + reason);
         return step(run, from, goesOn ? run.plan.get(from) : null, false);
     }
@@ -231,7 +240,9 @@ public final class CompanionPlanRunner {
         List<PlannedAction> before;
         boolean lastFailed;
         String lastMessage;
-        int obtainEnd, obtainSteps;
+        int obtainEnd, obtainSteps, noGain;
+        /** The last failure message among the no-gain steps in a row, if any of them failed. */
+        String noGainFailure;
         boolean replan;
         Run(List<PlannedAction> plan, Port port) { this.plan = new ArrayList<>(plan); this.port = port; }
 

@@ -14,7 +14,7 @@ public final class CompanionFailureMessages {
     public static Kind kind(String report) {
         String text = primary(report).toLowerCase(Locale.ROOT).replace('ё','е');
         if (text.contains("нет места") || text.contains("сумка заполнена") || text.contains("сумка забита")) return Kind.BAG;
-        if (text.contains("к тебе подойти")) return Kind.HANDOVER;
+        if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
@@ -40,7 +40,7 @@ public final class CompanionFailureMessages {
             case FOOD -> "Больше подходящей добычи поблизости не нашёл.";
             case PLACE -> "Здесь тесно, нужно место посвободнее.";
             case TIMEOUT -> "С этим затянулось. Пока отложу.";
-            case HANDOVER -> "Не дошёл до тебя, вещи остались у меня.";
+            case HANDOVER -> primary(report).toLowerCase(Locale.ROOT).contains("не вижу") ? "Не вижу тебя рядом, вещи остались у меня." : "Не дошёл до тебя, вещи остались у меня.";
             case OTHER -> "С этим пока не справился.";
         };
     }
