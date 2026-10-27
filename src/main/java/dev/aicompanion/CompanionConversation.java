@@ -7,21 +7,29 @@ import java.util.Set;
 
 /** Local admission/deduplication policy, shared by the client and deterministic tests. No model call to decide to talk. */
 public final class CompanionConversation {
-    public static final int MIN_GAP = 20 * 180, MAX_GAP = 20 * 300;
+    public static final int MIN_GAP = 20 * 60, MAX_GAP = 20 * 120;
+    public static final int MIN_PAUSE = 20 * 15, MAX_PAUSE = 20 * 30;
+    public static final int ANSWER_WAIT = 20 * 90;
     private long nextOpportunity;
     private long quietUntil;
     private boolean awaitingAnswer;
+    private long answerUntil;
+    private boolean unansweredQuestion;
     private long revision;
     private int observation;
     private final Deque<String> recent = new ArrayDeque<>();
 
     public static int gap(int jitter) { return MIN_GAP + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1); }
-    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; observation = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
+    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; unansweredQuestion = false; answerUntil = 0; observation = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
     // Normal conversation needs a short pause, not another full initiative interval after every answer.
-    public void activity(long now, int jitter) { revision++; quietUntil = now + 20 * 45 + Math.floorMod(jitter, 601); }
-    public void playerMessage(long now, int jitter) { awaitingAnswer = false; activity(now, jitter); }
-    public boolean ready(long now) { return now >= nextOpportunity && now >= quietUntil && !awaitingAnswer; }
+    public void activity(long now, int jitter) { revision++; quietUntil = now + MIN_PAUSE + Math.floorMod(jitter, MAX_PAUSE - MIN_PAUSE + 1); }
+    public void playerMessage(long now, int jitter) { awaitingAnswer = false; unansweredQuestion = false; activity(now, jitter); }
+    public boolean ready(long now) {
+        if (awaitingAnswer && now >= answerUntil) awaitingAnswer = false;
+        return now >= nextOpportunity && now >= quietUntil && !awaitingAnswer;
+    }
     public boolean awaitingAnswer() { return awaitingAnswer; }
+    public boolean canAskQuestion() { return !unansweredQuestion; }
     public long nextOpportunity() { return nextOpportunity; }
     public long revision() { return revision; }
     public void trackObservation(int serial) { observation = serial; }
@@ -36,7 +44,8 @@ public final class CompanionConversation {
     }
     public boolean acceptReply(long capturedRevision, String text, boolean safe, boolean busy) {
         return revision == capturedRevision && safe && !busy && !awaitingAnswer && text != null
-                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1 && fresh(text);
+                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1
+                && (canAskQuestion() || !text.contains("?")) && fresh(text);
     }
 
     public boolean fresh(String text) {
@@ -55,8 +64,8 @@ public final class CompanionConversation {
         if (text == null || text.isBlank()) return;
         recent.addLast(normalize(text));
         while (recent.size() > 12) recent.removeFirst();
-        // A question remains open until an actual player message, even if several minutes pass.
-        awaitingAnswer |= text.contains("?");
+        // Silence abandons the topic, never grants consent or invites another question.
+        if (text.contains("?")) { awaitingAnswer = true; unansweredQuestion = true; answerUntil = now + ANSWER_WAIT; }
         activity(now, jitter);
     }
     public void initiativeDelivered(String text, long now, int jitter) {
