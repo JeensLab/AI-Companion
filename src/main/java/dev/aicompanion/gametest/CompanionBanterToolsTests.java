@@ -154,6 +154,7 @@ public final class CompanionBanterToolsTests {
             h.assertTrue(h.getTick()>10,"Wait for the order");done(h,c);
             h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COBBLESTONE)==9,"Order short: "+count(c,Items.COBBLESTONE)+" cobblestone, hand="+c.getMainHandItem()+": "+c.getLastTaskResult());
             h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE)&&count(c,Items.WOODEN_PICKAXE)==1,"Carried stone not used for the upgrade");
+            h.assertTrue(c.getLastTaskResult().startsWith("Добыл 6 блоков камня: 3 по заказу и 3 взамен"),"Extra stone not explained: "+c.getLastTaskResult());
         });
     }
     @GameTest(template="tall_tree",timeoutTicks=900)

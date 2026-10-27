@@ -263,7 +263,13 @@ final class CompanionStoneMining {
             w.phase = w.afterStone != null ? w.afterStone : w.job == CompanionWork.Job.CRAFT || w.job == CompanionWork.Job.ORE ? CompanionWork.Phase.CRAFT : w.job == CompanionWork.Job.SMELT ? CompanionWork.Phase.FURNACE : CompanionWork.Phase.STORE;
             w.afterStone = null; w.resetTarget();
         }
-        else w.finish(true, "Добыл " + w.gathered + " блоков камня. В сумке: " + w.owner.getStoredItemsSummary() + ".");
+        else w.finish(true, mined() + ". В сумке: " + w.owner.getStoredItemsSummary() + ".");
+    }
+
+    /** More than ordered only to make up for the stone a tool took from the bag: said, so the larger number is no surprise. */
+    private String mined() {
+        int extra = w.wantedStone - w.requestedCount;
+        return "Добыл " + w.gathered + " блоков камня" + (extra > 0 ? ": " + w.requestedCount + " по заказу и " + extra + " взамен ушедших на инструмент" : "");
     }
 
     void exitMine(ServerLevel level) {
@@ -275,7 +281,7 @@ final class CompanionStoneMining {
         if (up) { w.owner.getNavigation().stop(); afterMining(); return; }
         if (w.orderHasStalled(level, 300)) {
             // Stone stays in the bag either way; report the position honestly instead of pretending to be out.
-            if (w.job == CompanionWork.Job.STONE) { w.finish(true, "Добыл " + w.gathered + " блоков камня, но наверх пока не выбрался: стою на "
+            if (w.job == CompanionWork.Job.STONE) { w.finish(true, mined() + ", но наверх пока не выбрался: стою на "
                     + w.owner.blockPosition().toShortString() + ". В сумке: " + w.owner.getStoredItemsSummary() + "."); return; }
             afterMining(); return;
         }
