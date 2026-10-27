@@ -129,9 +129,9 @@ final class CompanionGatherGoals {
             // On a pillar the hand alternates soil and axe per jump/swing by itself; forcing the axe every tick only flickered.
             // Game log 27.10: past the requested count he chopped the rest of a 32-log tree by hand. The axe for the rest
             // of the tree comes from logs beyond the request, so an unreachable crown or a lone tree never costs the order,
-            // and only while the tree still holds as many logs as the axe costs.
+            // and only while the tree still holds as many logs as the axe costs. The tree repays wood, so the axe is a wooden one.
             boolean spareWood = currentTreeLogs.size() >= AXE_WOOD && CompanionTools.count(c, ItemTags.LOGS) - inventoryTarget >= AXE_WOOD;
-            if ((c.logsRemaining > 0 || spareWood) && !c.temporaryPillar.isActive() && axeSense.tick()) { c.woodBreaking.reset(); return; }
+            if (!c.temporaryPillar.isActive() && (c.logsRemaining > 0 ? axeSense.tick() : spareWood && axeSense.tickWooden())) { c.woodBreaking.reset(); return; }
             if (c.logsRemaining > 0 && !c.temporaryPillar.isActive()) CompanionTools.equip(c, ItemTags.AXES, Blocks.OAK_LOG.defaultBlockState());
             if (target == null || !c.level().getBlockState(target).is(BlockTags.LOGS)) {
                 c.woodBreaking.reset();

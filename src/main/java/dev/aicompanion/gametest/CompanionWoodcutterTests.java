@@ -83,11 +83,13 @@ public final class CompanionWoodcutterTests {
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void axeIsMadeForTheRestOfTheTreeAfterTheTarget(GameTestHelper h) {
         CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); // the tree repays wood, not iron
         for (int x = 18; x <= 19; x++) for (int y = 1; y <= 3; y++) for (int z = 16; z <= 17; z++) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_LOG);
         companion.startGatheringLogs(1);
         h.succeedWhen(() -> {
             done(h, companion);
             h.assertTrue(companion.didLastTaskSucceed() && trunkLeft(h, 18, 16) + trunkLeft(h, 19, 16) + trunkLeft(h, 18, 17) + trunkLeft(h, 19, 17) == 0, companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.IRON_INGOT) == 3, "Iron spent on an axe nobody ordered: " + companion.getStoredItemsSummary());
             h.assertTrue(companion.getMainHandItem().is(Items.WOODEN_AXE) && companion.getMainHandItem().getDamageValue() > 0, "Rest of the tree chopped by hand: " + companion.getStoredItemsSummary());
             // Bench and axe come from 3 of the 12 logs: 12 planks less 4 for the bench, 3 for the head and 2 for 4 sticks.
             h.assertTrue(count(companion, Items.OAK_LOG) == 9 && count(companion, Items.OAK_PLANKS) == 3 && count(companion, Items.STICK) == 2
@@ -101,6 +103,20 @@ public final class CompanionWoodcutterTests {
         CompanionEntity companion = setup(h);
         for (int x = 18; x <= 19; x++) for (int y = 1; y <= 2; y++) for (int z = 16; z <= 17; z++) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_LOG);
         companion.startGatheringLogs(3);
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 8 && count(companion, Items.WOODEN_AXE) == 0
+                    && blocks(h, Blocks.CRAFTING_TABLE) == 0, companion.getLastTaskResult() + " Bag=" + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** Logs in the bag before the order are not spare: counted from the order alone, two of them would buy an axe for the last logs. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void carriedLogsAreNotSpentOnAnAxeAfterTheTarget(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 2)); // 8 planks: short of a bench and an axe while the log is owed
+        for (int x = 18; x <= 19; x++) for (int y = 1; y <= 3; y++) h.setBlock(new BlockPos(x, y, 16), Blocks.OAK_LOG);
+        companion.startGatheringLogs(1);
         h.succeedWhen(() -> {
             done(h, companion);
             h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 8 && count(companion, Items.WOODEN_AXE) == 0
