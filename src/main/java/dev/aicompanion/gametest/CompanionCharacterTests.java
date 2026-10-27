@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import com.google.gson.JsonObject;
 import dev.aicompanion.*;
+import dev.aicompanion.client.CompanionMouth;
 import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.entity.*;
 import net.minecraft.core.BlockPos;
@@ -226,6 +227,51 @@ public final class CompanionCharacterTests {
             }
             if(expression!=CompanionExpression.CALM&&changes<500) throw new AssertionError("Expression indistinct");
         }
+        h.succeed();
+    }
+    @GameTest(template="empty")
+    public static void openMouthOfEveryExpressionFitsItsFaceWithoutSeam(GameTestHelper h) throws Exception {
+        var root="/assets/aicompanion/textures/entity/";
+        var mouth=javax.imageio.ImageIO.read(CompanionCharacterTests.class.getResourceAsStream(root+"oleg_mouth.png"));
+        int w=CompanionMouth.BOX_RIGHT-CompanionMouth.BOX_LEFT,rowH=CompanionMouth.BOX_BOTTOM-CompanionMouth.BOX_TOP;
+        if(mouth.getWidth()!=w||mouth.getHeight()!=rowH*CompanionExpression.values().length) throw new AssertionError("No mouth row per expression");
+        for(var expression:CompanionExpression.values()) {
+            var face=javax.imageio.ImageIO.read(CompanionCharacterTests.class.getResourceAsStream(root+expression.texture()+".png"));
+            int top=expression.ordinal()*rowH,dark=0;
+            for(int y=0;y<rowH;y++) for(int x=0;x<w;x++) {
+                int open=mouth.getRGB(x,top+y),closed=face.getRGB(CompanionMouth.BOX_LEFT+x,CompanionMouth.BOX_TOP+y);
+                if((x==0||y==0||x==w-1||y==rowH-1)&&open!=closed) throw new AssertionError("Seam around the mouth of "+expression+" at "+x+","+y);
+                if((open>>>24)==255&&((open>>16)&255)<110&&((open>>8)&255)<60) dark++;
+            }
+            if(dark<150) throw new AssertionError("Mouth of "+expression+" does not open: "+dark);
+        }
+        h.succeed();
+    }
+    @GameTest(template="empty")
+    public static void mouthOpensOnLoudSyllablesOfTheVoice(GameTestHelper h) {
+        var pcm=new java.io.ByteArrayOutputStream();
+        for(int amplitude:new int[]{9000,0,9000}) for(int i=0;i<4*800;i++) {
+            int sample=(int)(amplitude*Math.sin(i*2*Math.PI*220/16000)); pcm.write(sample&255); pcm.write(sample>>8&255);
+        }
+        float[] loud=CompanionMouth.loudness(pcm.toByteArray(),16000);
+        h.assertTrue(loud.length==12,"Not one level per tick: "+loud.length);
+        h.assertTrue(CompanionMouth.voiceOpen(loud,1)&&!CompanionMouth.voiceOpen(loud,5)&&CompanionMouth.voiceOpen(loud,9),"Mouth does not follow the syllables");
+        h.assertTrue(!CompanionMouth.voiceOpen(loud,12)&&!CompanionMouth.voiceOpen(CompanionMouth.loudness(new byte[3200],16000),1),"Mouth open after the voice or in silence");
+        float[] phrase={.5F,1,.5F,1,.5F,1};
+        h.assertTrue(CompanionMouth.voiceOpen(phrase,1)&&!CompanionMouth.voiceOpen(phrase,2),"Mouth stays open through a phrase without pauses");
+        h.succeed();
+    }
+    @GameTest(template="empty")
+    public static void latestVoiceMovesOnlyItsSpeakersMouthUntilItEnds(GameTestHelper h) {
+        var oleg=java.util.UUID.randomUUID();var other=java.util.UUID.randomUUID();
+        CompanionMouth.stop(); CompanionMouth.voice(oleg,new float[]{1,0,1});
+        h.assertTrue(CompanionMouth.open(oleg,0)&&!CompanionMouth.open(other,0),"Voice moved the wrong mouth");
+        CompanionMouth.voice(oleg,new float[]{0,1});
+        h.assertTrue(!CompanionMouth.open(oleg,0),"New voice did not replace the old one");
+        CompanionMouth.tick();
+        h.assertTrue(CompanionMouth.open(oleg,0),"Voice not followed");
+        CompanionMouth.tick();
+        h.assertTrue(!CompanionMouth.open(oleg,0),"Mouth open after the voice");
         h.succeed();
     }
     private static JsonObject message(String role,String text) { var m=new JsonObject();m.addProperty("role",role);m.addProperty("content",text);return m; }

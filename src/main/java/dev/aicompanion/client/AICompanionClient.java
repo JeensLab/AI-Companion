@@ -84,7 +84,7 @@ public final class AICompanionClient {
             previousWorld = minecraft.level; preferenceSyncTicks = 0;
             dev.aicompanion.CompanionDiagnostics.event("", "world_changed", "dimension",
                     minecraft.level == null ? "disconnected" : minecraft.level.dimension().location());
-            CompanionActionExecutor.cancelPendingPlans("", "world_changed"); InworldTtsClient.resetPlaybackQueue();
+            CompanionActionExecutor.cancelPendingPlans("", "world_changed"); InworldTtsClient.resetPlaybackQueue(); CompanionMouth.stop();
         }
         CompanionVoiceAudio.tick();
         CompanionAmbientClient.tick();

@@ -17,6 +17,22 @@ final class CompanionSkin {
     private static final Rect[] BODY = {r(432,405,573,501),r(650,405,740,501),r(365,505,428,775),r(432,505,573,775),r(578,505,644,775),r(649,505,819,775)};
     private static final Rect[] ARM = {r(952,405,1051,500),r(952,718,1051,775),r(863,505,947,775),r(952,505,1051,775),r(1056,505,1128,775),r(1133,505,1202,775)};
     private static final Rect[] LEG = {r(136,407,226,500),r(136,713,226,774),r(52,505,131,774),r(136,505,226,774),r(232,505,294,774),r(299,505,361,774)};
+    private static final Rect MOUTH = r(CompanionMouth.BOX_LEFT,CompanionMouth.BOX_TOP,CompanionMouth.BOX_RIGHT,CompanionMouth.BOX_BOTTOM);
+
+    /** The open mouth: one quad just in front of the face over the mouth box, textured from row {@code row} of {@code rows}. */
+    static void mouth(PoseStack.Pose pose,VertexConsumer buffer,int light,int overlay,int row,int rows) {
+        Rect face=HEAD[3];
+        float left=-4+8*(MOUTH.x-face.x)/(face.right-face.x), right=-4+8*(MOUTH.right-face.x)/(face.right-face.x);
+        float top=-8+8*(MOUTH.y-face.y)/(face.bottom-face.y), bottom=-8+8*(MOUTH.bottom-face.y)/(face.bottom-face.y);
+        float v0=(float)row/rows, v1=(float)(row+1)/rows;
+        Vector3f normal=pose.transformNormal(Direction.NORTH.step(),new Vector3f());
+        // Same corner order as the NORTH face of the head cube.
+        for(float[] c:new float[][]{{right,top,1,v0},{left,top,0,v0},{left,bottom,0,v1},{right,bottom,1,v1}}) {
+            Vector3f p=new Vector3f(c[0],c[1],-4.05F).div(16);
+            pose.pose().transformPosition(p);
+            buffer.addVertex(p.x,p.y,p.z,-1,c[2],c[3],overlay,light,normal.x,normal.y,normal.z);
+        }
+    }
 
     static ModelPart root(ModelPart vanilla) {
         Map<String,ModelPart> children = new HashMap<>();

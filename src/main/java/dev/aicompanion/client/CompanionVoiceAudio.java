@@ -41,15 +41,17 @@ public final class CompanionVoiceAudio {
             try {
                 Pcm pcm = VoicePcm.decode(wav); Voice voice = new Voice(speaker, pcm, done);
                 ACTIVE.add(voice); client.getSoundManager().play(voice);
+                CompanionMouth.voice(speakerId, CompanionMouth.loudness(pcm.bytes(), pcm.format().getSampleRate()));
             } catch (Exception error) { done.completeExceptionally(error); }
         });
         return done;
     }
     public static void tick() {
         var client = Minecraft.getInstance();
+        if (!client.isPaused()) CompanionMouth.tick();
         for (Voice voice : List.copyOf(ACTIVE)) {
             if (voice.speaker.level() != client.level || !voice.speaker.isAlive() || voice.speaker.isRemoved()
-                    || (!client.isPaused() && ++voice.elapsed > voice.maximumTicks)) { client.getSoundManager().stop(voice); voice.finish(); }
+                    || (!client.isPaused() && ++voice.elapsed > voice.maximumTicks)) { client.getSoundManager().stop(voice); voice.finish(); CompanionMouth.stop(); }
             if (voice.done.isDone()) ACTIVE.remove(voice);
         }
     }

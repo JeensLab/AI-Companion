@@ -14,6 +14,7 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
     private static final ResourceLocation[] TEXTURES = java.util.Arrays.stream(dev.aicompanion.CompanionExpression.values())
             .map(expression -> ResourceLocation.fromNamespaceAndPath("aicompanion", "textures/entity/" + expression.texture() + ".png"))
             .toArray(ResourceLocation[]::new);
+    private static final ResourceLocation MOUTH = ResourceLocation.fromNamespaceAndPath("aicompanion", "textures/entity/oleg_mouth.png");
 
     public CompanionRenderer(EntityRendererProvider.Context context) {
         super(context, new PlayerModel<CompanionEntity>(CompanionSkin.root(context.bakeLayer(ModelLayers.PLAYER)), false) {
@@ -59,6 +60,18 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
         });
         addLayer(new HumanoidArmorLayer<>(this, new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
                 new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), context.getModelManager()));
+        // While he speaks, the open mouth of the current expression lies over the closed one: eyes and brows stay.
+        addLayer(new net.minecraft.client.renderer.entity.layers.RenderLayer<CompanionEntity, PlayerModel<CompanionEntity>>(this) {
+            @Override public void render(com.mojang.blaze3d.vertex.PoseStack pose, net.minecraft.client.renderer.MultiBufferSource buffers, int light,
+                    CompanionEntity entity, float limbSwing, float limbAmount, float partialTicks, float age, float yaw, float pitch) {
+                if (entity.isInvisible() || !CompanionMouth.open(entity.getUUID(), partialTicks)) return;
+                pose.pushPose(); getParentModel().head.translateAndRotate(pose);
+                CompanionSkin.mouth(pose.last(), buffers.getBuffer(net.minecraft.client.renderer.RenderType.entityCutoutNoCull(MOUTH)), light,
+                        net.minecraft.client.renderer.entity.LivingEntityRenderer.getOverlayCoords(entity, 0), entity.expression().ordinal(),
+                        dev.aicompanion.CompanionExpression.values().length);
+                pose.popPose();
+            }
+        });
     }
 
     @Override
