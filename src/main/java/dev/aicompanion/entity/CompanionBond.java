@@ -30,9 +30,7 @@ public final class CompanionBond {
     public static final int RESCUE_POINTS = 4;
     public static final int DEED_POINTS = 1;
     public static final int HIT_POINTS = 6;
-    public static final int ABANDON_POINTS = 3;
     public static final long HIT_GAP_TICKS = 600L;
-    public static final long ABANDON_AFTER_TICKS = 24000L;
     public static final int MAX_KINDS = 64;
     public static final int MAX_REASONS = 3;
     private static final int MAX_DECAY_DAYS = 400;
@@ -81,7 +79,7 @@ public final class CompanionBond {
     }
 
     public enum Reason {
-        GIFT("подарок"), RESCUE("спас от врага"), DEED("общее дело"), HIT("ударил"), ABANDONED("бросил одного надолго");
+        GIFT("подарок"), RESCUE("спас от врага"), DEED("общее дело"), HIT("ударил");
 
         private final String label;
 
@@ -100,7 +98,6 @@ public final class CompanionBond {
     private int giftToday;
     private int deedToday;
     private int hitToday;
-    private boolean abandonedToday;
     private boolean hasHit;
     private long lastHit;
 
@@ -132,7 +129,7 @@ public final class CompanionBond {
         resetDaily();
     }
 
-    private void resetDaily() { giftToday = 0; deedToday = 0; hitToday = 0; abandonedToday = false; }
+    private void resetDaily() { giftToday = 0; deedToday = 0; hitToday = 0; }
 
     /**
      * Credits only growth of the cumulative per-kind balance (put minus taken, never below zero) above its previous peak,
@@ -182,14 +179,6 @@ public final class CompanionBond {
         return move(-HIT_POINTS, Reason.HIT);
     }
 
-    /** The player left the companion idle far away for longer than 20 minutes; counted once per game day. */
-    public int leftIdleFar(long today, long idleTicks) {
-        advanceTo(today);
-        if (idleTicks <= ABANDON_AFTER_TICKS || abandonedToday) return 0;
-        abandonedToday = true;
-        return move(-ABANDON_POINTS, Reason.ABANDONED);
-    }
-
     private int move(int delta, Reason reason) {
         int before = score;
         score = Math.max(MIN, Math.min(MAX, score + delta));
@@ -220,7 +209,6 @@ public final class CompanionBond {
         CompoundTag tag = new CompoundTag();
         tag.putInt("Score", score); tag.putLong("Day", day);
         tag.putInt("GiftToday", giftToday); tag.putInt("DeedToday", deedToday); tag.putInt("HitToday", hitToday);
-        tag.putBoolean("AbandonedToday", abandonedToday);
         if (hasHit) tag.putLong("LastHit", lastHit);
         ListTag names = new ListTag();
         for (Reason reason : reasons) names.add(StringTag.valueOf(reason.name()));
@@ -240,9 +228,9 @@ public final class CompanionBond {
         if (tag.contains("Score")) bond.score = Math.max(MIN, Math.min(MAX, tag.getInt("Score")));
         bond.day = tag.contains("Day") ? tag.getLong("Day") : -1;
         bond.giftToday = Math.max(0, tag.getInt("GiftToday")); bond.deedToday = Math.max(0, tag.getInt("DeedToday")); bond.hitToday = Math.max(0, tag.getInt("HitToday"));
-        bond.abandonedToday = tag.getBoolean("AbandonedToday");
         bond.hasHit = tag.contains("LastHit");
         bond.lastHit = Math.max(0, Math.min(MAX_STAMP, tag.getLong("LastHit")));
+        // A name that is no longer a Reason (one retired since the save was written) is skipped, never an error.
         for (Tag name : tag.getList("Reasons", Tag.TAG_STRING)) {
             for (Reason reason : Reason.values()) if (reason.name().equals(name.getAsString()) && !bond.reasons.contains(reason)) bond.reasons.add(reason);
         }

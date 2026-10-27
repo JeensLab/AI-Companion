@@ -168,12 +168,6 @@ public final class CompanionBonds extends SavedData {
         return moved;
     }
 
-    public int leftIdleFar(UUID owner, long gameDay, long idleTicks) {
-        int moved = slot(owner).bond.leftIdleFar(gameDay, idleTicks);
-        setDirty();
-        return moved;
-    }
-
     /** Applies the daily decay and resets the daily counters up to {@code gameDay}. */
     public void advanceBond(UUID owner, long gameDay) {
         slot(owner).bond.advanceTo(gameDay);

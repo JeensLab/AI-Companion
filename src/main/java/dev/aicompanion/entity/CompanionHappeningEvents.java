@@ -4,7 +4,6 @@ import dev.aicompanion.OpenRouterConfig;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementType;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.monster.Monster;
@@ -32,7 +31,7 @@ public final class CompanionHappeningEvents {
     record Waiting(String key, String fact, long since) { }
 
     private static final long ABSENCE_MILLIS = 30L * 60_000;
-    private static final int STAMP_TICKS = 1200, DANGER_TICKS = 20, RESCUE_WINDOW_TICKS = 100, FIGHT_RADIUS = 8, DEED_RADIUS = 32, FAR_BLOCKS = 64;
+    private static final int STAMP_TICKS = 1200, DANGER_TICKS = 20, RESCUE_WINDOW_TICKS = 100, FIGHT_RADIUS = 8, DEED_RADIUS = 32;
     private static final String CANONICAL_COMPANION = "aicompanion:canonical_companion";
     private static final float DANGER_BELOW = 6, SAFE_ABOVE = 12;
     private static final Set<String> BIG_ADVANCEMENTS = Set.of("minecraft:story/mine_diamond", "minecraft:story/enter_the_nether",
@@ -42,7 +41,6 @@ public final class CompanionHappeningEvents {
     private static final Map<UUID, Waiting> WAITING = new HashMap<>();
     private static final Set<UUID> PRESENT = new HashSet<>();
     private static final Set<UUID> ENDANGERED = new HashSet<>();
-    private static final Map<UUID, Long> FAR_SINCE = new HashMap<>();
 
     private CompanionHappeningEvents() { }
 
@@ -51,7 +49,6 @@ public final class CompanionHappeningEvents {
         WAITING.clear();
         PRESENT.clear();
         ENDANGERED.clear();
-        FAR_SINCE.clear();
     }
 
     public static void onServerStopped(ServerStoppedEvent event) { clear(); }
@@ -138,7 +135,6 @@ public final class CompanionHappeningEvents {
         UUID id = player.getUUID();
         if (isOwner(player)) bonds(player.getServer()).markSeen(id, System.currentTimeMillis());
         PRESENT.remove(id);
-        FAR_SINCE.remove(id);
         WAITING.remove(id);
         ENDANGERED.remove(id);
         DEATHS.remove(id);
@@ -168,24 +164,7 @@ public final class CompanionHappeningEvents {
         int tick = server.getTickCount();
         if (tick % STAMP_TICKS == 0) stampPresent(server, System.currentTimeMillis());
         if (tick % DANGER_TICKS != 0) return;
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            checkDanger(player);
-            checkAbandoned(player, now(player));
-        }
-    }
-
-    /** The companion left idle, far away or in another dimension, for over 20 minutes without a break costs the bond once a day. */
-    public static void checkAbandoned(ServerPlayer player, long now) {
-        UUID id = player.getUUID();
-        CompanionEntity companion = loadedCompanion(player);
-        boolean idleFar = companion != null && companion.isAlive() && !companion.isFollowing() && !companion.hasActiveWorkOrder() && !companion.autonomy().running()
-                && (companion.level() != player.level() || companion.distanceToSqr(player) > (double) FAR_BLOCKS * FAR_BLOCKS);
-        if (!idleFar) { FAR_SINCE.remove(id); return; }
-        long since = FAR_SINCE.computeIfAbsent(id, key -> now);
-        if (now - since <= CompanionBond.ABANDON_AFTER_TICKS) return;
-        FAR_SINCE.put(id, now);
-        if (bonds(player.getServer()).leftIdleFar(id, CompanionBond.dayOf(now), now - since) != 0)
-            tell(player, "abandoned", "Товарищ оставил меня без дела далеко надолго.", null, Importance.NORMAL);
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) checkDanger(player);
     }
 
     public static void checkDanger(ServerPlayer player) {
@@ -243,16 +222,6 @@ public final class CompanionHappeningEvents {
     private static String cause(DamageSource source) {
         var killer = source.getEntity();
         return killer == null ? "причина: " + source.getMsgId() : "убит: " + killer.getType().getDescription().getString();
-    }
-
-    /** A plain lookup by the remembered UUID: the periodic pass must not trigger the duplicate sweep of getOwnedCompanion. */
-    private static CompanionEntity loadedCompanion(ServerPlayer player) {
-        var data = player.getPersistentData();
-        if (!data.hasUUID(CANONICAL_COMPANION)) return null;
-        UUID id = data.getUUID(CANONICAL_COMPANION);
-        for (ServerLevel level : player.getServer().getAllLevels())
-            if (level.getEntity(id) instanceof CompanionEntity found && found.isAlive() && player.getUUID().equals(found.getOwnerId())) return found;
-        return null;
     }
 
     /** Only players who have or had a companion get an entry; anyone else logging in or earning an advancement must not grow the save. */

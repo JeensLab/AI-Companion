@@ -7,6 +7,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -155,11 +156,9 @@ public final class CompanionBondTests {
         h.assertTrue(deeds == 5 && b.score() == 25, "Deed cap of +5 a day broken: " + deeds);
         for (int i = 0; i < 5; i++) b.rescued(3);
         h.assertTrue(b.score() == 45 && b.tier() == CompanionBond.Tier.PAL, "Rescues not credited: " + b.score());
-        h.assertTrue(b.leftIdleFar(3, CompanionBond.ABANDON_AFTER_TICKS) == 0, "Exactly 20 minutes is not 'longer than'");
-        h.assertTrue(b.leftIdleFar(3, CompanionBond.ABANDON_AFTER_TICKS + 1) == -3 && b.leftIdleFar(3, 99999) == 0 && b.score() == 42, "Abandonment is -3 once a day");
-        h.assertTrue(b.sharedDeed(4) == 1 && b.score() == 42, "A new day should decay by one then allow deeds again: " + b.score());
+        h.assertTrue(b.sharedDeed(4) == 1 && b.score() == 45, "A new day should decay by one then allow deeds again: " + b.score());
         b.advanceTo(14);
-        h.assertTrue(b.score() == 32, "Decay is not one point per day: " + b.score());
+        h.assertTrue(b.score() == 35, "Decay is not one point per day: " + b.score());
         b.advanceTo(1000);
         h.assertTrue(b.score() == CompanionBond.BASE, "Did not settle at base");
         b.advanceTo(2000);
@@ -278,6 +277,13 @@ public final class CompanionBondTests {
                 && events.getLast().importance() == CompanionHappenings.Importance.HIGH && events.getLast().gameTime() == 1300, "Happenings differ or ring wrong: " + events);
         h.assertTrue(b.lastSeen(owner).orElse(-1) == 1_700_000_000_000L && b.lastSeen(other).isEmpty(), "Last seen lost");
         h.assertTrue(b.memory(other).entries().size() == 1 && b.memory(other).entries().getFirst().text().equals("Шутка про лаву") && b.memory(other).callMe().isEmpty(), "Owners mixed up");
+
+        var oldWorld = new CompoundTag();
+        var oldReasons = new ListTag();
+        oldReasons.add(StringTag.valueOf("ABANDONED")); oldReasons.add(StringTag.valueOf("GIFT"));
+        oldWorld.put("Reasons", oldReasons);
+        oldWorld.putBoolean("AbandonedToday", true);
+        h.assertTrue(CompanionBond.load(oldWorld).reasons().equals(List.of(CompanionBond.Reason.GIFT)), "A bond saved with the retired abandonment reason did not load with GIFT only");
         h.succeed();
     }
 
