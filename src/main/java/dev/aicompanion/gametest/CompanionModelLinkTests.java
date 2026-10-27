@@ -10,6 +10,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
@@ -62,9 +63,9 @@ public final class CompanionModelLinkTests {
         h.assertTrue(OpenRouterClient.keyRequired(OpenRouterClient.endpoint("https://OpenRouter.ai/api/v1"))
                 && OpenRouterClient.endpoint("HTTP://localhost:11434/v1").getHost().equals("localhost"), "The address case matters");
         // The key goes to OpenRouter, any https server and this computer; never over plain http across a network.
-        h.assertTrue(OpenRouterClient.sendsKey(openRouter) && OpenRouterClient.sendsKey(ollama)
-                && OpenRouterClient.sendsKey(OpenRouterClient.endpoint("https://api.groq.com/openai/v1"))
-                && !OpenRouterClient.sendsKey(OpenRouterClient.endpoint("http://192.168.1.20:11434/v1")), "The key goes to the wrong servers");
+        h.assertTrue(OpenRouterClient.sendsKey(openRouter, "sk-or-v1-test") && OpenRouterClient.sendsKey(ollama, "gsk_test")
+                && OpenRouterClient.sendsKey(OpenRouterClient.endpoint("https://api.groq.com/openai/v1"), "gsk_test")
+                && !OpenRouterClient.sendsKey(OpenRouterClient.endpoint("http://192.168.1.20:11434/v1"), "gsk_test"), "The key goes to the wrong servers");
         h.assertTrue(OpenRouterClient.service(OpenRouterClient.endpoint("http://user:secret@localhost:11434/v1")).equals("localhost:11434"),
                 "Credentials from the address reach errors and logs");
         try {
@@ -73,6 +74,31 @@ public final class CompanionModelLinkTests {
         } catch (IllegalStateException expected) {
             h.assertTrue(expected.getMessage().startsWith("Адрес сервера модели"), "Unclear message: " + expected.getMessage());
         }
+        h.succeed();
+    }
+
+    /** Review of PR #7: «127.example.com» is not this computer, and an OpenRouter key left in the settings goes to OpenRouter only. */
+    @GameTest(template = "empty")
+    public static void keyStaysWithItsServer(GameTestHelper h) {
+        Object[][] cases = {
+                {"http://127.example.com/v1", "gsk_test", false},
+                {"http://127.0.0.1:8317/v1", "gsk_test", true},
+                {"http://127.1.2.3:11434/v1", "gsk_test", true},
+                {"http://[::1]:11434/v1", "gsk_test", true},
+                {"https://api.groq.com/openai/v1", "gsk_test", true},
+                {"https://api.groq.com/openai/v1", "sk-or-v1-test", false},
+                {"http://localhost:11434/v1", "sk-or-v1-test", false},
+                {"", "sk-or-v1-test", true},
+                {"https://OpenRouter.ai/api/v1", "sk-or-v1-test", true},
+                {"http://openrouter.ai/api/v1", "sk-or-v1-test", false},
+                {"https://openrouter.ai@evil.example/v1", "sk-or-v1-test", false},
+                {"https://api.groq.com/openai/v1", "Bearer sk-or-v1-test", false},
+                {"https://api.groq.com/openai/v1", "SK-OR-V1-TEST", false},
+        };
+        List<String> wrong = new ArrayList<>();
+        for (Object[] c : cases)
+            if (OpenRouterClient.sendsKey(OpenRouterClient.endpoint((String) c[0]), (String) c[1]) != (boolean) c[2]) wrong.add(c[0] + " + " + c[1]);
+        h.assertTrue(wrong.isEmpty(), "The key goes to the wrong servers: " + wrong);
         h.succeed();
     }
 

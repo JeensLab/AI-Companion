@@ -57,7 +57,7 @@ public final class CompanionSettingsScreen extends Screen {
         searchRadius.setMaxLength(3);
         searchRadius.setFilter(value -> value.matches("\\d{0,3}"));
         openRouterKey = addField(left, firstY + rowGap, "Ключ API", OpenRouterConfig.API_KEY.get(), true);
-        openRouterKey.setHint(Component.literal("для OpenRouter; локальному серверу не нужен").withStyle(ChatFormatting.GRAY));
+        openRouterKey.setHint(Component.literal("для OpenRouter, только туда; локальному не нужен").withStyle(ChatFormatting.GRAY));
         addVisibilityToggle(openRouterKey, left, firstY + rowGap, true);
         // The server shares the model's row: one more full row would push the last field under the buttons at small heights.
         model = addField(left, firstY + rowGap * 2, "openrouter/auto", OpenRouterConfig.MODEL.get(), false);

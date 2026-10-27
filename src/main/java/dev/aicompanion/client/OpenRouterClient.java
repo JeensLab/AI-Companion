@@ -48,10 +48,16 @@ public final class OpenRouterClient {
     }
     /** OpenRouter needs the player's key; a local server (Ollama, LM Studio) runs without one. */
     public static boolean keyRequired(URI endpoint) { return "openrouter.ai".equalsIgnoreCase(endpoint.getHost()); }
-    /** The key goes over https or to this computer: plain http across a network would show it to everyone on the way. */
-    public static boolean sendsKey(URI endpoint) {
+    /**
+     * The key goes over https or to this computer: plain http across a network would show it to everyone on the way.
+     * An OpenRouter key (sk-or-…) goes to OpenRouter only, even when left in the settings after switching servers.
+     */
+    public static boolean sendsKey(URI endpoint, String key) {
+        // Anywhere and in any case: a key pasted as «Bearer sk-or-…» or in quotes is still an OpenRouter key.
+        if (key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !keyRequired(endpoint)) return false;
         String host = endpoint.getHost().toLowerCase(java.util.Locale.ROOT);
-        return "https".equalsIgnoreCase(endpoint.getScheme()) || host.equals("localhost") || host.startsWith("127.") || host.equals("[::1]");
+        // A numeric loopback address only: «127.example.com» is a name anyone can register.
+        return "https".equalsIgnoreCase(endpoint.getScheme()) || host.equals("localhost") || host.matches("127(\\.\\d{1,3}){3}") || host.equals("[::1]");
     }
     /** The server named in errors and diagnostics: host and port, never credentials written into the address. */
     public static String service(URI endpoint) {
@@ -336,7 +342,7 @@ public final class OpenRouterClient {
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
         String key = OpenRouterConfig.API_KEY.get().trim();
-        if (!key.isEmpty() && sendsKey(endpoint)) builder.header("Authorization", "Bearer " + key);
+        if (!key.isEmpty() && sendsKey(endpoint, key)) builder.header("Authorization", "Bearer " + key);
         HttpRequest request = builder.build();
         String service = service(endpoint);
         String logged = keyRequired(endpoint) ? "openrouter" : service;  // the diagnostics label OpenRouter always had
