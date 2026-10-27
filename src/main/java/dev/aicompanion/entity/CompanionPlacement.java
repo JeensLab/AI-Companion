@@ -169,6 +169,9 @@ final class CompanionPlacement {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
                 BlockPos pos = origin.offset(dx, dy, dz);
                 if (!allowed.test(pos)) continue;
+                // The cell his stairs began at is where he climbs back to (autonomy in «долина»: the bench for the shovel stood
+                // there, no way up was left and he dug himself out).
+                if (c.work.isActive() && pos.equals(c.work.exitCell)) continue;
                 if (!serverLevel.hasChunkAt(pos) || !serverLevel.getBlockState(pos).canBeReplaced()) continue;
                 if (!serverLevel.getFluidState(pos).isEmpty() || !serverLevel.getWorldBorder().isWithinBounds(pos)) continue;
                 if (!serverLevel.getBlockState(pos.below()).isFaceSturdy(serverLevel, pos.below(), Direction.UP)) continue;
