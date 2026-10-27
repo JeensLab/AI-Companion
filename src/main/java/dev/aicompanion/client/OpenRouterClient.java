@@ -59,6 +59,13 @@ public final class OpenRouterClient {
         // A numeric loopback address only: «127.example.com» is a name anyone can register.
         return "https".equalsIgnoreCase(endpoint.getScheme()) || host.equals("localhost") || host.matches("127(\\.\\d{1,3}){3}") || host.equals("[::1]");
     }
+    /** Why a key that was set stayed home: told with a 401/403, or the player only sees the server refuse. */
+    public static String withheldKeyNote(URI endpoint, String key) {
+        if (key.isEmpty() || sendsKey(endpoint, key)) return "";
+        return key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !keyRequired(endpoint)
+                ? "Ключ OpenRouter мод отправляет только в OpenRouter: для этого сервера впиши его собственный ключ."
+                : "Ключ не отправлен: по обычному http через сеть мод его не передаёт — нужен адрес https или сервер на этом компьютере.";
+    }
     /** The server named in errors and diagnostics: host and port, never credentials written into the address. */
     public static String service(URI endpoint) {
         return keyRequired(endpoint) ? "OpenRouter" : endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());
@@ -343,6 +350,7 @@ public final class OpenRouterClient {
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
         String key = OpenRouterConfig.API_KEY.get().trim();
         if (!key.isEmpty() && sendsKey(endpoint, key)) builder.header("Authorization", "Bearer " + key);
+        String withheld = withheldKeyNote(endpoint, key);
         HttpRequest request = builder.build();
         String service = service(endpoint);
         String logged = keyRequired(endpoint) ? "openrouter" : service;  // the diagnostics label OpenRouter always had
@@ -369,7 +377,8 @@ public final class OpenRouterClient {
                         && (lower.contains("tool") || lower.contains("parameter") || lower.contains("function"))) {
                     throw new UnsupportedToolsException(error);
                 }
-                throw new IllegalStateException(error);
+                boolean refused = response.statusCode() == 401 || response.statusCode() == 403;
+                throw new IllegalStateException(refused && !withheld.isEmpty() ? error + " " + withheld : error);
             }
             JsonObject parsed = JsonParser.parseString(response.body()).getAsJsonObject();
             if (!parsed.has("choices") || !parsed.get("choices").isJsonArray() || parsed.getAsJsonArray("choices").isEmpty()) {

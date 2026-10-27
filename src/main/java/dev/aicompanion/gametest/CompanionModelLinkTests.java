@@ -99,6 +99,13 @@ public final class CompanionModelLinkTests {
         for (Object[] c : cases)
             if (OpenRouterClient.sendsKey(OpenRouterClient.endpoint((String) c[0]), (String) c[1]) != (boolean) c[2]) wrong.add(c[0] + " + " + c[1]);
         h.assertTrue(wrong.isEmpty(), "The key goes to the wrong servers: " + wrong);
+        // A held-back key is explained, or a 401 from a server that wanted it says nothing to the player.
+        String forgotten = OpenRouterClient.withheldKeyNote(OpenRouterClient.endpoint("https://api.groq.com/openai/v1"), "sk-or-v1-test");
+        String network = OpenRouterClient.withheldKeyNote(OpenRouterClient.endpoint("http://192.168.1.20:1234/v1"), "lm-key");
+        h.assertTrue(forgotten.startsWith("Ключ OpenRouter") && network.contains("https")
+                && OpenRouterClient.withheldKeyNote(OpenRouterClient.endpoint("https://api.groq.com/openai/v1"), "gsk_test").isEmpty()
+                && OpenRouterClient.withheldKeyNote(OpenRouterClient.endpoint(""), "").isEmpty(),
+                "Withheld key not explained: «" + forgotten + "» / «" + network + "»");
         h.succeed();
     }
 
