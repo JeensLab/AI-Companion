@@ -18,20 +18,26 @@ final class CompanionSocial {
     private boolean initialized;
     private int timeBand = -1;
     private boolean rain;
+    private boolean environmentInitialized;
     private final CompanionUrgent urgent = new CompanionUrgent();
     private String urgentKey = "";
     CompanionSocial(CompanionEntity owner) { this.owner = owner; }
-    private long next(long now) { return now + CompanionConversation.gap(owner.getRandom().nextInt(2401)); }
+    private long next(long now) { return now + CompanionConversation.gap(owner.getRandom().nextInt(CompanionConversation.MAX_GAP - CompanionConversation.MIN_GAP + 1)); }
     void observe(String key, String fact) {
+        offer(key, fact, 20 * 60 * 20);
+    }
+    private boolean offer(String key, String fact, int topicGap) {
         long now = owner.level().getGameTime();
         if (!initialized) { initialized = true; nextSpeech = next(now); }
-        if (!owner.talksOnOwn() || !owner.conversationAvailable() || !owner.sociallySafe() || now < nextSpeech) return;
-        if (seen.containsKey(key) && now - seen.get(key) < 20 * 60 * 20) return;
+        if (!owner.talksOnOwn() || !owner.conversationAvailable() || !owner.sociallySafe() || now < nextSpeech) return false;
+        if (seen.containsKey(key) && now - seen.get(key) < topicGap) return false;
         // A missed random chance must not silence this topic for the next twenty minutes.
-        if (owner.getRandom().nextFloat() > .65F) return;
+        // Stop selecting topics after an eligible attempt, even when the chance misses.
+        if (owner.getRandom().nextFloat() > .65F) return true;
         seen.put(key, now);
         while (seen.size() > 32) seen.remove(seen.keySet().iterator().next());
         emit(fact);
+        return true;
     }
     private void emit(String fact) {
         nextSpeech = next(owner.level().getGameTime());
@@ -64,6 +70,7 @@ final class CompanionSocial {
         long now = owner.level().getGameTime();
         if (!initialized) { initialized = true; nextSpeech = next(now); }
         int band = owner.level().isDay() ? 0 : 1;
+        if (!environmentInitialized) { timeBand = band; rain = owner.level().isRaining(); environmentInitialized = true; }
         if (timeBand >= 0 && band != timeBand) observe("time:" + band, band == 1 ? "В мире наступает ночь." : "В мире наступило утро.");
         timeBand = band;
         if (owner.level().isRaining() && !rain) observe("rain", "Начался дождь.");
@@ -82,13 +89,26 @@ final class CompanionSocial {
             }
         }
         var player = owner.getOwnerPlayer();
-        if (player != null && owner.distanceToSqr(player) < 12 * 12
-                && owner.tickCount > 20 * 180 && owner.getRandom().nextFloat() < .10F) {
+        if (player != null && owner.distanceToSqr(player) < 12 * 12 && owner.tickCount >= CompanionConversation.MIN_GAP) {
+            // Ordinary company is repeatable; a specific discovery still has its twenty-minute guard.
+            int topicGap = 20 * 60 * 4;
             String activity = owner.getActivityForAi();
             if (activity.length() > 180) activity = activity.substring(0, 180);
-            if (owner.hasActiveWorkOrder()) observe("working_together", "Товарищ рядом, я продолжаю работу: " + activity
-                    + ". Можно коротко перекинуться словом о нашем занятии или планах; завершение дела не подтверждено.");
-            else observe("plans", "Мы сейчас рядом. Я не выполняю работу. Можно спросить товарища о дальнейших планах, если это не повтор разговора.");
+            if (owner.hasActiveWorkOrder() && offer("company:work", "Товарищ рядом, я продолжаю работу: " + activity
+                    + ". Можно перекинуться словом о занятии, не отчитываясь о каждой партии; завершение дела не подтверждено.", topicGap)) return;
+            if (!player.getMainHandItem().isEmpty() && offer("company:equipment", "Товарищ рядом, в его руке сейчас: "
+                    + player.getMainHandItem().getHoverName().getString() + ". Можно высказать отношение к этому предмету, без выдуманной истории его получения.", topicGap)) return;
+            if (owner.level().isRaining() && offer("company:weather", "Мы рядом, сейчас идёт дождь. Начался ли он только что и есть ли у нас крыша — неизвестно.", topicGap)) return;
+            String memory = owner.deeds.conversationMemory(now);
+            if (!memory.isEmpty() && offer("company:memory", "Мы рядом. Можно вспомнить подтверждённое прошлое дело из журнала, "
+                    + "если оно связано с разговором; не повторяй жалобы и перечень добычи. Прошлые записи: "
+                    + memory, topicGap)) return;
+            if (offer("company:light", "Мы рядом. Повод поделиться своим отношением к факелам и пути обратно из шахты. "
+                    + "Это разговор о предпочтениях, не утверждение, что мы сейчас в шахте или без света.", topicGap)) return;
+            if (offer("company:order", "Мы рядом. Повод поделиться мыслью о порядке в сундуках и запасах для выживания. "
+                    + "Состояние наших сундуков и нехватка ресурсов этим не подтверждены.", topicGap)) return;
+            offer("company:company", "Мы рядом. Моя текущая активность: " + activity
+                    + ". Можно продолжить недавнюю тему, ответить на прежний стёб или поделиться спокойной мыслью о совместном выживании. Вопрос о планах не обязателен.", topicGap);
         }
     }
 

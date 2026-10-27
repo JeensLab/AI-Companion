@@ -405,7 +405,7 @@ public final class CompanionHappeningsTests {
         h.assertTrue("awaiting_answer".equals(say.rejection(asked, "Идём дальше", true, false, false))
                 && say.rejection(asked, "Идём дальше", true, false, true).isEmpty(), "An open question must refuse an ordinary reply only");
         h.assertTrue(say.awaitingAnswer(), "The question left open above is not open");
-        for (String text : new String[] {"Идём дальше", null, "", "...", "а".repeat(261), "Ты где? Ты жив?", "Держись, я рядом"}) {
+        for (String text : new String[] {"Идём дальше", "Ты где?", null, "", "...", "а".repeat(261), "Ты где? Ты жив?", "Держись, я рядом"}) {
             for (int bits = 0; bits < 16; bits++) {
                 boolean safe = (bits & 1) != 0, busy = (bits & 2) != 0, urgent = (bits & 4) != 0;
                 long captured = (bits & 8) != 0 ? asked : asked + 1;
@@ -414,6 +414,11 @@ public final class CompanionHappeningsTests {
                         "acceptReply differs from the rule it had before rejection(): " + bits + " " + text);
             }
         }
+        // Silence ends the wait for an answer, never the ban on asking again.
+        say.ready(200 + dev.aicompanion.CompanionConversation.ANSWER_WAIT);
+        h.assertTrue(!say.awaitingAnswer() && !say.canAskQuestion(), "Silence did not end the wait, or it reopened the question");
+        h.assertTrue("unanswered_question".equals(say.rejection(say.revision(), "Ты где?", true, false, false))
+                && say.rejection(say.revision(), "Идём дальше", true, false, false).isEmpty(), "An unanswered question must refuse only a new question");
         h.succeed();
     }
 
@@ -442,7 +447,8 @@ public final class CompanionHappeningsTests {
     private static boolean acceptedBeforeRejection(dev.aicompanion.CompanionConversation say, boolean awaitingAnswer, long capturedRevision,
                                                    String text, boolean safe, boolean busy, boolean urgent) {
         return capturedRevision == say.revision() && safe && !busy && (urgent || !awaitingAnswer) && text != null
-                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1 && say.fresh(text);
+                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1
+                && (say.canAskQuestion() || !text.contains("?")) && say.fresh(text);
     }
 
     private static void session(ServerPlayer player, CompanionEntity companion, int slot) {

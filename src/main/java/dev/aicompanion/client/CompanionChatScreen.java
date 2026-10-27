@@ -298,7 +298,7 @@ public final class CompanionChatScreen extends Screen {
         OpenRouterClient.recordActionResult(raw);
         CompanionDiagnostics.event(trace, "execution_report", "report", raw);
         dev.aicompanion.AICompanionMod.LOGGER.debug("Companion action result: {}", raw);
-        String spoken = error == null ? CompanionDialogue.summarize(actions, raw) : "Не получилось. Попробуем ещё раз?";
+        String spoken = error == null ? CompanionDialogue.summarize(actions, raw) : "Не вышло, бля. Поручение не завершено.";
         if (local && spoken.isBlank()) spoken = CompanionDialogue.acknowledge(actions);
         if (!spoken.isBlank()) addVoiceReply(spoken, trace, "engine_summary");
     }

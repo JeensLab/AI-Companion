@@ -44,9 +44,9 @@ public final class OpenRouterConfig {
             .define("inworldVoiceId", "Ashley");
 
     public static final ModConfigSpec.ConfigValue<String> PERSONALITY = BUILDER
-            .comment("Instructions that define the companion's personality.")
+            .comment("Additional personality preferences. Shared character directions also apply to existing saved settings.")
             .translation("config.aicompanion.personality")
-            .define("personality", "Ты мой товарищ по одиночному выживанию в Minecraft. Говори по-русски, естественно и дружелюбно, как живой игрок. Будь кратким, помни контекст разговора, проявляй инициативу и интересуйся нашим приключением.");
+            .define("personality", "Ты мой товарищ по выживанию в Minecraft: язвительный, разговорчивый и надёжный. Помни наш разговор, интересуйся происходящим, шути и матерись естественно, без постоянных комплиментов.");
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions. Stored in the world save.")
