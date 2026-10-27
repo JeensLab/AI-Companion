@@ -55,10 +55,10 @@ public final class CompanionChatScreen extends Screen {
         // and «ещё отвечает на прошлую просьбу… сделает следом» says so, as for voice.
         input.setValue("");
         addLine(Component.literal("Ты: " + text).withStyle(ChatFormatting.WHITE));
-        CompanionMemoryFlow.talk(true, text);
+        String action = companionAction(text);
+        CompanionMemoryFlow.playerSaid(text, action);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
-        String action = companionAction(text);
         if (answerMemoryCommand(action, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
@@ -78,7 +78,7 @@ public final class CompanionChatScreen extends Screen {
                     return;
                 }
                 replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
-                CompanionMemoryFlow.talk(false, reply.text());
+                CompanionMemoryFlow.companionSaid("model", reply.text());
                 CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", reply.text());
                 CompanionAmbientClient.replyDelivered(reply.text());
                 if (!reply.actions().isEmpty()) {
@@ -145,10 +145,10 @@ public final class CompanionChatScreen extends Screen {
     private static void sendVoiceMessage(String text, String trace) {
         Minecraft minecraft = Minecraft.getInstance();
         CompanionAmbientClient.playerMessage();
-        CompanionMemoryFlow.talk(true, text);
+        String action = companionAction(text);
+        CompanionMemoryFlow.playerSaid(text, action);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
-        String action = companionAction(text);
         if (answerMemoryCommand(action, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
@@ -218,7 +218,7 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private static void addVoiceReply(String text, String trace, String source) {
-        if (!"local_memory".equals(source)) CompanionMemoryFlow.talk(false, text);
+        CompanionMemoryFlow.companionSaid(source, text);
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
         if ("autonomous".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
         else CompanionAmbientClient.replyDelivered(text);

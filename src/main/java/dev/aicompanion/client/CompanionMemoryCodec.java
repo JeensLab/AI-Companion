@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The request that asks a model to condense dropped talk into memories, and the strict reading of its answer. The answer is
+ * The request that asks a model to condense the talk into memories, and the strict reading of its answer. The answer is
  * untrusted: only well-formed, short, non-sensitive items of a known kind get through; the server filters them again on store.
  */
 public final class CompanionMemoryCodec {

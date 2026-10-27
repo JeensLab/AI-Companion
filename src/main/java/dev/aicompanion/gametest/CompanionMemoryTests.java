@@ -186,12 +186,13 @@ public final class CompanionMemoryTests {
     }
 
     @GameTest(template="empty", batch="memory_compress", timeoutTicks=200)
-    public static void compressionTakesDroppedBufferAndDropsOldGeneration(GameTestHelper h) {
+    public static void compressionTakesPendingTalkAndDropsOldGeneration(GameTestHelper h) {
         var server = h.getLevel().getServer();
         UUID owner = UUID.randomUUID();
         List<JsonArray> requests = new CopyOnWriteArrayList<>();
         List<CompletableFuture<String>> futures = new CopyOnWriteArrayList<>();
         try {
+            var bonds = CompanionBonds.get(server);
             CompanionMemoryFlow.useCompleter((messages, maxTokens, trace) -> {
                 requests.add(messages);
                 var future = new CompletableFuture<String>();
@@ -200,42 +201,50 @@ public final class CompanionMemoryTests {
             });
             OpenRouterClient.resetSession();
             CompanionMemoryFlow.bind(server, owner, true);
-            long gen = OpenRouterClient.generation();
-            List<CompanionMemory.Talk> seeded = new ArrayList<>();
-            for (int i = 0; i < 12; i++) {
-                seeded.add(new CompanionMemory.Talk(true, "Вопрос " + i));
-                seeded.add(new CompanionMemory.Talk(false, "Ответ " + i));
+            for (int i = 0; i < 11; i++) {
+                CompanionMemoryFlow.playerSaid("Реплика игрока " + i, null);
+                CompanionMemoryFlow.companionSaid("model", "Ответ " + i);
             }
-            h.assertTrue(OpenRouterClient.restoreTalk(gen, seeded, () -> "system") && OpenRouterClient.historySize() == 25, "History not filled: " + OpenRouterClient.historySize());
-            for (int i = 0; i < 4; i++) OpenRouterClient.recordReply(gen, "Реплика " + i);
             h.assertTrue(requests.isEmpty(), "A request was made before enough player lines");
+            CompanionMemoryFlow.playerSaid("Реплика игрока 11", null);
 
-            for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Реплика игрока " + i);
-            h.assertTrue(requests.size() == 1, "Expected one compression request, got " + requests.size());
-            String sent = requests.getFirst().toString();
-            h.assertTrue(sent.contains("Вопрос 0") && sent.contains("Ответ 1") && !sent.contains("Реплика игрока"), "Request does not carry the dropped lines: " + sent);
-
-            for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Ещё реплика " + i);
-            h.assertTrue(requests.size() == 1, "A second request was made with an empty buffer: " + requests.size());
-
-            futures.getFirst().complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Любит железо\"}],\"call_me\":\"Роб\"}");
             h.runAfterDelay(5, () -> {
                 try {
-                    var memory = CompanionBonds.get(server).memory(owner);
-                    h.assertTrue(memory.entries().stream().anyMatch(e -> e.text().equals("Любит железо")) && memory.callMe().equals("Роб"),
-                            "Condensed memory was not stored: " + memory.entries());
-                    CompanionMemoryFlow.dropped("user", "Старый вопрос");
-                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Третья реплика " + i);
-                    h.assertTrue(requests.size() == 2, "Second batch was not requested: " + requests.size());
-                    OpenRouterClient.resetSession();
-                    futures.get(1).complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Боится пауков\"}]}");
+                    h.assertTrue(requests.size() == 1, "Expected one compression request, got " + requests.size());
+                    String sent = requests.getFirst().toString();
+                    h.assertTrue(sent.contains("Реплика игрока 0") && sent.contains("Ответ 10") && sent.contains("Реплика игрока 11"), "Request does not carry the journal: " + sent);
+
+                    // Lines said while a request is in flight start no second one and outlive the acknowledgement of the first.
+                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Ещё реплика " + i, null);
+                    futures.getFirst().complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Любит железо\"}],\"call_me\":\"Роб\"}");
+                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Третья реплика " + i, null);
+
                     h.runAfterDelay(5, () -> {
                         try {
-                            boolean leaked = CompanionBonds.get(server).memory(owner).entries().stream().anyMatch(e -> e.text().equals("Боится пауков"));
-                            h.assertTrue(!leaked, "A reply of the previous session was stored");
-                            h.succeed();
-                        } finally {
+                            var memory = bonds.memory(owner);
+                            h.assertTrue(requests.size() == 2, "Expected two requests in all, none while one was in flight, got " + requests.size());
+                            h.assertTrue(memory.entries().stream().anyMatch(e -> e.text().equals("Любит железо")) && memory.callMe().equals("Роб"),
+                                    "Condensed memory was not stored: " + memory.entries());
+                            var pending = bonds.pendingTalk(owner);
+                            h.assertTrue(pending.size() == 24 && pending.getFirst().text().equals("Ещё реплика 0"), "The acknowledgement did not remove exactly the condensed lines: " + pending);
+                            String second = requests.get(1).toString();
+                            h.assertTrue(second.contains("Ещё реплика 0") && second.contains("Третья реплика 11") && !second.contains("Реплика игрока"), "Second request carries the wrong lines: " + second);
+                            OpenRouterClient.resetSession();
+                            futures.get(1).complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Боится пауков\"}]}");
+
+                            h.runAfterDelay(5, () -> {
+                                try {
+                                    boolean leaked = bonds.memory(owner).entries().stream().anyMatch(e -> e.text().equals("Боится пауков"));
+                                    h.assertTrue(!leaked, "A reply of the previous session was stored");
+                                    h.assertTrue(bonds.pendingTalk(owner).size() == 24, "A reply of the previous session acknowledged the journal: " + bonds.pendingTalk(owner).size());
+                                    h.succeed();
+                                } finally {
+                                    resetFlow();
+                                }
+                            });
+                        } catch (RuntimeException error) {
                             resetFlow();
+                            throw error;
                         }
                     });
                 } catch (RuntimeException error) {
@@ -268,13 +277,14 @@ public final class CompanionMemoryTests {
 
             CompanionMemoryFlow.bind(server, owner, false);
             for (int i = 0; i < 15; i++) {
-                CompanionMemoryFlow.dropped("user", "Вопрос " + i);
-                CompanionMemoryFlow.talk(true, "Реплика " + i);
+                CompanionMemoryFlow.playerSaid("Реплика " + i, null);
+                CompanionMemoryFlow.companionSaid("model", "Ответ " + i);
             }
             h.assertTrue(calls[0] == 0, "Compression requested while memory is off: " + calls[0]);
             h.runAfterDelay(5, () -> {
                 try {
-                    h.assertTrue(CompanionBonds.get(server).memory(owner).recentTalk().isEmpty(), "Talk was stored while memory is off");
+                    h.assertTrue(calls[0] == 0, "Compression requested while memory is off: " + calls[0]);
+                    h.assertTrue(bonds.memory(owner).recentTalk().isEmpty() && bonds.pendingTalk(owner).isEmpty(), "Talk was stored while memory is off");
                     h.succeed();
                 } finally {
                     resetFlow();
@@ -298,6 +308,7 @@ public final class CompanionMemoryTests {
             bonds.happened(owner, "rescue", "Спас от зомби", 1000, CompanionHappenings.Importance.HIGH);
             bonds.remember(owner, CompanionMemory.PLAYER_FACT, "Любит железо");
             bonds.recordTalk(owner, true, "Привет");
+            bonds.ackPending(owner, bonds.pendingEnd(owner));
             bonds.setCallMe(owner, "Роб");
 
             CompanionEntityFixture fixture = CompanionEntityFixture.withDeeds(h);
@@ -321,43 +332,180 @@ public final class CompanionMemoryTests {
             h.assertTrue(!CompanionMemoryView.current().memories().isEmpty(), "View did not take the digest");
             h.assertTrue(OpenRouterClient.restoreTalk(OpenRouterClient.generation(), List.of(new CompanionMemory.Talk(true, "Мой секрет про арбузы"),
                     new CompanionMemory.Talk(false, "Запомнила про арбузы")), () -> "system"), "History fixture was not restored");
-            CompanionMemoryFlow.dropped("user", "Старый вопрос");
-            for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Реплика " + i);
-            h.assertTrue(futures.size() == 1, "In-flight compression was not started: " + futures.size());
-
-            long preForget = OpenRouterClient.generation();
-            CompanionMemoryFlow.forget();
-            h.assertTrue(OpenRouterClient.historySnapshot().stream().noneMatch(m -> !"system".equals(m.get("role").getAsString())),
-                    "History kept the forgotten talk: " + OpenRouterClient.historySnapshot());
-            h.assertTrue(!OpenRouterClient.recordReply(preForget, "Ответ на забытый вопрос")
-                    && OpenRouterClient.historySnapshot().stream().allMatch(m -> "system".equals(m.get("role").getAsString())),
-                    "A reply to a request begun before forgetting was stored again: " + OpenRouterClient.historySnapshot());
-            futures.getFirst().complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Боится пауков\"}],\"call_me\":\"Бро\"}");
+            CompanionMemoryFlow.playerSaid("Мой секрет про арбузы", null);
+            for (int i = 0; i < 11; i++) CompanionMemoryFlow.playerSaid("Реплика " + i, null);
 
             h.runAfterDelay(5, () -> {
                 try {
-                    var after = CompanionBonds.get(server);
-                    var memory = after.memory(owner);
-                    h.assertTrue(memory.entries().isEmpty() && memory.callMe().isEmpty() && memory.recentTalk().isEmpty(), "Memory survived forgetting: " + memory.save());
-                    h.assertTrue(after.bond(owner).score() == scoreBefore && after.bond(owner).reasons().equals(reasonsBefore), "Forgetting changed the bond");
-                    h.assertTrue(after.happenings(owner).all().equals(happeningsBefore), "Forgetting changed the happenings");
-                    h.assertTrue(fixture.companion.deedCount() == 2 && fixture.companion.getDeedsForAi().contains("Не нашёл камень."), "Forgetting touched the deeds");
-                    var view = CompanionMemoryView.current();
-                    h.assertTrue(view.memories().isEmpty() && view.callMe().isEmpty() && view.score() == scoreBefore && !view.happenings().isEmpty(),
-                            "Client view kept the memory or lost the bond: " + view);
-                    CompanionMemoryView.deliver(OpenRouterClient.generation(), pulledAt, pulled, false);
-                    CompanionMemoryView.deliver(OpenRouterClient.generation() - 1, CompanionMemoryView.forgetEpoch(), pulled, false);
-                    h.assertTrue(CompanionMemoryView.current().memories().isEmpty(), "A digest pulled before forgetting or for another session restored the memory");
+                    h.assertTrue(futures.size() == 1 && sent.getFirst().contains("арбуз"), "In-flight compression was not started or lacks the journal: " + sent);
+                    long oldEnd = bonds.pendingEnd(owner);
 
-                    for (int i = 0; i < 13; i++) OpenRouterClient.recordLocalExchange("Новый вопрос " + i, "Новый ответ " + i);
-                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.talk(true, "Ещё реплика " + i);
-                    h.assertTrue(futures.size() == 2 && sent.get(1).contains("Новый вопрос 0") && !sent.get(1).contains("арбуз"),
-                            "Trimming after forgetting refilled the buffer with forgotten talk: " + sent);
+                    long preForget = OpenRouterClient.generation();
+                    CompanionMemoryFlow.forget();
+                    h.assertTrue(OpenRouterClient.historySnapshot().stream().noneMatch(m -> !"system".equals(m.get("role").getAsString())),
+                            "History kept the forgotten talk: " + OpenRouterClient.historySnapshot());
+                    h.assertTrue(!OpenRouterClient.recordReply(preForget, "Ответ на забытый вопрос")
+                            && OpenRouterClient.historySnapshot().stream().allMatch(m -> "system".equals(m.get("role").getAsString())),
+                            "A reply to a request begun before forgetting was stored again: " + OpenRouterClient.historySnapshot());
+                    futures.getFirst().complete("{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Боится пауков\"}],\"call_me\":\"Бро\"}");
 
-                    h.assertTrue("companion memory forget".equals(CompanionLocalCommands.route("Олег, забудь всё", "Олег")), "«забудь всё» not routed");
-                    h.assertTrue("companion memory show".equals(CompanionLocalCommands.route("что ты обо мне помнишь", "Олег")), "«что ты обо мне помнишь» not routed");
-                    h.assertTrue(CompanionLocalCommands.route("забудь всё и добудь дерево", "Олег") == null, "A compound order was taken for forgetting");
-                    h.assertTrue(!CompanionLocalCommands.cancelsPlans("companion memory forget"), "Memory command cancels plans");
+                    h.runAfterDelay(5, () -> {
+                        try {
+                            var after = CompanionBonds.get(server);
+                            var memory = after.memory(owner);
+                            h.assertTrue(memory.entries().isEmpty() && memory.callMe().isEmpty() && memory.recentTalk().isEmpty() && after.pendingTalk(owner).isEmpty(),
+                                    "Memory survived forgetting: " + memory.save());
+                            h.assertTrue(after.bond(owner).score() == scoreBefore && after.bond(owner).reasons().equals(reasonsBefore), "Forgetting changed the bond");
+                            h.assertTrue(after.happenings(owner).all().equals(happeningsBefore), "Forgetting changed the happenings");
+                            h.assertTrue(fixture.companion.deedCount() == 2 && fixture.companion.getDeedsForAi().contains("Не нашёл камень."), "Forgetting touched the deeds");
+                            var view = CompanionMemoryView.current();
+                            h.assertTrue(view.memories().isEmpty() && view.callMe().isEmpty() && view.score() == scoreBefore && !view.happenings().isEmpty(),
+                                    "Client view kept the memory or lost the bond: " + view);
+                            CompanionMemoryView.deliver(OpenRouterClient.generation(), pulledAt, pulled, false);
+                            CompanionMemoryView.deliver(OpenRouterClient.generation() - 1, CompanionMemoryView.forgetEpoch(), pulled, false);
+                            h.assertTrue(CompanionMemoryView.current().memories().isEmpty(), "A digest pulled before forgetting or for another session restored the memory");
+
+                            for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Новая реплика " + i, null);
+
+                            h.runAfterDelay(5, () -> {
+                                try {
+                                    h.assertTrue(futures.size() == 2, "Compression after forgetting was not started: " + futures.size());
+                                    h.assertTrue(sent.get(1).contains("Новая реплика 0") && sent.get(1).contains("Новая реплика 11") && !sent.get(1).contains("арбуз"),
+                                            "The request after forgetting carries forgotten talk or lacks the new lines: " + sent);
+                                    h.assertTrue(after.pendingTalk(owner).size() == 12, "The journal after forgetting is wrong: " + after.pendingTalk(owner));
+                                    // The acknowledgement of the request begun before forgetting arrives late and must not eat lines numbered after it.
+                                    after.ackPending(owner, oldEnd);
+                                    h.assertTrue(after.pendingTalk(owner).size() == 12, "A late acknowledgement removed lines said after forgetting: " + after.pendingTalk(owner).size());
+
+                                    h.assertTrue("companion memory forget".equals(CompanionLocalCommands.route("Олег, забудь всё", "Олег")), "«забудь всё» not routed");
+                                    h.assertTrue("companion memory show".equals(CompanionLocalCommands.route("что ты обо мне помнишь", "Олег")), "«что ты обо мне помнишь» not routed");
+                                    h.assertTrue(CompanionLocalCommands.route("забудь всё и добудь дерево", "Олег") == null, "A compound order was taken for forgetting");
+                                    h.assertTrue(!CompanionLocalCommands.cancelsPlans("companion memory forget"), "Memory command cancels plans");
+                                    h.succeed();
+                                } finally {
+                                    resetFlow();
+                                }
+                            });
+                        } catch (RuntimeException error) {
+                            resetFlow();
+                            throw error;
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    resetFlow();
+                    throw error;
+                }
+            });
+        } catch (RuntimeException error) {
+            resetFlow();
+            throw error;
+        }
+    }
+
+    @GameTest(template="empty", batch="memory_logout", timeoutTicks=200)
+    public static void pendingTalkSurvivesLogoutAndIsCondensedNextSession(GameTestHelper h) {
+        var server = h.getLevel().getServer();
+        UUID owner = UUID.randomUUID();
+        List<JsonArray> requests = new CopyOnWriteArrayList<>();
+        try {
+            var bonds = CompanionBonds.get(server);
+            CompanionMemoryFlow.useCompleter((messages, maxTokens, trace) -> {
+                requests.add(messages);
+                if (requests.size() == 1) return CompletableFuture.failedFuture(new IllegalStateException("provider is down"));
+                return CompletableFuture.completedFuture(VALID);
+            });
+            OpenRouterClient.resetSession();
+            CompanionMemoryFlow.bind(server, owner, true);
+            for (int i = 0; i < 8; i++) {
+                CompanionMemoryFlow.playerSaid("Реплика игрока " + i, null);
+                CompanionMemoryFlow.companionSaid("model", "Ответ " + i);
+            }
+
+            h.runAfterDelay(5, () -> {
+                try {
+                    h.assertTrue(requests.isEmpty(), "A request was made before the session ended: " + requests.size());
+                    var pending = bonds.pendingTalk(owner);
+                    h.assertTrue(pending.size() == 16, "The journal does not hold the whole talk: " + pending);
+                    h.assertTrue(CompanionMemoryDigest.of(server, owner, true, 100).talk().size() == CompanionMemory.TALK_KEEP, "The digest takes the journal instead of the last lines");
+                    var registries = h.getLevel().registryAccess();
+                    var reloaded = CompanionBonds.load(bonds.save(new CompoundTag(), registries), registries);
+                    h.assertTrue(reloaded.pendingTalk(owner).equals(pending) && reloaded.pendingEnd(owner) == 16, "The journal differs after reload: " + reloaded.pendingTalk(owner));
+
+                    var crowded = new CompanionMemory();
+                    for (int i = 0; i < 45; i++) crowded.recordTalk(true, "Строка " + i);
+                    h.assertTrue(crowded.pendingTalk().size() == CompanionMemory.PENDING_KEEP && crowded.pendingTalk().getFirst().text().equals("Строка 5")
+                            && crowded.pendingEnd() == 45 && crowded.recentTalk().size() == CompanionMemory.TALK_KEEP,
+                            "The journal overflow is wrong: " + crowded.pendingTalk().size() + " lines, end " + crowded.pendingEnd());
+
+                    // Logout and login; binding twice in one session must not condense twice.
+                    OpenRouterClient.resetSession();
+                    CompanionMemoryFlow.unbind();
+                    CompanionMemoryFlow.bind(server, owner, true);
+                    CompanionMemoryFlow.bind(server, owner, true);
+
+                    h.runAfterDelay(5, () -> {
+                        try {
+                            h.assertTrue(requests.size() == 1, "Expected one request for the new session, got " + requests.size());
+                            String sent = requests.getFirst().toString();
+                            h.assertTrue(sent.contains("Реплика игрока 0") && sent.contains("Ответ 7"), "Request does not carry the journal: " + sent);
+                            h.assertTrue(bonds.pendingTalk(owner).size() == 16, "A failed request touched the journal: " + bonds.pendingTalk(owner).size());
+                            OpenRouterClient.resetSession();
+                            CompanionMemoryFlow.unbind();
+                            CompanionMemoryFlow.bind(server, owner, true);
+                            CompanionMemoryFlow.bind(server, owner, true);
+
+                            h.runAfterDelay(5, () -> {
+                                try {
+                                    var memory = bonds.memory(owner);
+                                    h.assertTrue(requests.size() == 2, "Expected a second request for the next session, got " + requests.size());
+                                    h.assertTrue(memory.entries().stream().anyMatch(e -> e.text().equals("Игрок любит железо")) && memory.callMe().equals("Роб"),
+                                            "Condensed memory was not stored: " + memory.entries());
+                                    h.assertTrue(bonds.pendingTalk(owner).isEmpty(), "The condensed lines stayed in the journal: " + bonds.pendingTalk(owner));
+                                    h.assertTrue(CompanionBonds.load(bonds.save(new CompoundTag(), registries), registries).pendingEnd(owner) == 16, "The journal numbering was lost on reload");
+                                    h.succeed();
+                                } finally {
+                                    resetFlow();
+                                }
+                            });
+                        } catch (RuntimeException error) {
+                            resetFlow();
+                            throw error;
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    resetFlow();
+                    throw error;
+                }
+            });
+        } catch (RuntimeException error) {
+            resetFlow();
+            throw error;
+        }
+    }
+
+    @GameTest(template="empty", batch="memory_events", timeoutTicks=200)
+    public static void eventRemarksAndMemoryCommandsStayOutOfSavedTalk(GameTestHelper h) {
+        var server = h.getLevel().getServer();
+        UUID owner = UUID.randomUUID();
+        try {
+            CompanionMemoryFlow.useCompleter((messages, maxTokens, trace) -> new CompletableFuture<>());
+            OpenRouterClient.resetSession();
+            CompanionMemoryFlow.bind(server, owner, true);
+            CompanionMemoryFlow.playerSaid("Олег, забудь всё", "companion memory forget");
+            CompanionMemoryFlow.playerSaid("Что ты обо мне помнишь", "companion memory show");
+            for (String source : List.of("autonomous", "autonomy", "engine_summary", "local_acknowledgement", "local_memory", "unknown")) {
+                CompanionMemoryFlow.companionSaid(source, "Реплика из источника " + source);
+            }
+            for (String source : List.of("model", "clarification", "local_identity")) CompanionMemoryFlow.companionSaid(source, "Слова " + source);
+            CompanionMemoryFlow.playerSaid("Привет, Олег", null);
+
+            h.runAfterDelay(5, () -> {
+                try {
+                    var bonds = CompanionBonds.get(server);
+                    var expected = List.of(new CompanionMemory.Talk(false, "Слова model"), new CompanionMemory.Talk(false, "Слова clarification"),
+                            new CompanionMemory.Talk(false, "Слова local_identity"), new CompanionMemory.Talk(true, "Привет, Олег"));
+                    h.assertTrue(bonds.memory(owner).recentTalk().equals(expected), "The last lines hold remarks or memory commands: " + bonds.memory(owner).recentTalk());
+                    h.assertTrue(bonds.pendingTalk(owner).equals(expected), "The journal holds remarks or memory commands: " + bonds.pendingTalk(owner));
                     h.succeed();
                 } finally {
                     resetFlow();

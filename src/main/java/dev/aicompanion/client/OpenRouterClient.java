@@ -1,7 +1,6 @@
 package dev.aicompanion.client;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.aicompanion.OpenRouterConfig;
@@ -566,9 +565,7 @@ public final class OpenRouterClient {
     }
 
     private static void dropOldest() {
-        JsonObject gone = HISTORY.remove(1);
-        JsonElement content = gone.get("content");
-        CompanionMemoryFlow.dropped(gone.get("role").getAsString(), content == null || content.isJsonNull() ? "" : content.getAsString());
+        HISTORY.remove(1);
     }
 
     private static String readError(String body, int statusCode) {

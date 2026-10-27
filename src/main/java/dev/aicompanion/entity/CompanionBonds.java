@@ -99,6 +99,25 @@ public final class CompanionBonds extends SavedData {
         setDirty();
     }
 
+    /** The lines waiting to be condensed into memories; reading never creates a slot and does not mark the data dirty. */
+    public List<CompanionMemory.Talk> pendingTalk(UUID owner) {
+        Slot slot = slots.get(owner);
+        return slot == null ? List.of() : slot.memory.pendingTalk();
+    }
+
+    /** The number after the last waiting line, to hand back to {@link #ackPending} once the lines up to it are condensed. */
+    public long pendingEnd(UUID owner) {
+        Slot slot = slots.get(owner);
+        return slot == null ? 0 : slot.memory.pendingEnd();
+    }
+
+    public void ackPending(UUID owner, long end) {
+        Slot slot = slots.get(owner);
+        if (slot == null) return;
+        slot.memory.ackPending(end);
+        setDirty();
+    }
+
     public boolean setCallMe(UUID owner, String name) {
         boolean stored = slot(owner).memory.setCallMe(name);
         if (stored) setDirty();
@@ -121,7 +140,7 @@ public final class CompanionBonds extends SavedData {
     public void forget(UUID owner) {
         Slot slot = slots.get(owner);
         if (slot == null) return;
-        slot.memory = new CompanionMemory();
+        slot.memory = slot.memory.forgotten();
         setDirty();
     }
 

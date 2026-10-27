@@ -16,14 +16,18 @@ import java.util.regex.Pattern;
 
 /**
  * What the companion remembers about one player: a few weighted memories, how to address the player, likes and dislikes,
- * and the last lines of the talk. Everything that reaches this class passes the server-side secret filter, so a key,
- * a coordinate or a registry id never lands in the saved world.
+ * and the last lines of the talk. Besides those, a journal keeps the lines not yet condensed into memories, numbered
+ * across forgetting, so a condensed batch is removed by its number and never takes a later line with it. Everything
+ * that reaches this class passes the server-side secret filter, so a key, a coordinate or a registry id never lands
+ * in the saved world.
  */
 public final class CompanionMemory {
     public static final int MAX_MEMORIES = 40;
     public static final int MAX_TEXT = 160;
     public static final int TALK_KEEP = 6;
     public static final int TALK_TEXT = 180;
+    public static final int PENDING_KEEP = 40;
+    public static final int PENDING_TEXT = 300;
     public static final int MAX_PREFERENCES = 6;
     public static final int PREFERENCE_TEXT = 40;
     public static final int CALL_ME_TEXT = 24;
@@ -64,6 +68,9 @@ public final class CompanionMemory {
 
     private final List<Entry> memories = new ArrayList<>();
     private final List<Talk> talk = new ArrayList<>();
+    private final List<Talk> pending = new ArrayList<>();
+    /** Running number of the first line in {@link #pending}; it only grows, so a number handed out once never means another line. */
+    private long pendingFrom;
     private final List<String> likes = new ArrayList<>();
     private final List<String> dislikes = new ArrayList<>();
     private String callMe = "";
@@ -162,19 +169,57 @@ public final class CompanionMemory {
         return best;
     }
 
-    /** Keeps the last lines of the talk; a secret is replaced by {@link #MASK} before the line is stored. */
+    /** Keeps the last lines of the talk and queues the line for condensing; a secret is replaced by {@link #MASK} before the line is stored. */
     public void recordTalk(boolean fromPlayer, String text) {
+        addTalk(fromPlayer, text);
+        addPending(fromPlayer, text);
+    }
+
+    private void addTalk(boolean fromPlayer, String text) {
         String clean = talkLine(text);
         if (clean.isEmpty()) return;
         talk.add(new Talk(fromPlayer, clean));
         while (talk.size() > TALK_KEEP) talk.removeFirst();
     }
 
+    private void addPending(boolean fromPlayer, String text) {
+        String clean = line(text, PENDING_TEXT);
+        if (clean.isEmpty()) return;
+        pending.add(new Talk(fromPlayer, clean));
+        while (pending.size() > PENDING_KEEP) {
+            pending.removeFirst();
+            pendingFrom++;
+        }
+    }
+
     /** A talk line the way it is stored: masked, flattened and cut to {@link #TALK_TEXT}. */
-    public static String talkLine(String text) {
+    public static String talkLine(String text) { return line(text, TALK_TEXT); }
+
+    private static String line(String text, int limit) {
         String clean = flatten(mask(flatten(text)));
-        if (clean.length() > TALK_TEXT) clean = clean.substring(0, TALK_TEXT - 1).strip() + "…";
+        if (clean.length() > limit) clean = clean.substring(0, limit - 1).strip() + "…";
         return clean;
+    }
+
+    /** The lines said since the last condensing that was acknowledged, oldest first. */
+    public List<Talk> pendingTalk() { return List.copyOf(pending); }
+
+    /** The number that the next line to be journaled will get; a condensed batch is acknowledged up to it. */
+    public long pendingEnd() { return pendingFrom + pending.size(); }
+
+    /** Removes the lines numbered below {@code end}; a number that is already behind, or ahead of the journal, removes nothing extra. */
+    public void ackPending(long end) {
+        long done = Math.min(end - pendingFrom, pending.size());
+        if (done <= 0) return;
+        pending.subList(0, (int) done).clear();
+        pendingFrom += done;
+    }
+
+    /** An empty memory that numbers the journal on from where this one stopped, so a late acknowledgement cannot remove a line said after forgetting. */
+    public CompanionMemory forgotten() {
+        CompanionMemory fresh = new CompanionMemory();
+        fresh.pendingFrom = pendingEnd();
+        return fresh;
     }
 
     public boolean setCallMe(String name) {
@@ -241,7 +286,7 @@ public final class CompanionMemory {
 
     public List<String> dislikes() { return List.copyOf(dislikes); }
 
-    public boolean isEmpty() { return memories.isEmpty() && talk.isEmpty() && likes.isEmpty() && dislikes.isEmpty() && callMe.isEmpty(); }
+    public boolean isEmpty() { return memories.isEmpty() && talk.isEmpty() && pending.isEmpty() && likes.isEmpty() && dislikes.isEmpty() && callMe.isEmpty(); }
 
     public CompanionMemory copy() { return load(save()); }
 
@@ -254,13 +299,9 @@ public final class CompanionMemory {
             list.add(item);
         }
         tag.put("Memories", list);
-        ListTag lines = new ListTag();
-        for (Talk line : talk) {
-            CompoundTag item = new CompoundTag();
-            item.putBoolean("Player", line.fromPlayer); item.putString("Text", line.text);
-            lines.add(item);
-        }
-        tag.put("Talk", lines);
+        tag.put("Talk", lines(talk));
+        tag.put("Pending", lines(pending));
+        tag.putLong("PendingFrom", pendingFrom);
         tag.putString("CallMe", callMe);
         tag.put("Likes", strings(likes));
         tag.put("Dislikes", strings(dislikes));
@@ -277,11 +318,24 @@ public final class CompanionMemory {
             if (KINDS.contains(item.getString("Kind")) && isStorable(text, MAX_TEXT)) memory.put(item.getString("Kind"), text, Math.max(1, Math.min(MAX_WEIGHT, item.getInt("Weight"))));
         }
         ListTag lines = tag.getList("Talk", Tag.TAG_COMPOUND);
-        for (int i = 0; i < lines.size(); i++) memory.recordTalk(lines.getCompound(i).getBoolean("Player"), lines.getCompound(i).getString("Text"));
+        for (int i = 0; i < lines.size(); i++) memory.addTalk(lines.getCompound(i).getBoolean("Player"), lines.getCompound(i).getString("Text"));
+        memory.pendingFrom = Math.max(0, tag.getLong("PendingFrom"));
+        ListTag waiting = tag.getList("Pending", Tag.TAG_COMPOUND);
+        for (int i = 0; i < waiting.size(); i++) memory.addPending(waiting.getCompound(i).getBoolean("Player"), waiting.getCompound(i).getString("Text"));
         memory.setCallMe(tag.getString("CallMe"));
         for (Tag like : tag.getList("Likes", Tag.TAG_STRING)) memory.addLike(like.getAsString());
         for (Tag dislike : tag.getList("Dislikes", Tag.TAG_STRING)) memory.addDislike(dislike.getAsString());
         return memory;
+    }
+
+    private static ListTag lines(List<Talk> source) {
+        ListTag list = new ListTag();
+        for (Talk line : source) {
+            CompoundTag item = new CompoundTag();
+            item.putBoolean("Player", line.fromPlayer); item.putString("Text", line.text);
+            list.add(item);
+        }
+        return list;
     }
 
     private static ListTag strings(List<String> values) {
