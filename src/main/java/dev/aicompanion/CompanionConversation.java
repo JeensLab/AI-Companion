@@ -17,8 +17,8 @@ public final class CompanionConversation {
     private boolean awaitingAnswer;
     private long answerUntil;
     private boolean unansweredQuestion;
-    private long lastActivity;
-    private int windowJitter;
+    private long lastTalk;
+    private int talkJitter;
     private long revision;
     private int observation;
     private final Deque<String> recent = new ArrayDeque<>();
@@ -31,7 +31,7 @@ public final class CompanionConversation {
         // Idle for a long while is when a friend starts talking; a minute of standing still is not yet.
         return working || idleTicks < 20 * 60 ? Scene.WORK : Scene.IDLE;
     }
-    /** Silence before a topic of his own, from the last word of anyone: the scene's minimum and up to a minute more. */
+    /** The pause before a topic of his own: the scene's minimum and up to a minute more. */
     public static int topicGap(Scene scene, int jitter) {
         int minimum = switch (scene) {
             case FIGHT -> Integer.MAX_VALUE;
@@ -43,19 +43,25 @@ public final class CompanionConversation {
         };
         return scene == Scene.FIGHT ? minimum : minimum + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1);
     }
-    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; unansweredQuestion = false; answerUntil = 0; observation = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
+    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; unansweredQuestion = false; answerUntil = 0; observation = 0; nextOpportunity = now + gap(jitter); talked(now, jitter); activity(now, jitter); }
     // Normal conversation needs a short pause, not another full initiative interval after every answer.
-    public void activity(long now, int jitter) { revision++; quietUntil = now + MIN_PAUSE + Math.floorMod(jitter, MAX_PAUSE - MIN_PAUSE + 1); lastActivity = now; windowJitter = jitter; }
-    public void playerMessage(long now, int jitter) { awaitingAnswer = false; unansweredQuestion = false; activity(now, jitter); }
+    public void activity(long now, int jitter) { revision++; quietUntil = now + MIN_PAUSE + Math.floorMod(jitter, MAX_PAUSE - MIN_PAUSE + 1); }
+    public void playerMessage(long now, int jitter) { awaitingAnswer = false; unansweredQuestion = false; talked(now, jitter); activity(now, jitter); }
+    /** The player's word or a topic of his own starts the pause before his next topic; remarks on events do not. */
+    public void talked(long now, int jitter) { lastTalk = now; talkJitter = jitter; }
     public boolean ready(long now) {
         if (awaitingAnswer && now >= answerUntil) awaitingAnswer = false;
         return now >= nextOpportunity && now >= quietUntil && !awaitingAnswer;
     }
     public boolean awaitingAnswer() { return awaitingAnswer; }
     public boolean canAskQuestion() { return !unansweredQuestion; }
-    /** His own topic waits for the scene's silence; never in a fight, nor over a question the player has not answered. */
+    /**
+     * Once the scene's pause since the last word of the player or his last topic is over, a topic of his own takes the next free
+     * initiative slot, shared with remarks on events: these come every one to two minutes and would never leave a pause of silence.
+     * Never in a fight, nor over a question the player has not answered.
+     */
     public boolean topicReady(long now, Scene scene) {
-        return scene != Scene.FIGHT && canAskQuestion() && now >= lastActivity + topicGap(scene, windowJitter);
+        return scene != Scene.FIGHT && canAskQuestion() && ready(now) && now >= lastTalk + topicGap(scene, talkJitter);
     }
     public long nextOpportunity() { return nextOpportunity; }
     public long revision() { return revision; }

@@ -175,14 +175,30 @@ public final class CompanionSoulTests {
         h.assertTrue(!c.topicReady(1199,Scene.TRAVEL)&&c.topicReady(1200,Scene.TRAVEL),"Road topic not after a minute");
         h.assertTrue(!c.topicReady(3599,Scene.WORK)&&c.topicReady(3600,Scene.WORK),"Work topic too soon");
         h.assertTrue(!c.topicReady(1_000_000,Scene.FIGHT),"Topic in a fight");
-        c.initiativeDelivered("Прикинь, у осьминога три сердца.",2000,0);
+        c.talked(2000,0); c.initiativeDelivered("Прикинь, у осьминога три сердца.",2000,0);
         h.assertTrue(!c.topicReady(3199,Scene.TRAVEL)&&c.topicReady(3200,Scene.TRAVEL),"A topic without a question held up the next one");
+        c.initiativeDelivered("Начался дождь.",3300,0);
+        h.assertTrue(!c.topicReady(4499,Scene.IDLE)&&c.topicReady(4500,Scene.IDLE),"A remark on an event put his topic off past the next free slot");
         // Silence is no answer and no consent (main): no new topic of his own until the player speaks; remarks on events go on.
-        c.initiativeDelivered("Что слушаешь, бро?",4000,0);
-        h.assertTrue(!c.topicReady(4000+CompanionConversation.ANSWER_WAIT,Scene.TRAVEL)&&!c.topicReady(1_000_000,Scene.IDLE)&&!c.canAskQuestion(),"New topic over an unanswered question");
+        c.talked(5000,0); c.initiativeDelivered("Что слушаешь, бро?",5000,0);
+        h.assertTrue(!c.topicReady(5000+CompanionConversation.ANSWER_WAIT,Scene.TRAVEL)&&!c.topicReady(1_000_000,Scene.IDLE)&&!c.canAskQuestion(),"New topic over an unanswered question");
         h.assertTrue(c.ready(1_000_000),"Unanswered question silenced remarks on events");
         c.playerMessage(20000,0);
         h.assertTrue(c.canAskQuestion()&&!c.topicReady(21199,Scene.TRAVEL)&&c.topicReady(21200,Scene.TRAVEL),"An answer did not reset the pause");
+        h.succeed();
+    }
+    @GameTest(template="empty")
+    public static void remarksOnEventsShareTheSlotInsteadOfCrowdingOutTopics(GameTestHelper h) {
+        // Game 27.10: an event every one to two minutes reset the pause before a topic, and at work no topic came at all.
+        for(var scene:new Scene[]{Scene.TRAVEL,Scene.MINE,Scene.IDLE,Scene.WORK}) {
+            var c=new CompanionConversation(); c.reset(0,600); int serial=0, events=0, topics=0; long answer=-1;
+            for(long t=1;t<=20*60*16;t++) {
+                if(t==answer) c.playerMessage(t,600);
+                if(t%(20*70)==0) { if(c.takeObservation(++serial,0,t,true,false,600)) { events++; c.initiativeDelivered("Событие номер "+serial,t,600); } }
+                else if(c.topicReady(t,scene)) { topics++; c.talked(t,600); c.initiativeDelivered("Тема номер "+t+"?",t,600); answer=t+200; }
+            }
+            h.assertTrue(topics>=(scene==Scene.WORK?3:4)&&events>=2,"Topics crowded out by remarks on events in "+scene+": "+topics+" topics, "+events+" remarks");
+        }
         h.succeed();
     }
     @GameTest(template="empty")

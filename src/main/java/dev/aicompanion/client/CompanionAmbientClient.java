@@ -76,6 +76,7 @@ final class CompanionAmbientClient {
         var topic = soul.nextTopic(java.util.concurrent.ThreadLocalRandom.current());
         if (topic == null) return;
         soul.raised(topic, System.currentTimeMillis());
+        conversation.talked(now(), jitter());
         String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
         dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic", "scene", scene.name(), "topic", topic.key());
         CompanionChatScreen.autonomousReply(topic.text(), trace);
