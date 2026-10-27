@@ -135,6 +135,55 @@ public final class CompanionObtainTests {
         });
     }
 
+    /** «Скрафтить» with no materials is turned into digging them up, like obtain_item. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void craftWithoutMaterialsIsObtained(GameTestHelper h) {
+        CompanionEntity companion = craftArena(h);
+        var future = run(h, companion, "[{\"action\":\"craft_item\",\"item\":\"minecraft:shears\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.SHEARS) == 1 && !future.join().report().contains("План остановлен"), future.join().report());
+        });
+    }
+
+    /** The craft count is new ones: 1 carried + 1 asked = 2. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void craftCountsNewOnesOnTopOfTheBag(GameTestHelper h) {
+        CompanionEntity companion = craftArena(h);
+        companion.setItem(1, new ItemStack(Items.SHEARS));
+        var future = run(h, companion, "[{\"action\":\"craft_item\",\"item\":\"minecraft:shears\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.SHEARS) == 2 && !future.join().report().contains("План остановлен"), future.join().report());
+        });
+    }
+
+    /** A full bag is not a shortage: the craft is refused as before, nothing is dug. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void craftWithAFullBagIsNotObtained(GameTestHelper h) {
+        CompanionEntity companion = craftArena(h);
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) companion.setItem(slot, new ItemStack(Items.WOODEN_SWORD));
+        companion.setItem(0, new ItemStack(Items.OAK_PLANKS, 5));
+        var future = run(h, companion, "[{\"action\":\"craft_item\",\"item\":\"minecraft:oak_button\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            var outcome = future.join();
+            h.assertTrue(outcome.report().contains("нет места") && count(companion, Items.OAK_PLANKS) == 5 && count(companion, Items.OAK_BUTTON) == 0
+                    && count(companion, Items.IRON_INGOT) == 0, outcome.report());
+        });
+    }
+
+    /** Iron ore, a furnace and coal at hand, an empty bag: shears take two ingots. */
+    private static CompanionEntity craftArena(GameTestHelper h) {
+        ground(h);
+        for (int z = 16; z <= 18; z++) h.setBlock(new BlockPos(20, GROUND + 1, z), Blocks.IRON_ORE);
+        h.setBlock(new BlockPos(13, GROUND + 1, 19), Blocks.FURNACE);
+        CompanionEntity companion = spawn(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.COAL, 2));
+        return companion;
+    }
+
     /** What none of his skills gets is said at once, and nothing is started. */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
     public static void anUnobtainableItemIsRefusedAtOnce(GameTestHelper h) {

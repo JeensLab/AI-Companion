@@ -223,6 +223,49 @@ public final class CompanionPlanRecoveryTests {
         });
     }
 
+    /** A shortage refusal of a craft becomes «get it» on (carried + asked); any other refusal of a craft stays a stop. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void craftShortageBecomesObtainOnTopOfTheBag(GameTestHelper h) {
+        var port = new CraftRefusalPort(CompanionActionResult.shortage("Не хватает материалов."));
+        var future = CompanionPlanRunner.run(List.of(new PlannedAction("craft_item", 0, 2, "minecraft:iron_helmet")), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.obtained.equals(List.of("minecraft:iron_helmet:3")) && port.calls.equals(List.of("craft_item", "verify_item"))
+                    && !outcome.report().contains("План остановлен"), port.obtained + " " + port.calls + " " + outcome);
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void craftRefusedForOtherReasonsIsNotObtained(GameTestHelper h) {
+        var port = new CraftRefusalPort(CompanionActionResult.failed("В моей сумке нет места."));
+        var future = CompanionPlanRunner.run(List.of(new PlannedAction("craft_item", 0, 2, "minecraft:iron_helmet")), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.obtained.isEmpty() && port.calls.equals(List.of("craft_item")) && outcome.report().contains("План остановлен: В моей сумке нет места."),
+                    port.obtained + " " + port.calls + " " + outcome);
+        });
+    }
+
+    /** One helmet carried; the first craft is refused with the given result, and obtain_item is just recorded. */
+    private static final class CraftRefusalPort implements CompanionPlanRunner.Port {
+        final List<String> calls = new ArrayList<>(), obtained = new ArrayList<>();
+        private final CompanionActionResult refusal;
+        CraftRefusalPort(CompanionActionResult refusal) { this.refusal = refusal; }
+        @Override public String trace() { return "gametest-craft"; }
+        @Override public boolean cancelled() { return false; }
+        @Override public CompletableFuture<State> state(PlannedAction action) { return CompletableFuture.completedFuture(IDLE); }
+        @Override public CompletableFuture<Void> pause(int seconds) { return CompletableFuture.completedFuture(null); }
+        @Override public CompletableFuture<Integer> carried(String item) { return CompletableFuture.completedFuture(1); }
+        @Override public CompletableFuture<CompanionPlanRunner.Expansion> expand(PlannedAction action) {
+            obtained.add(action.item() + ":" + action.count());
+            return CompletableFuture.completedFuture(new CompanionPlanRunner.Expansion(List.of(new PlannedAction("verify_item", 0, action.count(), action.item())), null));
+        }
+        @Override public CompletableFuture<Attempt> run(PlannedAction action) {
+            calls.add(action.type());
+            return CompletableFuture.completedFuture(action.type().equals("craft_item") ? new Attempt(refusal, false) : new Attempt(CompanionActionResult.ok("Готово."), true));
+        }
+    }
+
     private static final PlannedAction OBTAIN_HELMET = new PlannedAction("obtain_item", 0, 1, "minecraft:iron_helmet");
 
     /** A bag in the fake: ore gives ingots, a helmet takes two ingots and a log. expand plans from it like the server planner. */

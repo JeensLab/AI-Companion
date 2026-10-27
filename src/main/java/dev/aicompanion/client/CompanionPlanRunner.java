@@ -35,6 +35,8 @@ public final class CompanionPlanRunner {
         CompletableFuture<Attempt> run(PlannedAction action);
         CompletableFuture<Void> pause(int seconds);
         default void progress(List<PlannedAction> plan, int index) { }
+        /** How many of the item he carries now. */
+        default CompletableFuture<Integer> carried(String item) { return CompletableFuture.completedFuture(0); }
         /** obtain_item turned into the steps that get the item, or the reason it cannot be got. */
         default CompletableFuture<Expansion> expand(PlannedAction action) {
             return CompletableFuture.completedFuture(new Expansion(List.of(), "Не умею добывать этот предмет."));
@@ -118,6 +120,15 @@ public final class CompanionPlanRunner {
                         "continuePlan", verdict.decision() == Decision.CONTINUE, "decision", verdict.decision(), "reason", verdict.reason(),
                         "status", result.status(), "message", result.message(), "progressBefore", before.progress(), "progressAfter", after.progress(),
                         "completionCheck", List.of("follow", "protect", "wander").contains(action.type()) ? "mode_acknowledgement_only" : "engine_result");
+                // A craft refused at once for lack of materials becomes «get it»: "craft N" is N new ones, "get" counts all in the bag.
+                if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "craft_item".equals(action.type())) {
+                    return port.carried(action.item()).thenCompose(have -> {
+                        PlannedAction obtain = new PlannedAction("obtain_item", 0, have + action.count(), action.item());
+                        CompanionDiagnostics.event(port.trace(), "craft_to_obtain", "step", number, "action", action, "obtain", obtain);
+                        run.plan.set(index, obtain);
+                        return step(run, index, obtain, false);
+                    });
+                }
                 // A step of an obtain chain that did not succeed is planned around, even a partial gather the plan would go on after:
                 // the stop comes only if the new plan starts with the same step.
                 if (inObtain && !result.success() && verdict.decision() != Decision.RETRY

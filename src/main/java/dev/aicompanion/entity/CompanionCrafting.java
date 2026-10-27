@@ -31,7 +31,9 @@ public final class CompanionCrafting {
 
     private CompanionCrafting(ServerLevel level) { this.level = level; }
 
-    public record Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable) { }
+    public record Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable, boolean shortage) {
+        public Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable) { this(success, message, inventory, placeTable, false); }
+    }
 
     public static Plan plan(ServerLevel level, List<ItemStack> inventory, String requestedId, int count, boolean tableNearby) {
         ResourceLocation id = ResourceLocation.tryParse(requestedId);
@@ -45,12 +47,12 @@ public final class CompanionCrafting {
             if (planner.inventoryFull) return new Plan(false, "В моей сумке нет места для всей цепочки крафта. Освободи несколько ячеек; материалы сохранены.", copy(inventory), false);
             if (planner.searches > MAX_SEARCH) return new Plan(false, "Цепочка рецептов слишком сложная. Попроси сначала сделать промежуточные материалы; сумка не изменена.", copy(inventory), false);
             return new Plan(false, "Не могу сделать " + count + " «" + target.getDescription().getString()
-                    + "»: в моей сумке недостаточно подходящих материалов для полной цепочки крафта. Материалы сохранены.", copy(inventory), false);
+                    + "»: в моей сумке недостаточно подходящих материалов для полной цепочки крафта. Материалы сохранены.", copy(inventory), false, true);
         }
         int made = count(bag, target) - before;
         boolean placeTable = planner.needsTable && !tableNearby;
         if (placeTable && (!planner.ensure(bag, Items.CRAFTING_TABLE, 1) || !take(bag, Items.CRAFTING_TABLE))) {
-            return new Plan(false, "Для этого нужен верстак. Не хватает материалов, чтобы сделать и верстак, и запрошенный предмет. Материалы сохранены.", copy(inventory), false);
+            return new Plan(false, "Для этого нужен верстак. Не хватает материалов, чтобы сделать и верстак, и запрошенный предмет. Материалы сохранены.", copy(inventory), false, true);
         }
         String chain = String.join("; ", planner.steps);
         return new Plan(true, "Скрафтил " + made + " «" + target.getDescription().getString() + "»."
