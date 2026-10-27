@@ -55,6 +55,13 @@ final class CompanionDeeds {
 
     int size() { return deeds.size(); }
 
+    /** One complete past fact for banter; failures already have their own quiet-work notice. */
+    String conversationMemory(long now) {
+        if (deeds.isEmpty() || !deeds.getLast().ok) return "";
+        Deed last = deeds.getLast();
+        return ago(now - last.tick) + ": сделано — " + last.text;
+    }
+
     void save(CompoundTag tag) {
         ListTag list = new ListTag();
         for (Deed deed : deeds) {

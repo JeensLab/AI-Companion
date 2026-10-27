@@ -83,4 +83,17 @@ public final class CompanionSpeechTests {
         return CompanionPlanRequirements.apply(text, new CompanionReply("", List.of(step))).actions().stream()
                 .filter(action -> action.type().equals(step.type())).map(PlannedAction::count).toList();
     }
+    @GameTest(template = "empty")
+    public static void characterKeepsAcceptanceFailureCancellationAndSuccessDistinct(GameTestHelper h) {
+        var house=List.of(new PlannedAction("build_house",0,1));
+        String accepted=CompanionDialogue.acknowledge(house);
+        h.assertTrue(!accepted.contains("готов")&&!accepted.contains("построил"),"Acceptance became success");
+        String success=CompanionDialogue.summarize(house,"Дом построен.");
+        h.assertTrue(success.contains("Дом готов")&&success.contains("заебись"),"Confirmed joy lost");
+        String failure=CompanionDialogue.summarize(house,"План остановлен: В сумке нет места.");
+        h.assertTrue(failure.contains("сумка забита")&&!failure.contains("готов")&&!failure.contains("Дом"),"Failure gained a false result");
+        String cancelled=CompanionDialogue.summarize(house,"План остановлен: Заказ отменён.");
+        h.assertTrue(cancelled.equals("Ладно, остановился."),"Cancellation became a complaint or success");
+        h.succeed();
+    }
 }

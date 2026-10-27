@@ -16,13 +16,17 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
             .toArray(ResourceLocation[]::new);
 
     public CompanionRenderer(EntityRendererProvider.Context context) {
-        super(context, new PlayerModel<CompanionEntity>(CompanionSkin.root(context.bakeLayer(ModelLayers.PLAYER)), false) {
+        this(context, CompanionSkin.bake(context.bakeLayer(ModelLayers.PLAYER)));
+    }
+    private CompanionRenderer(EntityRendererProvider.Context context, CompanionSkin skin) {
+        super(context, new PlayerModel<CompanionEntity>(skin.root(), false) {
             @Override public void setupAnim(CompanionEntity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
                 rightArmPose = entity.getMainHandItem().isEmpty() ? ArmPose.EMPTY : ArmPose.ITEM;
                 leftArmPose = entity.getOffhandItem().isEmpty() ? ArmPose.EMPTY : ArmPose.ITEM;
                 if (entity.isUsingItem() && entity.getUsedItemHand() == net.minecraft.world.InteractionHand.OFF_HAND
                         && entity.getOffhandItem().canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK)) leftArmPose = ArmPose.BLOCK;
                 super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
+                skin.animate(entity.expression(), CompanionVoiceAudio.mouthOpen(entity), ageInTicks + entity.getId() * 17);
                 if (entity.isMiningAnimation()) {
                     float stroke = net.minecraft.util.Mth.sin(ageInTicks * (float)Math.PI / 4);
                     rightArm.xRot = -1.1F + stroke * .85F - headPitch * .006F;
