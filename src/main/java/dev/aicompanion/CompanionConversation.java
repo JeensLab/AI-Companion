@@ -71,7 +71,8 @@ public final class CompanionConversation {
     }
     public boolean acceptReply(long capturedRevision, String text, boolean safe, boolean busy) {
         return revision == capturedRevision && safe && !busy && !awaitingAnswer && text != null
-                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1 && fresh(text);
+                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1
+                && (canAskQuestion() || !text.contains("?")) && fresh(text);
     }
 
     public boolean fresh(String text) {

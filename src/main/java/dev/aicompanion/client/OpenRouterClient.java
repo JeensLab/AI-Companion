@@ -37,13 +37,15 @@ public final class OpenRouterClient {
     }
 
     public static synchronized CompletableFuture<String> react(String observation, String snapshot, String trace) {
+        return react(observation, snapshot, trace, true);
+    }
+
+    public static synchronized CompletableFuture<String> react(String observation, String snapshot, String trace, boolean canAskQuestion) {
         if (!pendingRequests.isDone() || !ambientRequest.isDone() || OpenRouterConfig.API_KEY.get().isBlank()) return CompletableFuture.completedFuture("");
         CompanionDiagnostics.event(trace, "ambient_observation", "observation", observation, "context", snapshot);
         JsonArray messages = new JsonArray();
         // A remark needs the character, not the list of actions: a short prompt, cheaper and faster (review 22.10).
-        messages.add(message("system", personaPrompt() + "\nСейчас возможность самостоятельной реплики. Молчание допустимо: верни пустой текст, если сказать нечего. "
-                + "Только данное наблюдение и обстановка: короткая шутка, реакция или один уместный вопрос о планах/происходящем. "
-                + "Не повторяй недавние вопросы/шутки. Без команд, JSON, планов, обещаний новых действий и выдуманных результатов."));
+        messages.add(message("system", personaPrompt() + ambientDirections(canAskQuestion)));
         synchronized (HISTORY) { ambientHistory(HISTORY).forEach(messages::add); }
         messages.add(message("user", "Наблюдение игры (данные): " + observation + "\nОбстановка (данные): " + snapshot));
         JsonObject body = new JsonObject(); body.addProperty("model", OpenRouterConfig.MODEL.get().isBlank() ? "openrouter/auto" : OpenRouterConfig.MODEL.get());

@@ -47,18 +47,62 @@ public final class CompanionCharacterTests {
         h.assertTrue(CompanionExpression.speech("Хех, ну ты и гений. Шучу.")==CompanionExpression.SMIRK,"No humor cue");
         h.assertTrue(CompanionExpression.speech("Ура, здорово получилось!")==CompanionExpression.PLEASED,"No joy cue");
         h.assertTrue(CompanionExpression.speech("Ага, сейчас сделаю.")==CompanionExpression.CALM,"Promise is joy");
+        h.assertTrue(CompanionExpression.speech("Ого, ничего себе!")==CompanionExpression.SURPRISED,"No surprise cue");
+        h.assertTrue(CompanionExpression.speech("Вот досада, обидно.")==CompanionExpression.DISPLEASED,"No displeased cue");
+        h.assertTrue(CompanionExpression.speech("Я недоволен.")==CompanionExpression.DISPLEASED,"Displeased treated as pleased");
+        h.assertTrue(CompanionExpression.speech("Тут много камня.")==CompanionExpression.CALM,"Surprise cue matches a word fragment");
         h.assertTrue(CompanionExpression.fromId(99)==CompanionExpression.CALM,"Unknown ID not safe"); h.succeed();
     }
     @GameTest(template="empty")
-    public static void initiativeWindowsAreThreeToFiveMinutesWithJitter(GameTestHelper h) {
-        var c = new CompanionConversation(); c.reset(100,0);
-        h.assertTrue(!c.ready(3699)&&c.ready(3700),"Initial quiet window");
-        c.initiativeDelivered("Работа идёт.",5000,2400); h.assertTrue(c.nextOpportunity()==11000&&!c.ready(10999)&&c.ready(11000),"Maximum initiative window");
-        for(int i=0;i<10000;i++) h.assertTrue(CompanionConversation.gap(i)>=3600&&CompanionConversation.gap(i)<=6000,"Gap escaped bounds");
-        c.initiativeDelivered("Начался дождь.",12000,777); h.assertTrue(c.nextOpportunity()==16377,"No jitter"); h.succeed();
+    public static void newEmotionsRespectDangerAndExpire(GameTestHelper h) {
+        var state = new CompanionExpressionState();
+        state.react(CompanionExpression.SURPRISED,100,60);
+        h.assertTrue(state.update(100,false,false,true)==CompanionExpression.SURPRISED,"Surprise lost during work");
+        state.react(CompanionExpression.DISPLEASED,101,60);
+        h.assertTrue(state.update(101,false,false,true)==CompanionExpression.DISPLEASED,"No displeased reaction");
+        h.assertTrue(state.update(102,true,false,true)==CompanionExpression.WORRIED,"Emotion overrides danger");
+        h.assertTrue(state.update(162,false,false,false)==CompanionExpression.CALM,"New emotion stuck");
+        h.assertTrue(CompanionExpression.fromId(5)==CompanionExpression.PLEASED,"Existing expression IDs changed");
+        h.succeed();
     }
     @GameTest(template="empty")
-    public static void aQuestionWaitsForThePlayersActualAnswer(GameTestHelper h) {
+    public static void mouthEnvelopeFollowsLocalAudioAndSilenceAtTheDeviceCursor(GameTestHelper h) throws Exception {
+        int rate = 24000;
+        byte[] samples = new byte[rate * 2];
+        for (int frame = rate / 4; frame < rate * 3 / 4; frame++) {
+            short value = (short)(Math.sin(frame * 2 * Math.PI * 220 / rate) * 16000);
+            samples[frame * 2] = (byte)value;
+            samples[frame * 2 + 1] = (byte)(value >> 8);
+        }
+        var wav = new java.io.ByteArrayOutputStream();
+        var format = new javax.sound.sampled.AudioFormat(rate,16,1,true,false);
+        try (var stream = new javax.sound.sampled.AudioInputStream(new java.io.ByteArrayInputStream(samples),format,rate)) {
+            javax.sound.sampled.AudioSystem.write(stream,javax.sound.sampled.AudioFileFormat.Type.WAVE,wav);
+        }
+        var pcm = dev.aicompanion.client.VoicePcm.decode(wav.toByteArray());
+        var envelope = new dev.aicompanion.client.CompanionSpeechEnvelope(pcm);
+        h.assertTrue(envelope.atSample(-1)==0 && envelope.atSample(0)==0,"Mouth opens before audio");
+        h.assertTrue(envelope.atSample(rate / 2)>.9F,"Speech does not open mouth");
+        h.assertTrue(envelope.atSample(rate * 9 / 10)==0 && envelope.atSample(rate)==0,"Silence/end does not close mouth");
+        float closed = 1;
+        for(int i=0;i<20;i++) closed=dev.aicompanion.client.CompanionSpeechEnvelope.smooth(closed,0,.01);
+        h.assertTrue(closed<.02F,"Release stays open across pauses");
+        float attack=dev.aicompanion.client.CompanionSpeechEnvelope.smooth(0,1,.01);
+        h.assertTrue(attack>0 && attack<1,"Attack is not smooth");
+        var next = new dev.aicompanion.client.CompanionSpeechEnvelope(new dev.aicompanion.client.VoicePcm.Pcm(format,new byte[4800]));
+        h.assertTrue(next.atSample(1200)==0,"Next silent reply inherits previous mouth");
+        h.succeed();
+    }
+    @GameTest(template="empty")
+    public static void initiativeWindowsAreOneToTwoMinutesWithJitter(GameTestHelper h) {
+        var c = new CompanionConversation(); c.reset(100,0);
+        h.assertTrue(!c.ready(1299)&&c.ready(1300),"Initial quiet window");
+        c.initiativeDelivered("Работа идёт.",5000,1200); h.assertTrue(c.nextOpportunity()==7400&&!c.ready(7399)&&c.ready(7400),"Maximum initiative window");
+        for(int i=0;i<10000;i++) h.assertTrue(CompanionConversation.gap(i)>=1200&&CompanionConversation.gap(i)<=2400,"Gap escaped bounds");
+        c.initiativeDelivered("Начался дождь.",12000,777); h.assertTrue(c.nextOpportunity()==13977,"No jitter"); h.succeed();
+    }
+    @GameTest(template="empty")
+    public static void ignoredQuestionExpiresWithoutConsentOrAnotherQuestion(GameTestHelper h) {
         var c = new CompanionConversation(); c.reset(0,0); c.delivered("Дальше за железом?",4000,0);
         h.assertTrue(!c.ready(4000+CompanionConversation.ANSWER_WAIT-1)&&c.awaitingAnswer(),"Unanswered question timed out into chatter");
         c.activity(5000,0); h.assertTrue(!c.ready(4000+CompanionConversation.ANSWER_WAIT-1),"Recording/reply activity closed the question");
@@ -98,6 +142,17 @@ public final class CompanionCharacterTests {
         c.playerMessage(4001,0);h.assertTrue(!c.acceptReply(capture,"Шучу.",true,false),"Player message not prioritized");
         capture=c.revision();c.reset(5000,0);h.assertTrue(!c.acceptReply(capture,"Шучу.",true,false),"World change replayed response");
         h.assertTrue(!c.acceptReply(c.revision(),"Куда? И зачем?",true,false),"Several questions admitted");h.succeed();
+    }
+    @GameTest(template="empty")
+    public static void recordingInvalidatesAmbientReplyWithoutAnsweringTheQuestion(GameTestHelper h) {
+        var c=new CompanionConversation();c.reset(0,0);
+        c.takeObservation(1,0,1200,true,false,0);long capture=c.revision();
+        c.activity(1201,0);
+        h.assertTrue(!c.acceptReply(capture,"Красота!",true,false),"Recording did not invalidate old reply");
+        c.delivered("Тебе нравится этот инструмент?",1300,0);c.activity(1400,0);
+        h.assertTrue(c.awaitingAnswer()&&!c.canAskQuestion(),"Failed recording counted as an answer");
+        c.reset(2000,0);
+        h.assertTrue(c.canAskQuestion()&&!c.awaitingAnswer()&&c.fresh("Тебе нравится этот инструмент?"),"World reset retained conversation state");h.succeed();
     }
     @GameTest(template="empty")
     public static void ambientHistoryKeepsQuestionsAndAnswersInCompactOrder(GameTestHelper h) {
@@ -185,7 +240,7 @@ public final class CompanionCharacterTests {
             h.assertTrue(c.socialSequence()==1,"Mature observation not emitted");
             var saved=new CompoundTag(); c.addAdditionalSaveData(saved); long now=h.getLevel().getGameTime();
             long gap=saved.getCompound("SocialCadence").getLong("Next")-now;
-            h.assertTrue(gap>=3600&&gap<=6000,"Server interval not three to five minutes: "+gap);
+            h.assertTrue(gap>=1200&&gap<=2400,"Server interval not one to two minutes: "+gap);
             var loaded=AICompanionMod.COMPANION.get().create(h.getLevel()); loaded.tickCount=300; loaded.readAdditionalSaveData(saved);
             for(int i=0;i<50;i++) loaded.observeEvent("other:"+i,"Ещё один блок.");
             h.assertTrue(loaded.socialSequence()==0,"Cooldown lost on reload");
