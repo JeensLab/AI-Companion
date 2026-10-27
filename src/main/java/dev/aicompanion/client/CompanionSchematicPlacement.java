@@ -166,11 +166,29 @@ public final class CompanionSchematicPlacement {
         }
         if (current.hintTicks-- <= 0) {
             current.hintTicks = 10;
-            BoundingBox box = current.placement().box(current.schematic);
-            minecraft.gui.setOverlayMessage(Component.literal("«" + current.schematic.title() + "» " + (current.index + 1) + "/" + current.files.size()
-                    + " · " + current.placement().rotationName() + ", " + current.placement().mirrorName() + " · " + box.minX() + " " + box.minY() + " " + box.minZ()
-                    + (current.locked ? " · закреплено" : "") + " · " + keyName(CONFIRM) + " — строить, " + keyName(CANCEL) + " — отмена").withStyle(ChatFormatting.AQUA), false);
+            minecraft.gui.setOverlayMessage(Component.literal(hint(minecraft, current)).withStyle(ChatFormatting.AQUA), false);
         }
+    }
+
+    /**
+     * The line over the hotbar, as long as the screen allows: the schematic and the two keys always, then turn, «закреплено» and the
+     * place while they fit (review of PR #6: at GUI scale «Авто» both ends were cut off).
+     */
+    private static String hint(Minecraft minecraft, Session current) {
+        int room = minecraft.getWindow().getGuiScaledWidth() - 24;
+        var font = minecraft.font;
+        String keys = keyName(CONFIRM) + " — строить · " + keyName(CANCEL) + " — отмена";
+        String title = current.schematic.title() + (current.files.size() > 1 ? " " + (current.index + 1) + "/" + current.files.size() : "");
+        while (title.length() > 8 && font.width("«" + title + "» · " + keys) > room) title = title.substring(0, title.length() - 2) + "…";
+        BoundingBox box = current.placement().box(current.schematic);
+        String turn = current.placement().rotationName() + (current.mirror == Mirror.NONE ? "" : ", отражено");
+        List<String> parts = new java.util.ArrayList<>();
+        for (String extra : new String[]{turn, current.locked ? "закреплено" : "", box.minX() + " " + box.minY() + " " + box.minZ()}) {
+            if (extra.isEmpty()) continue;
+            parts.add(extra);
+            if (font.width("«" + title + "» · " + String.join(" · ", parts) + " · " + keys) > room) parts.removeLast();
+        }
+        return "«" + title + "» · " + (parts.isEmpty() ? "" : String.join(" · ", parts) + " · ") + keys;
     }
 
     private static boolean switchSchematic(Session current, int by) {

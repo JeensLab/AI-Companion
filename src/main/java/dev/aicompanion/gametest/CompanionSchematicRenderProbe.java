@@ -86,21 +86,8 @@ public final class CompanionSchematicRenderProbe {
                 check(rotate(mc).getKey().getValue() == GLFW.GLFW_KEY_R, "Reset did not restore R");
                 mc.setScreen(null);
                 CompanionActionExecutor.cancelPendingPlans();
-                // The game's own chat: a direct command, no model request.
-                mc.player.connection.sendChat("стой здесь");
-            }
-            case 11 -> {
-                var server = mc.getSingleplayerServer();
-                var id = mc.player.getUUID();
-                server.execute(() -> {
-                    var companion = CompanionEvents.getOwnedCompanion(server.getPlayerList().getPlayer(id));
-                    placed.set(companion == null ? "none" : companion.isFollowing() ? "following" : "stays");
-                });
-            }
-            case 12 -> {
-                check("stays".equals(placed.get()), "The game chat did not reach the companion: " + placed.get());
                 CompanionHouseTests.delete(FILE);
-                AICompanionMod.LOGGER.info("SCHEMATIC_PROBE_PASSED: ghost shown, rotated by R, set down by Enter, taken by the companion, keys rebound in settings, game chat heard");
+                AICompanionMod.LOGGER.info("SCHEMATIC_PROBE_PASSED: ghost shown, rotated by R, set down by Enter, taken by the companion, keys rebound in settings");
                 mc.stop();
             }
             default -> { }

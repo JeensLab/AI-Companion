@@ -94,6 +94,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean gatheringDirt;
     int logsRemaining;
     int requestedLogs;
+    /** The wood species this chopping is for («dark_oak»), or null for any tree. */
+    String woodSpecies;
     int woodTaskVersion;
     int dirtTaskVersion;
     boolean supportSoilTask;
@@ -736,7 +738,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static boolean seesBlock(net.minecraft.world.entity.Entity viewer, Vec3 eye, BlockPos pos) { return CompanionPlacement.seesBlock(viewer, eye, pos); }
 
     public void startGatheringLogs(int count) { gathering.startGatheringLogs(count); }
-    void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count); }
+    void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count, null); }
+    void startGatheringLogsForWork(int count, String species) { gathering.startGatheringLogsForWork(count, species); }
+    /** A log this chopping takes: any while no species is asked for. */
+    boolean woodSpeciesAllows(net.minecraft.world.level.block.state.BlockState state) {
+        return woodSpecies == null || woodSpecies.equals(CompanionObtain.species(state.getBlock().asItem()));
+    }
     void startGatheringDirtForWork(int count) { gathering.startGatheringDirtForWork(count); }
     public void stopGathering() { gathering.stopGathering(); }
 

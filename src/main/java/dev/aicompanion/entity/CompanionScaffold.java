@@ -62,8 +62,18 @@ final class CompanionScaffold {
 
     static int supply(CompanionEntity owner, ToIntFunction<Item> reserved) {
         int count = 0;
-        for (Item item : MATERIALS) count += Math.max(0, carried(owner, item) - reserved.applyAsInt(item));
+        for (Item item : MATERIALS) if (usable(owner, item)) count += Math.max(0, carried(owner, item) - reserved.applyAsInt(item));
         return count;
+    }
+    /**
+     * Stone is stood on only with a pickaxe in the bag: by hand each block of it takes ten seconds to take down again (review of
+     * PR #6: a cobblestone scaffold under a 7×7 roof took five minutes). Dirt goes by hand in a moment.
+     */
+    private static boolean usable(CompanionEntity owner, Item item) {
+        if (item == Items.DIRT || item == Items.COARSE_DIRT) return true;
+        if (owner.getMainHandItem().is(net.minecraft.tags.ItemTags.PICKAXES)) return true;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(net.minecraft.tags.ItemTags.PICKAXES)) return true;
+        return false;
     }
     private static int carried(CompanionEntity owner, Item item) {
         int count = owner.getMainHandItem().is(item) ? owner.getMainHandItem().getCount() : 0;
@@ -189,8 +199,8 @@ final class CompanionScaffold {
 
     private boolean holdMaterial() {
         Item hand = owner.getMainHandItem().getItem();
-        if (MATERIALS.contains(hand) && carried(owner, hand) > reserved.applyAsInt(hand)) return true;
-        for (Item item : MATERIALS) if (carried(owner, item) > reserved.applyAsInt(item))
+        if (MATERIALS.contains(hand) && usable(owner, hand) && carried(owner, hand) > reserved.applyAsInt(hand)) return true;
+        for (Item item : MATERIALS) if (usable(owner, item) && carried(owner, item) > reserved.applyAsInt(item))
             return owner.equipForWork(BuiltInRegistries.ITEM.getKey(item).toString()).success() && owner.getMainHandItem().getItem() instanceof BlockItem;
         return false;
     }

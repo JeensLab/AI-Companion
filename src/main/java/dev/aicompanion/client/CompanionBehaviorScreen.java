@@ -10,7 +10,7 @@ final class CompanionBehaviorScreen extends Screen {
     private final Screen parent;
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
-        int left = width / 2 - 150, top = Math.max(32, height / 2 - 100);
+        int left = width / 2 - 150, top = Math.max(32, height / 2 - 85);
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();
@@ -28,10 +28,6 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.COMPANION_MARKER.set(!OpenRouterConfig.COMPANION_MARKER.get()); OpenRouterConfig.COMPANION_MARKER.save();
             b.setMessage(markerLabel());
         }).bounds(left, top + 90, 300, 20).build());
-        addRenderableWidget(Button.builder(gameChatLabel(), b -> {
-            OpenRouterConfig.GAME_CHAT.set(!OpenRouterConfig.GAME_CHAT.get()); OpenRouterConfig.GAME_CHAT.save();
-            b.setMessage(gameChatLabel());
-        }).bounds(left, top + 150, 300, 20).build());
         addRenderableWidget(Button.builder(autonomyLabel(CompanionVoiceAudio.speaker() != null && CompanionVoiceAudio.speaker().autonomyEnabled()), b -> {
             // Kept in the world with Oleg (off in a world that never had it), so the switch asks him, not the config file.
             var client = minecraft;
@@ -55,7 +51,6 @@ final class CompanionBehaviorScreen extends Screen {
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега сквозь стены (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
-    private Component gameChatLabel() { return Component.literal("Запросы из игрового чата (T): " + (OpenRouterConfig.GAME_CHAT.get() ? "вкл." : "выкл.")); }
     private Component distanceLabel() { return Component.literal("Слышимость голоса: " + OpenRouterConfig.VOICE_DISTANCE.get() + " блоков"); }
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);

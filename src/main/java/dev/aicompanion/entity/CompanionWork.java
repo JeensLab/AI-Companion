@@ -498,7 +498,12 @@ public final class CompanionWork {
             ironTool = requestedItem; ironToolCount = requestedCount; ironNeeded = ingotCost(requestedItem) * requestedCount; phase = Phase.IRON;
         }
         if (job == Job.WOOD) {
-            afterWood = Phase.WOOD_DONE; woodBeforeRequest = owner.collectedLogs(); owner.startGatheringLogsForWork(count);
+            afterWood = Phase.WOOD_DONE; woodBeforeRequest = owner.collectedLogs();
+            // «gather_wood minecraft:dark_oak_log»: only that species is chopped (the wood of a house order); empty — any tree.
+            var log = ResourceLocation.tryParse(item == null ? "" : item);
+            var logItem = log == null ? null : BuiltInRegistries.ITEM.getOptional(log).orElse(null);
+            String species = logItem != null && new ItemStack(logItem).is(ItemTags.LOGS) ? CompanionObtain.species(logItem) : null;
+            owner.startGatheringLogsForWork(count, species);
         }
         return CompanionActionResult.accepted(job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : "Сейчас подготовлюсь.");
     }

@@ -18,10 +18,11 @@ final class CompanionGathering {
 
     void startGatheringLogs(int count) {
         c.work.cancel();
-        startGatheringLogsForWork(count);
+        startGatheringLogsForWork(count, null);
     }
 
-    void startGatheringLogsForWork(int count) {
+    void startGatheringLogsForWork(int count, String species) {
+        c.woodSpecies = species;
         c.loot.beginCollection();
         c.woodTaskVersion++;
         c.temporaryPillar.requestCleanup();

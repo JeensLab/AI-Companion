@@ -139,14 +139,6 @@ public final class CompanionChatScreen extends Screen {
         }));
     }
 
-    /** A request typed in the game's own chat (T): heard like a spoken one, answered in the same chat. */
-    public static void processGameChat(String text) {
-        String trace = CompanionDiagnostics.newTrace();
-        CompanionDiagnostics.event(trace, "player_message", "source", "game_chat", "text", text);
-        appendHistory(Component.literal("Ты: " + text).withStyle(ChatFormatting.WHITE));
-        sendVoiceMessage(text, trace);
-    }
-
     private static void sendVoiceMessage(String text, String trace) {
         Minecraft minecraft = Minecraft.getInstance();
         CompanionAmbientClient.playerMessage();

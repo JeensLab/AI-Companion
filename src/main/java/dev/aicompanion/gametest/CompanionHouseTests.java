@@ -344,9 +344,86 @@ public final class CompanionHouseTests {
         });
     }
 
+    /** Review of PR #6: oak planks in the bag were counted as dark oak planks, and any tree was chopped for a species of wood. */
+    @GameTest(template = "empty")
+    public static void woodIsPlannedBySpecies(GameTestHelper h) {
+        var oak = List.of(new ItemStack(Items.OAK_PLANKS, 7));
+        var dark = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), oak, true, "minecraft:dark_oak_planks", 5);
+        h.assertTrue(!dark.refused() && dark.steps().stream().anyMatch(step -> step.type().equals("gather_wood") && step.item().equals("minecraft:dark_oak_log"))
+                && dark.steps().stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:dark_oak_planks")), "Oak planks taken for dark oak: " + dark);
+        var stairs = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.BIRCH_PLANKS, 12)), true, "minecraft:oak_stairs", 4);
+        h.assertTrue(!stairs.refused() && stairs.steps().stream().anyMatch(step -> step.type().equals("gather_wood") && step.item().equals("minecraft:oak_log")), "Birch planks taken for oak stairs: " + stairs);
+        var chest = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.BIRCH_PLANKS, 8)), true, "minecraft:chest", 1);
+        h.assertTrue(!chest.refused() && chest.steps().stream().noneMatch(step -> step.type().equals("gather_wood")), "Any planks do for a chest: " + chest);
+        var logs = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.BIRCH_LOG, 8)), true, "minecraft:oak_log", 4);
+        h.assertTrue(!logs.refused() && logs.steps().stream().anyMatch(step -> step.type().equals("gather_wood") && step.item().equals("minecraft:oak_log")), "Birch logs taken for oak logs: " + logs);
+        h.succeed();
+    }
+
+    /** The species is chopped, not the nearest tree: birch stands beside him, the oak further off. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void theSpeciesAskedForIsChopped(GameTestHelper h) {
+        ground(h);
+        for (int y = GROUND + 1; y <= GROUND + 4; y++) { h.setBlock(new BlockPos(17, y, 18), Blocks.BIRCH_LOG); h.setBlock(new BlockPos(6, y, 24), Blocks.OAK_LOG); }
+        CompanionEntity companion = spawn(h);
+        var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_planks\",\"count\":8}]"));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-house", () -> false));
+        h.succeedWhen(() -> {
+            finished(h, companion, future);
+            String report = future.join().report();
+            h.assertTrue(count(companion, Items.OAK_PLANKS) >= 8 && !report.contains("План остановлен"), report);
+            int birch = 0;
+            for (int y = GROUND + 1; y <= GROUND + 4; y++) if (h.getBlockState(new BlockPos(17, y, 18)).is(Blocks.BIRCH_LOG)) birch++;
+            h.assertTrue(birch == 4, "The nearer birch was chopped for oak planks: " + birch + " logs left");
+        });
+    }
+
+    /** Review of PR #6: no spruce around, oak planks left in the bag from the last house, birch trees near — the house is birch. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void aSpruceHouseIsBuiltFromTheTreesAroundDespiteOtherPlanks(GameTestHelper h) {
+        ground(h);
+        String file = "test_spruce_mixed.schem";
+        write(file, sponge(3, 1, 3, (x, y, z) -> Blocks.SPRUCE_PLANKS.defaultBlockState()));
+        for (int x : new int[]{6, 9}) for (int y = GROUND + 1; y <= GROUND + 4; y++) h.setBlock(new BlockPos(x, y, 22), Blocks.BIRCH_LOG);
+        CompanionEntity companion = spawn(h);
+        companion.setItem(0, new ItemStack(Items.OAK_PLANKS, 7));
+        var future = run(h, companion, "[{\"action\":\"build_house\"}]", file, Rotation.NONE);
+        h.succeedWhen(() -> {
+            finished(h, companion, future);
+            String report = future.join().report();
+            h.assertTrue(report.contains("готов") && !report.contains("План остановлен"), report);
+            for (BlockPos pos : BlockPos.betweenClosed(SITE, SITE.offset(2, 0, 2))) h.assertTrue(h.getBlockState(pos).is(Blocks.BIRCH_PLANKS), "Not built from birch: " + h.getBlockState(pos));
+            delete(file);
+        });
+    }
+
+    /** Review of PR #6: a 5×5 house saved before the schematics («SmallHouse») is the built-in house on the same place. */
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void anOldSmallHouseIsContinued(GameTestHelper h) {
+        ground(h);
+        CompanionEntity companion = spawn(h);
+        BlockPos base = h.absolutePos(SITE.offset(1, 0, 1));
+        CompoundTag saved = new CompoundTag(); companion.addAdditionalSaveData(saved);
+        CompoundTag house = new CompoundTag(); house.putLong("Base", base.asLong()); house.putString("Wood", "jungle");
+        house.putString("Dimension", h.getLevel().dimension().location().toString());
+        saved.remove("SchematicHouse"); saved.put("SmallHouse", house); companion.readAdditionalSaveData(saved);
+        var placement = companion.unfinishedHouse();
+        h.assertTrue(placement != null && placement.file().equals(CompanionSchematics.DEFAULT_HOUSE) && placement.origin().equals(base.offset(-1, 0, -1)), "Old house lost: " + placement);
+        var round = companion.houseRound();
+        h.assertTrue(round.refusal() == null && round.needs().stream().anyMatch(need -> need.item().startsWith("minecraft:jungle_")), "Old wood lost: " + round);
+        CompoundTag again = new CompoundTag(); companion.addAdditionalSaveData(again);
+        h.assertTrue(again.contains("SchematicHouse") && !again.contains("SmallHouse"), "Not saved in the new form");
+        h.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void houseRequestsAreUnderstood(GameTestHelper h) {
         h.assertTrue("build_house".equals(CompanionWorkCommands.parse("Олег, построй нам небольшой деревянный дом", "Олег").type()), "House command not recognized");
+        // Review of PR #6: «построй дом» showed «Схему «resources» не нашёл».
+        PlannedAction local = dev.aicompanion.client.CompanionLocalCommands.action(dev.aicompanion.client.CompanionLocalCommands.route("построй дом", "Олег"));
+        h.assertTrue("build_house".equals(local.type()) && local.item().isEmpty(), "Direct house command names a schematic: " + local);
+        String said = dev.aicompanion.client.CompanionDialogue.speakable("Не могу подойти к 1 блоку (например, 295, 75, 184). Освободи проход и скажи «дострой дом».");
+        h.assertTrue(said.equals("Не могу подойти к 1 блоку. Освободи проход и скажи «дострой дом»."), "Coordinates spoken in part: " + said);
         PlannedAction resume = CompanionWorkCommands.parse("дострой дом", "Олег");
         h.assertTrue(resume != null && "build_house".equals(resume.type()) && CompanionServerPlanPort.HOUSE_RESUME.equals(resume.item()), "Resume not recognized");
         h.assertTrue(CompanionWorkCommands.parse("не построй дом", "Олег") == null && CompanionWorkCommands.parse("построй дом и вернись", "Олег") == null, "Partial/negative command accepted");

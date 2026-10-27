@@ -18,9 +18,6 @@ public final class OpenRouterConfig {
             .comment("Outline the companion through walls when he is out of sight (toggled with the key G).")
             .define("companionMarker", true);
     public static final ModConfigSpec.BooleanValue CHUNK_LOADING = BUILDER.define("companionChunkLoading", true);
-    public static final ModConfigSpec.BooleanValue GAME_CHAT = BUILDER
-            .comment("In singleplayer, messages typed in the game's own chat (not commands) are requests to the companion too.")
-            .define("gameChatRequests", true);
     public static final ModConfigSpec.BooleanValue DIAGNOSTICS = BUILDER
             .comment("Write local diagnostic events, dialogue and game state to logs/aicompanion. May include private conversations and coordinates.")
             .define("diagnosticLogging", true);

@@ -37,11 +37,13 @@ public final class CompanionObtain {
 
     static final int MAX_STEPS = 16;
     private static final int MAX_DEPTH = 6;
-    private static final String LOGS = "#logs", PLANKS = "#planks", STONE = "#stone";
+    /** Any log, any planks, any crafting stone; «#logs:spruce» — logs of one species, for what only that wood makes. */
+    private static final String LOGS = "#logs", PLANKS = "#planks", STONE = "#stone", SPECIES = "#logs:";
 
     private final ServerLevel level;
     /** A bench stands within his reach: a 3x3 recipe needs no log for a new one. */
     private boolean bench;
+    /** What he carries, item by item: a key takes from all items it stands for. */
     private final Map<String, Integer> bag = new HashMap<>();
     private final List<Step> steps = new ArrayList<>();
     private final Set<String> active = new HashSet<>();
@@ -49,7 +51,7 @@ public final class CompanionObtain {
 
     private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench) {
         this.level = level; this.bench = bench;
-        for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
+        for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
     }
 
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count) {
@@ -57,18 +59,15 @@ public final class CompanionObtain {
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
         CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)));
-        String target = key(item);
-        // Only a plain log, planks or cobblestone stand for their family. Oak wood, a stripped log or cobbled deepslate is that
-        // exact item: logs in the bag do not make it (game log 27.10: «Stripped Oak Wood 0 из 7» after a plan of nothing).
-        if (target.startsWith("#") && !standsForFamily(item)) {
-            int carriedExact = carried.stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum();
-            if (carriedExact >= count) return new Plan(List.of(), null);
-            target = id.toString();
-            count -= carriedExact;
-        }
-        if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
-        // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.
-        boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
+        // What is asked for is that item: dark oak planks are not oak planks, a stripped log is not a log (review of PR #6: «Доски из
+        // тёмного дуба 0 из 5» with oak planks in the bag; game log 27.10: «Stripped Oak Wood 0 из 7»). A plain log is any log of its
+        // species, cobblestone any crafting stone.
+        String species = species(item);
+        String target = item == Items.COBBLESTONE ? STONE : species != null && plainLog(item) ? SPECIES + species : id.toString();
+        if (planner.have(target) >= count) return new Plan(List.of(), null);
+        // Planks and sticks are named by the exact item at the top: the craft that makes them is a step of its own.
+        boolean crafted = new ItemStack(item).is(ItemTags.PLANKS) || item == Items.STICK;
+        boolean ok = crafted
                 ? planner.need(target, count, 1) && planner.add("craft_item", id.toString(), count)
                 : planner.need(target, count, 0);
         if (!ok) return new Plan(List.of(), planner.why == null ? "Не знаю, как добыть «" + name(item) + "»." : planner.why);
@@ -78,9 +77,9 @@ public final class CompanionObtain {
 
     /** Takes {@code count} of the key from the bag, getting what is missing first. */
     private boolean need(String key, int count, int depth) {
-        int have = bag.getOrDefault(key, 0);
-        if (have >= count) { bag.put(key, have - count); return true; }
-        bag.put(key, 0);
+        int have = have(key);
+        if (have >= count) { take(key, count); return true; }
+        take(key, have);
         int missing = count - have;
         if (depth > MAX_DEPTH || !active.add(key)) return refuse("Цепочка для «" + label(key) + "» слишком запутанная.");
         try { return produce(key, missing, depth); } finally { active.remove(key); }
@@ -96,7 +95,12 @@ public final class CompanionObtain {
             case "minecraft:dirt" -> { return add("gather_dirt", "", count); }
             default -> { }
         }
+        // Logs of one species: those trees are chopped, not the nearest of any kind (review of PR #6: oak was chopped for dark oak).
+        if (key.startsWith(SPECIES)) return add("gather_wood", "minecraft:" + logOf(key.substring(SPECIES.length())), count);
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
+        // Planks of a species: from its logs; the craft that needs them makes them.
+        String species = species(item);
+        if (species != null && new ItemStack(item).is(ItemTags.PLANKS)) return need(SPECIES + species, ceil(count, 4), depth + 1);
         for (CompanionOre.Kind ore : CompanionOre.Kind.values())
             if (ore.drop == item) return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);
         CompanionGame.Kind game = animalFor(item);
@@ -142,12 +146,29 @@ public final class CompanionObtain {
     /** Of the items an ingredient takes, the one already carried, else the one with the shortest chain; null if none can be got. */
     private String cheapest(Ingredient ingredient, int count, int depth) {
         if (ingredient == null) return null;
+        return cheapest(options(ingredient), count, depth);
+    }
+    /**
+     * What an ingredient takes, as keys: a family only when the recipe itself takes any of it (a chest takes any planks, a bench any
+     * logs); oak stairs take oak planks, so that is the key — other planks in the bag do not make them.
+     */
+    private static List<String> options(Ingredient ingredient) {
+        List<Item> items = new ArrayList<>();
+        for (ItemStack option : ingredient.getItems()) if (!items.contains(option.getItem())) items.add(option.getItem());
+        if (items.isEmpty()) return List.of();
+        Set<String> kinds = new HashSet<>();
+        for (Item item : items) kinds.add(String.valueOf(species(item)));
+        if (items.stream().allMatch(item -> new ItemStack(item).is(ItemTags.PLANKS)))
+            return kinds.size() > 1 ? List.of(PLANKS) : List.of(BuiltInRegistries.ITEM.getKey(items.getFirst()).toString());
+        if (items.stream().allMatch(item -> new ItemStack(item).is(ItemTags.LOGS)))
+            return kinds.size() > 1 || kinds.contains("null") ? List.of(LOGS) : List.of(SPECIES + kinds.iterator().next());
+        if (items.size() > 1 && items.stream().allMatch(item -> family(item).equals(STONE))) return List.of(STONE);
         List<String> options = new ArrayList<>();
-        for (ItemStack option : ingredient.getItems()) { String key = key(option.getItem()); if (!options.contains(key)) options.add(key); }
-        return cheapest(options, count, depth);
+        for (Item item : items) { String key = BuiltInRegistries.ITEM.getKey(item).toString(); if (!options.contains(key)) options.add(key); }
+        return options;
     }
     private String cheapest(List<String> options, int count, int depth) {
-        for (String option : options) if (bag.getOrDefault(option, 0) >= count) return option;
+        for (String option : options) if (have(option) >= count) return option;
         String best = null;
         int bestCost = Integer.MAX_VALUE;
         for (String option : options.subList(0, Math.min(options.size(), 6))) {
@@ -166,7 +187,7 @@ public final class CompanionObtain {
             var recipe = holder.value();
             if (!recipe.getResultItem(level.registryAccess()).is(item)) continue;
             // Recycling a tool or armour in the furnace is no way to get nuggets: a shovel is not crafted to be melted down.
-            for (ItemStack option : recipe.getIngredients().getFirst().getItems()) { if (option.isDamageableItem()) continue; String key = key(option.getItem()); if (!options.contains(key)) options.add(key); }
+            for (ItemStack option : recipe.getIngredients().getFirst().getItems()) { if (option.isDamageableItem()) continue; String key = family(option.getItem()); if (!options.contains(key)) options.add(key); }
         }
         // What he carries first, then raw materials before blocks (the ore block itself is not what a pickaxe gives).
         options.sort(java.util.Comparator.comparing((String key) -> !key.contains("raw_")));
@@ -220,22 +241,56 @@ public final class CompanionObtain {
         return result;
     }
 
+    /** How many of what the key stands for he carries now. */
+    private int have(String key) {
+        int count = 0;
+        for (var entry : bag.entrySet()) if (stands(key, entry.getKey())) count += entry.getValue();
+        return count;
+    }
+    /** Takes that many of what the key stands for out of the bag of the plan. */
+    private void take(String key, int count) {
+        for (var entry : bag.entrySet()) {
+            if (count <= 0) break;
+            if (!stands(key, entry.getKey())) continue;
+            int taken = Math.min(count, entry.getValue());
+            entry.setValue(entry.getValue() - taken);
+            count -= taken;
+        }
+    }
+    private static boolean stands(String key, String carried) {
+        if (key.equals(carried)) return true;
+        if (!key.startsWith("#")) return false;
+        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(carried));
+        if (key.startsWith(SPECIES)) return plainLog(item) && key.substring(SPECIES.length()).equals(species(item));
+        return family(item).equals(key);
+    }
+    /** A log as a tree gives it: not stripped, not bark-covered wood. */
+    private static boolean plainLog(Item item) {
+        String path = BuiltInRegistries.ITEM.getKey(item).getPath();
+        return new ItemStack(item).is(ItemTags.LOGS) && !path.startsWith("stripped_") && (path.endsWith("_log") || path.endsWith("_stem"));
+    }
+    /** The wood species of a log, wood or planks item («dark_oak»), or null. */
+    static String species(Item item) {
+        String path = BuiltInRegistries.ITEM.getKey(item).getPath();
+        if (path.startsWith("stripped_")) path = path.substring("stripped_".length());
+        for (String suffix : List.of("_log", "_wood", "_stem", "_hyphae", "_planks")) if (path.endsWith(suffix)) return path.substring(0, path.length() - suffix.length());
+        return null;
+    }
+    private static String logOf(String species) {
+        Item stem = BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace(species + "_stem"));
+        return species + (stem != Items.AIR ? "_stem" : "_log");
+    }
+
     /** Wood and crafting stone are families: any log, any planks, any cobblestone-like block serve the same recipes. */
-    private static String key(Item item) {
+    private static String family(Item item) {
         ItemStack stack = new ItemStack(item);
         if (stack.is(ItemTags.LOGS_THAT_BURN) || stack.is(ItemTags.LOGS)) return LOGS;
         if (stack.is(ItemTags.PLANKS)) return PLANKS;
         if (stack.is(ItemTags.STONE_CRAFTING_MATERIALS) || stack.is(ItemTags.STONE_TOOL_MATERIALS)) return STONE;
         return BuiltInRegistries.ITEM.getKey(item).toString();
     }
-    private static boolean standsForFamily(Item item) {
-        ItemStack stack = new ItemStack(item);
-        if (stack.is(ItemTags.PLANKS)) return true;
-        String path = BuiltInRegistries.ITEM.getKey(item).getPath();
-        if (stack.is(ItemTags.LOGS)) return !path.startsWith("stripped_") && (path.endsWith("_log") || path.endsWith("_stem"));
-        return item == Items.COBBLESTONE;
-    }
     private static String label(String key) {
+        if (key.startsWith(SPECIES)) return name(BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace(logOf(key.substring(SPECIES.length())))));
         return switch (key) { case LOGS -> "брёвна"; case PLANKS -> "доски"; case STONE -> "булыжник"; default -> name(BuiltInRegistries.ITEM.get(ResourceLocation.parse(key))); };
     }
     private static String name(Item item) { return new ItemStack(item).getHoverName().getString(); }

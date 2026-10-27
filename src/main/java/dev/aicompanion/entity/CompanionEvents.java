@@ -281,7 +281,7 @@ public final class CompanionEvents {
                 yield CompanionActionResult.ok("protect".equals(action) ? "Защищаю тебя." : "Закончил охрану.");
             }
             case "gather_wood" -> {
-                yield companion.startWork("gather_wood", "", count);
+                yield companion.startWork("gather_wood", item, count);
             }
             // Handed over physically: walked to the player and tossed at their feet, never put into their inventory.
             case "give_wood" -> companion.startWork("give_items", "logs", 64);

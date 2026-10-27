@@ -145,7 +145,7 @@ final class CompanionGatherGoals {
                             + accessNote + " У меня в сумке: " + c.getStoredItemsSummary() + ".");
                 } else if (++noLogsTicks >= 100) finish(gathered == 0
                         ? c.autonomy.running() ? "В " + CompanionAutonomy.LEASH + " блоках от рабочего места не нашёл доступных деревьев."
-                        : "Сбор завершён: в пределах " + c.searchRadius + " блоков не нашёл доступных деревьев."
+                        : "Сбор завершён: в пределах " + c.searchRadius + " блоков не нашёл доступных деревьев" + speciesNote() + "."
                         : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен; "
                         + (unreachableLogs.isEmpty() ? "рядом больше нет доступных брёвен. "
                         : "оставшиеся брёвна не удалось достать по пути. ")
@@ -302,7 +302,8 @@ final class CompanionGatherGoals {
             if (!(c.level() instanceof ServerLevel serverLevel)) return null;
             if (searchCandidates == null) searchCandidates = CompanionLogSearch.find(serverLevel, searchOrigin, c.searchRadius);
             List<BlockPos> nearest = searchCandidates.stream().filter(candidate -> !unreachableLogs.contains(candidate) && !builtLogs.contains(candidate)
-                    && c.leashAllows(candidate) && c.level().hasChunkAt(candidate) && c.level().getBlockState(candidate).is(BlockTags.LOGS))
+                    && c.leashAllows(candidate) && c.level().hasChunkAt(candidate) && c.level().getBlockState(candidate).is(BlockTags.LOGS)
+                    && c.woodSpeciesAllows(c.level().getBlockState(candidate)))
                     .sorted(Comparator.comparingDouble(candidate -> candidate.distSqr(c.blockPosition()) + Math.max(0, candidate.getY() - c.getY()) * 4))
                     .limit(64).toList();
             // Marathon 23.10, «берег»: the trees were looked for once, from the mainland; on the island the two farther ones were beyond
@@ -376,7 +377,7 @@ final class CompanionGatherGoals {
             visited.add(seed.immutable());
             while (!queue.isEmpty() && currentTreeLogs.size() < 512) {
                 BlockPos pos = queue.removeFirst();
-                if (!c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(BlockTags.LOGS)) continue;
+                if (!c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(BlockTags.LOGS) || !c.woodSpeciesAllows(c.level().getBlockState(pos))) continue;
                 currentTreeLogs.add(pos.immutable());
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dy = -1; dy <= 1; dy++) {
@@ -396,6 +397,13 @@ final class CompanionGatherGoals {
         private Path findApproachPath(BlockPos log) {
             Path path = CompanionMiningNavigation.pathTo(c, log, 3.7, true);
             return path != null && path.canReach() ? path : null;
+        }
+
+        /** Chopping for one species: said in the report, so «no trees» is not read as «no trees at all». */
+        private String speciesNote() {
+            if (c.woodSpecies == null) return "";
+            var log = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.withDefaultNamespace(c.woodSpecies + "_log"));
+            return log == net.minecraft.world.item.Items.AIR ? "" : " с «" + new net.minecraft.world.item.ItemStack(log).getHoverName().getString() + "»";
         }
 
         private void finish(String message) {

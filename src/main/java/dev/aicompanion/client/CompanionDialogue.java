@@ -34,7 +34,9 @@ public final class CompanionDialogue {
     public static String speakable(String text) {
         if (text == null) return "";
         String result = text.split("Известные места:|В сумке:|У меня в сумке:|Цепочка:|Координаты:|Материалы сохранены")[0];
-        result = names(cleanReply(result)).replaceAll("(?:\\s(?:на|в))?\\s*\\(?-?\\d+, -?\\d+, -?\\d+\\)?", "")
+        // «(например, 295, 75, 184)» goes as a whole: only the numbers used to go, and «(например,» was read aloud (review of PR #6).
+        result = names(cleanReply(result)).replaceAll("\\s*\\((?:например,?\\s*)?(?:на\\s+)?-?\\d+, -?\\d+, -?\\d+\\)", "")
+                .replaceAll("(?:\\s(?:на|в))?\\s*\\(?-?\\d+, -?\\d+, -?\\d+\\)?", "")
                 .replaceAll("\\s+([.,;:!?])", "$1").replaceAll("\\s+", " ").trim();
         if (result.length() <= 200) return result;
         int end = Math.max(result.lastIndexOf(". ", 200), Math.max(result.lastIndexOf("! ", 200), result.lastIndexOf("? ", 200)));

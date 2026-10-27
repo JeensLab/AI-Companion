@@ -73,7 +73,7 @@ public final class CompanionHouse {
     private record Step(BlockPos pos, BlockState state, Item item, int items, BlockPos partner, BlockState partnerState, int stage, boolean stripped) { }
     private enum Cost { CHEAP, COSTLY, NONE }
 
-    static final List<String> WOODS = List.of("oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry");
+    static final List<String> WOODS = List.of("oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "crimson", "warped");
     private static final double REACH = 4.5D;
     /** Free bag slots kept for the drops of a clearing and the raw materials of the next crafts. */
     private static final int KEEP_FREE = 3;
@@ -645,19 +645,25 @@ public final class CompanionHouse {
             var first = protectedBlocks.entrySet().iterator().next();
             return "Мешает " + first.getValue() + (protectedBlocks.size() > 1 ? " (и ещё " + (protectedBlocks.size() - 1) + ")" : "") + ". Убери — и скажи «дострой дом».";
         }
+        // Only blocks he has material for are «out of reach»: the glass he cannot get is no matter of a path (review of PR #6:
+        // «не могу подойти к 6 блокам», five of them glass and a jigsaw block he had just said he cannot get).
+        Map<Item, Integer> bag = bag();
         BlockPos example = null;
-        int floating = 0, unreached = 0;
+        int floating = 0, unreached = 0, unfunded = 0;
         for (int index = 0; index < steps.size(); index++) {
             if (done.get(index)) continue;
             Step step = steps.get(index);
-            if (!supportedNow(level, step)) floating++; else unreached++;
-            if (example == null) example = step.pos;
+            if (!enough(bag, step)) { unfunded++; continue; }
+            if (!supportedNow(level, step)) floating++;
+            else { unreached++; if (example == null) example = step.pos; }
         }
-        String where = example == null ? "" : " (например, " + example.toShortString() + ")";
-        if (unreached == 0 && floating > 0) return floating + " блоков висят в воздухе, опереть их не на что" + where + ".";
-        return "Не могу подойти к " + (unreached + floating) + " блокам" + where + (scaffold.failure().isBlank() ? "" : ": " + scaffold.failure().toLowerCase())
-                + ". Освободи проход и скажи «дострой дом».";
+        String missing = unfunded == 0 ? "" : "Ещё " + unfunded + " " + (unfunded == 1 ? "блок" : "блоков") + " ждут материала.";
+        if (unreached > 0) return "Не могу подойти к " + unreached + " " + (unreached == 1 ? "блоку" : "блокам") + " (например, " + example.toShortString() + ")"
+                + (scaffold.failure().isBlank() ? "" : ": " + scaffold.failure().toLowerCase().replaceAll("\\.$", "")) + ". Освободи проход и скажи «дострой дом»." + (missing.isEmpty() ? "" : " " + missing);
+        if (floating > 0) return floating + " " + (floating == 1 ? "блок висит" : "блоков висят") + " в воздухе, опереть их не на что." + (missing.isEmpty() ? "" : " " + missing);
+        return missing;
     }
+
 
     private String finishedMessage() {
         BoundingBox box = placement.box(schematic);
@@ -836,10 +842,14 @@ public final class CompanionHouse {
         return false;
     }
 
-    /** Where to stand a scaffold for the cell and how tall: {feet, (0, levels, 0)}. */
+    /**
+     * Where to stand a scaffold for the cell and how tall: {feet, (0, levels, 0)}. Of the columns that reach it, the one whose top
+     * reaches most of what is still to set down: a roof is laid from a few columns, not one column per tile (review of PR #6).
+     */
     private BlockPos[] column(ServerLevel level, BlockPos focus, Step step) {
         record Option(BlockPos feet, int levels, double score) { }
         List<Option> options = new ArrayList<>();
+        int most = Math.min(CompanionScaffold.MAX_HEIGHT, CompanionScaffold.supply(owner, this::stillNeeded));
         for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
             if (dx == 0 && dz == 0) continue;
             for (int dy = -CompanionScaffold.MAX_HEIGHT - 2; dy <= 0; dy++) {
@@ -848,10 +858,10 @@ public final class CompanionHouse {
                 double horizontal = Math.sqrt(dx * dx + dz * dz);
                 double vertical = Math.sqrt(Math.max(0, (REACH - .4) * (REACH - .4) - horizontal * horizontal));
                 int least = Math.max(1, (int) Math.ceil(focus.getY() + .5 - (feet.getY() + owner.getEyeHeight()) - vertical));
-                int most = Math.min(CompanionScaffold.MAX_HEIGHT, CompanionScaffold.supply(owner, this::stillNeeded));
-                // The lowest top from which the cell is in reach and in sight: a tile hidden at the sides is seen from above.
-                boolean added = false;
-                for (int levels = least; levels <= most && !added; levels++) {
+                // The lowest top from which the cell is in reach and in sight (a tile hidden at the sides is seen from above),
+                // and a level or two higher, which may reach more of the roof.
+                int found = 0;
+                for (int levels = least; levels <= most && found < 3; levels++) {
                     boolean clear = true;
                     for (int up = 0; up <= levels + 1 && clear; up++) {
                         BlockPos cell = feet.above(up);
@@ -861,15 +871,34 @@ public final class CompanionHouse {
                     }
                     if (!clear) break;
                     Vec3 eye = Vec3.atBottomCenterOf(feet.above(levels)).add(0, owner.getEyeHeight(), 0);
-                    if (!visible(level, eye, focus)) continue;
+                    if (found == 0 && !visible(level, eye, focus)) continue;
                     options.add(new Option(feet.immutable(), levels, levels * 4D + feet.distSqr(owner.blockPosition()) * .25D + (insideBox(feet) ? 6 : 0)));
-                    added = true;
+                    found++;
                 }
-                if (added) break;
+                if (found > 0) break;
             }
         }
         options.sort(Comparator.comparingDouble(Option::score));
+        Map<Item, Integer> bag = bag();
+        Option best = null;
+        int bestReach = -1;
+        for (Option option : options.subList(0, Math.min(16, options.size()))) {
+            Vec3 eye = Vec3.atBottomCenterOf(option.feet.above(option.levels)).add(0, owner.getEyeHeight(), 0);
+            if (!visible(level, eye, focus)) continue;
+            int reach = 0;
+            for (int index = 0; index < steps.size(); index++) {
+                Step other = steps.get(index);
+                if (done.get(index) || !enough(bag, other) || eye.distanceToSqr(other.pos.getCenter()) > (REACH + .5) * (REACH + .5)) continue;
+                if (visible(level, eye, other.pos)) reach++;
+            }
+            if (reach > bestReach) { bestReach = reach; best = option; }
+        }
+        if (best == null) return null;
+        options.remove(best);
+        options.addFirst(best);
         for (Option option : options.subList(0, Math.min(4, options.size()))) {
+            Vec3 eye = Vec3.atBottomCenterOf(option.feet.above(option.levels)).add(0, owner.getEyeHeight(), 0);
+            if (!visible(level, eye, focus)) continue;
             Path walk = owner.getNavigation().createPath(option.feet, 0);
             if (walk != null && walk.canReach()) return new BlockPos[]{option.feet, new BlockPos(0, option.levels, 0)};
         }
@@ -1056,12 +1085,28 @@ public final class CompanionHouse {
         scaffold.save(data);
         tag.put("SchematicHouse", data);
     }
+    /**
+     * A world saved before the schematics: its unfinished 5×5 house is the built-in one, on the same place and of the same wood, so
+     * «дострой дом» goes on with it (review of PR #6). The old blueprint had its floor at Base; the built-in house has it one block in.
+     */
+    private void loadSmallHouse(CompoundTag old) {
+        if (!old.contains("Base")) return;
+        String wood = old.getString("Wood");
+        if (BuiltInRegistries.BLOCK.getOptional(ResourceLocation.withDefaultNamespace(wood + "_planks")).isEmpty()) return;
+        placement = new CompanionSchematic.Placement(CompanionSchematics.DEFAULT_HOUSE, BlockPos.of(old.getLong("Base")).offset(-1, 0, -1),
+                net.minecraft.world.level.block.Rotation.NONE, net.minecraft.world.level.block.Mirror.NONE);
+        dimension = old.getString("Dimension");
+        if (!wood.equals("oak")) woods.put("oak", wood);
+        ensureLoaded();
+    }
+
     void load(CompoundTag tag) {
         cancel();
         placement = null; schematic = null; loadError = ""; woods.clear(); steps = List.of(); done.clear(); clears.clear(); interior = Set.of(); anchor = null;
         complete = false; unobtainable.clear(); lastRoundProgress = -1; stuckRounds = 0; interiorCheckedAt = -1000;
         CompoundTag data = tag.getCompound("SchematicHouse");
         placement = CompanionSchematic.Placement.load(data);
+        if (placement == null && tag.contains("SmallHouse")) { loadSmallHouse(tag.getCompound("SmallHouse")); return; }
         if (placement == null) return;
         dimension = data.getString("Dimension");
         complete = data.getBoolean("Complete");

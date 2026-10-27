@@ -81,7 +81,8 @@ public final class CompanionLocalCommands {
             case "summon" -> new PlannedAction("come", 0, 1);
             case "roam" -> new PlannedAction("wander", 0, 1);
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
-            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[3]), parts[4]);
+            // «resources» only stands for an empty item in the command string; a house without a name is no schematic «resources».
+            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[3]), "build_house".equals(parts[2]) && "resources".equals(parts[4]) ? "" : parts[4]);
             default -> new PlannedAction(parts[1], 0, 1);
         };
     }
