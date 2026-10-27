@@ -45,11 +45,11 @@ public final class CompanionDialogue {
         boolean wood = actions.stream().anyMatch(action -> "gather_wood".equals(action.type()));
         boolean crafting = actions.stream().anyMatch(action -> "craft_item".equals(action.type()));
         if (wood && crafting) return "Окей, схожу за деревом и сделаю инструменты.";
-        if (wood) return "Ага, я за деревом.";
+        if (wood) return "Ладно, я за деревом. Лесопилка на выезде.";
         if (actions.isEmpty()) return "";
         return switch (actions.getFirst().type()) {
             case "gather_dirt" -> "Окей, накопаю земли.";
-            case "gather_stone" -> "Ага, возьму кирку и добуду камня.";
+            case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
             case "store_items" -> "Сейчас сложу в сундук.";
             case "take_items" -> "Сейчас заберу из сундука.";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
@@ -60,8 +60,8 @@ public final class CompanionDialogue {
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
-            case "wait" -> "Хорошо, подожду.";
-            case "protect" -> "Я прикрою.";
+            case "wait" -> "Ладно, жду здесь.";
+            case "protect" -> "Держись рядом, я прикрою.";
             case "hunt_mobs" -> "Окей, разберусь с монстрами поблизости.";
             case "smelt_items" -> "Ага, растоплю печь.";
             case "mine_ore" -> "Ага, возьму кирку и поищу руду.";
@@ -171,14 +171,14 @@ public final class CompanionDialogue {
             String partial = partialGather(actions, failure);
             if (partial != null) return partial;
             if (failure.contains("Для подъёма не хватает земли")) return "До верхушки без опоры не достану. Дай мне немного земли.";
-            if (failure.contains("сумке нет места") || failure.contains("сумка заполнена")) return "У меня сумка забита. Освободишь немного места?";
+            if (failure.contains("сумке нет места") || failure.contains("сумка заполнена")) return "Бля, сумка забита. Нужно освободить место.";
             if (failure.contains("недостаточно") || failure.contains("не хватает") || failure.contains("Не хватает")) return "На всё пока не хватает материалов.";
             if (failure.contains("дерев") || failure.contains("брёвен")) return "Доступного дерева больше не нашёл. Давай поищем в другом месте.";
             if (failure.contains("безопасное место")) return "Здесь не получается поставить. Нужно место посвободнее.";
             return dev.aicompanion.CompanionFailureMessages.explain(actions.isEmpty() ? "" : actions.getFirst().type(), failure);
         }
         var crafted = actions.stream().filter(action -> "craft_item".equals(action.type())).toList();
-        if (actions.stream().anyMatch(action -> "build_house".equals(action.type()))) return "Дом готов! Пойдём посмотрим.";
+        if (actions.stream().anyMatch(action -> "build_house".equals(action.type()))) return "Дом готов, заебись! Пойдём посмотрим.";
         long tools = crafted.stream().filter(action -> action.item().matches(".*_(sword|pickaxe|axe|shovel|hoe)")).count();
         if (tools > 1) return "Готово, инструменты сделал.";
         if (!crafted.isEmpty()) {
