@@ -173,6 +173,23 @@ public final class CompanionObtainTests {
         });
     }
 
+    /** Ore for the shears only: the bucket cannot be got, so its steps are skipped and the shears are still taken in hand. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void aPartMissingDoesNotDropTheRestOfThePlan(GameTestHelper h) {
+        CompanionEntity companion = craftArena(h);
+        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:shears\",\"count\":1},"
+                + "{\"action\":\"obtain_item\",\"item\":\"minecraft:bucket\",\"count\":1},"
+                + "{\"action\":\"equip_item\",\"item\":\"minecraft:shears\",\"slot\":\"mainhand\"},"
+                + "{\"action\":\"give_items\",\"item\":\"minecraft:bucket\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            var outcome = future.join();
+            h.assertTrue(companion.getItemBySlot(EquipmentSlot.MAINHAND).is(Items.SHEARS) && count(companion, Items.BUCKET) == 0
+                    && outcome.report().contains(dev.aicompanion.client.CompanionDialogue.PARTIAL_PREFIX) && !outcome.report().contains("План остановлен")
+                    && outcome.skipped().stream().anyMatch(a -> a.type().equals("give_items")) && outcome.skipped().stream().anyMatch(a -> a.type().equals("obtain_item")), outcome.toString());
+        });
+    }
+
     /** Iron ore, a furnace and coal at hand, an empty bag: shears take two ingots. */
     private static CompanionEntity craftArena(GameTestHelper h) {
         ground(h);

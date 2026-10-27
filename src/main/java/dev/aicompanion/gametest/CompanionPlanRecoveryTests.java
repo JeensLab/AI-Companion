@@ -198,6 +198,39 @@ public final class CompanionPlanRecoveryTests {
         });
     }
 
+    /** A given-up «get it» skips only the later steps naming that item; a step that fails outside it still stops the plan. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void givenUpObtainSkipsOnlyItsOwnItem(GameTestHelper h) {
+        var port = new BagPort();
+        port.neverMines = true;
+        var equip = new PlannedAction("equip_item", 0, 1, "minecraft:iron_helmet", "head");
+        var follow = new PlannedAction("follow", 0, 1);
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET, equip, follow), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "follow:1")) && outcome.skipped().equals(List.of(OBTAIN_HELMET, equip))
+                    && outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX + "Руды рядом нет.") && !outcome.report().contains("План остановлен")
+                    && outcome.report().endsWith(CompanionDialogue.SKIPPED_PREFIX + CompanionDialogue.describeAll(List.of(OBTAIN_HELMET, equip))), port.calls + " " + outcome);
+            String said = CompanionDialogue.summarize(List.of(OBTAIN_HELMET, equip, follow), outcome.report());
+            h.assertTrue(said.contains("Остальное сделал") && said.contains("Руды рядом нет") && said.contains("Пропустил"), said);
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void aStepOutsideTheObtainStillStopsThePlan(GameTestHelper h) {
+        var port = new BagPort();
+        port.neverMines = true;
+        var follow = new PlannedAction("follow", 0, 1);
+        var later = new PlannedAction("gather_stone", 0, 1);
+        port.followFails = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET, follow, later, later), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "follow:1")) && outcome.report().contains("План остановлен: Не пошёл.")
+                    && outcome.skipped().contains(later), port.calls + " " + outcome);
+        });
+    }
+
     /** A wood search that finds nothing goes on to the craft in an ordinary plan; inside obtain_item it must not be searched again and again. */
     @GameTest(template = "empty", timeoutTicks = 100)
     public static void obtainStopsWhenNoTreeIsFoundAgain(GameTestHelper h) {
@@ -272,7 +305,7 @@ public final class CompanionPlanRecoveryTests {
     private static final class BagPort implements CompanionPlanRunner.Port {
         final List<String> calls = new ArrayList<>();
         int logs, ingots, helmets;
-        boolean logsAppearAfterOre, pickaxeEatsIngot, mineFailsOnce, neverMines, mineChangesNothing, noTrees;
+        boolean logsAppearAfterOre, pickaxeEatsIngot, mineFailsOnce, neverMines, mineChangesNothing, noTrees, followFails;
         @Override public String trace() { return "gametest-bag"; }
         @Override public boolean cancelled() { return false; }
         @Override public CompletableFuture<State> state(PlannedAction action) { return CompletableFuture.completedFuture(IDLE); }
@@ -300,6 +333,7 @@ public final class CompanionPlanRecoveryTests {
                     ingots -= 2; logs--; helmets++;
                     yield CompanionActionResult.ok("Скрафтил.");
                 }
+                case "follow" -> followFails ? CompanionActionResult.failed("Не пошёл.") : CompanionActionResult.ok("Иду.");
                 default -> helmets >= 1 ? CompanionActionResult.ok("Готово.") : CompanionActionResult.failed("Добыл не всё.");
             };
             return CompletableFuture.completedFuture(new Attempt(result, true));

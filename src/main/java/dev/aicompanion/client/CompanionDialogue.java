@@ -73,6 +73,8 @@ public final class CompanionDialogue {
 
     /** Engine report line listing plan steps that were not started after a stop. */
     public static final String SKIPPED_PREFIX = "Не выполнено: ";
+    /** Engine report line: one «get it» order failed for good, yet the rest of the plan went on. */
+    public static final String PARTIAL_PREFIX = "Часть не вышла: ";
 
     public static String describe(PlannedAction action) {
         return switch (action.type()) {
@@ -152,6 +154,13 @@ public final class CompanionDialogue {
         if (marker >= 0 && (marker == 0 || report.charAt(marker - 1) == '\n')) {
             skipped = report.substring(marker + SKIPPED_PREFIX.length()).trim();
             report = report.substring(0, marker).trim();
+        }
+        int partial = report.lastIndexOf(PARTIAL_PREFIX);
+        if (partial >= 0 && !report.contains("План остановлен:") && (partial == 0 || report.charAt(partial - 1) == '\n')
+                && actions.stream().noneMatch(action -> action.type().startsWith("goal_"))) {
+            // The rest of the plan was done; the player hears why this part was not, and which steps went with it.
+            String why = dev.aicompanion.CompanionFailureMessages.primary(report.substring(partial + PARTIAL_PREFIX.length()).split("\n", 2)[0]);
+            return "Остальное сделал, а это не вышло: " + why + (skipped.isEmpty() ? "" : " Пропустил: " + skipped);
         }
         String spoken = summarizeSteps(actions, report);
         // Unstarted steps remain visible in Tasks. Reading them aloud turns one problem into a roll call.
