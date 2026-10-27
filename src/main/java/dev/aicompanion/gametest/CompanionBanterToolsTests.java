@@ -15,14 +15,16 @@ import net.neoforged.neoforge.gametest.*;
 @PrefixGameTestTemplate(false)
 public final class CompanionBanterToolsTests {
     @GameTest(template="empty")
-    public static void ordinaryAnswersDoNotPostponeInitiativeForAnotherFiveMinutes(GameTestHelper h) {
+    public static void ordinaryAnswersPauseForFifteenToThirtySecondsWithinInitiativeCap(GameTestHelper h) {
         var c=new CompanionConversation();c.reset(0,0);
-        c.playerMessage(3400,0);c.delivered("Ага, сейчас разберёмся.",4000,0);
-        h.assertTrue(!c.ready(4899)&&c.ready(4900)&&c.nextOpportunity()==3600,"Ordinary answer reset the full interval");
-        h.assertTrue(c.takeObservation(1,0,4900,true,false,2400),"Useful event after a conversation lost");
-        c.initiativeDelivered("Дождь вовремя, бля.",5000,2400);
-        c.playerMessage(5100,0);c.delivered("Зато пыль прибило.",5200,0);
-        h.assertTrue(!c.ready(10999)&&c.ready(11000),"Normal conversation bypassed initiative cap");h.succeed();
+        c.playerMessage(1400,0);c.delivered("Ага, сейчас разберёмся.",2000,0);
+        h.assertTrue(!c.ready(2299)&&c.ready(2300)&&c.nextOpportunity()==1200,"Ordinary answer reset the full interval");
+        c.delivered("Зато пыль прибило.",2400,300);
+        h.assertTrue(!c.ready(2999)&&c.ready(3000),"Maximum exchange pause is not thirty seconds");
+        h.assertTrue(c.takeObservation(1,0,3000,true,false,1200),"Useful event after a conversation lost");
+        c.initiativeDelivered("Дождь вовремя, бля.",3100,1200);
+        c.playerMessage(3200,0);c.delivered("Согласен.",3300,0);
+        h.assertTrue(!c.ready(5499)&&c.ready(5500),"Normal conversation bypassed initiative cap");h.succeed();
     }
     @GameTest(template="tall_tree",timeoutTicks=30)
     public static void unavailableConversationDoesNotConsumeTheNextUsefulTopic(GameTestHelper h) {
@@ -49,6 +51,57 @@ public final class CompanionBanterToolsTests {
         var tick=social.getClass().getDeclaredMethod("tick");tick.setAccessible(true);
         for(long seed=0;seed<10000&&c.socialSequence()==0;seed++){c.getRandom().setSeed(seed);tick.invoke(social);}
         h.assertTrue(c.socialSequence()==1&&c.socialObservation().contains("продолжаю работу")&&c.isWorking(),"No working conversation opportunity");h.succeed();
+    }
+    @GameTest(template="tall_tree",timeoutTicks=5100)
+    public static void clientAndServerAdmitDifferentCompanyTopicsWithoutTwentyMinuteSilence(GameTestHelper h) throws Exception {
+        var c=flat(h,1);c.setNoAi(true);mature(h,c);
+        Object social=field(c,"social");var tick=social.getClass().getDeclaredMethod("tick");tick.setAccessible(true);
+        var conversation=new CompanionConversation();long start=h.getLevel().getGameTime();conversation.reset(start,0);
+        String[] first={""};
+        for(int turn=1;turn<=2;turn++) {
+            int at=turn*2480;
+            h.runAtTickTime(at,()->{
+                try {
+                    long now=h.getLevel().getGameTime();
+                    c.tickCount=at;c.setConversationAvailable(conversation.ready(now));seed(c,false);
+                    tick.invoke(social);
+                    h.assertTrue(c.socialSequence()>0,"No nearby conversation opportunity: safe="+c.sociallySafe()+", available="+conversation.ready(now)+", next="+field(social,"nextSpeech")+", now="+now);
+                    h.assertTrue(conversation.takeObservation(c.socialSequence(),now-c.socialTime(),now,true,false,0),"Client and server windows suppressed the event");
+                    String fact=c.socialObservation();
+                    h.assertTrue(!fact.equals(first[0]),"Same company topic repeated");first[0]=fact;
+                    conversation.initiativeDelivered("Спокойно работаем " + at + ".",now,0);
+                    c.setConversationAvailable(false);
+                    long next=(long)field(social,"nextSpeech");
+                    h.assertTrue(next>=now+1200&&next<=now+2400,"Server cadence escaped bounds");
+                    if(at==4960)h.succeed();
+                } catch(ReflectiveOperationException e){throw new RuntimeException(e);}
+            });
+        }
+        // The test controls the availability bridge; skipped ticks cannot consume the topics.
+        c.setConversationAvailable(false);
+    }
+    @GameTest(template="tall_tree",timeoutTicks=30)
+    public static void disabledSpeechAndDistantOwnerDoNotGenerateCompanyEvents(GameTestHelper h) throws Exception {
+        var c=flat(h,1);c.setNoAi(true);c.tickCount=1200;mature(h,c);
+        Object social=field(c,"social");var tick=social.getClass().getDeclaredMethod("tick");tick.setAccessible(true);
+        c.setLifestyle(false,false);seed(c,false);tick.invoke(social);
+        h.assertTrue(c.socialSequence()==0,"Disabled speech emitted");
+        c.setLifestyle(false,true);
+        var player=h.makeMockServerPlayerInLevel();player.teleportTo(c.getX()+20,c.getY(),c.getZ());c.setOwnerId(player.getUUID());
+        seed(c,false);tick.invoke(social);
+        h.assertTrue(c.socialSequence()==0,"Distant company offered conversation");h.succeed();
+    }
+    @GameTest(template="tall_tree",timeoutTicks=30)
+    public static void companyMemoryKeepsAWholeSuccessfulFactButDoesNotRepeatFailures(GameTestHelper h) throws Exception {
+        var c=flat(h,1);c.setNoAi(true);c.tickCount=1200;
+        c.recordActionResult(CompanionActionResult.ok("Сделал каменную кирку."));
+        var saved=new CompoundTag();c.addAdditionalSaveData(saved);c.readAdditionalSaveData(saved);mature(h,c);
+        Object social=field(c,"social");var tick=social.getClass().getDeclaredMethod("tick");tick.setAccessible(true);
+        seed(c,false);tick.invoke(social);
+        h.assertTrue(c.socialObservation().contains("сделано — Сделал каменную кирку."),"Real past outcome missing");
+        c.recordActionResult(CompanionActionResult.failed("Не нашёл безопасного хода к руде."));mature(h,c);
+        seed(c,false);tick.invoke(social);
+        h.assertTrue(!c.socialObservation().contains("Не нашёл")&&!c.socialObservation().contains("прошлое дело"),"Failure notice repeated as banter");h.succeed();
     }
     @GameTest(template="tall_tree",timeoutTicks=900)
     public static void coalMiningUpgradesWoodToStoneWithExistingSticks(GameTestHelper h) {
@@ -185,6 +238,6 @@ public final class CompanionBanterToolsTests {
     private static int count(CompanionEntity c,Item item){int n=0;for(int i=0;i<c.getContainerSize();i++)if(c.getItem(i).is(item))n+=c.getItem(i).getCount();for(var s:new EquipmentSlot[]{EquipmentSlot.MAINHAND,EquipmentSlot.OFFHAND})if(c.getItemBySlot(s).is(item))n+=c.getItemBySlot(s).getCount();return n;}
     private static void mature(GameTestHelper h,CompanionEntity c){var tag=new CompoundTag();c.addAdditionalSaveData(tag);var cadence=new CompoundTag();cadence.putLong("Next",h.getLevel().getGameTime());tag.put("SocialCadence",cadence);c.readAdditionalSaveData(tag);}
     private static void seed(CompanionEntity c,boolean miss){for(long s=0;s<100000;s++){c.getRandom().setSeed(s);if((c.getRandom().nextFloat()>.65F)==miss){c.getRandom().setSeed(s);return;}}throw new AssertionError("No seed");}
-    private static Object field(Object target,String name)throws Exception{var f=target.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(target);}
+    private static Object field(Object target,String name)throws ReflectiveOperationException{var f=target.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(target);}
     private static void set(Object target,String name,Object value)throws Exception{var f=target.getClass().getDeclaredField(name);f.setAccessible(true);f.set(target,value);}
 }

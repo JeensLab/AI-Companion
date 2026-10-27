@@ -6,7 +6,7 @@ public final class CompanionExpressionState {
     private CompanionExpression pulse = CompanionExpression.CALM;
 
     public void react(CompanionExpression expression, long now, int ticks) {
-        if (expression != CompanionExpression.SMIRK && expression != CompanionExpression.PLEASED && expression != CompanionExpression.WORRIED) return;
+        if (expression == CompanionExpression.CALM || expression == CompanionExpression.FOCUSED || expression == CompanionExpression.COMBAT) return;
         pulse = expression;
         pulseUntil = now + Math.max(1, Math.min(160, ticks));
     }

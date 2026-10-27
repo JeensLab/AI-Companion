@@ -5,7 +5,7 @@ import net.minecraft.client.Minecraft;
 import java.util.UUID;
 import dev.aicompanion.CompanionConversation;
 
-/** Rare nearby comments. Background requests cannot execute actions or interrupt a conversation. */
+/** Nearby comments. Background requests cannot execute actions or interrupt a conversation. */
 final class CompanionAmbientClient {
     private static Object world;
     private static UUID companion;
@@ -14,7 +14,7 @@ final class CompanionAmbientClient {
     private static int transcriptions;
     private CompanionAmbientClient() { }
     private static long now() { var level = Minecraft.getInstance().level; return level == null ? 0 : level.getGameTime(); }
-    private static int jitter() { return java.util.concurrent.ThreadLocalRandom.current().nextInt(2401); }
+    private static int jitter() { return java.util.concurrent.ThreadLocalRandom.current().nextInt(CompanionConversation.MAX_GAP - CompanionConversation.MIN_GAP + 1); }
     static void conversationActivity() { conversation.activity(now(), jitter()); }
     static void transcriptionStarted() { transcriptions++; conversationActivity(); }
     static void transcriptionFinished() { transcriptions = Math.max(0, transcriptions - 1); conversationActivity(); }
@@ -74,7 +74,7 @@ final class CompanionAmbientClient {
         Object capturedWorld = world; UUID capturedCompanion = companion;
         long activity = conversation.revision(); String observation = speaker.socialObservation();
         String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
-        OpenRouterClient.react(observation, GameContext.ambientSnapshot(speaker), trace).whenComplete((text, error) -> client.execute(() -> {
+        OpenRouterClient.react(observation, GameContext.ambientSnapshot(speaker), trace, conversation.canAskQuestion()).whenComplete((text, error) -> client.execute(() -> {
             if (world != capturedWorld || client.level != capturedWorld) {
                 dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", "world_changed"); return;
             }
