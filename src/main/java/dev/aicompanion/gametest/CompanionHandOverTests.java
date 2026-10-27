@@ -83,6 +83,48 @@ public final class CompanionHandOverTests {
         });
     }
 
+    /**
+     * Game 27.10: two helmets made in a mine, the player 54 blocks off on the surface; the single direct path found no way and the
+     * hand-over gave up after 40 s. Here a long wall stands between them, the way round is longer than one search of the pathfinder.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 3000)
+    public static void handOverFromFarBehindAWallGoesInLegs(GameTestHelper h) {
+        for (int x = 0; x < 128; x++) for (int z = 0; z < 128; z++) {
+            h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+            if (x == 0 || x == 127 || z == 0 || z == 127 || (z == 90 && x >= 30)) for (int y = 1; y <= 3; y++) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
+        }
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 64, 1, 64);
+        var player = h.makeMockServerPlayerInLevel();
+        BlockPos stand = h.absolutePos(new BlockPos(62, 1, 118));
+        player.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        companion.setOwnerId(player.getUUID());
+        player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
+        CompanionEvents.getOwnedCompanion(player);
+        companion.setSearchRadius(60);
+        companion.setItem(0, new ItemStack(Items.IRON_HELMET, 2));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(owner, "give_items", "minecraft:iron_helmet", 2).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isWorking() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            boolean onGround = h.getLevel().getEntitiesOfClass(ItemEntity.class, owner.getBoundingBox().inflate(6),
+                    item -> item.getItem().is(Items.IRON_HELMET)).stream().mapToInt(item -> item.getItem().getCount()).sum() == 2;
+            h.assertTrue(onGround || owner.getInventory().countItem(Items.IRON_HELMET) == 2, "Helmets not at the player");
+            h.assertTrue(count(companion, Items.IRON_HELMET) == 0, "Kept the helmets");
+        });
+    }
+
+    /** Game 27.10: a failed hand-over was heard as «С этим пока не справился»; it must say the things are still with him. */
+    @GameTest(template = "empty")
+    public static void failedHandOverSaysItemsAreStillWithHim(GameTestHelper h) {
+        var steps = List.of(new PlannedAction("give_items", 0, 2, "minecraft:iron_helmet"));
+        for (String report : List.of("План остановлен: Не смог к тебе подойти, вещи остались у меня.",
+                "План остановлен: Не смог к тебе подойти: полминуты не мог подойти ближе, остановился на 1, 2, 3.")) {
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(steps, report);
+            h.assertTrue(said.contains("у меня") && said.contains("дошёл") && !said.contains("не справился"), said);
+        }
+        h.succeed();
+    }
+
     /** Game log 22.10: "put the stone sword in the chest" also put away the sword Oleg uses himself. */
     @GameTest(template = "tall_tree", timeoutTicks = 500)
     public static void storingANamedToolMovesOnlyTheRequestedOne(GameTestHelper h) {

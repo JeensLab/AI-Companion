@@ -4,7 +4,7 @@ import java.util.Locale;
 
 /** Spoken problems describe what matters to the player; engine receipts stay in the task journal. */
 public final class CompanionFailureMessages {
-    public enum Kind { BAG, WOOD, MATERIALS, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, OTHER }
+    public enum Kind { BAG, WOOD, MATERIALS, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, OTHER }
     private CompanionFailureMessages() { }
     public static String primary(String report) {
         int stopped = report.lastIndexOf("План остановлен:");
@@ -14,6 +14,7 @@ public final class CompanionFailureMessages {
     public static Kind kind(String report) {
         String text = primary(report).toLowerCase(Locale.ROOT).replace('ё','е');
         if (text.contains("нет места") || text.contains("сумка заполнена") || text.contains("сумка забита")) return Kind.BAG;
+        if (text.contains("к тебе подойти")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
@@ -39,6 +40,7 @@ public final class CompanionFailureMessages {
             case FOOD -> "Больше подходящей добычи поблизости не нашёл.";
             case PLACE -> "Здесь тесно, нужно место посвободнее.";
             case TIMEOUT -> "С этим затянулось. Пока отложу.";
+            case HANDOVER -> "Не дошёл до тебя, вещи остались у меня.";
             case OTHER -> "С этим пока не справился.";
         };
     }
