@@ -56,6 +56,8 @@ final class CompanionPlaces {
                         && place.pos.distSqr(owner.blockPosition()) <= radius * radius && (!loadedOnly || owner.level().hasChunkAt(place.pos)))
                 .sorted(Comparator.comparingDouble(place -> place.pos.distSqr(owner.blockPosition()))).map(Place::pos).toList();
     }
+    /** He set this block down or saw it: its place is known (what is inside a chest is learnt only by opening it). */
+    boolean knows(BlockPos pos) { return places.containsKey(key(dimension(), pos)); }
     /** He set this block down himself and it is still the block he set (a chest, furnace or bench of his, not the player's). */
     boolean placedByCompanion(BlockPos pos) {
         Place place = places.get(key(dimension(), pos));

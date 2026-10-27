@@ -100,7 +100,7 @@ public final class CompanionBanterToolsTests {
         c.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.WOODEN_PICKAXE));
         c.setItem(0,new ItemStack(Items.COBBLESTONE,4));c.setItem(1,new ItemStack(Items.STICK,4));
         boolean[] used={false};h.onEachTick(()->{var hand=c.getMainHandItem();used[0]|=hand.is(Items.STONE_SHOVEL)&&hand.getDamageValue()>0;});
-        c.startWork("mine_ore","coal",1);
+        glimpse(h,c,new BlockPos(16,3,23),19).thenExecute(()->c.startWork("mine_ore","coal",1));
         h.succeedWhen(()->{done(h,c);h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COAL)>0&&used[0],"No shovel in real dirt tunnel: "+c.getLastTaskResult());h.assertTrue(count(c,Items.WOODEN_PICKAXE)==1,"Original pickaxe lost");});
     }
     @GameTest(template="tall_tree",timeoutTicks=4000)
@@ -117,7 +117,7 @@ public final class CompanionBanterToolsTests {
             var hand=c.getMainHandItem();used[0]|=hand.is(Items.STONE_SHOVEL)&&hand.getDamageValue()>0;
             descended[0]|=c.getY()<h.absolutePos(new BlockPos(0,5,0)).getY();
         });
-        c.autonomy().setEnabled(true);
+        glimpse(h,c,new BlockPos(16,3,22),18).thenExecute(()->c.autonomy().setEnabled(true));
         h.succeedWhen(()->{
             h.assertTrue(count(c,Items.COAL)>=8&&!c.isWorking()&&c.getY()>=h.absolutePos(new BlockPos(0,6,0)).getY()-.1,"Autonomous tunnel unfinished: "+c.getActivityForAi()+" "+c.getLastTaskResult());
             h.assertTrue(used[0]&&descended[0],"No actual descent or shovel use");
@@ -172,6 +172,13 @@ public final class CompanionBanterToolsTests {
         var c=h.spawn(AICompanionMod.COMPANION.get(),16,y,16);var p=h.makeMockServerPlayerInLevel();p.teleportTo(c.getX()-3,c.getY(),c.getZ()-3);
         c.setOwnerId(p.getUUID());p.getPersistentData().putUUID("aicompanion:canonical_companion",c.getUUID());CompanionEvents.getOwnedCompanion(p);
         c.setFollowing(false);c.setLifestyle(false,true);c.setSearchRadius(16);return c;
+    }
+    /** He once saw this buried ore (no x-ray): a trench over it from z=fromZ stays open until he notices it, then the ground is as it was. */
+    private static GameTestSequence glimpse(GameTestHelper h,CompanionEntity c,BlockPos ore,int fromZ){
+        for(int x=15;x<=17;x++)for(int z=fromZ;z<=ore.getZ();z++)for(int y=4;y<6;y++)h.setBlock(new BlockPos(x,y,z),Blocks.AIR);
+        return h.startSequence().thenWaitUntil(()->h.assertTrue(c.remembersOre(h.absolutePos(ore)),"Ore in the trench not noticed")).thenExecute(()->{
+            for(int x=15;x<=17;x++)for(int z=fromZ;z<=ore.getZ();z++)for(int y=4;y<6;y++)h.setBlock(new BlockPos(x,y,z),y==5?Blocks.GRASS_BLOCK:Blocks.DIRT);
+        });
     }
     private static void bench(GameTestHelper h,CompanionEntity c,BlockPos pos){h.setBlock(pos,Blocks.CRAFTING_TABLE);c.rememberPlaced(h.absolutePos(pos));}
     private static void done(GameTestHelper h,CompanionEntity c){h.assertTrue(!c.isWorking()&&!c.isGatheringTask(),"Still working: "+c.getLastTaskResult());}

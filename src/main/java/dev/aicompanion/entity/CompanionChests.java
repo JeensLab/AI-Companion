@@ -68,7 +68,8 @@ final class CompanionChests {
         w.animateChest(level, w.openedChest, 1);
         level.playSound(null, w.openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
         w.owner.animateAction(3, w.target, ItemStack.EMPTY);
-        w.transferred += transfer(chest);
+        int moved = transfer(chest);
+        w.transferred += moved;
         chest.setChanged();
         w.rememberedChest = w.target.immutable();
         w.owner.rememberObserved(w.target);
@@ -76,7 +77,8 @@ final class CompanionChests {
         w.triedChests.add(w.target);
         w.phase = CompanionWork.Phase.CLOSE;
         w.cooldown = 10;
-        w.owner.workStatus("Складываю вещи в сундук.");
+        // A full chest is found full only by opening it; the next one he knows is tried.
+        w.owner.workStatus(moved > 0 ? "Складываю вещи в сундук." : "Этот сундук полон, поищу другой.");
     }
 
     /** An explicit placement order always places new blocks, even if storage already exists. */
@@ -147,7 +149,7 @@ final class CompanionChests {
         if (w.target == null) { w.target = findChest(level); w.resetApproach(); }
         if (w.target == null) {
             w.finish(w.transferred > 0 && (w.requestedItem.equals("all") || w.transferred >= w.requestedCount),
-                    "Забрал " + w.transferred + (w.requestedItem.equals("all") ? " предметов" : " из " + w.requestedCount) + ". В доступных сундуках больше нужных вещей нет. В сумке: " + w.owner.getStoredItemsSummary() + "."); return;
+                    "Забрал " + w.transferred + (w.requestedItem.equals("all") ? " предметов" : " из " + w.requestedCount) + ". В сундуках, что я знаю, больше нужных вещей нет. В сумке: " + w.owner.getStoredItemsSummary() + "."); return;
         }
         Container chest = chestAt(level, w.target);
         if (chest == null) { w.triedChests.add(w.target); w.resetTarget(); return; }
@@ -160,9 +162,10 @@ final class CompanionChests {
         w.openedChest = w.target.immutable(); w.animateChest(level, w.target, 1);
         level.playSound(null, w.target, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, .5F, 1);
         w.owner.observeEvent("chest", "Открыл сундук, чтобы взять нужные вещи.");
-        ItemStack shown = ItemStack.EMPTY; int movedHere = 0;
+        ItemStack shown = ItemStack.EMPTY; int movedHere = 0; boolean found = false;
         for (int slot = 0; slot < chest.getContainerSize() && w.transferred < w.requestedCount; slot++) {
             ItemStack stack = chest.getItem(slot); if (!eligible(stack)) continue;
+            found = true;
             ItemStack offered = stack.copyWithCount(Math.min(stack.getCount(), w.requestedCount - w.transferred));
             int offeredCount = offered.getCount(); w.owner.storeLoot(offered);
             int moved = offeredCount - offered.getCount();
@@ -170,19 +173,22 @@ final class CompanionChests {
         }
         w.owner.animateAction(3, w.target, shown); chest.setChanged(); w.owner.setChanged();
         w.rememberedChest = w.target.immutable(); w.owner.rememberObserved(w.target); w.owner.storageStatus(w.storageForAi()); w.triedChests.add(w.target);
-        if (movedHere == 0) { w.closeChest(); w.finish(false, "В сумке нет места для вещей из сундука. Предметы оставил на месте."); return; }
-        w.phase = CompanionWork.Phase.CLOSE; w.cooldown = 10; w.owner.workStatus("Забираю вещи из сундука.");
+        if (found && movedHere == 0) { w.closeChest(); w.finish(false, "В сумке нет места для вещей из сундука. Предметы оставил на месте."); return; }
+        // Nothing he needs in this one: closed again, and the next chest he knows is looked into.
+        w.phase = CompanionWork.Phase.CLOSE; w.cooldown = 10; w.owner.workStatus(found ? "Забираю вещи из сундука." : "Тут нужного нет, загляну в другой сундук.");
     }
 
     private BlockPos findChest(ServerLevel level) {
         List<BlockPos> found = new ArrayList<>();
         BlockPos center = w.owner.blockPosition();
         for (BlockPos pos : blockEntitiesNear(level)) {
-            if (w.triedChests.contains(pos) || w.insideHouse && !w.house.inside(pos)) continue;
+            if (w.triedChests.contains(pos) || w.insideHouse && !w.house.inside(pos) || chestAt(level, pos) == null) continue;
             // A deed of his own: only a chest he set down himself, near the player (the player: «не трогает мои сундуки»).
             if (w.owner.ownPlacesOnly() && (!w.owner.placedByMe(pos) || !w.owner.leashAllows(pos))) continue;
-            Container chest = chestAt(level, pos);
-            if (chest != null && (w.job == CompanionWork.Job.TAKE ? containsRequested(chest) : w.job == CompanionWork.Job.PLACE_CHEST || hasCapacity(chest))) found.add(pos.immutable());
+            // Like a player: a chest he set down, saw before or sees now, never one behind stone; what is inside he learns only
+            // by opening it, so the known chests are tried in turn.
+            if (!pos.equals(w.rememberedChest) && !w.owner.places.knows(pos) && !CompanionSight.inSight(w.owner, pos)) continue;
+            found.add(pos.immutable());
         }
         // The chest Oleg already uses is "ours": fill it before any other one nearby.
         found.sort(Comparator.comparing((BlockPos pos) -> !pos.equals(w.rememberedChest)).thenComparingDouble(pos -> pos.distSqr(center)));
@@ -238,19 +244,6 @@ final class CompanionChests {
         return moved;
     }
 
-    private boolean hasCapacity(Container chest) {
-        for (int source = 0; source < w.owner.getContainerSize(); source++) {
-            ItemStack stack = w.owner.getItem(source);
-            if (!eligible(stack)) continue;
-            for (int slot = 0; slot < chest.getContainerSize(); slot++) {
-                ItemStack existing = chest.getItem(slot);
-                if (chest.canPlaceItem(slot, stack) && (existing.isEmpty() || ItemStack.isSameItemSameComponents(existing, stack)
-                        && existing.getCount() < Math.min(stack.getMaxStackSize(), chest.getMaxStackSize()))) return true;
-            }
-        }
-        return false;
-    }
-
     private int eligibleCount() {
         int count = 0;
         int[] reserves = reserves(w.requestedItem);
@@ -291,11 +284,6 @@ final class CompanionChests {
         }
         return count;
     }
-    private boolean containsRequested(Container chest) {
-        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (eligible(chest.getItem(slot))) return true;
-        return false;
-    }
-
     /**
      * "Put the stone sword in the chest" means one sword, not every sword he carries: for a named tool, weapon or
      * armour piece only the requested count goes in (game log 22.10 put away his own sword too). Resources move whole.

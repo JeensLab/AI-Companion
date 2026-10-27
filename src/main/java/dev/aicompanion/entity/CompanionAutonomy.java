@@ -289,10 +289,10 @@ public final class CompanionAutonomy {
         for (var kind : List.of(CompanionOre.Kind.COAL, CompanionOre.Kind.IRON)) {
             var search = oreSearches.get(kind);
             if (search == null && level.getGameTime() >= nextOreScan.getOrDefault(kind, Long.MIN_VALUE)) {
-                search = new CompanionOre.Search(level, center(), LEASH, kind); oreSearches.put(kind, search);
+                search = new CompanionOre.Search(owner, level, center(), LEASH, kind); oreSearches.put(kind, search);
             }
             if (search != null && search.scan(level)) {
-                knownOre.put(kind, search.results(level)); oreSearches.remove(kind);
+                knownOre.put(kind, search.results()); oreSearches.remove(kind);
                 nextOreScan.put(kind, level.getGameTime() + 20 * 30);
             }
         }

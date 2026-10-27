@@ -68,6 +68,25 @@ public final class CompanionLivingTests {
         CompanionEntity companion = setup(helper); Container chest = chest(helper, 22); chest.setItem(0, new ItemStack(Items.OAK_LOG, 3)); companion.startWork("take_items", "logs", 7);
         helper.succeedWhen(() -> { done(helper, companion); helper.assertTrue(!companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 3 && chest.isEmpty(), "Partial withdrawal claimed full success or lost items"); });
     }
+    /** No x-ray for chests: one walled in stone and never seen is not known; its logs stay and the order says why. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void chestBehindStoneIsNotKnown(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container chest = chest(helper, 22); chest.setItem(0, new ItemStack(Items.OAK_LOG, 4));
+        for (BlockPos wall : new BlockPos[]{new BlockPos(21, 1, 16), new BlockPos(23, 1, 16), new BlockPos(22, 1, 15), new BlockPos(22, 1, 17), new BlockPos(22, 2, 16)}) helper.setBlock(wall, Blocks.STONE);
+        companion.startWork("take_items", "logs", 4);
+        helper.succeedWhen(() -> { done(helper, companion); helper.assertTrue(companion.getLastTaskResult().contains("сундуках, что я знаю") && count(chest, Items.OAK_LOG) == 4 && count(companion, Items.OAK_LOG) == 0, "Walled-in chest was known: " + companion.getLastTaskResult()); });
+    }
+    /** What is inside is learnt by opening: the nearer chest has no logs, so he looks in, closes it and goes on to the next one he sees. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void knownChestsAreOpenedInTurn(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); BlockPos near = new BlockPos(19, 1, 14), far = new BlockPos(24, 1, 18);
+        helper.setBlock(near, Blocks.CHEST); Container diamonds = (Container) helper.getBlockEntity(near); diamonds.setItem(0, new ItemStack(Items.DIAMOND, 2));
+        helper.setBlock(far, Blocks.CHEST); Container logs = (Container) helper.getBlockEntity(far); logs.setItem(0, new ItemStack(Items.OAK_LOG, 5));
+        boolean[] lookedIn = {false};
+        helper.onEachTick(() -> lookedIn[0] |= companion.getLastTaskResult().contains("Тут нужного нет"));
+        companion.startWork("take_items", "logs", 4);
+        helper.succeedWhen(() -> { done(helper, companion); helper.assertTrue(lookedIn[0] && companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 4 && count(logs, Items.OAK_LOG) == 1 && count(diamonds, Items.DIAMOND) == 2, "Chests not tried in turn: " + companion.getLastTaskResult()); });
+    }
     @GameTest(template = "tall_tree", timeoutTicks = 500)
     public static void chestMaterialsCanThenBeCrafted(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); Container chest = chest(helper, 22); chest.setItem(0, new ItemStack(Items.OAK_LOG, 4)); companion.startWork("take_items", "logs", 4);

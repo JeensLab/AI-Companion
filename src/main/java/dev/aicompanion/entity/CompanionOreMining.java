@@ -108,9 +108,9 @@ final class CompanionOreMining {
         }
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
         if (w.oreCandidates == null) {
-            if (w.oreSearch == null) w.oreSearch = new CompanionOre.Search(level, w.owner.blockPosition(), w.owner.getSearchRadius(), w.ore);
+            if (w.oreSearch == null) w.oreSearch = new CompanionOre.Search(w.owner, level, w.owner.blockPosition(), w.owner.getSearchRadius(), w.ore);
             if (!w.oreSearch.scan(level)) { w.owner.workStatus("Ищу «" + w.ore.oreName + "» в пределах " + w.oreSearch.radius() + " блоков."); return; }
-            w.oreCandidates = new ArrayList<>(w.oreSearch.results(level)); w.oreFound = w.oreCandidates.size();
+            w.oreCandidates = new ArrayList<>(w.oreSearch.results()); w.oreFound = w.oreCandidates.size();
         }
         if (!w.oreTunnel.isEmpty()) { digOreTunnel(level); return; }
         if (w.target == null) {
@@ -146,7 +146,7 @@ final class CompanionOreMining {
         if (harvestOreCell(level, w.target)) w.resetTarget();
     }
 
-    /** The next ore that can really be reached: in sight from a standing place, or behind a short safe tunnel. A few per tick. */
+    /** The next ore he sees or remembers that can really be reached: on foot, or by a short safe tunnel. A few per tick. */
     /**
      * Like stone: ore he can hit from here first, then the ore nearest on foot (one route search for the nearest ones in
      * sight), and a short tunnel only when walking plus digging it is less than the walk to the nearest ore in sight.
@@ -155,6 +155,8 @@ final class CompanionOreMining {
         w.oreChoosing = false;
         for (var iterator = w.oreCandidates.iterator(); iterator.hasNext(); ) {
             BlockPos candidate = iterator.next();
+            // Mined since he saw it: nothing to remember there any more.
+            if (level.hasChunkAt(candidate) && !w.ore.is(level.getBlockState(candidate))) w.owner.sight.forget(candidate);
             if (w.oreRejected.contains(candidate) || !w.owner.leashAllows(candidate)
                     || w.owner.autonomy().running() && candidate.getY() < w.owner.autonomy().center().getY() - CompanionOre.MAX_DROP
                     || !level.hasChunkAt(candidate) || !w.ore.is(level.getBlockState(candidate))) { iterator.remove(); continue; }
@@ -260,6 +262,7 @@ final class CompanionOreMining {
         w.owner.dropHarvest(pos, drops);
         if (w.ore.is(state)) {
             w.oreMined++;
+            w.owner.sight.forget(pos);
             w.owner.observeEvent("ore", "Добыл блок руды «" + w.ore.oreName + "», подбираю выпавшее. Работа ещё может продолжаться.");
             // The rest of the vein first: same kind touching the mined block.
             for (Direction side : Direction.values()) {
@@ -337,8 +340,9 @@ final class CompanionOreMining {
             ironStageDone(); return;
         }
         if (w.oreMined >= w.oreWanted) { w.finish(true, "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag); return; }
-        int radius = w.oreSearch == null ? w.owner.getSearchRadius() : w.oreSearch.radius(), depth = w.oreSearch == null ? CompanionOre.MAX_DROP : w.oreSearch.depth();
-        String why = w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» не нашёл в пределах " + radius + " блоков и до " + depth + " блоков вниз."
+        // Without x-ray: only ore in sight or seen before counts, so the honest reason is what he has not seen.
+        String why = w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» рядом не вижу и поблизости не встречал. Сквозь камень я не вижу:"
+                + " отведи меня к пещере или обрыву, где она видна."
                 : " Больше доступной руды «" + w.ore.oreName + "» рядом нет.";
         if (w.oreLiquid > 0) why += " У " + CompanionWorkItems.blocks(w.oreLiquid) + " рядом вода или лава — их не трогал.";
         if (w.oreUnreachable > 0) why += " К " + w.oreUnreachable + " не нашёл безопасного хода: не глубже " + CompanionOre.MAX_DROP

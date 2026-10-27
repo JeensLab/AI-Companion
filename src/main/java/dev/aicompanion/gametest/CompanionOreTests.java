@@ -23,7 +23,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-/** Ore like a player: the right pickaxe, ore in sight or behind a short tunnel, the whole vein, back up, nothing lost. */
+/** Ore like a player: the right pickaxe, only ore seen (now or before), a short tunnel to it, the whole vein, back up, nothing lost. */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionOreTests {
@@ -62,17 +62,43 @@ public final class CompanionOreTests {
         });
     }
 
-    /**
-     * Iron buried in the ground, no cave: a player's tunnel, stairs down and then straight, never a shaft.
-     * The stone of the tunnel is picked up too, and Oleg walks back up his own stairs.
-     */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
-    public static void buriedOreIsReachedByATunnelNotAShaft(GameTestHelper h) {
+    /** Iron buried in the ground, no cave, never seen: no x-ray, so the order ends honestly and the ore stays where it is. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void buriedOreIsNotSeenThroughStone(GameTestHelper h) {
         CompanionEntity companion = buried(h);
         BlockPos ore = new BlockPos(16, 3, 23); h.setBlock(ore, Blocks.IRON_ORE);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         h.assertTrue(companion.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        long id = companion.activeWorkId();
         h.succeedWhen(() -> {
+            done(h, companion);
+            CompanionActionResult result = companion.workResult(id);
+            h.assertTrue(result != null && !result.success() && result.message().contains("не вижу"), "Not an honest refusal: " + result);
+            h.assertTrue(h.getBlockState(ore).is(Blocks.IRON_ORE) && !companion.remembersOre(h.absolutePos(ore)), "Buried ore was found through stone");
+            h.assertTrue(count(companion, Items.COBBLESTONE) + count(companion, Items.DIRT) == 0, "Dug without seeing any ore: " + report(companion));
+        });
+    }
+
+    /**
+     * Iron he once saw at the bottom of a trench, and the trench filled in since: remembered (and saved), and reached like a
+     * player — a tunnel, stairs down and then straight, never a shaft. The stone of the tunnel is picked up too, and Oleg
+     * walks back up his own stairs.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void oreSeenEarlierIsReachedByATunnelNotAShaft(GameTestHelper h) {
+        CompanionEntity companion = buried(h);
+        companion.setFollowing(false);
+        BlockPos ore = new BlockPos(16, 3, 23); h.setBlock(ore, Blocks.IRON_ORE);
+        // A trench down to the ore, open towards him: its top face is in sight from where he stands.
+        for (int x = 15; x <= 17; x++) for (int z = 19; z <= 23; z++) for (int y = 4; y < SURFACE; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(companion.remembersOre(h.absolutePos(ore)), "Ore in sight not noticed")).thenExecute(() -> {
+            CompoundTag saved = new CompoundTag(); companion.addAdditionalSaveData(saved);
+            h.assertTrue(saved.getList("SeenOre", 10).size() == 1, "Seen ore not saved: " + saved.get("SeenOre"));
+            for (int x = 15; x <= 17; x++) for (int z = 19; z <= 23; z++) for (int y = 4; y < SURFACE; y++)
+                h.setBlock(new BlockPos(x, y, z), y == SURFACE - 1 ? Blocks.GRASS_BLOCK : Blocks.DIRT);
+            h.assertTrue(companion.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        }).thenWaitUntil(() -> {
             done(h, companion);
             h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.RAW_IRON) == 1, report(companion));
             h.assertTrue(h.getBlockState(ore).isAir(), "Ore still there");
@@ -85,7 +111,8 @@ public final class CompanionOreTests {
             h.assertTrue(deepestColumn <= 3, "Dug a shaft: deepest column " + deepestColumn);
             h.assertTrue(count(companion, Items.COBBLESTONE) + count(companion, Items.DIRT) > 0, "Tunnel blocks not picked up");
             h.assertTrue(companion.getY() >= h.absolutePos(new BlockPos(0, SURFACE, 0)).getY() - .01, "Did not climb back out: " + companion.position());
-        });
+            h.assertTrue(!companion.remembersOre(h.absolutePos(ore)), "Mined ore still remembered");
+        }).thenSucceed();
     }
 
     /** Lava right behind the ore: it is not dug, the reason is said, nothing spills. */

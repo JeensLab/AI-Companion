@@ -130,6 +130,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
     private final CompanionEntityNbt nbt = new CompanionEntityNbt(this);
     final CompanionPlaces places = new CompanionPlaces(this);
+    final CompanionSight sight = new CompanionSight(this);
     final CompanionDeeds deeds = new CompanionDeeds();
     final CompanionAutonomy autonomy = new CompanionAutonomy(this);
     final CompanionGoals goals = new CompanionGoals(this);
@@ -155,6 +156,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     int reclaimOwnDrops(BlockPos center, int radius) { int found = loot.reclaim(center, radius); if (found > 0) syncWorkState(); return found; }
     /** A block he set down himself (his chest, furnace, bench), as remembered. */
     boolean placedByMe(BlockPos pos) { return places.placedByCompanion(pos); }
+    /** He saw this ore with his own eyes and still remembers it (CompanionSight). */
+    public boolean remembersOre(BlockPos pos) { return sight.remembers(pos); }
     /** Blocks of this kind he set down himself, as remembered. */
     List<BlockPos> placedByMe(String block) { return places.placed(block); }
     /** While a deed of his own runs: only his own chests and furnaces, never the player's. */
@@ -646,6 +649,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         social.updateExpression();
         social.tick();
         lighting.tick();
+        sight.tick();
         goals.tick();
         autonomy.tick();
         diagnostics.tick();

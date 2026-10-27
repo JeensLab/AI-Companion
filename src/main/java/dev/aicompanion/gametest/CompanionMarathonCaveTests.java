@@ -91,13 +91,29 @@ public final class CompanionMarathonCaveTests {
         a.script.run("cave-torches", watch::summary);
     }
 
-    /** «Сделай железную кирку» with an empty bag: wood, stone, iron in the cave, a furnace, the pickaxe — and back up. */
+    /**
+     * No x-ray: from the meadow the iron deep in the dark cave is out of sight. He has been down in chamber B before (with the
+     * player) and saw it there; back on the meadow, the order leads him to what he remembers.
+     */
+    static MarathonScript sawTheIronBefore(GameTestHelper h, MarathonArena a, int meadowX, int meadowZ) {
+        return a.script
+                .then("he has seen the iron in chamber B", () -> {
+                    var below = h.absoluteVec(a.spot(41.5, FLOOR, 42.5));
+                    a.oleg.teleportTo(below.x, below.y, below.z);
+                }, () -> a.oleg.remembersOre(h.absolutePos(a.cell(46, FLOOR + 1, 40))), 20 * 10)
+                .then("back on the meadow", () -> {
+                    var meadow = h.absoluteVec(a.at(meadowX, meadowZ));
+                    a.oleg.teleportTo(meadow.x, meadow.y, meadow.z);
+                }, () -> true, 20);
+    }
+
+    /** «Сделай железную кирку» with an empty bag: wood, stone, the iron he saw in the cave, a furnace, the pickaxe — and back up. */
     @GameTest(template = "marathon_cave", batch = "marathon", timeoutTicks = 36000)
     public static void anIronPickaxeFromAnEmptyBag(GameTestHelper h) {
         cave(h);
         var a = new MarathonArena(h, X, Y, Z, 54, 46, 56, 47, 32);
         var watch = a.watch;
-        a.script
+        sawTheIronBefore(h, a, 54, 46)
                 .ask("Сделай железную кирку", null, 20 * 1500)
                 .check("the iron pickaxe", () -> {
                     a.expect(a.count(Items.IRON_PICKAXE) == 1, "No iron pickaxe || " + a.chat.history());
@@ -108,7 +124,7 @@ public final class CompanionMarathonCaveTests {
         a.script.run("cave-iron-pickaxe", watch::summary);
     }
 
-    /** «Добудь железо и переплавь» from the meadow: the iron is in the cave's far chamber; ingots by the bag, then back up. */
+    /** «Добудь железо и переплавь» from the meadow: the iron he saw in the cave's far chamber; ingots by the bag, then back up. */
     @GameTest(template = "marathon_cave", batch = "marathon", timeoutTicks = 20000)
     public static void ironFromTheCaveSmelted(GameTestHelper h) {
         cave(h);
@@ -116,7 +132,7 @@ public final class CompanionMarathonCaveTests {
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         a.oleg.setItem(0, new ItemStack(Items.OAK_LOG, 6));
         var watch = a.watch;
-        a.script
+        sawTheIronBefore(h, a, 56, 44)
                 .ask("Добудь железо и переплавь", "[{\"action\":\"mine_ore\",\"item\":\"minecraft:iron_ore\",\"count\":3}]", 20 * 600)
                 .check("ingots in the bag", () -> {
                     a.expect(a.chat.said.getLast().plan().stream().anyMatch(step -> step.type().equals("smelt_items")), "No smelting step: " + a.chat.history());

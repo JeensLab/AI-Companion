@@ -20,7 +20,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Ore like a player mines it: the right pickaxe, ore in sight or behind a short tunnel, never a shaft under the feet.
+ * Ore like a player mines it: the right pickaxe, only ore he sees or saw earlier (never through stone), a short tunnel
+ * when it is out of reach on foot, never a shaft under the feet.
  * Kinds, their real drops and pickaxe level come from the game tags; nothing here moves the companion.
  */
 public final class CompanionOre {
@@ -46,6 +47,11 @@ public final class CompanionOre {
             this.word = word; this.oreName = oreName; this.genitive = genitive; this.blocks = blocks; this.sample = sample; this.drop = drop; this.pickaxe = pickaxe;
         }
         boolean is(BlockState state) { return state.is(blocks); }
+        /** The kind of this ore block (deepslate and nether variants too), or null for anything else. */
+        static Kind of(BlockState state) {
+            for (Kind kind : values()) if (kind.is(state)) return kind;
+            return null;
+        }
         /** Nether gold ore breaks with any pickaxe; the iron one is for the overworld gold (review 22.10, М9). */
         private boolean netherGold(net.minecraft.world.level.Level level) { return this == GOLD && level.dimension() == net.minecraft.world.level.Level.NETHER; }
         Block sampleIn(net.minecraft.world.level.Level level) { return netherGold(level) ? Blocks.NETHER_GOLD_ORE : sample; }
@@ -153,9 +159,13 @@ public final class CompanionOre {
         return result;
     }
 
-    /** Incremental search of loaded sections for one kind of ore around the start, nearest first; exposed ore is cheaper. */
+    /**
+     * Incremental search of loaded sections for one kind of ore around the start, nearest first. Like a player without x-ray:
+     * only ore he sees now (CompanionSight) or saw earlier, never ore buried in stone.
+     */
     static final class Search {
         private record Section(int cx, int cz, int index) { }
+        private final CompanionEntity owner;
         private final Kind kind;
         private final BlockPos origin;
         private final int radius;
@@ -164,8 +174,8 @@ public final class CompanionOre {
         private final Deque<Section> pending = new ArrayDeque<>();
         private final List<BlockPos> found = new ArrayList<>();
 
-        Search(ServerLevel level, BlockPos origin, int radius, Kind kind) {
-            this.kind = kind; this.origin = origin.immutable(); this.radius = Math.clamp(radius, 8, 48);
+        Search(CompanionEntity owner, ServerLevel level, BlockPos origin, int radius, Kind kind) {
+            this.owner = owner; this.kind = kind; this.origin = origin.immutable(); this.radius = Math.clamp(radius, 8, 48);
             minY = Math.max(level.getMinBuildHeight(), origin.getY() - MAX_DROP - 1);
             maxY = Math.min(level.getMaxBuildHeight() - 1, origin.getY() + 16);
             for (int cx = (origin.getX() - this.radius) >> 4; cx <= (origin.getX() + this.radius) >> 4; cx++)
@@ -190,22 +200,21 @@ public final class CompanionOre {
                     if (!kind.is(section.getBlockState(x, y & 15, z))) continue;
                     BlockPos pos = new BlockPos((next.cx << 4) + x, y, (next.cz << 4) + z);
                     long dx = pos.getX() - origin.getX(), dz = pos.getZ() - origin.getZ();
-                    if (dx * dx + dz * dz <= (long) radius * radius) found.add(pos);
+                    if (dx * dx + dz * dz <= (long) radius * radius && CompanionSight.inSight(owner, pos)) {
+                        found.add(pos);
+                        owner.sight.saw(pos, kind);
+                    }
                 }
             }
             return pending.isEmpty();
         }
 
-        List<BlockPos> results(ServerLevel level) {
-            return found.stream().sorted(Comparator.comparingDouble(pos -> Math.sqrt(pos.distSqr(origin)) + (exposed(level, pos) ? 0 : 6))).limit(512).toList();
+        /** The ore in sight and the ore he remembers seeing within the radius, nearest first. */
+        List<BlockPos> results() {
+            var all = new java.util.LinkedHashSet<>(found);
+            all.addAll(owner.sight.ore(kind, origin, radius));
+            return all.stream().sorted(Comparator.comparingDouble(pos -> pos.distSqr(origin))).limit(512).toList();
         }
         int radius() { return radius; }
-        int depth() { return origin.getY() - minY; }
-
-        private static boolean exposed(ServerLevel level, BlockPos pos) {
-            for (Direction side : Direction.values())
-                if (level.getBlockState(pos.relative(side)).getCollisionShape(level, pos.relative(side)).isEmpty()) return true;
-            return false;
-        }
     }
 }
