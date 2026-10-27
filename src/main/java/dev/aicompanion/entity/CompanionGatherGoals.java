@@ -43,6 +43,8 @@ final class CompanionGatherGoals {
         private static final int CROWN_ATTEMPTS = 2;
         /** Farther than this a tree with no route yet is walked to, nearer it is climbed or skipped as before. */
         private static final int FAR_TREE = 12;
+        /** Most logs a bench and an axe cost. */
+        private static final int AXE_WOOD = 3;
         private int crownFailures;
         private final Set<BlockPos> unreachableLogs = new HashSet<>();
         /** Logs of a player's building (no living crown, touching planks, doors, glass…): never chopped. */
@@ -125,7 +127,11 @@ final class CompanionGatherGoals {
             c.logsRemaining = Math.max(0, inventoryTarget - CompanionTools.count(c, ItemTags.LOGS));
             c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
             // On a pillar the hand alternates soil and axe per jump/swing by itself; forcing the axe every tick only flickered.
-            if (c.logsRemaining > 0 && !c.temporaryPillar.isActive() && axeSense.tick()) { c.woodBreaking.reset(); return; }
+            // Game log 27.10: past the requested count he chopped the rest of a 32-log tree by hand. The axe for the rest
+            // of the tree comes from logs beyond the request, so an unreachable crown or a lone tree never costs the order,
+            // and only while the tree still holds as many logs as the axe costs.
+            boolean spareWood = currentTreeLogs.size() >= AXE_WOOD && CompanionTools.count(c, ItemTags.LOGS) - inventoryTarget >= AXE_WOOD;
+            if ((c.logsRemaining > 0 || spareWood) && !c.temporaryPillar.isActive() && axeSense.tick()) { c.woodBreaking.reset(); return; }
             if (c.logsRemaining > 0 && !c.temporaryPillar.isActive()) CompanionTools.equip(c, ItemTags.AXES, Blocks.OAK_LOG.defaultBlockState());
             if (target == null || !c.level().getBlockState(target).is(BlockTags.LOGS)) {
                 c.woodBreaking.reset();
