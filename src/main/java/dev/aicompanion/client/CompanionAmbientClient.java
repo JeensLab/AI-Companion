@@ -12,6 +12,7 @@ final class CompanionAmbientClient {
     private static final CompanionConversation conversation = new CompanionConversation();
     private static boolean pending;
     private static int transcriptions;
+    private static String urgentText = "";
     private CompanionAmbientClient() { }
     private static long now() { var level = Minecraft.getInstance().level; return level == null ? 0 : level.getGameTime(); }
     private static int jitter() { return java.util.concurrent.ThreadLocalRandom.current().nextInt(CompanionConversation.MAX_GAP - CompanionConversation.MIN_GAP + 1); }
@@ -64,30 +65,57 @@ final class CompanionAmbientClient {
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();
         if (speaker == null || !CompanionVoiceAudio.audible(speaker)) return;
-        // Initial tracking data is a snapshot, not a new event. Never replay a pre-load observation.
-        if (!speaker.getUUID().equals(companion)) { companion = speaker.getUUID(); conversation.trackObservation(speaker.socialSequence()); return; }
+        // Initial tracking data is a snapshot, not a new event, except an urgent line still fresh.
+        if (!speaker.getUUID().equals(companion)) {
+            companion = speaker.getUUID();
+            String first = speaker.socialObservation();
+            boolean firstUrgent = CompanionConversation.isUrgent(first);
+            conversation.firstSight(speaker.socialSequence(), now() - speaker.socialTime(), now(), firstUrgent);
+            urgentText = firstUrgent ? CompanionConversation.stripUrgent(first) : "";
+            return;
+        }
         int current = speaker.socialSequence();
-        if (!conversation.newObservation(current)) return;
-        if (!conversation.takeObservation(current, now() - speaker.socialTime(), now(), safe(speaker),
-                busy(), jitter())) return;
+        boolean fresh = conversation.newObservation(current);
+        if (!fresh && conversation.urgentPending() == 0) return;
+        boolean safe = safe(speaker);
+        String latest = speaker.socialObservation(), observation = CompanionConversation.stripUrgent(latest);
+        boolean urgent = fresh && CompanionConversation.isUrgent(latest);
+        if (urgent) {
+            boolean taken = conversation.takeObservation(current, now() - speaker.socialTime(), now(), safe, busy(), jitter(), true);
+            // Kept once taken as well: a lost reply is retried with the text of this same event.
+            if (taken || conversation.urgentPending() == current) urgentText = observation;
+            if (!taken) return;
+        } else if (conversation.takePendingUrgent(now(), safe, busy(), jitter())) {
+            urgent = true; observation = urgentText;
+        } else if (!fresh || !conversation.takeObservation(current, now() - speaker.socialTime(), now(), safe, busy(), jitter())) {
+            return;
+        }
         pending = true;
         Object capturedWorld = world; UUID capturedCompanion = companion;
-        long activity = conversation.revision(); String observation = speaker.socialObservation();
+        long activity = conversation.revision(); boolean wasUrgent = urgent;
         String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
-        OpenRouterClient.react(observation, GameContext.ambientSnapshot(speaker), trace, conversation.canAskQuestion()).whenComplete((text, error) -> client.execute(() -> {
+        OpenRouterClient.react(observation, GameContext.ambientSnapshot(speaker), trace, wasUrgent, conversation.canAskQuestion()).whenComplete((text, error) -> client.execute(() -> {
             if (world != capturedWorld || client.level != capturedWorld) {
                 dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", "world_changed"); return;
             }
             pending = false;
-            if (error != null) { dev.aicompanion.CompanionDiagnostics.failure(trace, "ambient_request", error); conversation.activity(now(), jitter()); return; }
-            if (!conversation.acceptReply(activity, text, OpenRouterConfig.AUTONOMOUS_SPEECH.get(),
-                    client.screen != null || client.isPaused() || busy())) {
-                dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", "conversation_changed_disabled_or_empty"); return;
+            if (error != null) {
+                dev.aicompanion.CompanionDiagnostics.failure(trace, "ambient_request", error); conversation.activity(now(), jitter());
+                if (wasUrgent) conversation.retryUrgent(now());
+                return;
             }
+            String rejection = conversation.rejection(activity, text, OpenRouterConfig.AUTONOMOUS_SPEECH.get(),
+                    client.screen != null || client.isPaused() || busy(), wasUrgent);
+            if (!rejection.isEmpty()) { discarded(trace, rejection, text, wasUrgent); return; }
             var currentSpeaker = CompanionVoiceAudio.speaker();
             if (currentSpeaker == null || !capturedCompanion.equals(currentSpeaker.getUUID())
-                    || !safe(currentSpeaker) || !CompanionVoiceAudio.audible(currentSpeaker)) return;
+                    || !safe(currentSpeaker) || !CompanionVoiceAudio.audible(currentSpeaker)) { discarded(trace, "not_heard", text, wasUrgent); return; }
             CompanionChatScreen.autonomousReply(text, trace);
         }));
+    }
+    /** A dropped urgent remark waits for its one retry; an ordinary one is simply lost. */
+    private static void discarded(String trace, String reason, String text, boolean urgent) {
+        dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", reason, "text", text);
+        if (urgent) conversation.retryUrgent(now());
     }
 }

@@ -204,6 +204,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         expressions.react(ok ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.WORRIED, level().getGameTime(), 100);
         // Failure already has its short work notice. Do not generate a second, model-written apology about it.
         if (ok) social.observe("deed:success", "Настоящий итог моего дела: " + CompanionDeeds.clean(message));
+        if (ok) CompanionHappeningEvents.sharedDeed(this);
     }
     private void refreshDeeds() { if (!level().isClientSide) entityData.set(DATA_DEEDS, deeds.summary(level().getGameTime())); }
     java.util.List<BlockPos> knownCraftingTables() { places.discoverTables(); refreshPlaces(); return places.tables(true); }
@@ -699,6 +700,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         boolean hurt = super.hurt(source, amount);
         if (hurt) {
             lastHurtTick = tickCount;
+            CompanionHappeningEvents.playerHit(this, source);
             if (!level().isClientSide && amount >= 4) expressions.react(dev.aicompanion.CompanionExpression.WORRIED, level().getGameTime(), 100);
         }
         return hurt;
