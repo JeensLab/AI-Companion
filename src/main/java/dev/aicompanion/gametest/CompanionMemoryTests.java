@@ -26,7 +26,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /** Chat history belongs to one world session; long-term memory is filled from the talk on the server and reaches the client by sync. */
@@ -55,6 +57,24 @@ public final class CompanionMemoryTests {
         h.assertTrue(OpenRouterClient.historySize() == 1, "New session history is wrong: " + OpenRouterClient.historySize());
         OpenRouterClient.resetSession();
         h.succeed();
+    }
+
+    @GameTest(template="empty", batch="memory_session_end")
+    public static void sessionEndRecognizesLateAndRefusedReplies(GameTestHelper h) {
+        try {
+            long begun = OpenRouterClient.generation();
+            h.assertTrue(!OpenRouterClient.sessionEnded(null, begun), "A reply of the current session was taken for a late one");
+            h.assertTrue(!OpenRouterClient.sessionEnded(new RuntimeException("x"), begun), "A failure was taken for the end of the session");
+            h.assertTrue(!OpenRouterClient.sessionEnded(new CompletionException(new RuntimeException("x")), begun), "A wrapped failure was taken for the end of the session");
+            h.assertTrue(OpenRouterClient.sessionEnded(new CancellationException(), begun), "A refused request was not recognized as the end of the session");
+            h.assertTrue(OpenRouterClient.sessionEnded(new CompletionException(new CancellationException()), begun), "A refusal wrapped in a CompletionException was not recognized");
+
+            OpenRouterClient.resetSession();
+            h.assertTrue(OpenRouterClient.sessionEnded(null, begun), "A reply accepted just before the end of the session was not recognized as late");
+            h.succeed();
+        } finally {
+            resetFlow();
+        }
     }
 
     @GameTest(template="empty")
@@ -267,49 +287,64 @@ public final class CompanionMemoryTests {
         int[] asked = {0};
         try {
             var bonds = CompanionBonds.get(server);
-            // An empty reply, a blank one, and one cut off by the token limit, which the client reports as an error.
+            // An unreadable reply, an empty one, a blank one, and one cut off by the token limit, which the client reports as an error.
             CompanionMemoryFlow.useCompleter((messages, maxTokens, trace) -> switch (asked[0]++) {
-                case 0 -> CompletableFuture.completedFuture("");
-                case 1 -> CompletableFuture.completedFuture(" \n ");
+                case 0 -> CompletableFuture.completedFuture("не JSON");
+                case 1 -> CompletableFuture.completedFuture("");
+                case 2 -> CompletableFuture.completedFuture(" \n ");
                 default -> CompletableFuture.completedFuture(CUT_OFF).thenApply(CompanionMemoryTests::completionText);
             });
             OpenRouterClient.resetSession();
             CompanionMemoryFlow.bind(server, owner, true);
-            for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Первая реплика " + i, null);
+            for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Нулевая реплика " + i, null);
 
             h.runAfterDelay(5, () -> {
                 try {
-                    h.assertTrue(asked[0] == 1 && bonds.pendingTalk(owner).size() == 12,
-                            "An empty reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
-                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Вторая реплика " + i, null);
+                    // Unlike the replies below, an answer that cannot be read counts as handled: its lines leave the journal, so the batches below stay under its ceiling.
+                    h.assertTrue(asked[0] == 1 && bonds.pendingTalk(owner).isEmpty(),
+                            "An unreadable reply left its lines in the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
+                    var unreadable = bonds.memory(owner);
+                    h.assertTrue(unreadable.entries().isEmpty() && unreadable.callMe().isEmpty(), "An unreadable reply was stored: " + unreadable.save());
+                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Первая реплика " + i, null);
 
                     h.runAfterDelay(5, () -> {
                         try {
-                            h.assertTrue(asked[0] == 2 && bonds.pendingTalk(owner).size() == 24,
-                                    "A blank reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
-                            for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Третья реплика " + i, null);
+                            h.assertTrue(asked[0] == 2 && bonds.pendingTalk(owner).size() == 12,
+                                    "An empty reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
+                            for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Вторая реплика " + i, null);
 
                             h.runAfterDelay(5, () -> {
                                 try {
-                                    h.assertTrue(asked[0] == 3 && bonds.pendingTalk(owner).size() == 36,
-                                            "A cut-off reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
-                                    var memory = bonds.memory(owner);
-                                    h.assertTrue(memory.entries().isEmpty() && memory.callMe().isEmpty(), "An unfinished reply was stored: " + memory.save());
+                                    h.assertTrue(asked[0] == 3 && bonds.pendingTalk(owner).size() == 24,
+                                            "A blank reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
+                                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Третья реплика " + i, null);
 
-                                    boolean refused = false;
-                                    try {
-                                        completionText(CUT_OFF);
-                                    } catch (IllegalStateException expected) {
-                                        refused = true;
-                                    }
-                                    h.assertTrue(refused, "A reply cut off by the token limit was taken for an answer");
-                                    String finished = completionText("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"x\"}}]}");
-                                    h.assertTrue("x".equals(finished), "A finished reply lost its text: " + finished);
-                                    String silent = completionText("{\"choices\":[{\"finish_reason\":null,\"message\":{\"content\":null}}]}");
-                                    h.assertTrue(silent.isEmpty(), "A reply without text is not empty: " + silent);
-                                    h.succeed();
-                                } finally {
+                                    h.runAfterDelay(5, () -> {
+                                        try {
+                                            h.assertTrue(asked[0] == 4 && bonds.pendingTalk(owner).size() == 36,
+                                                    "A cut-off reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
+                                            var memory = bonds.memory(owner);
+                                            h.assertTrue(memory.entries().isEmpty() && memory.callMe().isEmpty(), "An unfinished reply was stored: " + memory.save());
+
+                                            boolean refused = false;
+                                            try {
+                                                completionText(CUT_OFF);
+                                            } catch (IllegalStateException expected) {
+                                                refused = true;
+                                            }
+                                            h.assertTrue(refused, "A reply cut off by the token limit was taken for an answer");
+                                            String finished = completionText("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"x\"}}]}");
+                                            h.assertTrue("x".equals(finished), "A finished reply lost its text: " + finished);
+                                            String silent = completionText("{\"choices\":[{\"finish_reason\":null,\"message\":{\"content\":null}}]}");
+                                            h.assertTrue(silent.isEmpty(), "A reply without text is not empty: " + silent);
+                                            h.succeed();
+                                        } finally {
+                                            resetFlow();
+                                        }
+                                    });
+                                } catch (RuntimeException error) {
                                     resetFlow();
+                                    throw error;
                                 }
                             });
                         } catch (RuntimeException error) {
@@ -500,6 +535,7 @@ public final class CompanionMemoryTests {
                             var after = bonds.memory(owner);
                             h.assertTrue(bonds.pendingTalk(owner).isEmpty() && after.recentTalk().isEmpty() && after.entries().isEmpty() && after.callMe().isEmpty(),
                                     "Forgetting with memory off left the world's memory: " + after.save());
+                            h.assertTrue(!bonds.isDirty(), "Forgetting was not written out at once: the bonds still wait for the autosave");
                             h.succeed();
                         } finally {
                             resetFlow();

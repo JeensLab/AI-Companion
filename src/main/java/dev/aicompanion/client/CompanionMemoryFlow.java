@@ -197,7 +197,10 @@ public final class CompanionMemoryFlow {
         Target t = world;
         if (t == null) return;
         t.server().execute(() -> {
-            if (t.server().isRunning()) CompanionBonds.get(t.server()).forget(t.owner());
+            if (!t.server().isRunning()) return;
+            CompanionBonds.get(t.server()).forget(t.owner());
+            // The autosave may be minutes away, and a crash before it would bring the forgotten talk back at the next login.
+            t.server().overworld().getDataStorage().save();
         });
     }
 }

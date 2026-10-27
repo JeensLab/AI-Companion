@@ -438,7 +438,7 @@ public final class CompanionHappeningsTests {
         });
     }
 
-    /** The admission rule as it was written out in 8d17bfa, before {@code rejection} existed: the reference {@code acceptReply} must keep agreeing with. */
+    /** The admission rule as it was written out before {@code rejection()} existed: the reference {@code acceptReply} must keep agreeing with. */
     private static boolean acceptedBeforeRejection(dev.aicompanion.CompanionConversation say, boolean awaitingAnswer, long capturedRevision,
                                                    String text, boolean safe, boolean busy, boolean urgent) {
         return capturedRevision == say.revision() && safe && !busy && (urgent || !awaitingAnswer) && text != null

@@ -18,7 +18,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
 /** Chat completion client with a constrained tool-calling loop for in-game plans. */
@@ -89,7 +91,10 @@ public final class OpenRouterClient {
         return post(body, false, trace).thenApply(OpenRouterClient::completionText);
     }
 
-    /** The text of a plain completion; a reply cut off by the token limit is an error, not an answer that merely ends early. */
+    /**
+     * The text of a plain completion; a reply cut off by the token limit is an error, not an answer that merely ends early.
+     * Public so that a GameTest can check it on a canned response, without a network request.
+     */
     public static String completionText(JsonObject response) {
         JsonObject choice = response.getAsJsonArray("choices").get(0).getAsJsonObject();
         if ("length".equals(scalar(choice, "finish_reason"))) {
@@ -101,6 +106,17 @@ public final class OpenRouterClient {
 
     public static long generation() {
         synchronized (HISTORY) { return generation; }
+    }
+
+    /** A request refused because the session ended («Забудь всё») is not a failure; it arrives bare or wrapped in a CompletionException. */
+    private static boolean isSessionChange(Throwable error) {
+        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+        return cause instanceof CancellationException;
+    }
+
+    /** The session ended while the request was out: it was refused, or its reply was accepted just before the end and only arrives now, without an error. */
+    public static boolean sessionEnded(Throwable error, long requestGeneration) {
+        return error == null ? requestGeneration != generation() : isSessionChange(error);
     }
 
     public static List<JsonObject> historySnapshot() {

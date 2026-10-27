@@ -16,8 +16,6 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletionException;
 
 public final class CompanionChatScreen extends Screen {
     private static final int MAX_HISTORY_LINES = 200;
@@ -74,7 +72,7 @@ public final class CompanionChatScreen extends Screen {
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
         long sessionGeneration = OpenRouterClient.generation();
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
-            if (sessionEnded(error, sessionGeneration)) {
+            if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
                 if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
             } else if (error == null) {
@@ -125,8 +123,14 @@ public final class CompanionChatScreen extends Screen {
         CompanionAmbientClient.transcriptionStarted();
         Minecraft minecraft = Minecraft.getInstance();
         minecraft.gui.setOverlayMessage(Component.literal("Распознаю речь..."), false);
+        long heardGeneration = OpenRouterClient.generation();
         transcript.whenComplete((text, error) -> Minecraft.getInstance().execute(() -> {
             CompanionAmbientClient.transcriptionFinished();
+            // Recordings overlap: a phrase heard before «Забудь всё» can be recognized after it and must not reach the cleared journal or the model.
+            if (OpenRouterClient.sessionEnded(null, heardGeneration)) {
+                CompanionDiagnostics.event(trace, "voice_discarded", "reason", "session_changed");
+                return;
+            }
             Minecraft current = Minecraft.getInstance();
             if (error != null) {
                 CompanionDiagnostics.failure(trace, "speech_transcription", error);
@@ -167,7 +171,7 @@ public final class CompanionChatScreen extends Screen {
         announceThinking(OpenRouterClient.isBusy());
         long sessionGeneration = OpenRouterClient.generation();
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
-            if (sessionEnded(error, sessionGeneration)) {
+            if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
                 return;
             }
@@ -191,17 +195,6 @@ public final class CompanionChatScreen extends Screen {
                 }));
             }
         }));
-    }
-
-    /** A request refused because the session ended («Забудь всё») is not a failure; it arrives bare or wrapped in a CompletionException. */
-    private static boolean isSessionChange(Throwable error) {
-        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
-        return cause instanceof CancellationException;
-    }
-
-    /** The session ended while the request was out: it was refused, or its reply was accepted just before the end and only arrives now, without an error. */
-    private static boolean sessionEnded(Throwable error, long requestGeneration) {
-        return error == null ? requestGeneration != OpenRouterClient.generation() : isSessionChange(error);
     }
 
     /**
