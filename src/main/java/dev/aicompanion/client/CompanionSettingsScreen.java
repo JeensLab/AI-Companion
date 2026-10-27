@@ -6,6 +6,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
@@ -37,6 +38,8 @@ public final class CompanionSettingsScreen extends Screen {
         this.parent = parent;
     }
 
+    private static Component memoryLabel() { return Component.literal("Память: " + (OpenRouterConfig.LONG_TERM_MEMORY.get() ? "вкл." : "выкл.")); }
+
     @Override
     protected void init() {
         fields.clear();
@@ -44,6 +47,11 @@ public final class CompanionSettingsScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Поведение"), b -> {
             saveAndClose(); minecraft.setScreen(new CompanionBehaviorScreen(this));
         }).bounds(width - 94, 8, 88, 20).build());
+        addRenderableWidget(Button.builder(memoryLabel(), b -> {
+            OpenRouterConfig.LONG_TERM_MEMORY.set(!OpenRouterConfig.LONG_TERM_MEMORY.get()); OpenRouterConfig.LONG_TERM_MEMORY.save();
+            b.setMessage(memoryLabel()); CompanionPreferences.sync();
+        }).bounds(6, 8, 88, 20).tooltip(Tooltip.create(Component.literal(
+                "Помнить факты, обещания и недавний разговор между сессиями. Хранится в сохранении мира."))).build());
         int fieldWidth = Math.min(380, this.width - 80);
         int left = (this.width - fieldWidth) / 2;
         firstY = 36;

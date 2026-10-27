@@ -101,8 +101,10 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Длительные сценарии леса, пещеры или перезагрузки | `.\scripts\verify-endurance.ps1 -Arena Forest -Repetitions 1`; варианты арены: `Cave`, `Reload` |
 | Полный набор с итоговым JSON | `.\scripts\verify-scenarios.ps1 -Repetitions 1` |
 | Экран задач | `.\scripts\verify-task-ui.ps1` и просмотр созданных снимков |
+| Память, отношения и события | `.\scripts\verify-memory.ps1 -Expected <число тестов>`: сначала проверка `entity/*.java` (не больше 800 строк) и `build`, затем фокусный прогон `CompanionMemoryTests`, `CompanionBondTests`, `CompanionHappeningsTests`, ровно столько тестов, сколько в `-Expected`; `-Full <N>` добавляет полный `runGameTestServer` (ровно N, один повтор, если упал только известный нестабильный тест); `-Banter` добавляет `verify-banter-tools.ps1 -Repetitions 3`; `-Tag` (по умолчанию `memory`) задаёт префикс отчётов в `build/diagnostics/` |
 | Прочие экраны, рендер, клавиши | `.\gradlew.bat runClient`, ручная проверка изменённого сценария |
 | Живой диалог, STT/TTS | Ручная проверка с собственными ключами только по отдельному разрешению на платные запросы; локальные GameTest не доказывают работу провайдера |
+| Живое сжатие памяти через OpenRouter | `.\scripts\verify-memory-live.ps1 -AllowPaidRequests`: платный запрос к OpenRouter; ключ и модель читаются из `-ConfigPath` (по умолчанию `run\config\aicompanion-client.toml`); без флага или без ключа печатает `SKIP` и выходит с кодом 0, это не проверка; успех — `All 3 required tests passed` |
 
 Для проверки перезапуска заранее выполните `New-Item -ItemType Directory -Force build/diagnostics | Out-Null`:
 сам скрипт создаёт отдельный тестовый мир, но не создаёт каталог журналов.

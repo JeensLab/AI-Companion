@@ -30,9 +30,16 @@ public final class CompanionPreferences {
         int radius = OpenRouterConfig.SEARCH_RADIUS.get();
         boolean chunks = OpenRouterConfig.CHUNK_LOADING.get(), speech = OpenRouterConfig.AUTONOMOUS_SPEECH.get();
         boolean conversationAvailable = CompanionAmbientClient.availableForObservation();
+        boolean longTerm = OpenRouterConfig.LONG_TERM_MEMORY.get();
+        CompanionMemoryFlow.bind(server, playerId, longTerm);
+        long session = OpenRouterClient.generation();
+        long forgetEpoch = CompanionMemoryView.forgetEpoch();
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             if (player == null) return;
+            CompanionMemoryView.pull(player, longTerm, digest -> client.execute(() -> {
+                if (client.level == clientWorld) CompanionMemoryView.deliver(session, forgetEpoch, digest, longTerm);
+            }));
             var companion = CompanionEvents.getOwnedCompanion(player);
             player.getPersistentData().putBoolean("aicompanion:chunk_loading_enabled", chunks);
             if (companion != null) {

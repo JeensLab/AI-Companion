@@ -22,13 +22,16 @@ public final class GameContext {
         var client = Minecraft.getInstance();
         if (client.level == null || client.player == null) return "";
         String activity = speaker.getActivityForAi().split(";", 2)[0];
+        String remembered = PromptMemory.ambient(CompanionMemoryView.current());
         return "Время=" + timeOfDay(client.level.getDayTime()) + "; дождь=" + client.level.isRaining()
                 + "; здоровье игрока=" + Math.round(client.player.getHealth()) + "/" + Math.round(client.player.getMaxHealth())
                 + "; в его руке=" + client.player.getMainHandItem().getHoverName().getString()
-                + "; я=" + activity + "; здоровье=" + Math.round(speaker.getHealth()) + "/" + Math.round(speaker.getMaxHealth());
+                + "; я=" + activity + "; здоровье=" + Math.round(speaker.getHealth()) + "/" + Math.round(speaker.getMaxHealth())
+                + (remembered.isEmpty() ? "" : "; " + remembered);
     }
 
-    public static String snapshot() {
+    /** {@code message} is the player's current line: it picks which memories are the most relevant to show. */
+    public static String snapshot(String message) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null || minecraft.level == null) return "Игровой мир сейчас недоступен.";
 
@@ -50,6 +53,7 @@ public final class GameContext {
         List<CompanionEntity> companions = minecraft.level.getEntitiesOfClass(CompanionEntity.class,
                 player.getBoundingBox().inflate(128.0D), entity -> player.getUUID().equals(entity.getOwnerId()));
 
+        String remembered = PromptMemory.section(CompanionMemoryView.current(), message);
         return "Игровая обстановка (снимок на момент сообщения): измерение=" + minecraft.level.dimension().location()
                 + ", биом=" + biome
                 + ", позиция игрока=" + player.blockPosition().getX() + "," + player.blockPosition().getY() + "," + player.blockPosition().getZ()
@@ -72,6 +76,7 @@ public final class GameContext {
                         + ", исторический отчёт (не описание текущей экипировки)=" + (companions.getFirst().getLastTaskResult().isBlank()
                         ? "пока нет" : companions.getFirst().getLastTaskResult())
                         + ", журнал его недавних дел (старые первыми, настоящие итоги)=" + companions.getFirst().getDeedsForAi())
+                + (remembered.isEmpty() ? "" : ", " + remembered)
                 + ". Это только видимые клиенту сведения; не додумывай неизвестное.";
     }
 

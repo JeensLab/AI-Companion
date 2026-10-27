@@ -11,5 +11,6 @@
   "config.aicompanion.api_url": "Model server address",
   "config.aicompanion.personality": "Companion personality",
   "config.aicompanion.inworld_api_key": "Inworld Basic credential",
-  "config.aicompanion.inworld_voice_id": "Inworld voice ID"
+  "config.aicompanion.inworld_voice_id": "Inworld voice ID",
+  "config.aicompanion.long_term_memory": "Long-term memory"
 }
