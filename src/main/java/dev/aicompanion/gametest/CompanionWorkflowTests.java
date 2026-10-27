@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -83,6 +84,49 @@ public final class CompanionWorkflowTests {
         CompanionEntity companion = pit(helper, true); boolean[] animated = {false}, drop = {false};
         helper.onEachTick(() -> { animated[0] |= companion.isMiningAnimation(); drop[0] |= !items(helper, companion).isEmpty(); });
         helper.succeedWhen(() -> helper.assertTrue(animated[0] && drop[0] && companion.getY() >= helper.absolutePos(new BlockPos(16, 5, 16)).getY(), diagnostic(companion)));
+    }
+
+    /** The escape itself walks him out: the steps lead within reach of the player, where only a random stroll would move him on. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesSoilPitWithoutRandomStroll(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, true);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        stablePitExit(helper, companion);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesSoilPitAtFollowBoundary(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, true);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        BlockPos at = helper.absolutePos(new BlockPos(26, 5, 16));
+        player.teleportTo(at.getX() + .01, at.getY(), at.getZ() + .5);
+        stablePitExit(helper, companion);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesSoilPitWhileGuarding(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, true);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        companion.setProtecting(true);
+        stablePitExit(helper, companion);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesSoilPitTowardDistantPlayer(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, true);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        BlockPos at = helper.absolutePos(new BlockPos(30, 5, 16));
+        player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        stablePitExit(helper, companion);
+    }
+
+    private static void stablePitExit(GameTestHelper helper, CompanionEntity companion) {
+        double top = helper.absolutePos(new BlockPos(16, 5, 16)).getY();
+        int[] stable = {0};
+        helper.onEachTick(() -> stable[0] = companion.onGround() && companion.getY() >= top && !companion.isSelfRescuing() ? stable[0] + 1 : 0);
+        helper.succeedWhen(() -> helper.assertTrue(stable[0] >= 20, diagnostic(companion)));
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 700)

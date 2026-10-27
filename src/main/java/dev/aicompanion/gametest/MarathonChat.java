@@ -17,7 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Толик's chat without the network: a phrase goes the way it goes in the game. A short order is a local command
+ * the player's chat without the network: a phrase goes the way it goes in the game. A short order is a local command
  * (CompanionLocalCommands); anything else gets the plan a model would send for it (given here as the tool call's steps), which is
  * decoded by CompanionPlanCodec, amended by CompanionPlanRequirements and run by CompanionPlanRunner through
  * CompanionServerPlanPort. Plans queue one after another, and «стоп», «иди за мной» or a plan that starts with a priority order

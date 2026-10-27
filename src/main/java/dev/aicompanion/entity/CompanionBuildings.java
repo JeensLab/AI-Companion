@@ -50,7 +50,7 @@ final class CompanionBuildings {
 
     /**
      * Logs set among leaves a player placed (persistent), with no living crown anywhere: a player's planting or decoration, not a
-     * tree of the wild. Only a deed of his own leaves them alone (Толик 23.10: «не трогает … посаженное мной»).
+     * tree of the wild. Only a deed of his own leaves them alone (the player 23.10: «не трогает … посаженное мной»).
      */
     static boolean decorated(ServerLevel level, Collection<BlockPos> logs) {
         boolean placedLeaves = false;

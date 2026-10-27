@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The marathon's observer: what Толик watching Oleg would notice, measured the same way on every arena. Positions, statuses,
+ * The marathon's observer: what the player watching Oleg would notice, measured the same way on every arena. Positions, statuses,
  * self-rescues, the longest time stood still with nothing in hand, the longest walk round in circles, how far he went from the
  * player and from the work, and every item that fell in the arena and whether it was picked up.
  * Built in the test, ticked by {@code h.onEachTick(watch::tick)}; its trail goes into every failure message.

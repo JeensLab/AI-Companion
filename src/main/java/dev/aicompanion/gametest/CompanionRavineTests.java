@@ -19,7 +19,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * Game log 23.10 (session 05cdd3a7, 23:39–23:40): «сделай каменный меч» — the stone lay at the bottom of a ravine. He walked
  * down its ledges (drops of up to three blocks), mined four stones right there and then «нет обратного прохода к месту начала
  * добычи»: the work stopped with the stone at hand, the self-rescue dug a little soil and gave up — «не смог безопасно выбраться».
- * Толик: «нужно чтобы он в любой ситуации понимал как до меня добраться». A player mines what he came for and climbs out by
+ * the player: «нужно чтобы он в любой ситуации понимал как до меня добраться». A player mines what he came for and climbs out by
  * digging steps up the wall.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)

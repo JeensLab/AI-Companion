@@ -33,6 +33,7 @@ final class CompanionRecovery {
     private int jumpTicks;
     private long retryAfter;
     private boolean active;
+    private boolean exitingToPlayer;
     private String previousHand;
     private BlockPos checkedIntent;
     private long nextRouteCheck;
@@ -89,6 +90,8 @@ final class CompanionRecovery {
         previousHand = owner.getMainHandItem().isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(owner.getMainHandItem().getItem()).toString();
         active = true; elapsed = placed = dug = jumpTicks = 0; climbing = false; stairDirection = null; stepUp = null; blockedStairs.clear();
         destination = owner.recoveryDestination(); start = owner.position();
+        var player = owner.getOwnerPlayer();
+        exitingToPlayer = player != null && destination != null && destination.equals(player.blockPosition());
         jumpCell = digTarget = null; breaking.reset(); owner.getNavigation().stop(); owner.syncWorkState();
     }
     void cancel() {
@@ -106,6 +109,9 @@ final class CompanionRecovery {
         Path exit = owner.getNavigation().createPath(destination, 1);
         if (exit != null && exit.canReach()) {
             CompanionMiningNavigation.walk(owner, exit);
+            // Finish an ascent toward the player before yielding: following may be inactive or cross its start threshold
+            // between goal updates. Work destinations retain their existing movement handoff and time budget.
+            if (exitingToPlayer && belowExit(exit)) return;
             double dx = owner.getX() - start.x, dz = owner.getZ() - start.z;
             // Gaining height on a pillar is not yet an exit. Walk off the column before
             // yielding movement back to the task, otherwise a short route is cancelled mid-jump.
@@ -141,6 +147,13 @@ final class CompanionRecovery {
         // An item just dislodged above the mob may still be falling toward pickup range.
         if (owner.hasPendingLoot() && elapsed < 150) return;
         stop(false);
+    }
+
+    /** A block destination can end the path beside it, below its own height. */
+    private boolean belowExit(Path exit) {
+        var end = exit.getEndNode();
+        int height = end == null ? destination.getY() : Math.min(destination.getY(), end.y);
+        return owner.getY() < height - .5;
     }
 
     /**

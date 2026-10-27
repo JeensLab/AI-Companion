@@ -22,8 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * «Порядок и запас» (Толик 23.10): with the mode on and nothing asked, Oleg takes up a deed of his own by the player — his bag
- * in order, wood and stone up to his stock, the raw meat cooked. Arena «долина» (a piece of Толик's world), the player in the
+ * «Порядок и запас» (the player 23.10): with the mode on and nothing asked, Oleg takes up a deed of his own by the player — his bag
+ * in order, wood and stone up to his stock, the raw meat cooked. Arena «долина» (a recorded terrain fixture), the player in the
  * forest by the quarry (x 48, z 40): trees and stone both within 24 blocks of him.
  * The clock: the whole test server shares it and in GameTests the day goes on (only mob spawning and weather are off). These
  * tests take up to thirteen minutes, and the marathon batch after them started at night (its hunt-and-cook test failed). Each

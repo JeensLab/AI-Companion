@@ -8,7 +8,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Толик 23.10: «было бы удобно чтоб я всегда знал где он, может небольшой маркер на нем если он за стеной», then «оставь только
+ * the player 23.10: «было бы удобно чтоб я всегда знал где он, может небольшой маркер на нем если он за стеной», then «оставь только
  * контур». The drawing is the client's; here that the outline is no server state other players would see.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
