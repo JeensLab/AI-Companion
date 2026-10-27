@@ -41,12 +41,23 @@ final class CompanionWorkItems {
     }
 
     boolean prepareMiningTool(BlockState state) {
-        boolean busy = state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_SHOVEL) ? w.shovelSense.tick(reservedStone())
-                : (w.job == CompanionWork.Job.STONE || w.job == CompanionWork.Job.ORE) && state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE) && w.pickaxeSense.tick(reservedStone());
+        boolean busy = state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_SHOVEL) ? keepingOrderStone(() -> w.shovelSense.tick(reservedStone()))
+                : (w.job == CompanionWork.Job.STONE || w.job == CompanionWork.Job.ORE) && state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE) && keepingOrderStone(() -> w.pickaxeSense.tick(reservedStone()));
         if (busy) { w.breaking.reset(); w.resetApproach(); }
         return busy;
     }
     int reservedStone() { return w.phase == CompanionWork.Phase.MINE || w.phase == CompanionWork.Phase.PICKAXE ? Math.max(0, w.owner.collectedStone() - w.stoneCollectedBefore) : 0; }
+
+    /**
+     * A stone order keeps all its stone: a tool made from the stone he carried is mined back on top of the order, the way wood
+     * counts the bag (marathon of PR #6: 11 carried, 7 ordered, a stone pickaxe took 3 and the build got 15 of 18).
+     */
+    boolean keepingOrderStone(java.util.function.BooleanSupplier toolStep) {
+        int before = CompanionTools.count(w.owner, ItemTags.STONE_TOOL_MATERIALS);
+        boolean result = toolStep.getAsBoolean();
+        if (w.job == CompanionWork.Job.STONE) w.wantedStone += Math.max(0, before - CompanionTools.count(w.owner, ItemTags.STONE_TOOL_MATERIALS));
+        return result;
+    }
 
     static String blocks(int count) {
         int last = count % 10, tens = count % 100;

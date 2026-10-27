@@ -144,6 +144,52 @@ public final class CompanionBanterToolsTests {
             h.assertTrue(count(c,Items.DIAMOND)==2&&count(c,Items.STICK)==2,"Failed upgrade consumed ingredients");
         });
     }
+    @GameTest(template="tall_tree",timeoutTicks=900)
+    public static void stoneOrderKeepsCarriedStoneWhenThePickaxeIsUpgraded(GameTestHelper h) {
+        var c=coalWall(h,Items.WOODEN_PICKAXE);
+        c.setItem(0,new ItemStack(Items.COBBLESTONE,6));c.setItem(1,new ItemStack(Items.STICK,2));
+        // Ordered while standing, as in play: the upgrade then happens before the first swing, not after it.
+        h.runAtTickTime(10,()->{h.assertTrue(c.onGround(),"Not landed");c.startWork("gather_stone","",3);});
+        h.succeedWhen(()->{
+            h.assertTrue(h.getTick()>10,"Wait for the order");done(h,c);
+            h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COBBLESTONE)==9,"Order short: "+count(c,Items.COBBLESTONE)+" cobblestone, hand="+c.getMainHandItem()+": "+c.getLastTaskResult());
+            h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE)&&count(c,Items.WOODEN_PICKAXE)==1,"Carried stone not used for the upgrade");
+        });
+    }
+    @GameTest(template="tall_tree",timeoutTicks=900)
+    public static void stoneOrderMinesBackTheStoneOfAReplacedBrokenPickaxe(GameTestHelper h) {
+        var c=coalWall(h,Items.STONE_PICKAXE);c.getMainHandItem().setDamageValue(c.getMainHandItem().getMaxDamage()-1);
+        c.setItem(0,new ItemStack(Items.COBBLESTONE,6));c.setItem(1,new ItemStack(Items.STICK,2));
+        c.startWork("gather_stone","",3);
+        h.succeedWhen(()->{
+            done(h,c);
+            h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COBBLESTONE)==9&&count(c,Items.STONE_PICKAXE)==1,"Order short: "+count(c,Items.COBBLESTONE)+" cobblestone, hand="+c.getMainHandItem()+": "+c.getLastTaskResult());
+        });
+    }
+    @GameTest(template="tall_tree",timeoutTicks=900)
+    public static void stoneOrderMinesBackItsOwnStoneSpentOnALastResortPickaxe(GameTestHelper h) {
+        // Three swings left, too little spare stone for the tool sense and no wood: the mined stone itself makes the new pickaxe.
+        var c=coalWall(h,Items.STONE_PICKAXE);c.getMainHandItem().setDamageValue(c.getMainHandItem().getMaxDamage()-3);
+        c.setItem(0,new ItemStack(Items.COBBLESTONE,2));c.setItem(1,new ItemStack(Items.STICK,2));
+        c.startWork("gather_stone","",5);
+        h.succeedWhen(()->{
+            done(h,c);
+            h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COBBLESTONE)==7&&count(c,Items.STONE_PICKAXE)==1,"Order short: "+count(c,Items.COBBLESTONE)+" cobblestone, hand="+c.getMainHandItem()+": "+c.getLastTaskResult());
+        });
+    }
+    @GameTest(template="tall_tree",timeoutTicks=2600)
+    public static void stoneOrderMinesBackTheStoneOfANewShovel(GameTestHelper h) {
+        for(int x=0;x<32;x++)for(int z=0;z<32;z++)for(int y=0;y<6;y++)
+            h.setBlock(new BlockPos(x,y,z),y==0?Blocks.BEDROCK:y<4?Blocks.STONE:y==5?Blocks.GRASS_BLOCK:Blocks.DIRT);
+        var c=spawn(h,6);bench(h,c,new BlockPos(14,6,16));
+        c.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0,new ItemStack(Items.COBBLESTONE,4));c.setItem(1,new ItemStack(Items.STICK,2));
+        c.startWork("gather_stone","",3);
+        h.succeedWhen(()->{
+            done(h,c);
+            h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COBBLESTONE)==7&&count(c,Items.STONE_SHOVEL)==1,"Order short: "+count(c,Items.COBBLESTONE)+" cobblestone, shovels="+count(c,Items.STONE_SHOVEL)+": "+c.getLastTaskResult());
+        });
+    }
     @GameTest(template="tall_tree",timeoutTicks=2600)
     public static void oreTunnelMakesAndUsesAShovelForDirt(GameTestHelper h) {
         for(int x=0;x<32;x++)for(int z=0;z<32;z++)for(int y=0;y<6;y++)
