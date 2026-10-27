@@ -9,10 +9,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /** What the client knows about the player's memory, bond and happenings; refreshed by every sync from the server. */
 public final class CompanionMemoryView {
     private static final int RECALL_MEMORIES = 5;
+    // Memories end with their own punctuation; joined with «; » and a closing full stop it would double up.
+    private static final Pattern ENDING = Pattern.compile("[\\s.!?…;,]+$");
 
     private static volatile Digest current = Digest.EMPTY;
     private static final AtomicLong forgets = new AtomicLong();
@@ -52,7 +56,8 @@ public final class CompanionMemoryView {
         for (CompanionMemory.Entry entry : digest.relevant("", RECALL_MEMORIES)) parts.add(entry.text());
         if (!digest.likes().isEmpty()) parts.add("тебе нравится: " + String.join(", ", digest.likes()));
         if (!digest.dislikes().isEmpty()) parts.add("тебе не нравится: " + String.join(", ", digest.dislikes()));
-        if (parts.isEmpty()) return "Пока ничего особенного не помню. Расскажи что-нибудь о себе.";
-        return "Помню вот что: " + String.join("; ", parts) + ".";
+        String told = parts.stream().map(part -> ENDING.matcher(part).replaceFirst("")).filter(part -> !part.isEmpty()).collect(Collectors.joining("; "));
+        if (told.isEmpty()) return "Пока ничего особенного не помню. Расскажи что-нибудь о себе.";
+        return "Помню вот что: " + told + ".";
     }
 }

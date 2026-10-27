@@ -618,6 +618,33 @@ public final class CompanionMemoryTests {
         h.succeed();
     }
 
+    @GameTest(template="empty")
+    public static void recallReadsCleanlyWithoutAddressRepeat(GameTestHelper h) {
+        var memory = new CompanionMemory();
+        for (String fact : List.of("Любит железо.", "Просит звать его Роб.", "Боится пауков!", "Роб строит базу у реки")) {
+            memory.remember(CompanionMemory.PLAYER_FACT, fact);
+        }
+        h.assertTrue(memory.entries().size() == 4, "Fixture is wrong: " + memory.entries());
+        var digest = new CompanionMemoryDigest.Digest(memory.entries(), "Роб", List.of("яблоки", "арбузы."), List.of(), List.of(), 20, "знакомый", List.of(), List.of());
+
+        String told = CompanionMemoryView.recall(digest);
+        h.assertTrue(!told.contains(".;") && !told.contains("..") && !told.contains("!;"), "Punctuation doubled up: " + told);
+        h.assertTrue(!told.contains("Просит звать"), "The address was told twice: " + told);
+        h.assertTrue(told.contains("ты просил звать тебя Роб") && told.contains("Любит железо") && told.contains("Боится пауков")
+                && told.contains("Роб строит базу у реки") && told.contains("арбузы"), "Something real was lost: " + told);
+
+        var shown = digest.relevant("", 10);
+        h.assertTrue(shown.size() == 3 && shown.stream().noneMatch(e -> e.text().startsWith("Просит звать")), "The address repeat was ranked: " + shown);
+        h.assertTrue(CompanionMemory.repeatsAddress("Называет себя Робом", "Роб"), "«Называет себя Робом» is not a repeat");
+        h.assertTrue(CompanionMemory.repeatsAddress("Просит звать его Фёдором", "Федор"), "ё and е differ in the name");
+        h.assertTrue(!CompanionMemory.repeatsAddress("Называет себя Робом", ""), "A repeat is found while no name is set");
+        h.assertTrue(!CompanionMemory.repeatsAddress("Роб строит базу у реки", "Роб"), "A name without a word of address is a repeat");
+
+        String sent = CompanionMemoryCodec.request(List.of(new CompanionMemory.Talk(true, "Привет"))).toString();
+        h.assertTrue(sent.contains("Не дублируй в memories") && sent.contains("верно только сейчас"), "The condensing prompt lacks the new rules: " + sent);
+        h.succeed();
+    }
+
     private record CompanionEntityFixture(dev.aicompanion.entity.CompanionEntity companion) {
         static CompanionEntityFixture withDeeds(GameTestHelper h) {
             var companion = AICompanionMod.COMPANION.get().create(h.getLevel());

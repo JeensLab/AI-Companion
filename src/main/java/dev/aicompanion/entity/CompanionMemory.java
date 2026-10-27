@@ -65,6 +65,8 @@ public final class CompanionMemory {
     private static final int MASK_INPUT = TALK_TEXT * 4;
     private static final Pattern WORD = Pattern.compile("\\p{L}{3,}");
     private static final int STEM = 5;
+    // Forms of звать, называть, обращаться, имя and кличка; matched against a word already folded by fold().
+    private static final Pattern ADDRESS_WORD = Pattern.compile("(?:зов|зва(?:л|ть)|назыв|кличк)\\p{L}*|обраща\\p{L}*с[яь]|имя|имени|именем");
 
     private final List<Entry> memories = new ArrayList<>();
     private final List<Talk> talk = new ArrayList<>();
@@ -275,6 +277,23 @@ public final class CompanionMemory {
         }
         return stems;
     }
+
+    /** True when the text only says how the player asked to be addressed, which the digest already carries as «call_me». */
+    public static boolean repeatsAddress(String text, String callMe) {
+        Set<String> names = stems(fold(callMe));
+        if (names.isEmpty()) return false;
+        boolean named = false;
+        boolean asked = false;
+        var matcher = WORD.matcher(fold(text));
+        while (matcher.find()) {
+            String word = matcher.group();
+            named |= names.stream().anyMatch(word::startsWith);
+            asked |= ADDRESS_WORD.matcher(word).matches();
+        }
+        return named && asked;
+    }
+
+    private static String fold(String text) { return text == null ? "" : text.toLowerCase(Locale.ROOT).replace('ё', 'е'); }
 
     public List<Entry> entries() { return List.copyOf(memories); }
 

@@ -19,7 +19,11 @@ public final class CompanionMemoryDigest {
                          List<CompanionMemory.Talk> talk, int score, String tier, List<String> reasons, List<String> happenings) {
         public static final Digest EMPTY = new Digest(List.of(), "", List.of(), List.of(), List.of(), 0, "", List.of(), List.of());
 
-        public List<CompanionMemory.Entry> relevant(String query, int limit) { return CompanionMemory.rank(memories, query, limit); }
+        /** A memory that only repeats the form of address is left out: {@code callMe} is told on its own. */
+        public List<CompanionMemory.Entry> relevant(String query, int limit) {
+            List<CompanionMemory.Entry> own = memories.stream().filter(entry -> !CompanionMemory.repeatsAddress(entry.text(), callMe)).toList();
+            return CompanionMemory.rank(own, query, limit);
+        }
 
         /** UTF-8 size of every string in the digest. */
         public int bytes() {
