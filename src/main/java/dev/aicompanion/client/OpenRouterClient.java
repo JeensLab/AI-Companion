@@ -149,16 +149,22 @@ public final class OpenRouterClient {
         synchronized (HISTORY) { ambientHistory(HISTORY).forEach(messages::add); }
         messages.add(message("user", "Наблюдение игры (данные): " + observation + "\nОбстановка (данные): " + snapshot));
         JsonObject body = new JsonObject(); body.addProperty("model", OpenRouterConfig.MODEL.get().isBlank() ? "openrouter/auto" : OpenRouterConfig.MODEL.get());
-        body.add("messages", messages); body.addProperty("max_tokens", 150);
+        // Reasoning tokens count against max_tokens: at 150 a reasoning model ended with finish_reason "length" and no text.
+        // The visible length is held by the prompt and acceptReply, not by this limit.
+        body.add("messages", messages); body.addProperty("max_tokens", 600);
         CompletableFuture<String> next = post(body, false, trace).thenApply(response -> {
-            if (requestGeneration != generation()) return "";
-            var message = response.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message");
-            if (message.has("tool_calls")) return "";
-            // Nothing to say is silence, not an error (game log 22.10: five «пустой ответ» errors for remarks).
-            try {
-                var decoded = CompanionPlanCodec.decode(message);
-                return decoded.actions().isEmpty() ? decoded.text() : "";
-            } catch (IllegalStateException empty) { return ""; }
+            JsonObject choice = response.getAsJsonArray("choices").get(0).getAsJsonObject();
+            String text = "", silence = "";
+            if (requestGeneration != generation()) silence = "session_changed";
+            else if (choice.getAsJsonObject("message").has("tool_calls")) silence = "tool_calls";
+            else try {
+                // Nothing to say is silence, not an error (game log 22.10: five «пустой ответ» errors for remarks).
+                var decoded = CompanionPlanCodec.decode(choice.getAsJsonObject("message"));
+                if (decoded.actions().isEmpty()) text = decoded.text(); else silence = "plan";
+            } catch (IllegalStateException empty) { silence = "empty"; }
+            CompanionDiagnostics.event(trace, "ambient_reply", "finishReason", scalar(choice, "finish_reason"),
+                    "reasoningTokens", reasoningTokens(response), "silence", silence);
+            return text;
         });
         // Background speech has its own request slot. A player's message must not wait for it.
         ambientRequest = next.handle((unused, error) -> null); return next;
@@ -230,6 +236,13 @@ public final class OpenRouterClient {
 
     private static String scalar(JsonObject object, String key) {
         return object.has(key) && object.get(key).isJsonPrimitive() ? object.get(key).getAsString() : "unknown";
+    }
+
+    /** usage.completion_tokens_details.reasoning_tokens; providers omit it or send null. */
+    private static String reasoningTokens(JsonObject response) {
+        var usage = response.get("usage");
+        var details = usage != null && usage.isJsonObject() ? usage.getAsJsonObject().get("completion_tokens_details") : null;
+        return details != null && details.isJsonObject() ? scalar(details.getAsJsonObject(), "reasoning_tokens") : "unknown";
     }
 
     private static boolean requiresAction(String text) {

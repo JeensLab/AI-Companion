@@ -15,6 +15,8 @@ public final class CompanionConversation {
     private int observation;
     private int urgentSerial;
     private long urgentSince;
+    private int takenSerial, retriedSerial;
+    private long takenSince;
     private final Deque<String> recent = new ArrayDeque<>();
 
     /** Prefix the server puts on a HIGH event so the client can tell it from ordinary observations; it never reaches the model. */
@@ -25,7 +27,7 @@ public final class CompanionConversation {
     public static boolean isUrgent(String text) { return text != null && text.startsWith(URGENT_MARK); }
     public static String stripUrgent(String text) { return isUrgent(text) ? text.substring(URGENT_MARK.length()).stripLeading() : text; }
     public static int gap(int jitter) { return MIN_GAP + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1); }
-    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; observation = 0; urgentSerial = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
+    public void reset(long now, int jitter) { recent.clear(); awaitingAnswer = false; observation = 0; urgentSerial = 0; takenSerial = 0; retriedSerial = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); }
     // Normal conversation needs a short pause, not another full initiative interval after every answer.
     public void activity(long now, int jitter) { revision++; quietUntil = now + 20 * 45 + Math.floorMod(jitter, 601); }
     public void playerMessage(long now, int jitter) { awaitingAnswer = false; activity(now, jitter); }
@@ -58,7 +60,13 @@ public final class CompanionConversation {
         if (urgentSerial == 0) return false;
         if (now - urgentSince > URGENT_TTL) { urgentSerial = 0; return false; }
         if (!safe || busy) return false;
+        takenSerial = urgentSerial; takenSince = urgentSince;
         urgentSerial = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); return true;
+    }
+    /** A lost urgent reply (failed request, empty answer, nobody to hear it) gets one more try per remark while the remark is fresh; a newer pending remark wins. */
+    public boolean retryUrgent(long now) {
+        if (takenSerial == 0 || takenSerial == retriedSerial || urgentSerial != 0 || now - takenSince > URGENT_TTL) return false;
+        urgentSerial = takenSerial; urgentSince = takenSince; retriedSerial = takenSerial; return true;
     }
     /** The first snapshot after entering the world is not replayed, except a fresh urgent remark. */
     public void firstSight(int serial, long age, long now, boolean urgent) {
@@ -69,8 +77,19 @@ public final class CompanionConversation {
         return acceptReply(capturedRevision, text, safe, busy, false);
     }
     public boolean acceptReply(long capturedRevision, String text, boolean safe, boolean busy, boolean urgent) {
-        return revision == capturedRevision && safe && !busy && (urgent || !awaitingAnswer) && text != null
-                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1 && fresh(text);
+        return rejection(capturedRevision, text, safe, busy, urgent).isEmpty();
+    }
+    /** The first reason a reply is refused, in the order the checks run; empty when it is accepted. */
+    public String rejection(long capturedRevision, String text, boolean safe, boolean busy, boolean urgent) {
+        if (revision != capturedRevision) return "conversation_changed";
+        if (!safe) return "not_allowed";
+        if (busy) return "busy";
+        if (!urgent && awaitingAnswer) return "awaiting_answer";
+        // Punctuation-only text is as empty as a blank one: fresh() refuses both, and neither is a repeat.
+        if (text == null || normalize(text).isBlank()) return "empty";
+        if (text.length() > 260) return "too_long";
+        if (text.chars().filter(c -> c == '?').count() > 1) return "too_many_questions";
+        return fresh(text) ? "" : "repeat";
     }
 
     public boolean fresh(String text) {

@@ -82,7 +82,9 @@ final class CompanionAmbientClient {
         boolean urgent = fresh && CompanionConversation.isUrgent(latest);
         if (urgent) {
             boolean taken = conversation.takeObservation(current, now() - speaker.socialTime(), now(), safe, busy(), jitter(), true);
-            if (!taken) { if (conversation.urgentPending() == current) urgentText = observation; return; }
+            // Kept once taken as well: a lost reply is retried with the text of this same event.
+            if (taken || conversation.urgentPending() == current) urgentText = observation;
+            if (!taken) return;
         } else if (conversation.takePendingUrgent(now(), safe, busy(), jitter())) {
             urgent = true; observation = urgentText;
         } else if (!fresh || !conversation.takeObservation(current, now() - speaker.socialTime(), now(), safe, busy(), jitter())) {
@@ -97,15 +99,23 @@ final class CompanionAmbientClient {
                 dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", "world_changed"); return;
             }
             pending = false;
-            if (error != null) { dev.aicompanion.CompanionDiagnostics.failure(trace, "ambient_request", error); conversation.activity(now(), jitter()); return; }
-            if (!conversation.acceptReply(activity, text, OpenRouterConfig.AUTONOMOUS_SPEECH.get(),
-                    client.screen != null || client.isPaused() || busy(), wasUrgent)) {
-                dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", "conversation_changed_disabled_or_empty"); return;
+            if (error != null) {
+                dev.aicompanion.CompanionDiagnostics.failure(trace, "ambient_request", error); conversation.activity(now(), jitter());
+                if (wasUrgent) conversation.retryUrgent(now());
+                return;
             }
+            String rejection = conversation.rejection(activity, text, OpenRouterConfig.AUTONOMOUS_SPEECH.get(),
+                    client.screen != null || client.isPaused() || busy(), wasUrgent);
+            if (!rejection.isEmpty()) { discarded(trace, rejection, text, wasUrgent); return; }
             var currentSpeaker = CompanionVoiceAudio.speaker();
             if (currentSpeaker == null || !capturedCompanion.equals(currentSpeaker.getUUID())
-                    || !safe(currentSpeaker) || !CompanionVoiceAudio.audible(currentSpeaker)) return;
+                    || !safe(currentSpeaker) || !CompanionVoiceAudio.audible(currentSpeaker)) { discarded(trace, "not_heard", text, wasUrgent); return; }
             CompanionChatScreen.autonomousReply(text, trace);
         }));
+    }
+    /** A dropped urgent remark waits for its one retry; an ordinary one is simply lost. */
+    private static void discarded(String trace, String reason, String text, boolean urgent) {
+        dev.aicompanion.CompanionDiagnostics.event(trace, "ambient_discarded", "reason", reason, "text", text);
+        if (urgent) conversation.retryUrgent(now());
     }
 }

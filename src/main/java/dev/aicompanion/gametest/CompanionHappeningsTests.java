@@ -359,6 +359,60 @@ public final class CompanionHappeningsTests {
         h.succeed();
     }
 
+    @GameTest(template="empty")
+    public static void lostUrgentReplyIsRetriedOnce(GameTestHelper h) {
+        long ttl = dev.aicompanion.CompanionConversation.URGENT_TTL;
+        var talk = new dev.aicompanion.CompanionConversation();
+        talk.reset(0, 0);
+        h.assertTrue(!talk.retryUrgent(100), "A retry came before any urgent remark was taken");
+        h.assertTrue(talk.takeObservation(1, 0, 1000, true, false, 0, true), "Urgent remark not taken at once");
+        h.assertTrue(talk.retryUrgent(1100) && talk.urgentPending() == 1, "Lost urgent remark not put back to wait");
+        h.assertTrue(!talk.retryUrgent(1100), "A remark already waiting for its retry was queued again");
+        h.assertTrue(talk.takePendingUrgent(1100, true, false, 0) && talk.urgentPending() == 0, "Retried urgent remark not taken again");
+        h.assertTrue(!talk.retryUrgent(1100) && talk.urgentPending() == 0, "The same urgent remark was retried twice");
+        h.assertTrue(talk.takeObservation(2, 0, 10_000, true, false, 0, true), "Second urgent remark not taken");
+        h.assertTrue(!talk.retryUrgent(10_000 + ttl + 1) && talk.urgentPending() == 0, "Expired urgent remark was retried");
+        h.assertTrue(talk.takeObservation(3, 0, 20_000, true, false, 0, true), "Third urgent remark not taken");
+        h.assertTrue(talk.retryUrgent(20_000 + ttl) && talk.urgentPending() == 3, "Urgent remark at the edge of its time was not retried");
+        h.assertTrue(talk.takeObservation(4, 0, 30_000, true, false, 0, true), "Fourth urgent remark not taken");
+        h.assertTrue(!talk.takeObservation(5, 0, 30_010, true, true, 0, true) && talk.urgentPending() == 5, "Newer urgent remark not kept pending");
+        h.assertTrue(!talk.retryUrgent(30_020) && talk.urgentPending() == 5, "A retry pushed out a newer urgent remark");
+        h.assertTrue(talk.takePendingUrgent(30_030, true, false, 0) && talk.retryUrgent(30_040) && talk.urgentPending() == 5,
+                "The newer urgent remark was not the one retried");
+        talk.reset(40_000, 0);
+        h.assertTrue(!talk.retryUrgent(40_000), "A retry survived reset");
+        h.assertTrue(talk.takeObservation(5, 0, 40_000, true, false, 0, true) && talk.retryUrgent(40_010), "The retry mark outlived reset");
+
+        var say = new dev.aicompanion.CompanionConversation();
+        say.reset(0, 0);
+        long rev = say.revision();
+        h.assertTrue(say.rejection(rev, "Держись, я рядом", true, false, false).isEmpty(), "A fit reply was refused");
+        h.assertTrue("conversation_changed".equals(say.rejection(rev + 1, null, false, true, false)), "A changed conversation was not reported first");
+        h.assertTrue("not_allowed".equals(say.rejection(rev, null, false, true, false)), "A forbidden reply was not reported before busy");
+        h.assertTrue("busy".equals(say.rejection(rev, null, true, true, false)), "A busy client was not reported before empty");
+        for (String blank : new String[] {null, "", " \n", "..."}) {
+            h.assertTrue("empty".equals(say.rejection(rev, blank, true, false, false)), "An empty reply was not reported as empty: " + blank);
+        }
+        h.assertTrue("too_long".equals(say.rejection(rev, "а".repeat(261), true, false, false)), "A 261-character reply was not too long");
+        h.assertTrue("too_many_questions".equals(say.rejection(rev, "Ты где? Ты жив?", true, false, false)), "Two questions were not refused");
+        say.delivered("Держись, я рядом", 100, 0);
+        h.assertTrue("repeat".equals(say.rejection(say.revision(), "Держись, я рядом!", true, false, false)), "A repeat was not reported");
+        say.delivered("Что скажешь?", 200, 0);
+        long asked = say.revision();
+        h.assertTrue("awaiting_answer".equals(say.rejection(asked, "Идём дальше", true, false, false))
+                && say.rejection(asked, "Идём дальше", true, false, true).isEmpty(), "An open question must refuse an ordinary reply only");
+        for (String text : new String[] {"Идём дальше", null, "", "...", "а".repeat(261), "Ты где? Ты жив?", "Держись, я рядом"}) {
+            for (int bits = 0; bits < 16; bits++) {
+                boolean safe = (bits & 1) != 0, busy = (bits & 2) != 0, urgent = (bits & 4) != 0;
+                long captured = (bits & 8) != 0 ? asked : asked + 1;
+                h.assertTrue(say.acceptReply(captured, text, safe, busy, urgent) == say.rejection(captured, text, safe, busy, urgent).isEmpty()
+                        && say.acceptReply(captured, text, safe, busy) == say.rejection(captured, text, safe, busy, false).isEmpty(),
+                        "acceptReply disagrees with rejection: " + bits + " " + text);
+            }
+        }
+        h.succeed();
+    }
+
     @GameTest(template="tall_tree", batch="happen_welcome", timeoutTicks=260)
     public static void welcomeBackNotEatenByFirstSnapshot(GameTestHelper h) {
         var rig = rig(h); var p = rig.player(); var c = rig.companion();
