@@ -98,6 +98,43 @@ public final class CompanionObtainTests {
         });
     }
 
+    /** An ingot leaves the bag after the smelting (a pickaxe upgrade in the game): the missing ore is dug up and smelted too. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void ingotsLostOnTheWayAreMinedAgain(GameTestHelper h) {
+        ground(h);
+        for (int z = 16; z <= 18; z++) h.setBlock(new BlockPos(20, GROUND + 1, z), Blocks.IRON_ORE);
+        h.setBlock(new BlockPos(13, GROUND + 1, 19), Blocks.FURNACE);
+        CompanionEntity companion = spawn(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.COAL, 2));
+        var server = h.getLevel().getServer();
+        var real = new CompanionServerPlanPort(server, companion.getOwnerId(), "gametest-obtain", () -> false);
+        boolean[] eaten = {false};
+        var port = new CompanionPlanRunner.Port() {
+            @Override public String trace() { return real.trace(); }
+            @Override public boolean cancelled() { return false; }
+            @Override public java.util.concurrent.CompletableFuture<CompanionPlanRunner.State> state(dev.aicompanion.client.PlannedAction a) { return real.state(a); }
+            @Override public java.util.concurrent.CompletableFuture<Void> pause(int seconds) { return real.pause(seconds); }
+            @Override public java.util.concurrent.CompletableFuture<CompanionPlanRunner.Expansion> expand(dev.aicompanion.client.PlannedAction a) { return real.expand(a); }
+            @Override public java.util.concurrent.CompletableFuture<CompanionPlanRunner.Attempt> run(dev.aicompanion.client.PlannedAction a) {
+                var out = new java.util.concurrent.CompletableFuture<CompanionPlanRunner.Attempt>();
+                real.run(a).thenAccept(attempt -> server.execute(() -> {
+                    if (a.type().equals("smelt_items") && !eaten[0]) {
+                        for (int slot = 0; slot < companion.getContainerSize() && !eaten[0]; slot++)
+                            if (companion.getItem(slot).is(Items.IRON_INGOT)) { companion.getItem(slot).shrink(1); eaten[0] = true; }
+                    }
+                    out.complete(attempt);
+                }));
+                return out;
+            }
+        };
+        var future = CompanionPlanRunner.run(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"obtain_item\",\"item\":\"minecraft:iron_ingot\",\"count\":2}]")), port);
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(eaten[0] && count(companion, Items.IRON_INGOT) >= 2, future.join().report());
+        });
+    }
+
     /** What none of his skills gets is said at once, and nothing is started. */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
     public static void anUnobtainableItemIsRefusedAtOnce(GameTestHelper h) {

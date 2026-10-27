@@ -148,6 +148,130 @@ public final class CompanionPlanRecoveryTests {
         });
     }
 
+    /** The bag changes between the steps of an obtain_item (here: logs arrive after the ore), so the chain is planned again. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainDropsStepsTheBagMadeNeedless(GameTestHelper h) {
+        var port = new BagPort();
+        port.logsAppearAfterOre = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "craft_item:1", "verify_item:1")) && port.helmets == 1 && outcome.skipped().isEmpty(),
+                    port.calls + " " + outcome);
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainDigsUpWhatTheBagLostOnTheWay(GameTestHelper h) {
+        var port = new BagPort();
+        port.pickaxeEatsIngot = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "mine_ore:1", "gather_wood:1", "craft_item:1", "verify_item:1")) && port.helmets == 1
+                    && outcome.skipped().isEmpty(), port.calls + " " + outcome);
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainPlansAroundAFailedStepThatGainedSomething(GameTestHelper h) {
+        var port = new BagPort();
+        port.mineFailsOnce = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.size() >= 2 && port.calls.subList(0, 2).equals(List.of("mine_ore:2", "mine_ore:1")) && port.helmets == 1 && outcome.skipped().isEmpty()
+                    && !outcome.report().contains("План остановлен"), port.calls + " " + outcome);
+        });
+    }
+
+    /** A step that fails and is planned again without any gain stops the order with its own reason. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainStopsWhenTheSameStepFailsWithoutGain(GameTestHelper h) {
+        var port = new BagPort();
+        port.neverMines = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2")) && outcome.report().contains("План остановлен: Руды рядом нет.")
+                    && outcome.skipped().stream().noneMatch(a -> a.type().equals("mine_ore")), port.calls + " " + outcome);
+        });
+    }
+
+    /** A wood search that finds nothing goes on to the craft in an ordinary plan; inside obtain_item it must not be searched again and again. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainStopsWhenNoTreeIsFoundAgain(GameTestHelper h) {
+        var port = new BagPort();
+        port.noTrees = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1")) && outcome.report().contains("План остановлен: Деревьев рядом нет."),
+                    port.calls + " " + outcome);
+        });
+    }
+
+    /** Steps that succeed without ever changing the bag cannot loop: one obtain_item has a ceiling. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void obtainStepsHaveACeiling(GameTestHelper h) {
+        var port = new BagPort();
+        port.mineChangesNothing = true;
+        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            h.assertTrue(port.calls.size() == CompanionPlanRunner.MAX_OBTAIN_STEPS && outcome.report().contains("План остановлен"), port.calls.size() + " " + outcome);
+        });
+    }
+
+    private static final PlannedAction OBTAIN_HELMET = new PlannedAction("obtain_item", 0, 1, "minecraft:iron_helmet");
+
+    /** A bag in the fake: ore gives ingots, a helmet takes two ingots and a log. expand plans from it like the server planner. */
+    private static final class BagPort implements CompanionPlanRunner.Port {
+        final List<String> calls = new ArrayList<>();
+        int logs, ingots, helmets;
+        boolean logsAppearAfterOre, pickaxeEatsIngot, mineFailsOnce, neverMines, mineChangesNothing, noTrees;
+        @Override public String trace() { return "gametest-bag"; }
+        @Override public boolean cancelled() { return false; }
+        @Override public CompletableFuture<State> state(PlannedAction action) { return CompletableFuture.completedFuture(IDLE); }
+        @Override public CompletableFuture<Void> pause(int seconds) { return CompletableFuture.completedFuture(null); }
+        @Override public CompletableFuture<CompanionPlanRunner.Expansion> expand(PlannedAction action) {
+            List<PlannedAction> steps = new ArrayList<>();
+            if (helmets < 1) {
+                if (ingots < 2) steps.add(new PlannedAction("mine_ore", 0, 2 - ingots, "minecraft:iron_ore"));
+                if (logs < 1) steps.add(new PlannedAction("gather_wood", 0, 1));
+                steps.add(new PlannedAction("craft_item", 0, 1, action.item()));
+            }
+            steps.add(new PlannedAction("verify_item", 0, action.count(), action.item()));
+            return CompletableFuture.completedFuture(new CompanionPlanRunner.Expansion(steps, null));
+        }
+        @Override public CompletableFuture<Attempt> run(PlannedAction action) {
+            calls.add(action.type() + ":" + action.count());
+            CompanionActionResult result = switch (action.type()) {
+                case "mine_ore" -> mine(action.count());
+                case "gather_wood" -> {
+                    if (noTrees) yield CompanionActionResult.failed("Деревьев рядом нет.");
+                    logs++; yield CompanionActionResult.ok("Дерево.");
+                }
+                case "craft_item" -> {
+                    if (ingots < 2 || logs < 1) yield CompanionActionResult.failed("Не хватает материалов.");
+                    ingots -= 2; logs--; helmets++;
+                    yield CompanionActionResult.ok("Скрафтил.");
+                }
+                default -> helmets >= 1 ? CompanionActionResult.ok("Готово.") : CompanionActionResult.failed("Добыл не всё.");
+            };
+            return CompletableFuture.completedFuture(new Attempt(result, true));
+        }
+        private CompanionActionResult mine(int count) {
+            if (neverMines) return CompanionActionResult.failed("Руды рядом нет.");
+            if (mineChangesNothing) return CompanionActionResult.ok("Ничего.");
+            if (mineFailsOnce) { mineFailsOnce = false; ingots++; return CompanionActionResult.failed("Руды рядом больше нет."); }
+            ingots += count;
+            if (logsAppearAfterOre) logs += 3;
+            if (pickaxeEatsIngot) { pickaxeEatsIngot = false; ingots--; }
+            return CompanionActionResult.ok("Добыл.");
+        }
+    }
+
     private static int count(CompanionEntity c, Item item) {
         int n = 0; for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) n += c.getItem(slot).getCount();
         for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (c.getItemBySlot(slot).is(item)) n += c.getItemBySlot(slot).getCount();
