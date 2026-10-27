@@ -35,6 +35,7 @@ public final class CompanionWork {
     final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
+    final CompanionOreScouting scouting = new CompanionOreScouting(this);
     final CompanionChests chests = new CompanionChests(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
     final CompanionHandOver handOver = new CompanionHandOver(this);
@@ -482,6 +483,7 @@ public final class CompanionWork {
         oreOffFoot.clear(); oreNoTunnel.clear(); oreBlockedCells.clear(); pickaxeSense.reset(); shovelSense.reset();
         oreMined = oreFound = oreLiquid = oreUnreachable = orePickaxeAttempts = 0; oreDone = oreChoosing = oreLootRetried = false;
         oreSearch = null; oreCandidates = null; oreRejected.clear(); oreTunnel.clear(); oreExit = null;
+        scouting.reset();
         if (job == Job.ORE) {
             oreDropsBefore = items.countCarried(ore.drop);
             // A second vein must not turn the first descent into the next job's surface.

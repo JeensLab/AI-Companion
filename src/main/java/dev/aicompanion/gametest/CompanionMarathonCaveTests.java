@@ -124,7 +124,10 @@ public final class CompanionMarathonCaveTests {
         a.script.run("cave-iron-pickaxe", watch::summary);
     }
 
-    /** «Добудь железо и переплавь» from the meadow: the iron he saw in the cave's far chamber; ingots by the bag, then back up. */
+    /**
+     * «Добудь железо и переплавь» from the meadow, never down in the cave before: no iron in sight, so he looks down the cave
+     * mouth, walks down the passage look by look to the far chamber, sees the iron there; ingots by the bag, then back up.
+     */
     @GameTest(template = "marathon_cave", batch = "marathon", timeoutTicks = 20000)
     public static void ironFromTheCaveSmelted(GameTestHelper h) {
         cave(h);
@@ -132,7 +135,7 @@ public final class CompanionMarathonCaveTests {
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         a.oleg.setItem(0, new ItemStack(Items.OAK_LOG, 6));
         var watch = a.watch;
-        sawTheIronBefore(h, a, 56, 44)
+        a.script
                 .ask("Добудь железо и переплавь", "[{\"action\":\"mine_ore\",\"item\":\"minecraft:iron_ore\",\"count\":3}]", 20 * 600)
                 .check("ingots in the bag", () -> {
                     a.expect(a.chat.said.getLast().plan().stream().anyMatch(step -> step.type().equals("smelt_items")), "No smelting step: " + a.chat.history());

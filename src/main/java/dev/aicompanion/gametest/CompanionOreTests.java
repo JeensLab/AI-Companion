@@ -62,20 +62,64 @@ public final class CompanionOreTests {
         });
     }
 
-    /** Iron buried in the ground, no cave, never seen: no x-ray, so the order ends honestly and the ore stays where it is. */
-    @GameTest(template = "tall_tree", timeoutTicks = 600)
-    public static void buriedOreIsNotSeenThroughStone(GameTestHelper h) {
+    /**
+     * No ore anywhere and nowhere to look down: an exploration tunnel (stairs, then straight, never a shaft), nothing found, and
+     * the report says what he did. He walks back up his own stairs.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void scoutingThatFindsNothingSaysWhatWasDone(GameTestHelper h) {
         CompanionEntity companion = buried(h);
-        BlockPos ore = new BlockPos(16, 3, 23); h.setBlock(ore, Blocks.IRON_ORE);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         h.assertTrue(companion.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
         long id = companion.activeWorkId();
         h.succeedWhen(() -> {
             done(h, companion);
             CompanionActionResult result = companion.workResult(id);
-            h.assertTrue(result != null && !result.success() && result.message().contains("не вижу"), "Not an honest refusal: " + result);
-            h.assertTrue(h.getBlockState(ore).is(Blocks.IRON_ORE) && !companion.remembersOre(h.absolutePos(ore)), "Buried ore was found through stone");
-            h.assertTrue(count(companion, Items.COBBLESTONE) + count(companion, Items.DIRT) == 0, "Dug without seeing any ore: " + report(companion));
+            h.assertTrue(result != null && !result.success() && result.message().contains("не нашёл") && result.message().contains("разведочный ход ("),
+                    "Not an honest report of the search: " + result);
+            h.assertTrue(count(companion, Items.COBBLESTONE) > 0 && deepestColumn(h) <= 3, "No exploration tunnel, or a shaft: " + report(companion));
+            h.assertTrue(companion.getY() >= h.absolutePos(new BlockPos(0, SURFACE, 0)).getY() - .01, "Did not climb back out: " + companion.position());
+        });
+    }
+
+    /**
+     * Iron buried beside the way of the exploration tunnel, whichever way he digs it: never seen until the tunnel opens its
+     * wall, then mined. The iron beside the other ways stays where it is: nothing is found through stone.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void scoutingTunnelOpensBuriedOre(GameTestHelper h) {
+        CompanionEntity companion = buried(h);
+        BlockPos[] irons = {new BlockPos(17, 1, 23), new BlockPos(15, 1, 9), new BlockPos(23, 1, 17), new BlockPos(9, 1, 15)};
+        for (BlockPos iron : irons) h.setBlock(iron, Blocks.IRON_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.RAW_IRON) == 1, report(companion));
+            int left = 0; for (BlockPos iron : irons) if (h.getBlockState(iron).is(Blocks.IRON_ORE)) left++;
+            h.assertTrue(left == 3 && deepestColumn(h) <= 3, "Iron left: " + left + ", deepest column " + deepestColumn(h));
+            h.assertTrue(companion.getY() >= h.absolutePos(new BlockPos(0, SURFACE, 0)).getY() - .01, "Did not climb back out: " + companion.position());
+        });
+    }
+
+    /**
+     * An open cut goes down beside him into a covered passage with iron at its end, out of sight from above. He walks down to
+     * the lowest ground he sees, looks round there, sees the iron and mines it: no tunnel dug on the way.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void scoutingWalksDownIntoACaveItSees(GameTestHelper h) {
+        CompanionEntity companion = buried(h);
+        for (int x = 17; x <= 21; x++) for (int z = 15; z <= 17; z++) for (int y = SURFACE - (x - 16); y < SURFACE; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int x = 22; x <= 25; x++) for (int z = 15; z <= 17; z++) for (int y = 1; y <= 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        BlockPos iron = new BlockPos(26, 1, 16); h.setBlock(iron, Blocks.IRON_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(!companion.remembersOre(h.absolutePos(iron)), "Iron seen from above");
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.RAW_IRON) == 1 && h.getBlockState(iron).isAir(), report(companion));
+            // The block over the ore comes first, as in a player's 1x2; nothing else is dug.
+            h.assertTrue(count(companion, Items.DIRT) == 0 && count(companion, Items.COBBLESTONE) <= 1, "Dug instead of walking down: " + report(companion));
         });
     }
 
@@ -270,6 +314,16 @@ public final class CompanionOreTests {
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
         CompanionEvents.getOwnedCompanion(owner);
         companion.setSearchRadius(16);
+    }
+    /** The most air cells in one column below the surface of the buried arena: a shaft, not stairs, if more than 3. */
+    private static int deepestColumn(GameTestHelper h) {
+        int deepest = 0;
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) {
+            int column = 0;
+            for (int y = 1; y < SURFACE; y++) if (h.getBlockState(new BlockPos(x, y, z)).isAir()) column++;
+            deepest = Math.max(deepest, column);
+        }
+        return deepest;
     }
     private static String report(CompanionEntity companion) { return companion.getDeedsForAi() + " | bag: " + companion.getStoredItemsSummary(); }
     private static void done(GameTestHelper h, CompanionEntity companion) {

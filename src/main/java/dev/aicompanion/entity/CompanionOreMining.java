@@ -82,6 +82,7 @@ final class CompanionOreMining {
             w.goalOre = w.ore; w.goalOreWanted = w.oreWanted; w.goalOreMined = w.oreMined; w.goalOreDropsBefore = w.oreDropsBefore; w.goalOreExit = w.oreExit;
         }
         w.ore = CompanionOre.Kind.IRON; w.oreWanted = missing; w.oreMined = w.oreFound = w.oreLiquid = w.oreUnreachable = w.orePickaxeAttempts = 0;
+        w.scouting.reset();
         w.oreDone = w.oreChoosing = w.oreLootRetried = false; w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = null;
         w.oreDropsBefore = w.items.countCarried(Items.RAW_IRON);
         w.ironPrep = true; w.phase = CompanionWork.Phase.ORE_PICK; w.resetTarget();
@@ -95,6 +96,7 @@ final class CompanionOreMining {
             w.ore = w.goalOre; w.oreWanted = w.goalOreWanted; w.oreMined = w.goalOreMined; w.oreDropsBefore = w.goalOreDropsBefore;
             w.oreFound = w.oreLiquid = w.oreUnreachable = w.orePickaxeAttempts = 0; w.oreDone = w.oreChoosing = w.oreLootRetried = false;
             w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = w.goalOreExit; w.goalOre = null;
+            w.scouting.reset();
         }
         w.phase = CompanionWork.Phase.IRON; w.resetTarget();
     }
@@ -110,13 +112,15 @@ final class CompanionOreMining {
         if (w.oreCandidates == null) {
             if (w.oreSearch == null) w.oreSearch = new CompanionOre.Search(w.owner, level, w.owner.blockPosition(), w.owner.getSearchRadius(), w.ore);
             if (!w.oreSearch.scan(level)) { w.owner.workStatus("Ищу «" + w.ore.oreName + "» в пределах " + w.oreSearch.radius() + " блоков."); return; }
-            w.oreCandidates = new ArrayList<>(w.oreSearch.results()); w.oreFound = w.oreCandidates.size();
+            w.oreCandidates = new ArrayList<>(w.oreSearch.results()); w.oreFound += w.oreCandidates.size();
         }
         if (!w.oreTunnel.isEmpty()) { digOreTunnel(level); return; }
         if (w.target == null) {
             w.target = nextOre(level);
             if (w.target == null) {
                 if (w.oreChoosing) { w.owner.workStatus("Ищу подход к «" + w.ore.oreName + "»."); return; }
+                // Nothing in sight or remembered to go for: look down into caves, then an exploration tunnel (CompanionOreScouting).
+                if (w.scouting.next(level)) return;
                 w.oreDone = true; climbOutOfOre(level); return;
             }
             if (!w.oreTunnel.isEmpty()) return;
@@ -235,18 +239,27 @@ final class CompanionOreMining {
         BlockState state = level.getBlockState(cell);
         if (state.isAir() || state.canBeReplaced() && state.getFluidState().isEmpty()) { w.oreTunnel.removeFirst(); w.resetApproach(); return; }
         // The world may have changed since planning: never dig into liquid, under sand or into something built.
-        if (!CompanionOre.tunnelable(state) || !CompanionOre.safeTunnelCell(level, cell)) { w.oreUnreachable++; rejectOre(); return; }
+        if (!CompanionOre.tunnelable(state) || !CompanionOre.safeTunnelCell(level, cell)) { tunnelBlocked(); return; }
         if (!safeOreSwing(level, cell)) return;
         if (w.items.prepareMiningTool(state)) return;
         w.owner.selectToolForBlock(state);
         // Another ore on the way that this pickaxe would only destroy is not dug through.
-        if (state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && !w.owner.getMainHandItem().isCorrectToolForDrops(state)) { w.oreUnreachable++; rejectOre(); return; }
+        if (state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) && !w.owner.getMainHandItem().isCorrectToolForDrops(state)) { tunnelBlocked(); return; }
         int reach = w.items.reachBlock(level, cell, false);
-        if (reach < 0) { w.oreUnreachable++; rejectOre(); return; }
+        if (reach < 0) { tunnelBlocked(); return; }
         if (reach == 0) return;
-        w.owner.workStatus("Прокладываю ход к «" + w.ore.oreName + "».");
+        w.owner.workStatus(w.scouting.digging() ? "Копаю разведочный ход и смотрю стены: «" + w.ore.oreName + "» пока не видно."
+                : "Прокладываю ход к «" + w.ore.oreName + "».");
         if (!w.breaking.tick(level, cell)) return;
-        if (harvestOreCell(level, cell)) { w.oreTunnel.removeFirst(); w.resetApproach(); w.cooldown = 2; }
+        if (harvestOreCell(level, cell)) {
+            if (w.scouting.digging()) w.scouting.cellDug();
+            w.oreTunnel.removeFirst(); w.resetApproach(); w.cooldown = 2;
+        }
+    }
+    /** An unsafe or unreachable tunnel cell: no way to that ore, or the end of an exploration leg (not an unreachable ore). */
+    private void tunnelBlocked() {
+        if (!w.scouting.digging()) w.oreUnreachable++;
+        rejectOre();
     }
 
     /** Breaks a block like a player: real drops for the tool in hand, wear, the drops fall into the world to be picked up. */
@@ -275,6 +288,7 @@ final class CompanionOreMining {
 
     private void rejectOre() {
         if (w.target != null) w.oreRejected.add(w.target);
+        if (w.scouting.digging()) w.scouting.legBlocked();
         w.oreTunnel.clear(); w.resetTarget();
     }
 
@@ -340,9 +354,8 @@ final class CompanionOreMining {
             ironStageDone(); return;
         }
         if (w.oreMined >= w.oreWanted) { w.finish(true, "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag); return; }
-        // Without x-ray: only ore in sight or seen before counts, so the honest reason is what he has not seen.
-        String why = w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» рядом не вижу и поблизости не встречал. Сквозь камень я не вижу:"
-                + " отведи меня к пещере или обрыву, где она видна."
+        // Without x-ray: only ore in sight, seen before or opened up by his own search counts; the honest reason is the search.
+        String why = w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» не нашёл: " + w.scouting.summary() + " Сквозь камень я не вижу."
                 : " Больше доступной руды «" + w.ore.oreName + "» рядом нет.";
         if (w.oreLiquid > 0) why += " У " + CompanionWorkItems.blocks(w.oreLiquid) + " рядом вода или лава — их не трогал.";
         if (w.oreUnreachable > 0) why += " К " + w.oreUnreachable + " не нашёл безопасного хода: не глубже " + CompanionOre.MAX_DROP
