@@ -86,10 +86,17 @@ public final class OpenRouterClient {
         body.addProperty("model", OpenRouterConfig.MODEL.get().trim().isEmpty() ? "openrouter/auto" : OpenRouterConfig.MODEL.get().trim());
         body.add("messages", messages);
         body.addProperty("max_tokens", maxTokens);
-        return post(body, false, trace).thenApply(parsed -> {
-            JsonObject reply = parsed.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message");
-            return reply != null && reply.has("content") && !reply.get("content").isJsonNull() ? reply.get("content").getAsString() : "";
-        });
+        return post(body, false, trace).thenApply(OpenRouterClient::completionText);
+    }
+
+    /** The text of a plain completion; a reply cut off by the token limit is an error, not an answer that merely ends early. */
+    public static String completionText(JsonObject response) {
+        JsonObject choice = response.getAsJsonArray("choices").get(0).getAsJsonObject();
+        if ("length".equals(scalar(choice, "finish_reason"))) {
+            throw new IllegalStateException("Ответ модели оборвался на пределе токенов.");
+        }
+        JsonObject reply = choice.getAsJsonObject("message");
+        return reply != null && reply.has("content") && !reply.get("content").isJsonNull() ? reply.get("content").getAsString() : "";
     }
 
     public static long generation() {

@@ -48,6 +48,21 @@ public final class CompanionHappeningsTests {
         String unknownDeath = happeningText(h, p, "player_death");
         NeoForge.EVENT_BUS.post(new LivingDeathEvent(p, damage.fall()));
         String fallDeath = happeningText(h, p, "player_death");
+        // The killer is named by its type: the custom name is text the player may control and must not reach the happening.
+        var killer = h.spawn(EntityType.ZOMBIE, 18, 1, 16); killer.setNoAi(true); killer.setCustomName(Component.literal("Босс"));
+        NeoForge.EVENT_BUS.post(new LivingDeathEvent(p, damage.mobAttack(killer)));
+        String killedDeath = happeningText(h, p, "player_death");
+        // LAVA and ON_FIRE are also IS_FIRE, so their words only come out if they are asked before it; IN_FIRE is the plain «огонь».
+        var causes = List.of(Map.entry(damage.lava(), "лава"), Map.entry(damage.onFire(), "горение"), Map.entry(damage.inFire(), "огонь"),
+                Map.entry(damage.drown(), "утопление"), Map.entry(damage.starve(), "голод"), Map.entry(damage.inWall(), "удушье в блоках"),
+                Map.entry(damage.explosion(null, null), "взрыв"), Map.entry(damage.lightningBolt(), "молния"), Map.entry(damage.freeze(), "замерзание"),
+                Map.entry(damage.cactus(), "кактус"), Map.entry(damage.fellOutOfWorld(), "выпадение из мира"), Map.entry(damage.magic(), "магия"),
+                Map.entry(damage.wither(), "иссушение"));
+        String[] causeDeaths = new String[causes.size()];
+        for (int i = 0; i < causeDeaths.length; i++) {
+            NeoForge.EVENT_BUS.post(new LivingDeathEvent(p, causes.get(i).getKey()));
+            causeDeaths[i] = happeningText(h, p, "player_death");
+        }
         NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(p, advancement("aicompanion:test/plain", AdvancementType.TASK, true, true)));
         NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(p, advancement("minecraft:story/mine_diamond", AdvancementType.TASK, true, true)));
         NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(p, advancement("aicompanion:test/hard", AdvancementType.CHALLENGE, true, true)));
@@ -80,6 +95,14 @@ public final class CompanionHappeningsTests {
         h.assertTrue(seen.get("companion_died") == CompanionHappenings.Importance.HIGH, "Companion death not recorded as HIGH: " + seen);
         h.assertTrue(unknownDeath.equals("Товарищ погиб."), "A death of an unknown kind kept a cause or empty brackets: " + unknownDeath);
         h.assertTrue(fallDeath.equals("Товарищ погиб (падение)."), "A fall is not named in Russian: " + fallDeath);
+        String killerType = EntityType.ZOMBIE.getDescription().getString();
+        h.assertTrue(killedDeath.equals("Товарищ погиб (убит: " + killerType + ")."), "The killer is not named by its type, or its custom name leaked: " + killedDeath);
+        h.assertTrue(!killedDeath.replace(killerType, "").matches(".*[A-Za-z].*"), "A killed-by text has Latin letters besides the killer's type: " + killedDeath);
+        for (int i = 0; i < causeDeaths.length; i++) {
+            String wording = causes.get(i).getValue();
+            h.assertTrue(causeDeaths[i].equals("Товарищ погиб (" + wording + ")."), "The cause «" + wording + "» is worded wrong: " + causeDeaths[i]);
+            h.assertTrue(!causeDeaths[i].matches(".*[A-Za-z].*"), "A death text has Latin letters: " + causeDeaths[i]);
+        }
         h.assertTrue(!companionDeath.contains("("), "The companion's death of an unknown kind kept a cause or empty brackets: " + companionDeath);
         for (String death : List.of(unknownDeath, fallDeath, companionDeath)) {
             h.assertTrue(!death.matches(".*[A-Za-z].*"), "A death text has Latin letters: " + death);
@@ -381,13 +404,14 @@ public final class CompanionHappeningsTests {
         long asked = say.revision();
         h.assertTrue("awaiting_answer".equals(say.rejection(asked, "Идём дальше", true, false, false))
                 && say.rejection(asked, "Идём дальше", true, false, true).isEmpty(), "An open question must refuse an ordinary reply only");
+        h.assertTrue(say.awaitingAnswer(), "The question left open above is not open");
         for (String text : new String[] {"Идём дальше", null, "", "...", "а".repeat(261), "Ты где? Ты жив?", "Держись, я рядом"}) {
             for (int bits = 0; bits < 16; bits++) {
                 boolean safe = (bits & 1) != 0, busy = (bits & 2) != 0, urgent = (bits & 4) != 0;
                 long captured = (bits & 8) != 0 ? asked : asked + 1;
-                h.assertTrue(say.acceptReply(captured, text, safe, busy, urgent) == say.rejection(captured, text, safe, busy, urgent).isEmpty()
-                        && say.acceptReply(captured, text, safe, busy) == say.rejection(captured, text, safe, busy, false).isEmpty(),
-                        "acceptReply disagrees with rejection: " + bits + " " + text);
+                h.assertTrue(say.acceptReply(captured, text, safe, busy, urgent) == acceptedBeforeRejection(say, true, captured, text, safe, busy, urgent)
+                        && say.acceptReply(captured, text, safe, busy) == acceptedBeforeRejection(say, true, captured, text, safe, busy, false),
+                        "acceptReply differs from the rule it had before rejection(): " + bits + " " + text);
             }
         }
         h.succeed();
@@ -412,6 +436,13 @@ public final class CompanionHappeningsTests {
             h.assertTrue(talk.urgentPending() == c.socialSequence(), "The first snapshot swallowed the return");
             h.succeed();
         });
+    }
+
+    /** The admission rule as it was written out in 8d17bfa, before {@code rejection} existed: the reference {@code acceptReply} must keep agreeing with. */
+    private static boolean acceptedBeforeRejection(dev.aicompanion.CompanionConversation say, boolean awaitingAnswer, long capturedRevision,
+                                                   String text, boolean safe, boolean busy, boolean urgent) {
+        return capturedRevision == say.revision() && safe && !busy && (urgent || !awaitingAnswer) && text != null
+                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1 && say.fresh(text);
     }
 
     private static void session(ServerPlayer player, CompanionEntity companion, int slot) {

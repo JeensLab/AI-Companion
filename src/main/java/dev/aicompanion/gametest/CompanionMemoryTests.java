@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionMemoryCodec;
@@ -34,6 +35,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class CompanionMemoryTests {
     private static final String VALID = "{\"memories\":[{\"kind\":\"player_fact\",\"text\":\"Игрок любит железо\"},"
             + "{\"kind\":\"promise\",\"text\":\"Обещал показать шахту\"}],\"call_me\":\"Роб\"}";
+    private static final String CUT_OFF = "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"{\\\"memories\\\":[\"}}]}";
 
     @GameTest(template="empty")
     public static void historyIsClearedOnLogoutAndLateRepliesAreDropped(GameTestHelper h) {
@@ -258,6 +260,74 @@ public final class CompanionMemoryTests {
         }
     }
 
+    @GameTest(template="empty", batch="memory_unfinished", timeoutTicks=200)
+    public static void unfinishedCompressionReplyKeepsTheJournal(GameTestHelper h) {
+        var server = h.getLevel().getServer();
+        UUID owner = UUID.randomUUID();
+        int[] asked = {0};
+        try {
+            var bonds = CompanionBonds.get(server);
+            // An empty reply, a blank one, and one cut off by the token limit, which the client reports as an error.
+            CompanionMemoryFlow.useCompleter((messages, maxTokens, trace) -> switch (asked[0]++) {
+                case 0 -> CompletableFuture.completedFuture("");
+                case 1 -> CompletableFuture.completedFuture(" \n ");
+                default -> CompletableFuture.completedFuture(CUT_OFF).thenApply(CompanionMemoryTests::completionText);
+            });
+            OpenRouterClient.resetSession();
+            CompanionMemoryFlow.bind(server, owner, true);
+            for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Первая реплика " + i, null);
+
+            h.runAfterDelay(5, () -> {
+                try {
+                    h.assertTrue(asked[0] == 1 && bonds.pendingTalk(owner).size() == 12,
+                            "An empty reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
+                    for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Вторая реплика " + i, null);
+
+                    h.runAfterDelay(5, () -> {
+                        try {
+                            h.assertTrue(asked[0] == 2 && bonds.pendingTalk(owner).size() == 24,
+                                    "A blank reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
+                            for (int i = 0; i < 12; i++) CompanionMemoryFlow.playerSaid("Третья реплика " + i, null);
+
+                            h.runAfterDelay(5, () -> {
+                                try {
+                                    h.assertTrue(asked[0] == 3 && bonds.pendingTalk(owner).size() == 36,
+                                            "A cut-off reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
+                                    var memory = bonds.memory(owner);
+                                    h.assertTrue(memory.entries().isEmpty() && memory.callMe().isEmpty(), "An unfinished reply was stored: " + memory.save());
+
+                                    boolean refused = false;
+                                    try {
+                                        completionText(CUT_OFF);
+                                    } catch (IllegalStateException expected) {
+                                        refused = true;
+                                    }
+                                    h.assertTrue(refused, "A reply cut off by the token limit was taken for an answer");
+                                    String finished = completionText("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"x\"}}]}");
+                                    h.assertTrue("x".equals(finished), "A finished reply lost its text: " + finished);
+                                    String silent = completionText("{\"choices\":[{\"finish_reason\":null,\"message\":{\"content\":null}}]}");
+                                    h.assertTrue(silent.isEmpty(), "A reply without text is not empty: " + silent);
+                                    h.succeed();
+                                } finally {
+                                    resetFlow();
+                                }
+                            });
+                        } catch (RuntimeException error) {
+                            resetFlow();
+                            throw error;
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    resetFlow();
+                    throw error;
+                }
+            });
+        } catch (RuntimeException error) {
+            resetFlow();
+            throw error;
+        }
+    }
+
     @GameTest(template="empty", batch="memory_off", timeoutTicks=200)
     public static void disabledLongTermMemoryWritesAndCompressesNothing(GameTestHelper h) {
         var server = h.getLevel().getServer();
@@ -389,6 +459,50 @@ public final class CompanionMemoryTests {
                         } catch (RuntimeException error) {
                             resetFlow();
                             throw error;
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    resetFlow();
+                    throw error;
+                }
+            });
+        } catch (RuntimeException error) {
+            resetFlow();
+            throw error;
+        }
+    }
+
+    @GameTest(template="empty", batch="memory_forget_off", timeoutTicks=200)
+    public static void forgetWithMemoryOffErasesTheWorld(GameTestHelper h) {
+        var server = h.getLevel().getServer();
+        UUID owner = UUID.randomUUID();
+        try {
+            var bonds = CompanionBonds.get(server);
+            CompanionMemoryFlow.useCompleter((messages, maxTokens, trace) -> new CompletableFuture<>());
+            OpenRouterClient.resetSession();
+            CompanionMemoryFlow.bind(server, owner, true);
+            bonds.remember(owner, CompanionMemory.PLAYER_FACT, "Любит железо");
+            bonds.setCallMe(owner, "Роб");
+            CompanionMemoryFlow.playerSaid("Мой секрет про арбузы", null);
+            CompanionMemoryFlow.companionSaid("model", "Запомнил про арбузы");
+
+            h.runAfterDelay(5, () -> {
+                try {
+                    var before = bonds.memory(owner);
+                    h.assertTrue(!bonds.pendingTalk(owner).isEmpty() && !before.recentTalk().isEmpty() && !before.entries().isEmpty(), "Fixture is empty: " + before.save());
+
+                    // The setting is switched off after the talk was saved: the world still holds it.
+                    CompanionMemoryFlow.bind(server, owner, false);
+                    CompanionMemoryFlow.forget();
+
+                    h.runAfterDelay(5, () -> {
+                        try {
+                            var after = bonds.memory(owner);
+                            h.assertTrue(bonds.pendingTalk(owner).isEmpty() && after.recentTalk().isEmpty() && after.entries().isEmpty() && after.callMe().isEmpty(),
+                                    "Forgetting with memory off left the world's memory: " + after.save());
+                            h.succeed();
+                        } finally {
+                            resetFlow();
                         }
                     });
                 } catch (RuntimeException error) {
@@ -565,6 +679,8 @@ public final class CompanionMemoryTests {
         CompanionMemoryFlow.unbind();
         OpenRouterClient.resetSession();
     }
+
+    private static String completionText(String response) { return OpenRouterClient.completionText(JsonParser.parseString(response).getAsJsonObject()); }
 
     private static String role(List<JsonObject> history, int index) { return history.get(index).get("role").getAsString(); }
 

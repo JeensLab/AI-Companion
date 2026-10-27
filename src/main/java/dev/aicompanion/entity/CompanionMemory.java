@@ -209,7 +209,7 @@ public final class CompanionMemory {
     /** The number that the next line to be journaled will get; a condensed batch is acknowledged up to it. */
     public long pendingEnd() { return pendingFrom + pending.size(); }
 
-    /** Removes the lines numbered below {@code end}; a number that is already behind, or ahead of the journal, removes nothing extra. */
+    /** Removes the lines numbered below {@code end}; a number already behind removes nothing, one ahead of the journal clears the whole journal and no more. */
     public void ackPending(long end) {
         long done = Math.min(end - pendingFrom, pending.size());
         if (done <= 0) return;

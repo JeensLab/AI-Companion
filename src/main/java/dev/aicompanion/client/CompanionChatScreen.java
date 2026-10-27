@@ -72,8 +72,12 @@ public final class CompanionChatScreen extends Screen {
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
 
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
+        long sessionGeneration = OpenRouterClient.generation();
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
-            if (error == null) {
+            if (sessionEnded(error, sessionGeneration)) {
+                CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
+                if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
+            } else if (error == null) {
                 if (planGeneration != CompanionActionExecutor.currentPlanGeneration()) {
                     CompanionDiagnostics.event(trace, "reply_discarded", "reason", "generation_changed");
                     if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
@@ -94,9 +98,6 @@ public final class CompanionChatScreen extends Screen {
                     dev.aicompanion.AICompanionMod.LOGGER.warn("Inworld speech could not be played: {}", speechError.getMessage());
                     return null;
                 });
-            } else if (isSessionChange(error)) {
-                CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
-                if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
             } else {
                 CompanionDiagnostics.failure(trace, "chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
@@ -164,12 +165,13 @@ public final class CompanionChatScreen extends Screen {
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
         announceThinking(OpenRouterClient.isBusy());
+        long sessionGeneration = OpenRouterClient.generation();
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
+            if (sessionEnded(error, sessionGeneration)) {
+                CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
+                return;
+            }
             if (error != null) {
-                if (isSessionChange(error)) {
-                    CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
-                    return;
-                }
                 CompanionDiagnostics.failure(trace, "voice_chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
                 Component message = Component.literal("Не удалось получить ответ: " + cause.getMessage()).withStyle(ChatFormatting.RED);
@@ -195,6 +197,11 @@ public final class CompanionChatScreen extends Screen {
     private static boolean isSessionChange(Throwable error) {
         Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
         return cause instanceof CancellationException;
+    }
+
+    /** The session ended while the request was out: it was refused, or its reply was accepted just before the end and only arrives now, without an error. */
+    private static boolean sessionEnded(Throwable error, long requestGeneration) {
+        return error == null ? requestGeneration != OpenRouterClient.generation() : isSessionChange(error);
     }
 
     /**
@@ -267,12 +274,14 @@ public final class CompanionChatScreen extends Screen {
         boolean forget = "companion memory forget".equals(action);
         if (!forget && !"companion memory show".equals(action)) return false;
         CompanionDiagnostics.event(trace, "message_route", "route", "local_memory", "command", action);
+        boolean remembers = OpenRouterConfig.LONG_TERM_MEMORY.get();
         String answer;
-        if (!OpenRouterConfig.LONG_TERM_MEMORY.get()) answer = "Долговременная память выключена в настройках, так что я ничего не храню.";
-        else if (forget) {
+        if (forget) {
             CompanionMemoryFlow.forget();
-            answer = "Всё, что ты мне рассказывал, я забыл. Наши общие дела и отношения остаются.";
-        } else answer = CompanionMemoryView.recall(CompanionMemoryView.current());
+            answer = remembers ? "Всё, что ты мне рассказывал, я забыл. Наши общие дела и отношения остаются."
+                    : "Всё, что ты мне рассказывал, я забыл. Долговременная память выключена, так что нового я не запоминаю.";
+        } else if (remembers) answer = CompanionMemoryView.recall(CompanionMemoryView.current());
+        else answer = "Долговременная память выключена в настройках: нового я не запоминаю и прежнее не вспоминаю.";
         addVoiceReply(answer, trace, "local_memory");
         return true;
     }
