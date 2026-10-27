@@ -154,6 +154,29 @@ public final class CompanionHappeningsTests {
         });
     }
 
+    @GameTest(template="tall_tree", batch="happen_hold", timeoutTicks=260)
+    public static void urgentLineHoldsBackOrdinaryTopics(GameTestHelper h) {
+        CompanionHappeningEvents.clear();
+        var rig = rig(h); var p = rig.player(); var c = rig.companion();
+        // Pacing already run out, and no ordinary topic before the line is out: only its release can hold the next one back.
+        var saved = new net.minecraft.nbt.CompoundTag(); c.addAdditionalSaveData(saved);
+        var cadence = new net.minecraft.nbt.CompoundTag(); cadence.putLong("Next", h.getLevel().getGameTime()); saved.put("SocialCadence", cadence);
+        c.readAdditionalSaveData(saved);
+        c.setConversationAvailable(false);
+        NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(p, advancement("aicompanion:test/held", AdvancementType.CHALLENGE, true, true, "Первое")));
+        h.runAfterDelay(140, () -> {
+            CompanionHappeningEvents.clear();
+            h.assertTrue(c.socialSequence() == 1 && c.socialObservation().startsWith(URGENT), "The urgent line was not released: " + c.socialObservation());
+            c.setConversationAvailable(true);
+            long seed = 0;
+            while (true) { c.getRandom().setSeed(seed); if (c.getRandom().nextFloat() <= .65F) break; seed++; }
+            c.getRandom().setSeed(seed);
+            c.observeEvent("stone", "Реально сломал камень.");
+            h.assertTrue(c.socialSequence() == 1 && c.socialObservation().startsWith(URGENT), "An ordinary topic replaced the urgent line: " + c.socialObservation());
+            h.succeed();
+        });
+    }
+
     @GameTest(template="tall_tree", batch="happen_dimension", timeoutTicks=500)
     public static void urgentWaitsUntilOwnerIsNearAfterDimensionReturn(GameTestHelper h) {
         CompanionHappeningEvents.clear();
@@ -409,8 +432,8 @@ public final class CompanionHappeningsTests {
             for (int bits = 0; bits < 16; bits++) {
                 boolean safe = (bits & 1) != 0, busy = (bits & 2) != 0, urgent = (bits & 4) != 0;
                 long captured = (bits & 8) != 0 ? asked : asked + 1;
-                h.assertTrue(say.acceptReply(captured, text, safe, busy, urgent) == acceptedBeforeRejection(say, true, captured, text, safe, busy, urgent)
-                        && say.acceptReply(captured, text, safe, busy) == acceptedBeforeRejection(say, true, captured, text, safe, busy, false),
+                h.assertTrue(say.acceptReply(captured, text, safe, busy, urgent) == admittedByRule(say, true, captured, text, safe, busy, urgent)
+                        && say.acceptReply(captured, text, safe, busy) == admittedByRule(say, true, captured, text, safe, busy, false),
                         "acceptReply differs from the written-out admission rule: " + bits + " " + text);
             }
         }
@@ -420,6 +443,9 @@ public final class CompanionHappeningsTests {
         h.assertTrue("unanswered_question".equals(say.rejection(say.revision(), "Ты где?", true, false, false))
                 && say.rejection(say.revision(), "Идём дальше", true, false, false).isEmpty()
                 && say.rejection(say.revision(), "Ты где?", true, false, true).isEmpty(), "An unanswered question must refuse only a new ordinary question");
+        String urgentPrompt = dev.aicompanion.client.OpenRouterClient.ambientDirections(true, false);
+        h.assertTrue(urgentPrompt.contains("молчать нельзя") && urgentPrompt.contains("не задавай новый вопрос"),
+                "The urgent prompt after an ignored question must forbid silence and a new question");
         h.succeed();
     }
 
@@ -445,8 +471,8 @@ public final class CompanionHappeningsTests {
     }
 
     /** The admission rule written out as one condition, apart from the order of checks in {@code rejection()}: {@code acceptReply} must keep agreeing with it. */
-    private static boolean acceptedBeforeRejection(dev.aicompanion.CompanionConversation say, boolean awaitingAnswer, long capturedRevision,
-                                                   String text, boolean safe, boolean busy, boolean urgent) {
+    private static boolean admittedByRule(dev.aicompanion.CompanionConversation say, boolean awaitingAnswer, long capturedRevision,
+                                          String text, boolean safe, boolean busy, boolean urgent) {
         return capturedRevision == say.revision() && safe && !busy && (urgent || !awaitingAnswer) && text != null
                 && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1
                 && (urgent || say.canAskQuestion() || !text.contains("?")) && say.fresh(text);
