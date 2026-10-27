@@ -74,11 +74,11 @@ public final class CompanionChatScreen extends Screen {
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
             if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
-                if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
+                dropThinkingLine();
             } else if (error == null) {
                 if (planGeneration != CompanionActionExecutor.currentPlanGeneration()) {
                     CompanionDiagnostics.event(trace, "reply_discarded", "reason", "generation_changed");
-                    if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
+                    dropThinkingLine();
                     return;
                 }
                 replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
@@ -309,10 +309,18 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private void replaceThinkingLine(Component replacement) {
-        if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) {
-            conversation.removeLast();
-        }
+        dropThinkingLine();
         addLine(replacement);
+    }
+
+    /**
+     * The oldest «...» belongs to this reply: requests are answered in order. Only the last line was checked before, so a
+     * message typed while waiting («забудь всё», a second request) left a grey «...» for good (review of PR #19).
+     */
+    private static synchronized void dropThinkingLine() {
+        for (var it = conversation.iterator(); it.hasNext(); ) {
+            if (it.next().getString().equals("...")) { it.remove(); return; }
+        }
     }
 
     private static synchronized void appendHistory(Component line) {

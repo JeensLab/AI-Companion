@@ -99,7 +99,9 @@ public final class CompanionConversation {
         // Punctuation-only text is as empty as a blank one: fresh() refuses both, and neither is a repeat.
         if (text == null || normalize(text).isBlank()) return "empty";
         if (text.length() > 260) return "too_long";
-        if (text.chars().filter(c -> c == '?').count() > 1) return "too_many_questions";
+        // PR #19 review: after a death the model asked «…рухнул? Живой хоть?» twice and both were dropped; an urgent line is
+        // answered anyway, its prompt asks for one question at most.
+        if (!urgent && text.chars().filter(c -> c == '?').count() > 1) return "too_many_questions";
         // An ignored question must not silence an urgent line either; its prompt still asks it to ask none.
         if (!urgent && !canAskQuestion() && text.contains("?")) return "unanswered_question";
         return fresh(text) ? "" : "repeat";

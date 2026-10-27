@@ -30,7 +30,8 @@ public final class CompanionMemoryCodec {
             + "Ответь только JSON без пояснений: {\"memories\":[{\"kind\":\"player_fact\",\"text\":\"...\"}],\"call_me\":\"\",\"likes\":[],\"dislikes\":[]}. "
             + "call_me — как игрок просил себя называть, иначе пустая строка. "
             + "Не дублируй в memories то, что уже в call_me: как игрок просил себя звать, пиши только в call_me. "
-            + "likes и dislikes — что игрок явно любит и не любит, не больше 6 коротких слов или фраз до 40 символов в каждом, иначе пустые списки.";
+            + "likes и dislikes — что игрок явно любит и не любит, не больше 6 коротких слов или фраз до 40 символов в каждом, иначе пустые списки. "
+            + "Не дублируй в memories то, что уже в likes или dislikes.";
 
     public record Memory(String kind, String text) { }
 

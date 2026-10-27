@@ -781,6 +781,8 @@ public final class CompanionMemoryTests {
 
         String told = CompanionMemoryView.recall(digest);
         h.assertTrue(!told.contains(".;") && !told.contains("..") && !told.contains("!;"), "Punctuation doubled up: " + told);
+        // Review of PR #19: «звать тебя Серый; У игрока есть пёс» — one sentence per memory, the likes too.
+        h.assertTrue(!told.contains(";") && told.contains(". Боится пауков") && told.contains(". Тебе нравится: яблоки"), "Not told in sentences: " + told);
         h.assertTrue(!told.contains("Просит звать"), "The address was told twice: " + told);
         h.assertTrue(told.contains("ты просил звать тебя Роб") && told.contains("Любит железо") && told.contains("Боится пауков")
                 && told.contains("Роб строит базу у реки") && told.contains("арбузы"), "Something real was lost: " + told);
@@ -793,7 +795,8 @@ public final class CompanionMemoryTests {
         h.assertTrue(!CompanionMemory.repeatsAddress("Роб строит базу у реки", "Роб"), "A name without a word of address is a repeat");
 
         String sent = CompanionMemoryCodec.request(List.of(new CompanionMemory.Talk(true, "Привет"))).toString();
-        h.assertTrue(sent.contains("Не дублируй в memories") && sent.contains("верно только сейчас"), "The condensing prompt lacks the new rules: " + sent);
+        h.assertTrue(sent.contains("Не дублируй в memories") && sent.contains("верно только сейчас") && sent.contains("уже в likes или dislikes"),
+                "The condensing prompt lacks the new rules: " + sent);
         h.succeed();
     }
 

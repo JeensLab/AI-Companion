@@ -421,6 +421,8 @@ public final class CompanionHappeningsTests {
         }
         h.assertTrue("too_long".equals(say.rejection(rev, "а".repeat(261), true, false, false)), "A 261-character reply was not too long");
         h.assertTrue("too_many_questions".equals(say.rejection(rev, "Ты где? Ты жив?", true, false, false)), "Two questions were not refused");
+        // Review of PR #19: both the remark and its retry after a death asked «…рухнул? Живой хоть?», and the death went unanswered.
+        h.assertTrue(say.rejection(rev, "Ты чё, с неба рухнул? Живой хоть?", true, false, true).isEmpty(), "An urgent line with two questions was dropped");
         say.delivered("Держись, я рядом", 100, 0);
         h.assertTrue("repeat".equals(say.rejection(say.revision(), "Держись, я рядом!", true, false, false)), "A repeat was not reported");
         say.delivered("Что скажешь?", 200, 0);
@@ -444,7 +446,8 @@ public final class CompanionHappeningsTests {
                 && say.rejection(say.revision(), "Идём дальше", true, false, false).isEmpty()
                 && say.rejection(say.revision(), "Ты где?", true, false, true).isEmpty(), "An unanswered question must refuse only a new ordinary question");
         String urgentPrompt = dev.aicompanion.client.OpenRouterClient.ambientDirections(true, false);
-        h.assertTrue(urgentPrompt.contains("молчать нельзя") && urgentPrompt.contains("не задавай новый вопрос"),
+        h.assertTrue(urgentPrompt.contains("молчать нельзя") && urgentPrompt.contains("не задавай новый вопрос")
+                && urgentPrompt.contains("не больше одного вопроса"),
                 "The urgent prompt after an ignored question must forbid silence and a new question");
         h.succeed();
     }
@@ -474,7 +477,7 @@ public final class CompanionHappeningsTests {
     private static boolean admittedByRule(dev.aicompanion.CompanionConversation say, boolean awaitingAnswer, long capturedRevision,
                                           String text, boolean safe, boolean busy, boolean urgent) {
         return capturedRevision == say.revision() && safe && !busy && (urgent || !awaitingAnswer) && text != null
-                && text.length() <= 260 && text.chars().filter(c -> c == '?').count() <= 1
+                && text.length() <= 260 && (urgent || text.chars().filter(c -> c == '?').count() <= 1)
                 && (urgent || say.canAskQuestion() || !text.contains("?")) && say.fresh(text);
     }
 
