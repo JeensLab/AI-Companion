@@ -51,7 +51,7 @@ public final class CompanionSettingsScreen extends Screen {
             OpenRouterConfig.LONG_TERM_MEMORY.set(!OpenRouterConfig.LONG_TERM_MEMORY.get()); OpenRouterConfig.LONG_TERM_MEMORY.save();
             b.setMessage(memoryLabel()); CompanionPreferences.sync();
         }).bounds(6, 8, 88, 20).tooltip(Tooltip.create(Component.literal(
-                "Помнить факты, обещания и недавний разговор между сессиями. Хранится в сохранении мира."))).build());
+                "Помнить факты, обещания и недавний разговор между сессиями, подстраивать характер и заводить свои темы. Хранится в сохранении мира."))).build());
         int fieldWidth = Math.min(380, this.width - 80);
         int left = (this.width - fieldWidth) / 2;
         firstY = 36;

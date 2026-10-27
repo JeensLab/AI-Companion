@@ -56,15 +56,58 @@ final class CompanionAmbientClient {
         if (text.isBlank() || client.level.getGameTime() - speaker.autonomyLineTime() > 200) return;
         CompanionChatScreen.autonomyLine(text);
     }
+    private static net.minecraft.world.phys.Vec3 lastSpot;
+    private static long sampledAt, travelUntil, idleSince;
+    /** What is going on, as the client sees it: a fight, a mine, the road together, a long idle spell or work. */
+    private static CompanionConversation.Scene scene(dev.aicompanion.entity.CompanionEntity speaker) {
+        var client = Minecraft.getInstance(); var player = client.player; long now = now();
+        if (lastSpot == null || now - sampledAt >= 100 || now < sampledAt) {
+            // Eight blocks in five seconds: walking or riding somewhere, not pottering about one spot.
+            if (lastSpot != null && player.position().subtract(lastSpot).horizontalDistanceSqr() > 8 * 8) travelUntil = now + 300;
+            lastSpot = player.position(); sampledAt = now;
+        }
+        boolean travelling = now < travelUntil, working = speaker.isGatheringTask();
+        if (travelling || working || idleSince > now) idleSince = now;
+        boolean underground = player.getY() < client.level.getSeaLevel() - 4 && !client.level.canSeeSky(player.blockPosition());
+        return CompanionConversation.scene(speaker.fighting(), underground, travelling, working, now - idleSince);
+    }
+    /**
+     * His own topic, word for word, no model request to start talking. The topics are his memory of the player, kept in the world:
+     * the server picks one and marks it raised, and it is said if nothing has happened in the meantime.
+     */
+    private static void raiseTopic(CompanionConversation.Scene scene) {
+        var client = Minecraft.getInstance(); var server = client.getSingleplayerServer();
+        if (server == null) return;
+        pending = true;
+        Object capturedWorld = world; UUID capturedCompanion = companion, owner = client.player.getUUID(); long activity = conversation.revision();
+        server.execute(() -> {
+            if (!server.isRunning()) return;
+            var topic = dev.aicompanion.entity.CompanionBonds.get(server).raiseTopic(owner, java.util.concurrent.ThreadLocalRandom.current());
+            client.execute(() -> {
+                if (world != capturedWorld || client.level != capturedWorld) return;
+                pending = false;
+                String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
+                var speaker = CompanionVoiceAudio.speaker();
+                if (conversation.revision() != activity || speaker == null || !capturedCompanion.equals(speaker.getUUID()) || !safe(speaker)
+                        || !CompanionVoiceAudio.audible(speaker) || client.screen != null || client.isPaused()) {
+                    dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic_dropped", "topic", topic.key()); return;
+                }
+                conversation.talked(now(), jitter());
+                dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic", "scene", scene.name(), "topic", topic.key());
+                CompanionChatScreen.ownTopic(topic.text(), trace);
+            });
+        });
+    }
     static void tick() {
         var client = Minecraft.getInstance();
         if (client.level != world) {
-            world = client.level; companion = null; pending = false;
+            world = client.level; companion = null; pending = false; lastSpot = null; travelUntil = 0; idleSince = now();
             conversation.reset(now(), jitter());
         }
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();
         if (speaker == null || !CompanionVoiceAudio.audible(speaker)) return;
+        var scene = scene(speaker);
         // Initial tracking data is a snapshot, not a new event, except an urgent line still fresh.
         if (!speaker.getUUID().equals(companion)) {
             companion = speaker.getUUID();
@@ -76,7 +119,12 @@ final class CompanionAmbientClient {
         }
         int current = speaker.socialSequence();
         boolean fresh = conversation.newObservation(current);
-        if (!fresh && conversation.urgentPending() == 0) return;
+        if (!fresh && conversation.urgentPending() == 0) {
+            // A topic needs the model to go on talking, and the memory of the player to know which topics he has raised.
+            if (conversation.topicReady(now(), scene) && !busy() && safe(speaker) && OpenRouterConfig.LONG_TERM_MEMORY.get()
+                    && OpenRouterClient.modelConfigured()) raiseTopic(scene);
+            return;
+        }
         boolean safe = safe(speaker);
         String latest = speaker.socialObservation(), observation = CompanionConversation.stripUrgent(latest);
         boolean urgent = fresh && CompanionConversation.isUrgent(latest);

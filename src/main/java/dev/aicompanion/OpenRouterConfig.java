@@ -54,7 +54,7 @@ public final class OpenRouterConfig {
             .define("personality", "Ты мой товарищ по выживанию в Minecraft: язвительный, разговорчивый и надёжный. Помни наш разговор, интересуйся происходящим, шути и матерись естественно, без постоянных комплиментов.");
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
-            .comment("Let the companion remember facts, promises and recent talk between sessions. Stored in the world save.")
+            .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")
             .define("longTermMemory", true);
 

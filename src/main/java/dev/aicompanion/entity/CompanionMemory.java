@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
  * and the last lines of the talk. Besides those, a journal keeps the lines not yet condensed into memories, numbered
  * across forgetting, so a condensed batch is removed by its number and never takes a later line with it. Everything
  * that reaches this class passes the server-side secret filter, so a key, a coordinate or a registry id never lands
- * in the saved world.
+ * in the saved world. The companion's character and topics of his own, made from the same talks, are kept here too.
  */
 public final class CompanionMemory {
     public static final int MAX_MEMORIES = 40;
@@ -76,6 +76,7 @@ public final class CompanionMemory {
     private final List<String> likes = new ArrayList<>();
     private final List<String> dislikes = new ArrayList<>();
     private String callMe = "";
+    private CompanionSoul soul = new CompanionSoul();
 
     /** True when the text carries something that must not be remembered or stored. */
     public static boolean isSensitive(String text) {
@@ -175,6 +176,7 @@ public final class CompanionMemory {
     public void recordTalk(boolean fromPlayer, String text) {
         addTalk(fromPlayer, text);
         addPending(fromPlayer, text);
+        if (fromPlayer) soul.heard();
     }
 
     private void addTalk(boolean fromPlayer, String text) {
@@ -305,7 +307,9 @@ public final class CompanionMemory {
 
     public List<String> dislikes() { return List.copyOf(dislikes); }
 
-    public boolean isEmpty() { return memories.isEmpty() && talk.isEmpty() && pending.isEmpty() && likes.isEmpty() && dislikes.isEmpty() && callMe.isEmpty(); }
+    public CompanionSoul soul() { return soul; }
+
+    public boolean isEmpty() { return memories.isEmpty() && talk.isEmpty() && pending.isEmpty() && likes.isEmpty() && dislikes.isEmpty() && callMe.isEmpty() && soul.isEmpty(); }
 
     public CompanionMemory copy() { return load(save()); }
 
@@ -324,6 +328,7 @@ public final class CompanionMemory {
         tag.putString("CallMe", callMe);
         tag.put("Likes", strings(likes));
         tag.put("Dislikes", strings(dislikes));
+        tag.put("Soul", soul.save());
         return tag;
     }
 
@@ -344,6 +349,7 @@ public final class CompanionMemory {
         memory.setCallMe(tag.getString("CallMe"));
         for (Tag like : tag.getList("Likes", Tag.TAG_STRING)) memory.addLike(like.getAsString());
         for (Tag dislike : tag.getList("Dislikes", Tag.TAG_STRING)) memory.addDislike(dislike.getAsString());
+        memory.soul = CompanionSoul.load(tag.getCompound("Soul"));
         return memory;
     }
 

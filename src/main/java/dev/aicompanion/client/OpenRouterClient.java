@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -87,6 +88,10 @@ public final class OpenRouterClient {
     }
     private static URI endpoint() { return endpoint(OpenRouterConfig.API_URL.get()); }
     private static boolean missingKey(URI endpoint) { return keyRequired(endpoint) && OpenRouterConfig.API_KEY.get().isBlank(); }
+    /** A model server is set up to answer: the address is valid and OpenRouter has its key. */
+    static boolean modelConfigured() {
+        try { return !missingKey(endpoint()); } catch (IllegalStateException badAddress) { return false; }
+    }
 
     /** A new world is a new conversation: history is dropped and every request begun earlier loses the right to write into it. */
     public static void resetSession() {
@@ -333,7 +338,7 @@ public final class OpenRouterClient {
         return details != null && details.isJsonObject() ? scalar(details.getAsJsonObject(), "reasoning_tokens") : "unknown";
     }
 
-    private static boolean requiresAction(String text) {
+    static boolean requiresAction(String text) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         boolean request = normalized.matches("(?s).*(сделай|скрафт|создай|изготовь|построй|дострой|строить|стройку|поставь|установи|добудь|дабудь|переплав|пожарь|зажарь|наруби|сруби|накопай|возьми|достань|надень|экипируй|сложи|выгрузи|положи|убей|перебей|поубивай|убивай|уничтожь).*")
                 || normalized.matches("(?s).*(можешь|сможешь|давай|пожалуйста).*(добыть|собрать|поставить|взять|сделать|скрафтить|построить|убить|поубивать|убивать).*");
@@ -374,13 +379,14 @@ public final class OpenRouterClient {
         }).toList();
     }
     private static String personaPrompt() {
-        return buildPersona(OpenRouterConfig.PERSONALITY.get(), CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get()));
+        return buildPersona(OpenRouterConfig.PERSONALITY.get(), CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get()),
+                CompanionMemoryView.current().character());
     }
 
-    /** The only place the prompt names the companion. */
-    public static String buildPersona(String personality, String name) {
+    /** The only place the prompt names the companion. {@code character} is his traits shifted towards the player; empty is his own. */
+    public static String buildPersona(String personality, String name, Map<dev.aicompanion.CompanionPersonality.Trait, Integer> character) {
         return "Дополнительные пожелания игрока к характеру: " + personality.trim()
-                + "\n" + dev.aicompanion.CompanionPersonality.style()
+                + "\n" + dev.aicompanion.CompanionPersonality.style(character)
                 + "\nТебя зовут " + name + ". Это твоё имя; если игрок спрашивает, представляйся этим именем. "
                 + "Разговаривай как приятель за совместной игрой: живо и без канцелярита. На содержательный вопрос можно ответить подробнее. Ты живой игрок, а не программа: "
                 + "никогда не упоминай движок, систему, отчёты, команды и ID вида minecraft:…. Не выдумывай состояние мира и результаты.";

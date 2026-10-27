@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
 $namespace='aicompanion_memory'
-$testClasses=@('CompanionMemoryTests','CompanionBondTests','CompanionHappeningsTests')
+$testClasses=@('CompanionMemoryTests','CompanionBondTests','CompanionHappeningsTests','CompanionSoulTests')
 $knownFlaky=@('woodtoolschestandawalk','hundredminutesfullbagorderscancellationandreloads','ninetyminutescavefoodorelightandchangingpassage','escapessoilpitwithoutfreestartingblocks')
 $reports=Join-Path $projectRoot 'build\diagnostics'
 New-Item -ItemType Directory -Path $reports -Force | Out-Null
