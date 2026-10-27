@@ -124,14 +124,21 @@ public final class CompanionChatScreen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         minecraft.gui.setOverlayMessage(Component.literal("Распознаю речь..."), false);
         long heardGeneration = OpenRouterClient.generation();
+        var heardWorld = minecraft.level;
         transcript.whenComplete((text, error) -> Minecraft.getInstance().execute(() -> {
             CompanionAmbientClient.transcriptionFinished();
+            Minecraft current = Minecraft.getInstance();
             // Recordings overlap: a phrase heard before «Забудь всё» can be recognized after it and must not reach the cleared journal or the model.
             if (OpenRouterClient.sessionEnded(null, heardGeneration)) {
-                CompanionDiagnostics.event(trace, "voice_discarded", "reason", "session_changed");
+                CompanionDiagnostics.event(trace, "voice_discarded", "reason", "session_changed", "outcome", error != null ? "error" : "text");
+                // A phrase said after «Забудь всё» shares the generation of one said before it and cannot be told apart, so the player is told; leaving the world stays silent.
+                if (heardWorld != null && current.level == heardWorld) {
+                    Component message = Component.literal("Фразу, сказанную вместе с просьбой забыть всё, я пропустил. Если она нужна — повтори.").withStyle(ChatFormatting.GRAY);
+                    appendHistory(message);
+                    current.gui.getChat().addMessage(message);
+                }
                 return;
             }
-            Minecraft current = Minecraft.getInstance();
             if (error != null) {
                 CompanionDiagnostics.failure(trace, "speech_transcription", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();

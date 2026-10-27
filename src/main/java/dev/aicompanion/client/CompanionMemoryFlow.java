@@ -197,10 +197,13 @@ public final class CompanionMemoryFlow {
         Target t = world;
         if (t == null) return;
         t.server().execute(() -> {
-            if (!t.server().isRunning()) return;
+            // After a crash `running` can stay true, and execute() on a stopped server runs the task in the calling client thread, beside stopServer().
+            if (!t.server().isRunning() || t.server().isStopped()) return;
             CompanionBonds.get(t.server()).forget(t.owner());
             // The autosave may be minutes away, and a crash before it would bring the forgotten talk back at the next login.
-            t.server().overworld().getDataStorage().save();
+            // The autosave's own call, not the data storage alone: that writes the overworld SavedData without chunks and players, which can then disagree
+            // after a crash (a memorial naming a companion the chunks still hold alive); this call keeps them consistent and honours /save-off.
+            t.server().saveEverything(true, false, false);
         });
     }
 }
