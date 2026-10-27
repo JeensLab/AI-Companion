@@ -45,6 +45,9 @@ public final class CompanionHappeningsTests {
         var rig = rig(h); var p = rig.player(); var c = rig.companion();
         var damage = h.getLevel().damageSources();
         NeoForge.EVENT_BUS.post(new LivingDeathEvent(p, damage.generic()));
+        String unknownDeath = happeningText(h, p, "player_death");
+        NeoForge.EVENT_BUS.post(new LivingDeathEvent(p, damage.fall()));
+        String fallDeath = happeningText(h, p, "player_death");
         NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(p, advancement("aicompanion:test/plain", AdvancementType.TASK, true, true)));
         NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(p, advancement("minecraft:story/mine_diamond", AdvancementType.TASK, true, true)));
         NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(p, advancement("aicompanion:test/hard", AdvancementType.CHALLENGE, true, true)));
@@ -58,6 +61,7 @@ public final class CompanionHappeningsTests {
         CompanionHappeningEvents.welcome(p, System.currentTimeMillis());
         CompanionHappeningEvents.gift(p, List.of(CompanionBond.change(new ItemStack(Items.DIAMOND), 1)), "1 × Алмаз");
         NeoForge.EVENT_BUS.post(new LivingDeathEvent(c, damage.generic()));
+        String companionDeath = happeningText(h, p, "companion_died");
 
         Map<String, CompanionHappenings.Importance> seen = new HashMap<>();
         for (var event : bonds(h).happenings(p.getUUID()).all()) seen.put(event.key(), event.importance());
@@ -74,6 +78,12 @@ public final class CompanionHappeningsTests {
         h.assertTrue(!secret.contains("abcdef"), "A secret in an event text reached the save: " + secret);
         h.assertTrue(seen.entrySet().containsAll(expected.entrySet()), "Sources or importance wrong: " + seen);
         h.assertTrue(seen.get("companion_died") == CompanionHappenings.Importance.HIGH, "Companion death not recorded as HIGH: " + seen);
+        h.assertTrue(unknownDeath.equals("Товарищ погиб."), "A death of an unknown kind kept a cause or empty brackets: " + unknownDeath);
+        h.assertTrue(fallDeath.equals("Товарищ погиб (падение)."), "A fall is not named in Russian: " + fallDeath);
+        h.assertTrue(!companionDeath.contains("("), "The companion's death of an unknown kind kept a cause or empty brackets: " + companionDeath);
+        for (String death : List.of(unknownDeath, fallDeath, companionDeath)) {
+            h.assertTrue(!death.matches(".*[A-Za-z].*"), "A death text has Latin letters: " + death);
+        }
         h.succeed();
     }
 
@@ -421,6 +431,11 @@ public final class CompanionHappeningsTests {
     }
 
     private static CompanionBonds bonds(GameTestHelper h) { return CompanionBonds.get(h.getLevel().getServer()); }
+
+    private static String happeningText(GameTestHelper h, ServerPlayer p, String key) {
+        return bonds(h).happenings(p.getUUID()).all().stream().filter(event -> event.key().equals(key)).findFirst()
+                .map(CompanionHappenings.Happening::text).orElse("");
+    }
 
     private static Rig rig(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);

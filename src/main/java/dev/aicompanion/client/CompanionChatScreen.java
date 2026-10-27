@@ -16,6 +16,8 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletionException;
 
 public final class CompanionChatScreen extends Screen {
     private static final int MAX_HISTORY_LINES = 200;
@@ -92,6 +94,9 @@ public final class CompanionChatScreen extends Screen {
                     dev.aicompanion.AICompanionMod.LOGGER.warn("Inworld speech could not be played: {}", speechError.getMessage());
                     return null;
                 });
+            } else if (isSessionChange(error)) {
+                CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
+                if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
             } else {
                 CompanionDiagnostics.failure(trace, "chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
@@ -161,6 +166,10 @@ public final class CompanionChatScreen extends Screen {
         announceThinking(OpenRouterClient.isBusy());
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
             if (error != null) {
+                if (isSessionChange(error)) {
+                    CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
+                    return;
+                }
                 CompanionDiagnostics.failure(trace, "voice_chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
                 Component message = Component.literal("Не удалось получить ответ: " + cause.getMessage()).withStyle(ChatFormatting.RED);
@@ -180,6 +189,12 @@ public final class CompanionChatScreen extends Screen {
                 }));
             }
         }));
+    }
+
+    /** A request refused because the session ended («Забудь всё») is not a failure; it arrives bare or wrapped in a CompletionException. */
+    private static boolean isSessionChange(Throwable error) {
+        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+        return cause instanceof CancellationException;
     }
 
     /**

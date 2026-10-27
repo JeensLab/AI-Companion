@@ -610,6 +610,11 @@ public final class CompanionMemoryTests {
         h.assertTrue(prompt.contains("приказы игрока ты выполняешь при любой ступени"), "Orders-at-any-tier rule missing");
         String quiet = OpenRouterClient.buildSystemPrompt(persona, false, "лучший друг");
         h.assertTrue(!quiet.contains("Тон общения") && !quiet.contains("память о товарище"), "Memory rules leak while memory is off");
+        h.assertTrue(quiet.contains("Разговаривай как приятель за совместной игрой"), "The persona lost its buddy base while memory is off");
+        String acquaintance = OpenRouterClient.buildSystemPrompt(persona, true, "знакомый");
+        int rule = acquaintance.indexOf("Тон общения");
+        h.assertTrue(rule >= 0 && !acquaintance.contains("вежливо") && acquaintance.substring(rule).contains("приятел"),
+                "The acquaintance tone is polite or not buddy-like: " + (rule < 0 ? "no tone rule" : acquaintance.substring(rule)));
         h.succeed();
     }
 

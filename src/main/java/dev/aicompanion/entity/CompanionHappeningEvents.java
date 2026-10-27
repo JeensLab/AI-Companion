@@ -5,7 +5,9 @@ import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementType;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
@@ -74,7 +76,8 @@ public final class CompanionHappeningEvents {
     private static void playerDied(ServerPlayer player, DamageSource source) {
         ENDANGERED.remove(player.getUUID());
         if (!isOwner(player)) return;
-        String text = "Товарищ погиб (" + cause(source) + ").";
+        String cause = cause(source);
+        String text = cause.isEmpty() ? "Товарищ погиб." : "Товарищ погиб (" + cause + ").";
         bonds(player.getServer()).happened(player.getUUID(), "player_death", text, now(player), Importance.HIGH);
         DEATHS.put(player.getUUID(), text);
     }
@@ -84,10 +87,12 @@ public final class CompanionHappeningEvents {
         MinecraftServer server = companion.level().getServer();
         if (owner == null || server == null) return;
         String cause = cause(source);
+        String name = companion.getName().getString();
         long now = server.overworld().getGameTime();
-        bonds(server).happened(owner, "companion_died", companion.getName().getString() + " погиб (" + cause + ").", now, Importance.HIGH);
+        bonds(server).happened(owner, "companion_died", cause.isEmpty() ? name + " погиб." : name + " погиб (" + cause + ").", now, Importance.HIGH);
         // Never handed to the dying entity: the one who comes back tells it.
-        WAITING.put(owner, new Waiting("companion_died", CompanionHappenings.clean("Я погиб (" + cause + "), и вернулся к товарищу."), now));
+        String told = cause.isEmpty() ? "Я погиб и вернулся к товарищу." : "Я погиб (" + cause + "), и вернулся к товарищу.";
+        WAITING.put(owner, new Waiting("companion_died", CompanionHappenings.clean(told), now));
     }
 
     private static void rescue(LivingDeathEvent event) {
@@ -218,10 +223,28 @@ public final class CompanionHappeningEvents {
 
     private static String clip(String text) { return CompanionHappenings.clean(text); }
 
-    /** What killed or hurt, by type or damage id: custom names and death messages are text other players control. */
+    /**
+     * What killed or hurt: the killer by type (custom names and death messages are text other players control), else the
+     * kind of damage in words. Empty for a kind without words here, so the death text just leaves the cause out.
+     */
     private static String cause(DamageSource source) {
         var killer = source.getEntity();
-        return killer == null ? "причина: " + source.getMsgId() : "убит: " + killer.getType().getDescription().getString();
+        if (killer != null) return "убит: " + killer.getType().getDescription().getString();
+        if (source.is(DamageTypeTags.IS_FALL)) return "падение";
+        if (source.is(DamageTypes.LAVA)) return "лава";
+        if (source.is(DamageTypes.ON_FIRE)) return "горение";
+        if (source.is(DamageTypeTags.IS_FIRE)) return "огонь";
+        if (source.is(DamageTypeTags.IS_DROWNING)) return "утопление";
+        if (source.is(DamageTypes.STARVE)) return "голод";
+        if (source.is(DamageTypes.IN_WALL)) return "удушье в блоках";
+        if (source.is(DamageTypeTags.IS_EXPLOSION)) return "взрыв";
+        if (source.is(DamageTypeTags.IS_LIGHTNING)) return "молния";
+        if (source.is(DamageTypeTags.IS_FREEZING)) return "замерзание";
+        if (source.is(DamageTypes.CACTUS)) return "кактус";
+        if (source.is(DamageTypes.FELL_OUT_OF_WORLD)) return "выпадение из мира";
+        if (source.is(DamageTypes.MAGIC)) return "магия";
+        if (source.is(DamageTypes.WITHER)) return "иссушение";
+        return "";
     }
 
     /** Only players who have or had a companion get an entry; anyone else logging in or earning an advancement must not grow the save. */

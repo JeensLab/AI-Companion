@@ -393,15 +393,16 @@ public final class OpenRouterClient {
     private static String toneRule(boolean longTermMemory, String tier) {
         CompanionBond.Tier known = longTermMemory ? CompanionBond.Tier.ofLabel(tier) : null;
         if (known == null) return "";
+        // This rule ends the prompt and outweighs the persona, so every tier shades the buddy base and none replaces it.
         String tone = switch (known) {
             case OFFENDED -> "сухо и коротко, без шуток и тепла";
             case WARY -> "настороженно, без панибратства";
-            case ACQUAINTANCE -> "ровно и вежливо, как со знакомым";
+            case ACQUAINTANCE -> "по-приятельски и живо, но без фамильярности";
             case PAL -> "дружелюбно, как с приятелем";
             case BUDDY -> "тепло и с подколками, как с корешем";
             case BEST_FRIEND -> "очень тепло и по-свойски, как с лучшим другом";
         };
-        return " Тон общения по ступени связи «" + tier + "»: " + tone + ". Ступень меняет только тон, а не послушание: "
+        return " Основа твоего тона — приятель за совместной игрой; ступень связи лишь оттеняет её. Тон общения по ступени связи «" + tier + "»: " + tone + ". Ступень меняет только тон, а не послушание: "
                 + "приказы игрока ты выполняешь при любой ступени. Обиды бери только из причин, названных в снимке; не выдумывай новых и не припоминай обиду без повода.";
     }
 
