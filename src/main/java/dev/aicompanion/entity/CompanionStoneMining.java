@@ -138,7 +138,7 @@ final class CompanionStoneMining {
                 }
                 // No stairs possible here (rock or bedrock under him, the stairs done): the far faces, walked to in legs.
                 if (startStoneTravel(level)) return;
-                w.finish(false, "Добыл " + w.gathered + " из " + w.wantedStone + ". Проверил доступные выходы камня в пределах " + w.owner.getSearchRadius() + " блоков; безопасного подхода или неглубокого спуска не нашёл."); return;
+                w.finish(false, "Добыл " + w.gathered + " из " + w.wantedStone + (madeUp() > 0 ? " (" + orderAndMadeUp() + ")" : "") + ". Проверил доступные выходы камня в пределах " + w.owner.getSearchRadius() + " блоков; безопасного подхода или неглубокого спуска не нашёл."); return;
             }
         }
         if (w.items.prepareMiningTool(level.getBlockState(w.target))) return;
@@ -263,8 +263,16 @@ final class CompanionStoneMining {
             w.phase = w.afterStone != null ? w.afterStone : w.job == CompanionWork.Job.CRAFT || w.job == CompanionWork.Job.ORE ? CompanionWork.Phase.CRAFT : w.job == CompanionWork.Job.SMELT ? CompanionWork.Phase.FURNACE : CompanionWork.Phase.STORE;
             w.afterStone = null; w.resetTarget();
         }
-        else w.finish(true, "Добыл " + w.gathered + " блоков камня. В сумке: " + w.owner.getStoredItemsSummary() + ".");
+        else w.finish(true, mined() + ". В сумке: " + w.owner.getStoredItemsSummary() + ".");
     }
+
+    /** More than ordered only to make up for the stone a tool took from the bag: said, so the larger number is no surprise. */
+    private String mined() {
+        return "Добыл " + w.gathered + " блоков камня" + (madeUp() > 0 ? ": " + orderAndMadeUp() : "");
+    }
+    /** Stone added to a stone order for the tools it took; other jobs reuse wantedStone for their own needs. */
+    private int madeUp() { return w.job == CompanionWork.Job.STONE ? w.wantedStone - w.requestedCount : 0; }
+    private String orderAndMadeUp() { return w.requestedCount + " по заказу и " + madeUp() + " взамен ушедших на инструмент"; }
 
     void exitMine(ServerLevel level) {
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
@@ -275,7 +283,7 @@ final class CompanionStoneMining {
         if (up) { w.owner.getNavigation().stop(); afterMining(); return; }
         if (w.orderHasStalled(level, 300)) {
             // Stone stays in the bag either way; report the position honestly instead of pretending to be out.
-            if (w.job == CompanionWork.Job.STONE) { w.finish(true, "Добыл " + w.gathered + " блоков камня, но наверх пока не выбрался: стою на "
+            if (w.job == CompanionWork.Job.STONE) { w.finish(true, mined() + ", но наверх пока не выбрался: стою на "
                     + w.owner.blockPosition().toShortString() + ". В сумке: " + w.owner.getStoredItemsSummary() + "."); return; }
             afterMining(); return;
         }

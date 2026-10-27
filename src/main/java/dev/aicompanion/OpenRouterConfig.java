@@ -24,14 +24,19 @@ public final class OpenRouterConfig {
     public static final ModConfigSpec.IntValue VOICE_DISTANCE = BUILDER.defineInRange("voiceDistance", 32, 8, 64);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
-            .comment("Your OpenRouter API key. Stored in the local Minecraft config folder.")
+            .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
             .translation("config.aicompanion.api_key")
             .define("apiKey", "");
 
     public static final ModConfigSpec.ConfigValue<String> MODEL = BUILDER
-            .comment("OpenRouter model ID. Use openrouter/auto to let OpenRouter choose a model.")
+            .comment("Model ID. With OpenRouter, openrouter/auto lets OpenRouter choose; with your own server, the name of a model it has loaded.")
             .translation("config.aicompanion.model")
             .define("model", "openrouter/auto");
+
+    public static final ModConfigSpec.ConfigValue<String> API_URL = BUILDER
+            .comment("OpenAI-compatible chat server. Empty means OpenRouter; for example http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio. A local server needs no API key.")
+            .translation("config.aicompanion.api_url")
+            .define("apiUrl", "");
 
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
             .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to disable voice output.")

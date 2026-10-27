@@ -55,7 +55,7 @@ final class CompanionWorkCrafting {
     }
 
     void preparePickaxe() {
-        if ((w.job == CompanionWork.Job.STONE || w.job == CompanionWork.Job.ORE) && w.pickaxeSense.tick(w.items.reservedStone())) return;
+        if ((w.job == CompanionWork.Job.STONE || w.job == CompanionWork.Job.ORE) && w.items.keepingOrderStone(() -> w.pickaxeSense.tick(w.items.reservedStone()))) return;
         ItemStack best = ItemStack.EMPTY;
         double score = -1;
         for (ItemStack stack : w.items.carriedItems()) {
@@ -67,7 +67,7 @@ final class CompanionWorkCrafting {
             if (approachCraftingTable()) return;
             if (!w.items.moveHandMaterialsToBag()) return;
             // A worn-out pickaxe with mined cobblestone in the bag is replaced by the better stone one.
-            String replacement = w.items.countStoneMaterials() >= 3 && w.owner.craftFromBag("minecraft:stone_pickaxe", 1).success()
+            String replacement = w.items.countStoneMaterials() >= 3 && w.items.keepingOrderStone(() -> w.owner.craftFromBag("minecraft:stone_pickaxe", 1).success())
                     ? "minecraft:stone_pickaxe" : "minecraft:wooden_pickaxe";
             CompanionActionResult crafted = replacement.equals("minecraft:stone_pickaxe")
                     ? CompanionActionResult.ok("") : w.owner.craftFromBag(replacement, 1);

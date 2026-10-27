@@ -60,7 +60,7 @@ public final class CompanionPlanCodec {
         if (actions.size() > MAX_STEPS) throw invalid();
         reply = CompanionDialogue.cleanReply(reply);
         if (reply.isBlank() || (!actions.isEmpty() && reply.matches("(?s).*(План принят|Понял, выполняю|Результат сообщу после действий).*"))) {
-            if (actions.isEmpty()) throw new IllegalStateException("Модель вернула пустой ответ без команд. Попробуй повторить просьбу или выбрать другую модель OpenRouter.");
+            if (actions.isEmpty()) throw new IllegalStateException("Модель вернула пустой ответ без команд. Попробуй повторить просьбу или выбрать другую модель в настройках.");
             reply = CompanionDialogue.acknowledge(actions);
         }
         // A plan is an intention. Completion is spoken only after the server verifies the result.

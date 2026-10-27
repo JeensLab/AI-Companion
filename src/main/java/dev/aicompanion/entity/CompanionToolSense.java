@@ -36,6 +36,7 @@ final class CompanionToolSense {
     private final java.util.Map<String, Integer> failed = new java.util.HashMap<>();
     private int walks;
     private static final int MAX_WALKS = 2;
+    private boolean woodOnly;
 
     CompanionToolSense(CompanionEntity owner, String kind, TagKey<Item> tag, BlockState sample) {
         this.owner = owner; this.kind = kind; this.tag = tag; this.sample = sample;
@@ -47,6 +48,11 @@ final class CompanionToolSense {
     /** True when walking to a workbench or crafting; the caller skips its own movement and mining. */
     boolean tick() {
         return tick(0);
+    }
+    /** Only a first wooden tool, for work past an order: spare wood pays for it, ingots, diamonds and stone stay. */
+    boolean tickWooden() {
+        woodOnly = true;
+        try { return tick(0); } finally { woodOnly = false; }
     }
     /** Already collected order materials are not spent on optional tool improvements. */
     boolean tick(int reservedStone) {
@@ -100,7 +106,7 @@ final class CompanionToolSense {
         // Like a player: iron and diamonds go into a pickaxe on their own, other tools from them only on request.
         for (String material : kind.equals("pickaxe") ? new String[]{"diamond", "iron", "stone", "wooden"} : new String[]{"stone", "wooden"}) {
             String id = "minecraft:" + material + "_" + kind;
-            if (speed(id) <= best || blocked(id) || material.equals("wooden") && best > 0) continue;
+            if (speed(id) <= best || blocked(id) || material.equals("wooden") && best > 0 || woodOnly && !material.equals("wooden")) continue;
             boolean available = switch (material) {
                 case "diamond" -> count(net.minecraft.world.item.Items.DIAMOND) >= stoneCost();
                 case "iron" -> count(net.minecraft.world.item.Items.IRON_INGOT) >= stoneCost();
