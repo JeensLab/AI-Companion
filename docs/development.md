@@ -64,6 +64,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Постройки по схемам | `schematic/` (форматы и папка), `entity/CompanionHouse.java`, `CompanionScaffold.java`, `client/CompanionSchematicPlacement.java`, `CompanionSchematicGhost.java`; тесты `gametest/CompanionHouseTests.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
 | Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java` |
+| Разговор по своей инициативе, память и характер | `CompanionConversation.java` (сцены и темп), `CompanionTopics.java` (банк тем), `CompanionSoul.java`, `CompanionSoulFiles.java` (память в `mods/oleh_ai_soul`), `CompanionPersonality.java`, `client/CompanionAmbientClient.java`; тесты `gametest/CompanionSoulTests.java` |
 | Локальные настройки и диагностика | `OpenRouterConfig.java`, `CompanionDiagnostics.java`, [SECURITY.md](../SECURITY.md) |
 | Регрессии и структуры | `gametest/`, `entity/CompanionStairApproachTests.java`, `src/main/resources/data/aicompanion/structure/` |
 
@@ -94,7 +95,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
-| Самостоятельные реплики и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
+| Самостоятельные реплики, свои темы, память Олега и обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
 | Тихая работа, речь и восстановление поручений | `.\scripts\verify-quiet-work.ps1` |
 | Критические проверки длительной работы | `.\scripts\verify-endurance.ps1 -CriticalOnly -Repetitions 1` |
 | Длительные сценарии леса, пещеры или перезагрузки | `.\scripts\verify-endurance.ps1 -Arena Forest -Repetitions 1`; варианты арены: `Cave`, `Reload` |

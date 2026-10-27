@@ -4,7 +4,7 @@ $projectRoot=Split-Path -Parent $PSScriptRoot
 $namespace='aicompanion_banter'
 $fixturePath=Join-Path $projectRoot "src\main\resources\data\$namespace"
 $sources=@{}
-foreach($name in @('CompanionBanterToolsTests','CompanionCharacterTests')) {
+foreach($name in @('CompanionBanterToolsTests','CompanionCharacterTests','CompanionSoulTests')) {
     $path=Join-Path $projectRoot "src\main\java\dev\aicompanion\gametest\$name.java"
     $sources[$path]=[IO.File]::ReadAllText($path)
 }

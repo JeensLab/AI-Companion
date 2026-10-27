@@ -55,7 +55,8 @@ final class CompanionBehaviorScreen extends Screen {
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 18, 0xFFFFFF);
-        graphics.drawCenteredString(font, "Редкие реплики об обстановке используют OpenRouter и Inworld.", width / 2, height - 64, 0xB8C3D1);
+        graphics.drawCenteredString(font, "Свои темы, реплики и разбор бесед используют OpenRouter и Inworld.", width / 2, height - 76, 0xB8C3D1);
+        graphics.drawCenteredString(font, "Память Олега о тебе — в папке " + dev.aicompanion.CompanionSoulFiles.FOLDER + ".", width / 2, height - 64, 0xB8C3D1);
     }
     @Override public void onClose() { minecraft.setScreen(parent); }
 }

@@ -60,8 +60,10 @@ public final class CompanionCharacterTests {
     @GameTest(template="empty")
     public static void aQuestionWaitsForThePlayersActualAnswer(GameTestHelper h) {
         var c = new CompanionConversation(); c.reset(0,0); c.delivered("Дальше за железом?",4000,0);
-        h.assertTrue(!c.ready(100000)&&c.awaitingAnswer(),"Unanswered question timed out into chatter");
-        c.activity(100001,0); h.assertTrue(!c.ready(200000),"Recording/reply activity closed the question");
+        h.assertTrue(!c.ready(4000+CompanionConversation.ANSWER_WAIT-1)&&c.awaitingAnswer(),"Unanswered question timed out into chatter");
+        c.activity(5000,0); h.assertTrue(!c.ready(4000+CompanionConversation.ANSWER_WAIT-1),"Recording/reply activity closed the question");
+        // Soul model: a question nobody answers is let go, so that he does not stay silent until the player speaks.
+        h.assertTrue(c.ready(4000+CompanionConversation.ANSWER_WAIT),"Ignored question silenced him for good");
         c.playerMessage(200001,0); h.assertTrue(!c.awaitingAnswer()&&!c.ready(200002)&&c.ready(203601),"Answer not accounted for"); h.succeed();
     }
     @GameTest(template="empty")
@@ -138,9 +140,9 @@ public final class CompanionCharacterTests {
     public static void actualCombatAndLowHealthOverrideSpeech(GameTestHelper h) {
         var c=fixture(h); var zombie=h.spawn(EntityType.ZOMBIE,22,1,16); zombie.setNoAi(true); zombie.setInvulnerable(true);
         c.setTarget(zombie); c.reactToSpeech("Хех, шучу.");
-        h.runAtTickTime(2,()->{h.assertTrue(c.expression()==CompanionExpression.COMBAT&&!c.sociallySafe(),"Fight priority"); c.setHealth(6);});
+        h.runAtTickTime(2,()->{h.assertTrue(c.expression()==CompanionExpression.COMBAT&&!c.sociallySafe()&&c.fighting(),"Fight priority"); c.setHealth(6);});
         h.runAtTickTime(4,()->{h.assertTrue(c.expression()==CompanionExpression.WORRIED,"Low health priority"); c.setHealth(20); c.setTarget(null); zombie.discard();});
-        h.runAtTickTime(160,()->{h.assertTrue(c.expression()==CompanionExpression.CALM,"Fight/danger stuck"); h.succeed();});
+        h.runAtTickTime(160,()->{h.assertTrue(c.expression()==CompanionExpression.CALM&&!c.fighting(),"Fight/danger stuck"); h.succeed();});
     }
     @GameTest(template="tall_tree",timeoutTicks=50)
     public static void trackingSnapshotAndWorldReloadShowCurrentFace(GameTestHelper h) {
@@ -202,7 +204,7 @@ public final class CompanionCharacterTests {
         h.runAtTickTime(220,()->{
             mature(c,h);
             h.assertTrue(c.getTarget()==null,"Oleg already fighting, not testing distant owner threat");
-            h.assertTrue(!c.sociallySafe(),"Threat near the owner ignored outside Oleg's twelve blocks");
+            h.assertTrue(!c.sociallySafe()&&c.fighting(),"Threat near the owner ignored outside Oleg's twelve blocks");
             for(int i=0;i<50;i++) c.observeEvent("unsafe-owner:"+i,"Погода изменилась.");
             h.assertTrue(c.socialSequence()==0,"Chatter while the player is threatened");h.succeed();
         });

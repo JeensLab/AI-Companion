@@ -80,6 +80,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<Long> DATA_SAY_TIME = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     static final EntityDataAccessor<Boolean> DATA_SOCIAL_SAFE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    static final EntityDataAccessor<Boolean> DATA_FIGHTING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
@@ -364,7 +365,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_ACTION, 0); builder.define(DATA_ACTION_UNTIL, 0L); builder.define(DATA_ACTION_ITEM, ItemStack.EMPTY);
         builder.define(DATA_SOCIAL, ""); builder.define(DATA_SOCIAL_SERIAL, 0); builder.define(DATA_SOCIAL_TIME, 0L);
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
-        builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false);
+        builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
@@ -519,6 +520,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean conversationAvailable() { return conversationAvailable; }
     public dev.aicompanion.CompanionExpression expression() { return dev.aicompanion.CompanionExpression.fromId(entityData.get(DATA_EXPRESSION)); }
     public boolean sociallySafe() { return social.sociallySafe(); }
+    /** A fight with monsters at him or at the player: no talk then («Помолчи, я тут занят мобом»). Synced to the client. */
+    public boolean fighting() { return entityData.get(DATA_FIGHTING); }
     public void reactToSpeech(String text) { social.reactToSpeech(text); }
     public void setLifestyle(boolean chunks, boolean speech) { chunkLoading = chunks; autonomousSpeech = speech; }
     public String socialObservation() { return social.socialObservation(); }

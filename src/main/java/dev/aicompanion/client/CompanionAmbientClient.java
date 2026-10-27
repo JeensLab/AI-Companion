@@ -55,19 +55,71 @@ final class CompanionAmbientClient {
         if (text.isBlank() || client.level.getGameTime() - speaker.autonomyLineTime() > 200) return;
         CompanionChatScreen.autonomyLine(text);
     }
+    private static net.minecraft.world.phys.Vec3 lastSpot;
+    private static long sampledAt, travelUntil, idleSince;
+    /** What is going on, as the client sees it: a fight, a mine, the road together, a long idle spell or work. */
+    private static CompanionConversation.Scene scene(dev.aicompanion.entity.CompanionEntity speaker) {
+        var client = Minecraft.getInstance(); var player = client.player; long now = now();
+        if (lastSpot == null || now - sampledAt >= 100 || now < sampledAt) {
+            // Eight blocks in five seconds: walking or riding somewhere, not pottering about one spot.
+            if (lastSpot != null && player.position().subtract(lastSpot).horizontalDistanceSqr() > 8 * 8) travelUntil = now + 300;
+            lastSpot = player.position(); sampledAt = now;
+        }
+        boolean travelling = now < travelUntil, working = speaker.isGatheringTask();
+        if (travelling || working || idleSince > now) idleSince = now;
+        boolean underground = player.getY() < client.level.getSeaLevel() - 4 && !client.level.canSeeSky(player.blockPosition());
+        return CompanionConversation.scene(speaker.fighting(), underground, travelling, working, now - idleSince);
+    }
+    /** His own topic, word for word from his memory: no model request to start talking. */
+    private static void raiseTopic(CompanionConversation.Scene scene) {
+        var soul = dev.aicompanion.CompanionSoulFiles.soul();
+        var topic = soul.nextTopic(java.util.concurrent.ThreadLocalRandom.current());
+        if (topic == null) return;
+        soul.raised(topic, System.currentTimeMillis());
+        String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
+        dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic", "scene", scene.name(), "topic", topic.key());
+        CompanionChatScreen.autonomousReply(topic.text(), trace);
+    }
+    private static boolean reflecting;
+    private static long reflectCheck;
+    /** A finished talk goes to analysis in the background; he adapts and gets new topics. Off with his own speech. */
+    private static void reflect() {
+        long now = System.currentTimeMillis();
+        if (reflecting || now - reflectCheck < 5000) return;
+        reflectCheck = now;
+        boolean possible = OpenRouterConfig.AUTONOMOUS_SPEECH.get() && !OpenRouterConfig.API_KEY.get().isBlank();
+        if (possible && !OpenRouterClient.backgroundFree()) return;
+        var soul = dev.aicompanion.CompanionSoulFiles.soul();
+        String talk = soul.takeTalk(now, possible);
+        if (talk == null) return;
+        reflecting = true;
+        String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
+        OpenRouterClient.reflect(soul.memory(), talk, trace).whenComplete((analysis, error) -> Minecraft.getInstance().execute(() -> {
+            reflecting = false;
+            if (error != null) { dev.aicompanion.CompanionDiagnostics.failure(trace, "soul_reflection", error); soul.failed(System.currentTimeMillis()); }
+            else dev.aicompanion.CompanionDiagnostics.event(trace, "soul_reflection_result", "kept", soul.absorb(analysis, System.currentTimeMillis()));
+        }));
+    }
     static void tick() {
         var client = Minecraft.getInstance();
         if (client.level != world) {
-            world = client.level; companion = null; pending = false;
+            world = client.level; companion = null; pending = false; lastSpot = null; idleSince = now();
             conversation.reset(now(), jitter());
         }
+        reflect();
+        dev.aicompanion.CompanionSoulFiles.saveIfChanged();
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();
         if (speaker == null || !CompanionVoiceAudio.audible(speaker)) return;
+        var scene = scene(speaker);
         // Initial tracking data is a snapshot, not a new event. Never replay a pre-load observation.
         if (!speaker.getUUID().equals(companion)) { companion = speaker.getUUID(); conversation.trackObservation(speaker.socialSequence()); return; }
         int current = speaker.socialSequence();
-        if (!conversation.newObservation(current)) return;
+        if (!conversation.newObservation(current)) {
+            // A topic needs the model to go on talking; without its key he would only be heard asking.
+            if (conversation.topicReady(now(), scene) && !busy() && safe(speaker) && !OpenRouterConfig.API_KEY.get().isBlank()) raiseTopic(scene);
+            return;
+        }
         if (!conversation.takeObservation(current, now() - speaker.socialTime(), now(), safe(speaker),
                 busy(), jitter())) return;
         pending = true;

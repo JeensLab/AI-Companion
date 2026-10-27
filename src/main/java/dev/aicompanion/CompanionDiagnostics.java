@@ -85,7 +85,7 @@ public final class CompanionDiagnostics {
                         .limit(8).toList());
     }
 
-    private static String sanitize(String text) {
+    public static String sanitize(String text) {
         for (String secret : SECRETS) if (!secret.isEmpty()) text = text.replace(secret, "[REDACTED]");
         text = text.replaceAll("(?i)sk-or-v1-[a-z0-9_-]+", "[REDACTED]")
                 .replaceAll("(?i)\\b(Bearer|Basic)\\s+[a-z0-9+/=_:.-]+", "$1 [REDACTED]");
