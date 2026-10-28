@@ -56,6 +56,9 @@ public final class CompanionWork {
     static final int MAX_STAIRS = 3;
     static final int MAX_MINE_DEPTH = 14;
     boolean selectingStone;
+    /** Ticks in a row the stone choice has waited on its searches: past STONE_CHOICE_TICKS the own stairs are tried first. */
+    int choosingTicks;
+    static final int STONE_CHOICE_TICKS = 100;
     Job job;
     Phase phase;
     Phase afterWood;
@@ -617,7 +620,7 @@ public final class CompanionWork {
         var player = owner.getOwnerPlayer();
         if (player == null) { finish(false, "Не вижу тебя в этом измерении."); return; }
         owner.movementIntent(player.blockPosition());
-        if (owner.distanceToSqr(player) <= 9 && Math.abs(owner.getY() - player.getY()) <= 1.25 && owner.hasLineOfSight(player)) {
+        if (owner.distanceToSqr(player) <= 9 && Math.abs(owner.getY() - player.getY()) <= 1.25 && owner.hasLineOfSight(player) && (owner.onGround() || !owner.onClimbable())) {
             finish(true, "Я рядом."); return;
         }
         owner.workStatus("Пытаюсь добраться до игрока.");

@@ -98,11 +98,11 @@ public final class CompanionPolygonTests {
     @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void villageV2(GameTestHelper h) { village(h, 2, true, 14); }
 
-    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void towerV0(GameTestHelper h) { tower(h, 0, false, 16); }
-    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void towerV1(GameTestHelper h) { tower(h, 1, false, 26); }
-    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void towerV2(GameTestHelper h) { tower(h, 2, true, 16); }
 
     @GameTest(batch = "polygon", template = "marathon_far", timeoutTicks = 3100)

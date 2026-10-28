@@ -128,7 +128,7 @@ final class CompanionSearch {
             closed.add(node);
             BlockPos hit = reached(node);
             if (hit != null) return finish(State.FOUND, build(node, hit, true), now);
-            if (stopAt >= 0) {
+            if (stopAt >= 0 && !hangs(node)) {
                 float est = estimate(node);
                 if (est < nearestEstimate) { nearestEstimate = est; nearestNode = node; }
                 if (est <= stopAt) return finish(State.EXHAUSTED, build(node, targets.iterator().next(), false), now);
@@ -156,6 +156,7 @@ final class CompanionSearch {
         if (nearestNode != null) return build(nearestNode, targets.iterator().next(), false);
         Node best = start; BlockPos aim = targets.iterator().next(); double least = Double.MAX_VALUE;
         for (Node node : closed) for (BlockPos t : targets) {
+            if (hangs(node)) continue;
             double distance = node.distanceToSqr(t);
             if (distance < least) { least = distance; best = node; aim = t; }
         }
@@ -186,8 +187,15 @@ final class CompanionSearch {
         return new Found(nodes, path.getTarget(), path.canReach(), path.accuracy, path.range);
     }
 
+    /**
+     * A cell hanging on a ladder or vine (nothing under his feet): no route ends there, whole or the part nearest a target. There he
+     * slides down it (game 28.10: up and down by the player at the top), or off the end of one that stops in mid-air.
+     */
+    private static boolean hangs(Node node) { return node.type == net.minecraft.world.level.pathfinder.PathType.OPEN; }
+
     /** The target this cell is at (within the accuracy, as the game counted it: blocks along the axes), or null. */
     private BlockPos reached(Node node) {
+        if (hangs(node)) return null;
         if (accuracy == 0) { BlockPos at = node.asBlockPos(); return targets.contains(at) ? at : null; }
         if (node.x < minX - accuracy || node.x > maxX + accuracy || node.z < minZ - accuracy || node.z > maxZ + accuracy) return null;
         BlockPos hit = null; float least = Float.MAX_VALUE;

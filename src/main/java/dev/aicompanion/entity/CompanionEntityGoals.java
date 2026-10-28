@@ -148,7 +148,7 @@ final class CompanionEntityGoals {
         @Override
         public boolean canContinueToUse() {
             return !companion.autonomy.staysAtWork() && (companion.following || companion.protecting) && companion.inventoryViewers == 0 && owner != null && owner.isAlive()
-                    && owner.level() == companion.level() && companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D);
+                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D) || companion.onClimbable() && !companion.onGround());
         }
 
         @Override
@@ -164,7 +164,7 @@ final class CompanionEntityGoals {
             }
             if (companion.level().getGameTime() < retryAt) return;
             if (!companion.onGround() && !companion.isInWater()) return;
-            var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR, FOLLOW_SPEED);
+            var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR, owner.isSprinting());
             if (step == CompanionTravel.Step.WALKING) {
                 travelling = true;
                 // A whole route to him exists again: the next time there is none is a new occasion to say so.
@@ -203,7 +203,5 @@ final class CompanionEntityGoals {
         // Where the player was when there was no way to him; he waits until the player is elsewhere.
         private BlockPos waitingFor;
         private static final int FOLLOW_NEAR = 3;
-        // A little above walking pace: he keeps up with a player who walks.
-        private static final double FOLLOW_SPEED = 1.15D;
     }
 }

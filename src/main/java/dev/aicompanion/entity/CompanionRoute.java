@@ -194,10 +194,10 @@ final class CompanionRoute {
     CompanionTravel.Step legs(BlockPos target, double near) { return w.owner.travel().toward(target, near); }
 
     /** The same towards a goal that moves (the player): the legs and their progress are kept while it shifts by less than sixteen blocks. */
-    CompanionTravel.Step follow(BlockPos target, double near) { return w.owner.travel().follow(target, near, 1D); }
+    CompanionTravel.Step follow(BlockPos target, double near) { return w.owner.travel().follow(target, near, false); }
 
-    /** The same at this speed (the following keeps up with a walking player). */
-    CompanionTravel.Step follow(BlockPos target, double near, double speed) { return w.owner.travel().follow(target, near, speed); }
+    /** The same running when the player does (the following keeps up with a sprinting player). */
+    CompanionTravel.Step follow(BlockPos target, double near, boolean runs) { return w.owner.travel().follow(target, near, runs); }
 
     /** The legs are over, the goal reached or not: the walk is told to the journal if it was not yet. */
     void legsEnd(boolean arrived) { if (arrived) w.owner.travel().arrived(); else w.owner.travel().reset(); }

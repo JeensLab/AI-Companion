@@ -3,6 +3,8 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.attributes.DefaultAttributes;
 
 import java.util.Optional;
 
@@ -44,6 +46,9 @@ final class CompanionEntityNbt {
         c.preferredWeapon = tag.getString("PreferredWeapon");
         if (tag.contains("CompanionName")) c.setCompanionName(tag.getString("CompanionName"));
         c.setSearchRadius(tag.contains("SearchRadius") ? tag.getInt("SearchRadius") : 64);
+        // The game loads an attribute's base from the save: a world saved before the pace became a player's (0.30) kept him slower.
+        var speed = c.getAttribute(Attributes.MOVEMENT_SPEED);
+        if (speed != null) speed.setBaseValue(DefaultAttributes.getSupplier(dev.aicompanion.AICompanionMod.COMPANION.get()).getBaseValue(Attributes.MOVEMENT_SPEED));
         c.roaming = tag.getBoolean("Roaming");
         c.roamOrigin = tag.contains("RoamOrigin") ? BlockPos.of(tag.getLong("RoamOrigin")) : c.blockPosition();
         c.getEntityData().set(CompanionEntity.DATA_ROAMING, c.roaming);

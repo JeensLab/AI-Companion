@@ -18,8 +18,25 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     // The cell budget of one search (CompanionSearch.BUDGET unless a GameTest lowers it) and whether the last one ended at it.
     private int budget = CompanionSearch.BUDGET;
     private boolean ranOut;
+    private final CompanionJumps jumps = new CompanionJumps(mob);
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
+
+    /** A jump of the route is walked on the tick the game follows the path (CompanionJumps). */
+    @Override public void tick() { super.tick(); jumps.tick(path); jumps.climb(path); }
+
+    /** Run up to a jump ahead: read by the stroke, which sets sprinting. */
+    boolean sprintsToJump() { return jumps.sprints(); }
+    boolean slowsForJump() { return jumps.slows(); }
+
+    /**
+     * The game follows a path only on the ground, in a liquid or as a passenger; off the ground it only lets a fall run past the nodes
+     * below, all of them in a few ticks, so on a ladder he would be sent off it at once. Climbing is followed node by node.
+     */
+    @Override protected boolean canUpdatePath() { return super.canUpdatePath() || mob.onClimbable(); }
+
+    /** On a ladder or vine, or coming to one: walk, do not run. */
+    boolean climbs() { return jumps.climbs(); }
 
     @Override protected PathFinder createPathFinder(int maxVisitedNodes) {
         this.evaluator = new CompanionNodeEvaluator();

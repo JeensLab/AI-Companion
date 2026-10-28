@@ -354,6 +354,143 @@ public final class CompanionOwnSearchTests {
         });
     }
 
+    /** Ticks one crossing of a pit may take: the way round its ends is 40 blocks and more, 140 ticks even at a run. */
+    private static final int CROSSING_TICKS = 110;
+    /** Crossings in one test, there and back: a jump has physics variance, so one run proves it a few times. */
+    private static final int CROSSINGS = 6;
+
+    /**
+     * A pit across the arena, {@code width} wide (x 15..), from the third block of the arena to the third from its far end, so the way
+     * round is long. The ground stands at y 6; the pit is cut down to {@code bottom} (3: floor three blocks down, the deepest he
+     * may fall; 2: four down) and {@code fill} fills it from y 3 up to {@code fillTop} (lava).
+     */
+    private static void pit(GameTestHelper h, int width, int bottom, Block fill, int fillTop) {
+        box(h, 0, 0, 0, 31, 14, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 5, 31, Blocks.STONE);
+        box(h, 15, bottom, 3, 14 + width, 5, 28, Blocks.AIR);
+        if (fill != Blocks.AIR) box(h, 15, 3, 3, 14 + width, fillTop, 28, fill);
+    }
+
+    /** He is called across the pit and back {@link #CROSSINGS} times; each must take at most {@link #CROSSING_TICKS} and he never goes below the ground. */
+    private static void crossPit(GameTestHelper h) {
+        CompanionEntity c = spawn(h, 8, 6, 15);
+        var player = player(c, h);
+        teleport(h, player, 24, 6, 15);
+        double floor = c.getY();
+        float health = c.getHealth();
+        int[] crossed = {0};
+        long[] began = {h.getTick()};
+        double[] lowest = {c.getY()};
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.onEachTick(() -> {
+            lowest[0] = Math.min(lowest[0], c.getY());
+            h.assertTrue(lowest[0] >= floor - .05, "Fell into the pit: down to " + (floor - lowest[0]) + " blocks at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(c.getHealth() >= health, "Hurt in the pit");
+            if (h.getTick() - began[0] > CROSSING_TICKS) h.fail("Crossing " + (crossed[0] + 1) + " took over " + CROSSING_TICKS + " ticks: at " + h.relativePos(c.blockPosition()).toShortString() + ", " + c.getLastTaskResult());
+            if (c.isWorking() || !c.didLastTaskSucceed() || c.distanceToSqr(player) > 16) return;
+            if (++crossed[0] == CROSSINGS) { h.succeed(); return; }
+            teleport(h, player, crossed[0] % 2 == 0 ? 24 : 6, 6, 15);
+            began[0] = h.getTick();
+            h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aPitOneBlockWideIsJumpedWhenAMissIsSafe(GameTestHelper h) {
+        pit(h, 1, 3, Blocks.AIR, 3);
+        crossPit(h);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aPitTwoBlocksWideIsJumpedWhenAMissIsSafe(GameTestHelper h) {
+        pit(h, 2, 3, Blocks.AIR, 3);
+        crossPit(h);
+    }
+
+    /** Lava in the pit (up to the ground's level) or its floor four blocks down: no jump, however short the way across; he goes round. */
+    private static void roundThePit(GameTestHelper h) {
+        CompanionEntity c = spawn(h, 8, 6, 15);
+        var player = player(c, h);
+        teleport(h, player, 24, 6, 15);
+        float health = c.getHealth();
+        double floor = c.getY();
+        h.runAfterDelay(5, () -> {
+            Path way = search(c, player);
+            // The way round is longer than one search sees, so what it gives may be only the part nearest the player: no jump in it either way.
+            for (int i = 1; way != null && i < way.getNodeCount(); i++) h.assertTrue(Math.max(Math.abs(way.getNode(i).x - way.getNode(i - 1).x), Math.abs(way.getNode(i).z - way.getNode(i - 1).z)) < 2, "The way jumps at " + way.getNode(i - 1));
+            h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        });
+        h.onEachTick(() -> {
+            h.assertTrue(c.getY() >= floor - .05 && c.getHealth() >= health && !c.isOnFire(), "Went into the pit: " + h.relativePos(c.blockPosition()).toShortString());
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, "Still walking: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(h.getTick() > CROSSING_TICKS, "Across in " + h.getTick() + " ticks: he did not go round");
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aPitOneBlockWideOverLavaIsGoneRoundNotJumped(GameTestHelper h) {
+        pit(h, 1, 3, Blocks.LAVA, 5);
+        roundThePit(h);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aPitTwoBlocksWideOverLavaIsGoneRoundNotJumped(GameTestHelper h) {
+        pit(h, 2, 3, Blocks.LAVA, 5);
+        roundThePit(h);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aPitFourBlocksDeepIsGoneRoundNotJumped(GameTestHelper h) {
+        pit(h, 1, 2, Blocks.AIR, 3);
+        roundThePit(h);
+    }
+
+    /**
+     * Run (the player 25 blocks off) across a pit one block wide onto a strip one block wide, with a deep drop right after it and the
+     * route turning along the strip: the sprint's boost carried him a cell past the landing and off the strip. No sprint before a
+     * jump of one block; he never goes below the strip.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aRunToAOnePitLandsOnTheStripAndDoesNotOverrunIt(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 14, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 5, 31, Blocks.STONE);
+        // The pit at x 15 (across the whole arena) and the strip at x 16; east of it a fall of four.
+        box(h, 15, 3, 0, 15, 5, 31, Blocks.AIR);
+        box(h, 17, 2, 0, 31, 5, 31, Blocks.AIR);
+        // The bank beside the player is walled off: only the strip leads to him.
+        box(h, 9, 6, 9, 14, 9, 31, Blocks.STONE);
+        CompanionEntity c = spawn(h, 9, 6, 2);
+        var player = player(c, h);
+        teleport(h, player, 16, 6, 30);
+        double floor = c.getY();
+        float health = c.getHealth();
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.onEachTick(() -> {
+            h.assertTrue(c.getY() >= floor - .05 && c.getHealth() >= health, "Fell off the route: " + h.relativePos(c.blockPosition()).toShortString() + ", health " + c.getHealth());
+            if (h.getTick() > 300) h.fail("Not there in 300 ticks: at " + h.relativePos(c.blockPosition()).toShortString() + ", " + c.getLastTaskResult());
+            if (!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16) h.succeed();
+        });
+    }
+
+    /** A block over the take-off cell at the head's reach (y + 2) or over the landing (y + 3, y + 2): the jump is cut short, so he goes round. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aCeilingOverTheTakeOffOfAPitIsGoneRoundNotJumped(GameTestHelper h) {
+        pit(h, 2, 3, Blocks.AIR, 3);
+        box(h, 14, 8, 3, 14, 8, 28, Blocks.STONE);
+        roundThePit(h);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aCeilingOverTheLandingOfAPitIsGoneRoundNotJumped(GameTestHelper h) {
+        pit(h, 2, 3, Blocks.AIR, 3);
+        box(h, 17, 9, 3, 17, 9, 28, Blocks.STONE);
+        roundThePit(h);
+    }
+
     private static net.minecraft.world.entity.ai.goal.GoalSelector goals(CompanionEntity c) {
         try {
             var field = net.minecraft.world.entity.Mob.class.getDeclaredField("goalSelector");

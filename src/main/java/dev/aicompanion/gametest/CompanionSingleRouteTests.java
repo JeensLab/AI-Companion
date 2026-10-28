@@ -506,14 +506,14 @@ public final class CompanionSingleRouteTests {
         box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
         CompanionEntity c = spawn(h, 4, 2, 4);
         Object travel = field(c, "travel");
-        var follow = travel.getClass().getDeclaredMethod("follow", BlockPos.class, double.class, double.class);
+        var follow = travel.getClass().getDeclaredMethod("follow", BlockPos.class, double.class, boolean.class);
         follow.setAccessible(true);
         BlockPos goal = h.absolutePos(new BlockPos(24, 2, 24));
-        follow.invoke(travel, goal, 3D, 1D);
+        follow.invoke(travel, goal, 3D, false);
         long first = (Long) field(travel, "walkUntil");
         h.runAtTickTime(40, () -> {
             try {
-                follow.invoke(travel, goal.east(), 3D, 1D);
+                follow.invoke(travel, goal.east(), 3D, false);
                 h.assertTrue((Long) field(travel, "walkUntil") == first, "The bound was renewed by a shift of one block");
             } catch (Exception e) { throw new IllegalStateException(e); }
             h.succeed();
