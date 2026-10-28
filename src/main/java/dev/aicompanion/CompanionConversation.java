@@ -72,10 +72,11 @@ public final class CompanionConversation {
     /**
      * Once the scene's pause since the last word of the player or his last topic is over, a topic of his own takes the next free
      * initiative slot, shared with remarks on events: these come every one to two minutes and would never leave a pause of silence.
-     * Never in a fight, nor over a question the player has not answered.
+     * Never in a fight. Over a question the player has not answered he asks nothing, as in remarks on events, but goes on sharing:
+     * the topic is then one without a question (review of PR #28: one question in a remark on chests silenced his topics for good).
      */
     public boolean topicReady(long now, Scene scene) {
-        return scene != Scene.FIGHT && canAskQuestion() && ready(now) && now >= lastTalk + topicGap(scene, talkJitter);
+        return scene != Scene.FIGHT && ready(now) && now >= lastTalk + topicGap(scene, talkJitter);
     }
     public long nextOpportunity() { return nextOpportunity; }
     public long revision() { return revision; }

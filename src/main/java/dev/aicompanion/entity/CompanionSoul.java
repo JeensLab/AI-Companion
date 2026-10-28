@@ -36,12 +36,17 @@ public final class CompanionSoul {
     private String opened = "";
     private int answers;
 
-    /** A topic he has not raised yet: often one of his own, otherwise one from the bank by the player's taste. */
-    public Topic next(RandomGenerator random) {
-        List<Topic> bank = CompanionTopics.ALL.stream().filter(topic -> !raised.contains(topic.key())).toList();
-        if (!own.isEmpty() && (bank.isEmpty() || random.nextInt(10) < 6)) return CompanionTopics.own(own.get(random.nextInt(own.size())));
+    /**
+     * A topic he has not raised yet: often one of his own, otherwise one from the bank by the player's taste. Without
+     * {@code questions} (the player left his last question unanswered) only one that asks nothing.
+     */
+    public Topic next(RandomGenerator random, boolean questions) {
+        List<Topic> fitting = questions ? CompanionTopics.ALL : CompanionTopics.ALL.stream().filter(topic -> !topic.text().contains("?")).toList();
+        List<String> mine = questions ? own : own.stream().filter(text -> !text.contains("?")).toList();
+        List<Topic> bank = fitting.stream().filter(topic -> !raised.contains(topic.key())).toList();
+        if (!mine.isEmpty() && (bank.isEmpty() || random.nextInt(10) < 6)) return CompanionTopics.own(mine.get(random.nextInt(mine.size())));
         // Everything raised: the bank topic raised longest ago comes back first.
-        if (bank.isEmpty()) return raised.stream().map(CompanionTopics::bank).filter(Objects::nonNull).findFirst().orElse(CompanionTopics.ALL.getFirst());
+        if (bank.isEmpty()) return raised.stream().map(CompanionTopics::bank).filter(Objects::nonNull).filter(fitting::contains).findFirst().orElse(fitting.getFirst());
         double total = 0;
         for (Topic topic : bank) total += weight(topic.category());
         double pick = random.nextDouble() * total;
