@@ -35,6 +35,7 @@ public final class CompanionWork {
     final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
+    final CompanionRoute route = new CompanionRoute(this);
     final CompanionChests chests = new CompanionChests(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
     final CompanionHandOver handOver = new CompanionHandOver(this);
@@ -74,6 +75,7 @@ public final class CompanionWork {
     long lastProgressTick;
     double bestDistance;
     net.minecraft.world.phys.Vec3 approachMoved;
+    long approachUntil;
     BlockPos target;
     Path path;
     Set<BlockPos> standCells = Set.of();
@@ -106,6 +108,8 @@ public final class CompanionWork {
     final Set<java.util.UUID> huntDead = new HashSet<>();
     int huntKills;
     net.minecraft.world.phys.Vec3 orderProgressPosition;
+    private BlockPos comeFailedAt;
+    private long comeFailedTime;
     long orderProgressTime;
     /**
      * Watchdog for every work (game log 21.10: two minutes on one spot with «Проверяю подход к камню», then a faceless
@@ -127,10 +131,13 @@ public final class CompanionWork {
     final java.util.Map<BlockPos, BlockPos> offFoot = new java.util.HashMap<>();
     static final int OFF_FOOT_MOVE = 4;
     /** Choosing a face over a few ticks: the nearest on foot so far and the faces already compared. */
-    CompanionMiningNavigation.Choice stoneChoice;
+    CompanionRoute.Reach stoneChoice;
     final Set<BlockPos> stoneCompared = new HashSet<>();
     final List<BlockPos> stoneSingles = new ArrayList<>();
     static final int STONE_GROUP = 8;
+    /** Searches that really ran (not «no stand cell») in one choice; with a face found, after this many he takes the best instead of comparing every face in reach. */
+    int stoneSearches;
+    static final int STONE_SEARCHES = 20;
     /** Farther than this a face with no route is walked to in legs (CompanionTravel). */
     static final int FAR_STONE = 12;
     static final int TRAVEL_SPOT = 10;
@@ -457,7 +464,7 @@ public final class CompanionWork {
         if (insideHouse) placementAnchor = house.interiorAnchor();
         placementMoving = false;
         placedChests.clear();
-        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); huntTargets.clear(); huntDead.clear(); huntKills = 0;
+        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); comeFailedAt = null; huntTargets.clear(); huntDead.clear(); huntKills = 0;
         if (job == Job.HUNT) {
             for (var monster : level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
                     new AABB(placementAnchor).inflate(18), monster -> monster.isAlive() && monster.distanceToSqr(placementAnchor.getCenter()) <= 18 * 18
@@ -510,7 +517,7 @@ public final class CompanionWork {
         lots.clear(); heading = null;
         clearCracks();
         closeChest();
-        house.cancel();
+        house.cancel(); route.abandon();
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null;
         cooldown = 0;
@@ -614,19 +621,23 @@ public final class CompanionWork {
             finish(true, "Я рядом."); return;
         }
         owner.workStatus("Пытаюсь добраться до игрока.");
-        // Far off: in legs round walls and ridges, like the following (CompanionTravel); it gives up after half a minute without
-        // coming closer, and says so.
-        if (owner.distanceToSqr(player) > 32 * 32 && (owner.onGround() || owner.isInWater())) {
-            var step = owner.travel().follow(player.blockPosition(), 24);
-            if (step == CompanionTravel.Step.FAILED) { owner.travel().reset(); finish(false, "Не смог добраться до тебя: полминуты не мог подойти ближе, остановился на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return; }
-            if (step == CompanionTravel.Step.WALKING) { orderProgressPosition = null; return; }
+        // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
+        // far by the way. Legs that came to nothing are not started again from the same spot at once: the self-rescue takes him over
+        // there (down a cave: up through the rock), and the order ends only when he stands still (stalled). Five seconds on, they
+        // are tried again even from the same spot: the rescue may have opened the way a few blocks off, and he must walk it.
+        if (comeFailedAt == null || level.getGameTime() - comeFailedTime >= 100 || !comeFailedAt.closerThan(owner.blockPosition(), 3)) {
+            var step = route.follow(player.blockPosition(), 2);
+            if (step == CompanionTravel.Step.WALKING) { if (!owner.travel().searchOnly()) orderProgressPosition = null; return; }
             owner.travel().reset();
+            if (step == CompanionTravel.Step.FAILED) { comeFailedAt = owner.blockPosition(); comeFailedTime = level.getGameTime(); }
         }
-        if (orderHasStalled(level, 240)) { finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return; }
-        Path route = owner.getNavigation().createPath(player, 1);
-        if (route != null && route.getNodeCount() > 1) CompanionMiningNavigation.walk(owner, route);
-        // No new route this tick (bobbing in the water at a bank, marathon 23.10): keep walking the one he has.
-        else if (owner.onGround() && !owner.isInWater()) owner.getNavigation().stop();
+        if (orderHasStalled(level, 240)) {
+            // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
+            Boolean none = route.noWay(player.blockPosition());
+            if (none == null) return;
+            if (none) { finish(false, "Не могу к тебе пройти."); return; }
+            finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
+        }
     }
 
     void watchChase() { hunting.watchChase(); }
@@ -653,7 +664,7 @@ public final class CompanionWork {
         double distance = owner.distanceToSqr(block.getCenter());
         if (distance + 0.05D < bestDistance) { bestDistance = distance; lastProgressTick = level.getGameTime(); }
         // A path up a slope or around a hill can lead away from the target for a while. Walking is progress too.
-        if (approachMoved == null || owner.position().distanceToSqr(approachMoved) > .7 * .7) { approachMoved = owner.position(); lastProgressTick = level.getGameTime(); }
+        if ((approachUntil == 0 || level.getGameTime() < approachUntil) && (approachMoved == null || owner.position().distanceToSqr(approachMoved) > .7 * .7)) { approachMoved = owner.position(); lastProgressTick = level.getGameTime(); }
         if (level.getGameTime() - lastProgressTick > 80) return false;
         if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
             Set<BlockPos> feet = new HashSet<>();
@@ -666,10 +677,15 @@ public final class CompanionWork {
                 if (!items.visibleFrom(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), block)) continue;
                 feet.add(pos);
             }
-            path = owner.getNavigation().createPath(feet, 0);
+            var found = route.cells(feet, 0);
+            // This tick's cells went elsewhere: he keeps walking, the cells are asked again next tick.
+            if (found.busy()) return true;
+            path = found.path();
+            // Walking counts as progress for as long as the first route found takes at his pace, twice over, and ten seconds more.
+            if (path != null && approachUntil == 0) approachUntil = level.getGameTime() + CompanionRoute.farLimit(found.length());
             standCells = feet;
         }
-        if (path != null && path.canReach() && owner.getNavigation().moveTo(path, 0.95D)) return true;
+        if (path != null && path.canReach()) { route.walk(path, 0.95D); return true; }
         // Arrived at a chosen cell, but its view was checked from the centre: step there instead of
         // reporting the bench or chest beside us as unreachable. The progress watchdog above still bounds this.
         BlockPos here = owner.blockPosition();
@@ -696,11 +712,11 @@ public final class CompanionWork {
                 "reason", "terrain_changed_after_route_recovery", "attempt", recoveryReplans, "collected", gathered, "requested", wantedStone);
     }
     void resetTarget() {
-        clearCracks(); target = null; resetApproach();
+        clearCracks(); target = null; resetApproach(); route.abandon();
         // The old target is no destination any more: a self-rescue must not take it for one while he looks for the next.
         owner.movementIntent(null);
     }
-    void resetApproach() { path = null; standCells = Set.of(); approachMoved = null; bestDistance = Double.MAX_VALUE; lastProgressTick = owner.level().getGameTime(); }
+    void resetApproach() { path = null; standCells = Set.of(); approachMoved = null; approachUntil = 0; bestDistance = Double.MAX_VALUE; lastProgressTick = owner.level().getGameTime(); }
     void clearCracks() { breaking.reset(); }
     void closeChest() {
         if (openedChest != null && owner.level() instanceof ServerLevel level && level.hasChunkAt(openedChest)

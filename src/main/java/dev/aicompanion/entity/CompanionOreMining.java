@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Set;
 
 final class CompanionOreMining {
+    /** Where ore is worked from: within reach, in sight, not on the ore's own block, where its drop can be picked up. */
+    private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(3.5, false, true, true);
     final CompanionWork w;
 
     CompanionOreMining(CompanionWork w) { this.w = w; }
@@ -169,7 +171,9 @@ final class CompanionOreMining {
                     && CompanionMiningNavigation.dropCollectable(level, candidate, w.owner.blockPosition())) return chosenOre(candidate, null);
         }
         List<BlockPos> group = sorted.stream().filter(pos -> !w.oreOffFoot.contains(pos)).limit(CompanionWork.STONE_GROUP).toList();
-        CompanionMiningNavigation.Choice walk = group.isEmpty() ? null : CompanionMiningNavigation.nearestOnFoot(w.owner, group, 3.5, false, true, true);
+        CompanionRoute.Reach walk = group.isEmpty() ? null : w.route.nearest(group, APPROACH);
+        if (walk != null && walk.busy()) { w.oreChoosing = true; return null; }
+        if (walk != null && !walk.found()) walk = null;
         if (walk != null && !safeOreApproach(walk.path())) { w.oreOffFoot.add(walk.block()); walk = null; }
         int budget = 2;
         java.util.Map<BlockPos, Double> keys = new java.util.HashMap<>();
@@ -180,9 +184,11 @@ final class CompanionOreMining {
             if (budget-- <= 0) { w.oreChoosing = true; return null; }
             if (!w.oreOffFoot.contains(candidate) && (walk == null || !group.contains(candidate))) {
                 // Its own walk: beyond the compared group, or the group search spent its steps on an ore it cannot reach.
-                Path route = CompanionMiningNavigation.pathTo(w.owner, candidate, 3.5, false, true, true);
-                boolean safe = safeOreApproach(route);
-                if (safe && (walk == null || CompanionMiningNavigation.length(w.owner, route) < walk.length())) return chosenOre(candidate, route);
+                CompanionRoute.Reach own = w.route.to(candidate, APPROACH);
+                // The tick's cells are spent: the choice already found (the group's walk) stands, it is not cancelled.
+                if (own.busy()) { if (walk != null) break; w.oreChoosing = true; return null; }
+                boolean safe = safeOreApproach(own.path());
+                if (safe && (walk == null || own.length() < walk.length())) return chosenOre(candidate, own.path());
                 if (!safe) w.oreOffFoot.add(candidate);
             }
             int tries = 0;
@@ -192,8 +198,11 @@ final class CompanionOreMining {
                 if (cells == null || cells.stream().anyMatch(cell -> blockedOreCell(level, cell))) continue;
                 tries++;
                 if (w.owner.autonomy().running() && w.oreExit != null && !CompanionMiningNavigation.canWalkBackUp(w.owner, stand, w.oreExit.getY())) continue;
-                Path way = w.owner.blockPosition().equals(stand) ? null : w.owner.getNavigation().createPath(stand, 0);
-                if (way != null && !way.canReach()) continue;
+                int busy = w.route.busyAnswers();
+                Path way = w.owner.blockPosition().equals(stand) ? null : w.route.toCells(Set.of(stand));
+                // This tick's cells went elsewhere: the tunnel is not ruled out, the choice is made again next tick.
+                if (way == null && w.route.busyAnswers() != busy) { w.oreChoosing = true; return null; }
+                if (way == null && !w.owner.blockPosition().equals(stand)) continue;
                 // Each cell is a few swings; a walk to the ore in sight that is shorter wins.
                 if (walk != null && (way == null ? 0 : CompanionMiningNavigation.length(w.owner, way)) + cells.size() * 2 >= walk.length()) continue;
                 w.oreTunnel.addAll(cells);
@@ -283,10 +292,13 @@ final class CompanionOreMining {
         if (CompanionMiningNavigation.supportsLivingEntity(w.owner, pos)) {
             w.breaking.reset();
             if (level.getGameTime() - w.lastProgressTick > 160) { blockOreCell(level, pos, "occupied_support"); return false; }
-            if (w.path == null || w.owner.getNavigation().isDone() || w.owner.getNavigation().isStuck())
-                w.path = CompanionMiningNavigation.pathTo(w.owner, pos, 3.5, false, true);
+            if (w.path == null || w.route.legOver()) {
+                var reach = w.route.to(pos, new CompanionRoute.Need(3.5, false, true, false));
+                if (reach.busy()) return false;
+                w.path = reach.path();
+            }
             if (w.path == null || !safeOreApproach(w.path)) { blockOreCell(level, pos, "occupied_support"); return false; }
-            w.owner.movementIntent(pos); CompanionMiningNavigation.walk(w.owner, w.path); return false;
+            w.owner.movementIntent(pos); w.route.walk(w.path); return false;
         }
         if (!CompanionMiningNavigation.preservesAutonomousReturn(w.owner, pos) || w.oreExit != null && w.owner.getY() < w.oreExit.getY() - .5
                 && !CompanionMiningNavigation.canWalkBackUp(w.owner, w.owner.blockPosition(), w.oreExit.getY(), pos)) {
@@ -306,27 +318,31 @@ final class CompanionOreMining {
         w.oreUnreachable++; rejectOre();
     }
 
-    /** Back up the own stairs before reporting, like after stone. */
+    /** Back up the own stairs before reporting, like after stone: in legs when the way is longer than one search. */
     private void climbOutOfOre(ServerLevel level) {
         if (w.oreExit == null || w.owner.getY() >= w.oreExit.getY() - .5) { finishOre(); return; }
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
         if (w.orderHasStalled(level, 300)) { finishOre(); return; }
         w.owner.movementIntent(w.oreExit);
         w.owner.workStatus("Поднимаюсь по своему ходу наверх.");
-        if (w.path == null || w.owner.getNavigation().isDone() || w.owner.getNavigation().isStuck()) {
-            if (!w.owner.autonomy().running()) w.path = w.owner.getNavigation().createPath(w.oreExit, 0);
-            else {
-                // The exact start cell may have been a temporary support; another safe cell at the same height is an exit too.
-                Set<BlockPos> exits = new HashSet<>();
-                for (BlockPos cell : BlockPos.betweenClosed(w.oreExit.offset(-3,0,-3), w.oreExit.offset(3,1,3)))
-                    if (CompanionMiningNavigation.standable(w.owner, cell)) exits.add(cell.immutable());
-                w.path = exits.isEmpty() ? null : w.owner.getNavigation().createPath(exits, 0);
-            }
+        // The exact start cell may have been a temporary support (autonomous work): near it, any safe cell at its height is an exit.
+        boolean exact = !w.owner.autonomy().running();
+        var step = w.route.legs(w.oreExit, exact ? 2.5 : 3.5);
+        if (step == CompanionTravel.Step.WALKING) return;
+        if (step == CompanionTravel.Step.FAILED) { finishOre(); return; }
+        // Near it but not up on its level: the last steps by one search.
+        if (w.path == null || w.route.legOver()) {
+            Set<BlockPos> exits = new HashSet<>();
+            if (exact) exits.add(w.oreExit);
+            else for (BlockPos cell : BlockPos.betweenClosed(w.oreExit.offset(-3,0,-3), w.oreExit.offset(3,1,3)))
+                if (CompanionMiningNavigation.standable(w.owner, cell)) exits.add(cell.immutable());
+            w.path = exits.isEmpty() ? null : w.route.toCells(exits);
         }
-        if (w.path != null && w.path.canReach()) CompanionMiningNavigation.walk(w.owner, w.path);
+        if (w.path != null) w.route.walk(w.path);
     }
 
     private void finishOre() {
+        w.route.legsEnd(w.oreExit == null || w.owner.getY() >= w.oreExit.getY() - .5); w.route.abandon();
         int gained = Math.max(0, w.items.countCarried(w.ore.drop) - w.oreDropsBefore);
         String got = "«" + w.ore.oreName + "»: в сумке прибавилось " + gained + " «" + CompanionWork.itemName(w.ore.drop) + "».";
         String below = w.oreExit != null && w.owner.getY() < w.oreExit.getY() - .5

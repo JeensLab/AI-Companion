@@ -37,12 +37,18 @@ final class CompanionGatherGoals {
         private int lastProgressTick;
         private int targetStartedTick;
         private double bestTargetDistance;
+        private int farUntil;
+        /** The approach path is one longer than a search: walked in legs, its start leads away from the trunk. */
+        private boolean farApproach;
+        private net.minecraft.world.phys.Vec3 farMoved;
         private boolean resumeAfterCleanup;
         private int taskVersion;
         private String accessIssue = "";
         private static final int CROWN_ATTEMPTS = 2;
         /** Farther than this a tree with no route yet is walked to, nearer it is climbed or skipped as before. */
         private static final int FAR_TREE = 12;
+        /** Where a trunk is chopped from: within reach, leaves cleared or in the way. */
+        private static final CompanionRoute.Need TRUNK = new CompanionRoute.Need(3.7, true, false, false);
         /** Most logs a bench and an axe cost. */
         private static final int AXE_WOOD = 3;
         private int crownFailures;
@@ -139,7 +145,7 @@ final class CompanionGatherGoals {
                 target = selectNextLog();
                 approachPath = null;
                 pathFailTicks = 0;
-                lastProgressTick = targetStartedTick = c.tickCount;
+                lastProgressTick = targetStartedTick = c.tickCount; farUntil = 0;
                 bestTargetDistance = Double.MAX_VALUE;
             }
             if (target == null) {
@@ -173,14 +179,14 @@ final class CompanionGatherGoals {
             double distance = c.distanceToSqr(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
             BlockPos leaves = CompanionMiningNavigation.obstructingLeaves(c, target);
             if (leaves != null && c.distanceToSqr(leaves.getCenter()) <= CompanionEntity.LOG_INTERACTION_RANGE_SQR) {
-                c.getNavigation().stop();
+                c.work.route.stop();
                 if (c.woodBreaking.tick((ServerLevel)c.level(), leaves)) {
                     c.gathering.mineLog(leaves); c.woodBreaking.reset();
                 }
                 return;
             }
             if (distance <= CompanionEntity.LOG_INTERACTION_RANGE_SQR && CompanionMiningNavigation.visible(c, c.getEyePosition(), target)) {
-                c.getNavigation().stop();
+                c.work.route.stop();
                 // With no axe, put away held building supplies and use a real empty hand.
                 if (c.getOffhandItem().is(ItemTags.AXES)) c.unequipForSupport("offhand");
                 c.selectToolForBlock(c.level().getBlockState(target));
@@ -218,29 +224,37 @@ final class CompanionGatherGoals {
                 boolean noProgress = c.tickCount - lastProgressTick >= 60;
                 // Navigation considers a waypoint reached before the mob is exactly centered.
                 // Give the movement controller time to line up a visible face before trying a pillar.
-                if (approachPath != null && (c.getNavigation().isStuck() || noProgress)) {
+                if (approachPath != null && (c.work.route.stuck() || noProgress)) {
                     tryClimbing();
                     return;
                 }
+                // A far route's leg is over: the next search goes on from where he is.
+                if (approachPath != null && farApproach && c.work.route.done()) approachPath = null;
                 if (approachPath == null) approachPath = findApproachPath(target);
+                // The search goes on next tick: not yet «no route» (climbing, far legs and rejecting wait for it).
+                if (approachPath == null && searching) return;
+                if (approachPath != null && farApproach && c.tickCount < farUntil && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
+                    farMoved = c.position(); lastProgressTick = targetStartedTick = c.tickCount;
+                }
                 // A tree far off over hills: walked to in legs first, not declared out of reach (game log 23.10, aa07e605).
                 if (approachPath == null && Math.hypot(target.getX() + .5 - c.getX(), target.getZ() + .5 - c.getZ()) > FAR_TREE) {
                     // To the foot of the trunk, as a player walks to a tree: a route to a log up in the crown is never found, and its parts
                     // led him off swimming round an island (marathon 23.10, «берег»).
                     BlockPos foot = target;
                     while (foot.getY() > c.level().getMinBuildHeight() && c.level().getBlockState(foot.below()).is(BlockTags.LOGS)) foot = foot.below();
-                    var step = c.travel.toward(foot, FAR_TREE - 4);
+                    var step = c.work.route.legs(foot, FAR_TREE - 4);
                     if (step == CompanionTravel.Step.WALKING) {
                         targetStartedTick = lastProgressTick = c.tickCount;
                         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Иду к дереву подальше.");
                         return;
                     }
-                    c.travel.reset();
+                    c.work.route.legsEnd(step == CompanionTravel.Step.NEAR);
                     if (step == CompanionTravel.Step.FAILED) { rejectTarget(false); return; }
                     approachPath = findApproachPath(target);
+                    if (approachPath == null && searching) return;
                 }
                 if (approachPath == null) { tryClimbing(); return; }
-                CompanionMiningNavigation.walk(c, approachPath);
+                c.work.route.walk(approachPath);
             }
         }
 
@@ -266,7 +280,7 @@ final class CompanionGatherGoals {
             currentTreeLogs.add(branch);
             target = branch;
             approachPath = null;
-            lastProgressTick = targetStartedTick = c.tickCount;
+            lastProgressTick = targetStartedTick = c.tickCount; farUntil = 0;
             bestTargetDistance = Double.MAX_VALUE;
             c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Над опорой ветка, срублю её отсюда.");
             return true;
@@ -291,14 +305,14 @@ final class CompanionGatherGoals {
             c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "До этой части дерева безопасно не добраться, ищу другую.");
             target = null;
             approachPath = null;
-            c.getNavigation().stop();
+            c.work.route.stop();
             retryDelay = 2;
         }
 
         @Override
         public void stop() {
             c.woodBreaking.reset();
-            c.getNavigation().stop();
+            c.work.route.stop();
             target = null;
             c.temporaryPillar.requestCleanup();
             resumeAfterCleanup = c.gatheringLogs || c.supportSoilTask;
@@ -337,9 +351,10 @@ final class CompanionGatherGoals {
             Set<Long> trunks = new HashSet<>();
             List<BlockPos> group = nearest.stream().filter(candidate -> !walkTried.contains(candidate)
                     && trunks.add(BlockPos.asLong(candidate.getX(), 0, candidate.getZ()))).limit(8).toList();
-            var walk = group.isEmpty() ? null : CompanionMiningNavigation.nearestOnFoot(c, group, 3.7, true, false);
-            if (walk == null) walkTried.addAll(group);
-            return walk == null ? nearest.get(0) : walk.block();
+            var walk = group.isEmpty() ? null : c.work.route.nearest(group, TRUNK);
+            if (walk != null && walk.busy()) return nearest.get(0);
+            if (walk == null || !walk.found()) { walkTried.addAll(group); return nearest.get(0); }
+            return walk.block();
         }
         /** Keep working on the connected tree after the requested minimum is reached. */
         private BlockPos selectNextLog() {
@@ -399,9 +414,13 @@ final class CompanionGatherGoals {
         }
 
         /** Find a reachable standing spot next to the log; never path into the solid log itself. */
+        private boolean searching;
         private Path findApproachPath(BlockPos log) {
-            Path path = CompanionMiningNavigation.pathTo(c, log, 3.7, true);
-            return path != null && path.canReach() ? path : null;
+            var reach = c.work.route.to(log, TRUNK);
+            searching = reach.busy();
+            farApproach = reach.kind() == CompanionRoute.Kind.FAR;
+            if (farApproach && farUntil == 0) farUntil = c.tickCount + (int)CompanionRoute.farLimit(reach.length());
+            return reach.path();
         }
 
         private void finish(String message) {
@@ -436,6 +455,11 @@ final class CompanionGatherGoals {
         private boolean resume;
         private final CompanionToolSense shovelSense;
         private int targetSince, targetProgress;
+        private int farUntil;
+        private boolean farApproach;
+        private net.minecraft.world.phys.Vec3 farMoved;
+        /** Dirt is dug from within reach and sight, off its own cell, where its drop can be picked up. */
+        private static final CompanionRoute.Need DIRT = new CompanionRoute.Need(3.5, false, true, true);
         private double targetBest;
 
         GatherDirtGoal(CompanionEntity c) {
@@ -469,7 +493,7 @@ final class CompanionGatherGoals {
             c.logsRemaining = Math.max(0, inventoryTarget - CompanionTools.soil(c));
             c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
             if (c.logsRemaining <= 0 && !c.loot.hasPending()) { finish("Добыча земли завершена: добыл " + gathered + " блоков. В сумке: " + c.getStoredItemsSummary() + "."); return; }
-            if (c.logsRemaining > 0 && c.loot.incomingSoil() >= c.logsRemaining) { c.dirtBreaking.reset(); c.getNavigation().stop(); return; }
+            if (c.logsRemaining > 0 && c.loot.incomingSoil() >= c.logsRemaining) { c.dirtBreaking.reset(); c.work.route.stop(); return; }
             // Soil for a support under a crown: by hand, a shovel would eat the wood just cut (marathon 23.10: «добудь дерева» ended
             // with fewer logs than asked, one gone into a shovel for six blocks of dirt).
             if (!c.supportSoilTask && shovelSense.tick()) { c.dirtBreaking.reset(); approachPath = null; return; }
@@ -485,7 +509,7 @@ final class CompanionGatherGoals {
                 target = findNearestDirt();
                 approachPath = null;
                 pathFailTicks = 0;
-                targetSince = targetProgress = c.tickCount; targetBest = Double.MAX_VALUE;
+                targetSince = targetProgress = c.tickCount; targetBest = Double.MAX_VALUE; farUntil = 0;
             }
             if (target == null) {
                 if (++noDirtTicks >= 80) finish("Нашёл только " + gathered + " из " + c.requestedLogs
@@ -497,15 +521,15 @@ final class CompanionGatherGoals {
             c.getLookControl().setLookAt(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
             double distance = c.distanceToSqr(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D);
             if (!CompanionMiningNavigation.preservesAutonomousReturn(c, target)) {
-                unreachable.add(target.immutable()); c.dirtBreaking.reset(); target = null; approachPath = null; c.getNavigation().stop(); return;
+                unreachable.add(target.immutable()); c.dirtBreaking.reset(); target = null; approachPath = null; c.work.route.stop(); return;
             }
             if (distance + .05 < targetBest) { targetBest = distance; targetProgress = c.tickCount; }
             if (c.tickCount - targetSince > 20 * 30 || c.tickCount - targetProgress > 160) {
-                unreachable.add(target.immutable()); c.dirtBreaking.reset(); target = null; approachPath = null; c.getNavigation().stop(); return;
+                unreachable.add(target.immutable()); c.dirtBreaking.reset(); target = null; approachPath = null; c.work.route.stop(); return;
             }
             if (distance <= CompanionEntity.LOG_INTERACTION_RANGE_SQR && CompanionMiningNavigation.visible(c, c.getEyePosition(), target)
                     && CompanionMiningNavigation.dropCollectable((ServerLevel)c.level(), target, c.blockPosition())) {
-                c.getNavigation().stop();
+                c.work.route.stop();
                 c.selectToolForBlock(c.level().getBlockState(target));
                 if (!c.dirtBreaking.tick((ServerLevel)c.level(), target)) return;
                 if (c.gathering.mineDirt(target)) {
@@ -527,26 +551,33 @@ final class CompanionGatherGoals {
 
             c.dirtBreaking.reset();
 
-            if (c.getNavigation().isStuck()) {
+            // Stuck on his own way to this block, not on a walk before it (following, a hand-over).
+            if (approachPath != null && c.work.route.stuck()) {
                 unreachable.add(target.immutable());
                 target = null;
                 approachPath = null;
-                c.getNavigation().stop();
+                c.work.route.stop();
                 retryDelay = 10;
                 pathFailTicks = 0;
                 return;
             }
-            if (approachPath == null || c.getNavigation().isDone()) approachPath = findDirtApproachPath(target);
-            if (approachPath == null || !c.getNavigation().moveTo(approachPath, 1.0D)) {
+            if (approachPath == null || c.work.route.done()) approachPath = findDirtApproachPath(target);
+            // The search goes on at the next tick: not a failed try.
+            if (approachPath == null && searching) return;
+            // A far route first leads away from the block: walking on is progress.
+            if (approachPath != null && farApproach && c.tickCount < farUntil && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
+                farMoved = c.position(); targetProgress = c.tickCount;
+            }
+            if (approachPath == null) {
                 if (++pathFailTicks >= 20) {
                     unreachable.add(target.immutable());
                     target = null;
                     approachPath = null;
-                    c.getNavigation().stop();
+                    c.work.route.stop();
                     retryDelay = 10;
                     pathFailTicks = 0;
                 } else approachPath = null;
-            } else pathFailTicks = 0;
+            } else { c.work.route.walk(approachPath); pathFailTicks = 0; }
         }
 
         private BlockPos findNearestDirt() {
@@ -581,10 +612,15 @@ final class CompanionGatherGoals {
             return best;
         }
 
+        private boolean searching;
         private Path findDirtApproachPath(BlockPos block) {
             // The previous adjacent-cell search could end behind a ledge with no view of the block, endlessly alternating
             // a single swing and the same walk. Use the common visible approach with a collectable physical drop.
-            return CompanionMiningNavigation.pathTo(c, block, 3.5, false, true, true);
+            var reach = c.work.route.to(block, DIRT);
+            searching = reach.busy();
+            farApproach = reach.kind() == CompanionRoute.Kind.FAR;
+            if (farApproach && farUntil == 0) farUntil = c.tickCount + (int)CompanionRoute.farLimit(reach.length());
+            return reach.path();
         }
 
         private void finish(String message) {
@@ -593,7 +629,7 @@ final class CompanionGatherGoals {
                 c.supportSoilTask = false; c.gatheringDirt = false; c.gatheringLogs = true;
                 c.requestedLogs = c.savedWoodRequested; c.logsRemaining = c.savedWoodRemaining;
                 c.workStatus(c.lastTaskSucceeded ? "Земля для опоры есть, возвращаюсь к дереву." : "Доступной земли не нашёл, попробую другое дерево.");
-                c.getNavigation().stop(); return;
+                c.work.route.stop(); return;
             }
             c.gatheringDirt = false;
             c.gatheringLogs = false;
@@ -605,6 +641,6 @@ final class CompanionGatherGoals {
             if (c.work.isActive()) c.syncWorkState(); else { c.noteDeed(message, c.lastTaskSucceeded); c.finishFollowing(); }
         }
 
-        @Override public void stop() { resume = c.gatheringDirt; c.dirtBreaking.reset(); c.getNavigation().stop(); target = null; }
+        @Override public void stop() { resume = c.gatheringDirt; c.dirtBreaking.reset(); c.work.route.stop(); target = null; }
     }
 }

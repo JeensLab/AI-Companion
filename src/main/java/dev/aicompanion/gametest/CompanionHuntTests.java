@@ -100,6 +100,31 @@ public final class CompanionHuntTests {
         });
     }
 
+    /**
+     * A cow on a ledge six blocks up that he cannot climb, well within the hunt radius: the pig is taken, and no walk is wasted on the
+     * cow (a food run once walked into the corner of its pen for thirteen seconds towards a cow in the next test's).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void anAnimalOnALedgeOutOfReachIsNotWalkedTowards(GameTestHelper h) {
+        ground(h);
+        for (int x = 22; x <= 26; x++) for (int z = 14; z <= 18; z++) for (int y = GROUND + 1; y <= GROUND + 6; y++) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        var cow = h.spawn(EntityType.COW, 24, GROUND + 7, 16);
+        cow.setNoAi(true);
+        h.spawn(EntityType.PIG, 10, GROUND + 1, 16).setNoAi(true);
+        CompanionEntity companion = spawn(h, 8, 16);
+        long id = order(h, companion, "food", 3);
+        double start = companion.getX();
+        double[] east = {0};
+        h.onEachTick(() -> east[0] = Math.max(east[0], companion.getX() - start));
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(count(companion, Items.PORKCHOP) >= 1, "The pig was left: " + result.message());
+            h.assertTrue(cow.isAlive(), "The cow on the ledge died");
+            h.assertTrue(east[0] < 8, "Walked towards the cow on the ledge: " + Math.round(east[0]) + " blocks");
+            h.assertTrue(result.success() && result.message().contains("пути нет"), result.message());
+        });
+    }
+
     /** Nothing to hunt: the plan stops at the hunt with its real reason, not with «жарить нечего» from the furnace. */
     @GameTest(template = "tall_tree", timeoutTicks = 600)
     public static void anEmptyHuntDoesNotGoOnToTheFurnace(GameTestHelper h) {

@@ -61,10 +61,12 @@ final class CompanionEntityGoals {
     static final class RoamGoal extends Goal {
         final CompanionEntity c;
         private int nextAttempt;
+        // The places picked for a walk, kept while the search to them goes on (a new pick would be a new search, never finished).
+        private Set<BlockPos> picked, pickedNear;
         RoamGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
         @Override public boolean canUse() { return c.roaming && c.inventoryViewers == 0; }
         @Override public boolean canContinueToUse() { return canUse(); }
-        @Override public void start() { nextAttempt = 0; }
+        @Override public void start() { nextAttempt = 0; picked = pickedNear = null; }
         @Override public void tick() {
             if (!(c.level() instanceof ServerLevel serverLevel)) return;
             if (!c.onGround() && !c.isInWater()) return;
@@ -72,6 +74,7 @@ final class CompanionEntityGoals {
             if (c.tickCount < nextAttempt) return;
             nextAttempt = c.tickCount + 60;
             if (c.roamOrigin == null) c.roamOrigin = c.blockPosition();
+            if (picked != null) { walkTo(picked, pickedNear); return; }
             Set<BlockPos> destinations = new HashSet<>();
             Set<BlockPos> nearbyDestinations = new HashSet<>();
             double preferredDistance = Math.max(8.0D, c.searchRadius * 0.7D);
@@ -85,9 +88,17 @@ final class CompanionEntityGoals {
                 nearbyDestinations.add(feet);
                 if (feet.distSqr(c.blockPosition()) >= preferredDistance * preferredDistance) destinations.add(feet);
             }
-            Path path = c.getNavigation().createPath(destinations, 0);
-            if (path == null || !path.canReach()) path = c.getNavigation().createPath(nearbyDestinations, 0);
-            if (path != null && path.canReach()) c.getNavigation().moveTo(path, 0.9D);
+            walkTo(destinations, nearbyDestinations);
+        }
+
+        private void walkTo(Set<BlockPos> destinations, Set<BlockPos> nearbyDestinations) {
+            int busy = c.work.route.busyAnswers();
+            Path path = c.work.route.toCells(destinations);
+            if (path == null) path = c.work.route.toCells(nearbyDestinations);
+            boolean searching = path == null && c.work.route.busyAnswers() != busy;
+            picked = searching ? destinations : null; pickedNear = searching ? nearbyDestinations : null;
+            if (searching) nextAttempt = c.tickCount + 1;
+            if (path != null) c.work.route.walk(path, 0.9D);
         }
 
         private BlockPos findStandingPosition(ServerLevel serverLevel, int x, int z) {
@@ -128,6 +139,8 @@ final class CompanionEntityGoals {
                 return false;
             }
             owner = serverLevel.getServer().getPlayerList().getPlayer(companion.ownerId);
+            // Near him again (the following ends at four blocks, or was interrupted before): the next time he is out of reach is a new occasion to say so.
+            if (owner != null && owner.level() == companion.level() && companion.distanceToSqr(owner) <= 16) toldAbout = null;
             return owner != null && owner.level() == companion.level()
                     && companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64);
         }
@@ -142,28 +155,55 @@ final class CompanionEntityGoals {
         public void tick() {
             if (owner == null) return;
             companion.getLookControl().setLookAt(owner, 20.0F, 30.0F);
-            // Far off, like a player who lost sight of a friend: walked to in legs, round walls and over ridges, never a teleport
-            // (marathon 23.10: beyond 128 blocks he used to appear beside the player). Near, the game's own following.
-            if (companion.distanceToSqr(owner) > FAR_FOLLOW * FAR_FOLLOW) {
-                if (!companion.onGround() && !companion.isInWater()) return;
-                var step = companion.travel().follow(owner.blockPosition(), FAR_FOLLOW - 8);
-                // Half a minute without coming closer: start the walk anew (the self-rescue takes over where he is stuck).
-                if (step != CompanionTravel.Step.WALKING) companion.travel().reset();
-                travelling = step == CompanionTravel.Step.WALKING;
+            // Like a player who lost sight of a friend: on foot, in legs round walls and over ridges, as far as the way goes and with
+            // no time limit while he is in this world; never a teleport (marathon 23.10). With no way, he says so once and waits
+            // where he stands until the player moves, then tries again.
+            if (waitingFor != null) {
+                if (owner.blockPosition().distSqr(waitingFor) < 9) return;
+                waitingFor = null;
+            }
+            if (companion.level().getGameTime() < retryAt) return;
+            if (!companion.onGround() && !companion.isInWater()) return;
+            var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR, FOLLOW_SPEED);
+            if (step == CompanionTravel.Step.WALKING) {
+                travelling = true;
+                // A whole route to him exists again: the next time there is none is a new occasion to say so.
+                if (companion.travel().onRoute()) toldAbout = null;
                 return;
             }
-            if (travelling) { companion.travel().reset(); travelling = false; }
-            companion.getNavigation().moveTo(owner, 1.15D);
+            travelling = false;
+            companion.travel().reset();
+            if (step == CompanionTravel.Step.FAILED) {
+                companion.getNavigation().stop();
+                waitingFor = owner.blockPosition();
+                // Told only where the route search sees there is no way, once per place of the player; a stuck walk is the
+                // self-rescue's, silently (not «no way»), and is tried anew in a few seconds.
+                Boolean none = companion.work.route.noWay(owner.blockPosition());
+                // Not known yet (the search goes by the shares of the ticks): asked again next tick.
+                if (none == null) { waitingFor = null; retryAt = companion.level().getGameTime() + 1; }
+                else if (none) {
+                    if (toldAbout == null || toldAbout.distSqr(owner.blockPosition()) >= 9) {
+                        toldAbout = owner.blockPosition();
+                        companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься.", companion.hasActiveWorkOrder());
+                    }
+                } else { waitingFor = null; retryAt = companion.level().getGameTime() + 100; }
+            } else toldAbout = null;
         }
 
         @Override
         public void stop() {
-            owner = null;
+            owner = null; waitingFor = null;
             if (travelling) { companion.travel().reset(); travelling = false; }
             companion.getNavigation().stop();
         }
         private boolean travelling;
-        /** Farther than this the following goes in legs (CompanionTravel). */
-        private static final int FAR_FOLLOW = 32;
+        // Where the player stood when he was told there is no way: kept while the goal is interrupted (self-rescue, pickup, fight, inventory).
+        private BlockPos toldAbout;
+        private long retryAt;
+        // Where the player was when there was no way to him; he waits until the player is elsewhere.
+        private BlockPos waitingFor;
+        private static final int FOLLOW_NEAR = 3;
+        // A little above walking pace: he keeps up with a player who walks.
+        private static final double FOLLOW_SPEED = 1.15D;
     }
 }

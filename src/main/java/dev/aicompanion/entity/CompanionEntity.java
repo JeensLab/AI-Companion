@@ -143,9 +143,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean autonomyEnabled() { return level().isClientSide ? entityData.get(DATA_AUTONOMY) : autonomy.enabled(); }
     void syncAutonomy() { if (!level().isClientSide) entityData.set(DATA_AUTONOMY, autonomy.enabled()); }
     /** A rare autonomous notice, shown and voiced by the client. Routine progress stays in workStatus and the journal. */
-    void autonomySay(String text) {
+    void autonomySay(String text) { autonomySay(text, true); }
+    /** Not as the work status where it would replace the result of the last order (the status then keeps it, like CompanionRecovery). */
+    void autonomySay(String text, boolean asStatus) {
         entityData.set(DATA_SAY, text); entityData.set(DATA_SAY_SERIAL, entityData.get(DATA_SAY_SERIAL) + 1); entityData.set(DATA_SAY_TIME, level().getGameTime());
-        workStatus(text);
+        if (asStatus) workStatus(text);
     }
     public String autonomyLine() { return entityData.get(DATA_SAY); }
     public int autonomyLineSerial() { return entityData.get(DATA_SAY_SERIAL); }
@@ -247,19 +249,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     String diagnosticState() { return diagnostics.diagnosticState(); }
     net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
-    /** The game's ground navigation, with the walking search that also climbs out of water onto a bank (CompanionNodeEvaluator). */
+    /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
     @Override protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
-        var navigation = new net.minecraft.world.entity.ai.navigation.GroundPathNavigation(this, level) {
-            @Override protected net.minecraft.world.level.pathfinder.PathFinder createPathFinder(int maxVisitedNodes) {
-                this.nodeEvaluator = new CompanionNodeEvaluator();
-                this.nodeEvaluator.setCanPassDoors(true);
-                return new net.minecraft.world.level.pathfinder.PathFinder(this.nodeEvaluator, maxVisitedNodes);
-            }
-        };
-        // Twice the game's budget of searched cells (marathon 23.10: the coal down in the cave, 45 steps by its narrow way, was
-        // «out of reach» from the meadow above — the search spent its 2048 cells on the meadow first).
-        navigation.setMaxVisitedNodesMultiplier(2F);
-        return navigation;
+        // Every path is built by our own search (CompanionSearch.BUDGET cells), not the game's. Marathon 23.10: the coal down in the
+        // cave, 45 steps by its narrow way, was «out of reach» from the meadow above — the search spent its cells on the meadow first.
+        return new CompanionNavigation(this, level);
     }
 
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level) {
@@ -297,7 +291,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             }
         });
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
-        this.getNavigation().setMaxVisitedNodesMultiplier(3.0F);
         // Review 22.10, В1: vanilla «hit back whoever hurt me» also hit back the player after a stray blow.
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this) {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
