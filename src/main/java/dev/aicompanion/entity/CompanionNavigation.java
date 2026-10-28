@@ -220,12 +220,14 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     void forget(CompanionSearch search) { searches.values().remove(search); }
 
     /**
-     * Whether a search to these cells is going on: a wide one sees all a short one would, so the short one, dropped by a block
-     * change, is not begun again under it (with blocks changing every few ticks the wide one would else never get its share).
+     * Whether a search to these cells is going on from about here: a wide one sees all a short one would, so the short one, dropped
+     * by a block change, is not begun again under it (with blocks changing every few ticks the wide one would else never get its
+     * share). One begun farther off is no answer for here: the short one from here is asked.
      */
     boolean running(Set<BlockPos> targets, int accuracy, float range) {
         CompanionSearch search = searches.get(new Key(Set.copyOf(targets), accuracy, range));
-        return search != null && search.state() == CompanionSearch.State.RUNNING && !stale(search, level.getGameTime());
+        return search != null && search.state() == CompanionSearch.State.RUNNING && !stale(search, level.getGameTime())
+                && search.origin.distanceToSqr(mob.position()) <= 36;
     }
 
     public Path search(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(1)); }

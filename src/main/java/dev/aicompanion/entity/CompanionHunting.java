@@ -61,7 +61,16 @@ final class CompanionHunting {
                 List<net.minecraft.world.entity.animal.Animal> any = huntable(level);
                 if (any.isEmpty()) { finishHunt(level); return; }
                 if (w.gameTravels >= 3) { w.finish(false, gameReport(false) + " К остальным животным не нашёл пути."); return; }
-                w.gameTravel = any.stream().min(Comparator.comparingDouble(w.owner::distanceToSqr)).orElseThrow().blockPosition();
+                // Not towards one the wide search has gone round and found no way to: that walk only ends in a corner.
+                BlockPos to = null;
+                for (var animal : any.stream().sorted(Comparator.comparingDouble(w.owner::distanceToSqr)).toList()) {
+                    Boolean none = w.route.provenNoWay(animal.blockPosition());
+                    if (none == null) return;
+                    if (!none) { to = animal.blockPosition(); break; }
+                    w.gameSkipped.put(animal.getUUID(), level.getGameTime() + 20 * 30);
+                }
+                if (to == null) { w.finish(w.gameKills >= w.gameWanted || w.gameForFood && w.gameKills > 0, gameReport(false) + " К остальным животным пути нет."); return; }
+                w.gameTravel = to;
                 travelToGame(level);
                 return;
             }

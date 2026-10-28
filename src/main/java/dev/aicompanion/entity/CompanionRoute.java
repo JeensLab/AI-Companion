@@ -109,6 +109,8 @@ final class CompanionRoute {
                 if (wideFailed.size() > 64) wideFailed.values().removeIf(old -> now - old.at() >= 100);
                 if (wideFailed.size() > 256) wideFailed.clear();
                 wideFailed.put(Set.copyOf(cells), new Wide(now, nav.lastSearchExhausted()));
+                // It went on while the short one was not asked: the short one, from here and in the world as it is now, first.
+                if (wideGoing) return new Reach(Kind.NONE, null, null, 0, BUSY);
                 return new Reach(Kind.NONE, null, null, 0, "no route");
             }
             kind = Kind.FAR;
@@ -140,6 +142,22 @@ final class CompanionRoute {
         Reach reach = cells(Set.of(target), 1);
         if (reach.busy()) return null;
         return !reach.found() && !NOT_SEARCHED.equals(reach.reason());
+    }
+
+    /**
+     * The same, true only where it is proven: the wide search went over all he can reach within its range inside its cell budget and
+     * the target was not in it (an animal on a ledge behind a wall). One that ran out of cells proves nothing, whatever the distance.
+     */
+    Boolean provenNoWay(BlockPos target) {
+        Reach reach = cells(Set.of(target), 1);
+        if (reach.busy()) return null;
+        if (reach.found() || NOT_SEARCHED.equals(reach.reason())) return false;
+        float range = nav().followRange(3);
+        if (w.owner.distanceToSqr(target.getCenter()) > range * range) return false;
+        long now = w.owner.level().getGameTime();
+        for (var entry : wideFailed.entrySet())
+            if (now - entry.getValue().at() < 100 && !entry.getValue().exact() && entry.getKey().contains(target)) return true;
+        return false;
     }
 
     /** One search to any of these cells: the way if it comes all the way, else null. For the short last steps, not for far goals. */
