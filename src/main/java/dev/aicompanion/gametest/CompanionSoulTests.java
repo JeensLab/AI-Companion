@@ -230,7 +230,9 @@ public final class CompanionSoulTests {
             h.assertTrue(!c.fighting()&&!c.sociallySafe(),"A peaceful zombified piglin in sight became a fight, or chatter safe beside it");
             piglin.setTarget(player);
         });
-        h.runAtTickTime(80,()->{h.assertTrue(c.fighting(),"A monster after the player is no fight");h.succeed();});
+        // The invulnerable piglin is removed, or it stays beside a later marathon arena: Oleg then fights it for ever and the
+        // marathons failed «Иди ко мне» (3 of 5 full runs after PR #28, none before). The batch cleanup only takes companions.
+        h.runAtTickTime(80,()->{boolean fight=c.fighting(); piglin.discard(); h.assertTrue(fight,"A monster after the player is no fight");h.succeed();});
     }
     private static void resetFlow() {
         CompanionMemoryFlow.useCompleter(null);
