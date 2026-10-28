@@ -448,6 +448,49 @@ public final class CompanionOwnSearchTests {
         roundThePit(h);
     }
 
+    /**
+     * Run (the player 25 blocks off) across a pit one block wide onto a strip one block wide, with a deep drop right after it and the
+     * route turning along the strip: the sprint's boost carried him a cell past the landing and off the strip. No sprint before a
+     * jump of one block; he never goes below the strip.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aRunToAOnePitLandsOnTheStripAndDoesNotOverrunIt(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 14, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 5, 31, Blocks.STONE);
+        // The pit at x 15 (across the whole arena) and the strip at x 16; east of it a fall of four.
+        box(h, 15, 3, 0, 15, 5, 31, Blocks.AIR);
+        box(h, 17, 2, 0, 31, 5, 31, Blocks.AIR);
+        // The bank beside the player is walled off: only the strip leads to him.
+        box(h, 9, 6, 9, 14, 9, 31, Blocks.STONE);
+        CompanionEntity c = spawn(h, 9, 6, 2);
+        var player = player(c, h);
+        teleport(h, player, 16, 6, 30);
+        double floor = c.getY();
+        float health = c.getHealth();
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.onEachTick(() -> {
+            h.assertTrue(c.getY() >= floor - .05 && c.getHealth() >= health, "Fell off the route: " + h.relativePos(c.blockPosition()).toShortString() + ", health " + c.getHealth());
+            if (h.getTick() > 300) h.fail("Not there in 300 ticks: at " + h.relativePos(c.blockPosition()).toShortString() + ", " + c.getLastTaskResult());
+            if (!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16) h.succeed();
+        });
+    }
+
+    /** A block over the take-off cell at the head's reach (y + 2) or over the landing (y + 3, y + 2): the jump is cut short, so he goes round. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aCeilingOverTheTakeOffOfAPitIsGoneRoundNotJumped(GameTestHelper h) {
+        pit(h, 2, 3, Blocks.AIR, 3);
+        box(h, 14, 8, 3, 14, 8, 28, Blocks.STONE);
+        roundThePit(h);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aCeilingOverTheLandingOfAPitIsGoneRoundNotJumped(GameTestHelper h) {
+        pit(h, 2, 3, Blocks.AIR, 3);
+        box(h, 17, 9, 3, 17, 9, 28, Blocks.STONE);
+        roundThePit(h);
+    }
+
     private static net.minecraft.world.entity.ai.goal.GoalSelector goals(CompanionEntity c) {
         try {
             var field = net.minecraft.world.entity.Mob.class.getDeclaredField("goalSelector");

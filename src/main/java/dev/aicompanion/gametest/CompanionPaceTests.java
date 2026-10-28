@@ -161,6 +161,29 @@ public final class CompanionPaceTests {
         });
     }
 
+    /**
+     * A player walking away (no sprint): he closes up to a few blocks and stays there (the follow wakes at 4 blocks, so the gap swings from 3 to 5.7). At the player's own pace he trailed ten blocks
+     * and more behind (the old follow pace of 1.15 closed to four; now it is the same push on a base that is a player's walk).
+     */
+    @GameTest(template = "marathon_far", timeoutTicks = 500)
+    public static void heClosesUpToAWalkingPlayer(GameTestHelper h) {
+        strip(h);
+        CompanionEntity c = spawn(h, 56, 2, 10, 56, 2, 20);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        double[] widest = {0};
+        h.onEachTick(() -> {
+            player.setSprinting(false);
+            player.setYRot(0); player.setXRot(0);
+            player.travel(new Vec3(0, 0, .98));
+            // From tick 300: caught up, if he ever does.
+            if (h.getTick() >= 300) widest[0] = Math.max(widest[0], c.distanceTo(player));
+        });
+        h.runAtTickTime(450, () -> {
+            h.assertTrue(widest[0] <= 6, String.format("Trailed %.1f blocks behind a walking player", widest[0]));
+            h.succeed();
+        });
+    }
+
     /** The player a hundred and fifty blocks off: on foot all the way, no jump of the position, no teleport. */
     @GameTest(template = "marathon_far", timeoutTicks = 1500)
     public static void aPlayerHundredAndFiftyBlocksOffIsWalkedTo(GameTestHelper h) {

@@ -80,14 +80,18 @@ final class CompanionMoves {
     /**
      * Over a pit of one or two blocks to ground at the same level on its far side (CompanionJumps walks it: the route's two nodes
      * more than a block apart are a jump). Only where a miss is safe: the pit's floor within the fall he may take and nothing in it
-     * that hurts, and head room over it for the whole arc.
+     * that hurts, and head room over it, the edge cell and the landing for the whole arc.
      */
     private void jump(Node from, Direction d, double floor, Sink sink) {
+        // He takes off from the edge cell: his head reaches 2.2 above its floor as he rises.
+        if (eval.typeAt(from.x, from.y + 2, from.z) != PathType.OPEN) return;
         for (int gap = 1; gap <= JUMP_WIDTH; gap++) {
             int x = from.x + d.getStepX() * gap, z = from.z + d.getStepZ() * gap;
             if (!safePit(x, from.y, z)) return;
             int lx = x + d.getStepX(), lz = z + d.getStepZ();
             if (eval.typeAt(lx, from.y, lz) != PathType.WALKABLE || eval.floorAt(lx, from.y, lz) != floor) continue;
+            // He comes down on the landing cell with his head still high in the arc: a block there cuts the jump short, into the pit.
+            if (eval.typeAt(lx, from.y + 2, lz) != PathType.OPEN || eval.typeAt(lx, from.y + 3, lz) != PathType.OPEN) continue;
             Node to = cell(lx, from.y, lz, 0, floor, d);
             if (to != null && to.type == PathType.WALKABLE && to.costMalus >= 0) sink.offer(to, (gap + 1) * TICKS_PER_BLOCK + JUMP);
         }

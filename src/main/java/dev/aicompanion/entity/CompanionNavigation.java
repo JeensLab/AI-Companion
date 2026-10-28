@@ -27,6 +27,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
 
     /** Run up to a jump ahead: read by the stroke, which sets sprinting. */
     boolean sprintsToJump() { return jumps.sprints(); }
+    boolean slowsForJump() { return jumps.slows(); }
 
     /**
      * The game follows a path only on the ground, in a liquid or as a passenger; off the ground it only lets a fall run past the nodes

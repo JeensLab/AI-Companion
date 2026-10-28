@@ -22,23 +22,31 @@ final class CompanionJumps {
     private static final double SLOW = 1, OFF_WALL = .15;
 
     private final Mob mob;
-    private boolean sprints, climbing;
+    private boolean sprints, slows, climbing;
 
     CompanionJumps(Mob mob) { this.mob = mob; }
 
     /** A jump is next on the route (or the one after): run up to it. */
     boolean sprints() { return sprints; }
 
+    /**
+     * A jump of one block or a drop of two and more is next (or the one after): not at a run, whatever the length of the way. The
+     * sprint's boost carries a jump a cell past a one-block landing, and a run off a ledge a block or two out from its foot.
+     */
+    boolean slows() { return slows; }
+
     /** One tick, after the game's path following has aimed him at the next node. */
     void tick(Path path) {
-        sprints = false;
+        sprints = false; slows = false;
         if (path == null || path.isDone()) return;
         int next = path.getNextNodeIndex();
         for (int landing = Math.max(1, next); landing <= next + 1 && landing < path.getNodeCount(); landing++) {
             Node from = path.getNode(landing - 1), to = path.getNode(landing);
             int dx = to.x - from.x, dz = to.z - from.z, width = Math.max(Math.abs(dx), Math.abs(dz));
+            if (from.y - to.y >= 2) slows = true;
             if (width < 2 || from.y != to.y) continue;
             sprints = width >= RUN_FROM;
+            slows = !sprints;
             // At the edge cell, heading for the landing: how far over its centre he is, along the jump.
             double along = (mob.getX() - from.x - .5) * Integer.signum(dx) + (mob.getZ() - from.z - .5) * Integer.signum(dz);
             if (landing == next && mob.onGround() && along >= EDGE) mob.getJumpControl().jump();

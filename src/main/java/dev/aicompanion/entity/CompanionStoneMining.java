@@ -138,6 +138,9 @@ final class CompanionStoneMining {
                     w.finish(false, "Не могу безопасно продолжить проход к камню. Вещи сохранил."); return;
                 }
             } else w.target = nextStone(level);
+            // Past the limit with a face already found: that face (the best so far, as at the search limit), not the stairs, which would
+            // throw the choice away.
+            if (w.target == null && w.selectingStone && w.stoneChoice != null && w.choosingTicks > CompanionWork.STONE_CHOICE_TICKS) w.target = takeChoice();
             if (w.target == null) {
                 // Faces that no route reaches can keep him choosing for twenty seconds (marathon: a plain with the stone below the dirt);
                 // after a few the stairs are tried first, and the choice goes on if none can be dug.
@@ -357,13 +360,7 @@ final class CompanionStoneMining {
                 group.add(pos);
                 if (group.size() >= CompanionWork.STONE_GROUP) break;
             }
-            if (group.isEmpty() || w.stoneChoice != null && w.stoneSearches >= CompanionWork.STONE_SEARCHES) {
-                CompanionRoute.Reach best = w.stoneChoice;
-                endStoneChoice();
-                if (best == null) return null;
-                w.path = best.path();
-                return best.block();
-            }
+            if (group.isEmpty() || w.stoneChoice != null && w.stoneSearches >= CompanionWork.STONE_SEARCHES) return takeChoice();
             if (searches >= 5 || w.route.busy()) { w.selectingStone = true; return null; }
             if (single) w.stoneSingles.removeFirst();
             w.stoneCompared.addAll(group);
@@ -426,7 +423,16 @@ final class CompanionStoneMining {
         w.stoneTravel = null; w.offFoot.clear(); endStoneChoice(); w.dryAnchor = null;
         return false;
     }
-    void endStoneChoice() { w.stoneSearches = 0; w.stoneChoice = null; w.stoneCompared.clear(); w.stoneSingles.clear(); }
+    /** The best face found by the choice so far (null if none), walked to by its path; the choice is over. */
+    private BlockPos takeChoice() {
+        CompanionRoute.Reach best = w.stoneChoice;
+        endStoneChoice();
+        if (best == null) return null;
+        w.path = best.path();
+        return best.block();
+    }
+    /** The choice is over (a face taken, stairs begun, the route recovered): its searches and its waiting clock start anew. */
+    void endStoneChoice() { w.stoneSearches = 0; w.stoneChoice = null; w.stoneCompared.clear(); w.stoneSingles.clear(); w.selectingStone = false; w.choosingTicks = 0; }
 
     static boolean isStone(BlockState state) {
         // Natural stone only: cobblestone is what walls and towers are made of (review 22.10, К2).

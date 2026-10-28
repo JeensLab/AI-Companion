@@ -43,6 +43,8 @@ final class CompanionTravel {
     private boolean sideStep;
     // The player followed is sprinting: run as he does, however near.
     private boolean runs;
+    // The walk is a follow (the goal is the player and moves on), not a walk to a place.
+    private boolean following;
     // He runs (sprints) up to this tick: set by every step that wants it, so it lapses by itself when the walk ends.
     private int runUntil;
     /** A walk this far from its goal is run, like a player holding Ctrl on a long way; nearer, at a walk. */
@@ -50,6 +52,12 @@ final class CompanionTravel {
     /** A sprinting player this far ahead is caught up with at this push (a mob's pace goes by its square: a tenth faster than his run). */
     private static final int CATCH_UP = 10;
     private static final double CATCH_UP_SPEED = 1.05;
+    /**
+     * Following a player on foot he walks a little faster than the player does, as he did at the old follow pace (base .30 and push
+     * 1.15 are .251 blocks a tick, a mob's pace going by the square of the push): .251 over a player's walk of .2156 is 1.08 squared.
+     * At the player's own pace he trailed eight to twelve blocks behind a walking player, not four.
+     */
+    private static final double FOLLOW_SPEED = 1.08;
     // The push the legs are walked at now: 1, or CATCH_UP_SPEED.
     private double pace = 1;
     private net.minecraft.world.phys.Vec3 legMoved;
@@ -88,14 +96,14 @@ final class CompanionTravel {
      * {@code runs}: the player is sprinting, so is he.
      */
     Step follow(BlockPos target, double near, boolean runs) {
-        this.runs = runs;
+        this.runs = runs; following = true;
         if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); }
         return step(target, near);
     }
 
     /** One tick of walking towards the goal; NEAR once within {@code near} blocks, the caller then works it as usual. */
     Step toward(BlockPos target, double near) {
-        runs = false;
+        runs = false; following = false;
         return step(target, near);
     }
 
@@ -110,7 +118,7 @@ final class CompanionTravel {
         if (runs || distance > RUN_FROM) runUntil = owner.tickCount + 3;
         // At the player's own pace the follow still lost him: each new leg costs a few ticks, and the gap to a sprinting player grew
         // by a third of a block a second (game 28.10: 9.6 to 14.6 blocks in 18 s). Fallen behind, he runs a little faster to catch up.
-        pace = runs && distance > CATCH_UP ? CATCH_UP_SPEED : 1;
+        pace = runs && distance > CATCH_UP ? CATCH_UP_SPEED : following && !running() ? FOLLOW_SPEED : 1;
         owner.getNavigation().setSpeedModifier(pace);
         if (distance + PROGRESS <= best) { best = distance; lastProgress = now; turn = 0; }
         // Along a whole route that winds away from the goal (a mine, a tunnel) the straight distance first grows: walking counts.

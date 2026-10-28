@@ -31,7 +31,7 @@ final class CompanionSwimming {
         boolean fast = (ahead || held) && !c.onGround() && !c.isPassenger() && c.isAlive();
         // The same flag runs on land (a long way, a sprinting player): set here, or this stroke would switch it off every tick.
         // Not wading: water at his feet, even before the game has noticed it, is walked through upright (knee-deep tests).
-        boolean sprint = fast || !c.isInWater() && c.level().getFluidState(c.blockPosition()).isEmpty() && !c.isPassenger() && c.isAlive() && (c.travel().running() || c.getNavigation() instanceof CompanionNavigation nav && nav.sprintsToJump()) && !(c.getNavigation() instanceof CompanionNavigation ladder && ladder.climbs());
+        boolean sprint = fast || !c.isInWater() && c.level().getFluidState(c.blockPosition()).isEmpty() && !c.isPassenger() && c.isAlive() && (c.travel().running() && !(c.getNavigation() instanceof CompanionNavigation slow && slow.slowsForJump()) || c.getNavigation() instanceof CompanionNavigation nav && nav.sprintsToJump()) && !(c.getNavigation() instanceof CompanionNavigation ladder && ladder.climbs());
         if (c.isSprinting() != sprint) c.setSprinting(sprint);
         if (c.getPose() == (fast ? Pose.STANDING : Pose.SWIMMING)) c.setPose(fast ? Pose.SWIMMING : Pose.STANDING);
         // At a sprint the game sinks nothing in water (Entity.getFluidFallingAdjustedMovement): the float lifted him till he lay on
