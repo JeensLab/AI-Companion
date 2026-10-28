@@ -234,10 +234,15 @@ public final class CompanionSingleRouteTests {
         });
     }
 
-    /** A remembered bench at the far end of the corridor, within the bench trip: walked to in legs, none set down instead. */
+    /** A remembered bench at the far end of the corridor (a way of about 38, beyond one search but within twice the bench trip): walked to in legs, none set down instead. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void benchBeyondOneSearchIsWalkedTo(GameTestHelper h) {
-        BlockPos bench = labyrinth(h); h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 7, 31, Blocks.BEDROCK);
+        box(h, 4, 2, 4, 24, 3, 4, Blocks.AIR);
+        box(h, 24, 2, 5, 24, 3, 8, Blocks.AIR);
+        box(h, 7, 2, 8, 24, 3, 8, Blocks.AIR);
+        BlockPos bench = new BlockPos(7, 2, 8); h.setBlock(bench, Blocks.CRAFTING_TABLE);
         CompanionEntity c = spawn(h, 4, 2, 4);
         c.rememberPlaced(h.absolutePos(bench));
         c.setItem(0, new ItemStack(Items.STICK, 7));
@@ -283,6 +288,9 @@ public final class CompanionSingleRouteTests {
         box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
         box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
         box(h, 11, 2, 0, 11, 12, 31, Blocks.BEDROCK);
+        // Closed all round (and the wall across the whole of it): no way round for the wide search through the neighbours' arenas.
+        box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
         CompanionEntity c = spawn(h, 10, 2, 10);
         var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         teleport(h, player, 12, 2, 10);
@@ -292,6 +300,7 @@ public final class CompanionSingleRouteTests {
             h.assertTrue(h.getTick() > 300 && !c.isWorking(), "Still walking: " + c.getLastTaskResult());
             long near = routeEvents(c).stream().filter(line -> line.contains("\"NEAR\"")).count();
             h.assertTrue(near == 1, near + " NEAR events for one walk: " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().equals("Не могу к тебе пройти, вещи остались у меня."), "The hand-over ended otherwise: " + c.getLastTaskResult());
         });
     }
 
@@ -444,7 +453,7 @@ public final class CompanionSingleRouteTests {
         catch (ReflectiveOperationException e) { return e.toString(); }
     }
 
-    private static void teleport(GameTestHelper h, net.minecraft.server.level.ServerPlayer player, int x, int y, int z) {
+    static void teleport(GameTestHelper h, net.minecraft.server.level.ServerPlayer player, int x, int y, int z) {
         BlockPos stand = h.absolutePos(new BlockPos(x, y, z));
         player.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
     }
@@ -455,11 +464,11 @@ public final class CompanionSingleRouteTests {
         return n;
     }
 
-    private static Object field(Object target, String name) throws Exception {
+    static Object field(Object target, String name) throws Exception {
         var field = target.getClass().getDeclaredField(name); field.setAccessible(true); return field.get(target);
     }
 
-    private static CompanionEntity spawn(GameTestHelper h, int x, int y, int z) {
+    static CompanionEntity spawn(GameTestHelper h, int x, int y, int z) {
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), x, y, z);
         var owner = h.makeMockServerPlayerInLevel();
         BlockPos stand = h.absolutePos(new BlockPos(x, y, z));
@@ -480,11 +489,11 @@ public final class CompanionSingleRouteTests {
         } catch (java.io.IOException error) { return List.of(); }
     }
 
-    private static void box(GameTestHelper h, int x1, int y1, int z1, int x2, int y2, int z2, Block block) {
+    static void box(GameTestHelper h, int x1, int y1, int z1, int x2, int y2, int z2, Block block) {
         for (int x = x1; x <= x2; x++) for (int y = y1; y <= y2; y++) for (int z = z1; z <= z2; z++) h.setBlock(new BlockPos(x, y, z), block);
     }
 
-    private static int count(CompanionEntity c, Item item) {
+    static int count(CompanionEntity c, Item item) {
         int count = 0;
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) count += c.getItem(slot).getCount();
         return count;

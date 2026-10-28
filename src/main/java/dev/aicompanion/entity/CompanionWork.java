@@ -512,7 +512,7 @@ public final class CompanionWork {
         lots.clear(); heading = null;
         clearCracks();
         closeChest();
-        house.cancel();
+        house.cancel(); route.abandon();
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null;
         cooldown = 0;
@@ -669,7 +669,10 @@ public final class CompanionWork {
                 if (!items.visibleFrom(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), block)) continue;
                 feet.add(pos);
             }
-            path = route.cells(feet, 0).path();
+            var found = route.cells(feet, 0);
+            // This tick's wide search went elsewhere: he keeps walking, the cells are asked again next tick.
+            if (found.busy()) return true;
+            path = found.path();
             standCells = feet;
         }
         if (path != null && path.canReach()) { route.walk(path, 0.95D); return true; }

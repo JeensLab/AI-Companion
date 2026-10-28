@@ -129,7 +129,9 @@ final class CompanionWorkCrafting {
             for (BlockPos pos : w.owner.knownCraftingTables()) {
                 // Farther than a short trip, the travelling bench is set down here instead of a long walk back.
                 if (pos.distSqr(w.owner.blockPosition()) > CompanionWork.BENCH_TRIP * CompanionWork.BENCH_TRIP) continue;
-                if (w.route.to(pos, CompanionToolSense.BENCH).found()) { w.craftingStation = pos; break; }
+                var reach = w.route.to(pos, CompanionToolSense.BENCH);
+                // The walk to it is at most twice the straight trip; a longer one costs more than a new bench.
+                if (reach.found() && reach.length() <= 2 * CompanionWork.BENCH_TRIP) { w.craftingStation = pos; break; }
             }
             w.resetApproach();
         }

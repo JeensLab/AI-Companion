@@ -52,6 +52,8 @@ final class CompanionHunting {
             if (w.gameTravel != null && travelToGame(level)) return;
             List<net.minecraft.world.entity.animal.Animal> game = huntable(level);
             if (!game.isEmpty()) current = nearestGameOnFoot(game);
+            // The tick's wide search went elsewhere: the animals are asked again next tick, none is skipped.
+            if (current == null && !game.isEmpty() && gameBusy) return;
             if (current == null && w.gameTravel != null) { travelToGame(level); return; }
             if (current == null) {
                 // None within one route: walk towards the nearest in legs (game log 23.10: «пускай ищет даже если еда далеко»).
@@ -124,16 +126,20 @@ final class CompanionHunting {
     }
 
     /** One route search to all of them at once: the animal nearest on foot, not across the river by the straight line. */
+    private boolean gameBusy;
     private net.minecraft.world.entity.animal.Animal nearestGameOnFoot(List<net.minecraft.world.entity.animal.Animal> game) {
+        gameBusy = false;
         java.util.Map<BlockPos, net.minecraft.world.entity.animal.Animal> at = new java.util.HashMap<>();
         for (var animal : game) at.putIfAbsent(animal.blockPosition(), animal);
         var reach = w.route.cells(at.keySet(), 1);
+        if (reach.busy()) { gameBusy = true; return null; }
         var best = reach.found() ? at.get(reach.path().getTarget()) : null;
         if (best == null && reach.found()) best = game.stream().min(Comparator.comparingDouble(w.owner::distanceToSqr)).orElse(null);
         if (best == null) {
             // That search may spend its steps on one it cannot reach: the nearest few on their own.
             for (var animal : game.stream().sorted(Comparator.comparingDouble(w.owner::distanceToSqr)).limit(3).toList()) {
                 var single = w.route.cells(java.util.Set.of(animal.blockPosition()), 1);
+                if (single.busy()) { gameBusy = true; break; }
                 if (single.found()) { best = animal; reach = single; break; }
                 w.gameSkipped.put(animal.getUUID(), w.owner.level().getGameTime() + 20 * 10);
             }

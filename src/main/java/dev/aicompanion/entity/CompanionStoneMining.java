@@ -35,8 +35,10 @@ final class CompanionStoneMining {
             if (level.getGameTime() >= w.nextReturnCheck && w.owner.onGround()) {
                 w.nextReturnCheck = level.getGameTime() + 40;
                 // A way back longer than one search is a way back (the wide search finds it).
-                boolean blocked = !w.route.cells(Set.of(w.workOrigin), 1).found();
-                w.returnMisses = blocked ? w.returnMisses + 1 : 0;
+                var back = w.route.cells(Set.of(w.workOrigin), 1);
+                boolean blocked = !back.found();
+                // Not searched (the tick's wide search went elsewhere) is neither a miss nor a way: asked again in two seconds.
+                w.returnMisses = back.busy() ? w.returnMisses : blocked ? w.returnMisses + 1 : 0;
                 boolean confirmed = w.returnMisses >= 2;
                 if (confirmed && !w.returnRouteBlocked) w.returnBlockedSince = level.getGameTime();
                 w.returnRouteBlocked = confirmed;
@@ -341,7 +343,7 @@ final class CompanionStoneMining {
                 w.path = best.path();
                 return best.block();
             }
-            if (searches >= 5) { w.selectingStone = true; return null; }
+            if (searches >= 5 || w.route.busy()) { w.selectingStone = true; return null; }
             if (single) w.stoneSingles.removeFirst();
             w.stoneCompared.addAll(group);
             CompanionRoute.Reach found = w.route.nearest(group, APPROACH);

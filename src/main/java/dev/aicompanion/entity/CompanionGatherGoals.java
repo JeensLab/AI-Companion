@@ -38,6 +38,7 @@ final class CompanionGatherGoals {
         private int targetStartedTick;
         private double bestTargetDistance;
         /** The approach path is one longer than a search: walked in legs, its start leads away from the trunk. */
+        private int farUntil;
         private boolean farApproach;
         private net.minecraft.world.phys.Vec3 farMoved;
         private boolean resumeAfterCleanup;
@@ -144,7 +145,7 @@ final class CompanionGatherGoals {
                 target = selectNextLog();
                 approachPath = null;
                 pathFailTicks = 0;
-                lastProgressTick = targetStartedTick = c.tickCount;
+                lastProgressTick = targetStartedTick = c.tickCount; farUntil = 0;
                 bestTargetDistance = Double.MAX_VALUE;
             }
             if (target == null) {
@@ -230,7 +231,7 @@ final class CompanionGatherGoals {
                 // A far route's leg is over: the next search goes on from where he is.
                 if (approachPath != null && farApproach && c.work.route.done()) approachPath = null;
                 if (approachPath == null) approachPath = findApproachPath(target);
-                if (approachPath != null && farApproach && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
+                if (approachPath != null && farApproach && c.tickCount < farUntil && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
                     farMoved = c.position(); lastProgressTick = targetStartedTick = c.tickCount;
                 }
                 // A tree far off over hills: walked to in legs first, not declared out of reach (game log 23.10, aa07e605).
@@ -276,7 +277,7 @@ final class CompanionGatherGoals {
             currentTreeLogs.add(branch);
             target = branch;
             approachPath = null;
-            lastProgressTick = targetStartedTick = c.tickCount;
+            lastProgressTick = targetStartedTick = c.tickCount; farUntil = 0;
             bestTargetDistance = Double.MAX_VALUE;
             c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Над опорой ветка, срублю её отсюда.");
             return true;
@@ -412,6 +413,7 @@ final class CompanionGatherGoals {
         private Path findApproachPath(BlockPos log) {
             var reach = c.work.route.to(log, TRUNK);
             farApproach = reach.kind() == CompanionRoute.Kind.FAR;
+            if (farApproach && farUntil == 0) farUntil = c.tickCount + (int)CompanionRoute.farLimit(reach.length());
             return reach.path();
         }
 
@@ -447,6 +449,7 @@ final class CompanionGatherGoals {
         private boolean resume;
         private final CompanionToolSense shovelSense;
         private int targetSince, targetProgress;
+        private int farUntil;
         private boolean farApproach;
         private net.minecraft.world.phys.Vec3 farMoved;
         /** Dirt is dug from within reach and sight, off its own cell, where its drop can be picked up. */
@@ -500,7 +503,7 @@ final class CompanionGatherGoals {
                 target = findNearestDirt();
                 approachPath = null;
                 pathFailTicks = 0;
-                targetSince = targetProgress = c.tickCount; targetBest = Double.MAX_VALUE;
+                targetSince = targetProgress = c.tickCount; targetBest = Double.MAX_VALUE; farUntil = 0;
             }
             if (target == null) {
                 if (++noDirtTicks >= 80) finish("Нашёл только " + gathered + " из " + c.requestedLogs
@@ -553,7 +556,7 @@ final class CompanionGatherGoals {
             }
             if (approachPath == null || c.work.route.done()) approachPath = findDirtApproachPath(target);
             // A far route first leads away from the block: walking on is progress.
-            if (approachPath != null && farApproach && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
+            if (approachPath != null && farApproach && c.tickCount < farUntil && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
                 farMoved = c.position(); targetProgress = c.tickCount;
             }
             if (approachPath == null) {
@@ -605,6 +608,7 @@ final class CompanionGatherGoals {
             // a single swing and the same walk. Use the common visible approach with a collectable physical drop.
             var reach = c.work.route.to(block, DIRT);
             farApproach = reach.kind() == CompanionRoute.Kind.FAR;
+            if (farApproach && farUntil == 0) farUntil = c.tickCount + (int)CompanionRoute.farLimit(reach.length());
             return reach.path();
         }
 

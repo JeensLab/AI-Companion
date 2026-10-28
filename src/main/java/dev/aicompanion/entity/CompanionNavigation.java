@@ -45,6 +45,13 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         return createPath(targets, 8, false, accuracy, (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 3));
     }
 
+    private long wideTick = -1;
+    /** One wide search per companion per game tick: the first takes it, the rest are told «not now» (the choice loops multiplied them). */
+    boolean takeWide() { long now = level.getGameTime(); if (wideTick == now) return false; wideTick = now; return true; }
+    boolean wideSpent() { return wideTick == level.getGameTime(); }
+    /** The searches of this tick have taken this much already: a choice that goes on searching waits for the next one. */
+    boolean overBudget() { return tickOf == level.getGameTime() && tickNanos > 3_000_000; }
+
     /** Cells expanded and nanoseconds spent in searches so far; the difference of two readings is the cost of what lay between. */
     public record Meter(long nodes, long nanos, long maxTickNanos) {
         public double ms() { return nanos / 1e6; }

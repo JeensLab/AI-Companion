@@ -134,6 +134,8 @@ final class CompanionHouse {
                 if (canPlaceFromHere(level, step)) { select(index, level); break; }
                 Path route = route(level, step);
                 if (route != null && route.canReach()) { select(index, level); path = route; break; }
+                // The tick's wide search went elsewhere: the rest of the steps are asked next tick, none is written off.
+                if (route == null && routeBusy) return Result.working();
                 unreachable.add(index);
             }
             if (target < 0) return Result.failed("Не могу подойти к оставшимся блокам дома. Освободи проход и скажи «дострой дом».");
@@ -390,6 +392,7 @@ final class CompanionHouse {
         }
         return false;
     }
+    private boolean routeBusy;
     private Path route(ServerLevel level, Step step) {
         Set<BlockPos> feet = new java.util.HashSet<>();
         for (int y = 0; y <= 1; y++) for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
@@ -402,7 +405,9 @@ final class CompanionHouse {
             if (!level.noCollision(owner, body) || !visible(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), step.pos)) continue;
             feet.add(pos);
         }
-        return feet.isEmpty() ? null : owner.work.route.cells(feet, 0).path();
+        var reach = feet.isEmpty() ? null : owner.work.route.cells(feet, 0);
+        routeBusy = reach != null && reach.busy();
+        return reach == null ? null : reach.path();
     }
 
     void save(CompoundTag tag) {

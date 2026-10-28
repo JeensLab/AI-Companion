@@ -172,6 +172,7 @@ final class CompanionOreMining {
         }
         List<BlockPos> group = sorted.stream().filter(pos -> !w.oreOffFoot.contains(pos)).limit(CompanionWork.STONE_GROUP).toList();
         CompanionRoute.Reach walk = group.isEmpty() ? null : w.route.nearest(group, APPROACH);
+        if (walk != null && walk.busy()) { w.oreChoosing = true; return null; }
         if (walk != null && !walk.found()) walk = null;
         if (walk != null && !safeOreApproach(walk.path())) { w.oreOffFoot.add(walk.block()); walk = null; }
         int budget = 2;
@@ -184,6 +185,7 @@ final class CompanionOreMining {
             if (!w.oreOffFoot.contains(candidate) && (walk == null || !group.contains(candidate))) {
                 // Its own walk: beyond the compared group, or the group search spent its steps on an ore it cannot reach.
                 CompanionRoute.Reach own = w.route.to(candidate, APPROACH);
+                if (own.busy()) { w.oreChoosing = true; return null; }
                 boolean safe = safeOreApproach(own.path());
                 if (safe && (walk == null || own.length() < walk.length())) return chosenOre(candidate, own.path());
                 if (!safe) w.oreOffFoot.add(candidate);
@@ -286,7 +288,11 @@ final class CompanionOreMining {
         if (CompanionMiningNavigation.supportsLivingEntity(w.owner, pos)) {
             w.breaking.reset();
             if (level.getGameTime() - w.lastProgressTick > 160) { blockOreCell(level, pos, "occupied_support"); return false; }
-            if (w.path == null || w.route.legOver()) w.path = w.route.to(pos, new CompanionRoute.Need(3.5, false, true, false)).path();
+            if (w.path == null || w.route.legOver()) {
+                var reach = w.route.to(pos, new CompanionRoute.Need(3.5, false, true, false));
+                if (reach.busy()) return false;
+                w.path = reach.path();
+            }
             if (w.path == null || !safeOreApproach(w.path)) { blockOreCell(level, pos, "occupied_support"); return false; }
             w.owner.movementIntent(pos); w.route.walk(w.path); return false;
         }

@@ -158,7 +158,9 @@ final class CompanionToolSense {
     private BlockPos reachableBench() {
         for (BlockPos pos : owner.knownCraftingTables()) {
             if (pos.distSqr(owner.blockPosition()) > BENCH_WALK * BENCH_WALK) continue;
-            if (owner.work.route.to(pos, BENCH).found()) return pos;
+            // A bench behind a long way round is not near: that walk costs more than a new bench (twice the straight radius at most).
+            var reach = owner.work.route.to(pos, BENCH);
+            if (reach.found() && reach.length() <= 2 * BENCH_WALK) return pos;
         }
         return null;
     }

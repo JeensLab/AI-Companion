@@ -28,6 +28,8 @@ final class CompanionTravel {
     private Path leg;
     private double best, near;
     private long lastProgress;
+    // Walking counts as progress for three times the time the straight way takes (a way round is longer, not endless).
+    private long walkUntil;
     private int turn;
     private boolean sideStep;
     // How fast the legs are walked: a walking player is kept up with at 1.15, other walks go at 1.
@@ -60,7 +62,7 @@ final class CompanionTravel {
      */
     Step follow(BlockPos target, double near, double speed) {
         this.speed = speed;
-        if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); }
+        if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); walkUntil = owner.level().getGameTime() + (long)(3 * distance() / .19) + 200; }
         return step(target, near);
     }
 
@@ -74,14 +76,14 @@ final class CompanionTravel {
         if (!(owner.level() instanceof ServerLevel level)) return Step.FAILED;
         long now = level.getGameTime();
         this.near = near;
-        if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
+        if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; walkUntil = now + (long)(3 * distance() / .19) + 200; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
         owner.movementIntent(goal);
         double distance = distance();
         if (distance <= near) { owner.getNavigation().stop(); told("NEAR", "arrived"); return Step.NEAR; }
         if (distance + PROGRESS <= best) { best = distance; lastProgress = now; turn = 0; }
         // Along a whole route that winds away from the goal (a mine, a tunnel) the straight distance first grows: walking counts.
         // Only on a leg that arrives (its end within the search's accuracy of the goal), not on side steps and parts that only head that way.
-        if (leg != null && leg.canReach() && endDistance(leg) <= near + 2 && (legMoved == null || owner.position().distanceToSqr(legMoved) > .7 * .7)) { legMoved = owner.position(); lastProgress = now; }
+        if (leg != null && leg.canReach() && endDistance(leg) <= near + 2 && now < walkUntil && (legMoved == null || owner.position().distanceToSqr(legMoved) > .7 * .7)) { legMoved = owner.position(); lastProgress = now; }
         if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); told("FAILED", "no progress for half a minute"); return Step.FAILED; }
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
         if (leg != null && !owner.getNavigation().isDone() && !owner.getNavigation().isStuck()) return Step.WALKING;

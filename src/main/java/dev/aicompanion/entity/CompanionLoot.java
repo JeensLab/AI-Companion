@@ -41,6 +41,7 @@ final class CompanionLoot {
     private Vec3 routedItem;
     // The way to the drop is longer than one search: walked in legs, and where he was when last seen moving on.
     private boolean farRoute;
+    private long farUntil;
     private Vec3 farMoved;
     private record Site(BlockPos pos, List<ItemStack> drops, long expires) { }
     private final java.util.Deque<Site> sites = new java.util.ArrayDeque<>();
@@ -184,7 +185,7 @@ final class CompanionLoot {
         if (target == null || !target.isAlive() || !pending.contains(target.getUUID()) || unreachable.contains(target.getUUID())) {
             target = pending.stream().filter(id -> chaseable(level, id)).map(level::getEntity).filter(e -> e instanceof ItemEntity).map(e -> (ItemEntity)e)
                     .min(java.util.Comparator.comparingDouble(owner::distanceToSqr)).orElse(null);
-            path = null; pickupPoint = null; nextRoute = 0; routedItem = null; farRoute = false; farMoved = null; lastProgress = level.getGameTime(); bestDistance = Double.MAX_VALUE;
+            path = null; pickupPoint = null; nextRoute = 0; routedItem = null; farRoute = false; farUntil = 0; farMoved = null; lastProgress = level.getGameTime(); bestDistance = Double.MAX_VALUE;
             dropLeaf();
         }
         if (target == null) return;
@@ -195,7 +196,7 @@ final class CompanionLoot {
         double distance = owner.distanceToSqr(target);
         if (distance + .05 < bestDistance) { bestDistance = distance; lastProgress = level.getGameTime(); }
         // Along a route longer than one search the distance to the drop first grows: walking on is progress there.
-        if (farRoute && path != null && (farMoved == null || owner.position().distanceToSqr(farMoved) > .7 * .7)) { farMoved = owner.position(); lastProgress = level.getGameTime(); }
+        if (farRoute && path != null && level.getGameTime() < farUntil && (farMoved == null || owner.position().distanceToSqr(farMoved) > .7 * .7)) { farMoved = owner.position(); lastProgress = level.getGameTime(); }
         if (level.getGameTime() - lastProgress > (path == null ? 16 : 45)) {
             UUID id = target.getUUID();
             if (attempts.merge(id, 1, Integer::sum) >= 3) giveUpFromHere(level, id);
@@ -232,7 +233,10 @@ final class CompanionLoot {
                 }
             }
             var reach = feet.isEmpty() ? null : owner.work.route.cells(feet, 0);
+            // The tick's wide search went elsewhere: asked again next tick, the drop is not given up for it.
+            if (reach != null && reach.busy()) { nextRoute = level.getGameTime() + 1; return; }
             path = reach == null ? null : reach.path(); farRoute = reach != null && reach.kind() == CompanionRoute.Kind.FAR;
+            if (farRoute && farUntil == 0) farUntil = level.getGameTime() + CompanionRoute.farLimit(reach.length());
             pickupPoint = path == null ? null : points.get(path.getTarget());
             // Marathon 23.10: drops in crevices of a ravine got three tries of standing a second or two each, though from here
             // there was no way to them at all. A drop at rest with no cell to take it from, or no route to one, is given up
@@ -324,7 +328,11 @@ final class CompanionLoot {
             double distance = owner.distanceToSqr(leaf.getCenter());
             if (distance + .05 < leafBest) { leafBest = distance; leafProgress = level.getGameTime(); }
             if (level.getGameTime() - leafProgress > 45) { giveUpFromHere(level, target.getUUID()); leaf = null; path = null; owner.work.route.stop(); return; }
-            if (path == null || owner.work.route.legOver()) path = owner.work.route.to(leaf, LEAF_STAND).path();
+            if (path == null || owner.work.route.legOver()) {
+                var reach = owner.work.route.to(leaf, LEAF_STAND);
+                if (reach.busy()) return;
+                path = reach.path();
+            }
             if (path == null || !path.canReach()) { giveUpFromHere(level, target.getUUID()); leaf = null; path = null; owner.work.route.stop(); return; }
             owner.workStatus("Подойду к листве, чтобы достать вещь.");
             owner.work.route.walk(path); return;
