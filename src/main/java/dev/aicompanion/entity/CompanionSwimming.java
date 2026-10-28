@@ -1,11 +1,52 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.Pose;
+import net.minecraft.world.level.pathfinder.Path;
 
 final class CompanionSwimming {
     final CompanionEntity c;
 
     CompanionSwimming(CompanionEntity c) { this.c = c; }
+
+    /** Nodes of deep water at his level he must still have ahead for the fast stroke; the last of the way is an ordinary one. */
+    private static final int FAST_STROKE_AHEAD = 3;
+    /** The fast stroke is held a few ticks more, as a player keeps Ctrl held: see stroke(). */
+    private int fastStrokeUntil;
+
+    /**
+     * A long way through deep water like a player holding Ctrl: sprinting, lying flat. The water then holds him back less (0.9
+     * instead of 0.8 a tick) and he swims twice as fast; with the ordinary stroke the player sprint-swimming left him behind
+     * (seen in the owner's game). Near the bank, the end of the way, in shallow water and out of it — the ordinary stroke, upright.
+     */
+    void stroke() {
+        var path = c.getNavigation().getPath();
+        boolean ahead = c.isInWater() && swimAhead(path);
+        if (ahead) fastStrokeUntil = c.tickCount + 5;
+        // Between two routes (one ends, the next comes a tick later), or bobbed out of the water by the float for a tick: still the
+        // same swim, not a stop (28.10: else he stood up and lay down again there).
+        boolean held = c.isSprinting() && c.tickCount < fastStrokeUntil && (path == null || path.isDone() || !c.isInWater());
+        boolean fast = (ahead || held) && !c.onGround() && !c.isPassenger() && c.isAlive();
+        if (c.isSprinting() != fast) c.setSprinting(fast);
+        if (c.getPose() == (fast ? Pose.STANDING : Pose.SWIMMING)) c.setPose(fast ? Pose.SWIMMING : Pose.STANDING);
+        // At a sprint the game sinks nothing in water (Entity.getFluidFallingAdjustedMovement): the float lifted him till he lay on
+        // the water and now and then out of it. The ordinary sinking keeps him in it at the usual depth.
+        if (fast && c.isInWater()) c.setDeltaMovement(c.getDeltaMovement().add(0, -c.getGravity() / 16, 0));
+    }
+
+    private boolean swimAhead(Path path) {
+        if (path == null || path.isDone()) return false;
+        int ahead = Math.min(path.getNodeCount(), path.getNextNodeIndex() + FAST_STROKE_AHEAD);
+        // A route the search cut short (sixteen blocks) goes on from its end: only the real end of the way slows him down.
+        if (ahead - path.getNextNodeIndex() < FAST_STROKE_AHEAD && path.canReach()) return false;
+        for (int index = path.getNextNodeIndex(); index < ahead; index++) {
+            BlockPos node = path.getNodePos(index);
+            // Two blocks deep at least: in water to the knees a player stands, and his eyes over it never start the swim.
+            if (node.getY() > c.getY() + .5 || !c.level().getFluidState(node).is(FluidTags.WATER) || !c.level().getFluidState(node.below()).is(FluidTags.WATER)) return false;
+        }
+        return true;
+    }
 
     /**
      * At a bank a block over the water, like a player: hold the jump while pressing against it, until out (marathon 23.10,
@@ -23,16 +64,19 @@ final class CompanionSwimming {
         // The bank a node or two ahead counts too: along an island's edge the route often keeps one more cell of water first
         // (marathon 23.10: he bobbed along the shore of the island and never got out).
         boolean bank = false;
+        // Lifted out by the water, his feet are already less than half a block under the bank, and it is still the bank (28.10:
+        // with the half block asked there too, the push off came only on the fourth lift — three seconds of bobbing at the edge).
+        double above = c.isInWater() ? .5 : 0;
         if (routed)
             for (int index = path.getNextNodeIndex(); index < Math.min(path.getNodeCount(), path.getNextNodeIndex() + 3) && !bank; index++) {
                 BlockPos node = path.getNodePos(index);
-                bank = node.getY() > c.getY() + .5 && Math.abs(node.getX() + .5 - c.getX()) < 1.6 && Math.abs(node.getZ() + .5 - c.getZ()) < 1.6;
+                bank = node.getY() > c.getY() + above && Math.abs(node.getX() + .5 - c.getX()) < 1.6 && Math.abs(node.getZ() + .5 - c.getZ()) < 1.6;
             }
         // Bobbing at the bank, the game's navigation gives the route up as «stuck»: then the bank in front of him, if where he is
         // going (the player, the work) lies higher than the water.
         if (!bank && !routed) {
             BlockPos destination = c.recoveryDestination();
-            if (destination == null || destination.getY() <= c.getY() + .5) return;
+            if (destination == null || destination.getY() <= c.getY() + above) return;
             BlockPos front = c.blockPosition().relative(c.getDirection());
             for (int up = 1; up <= 2 && !bank; up++) bank = CompanionMiningNavigation.standable(c, front.above(up));
             // Pressing on towards it, as the route would have.
