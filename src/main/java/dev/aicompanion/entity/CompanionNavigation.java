@@ -15,7 +15,7 @@ import java.util.Set;
  */
 public final class CompanionNavigation extends net.minecraft.world.entity.ai.navigation.GroundPathNavigation {
     private CompanionNodeEvaluator evaluator;
-    private long nanos, tickNanos, tickOf = -1, maxTickNanos, searched;
+    private long nanos, tickNanos, tickCells, tickOf = -1, maxTickNanos, searched;
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
 
@@ -32,7 +32,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         try {
             return super.createPath(targets, regionOffset, offsetUpward, accuracy, followRange);
         } finally {
-            spent(System.nanoTime() - start);
+            spent(System.nanoTime() - start, 0);
         }
     }
 
@@ -59,7 +59,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
             return found;
         } finally {
             if (search != null) searched += search.expanded();
-            spent(System.nanoTime() - start);
+            spent(System.nanoTime() - start, search == null ? 0 : search.expanded());
         }
     }
 
@@ -91,18 +91,20 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     private float followRange(int times) { return (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * times); }
 
     /** The time of a search, as the meter has it. */
-    private void spent(long spent) {
+    private void spent(long spent, long cells) {
         long now = level.getGameTime();
-        if (now != tickOf) { tickOf = now; tickNanos = 0; }
-        tickNanos += spent; maxTickNanos = Math.max(maxTickNanos, tickNanos); nanos += spent;
+        if (now != tickOf) { tickOf = now; tickNanos = tickCells = 0; }
+        tickCells += cells; tickNanos += spent; maxTickNanos = Math.max(maxTickNanos, tickNanos); nanos += spent;
     }
 
     private long wideTick = -1;
     /** One wide search per companion per game tick: the first takes it, the rest are told «not now» (the choice loops multiplied them). */
     boolean takeWide() { long now = level.getGameTime(); if (wideTick == now) return false; wideTick = now; return true; }
     boolean wideSpent() { return wideTick == level.getGameTime(); }
-    /** The searches of this tick have taken this much already: a choice that goes on searching waits for the next one. */
-    boolean overBudget() { return tickOf == level.getGameTime() && tickNanos > 3_000_000; }
+    /** Cells one tick's searches may expand together: counted in cells, not ms, so the answer does not depend on the machine's speed. */
+    static final int TICK_CELLS = 3000;
+    /** The searches of this tick have expanded that many cells already: a choice that goes on searching waits for the next one. */
+    boolean overBudget() { return tickOf == level.getGameTime() && tickCells >= TICK_CELLS; }
 
     /** Cells expanded and nanoseconds spent in searches so far; the difference of two readings is the cost of what lay between. */
     public record Meter(long nodes, long nanos, long maxTickNanos) {
