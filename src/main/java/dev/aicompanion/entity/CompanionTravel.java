@@ -26,7 +26,7 @@ final class CompanionTravel {
     private final CompanionEntity owner;
     private BlockPos goal;
     private Path leg;
-    private double best;
+    private double best, near;
     private long lastProgress;
     private int turn;
     private boolean sideStep;
@@ -73,13 +73,15 @@ final class CompanionTravel {
     private Step step(BlockPos target, double near) {
         if (!(owner.level() instanceof ServerLevel level)) return Step.FAILED;
         long now = level.getGameTime();
+        this.near = near;
         if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
         owner.movementIntent(goal);
         double distance = distance();
         if (distance <= near) { owner.getNavigation().stop(); told("NEAR", "arrived"); return Step.NEAR; }
         if (distance + PROGRESS <= best) { best = distance; lastProgress = now; turn = 0; }
         // Along a whole route that winds away from the goal (a mine, a tunnel) the straight distance first grows: walking counts.
-        if (leg != null && leg.canReach() && (legMoved == null || owner.position().distanceToSqr(legMoved) > .7 * .7)) { legMoved = owner.position(); lastProgress = now; }
+        // Only on a leg that arrives (its end within the search's accuracy of the goal), not on side steps and parts that only head that way.
+        if (leg != null && leg.canReach() && endDistance(leg) <= near + 2 && (legMoved == null || owner.position().distanceToSqr(legMoved) > .7 * .7)) { legMoved = owner.position(); lastProgress = now; }
         if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); told("FAILED", "no progress for half a minute"); return Step.FAILED; }
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
         if (leg != null && !owner.getNavigation().isDone() && !owner.getNavigation().isStuck()) return Step.WALKING;
@@ -120,7 +122,9 @@ final class CompanionTravel {
                 }
             }
         }
-        // Into a wall or a cliff: round it, like a player trying left and right. Each side step is walked to its end.
+        // Into a wall or a cliff: round it, like a player trying left and right. Each side step is walked to its end. Not for a goal
+        // this near: the player on a roof or a pillar is not walked round for a minute (the self-rescue takes him there).
+        if (Math.hypot(goal.getX() + .5 - owner.getX(), goal.getZ() + .5 - owner.getZ()) <= STRAIGHT_LEG) return null;
         while (turn < TURNS.length) {
             double angle = Math.atan2(goal.getZ() - owner.getZ(), goal.getX() - owner.getX()) + Math.toRadians(TURNS[turn++]);
             int x = (int) Math.floor(owner.getX() + Math.cos(angle) * SIDE_STEP), z = (int) Math.floor(owner.getZ() + Math.sin(angle) * SIDE_STEP);

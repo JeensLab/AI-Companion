@@ -149,6 +149,7 @@ final class CompanionEntityGoals {
                 if (owner.blockPosition().distSqr(waitingFor) < 9) return;
                 waitingFor = null;
             }
+            if (companion.level().getGameTime() < retryAt) return;
             if (!companion.onGround() && !companion.isInWater()) return;
             var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR, FOLLOW_SPEED);
             if (step == CompanionTravel.Step.WALKING) { travelling = true; return; }
@@ -157,17 +158,27 @@ final class CompanionEntityGoals {
             if (step == CompanionTravel.Step.FAILED) {
                 companion.getNavigation().stop();
                 waitingFor = owner.blockPosition();
-                if (!told) { told = true; companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься."); }
-            } else told = false;
+                // Told only where the route search sees there is no way, once per place of the player; a stuck walk is the
+                // self-rescue's, silently (not «no way»), and is tried anew in a few seconds.
+                if (companion.work.route.noWayTo(owner.blockPosition())) {
+                    if (toldAbout == null || toldAbout.distSqr(owner.blockPosition()) >= 9) {
+                        toldAbout = owner.blockPosition();
+                        companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься.", companion.hasActiveWorkOrder());
+                    }
+                } else { waitingFor = null; retryAt = companion.level().getGameTime() + 100; }
+            } else toldAbout = null;
         }
 
         @Override
         public void stop() {
-            owner = null; waitingFor = null; told = false;
+            owner = null; waitingFor = null;
             if (travelling) { companion.travel().reset(); travelling = false; }
             companion.getNavigation().stop();
         }
-        private boolean travelling, told;
+        private boolean travelling;
+        // Where the player stood when he was told there is no way: kept while the goal is interrupted (self-rescue, pickup, fight, inventory).
+        private BlockPos toldAbout;
+        private long retryAt;
         // Where the player was when there was no way to him; he waits until the player is elsewhere.
         private BlockPos waitingFor;
         private static final int FOLLOW_NEAR = 3;

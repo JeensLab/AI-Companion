@@ -143,9 +143,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean autonomyEnabled() { return level().isClientSide ? entityData.get(DATA_AUTONOMY) : autonomy.enabled(); }
     void syncAutonomy() { if (!level().isClientSide) entityData.set(DATA_AUTONOMY, autonomy.enabled()); }
     /** A rare autonomous notice, shown and voiced by the client. Routine progress stays in workStatus and the journal. */
-    void autonomySay(String text) {
+    void autonomySay(String text) { autonomySay(text, true); }
+    /** Not as the work status where it would replace the result of the last order (the status then keeps it, like CompanionRecovery). */
+    void autonomySay(String text, boolean asStatus) {
         entityData.set(DATA_SAY, text); entityData.set(DATA_SAY_SERIAL, entityData.get(DATA_SAY_SERIAL) + 1); entityData.set(DATA_SAY_TIME, level().getGameTime());
-        workStatus(text);
+        if (asStatus) workStatus(text);
     }
     public String autonomyLine() { return entityData.get(DATA_SAY); }
     public int autonomyLineSerial() { return entityData.get(DATA_SAY_SERIAL); }

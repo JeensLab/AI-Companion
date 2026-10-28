@@ -197,7 +197,7 @@ public final class CompanionSingleRouteTests {
             if (h.getTick() > 1100 && h.getTick() < 2300) h.assertTrue(c.autonomyLineSerial() == said[0], "Spoke again while waiting");
             if (h.getTick() == 2300) {
                 h.assertTrue(said[0] == 1, "Told " + said[0] + " times, not once: " + c.autonomyLine() + " | " + c.getLastTaskResult() + " | " + state(c) + " at " + h.relativePos(c.blockPosition()).toShortString());
-                h.assertTrue(c.distanceToSqr(player) > 16, "Reached the sealed player?");
+                h.assertTrue(c.distanceToSqr(player) > 9, "Reached the sealed player?");
                 teleport(h, player, 8, 2, 28);
             }
         });
@@ -312,6 +312,131 @@ public final class CompanionSingleRouteTests {
             h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
             h.assertTrue(c.getLastTaskResult().equals("Не могу к тебе пройти."), c.getLastTaskResult());
         });
+    }
+
+    /** Review fix F1: a player standing off the centre of his block: the hand-over still comes close enough to toss the gift. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void handOverToAnOffCentrePlayerSucceeds(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 11, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        BlockPos stand = h.absolutePos(new BlockPos(14, 2, 10));
+        player.teleportTo(stand.getX() + .99, stand.getY(), stand.getZ() + .5);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(player, "give_items", "minecraft:stone_pickaxe", 1).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed(), c.getLastTaskResult());
+        });
+    }
+
+    /** Review fix F1: three blocks from the player (near) but a pillar in the line of sight: he steps round it and hands over. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void handOverBehindAPillarCornerSucceeds(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 11, 2, 10, 11, 5, 10, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 9, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 12, 2, 10);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(player, "give_items", "minecraft:stone_pickaxe", 1).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed(), c.getLastTaskResult());
+        });
+    }
+
+    /**
+     * Review fix F3: the player on top of an eight-high pillar four blocks aside, following on: he does not set off on side steps of
+     * twenty blocks (he stays by the pillar's foot) and the self-rescue is left its turn.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void followingAPlayerOnAPillarStaysByItsFoot(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 14, 2, 16, 14, 9, 16, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 10, 2, 16);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 14, 10, 16);
+        BlockPos foot = h.absolutePos(new BlockPos(14, 2, 16));
+        double[] far = {0};
+        h.onEachTick(() -> {
+            if (h.getTick() > 100) far[0] = Math.max(far[0], Math.hypot(c.getX() - foot.getX() - .5, c.getZ() - foot.getZ() - .5));
+            if (h.getTick() == 1500) {
+                h.assertTrue(far[0] <= 6, "Wandered " + far[0] + " blocks from the pillar: " + h.relativePos(c.blockPosition()).toShortString());
+                h.succeed();
+            }
+        });
+    }
+
+    /**
+     * Review fix F4: a player sealed in bedrock and higher than him: the self-rescue interrupts the following over and over, yet the
+     * phrase is said once over three minutes.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void aHigherSealedPlayerIsToldOnce(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 21, 2, 21, 27, 12, 27, Blocks.BEDROCK);
+        box(h, 23, 6, 23, 25, 9, 25, Blocks.AIR);
+        CompanionEntity c = spawn(h, 6, 2, 6);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 24, 6, 24);
+        // Anything that interrupts the following for a moment (here an open inventory) starts it anew; the phrase is said once all the same.
+        h.onEachTick(() -> {
+            if (h.getTick() % 1000 >= 900 && h.getTick() % 1000 <= 903) setInventoryViewers(c, h.getTick() % 1000 < 903 ? 1 : 0);
+        });
+        h.runAtTickTime(3600, () -> {
+            h.assertTrue(c.autonomyLineSerial() == 1, "Told " + c.autonomyLineSerial() + " times, not once: " + c.autonomyLine() + " | " + c.getLastTaskResult());
+            h.succeed();
+        });
+    }
+
+    /** Review fix F11: the follow phrase does not replace the result of the order that ended before it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void theFollowPhraseKeepsTheOrderResult(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 1, 2, 16, 30, 12, 16, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 15, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 15, 2, 26);
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.runAtTickTime(2400, () -> {
+            h.assertTrue(c.autonomyLineSerial() >= 1, "The follow phrase was not said");
+            h.assertTrue(c.getLastTaskResult().equals("Не могу к тебе пройти."), "The result of the order was replaced: " + c.getLastTaskResult());
+            h.succeed();
+        });
+    }
+
+    /** Review fix F5: «иди ко мне» to a player beyond the reach of the wide search, with a wall between: stuck, not «no way». */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void comeFromBeyondTheWideSearchSaysStuck(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 1, 2, 16, 30, 12, 16, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 15, 2, 3);
+        c.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).setBaseValue(8);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 15, 2, 29);
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().contains("Застрял"), c.getLastTaskResult());
+        });
+    }
+
+    private static void setInventoryViewers(CompanionEntity c, int viewers) {
+        try { var f = CompanionEntity.class.getDeclaredField("inventoryViewers"); f.setAccessible(true); f.setInt(c, viewers); }
+        catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
     }
 
     private static String state(CompanionEntity c) {

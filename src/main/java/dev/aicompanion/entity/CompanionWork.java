@@ -627,7 +627,7 @@ public final class CompanionWork {
         }
         if (orderHasStalled(level, 240)) {
             // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
-            if (!route.cells(Set.of(player.blockPosition()), 1).found()) { finish(false, "Не могу к тебе пройти."); return; }
+            if (route.noWayTo(player.blockPosition())) { finish(false, "Не могу к тебе пройти."); return; }
             finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
         }
     }

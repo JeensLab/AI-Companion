@@ -94,6 +94,15 @@ final class CompanionRoute {
 
     Reach to(BlockPos block, Need need) { return nearest(List.of(block), need); }
 
+    /**
+     * «No way» is told only where the wide search can see: with the target within one and a half follow ranges in a straight line
+     * and no whole route to it. Farther off it sees nothing at its cell budget, and a stuck walk is told as stuck, not as no way.
+     */
+    boolean noWayTo(BlockPos target) {
+        double range = w.owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 1.5;
+        return w.owner.distanceToSqr(target.getCenter()) <= range * range && !cells(Set.of(target), 1).found();
+    }
+
     /** One search to any of these cells: the way if it comes all the way, else null. For the short last steps, not for far goals. */
     Path toCells(Set<BlockPos> cells) { return toCells(cells, 0); }
 
