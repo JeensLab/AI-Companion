@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.block.Blocks;
 import dev.aicompanion.CompanionConversation;
+import dev.aicompanion.CompanionDiagnostics;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import java.util.LinkedHashMap;
@@ -17,7 +18,10 @@ final class CompanionSocial {
     private boolean initialized;
     private int timeBand = -1;
     private boolean rain;
+    private boolean attacked;
     private boolean environmentInitialized;
+    private final CompanionUrgent urgent = new CompanionUrgent();
+    private String urgentKey = "";
     CompanionSocial(CompanionEntity owner) { this.owner = owner; }
     private long next(long now) { return now + CompanionConversation.gap(owner.getRandom().nextInt(CompanionConversation.MAX_GAP - CompanionConversation.MIN_GAP + 1)); }
     void observe(String key, String fact) {
@@ -40,7 +44,30 @@ final class CompanionSocial {
         nextSpeech = next(owner.level().getGameTime());
         owner.socialEvent(fact);
     }
+    void urgent(String key, String fact) { urgent(key, fact, owner.level().getGameTime()); }
+    private void urgent(String key, String fact, long since) {
+        urgentKey = key;
+        urgent.offer(fact, since);
+    }
+    private void tickUrgent() {
+        if (!owner.isAlive()) return;
+        long now = owner.level().getGameTime();
+        if (!urgent.pending()) {
+            var waiting = CompanionHappeningEvents.claim(owner.getOwnerId());
+            if (waiting != null) urgent(waiting.key(), waiting.fact(), waiting.since());
+        }
+        if (!urgent.pending()) return;
+        var player = owner.getOwnerPlayer();
+        double voice = CompanionHappeningEvents.voiceBlocks();
+        boolean heard = player != null && owner.talksOnOwn() && owner.distanceToSqr(player) < voice * voice;
+        String fact = urgent.step(now, heard, sociallySafe());
+        if (fact == null) return;
+        CompanionDiagnostics.event("", "urgent_released", "key", urgentKey);
+        // Through emit(): the ordinary pacing restarts, so no ordinary topic overwrites this line within the same tick.
+        emit(CompanionConversation.URGENT_MARK + fact);
+    }
     void tick() {
+        tickUrgent();
         if (owner.tickCount % 40 != 0 || !owner.talksOnOwn() || !owner.isAlive()) return;
         long now = owner.level().getGameTime();
         if (!initialized) { initialized = true; nextSpeech = next(now); }
@@ -101,6 +128,8 @@ final class CompanionSocial {
                             monster -> CompanionHostiles.observed(player, monster, 12)).isEmpty();
             owner.nearbyExplosiveThreat = threats.stream().anyMatch(monster -> monster instanceof net.minecraft.world.entity.monster.Creeper creeper
                     && (creeper.getSwellDir() > 0 || creeper.distanceToSqr(owner) < 36));
+            // Endermen, zombified piglins and spiders by day are monsters too, but only one after him or the player makes a fight.
+            attacked = threats.stream().anyMatch(monster -> monster.getTarget() == owner || player != null && monster.getTarget() == player);
         }
         boolean danger = owner.getHealth() <= owner.getMaxHealth() * .35F || owner.isOnFire() || owner.isInLava() || owner.isUnderWater() && owner.getAirSupply() < 40
                 || owner.recovery.active() || owner.nearbyExplosiveThreat;
@@ -108,6 +137,8 @@ final class CompanionSocial {
         var expression = owner.expressions.update(owner.level().getGameTime(), danger, combat,
                 owner.hasActiveWorkOrder() || owner.isMiningAnimation() || owner.actionAnimation() != 0);
         owner.getEntityData().set(CompanionEntity.DATA_EXPRESSION, expression.ordinal());
+        // A hunt for meat is no fight; a monster he fights or one near him after either of them is.
+        owner.getEntityData().set(CompanionEntity.DATA_FIGHTING, combat && owner.getTarget() instanceof Monster || attacked);
         owner.getEntityData().set(CompanionEntity.DATA_SOCIAL_SAFE, !danger && !combat && !owner.nearbySocialThreat && owner.tickCount - owner.lastHurtTick > 200
                 && (owner.getOwnerPlayer() == null || owner.getOwnerPlayer().getHealth() > 8 && owner.getOwnerPlayer().hurtTime == 0));
     }

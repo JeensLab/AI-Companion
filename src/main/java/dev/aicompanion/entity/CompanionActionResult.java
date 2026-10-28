@@ -5,7 +5,9 @@ public record CompanionActionResult(boolean success, String message, Status stat
     /** Facts of a completed server operation; ACCEPTED and speech carry no proof of completion. */
     public record Evidence(long workId, String action, String item, int count, java.util.UUID recipient,
                            java.util.UUID operation, java.util.UUID itemEntity) { }
-    public enum Status { ACCEPTED, SUCCESS, FAILED, BLOCKED, TIMEOUT, CANCELLED }
+    public enum Status { ACCEPTED, SUCCESS, FAILED, BLOCKED, TIMEOUT, CANCELLED,
+        /** A craft refused at once for lack of materials (not a full bag, not a too long chain): the plan may get them instead. */
+        SHORTAGE }
     public CompanionActionResult(boolean success, String message, Status status) { this(success, message, status, null); }
     public CompanionActionResult(boolean success, String message) { this(success, message, success ? Status.SUCCESS : Status.FAILED); }
     public CompanionActionResult {
@@ -17,6 +19,7 @@ public record CompanionActionResult(boolean success, String message, Status stat
     public static CompanionActionResult accepted(String message) { return new CompanionActionResult(true, message, Status.ACCEPTED); }
     public static CompanionActionResult blocked(String message) { return new CompanionActionResult(false, message, Status.BLOCKED); }
     public static CompanionActionResult timeout(String message) { return new CompanionActionResult(false, message, Status.TIMEOUT); }
+    public static CompanionActionResult shortage(String message) { return new CompanionActionResult(false, message, Status.SHORTAGE); }
     public static CompanionActionResult cancelled(String message) { return new CompanionActionResult(false, message, Status.CANCELLED); }
     public CompanionActionResult withEvidence(Evidence facts) { return new CompanionActionResult(success, message, status, facts); }
     public net.minecraft.nbt.CompoundTag save() {

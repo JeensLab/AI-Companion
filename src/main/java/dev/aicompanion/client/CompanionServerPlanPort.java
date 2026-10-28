@@ -100,6 +100,13 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         });
     }
 
+    @Override public CompletableFuture<Integer> carried(String item) {
+        return onServer(player -> {
+            CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            return companion == null ? 0 : companion.carriedCount(item);
+        });
+    }
+
     /** Pauses count server ticks: they stop while singleplayer is paused and follow the GameTest tick rate. */
     @Override public CompletableFuture<Void> pause(int seconds) {
         CompletableFuture<Void> wake = new CompletableFuture<>();

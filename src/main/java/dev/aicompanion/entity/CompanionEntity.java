@@ -81,6 +81,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<Long> DATA_SAY_TIME = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.LONG);
     static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     static final EntityDataAccessor<Boolean> DATA_SOCIAL_SAFE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    static final EntityDataAccessor<Boolean> DATA_FIGHTING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
@@ -207,6 +208,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         expressions.react(ok ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.WORRIED, level().getGameTime(), 100);
         // Failure already has its short work notice. Do not generate a second, model-written apology about it.
         if (ok) social.observe("deed:success", "Настоящий итог моего дела: " + CompanionDeeds.clean(message));
+        if (ok) CompanionHappeningEvents.sharedDeed(this);
     }
     private void refreshDeeds() { if (!level().isClientSide) entityData.set(DATA_DEEDS, deeds.summary(level().getGameTime())); }
     java.util.List<BlockPos> knownCraftingTables() { places.discoverTables(); refreshPlaces(); return places.tables(true); }
@@ -366,7 +368,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_ACTION, 0); builder.define(DATA_ACTION_UNTIL, 0L); builder.define(DATA_ACTION_ITEM, ItemStack.EMPTY);
         builder.define(DATA_SOCIAL, ""); builder.define(DATA_SOCIAL_SERIAL, 0); builder.define(DATA_SOCIAL_TIME, 0L);
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
-        builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false);
+        builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
@@ -521,6 +523,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean conversationAvailable() { return conversationAvailable; }
     public dev.aicompanion.CompanionExpression expression() { return dev.aicompanion.CompanionExpression.fromId(entityData.get(DATA_EXPRESSION)); }
     public boolean sociallySafe() { return social.sociallySafe(); }
+    /** A fight with monsters at him or at the player: no talk then («Помолчи, я тут занят мобом»). Synced to the client. */
+    public boolean fighting() { return entityData.get(DATA_FIGHTING); }
     public void reactToSpeech(String text) { social.reactToSpeech(text); }
     public void setLifestyle(boolean chunks, boolean speech) { chunkLoading = chunks; autonomousSpeech = speech; }
     public String socialObservation() { return social.socialObservation(); }
@@ -600,6 +604,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean didLastTaskSucceed() { return lastTaskSucceeded; }
 
     public CompanionObtain.Plan obtainPlan(String item, int count) { return bag.obtainPlan(item, count); }
+    public int carriedCount(String item) { return bag.carriedCount(item); }
     public CompanionActionResult carriedCheck(String item, int count) { return bag.carriedCheck(item, count); }
     public String getStoredItemsSummary() { return bag.getStoredItemsSummary(); }
     public String getStoredItemsForAi() { return bag.getStoredItemsForAi(); }
@@ -702,6 +707,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         boolean hurt = super.hurt(source, amount);
         if (hurt) {
             lastHurtTick = tickCount;
+            CompanionHappeningEvents.playerHit(this, source);
             if (!level().isClientSide && amount >= 4) expressions.react(dev.aicompanion.CompanionExpression.WORRIED, level().getGameTime(), 100);
         }
         return hurt;

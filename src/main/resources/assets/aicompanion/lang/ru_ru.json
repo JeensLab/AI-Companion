@@ -5,10 +5,13 @@
   "key.aicompanion.open_interface": "Открыть интерфейс и задачи компаньона",
   "key.aicompanion.push_to_talk": "Говорить с компаньоном, не открывая чат (V)",
   "key.aicompanion.toggle_marker": "Контур компаньона сквозь стены: вкл./выкл. (G)",
+  "key.aicompanion.toggle_mood": "Полоска настроения компаньона: вкл./выкл. (N)",
   "key.categories.aicompanion": "ИИ-компаньон",
-  "config.aicompanion.api_key": "Ключ OpenRouter API",
-  "config.aicompanion.model": "Модель OpenRouter",
+  "config.aicompanion.api_key": "Ключ API",
+  "config.aicompanion.model": "Модель",
+  "config.aicompanion.api_url": "Адрес сервера модели",
   "config.aicompanion.personality": "Характер компаньона",
   "config.aicompanion.inworld_api_key": "Ключ Inworld (Basic)",
-  "config.aicompanion.inworld_voice_id": "ID голоса Inworld"
+  "config.aicompanion.inworld_voice_id": "ID голоса Inworld",
+  "config.aicompanion.long_term_memory": "Долговременная память"
 }

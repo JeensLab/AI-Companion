@@ -55,27 +55,35 @@ public final class CompanionChatScreen extends Screen {
         // and «ещё отвечает на прошлую просьбу… сделает следом» says so, as for voice.
         input.setValue("");
         addLine(Component.literal("Ты: " + text).withStyle(ChatFormatting.WHITE));
+        String action = companionAction(text);
+        CompanionMemoryFlow.playerSaid(text, action);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
-        String action = companionAction(text);
+        if (answerMemoryCommand(action, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
             runLocalCommand(action, trace);
             return;
         }
+        if (hushInFight(text, trace)) return;
         addLine(Component.literal("...").withStyle(ChatFormatting.GRAY));
         announceThinking(OpenRouterClient.isBusy());
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
 
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
-        OpenRouterClient.send(text, GameContext.snapshot(), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
-            if (error == null) {
+        long sessionGeneration = OpenRouterClient.generation();
+        OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
+            if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
+                CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
+                dropThinkingLine();
+            } else if (error == null) {
                 if (planGeneration != CompanionActionExecutor.currentPlanGeneration()) {
                     CompanionDiagnostics.event(trace, "reply_discarded", "reason", "generation_changed");
-                    if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) conversation.removeLast();
+                    dropThinkingLine();
                     return;
                 }
                 replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
+                CompanionMemoryFlow.companionSaid("model", reply.text());
                 CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", reply.text());
                 CompanionAmbientClient.replyDelivered(reply.text());
                 if (!reply.actions().isEmpty()) {
@@ -116,9 +124,22 @@ public final class CompanionChatScreen extends Screen {
         CompanionAmbientClient.transcriptionStarted();
         Minecraft minecraft = Minecraft.getInstance();
         minecraft.gui.setOverlayMessage(Component.literal("Распознаю речь..."), false);
+        long heardGeneration = OpenRouterClient.generation();
+        var heardWorld = minecraft.level;
         transcript.whenComplete((text, error) -> Minecraft.getInstance().execute(() -> {
             CompanionAmbientClient.transcriptionFinished();
             Minecraft current = Minecraft.getInstance();
+            // Recordings overlap: a phrase heard before «Забудь всё» can be recognized after it and must not reach the cleared journal or the model.
+            if (OpenRouterClient.sessionEnded(null, heardGeneration)) {
+                CompanionDiagnostics.event(trace, "voice_discarded", "reason", "session_changed", "outcome", error != null ? "error" : "text");
+                // A phrase said after «Забудь всё» shares the generation of one said before it and cannot be told apart, so the player is told; leaving the world stays silent.
+                if (heardWorld != null && current.level == heardWorld) {
+                    Component message = Component.literal("Фразу, сказанную вместе с просьбой забыть всё, я пропустил. Если она нужна — повтори.").withStyle(ChatFormatting.GRAY);
+                    appendHistory(message);
+                    current.gui.getChat().addMessage(message);
+                }
+                return;
+            }
             if (error != null) {
                 CompanionDiagnostics.failure(trace, "speech_transcription", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
@@ -142,19 +163,27 @@ public final class CompanionChatScreen extends Screen {
     private static void sendVoiceMessage(String text, String trace) {
         Minecraft minecraft = Minecraft.getInstance();
         CompanionAmbientClient.playerMessage();
+        String action = companionAction(text);
+        CompanionMemoryFlow.playerSaid(text, action);
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
-        String action = companionAction(text);
+        if (answerMemoryCommand(action, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
             runLocalCommand(action, trace);
             return;
         }
+        if (hushInFight(text, trace)) return;
 
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
         announceThinking(OpenRouterClient.isBusy());
-        OpenRouterClient.send(text, GameContext.snapshot(), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
+        long sessionGeneration = OpenRouterClient.generation();
+        OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
+            if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
+                CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
+                return;
+            }
             if (error != null) {
                 CompanionDiagnostics.failure(trace, "voice_chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
@@ -213,8 +242,9 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private static void addVoiceReply(String text, String trace, String source) {
+        CompanionMemoryFlow.companionSaid(source, text);
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
-        if ("autonomous".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
+        if ("autonomous".equals(source) || "topic".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
         else CompanionAmbientClient.replyDelivered(text);
         Minecraft minecraft = Minecraft.getInstance();
         Component reply = Component.literal(companionName() + ": " + text).withStyle(ChatFormatting.AQUA);
@@ -242,6 +272,38 @@ public final class CompanionChatScreen extends Screen {
         addVoiceReply(text, trace, "autonomous");
     }
 
+    /** A topic of his own: unlike a remark on an event, it goes to the memory journal with the player's answers to it. */
+    static void ownTopic(String text, String trace) {
+        OpenRouterClient.recordSpokenLine(text);
+        addVoiceReply(text, trace, "topic");
+    }
+
+    /** A fight is no time to chat: small talk gets a short brush-off without a model request; orders still go through. */
+    private static boolean hushInFight(String text, String trace) {
+        var speaker = CompanionVoiceAudio.speaker();
+        if (!CompanionLocalCommands.hushed(speaker != null && speaker.fighting(), text)) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_fight_hush");
+        OpenRouterClient.recordLocalExchange(text, CompanionLocalCommands.FIGHT_HUSH);
+        addVoiceReply(CompanionLocalCommands.FIGHT_HUSH, trace, "fight_hush");
+        return true;
+    }
+
+    private static boolean answerMemoryCommand(String action, String trace) {
+        boolean forget = "companion memory forget".equals(action);
+        if (!forget && !"companion memory show".equals(action)) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_memory", "command", action);
+        boolean remembers = OpenRouterConfig.LONG_TERM_MEMORY.get();
+        String answer;
+        if (forget) {
+            CompanionMemoryFlow.forget();
+            answer = remembers ? "Всё, что ты мне рассказывал, я забыл. Наши общие дела и отношения остаются."
+                    : "Всё, что ты мне рассказывал, я забыл. Долговременная память выключена, так что нового я не запоминаю.";
+        } else if (remembers) answer = CompanionMemoryView.recall(CompanionMemoryView.current());
+        else answer = "Долговременная память выключена в настройках: нового я не запоминаю и прежнее не вспоминаю.";
+        addVoiceReply(answer, trace, "local_memory");
+        return true;
+    }
+
     private static void replyWithName(String userText, String trace) {
         CompanionDiagnostics.event(trace, "message_route", "route", "local_identity");
         String answer = "Я " + companionName() + ".";
@@ -265,10 +327,18 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private void replaceThinkingLine(Component replacement) {
-        if (!conversation.isEmpty() && conversation.getLast().getString().equals("...")) {
-            conversation.removeLast();
-        }
+        dropThinkingLine();
         addLine(replacement);
+    }
+
+    /**
+     * The oldest «...» belongs to this reply: requests are answered in order. Only the last line was checked before, so a
+     * message typed while waiting («забудь всё», a second request) left a grey «...» for good (review of PR #19).
+     */
+    private static synchronized void dropThinkingLine() {
+        for (var it = conversation.iterator(); it.hasNext(); ) {
+            if (it.next().getString().equals("...")) { it.remove(); return; }
+        }
     }
 
     private static synchronized void appendHistory(Component line) {

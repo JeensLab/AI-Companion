@@ -201,9 +201,9 @@ public final class CompanionCharacterTests {
     public static void actualCombatAndLowHealthOverrideSpeech(GameTestHelper h) {
         var c=fixture(h); var zombie=h.spawn(EntityType.ZOMBIE,22,1,16); zombie.setNoAi(true); zombie.setInvulnerable(true);
         c.setTarget(zombie); c.reactToSpeech("Хех, шучу.");
-        h.runAtTickTime(2,()->{h.assertTrue(c.expression()==CompanionExpression.COMBAT&&!c.sociallySafe(),"Fight priority"); c.setHealth(6);});
+        h.runAtTickTime(2,()->{h.assertTrue(c.expression()==CompanionExpression.COMBAT&&!c.sociallySafe()&&c.fighting(),"Fight priority"); c.setHealth(6);});
         h.runAtTickTime(4,()->{h.assertTrue(c.expression()==CompanionExpression.WORRIED,"Low health priority"); c.setHealth(20); c.setTarget(null); zombie.discard();});
-        h.runAtTickTime(160,()->{h.assertTrue(c.expression()==CompanionExpression.CALM,"Fight/danger stuck"); h.succeed();});
+        h.runAtTickTime(160,()->{h.assertTrue(c.expression()==CompanionExpression.CALM&&!c.fighting(),"Fight/danger stuck"); h.succeed();});
     }
     @GameTest(template="tall_tree",timeoutTicks=50)
     public static void trackingSnapshotAndWorldReloadShowCurrentFace(GameTestHelper h) {

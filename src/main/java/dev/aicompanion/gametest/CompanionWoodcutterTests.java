@@ -79,6 +79,51 @@ public final class CompanionWoodcutterTests {
         });
     }
 
+    /** Game log 27.10: past the requested count Oleg chopped the rest of a 32-log dark oak by hand, though spare logs make a bench and an axe. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void axeIsMadeForTheRestOfTheTreeAfterTheTarget(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); // the tree repays wood, not iron
+        for (int x = 18; x <= 19; x++) for (int y = 1; y <= 3; y++) for (int z = 16; z <= 17; z++) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_LOG);
+        companion.startGatheringLogs(1);
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && trunkLeft(h, 18, 16) + trunkLeft(h, 19, 16) + trunkLeft(h, 18, 17) + trunkLeft(h, 19, 17) == 0, companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.IRON_INGOT) == 3, "Iron spent on an axe nobody ordered: " + companion.getStoredItemsSummary());
+            h.assertTrue(companion.getMainHandItem().is(Items.WOODEN_AXE) && companion.getMainHandItem().getDamageValue() > 0, "Rest of the tree chopped by hand: " + companion.getStoredItemsSummary());
+            // Bench and axe come from 3 of the 12 logs: 12 planks less 4 for the bench, 3 for the head and 2 for 4 sticks.
+            h.assertTrue(count(companion, Items.OAK_LOG) == 9 && count(companion, Items.OAK_PLANKS) == 3 && count(companion, Items.STICK) == 2
+                    && blocks(h, Blocks.CRAFTING_TABLE) == 1, "Axe not paid with real wood: " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** Three spare logs but two left on the tree: an axe would cost more than it saves, so the spare logs stay the player's. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void noAxeIsMadeForTheLastLogsOfATree(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 18; x <= 19; x++) for (int y = 1; y <= 2; y++) for (int z = 16; z <= 17; z++) h.setBlock(new BlockPos(x, y, z), Blocks.OAK_LOG);
+        companion.startGatheringLogs(3);
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 8 && count(companion, Items.WOODEN_AXE) == 0
+                    && blocks(h, Blocks.CRAFTING_TABLE) == 0, companion.getLastTaskResult() + " Bag=" + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** Logs in the bag before the order are not spare: counted from the order alone, two of them would buy an axe for the last logs. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void carriedLogsAreNotSpentOnAnAxeAfterTheTarget(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 2)); // 8 planks: short of a bench and an axe while the log is owed
+        for (int x = 18; x <= 19; x++) for (int y = 1; y <= 3; y++) h.setBlock(new BlockPos(x, y, 16), Blocks.OAK_LOG);
+        companion.startGatheringLogs(1);
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 8 && count(companion, Items.WOODEN_AXE) == 0
+                    && blocks(h, Blocks.CRAFTING_TABLE) == 0, companion.getLastTaskResult() + " Bag=" + companion.getStoredItemsSummary());
+        });
+    }
+
     /** Stone and a bench a few steps away: Oleg walks over and makes the better axe before chopping on. */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void woodenAxeIsUpgradedAtNearbyWorkbench(GameTestHelper h) {
@@ -96,6 +141,23 @@ public final class CompanionWoodcutterTests {
             h.assertTrue(visited[0] && blocks(h, Blocks.CRAFTING_TABLE) == 1, "Did not walk to the existing bench or placed another one");
             h.assertTrue(companion.getMainHandItem().is(Items.STONE_AXE) && companion.getMainHandItem().getDamageValue() > 0, "Stone axe not made or not used");
             h.assertTrue(count(companion, Items.WOODEN_AXE) == 1 && count(companion, Items.COBBLESTONE) == 0, "Old axe lost or stone not spent: " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** Iron and diamond upgrades are for the pickaxe only; a player does not forge an iron axe for chopping. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void spareIngotsAreNotMadeIntoAnAxeWhileChopping(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        BlockPos bench = new BlockPos(10, 1, 16); h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_AXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 4)); companion.setItem(1, new ItemStack(Items.STICK, 4));
+        for (int y = 1; y <= 4; y++) h.setBlock(new BlockPos(21, y, 16), Blocks.OAK_LOG);
+        companion.startGatheringLogs(3);
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && trunkLeft(h, 21, 16) == 0, companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.IRON_AXE) == 0 && count(companion, Items.IRON_INGOT) == 4 && count(companion, Items.STONE_AXE) == 1,
+                    "Iron axe made on its own: " + companion.getStoredItemsSummary());
         });
     }
 

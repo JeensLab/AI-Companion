@@ -17,6 +17,9 @@ public final class OpenRouterConfig {
     public static final ModConfigSpec.BooleanValue COMPANION_MARKER = BUILDER
             .comment("Outline the companion through walls when he is out of sight (toggled with the key G).")
             .define("companionMarker", true);
+    public static final ModConfigSpec.BooleanValue MOOD_PANEL = BUILDER
+            .comment("Show the companion's mood, bond and character as a thin panel on the right of the screen (toggled with the key N).")
+            .define("moodPanel", true);
     public static final ModConfigSpec.BooleanValue CHUNK_LOADING = BUILDER.define("companionChunkLoading", true);
     public static final ModConfigSpec.BooleanValue DIAGNOSTICS = BUILDER
             .comment("Write local diagnostic events, dialogue and game state to logs/aicompanion. May include private conversations and coordinates.")
@@ -24,14 +27,19 @@ public final class OpenRouterConfig {
     public static final ModConfigSpec.IntValue VOICE_DISTANCE = BUILDER.defineInRange("voiceDistance", 32, 8, 64);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
-            .comment("Your OpenRouter API key. Stored in the local Minecraft config folder.")
+            .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
             .translation("config.aicompanion.api_key")
             .define("apiKey", "");
 
     public static final ModConfigSpec.ConfigValue<String> MODEL = BUILDER
-            .comment("OpenRouter model ID. Use openrouter/auto to let OpenRouter choose a model.")
+            .comment("Model ID. With OpenRouter, openrouter/auto lets OpenRouter choose; with your own server, the name of a model it has loaded.")
             .translation("config.aicompanion.model")
             .define("model", "openrouter/auto");
+
+    public static final ModConfigSpec.ConfigValue<String> API_URL = BUILDER
+            .comment("OpenAI-compatible chat server. Empty means OpenRouter; for example http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio. A local server needs no API key.")
+            .translation("config.aicompanion.api_url")
+            .define("apiUrl", "");
 
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
             .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to disable voice output.")
@@ -47,6 +55,11 @@ public final class OpenRouterConfig {
             .comment("Additional personality preferences. Shared character directions also apply to existing saved settings.")
             .translation("config.aicompanion.personality")
             .define("personality", "Ты мой товарищ по выживанию в Minecraft: язвительный, разговорчивый и надёжный. Помни наш разговор, интересуйся происходящим, шути и матерись естественно, без постоянных комплиментов.");
+
+    public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
+            .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
+            .translation("config.aicompanion.long_term_memory")
+            .define("longTermMemory", true);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 

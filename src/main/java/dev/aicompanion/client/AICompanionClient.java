@@ -10,7 +10,9 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
@@ -46,6 +48,13 @@ public final class AICompanionClient {
             GLFW.GLFW_KEY_G,
             "key.categories.aicompanion"
     );
+    private static final KeyMapping TOGGLE_MOOD = new KeyMapping(
+            "key.aicompanion.toggle_mood",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_N,
+            "key.categories.aicompanion"
+    );
     private boolean wasPushToTalkDown;
     private int preferenceSyncTicks;
     private Object previousWorld;
@@ -57,8 +66,15 @@ public final class AICompanionClient {
         modEventBus.addListener(this::registerKeyMappings);
         modEventBus.addListener(this::registerEntityRenderers);
         modEventBus.addListener(this::registerMenuScreens);
+        modEventBus.addListener(this::registerGuiLayers);
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForge.EVENT_BUS.addListener(this::onLoggingOut);
+    }
+
+    private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        OpenRouterClient.resetSession();
+        CompanionMemoryFlow.unbind();
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -66,6 +82,11 @@ public final class AICompanionClient {
         event.register(OPEN_INTERFACE);
         event.register(PUSH_TO_TALK);
         event.register(TOGGLE_MARKER);
+        event.register(TOGGLE_MOOD);
+    }
+
+    private void registerGuiLayers(RegisterGuiLayersEvent event) {
+        event.registerAboveAll(CompanionMoodPanel.ID, CompanionMoodPanel::render);
     }
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -108,6 +129,7 @@ public final class AICompanionClient {
         wasPushToTalkDown = pushToTalkDown;
 
         while (TOGGLE_MARKER.consumeClick()) if (minecraft.level != null && minecraft.screen == null) CompanionMarker.toggle();
+        while (TOGGLE_MOOD.consumeClick()) if (minecraft.level != null && minecraft.screen == null) CompanionMoodPanel.toggle();
         while (OPEN_INTERFACE.consumeClick()) if (minecraft.level != null && minecraft.screen == null)
             minecraft.setScreen(new CompanionTasksScreen());
         while (OPEN_CHAT.consumeClick()) {

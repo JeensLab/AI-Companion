@@ -66,6 +66,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
 | Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java` |
+| Разговор по своей инициативе, память и характер | `CompanionConversation.java` (сцены и темп), `CompanionTopics.java` (банк тем), `CompanionPersonality.java`, `client/CompanionAmbientClient.java`; память в мире и её сжатие вместе с чертами и своими темами — `client/CompanionMemoryFlow.java`, `CompanionMemoryCodec.java`, `entity/CompanionMemory.java`, `CompanionSoul.java`, `CompanionBonds.java`; тесты `gametest/CompanionSoulTests.java`, `CompanionMemoryTests.java` |
 | Локальные настройки и диагностика | `OpenRouterConfig.java`, `CompanionDiagnostics.java`, [SECURITY.md](../SECURITY.md) |
 | Регрессии и структуры | `gametest/`, `entity/CompanionStairApproachTests.java`, `src/main/resources/data/aicompanion/structure/` |
 
@@ -96,14 +97,16 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
-| Самостоятельные реплики и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
+| Самостоятельные реплики, свои темы Олега и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
 | Тихая работа, речь и восстановление поручений | `.\scripts\verify-quiet-work.ps1` |
 | Критические проверки длительной работы | `.\scripts\verify-endurance.ps1 -CriticalOnly -Repetitions 1` |
 | Длительные сценарии леса, пещеры или перезагрузки | `.\scripts\verify-endurance.ps1 -Arena Forest -Repetitions 1`; варианты арены: `Cave`, `Reload` |
 | Полный набор с итоговым JSON | `.\scripts\verify-scenarios.ps1 -Repetitions 1` |
 | Экран задач | `.\scripts\verify-task-ui.ps1` и просмотр созданных снимков |
+| Память, отношения и события | `.\scripts\verify-memory.ps1 -Expected <число тестов>`: сначала проверка `entity/*.java` (не больше 800 строк) и `build`, затем фокусный прогон `CompanionMemoryTests`, `CompanionBondTests`, `CompanionHappeningsTests`, `CompanionSoulTests`, ровно столько тестов, сколько в `-Expected`; `-Full <N>` добавляет полный `runGameTestServer` (ровно N, один повтор, если упал только известный нестабильный тест); `-Banter` добавляет `verify-banter-tools.ps1 -Repetitions 3`; `-Tag` (по умолчанию `memory`) задаёт префикс отчётов в `build/diagnostics/` |
 | Прочие экраны, рендер, клавиши | `.\gradlew.bat runClient`, ручная проверка изменённого сценария |
 | Живой диалог, STT/TTS | Ручная проверка с собственными ключами только по отдельному разрешению на платные запросы; локальные GameTest не доказывают работу провайдера |
+| Живое сжатие памяти через OpenRouter | `.\scripts\verify-memory-live.ps1 -AllowPaidRequests`: платный запрос к OpenRouter; ключ и модель читаются из `-ConfigPath` (по умолчанию `run\config\aicompanion-client.toml`); без флага или без ключа печатает `SKIP` и выходит с кодом 0, это не проверка; успех — `All 3 required tests passed` |
 
 Для проверки перезапуска заранее выполните `New-Item -ItemType Directory -Force build/diagnostics | Out-Null`:
 сам скрипт создаёт отдельный тестовый мир, но не создаёт каталог журналов.

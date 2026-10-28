@@ -73,6 +73,8 @@ public final class CompanionDialogue {
 
     /** Engine report line listing plan steps that were not started after a stop. */
     public static final String SKIPPED_PREFIX = "Не выполнено: ";
+    /** Engine report line: one «get it» order failed for good, yet the rest of the plan went on. */
+    public static final String PARTIAL_PREFIX = "Часть не вышла: ";
 
     public static String describe(PlannedAction action) {
         return switch (action.type()) {
@@ -138,7 +140,7 @@ public final class CompanionDialogue {
         return String.join(", ", parts);
     }
 
-    private static String itemName(String id) {
+    public static String itemName(String id) {
         var key = net.minecraft.resources.ResourceLocation.tryParse(id);
         if (key == null) return id;
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key)
@@ -153,9 +155,53 @@ public final class CompanionDialogue {
             skipped = report.substring(marker + SKIPPED_PREFIX.length()).trim();
             report = report.substring(0, marker).trim();
         }
+        String failed = actions.stream().anyMatch(action -> action.type().startsWith("goal_")) ? "" : failedParts(report);
+        if (!failed.isEmpty()) {
+            // Parts given up while the rest went on: the player hears what was not made and why, once, not the steps that went with it.
+            if (!report.contains("План остановлен:")) return "Остальное сделал. " + failed;
+            // The plan stopped on the last part given up (same reason on the line before the stop): it is one «Не вышло», said once.
+            if (stoppedOnLastPart(report)) return failed;
+            String lower = report.toLowerCase(java.util.Locale.ROOT);
+            String stopped = summarizeSteps(actions, report);
+            return lower.contains("отменён") || lower.contains("остановки") ? stopped : stopped + " " + failed;
+        }
         String spoken = summarizeSteps(actions, report);
         // Unstarted steps remain visible in Tasks. Reading them aloud turns one problem into a roll call.
         return spoken.isBlank() && !skipped.isEmpty() ? "Пока получилось выполнить только часть поручения." : spoken;
+    }
+
+    private static boolean stoppedOnLastPart(String report) {
+        String[] lines = report.split("\n");
+        for (int i = lines.length - 1; i > 0; i--) {
+            if (!lines[i].startsWith("План остановлен:")) continue;
+            String part = lines[i - 1];
+            String rest = part.startsWith(PARTIAL_PREFIX) ? part.substring(PARTIAL_PREFIX.length()) : "";
+            int end = rest.startsWith("«") ? rest.indexOf("»: ") : -1;
+            return end > 0 && rest.substring(end + 3).strip().equals(lines[i].substring("План остановлен:".length()).strip());
+        }
+        return false;
+    }
+
+    /** «Не вышло: «A», «B» — причина.» from the give-up lines of the report; empty if there are none. */
+    private static String failedParts(String report) {
+        List<String> names = new java.util.ArrayList<>(), whys = new java.util.ArrayList<>();
+        for (String line : report.split("\n")) {
+            if (!line.startsWith(PARTIAL_PREFIX)) continue;
+            String rest = line.substring(PARTIAL_PREFIX.length());
+            int end = rest.startsWith("«") ? rest.indexOf("»: ") : -1;
+            if (end > 0) { String name = rest.substring(0, end + 1); if (!names.contains(name)) names.add(name); rest = rest.substring(end + 3); }
+            // Only ore digging speaks of ore: an unsafe route to it is said as ore out of reach, not as a lost way (game 27.10).
+            String why = dev.aicompanion.CompanionFailureMessages.explain(rest.contains("руд") ? "mine_ore" : "", rest);
+            // The engine's own words for a reason that has no kind (a planner's refusal, «Два раза подряд ничего не прибавилось.»), if short.
+            String own = dev.aicompanion.CompanionFailureMessages.primary(rest);
+            if (dev.aicompanion.CompanionFailureMessages.kind(rest) == dev.aicompanion.CompanionFailureMessages.Kind.OTHER && !own.isEmpty() && own.length() <= 100) why = own;
+            // Two reasons at most: four parts with three reasons ran over two hundred characters.
+            if (!whys.contains(why) && whys.size() < 2) whys.add(why);
+        }
+        if (whys.isEmpty()) return "";
+        if (names.isEmpty()) return "Часть не вышла: " + String.join(" ", whys);
+        String why = String.join(" ", whys);
+        return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
     private static String summarizeSteps(List<PlannedAction> actions, String report) {
@@ -179,6 +225,9 @@ public final class CompanionDialogue {
         }
         var crafted = actions.stream().filter(action -> "craft_item".equals(action.type())).toList();
         if (actions.stream().anyMatch(action -> "build_house".equals(action.type()))) return "Дом готов, заебись! Пойдём посмотрим.";
+        // Made and handed over: «посмотри в сумке» would send the player to a bag the things already left (PR #29, the armour order).
+        if (!crafted.isEmpty() && actions.stream().anyMatch(action -> "give_items".equals(action.type()) || "give_wood".equals(action.type())))
+            return actions.stream().anyMatch(action -> "equip_item".equals(action.type())) ? "Готово: сделал, своё надел, твоё отдал." : "Готово, сделал и отдал тебе.";
         long tools = crafted.stream().filter(action -> action.item().matches(".*_(sword|pickaxe|axe|shovel|hoe)")).count();
         if (tools > 1) return "Готово, инструменты сделал.";
         if (!crafted.isEmpty()) {

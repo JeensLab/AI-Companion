@@ -19,6 +19,10 @@ import java.util.concurrent.CompletableFuture;
 public final class CompanionPlanRunner {
     public static final int MAX_RECOVERIES = 2;
     public static final int IDLE_WAIT_SECONDS = 20;
+    /** In a row, steps of one obtain_item after which the bag layout is unchanged: the second one gives the part up. */
+    private static final int NO_GAIN_LIMIT = 2;
+    /** Steps run for one obtain_item, replans included: twice the longest chain the planner gives (CompanionObtain.MAX_STEPS). */
+    public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items",
             "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals");
@@ -33,6 +37,8 @@ public final class CompanionPlanRunner {
         CompletableFuture<Attempt> run(PlannedAction action);
         CompletableFuture<Void> pause(int seconds);
         default void progress(List<PlannedAction> plan, int index) { }
+        /** How many of the item he carries now. */
+        default CompletableFuture<Integer> carried(String item) { return CompletableFuture.completedFuture(0); }
         /** obtain_item turned into the steps that get the item, or the reason it cannot be got. */
         default CompletableFuture<Expansion> expand(PlannedAction action) {
             return CompletableFuture.completedFuture(new Expansion(List.of(), "Не умею добывать этот предмет."));
@@ -78,7 +84,7 @@ public final class CompanionPlanRunner {
     }
 
     private static CompletableFuture<Integer> step(Run run, int index, PlannedAction action, boolean retried) {
-        if (index >= run.plan.size()) return CompletableFuture.completedFuture(index);
+        if (index >= run.plan.size() && !run.replan) return CompletableFuture.completedFuture(index);
         Port port = run.port;
         int number = index + 1;
         port.progress(List.copyOf(run.plan), index);
@@ -88,15 +94,18 @@ public final class CompanionPlanRunner {
             run.cancelled = true;
             return CompletableFuture.completedFuture(index);
         }
+        if (run.replan) return replan(run, index);
         // «Добудь X»: the chain of real steps is planned now, from the bag as it is after the steps before (CompanionObtain).
+        // After each of its steps the chain is planned again (replan), so steps that became needless drop out and a shortage is dug up.
         if ("obtain_item".equals(action.type())) return port.expand(action).thenCompose(expansion -> {
             CompanionDiagnostics.event(port.trace(), "obtain_planned", "step", number, "action", action, "steps", expansion.steps(), "refusal", expansion.refusal());
             if (expansion.refusal() != null) {
-                run.reports.add("План остановлен: " + expansion.refusal());
-                return CompletableFuture.completedFuture(index + 1);
+                run.obtain = action; run.obtainEnd = index + 1;
+                return giveUpObtain(run, index, expansion.refusal());
             }
             run.plan.remove(index);
             run.plan.addAll(index, expansion.steps());
+            run.obtain = action; run.obtainEnd = index + expansion.steps().size(); run.obtainSteps = 0; run.noGain = 0; run.noGainFailure = null;
             return step(run, index, run.plan.get(index), false);
         });
         // Pillar descent, loot pickup and similar tails of the previous step end before the next order.
@@ -107,13 +116,37 @@ public final class CompanionPlanRunner {
                 List<PlannedAction> later = run.plan.subList(index + 1, run.plan.size());
                 Verdict verdict = decide(action, attempt, before, after, later, retried, run.recoveries, port.cancelled());
                 CompanionActionResult result = attempt.result();
+                boolean inObtain = run.obtain != null && index < run.obtainEnd;
+                if (inObtain) run.obtainSteps++;
+                List<PlannedAction> layout = inObtain ? List.copyOf(run.plan.subList(index, Math.min(run.obtainEnd, run.plan.size()))) : List.of();
                 CompanionDiagnostics.event(port.trace(), "step_result", "step", number, "action", action, "success", result.success(),
                         "continuePlan", verdict.decision() == Decision.CONTINUE, "decision", verdict.decision(), "reason", verdict.reason(),
                         "status", result.status(), "message", result.message(), "progressBefore", before.progress(), "progressAfter", after.progress(),
                         "completionCheck", List.of("follow", "protect", "wander").contains(action.type()) ? "mode_acknowledgement_only" : "engine_result");
+                // A craft refused at once for lack of materials becomes «get it»: "craft N" is N new ones, "get" counts all in the bag.
+                if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "craft_item".equals(action.type())) {
+                    return port.carried(action.item()).thenCompose(have -> {
+                        PlannedAction obtain = new PlannedAction("obtain_item", 0, have + action.count(), action.item());
+                        CompanionDiagnostics.event(port.trace(), "craft_to_obtain", "step", number, "action", action, "obtain", obtain);
+                        run.plan.set(index, obtain);
+                        return step(run, index, obtain, false);
+                    });
+                }
+                // A blocked step of an obtain chain gives up only this part; the rest of the plan goes on.
+                if (inObtain && "blocked".equals(verdict.reason())) return giveUpObtain(run, index, result.message());
+                // A step of an obtain chain that did not succeed is planned around, even a partial gather the plan would go on after:
+                // the stop comes only if the new plan is the same as before the step (nothing was gained).
+                if (inObtain && !result.success() && verdict.decision() != Decision.RETRY && !"cancelled".equals(verdict.reason())) {
+                    run.replan = true; run.before = layout; run.lastFailed = true; run.lastMessage = result.message();
+                    return step(run, index + 1, null, false);
+                }
                 return switch (verdict.decision()) {
                     case CONTINUE -> {
                         run.reports.add(result.message());
+                        if (inObtain) {
+                            if (index + 1 < run.obtainEnd) { run.replan = true; run.before = layout; run.lastFailed = false; run.lastMessage = result.message(); }
+                            else run.obtain = null;
+                        }
                         yield step(run, index + 1, index + 1 < run.plan.size() ? run.plan.get(index + 1) : null, false);
                     }
                     case RETRY -> {
@@ -129,6 +162,55 @@ public final class CompanionPlanRunner {
                 };
             }));
         });
+    }
+
+    /** Plans the running obtain_item again from the bag as it is now and puts the new steps in place of the unfinished ones. */
+    private static CompletableFuture<Integer> replan(Run run, int index) {
+        Port port = run.port;
+        run.replan = false;
+        List<PlannedAction> before = run.before;
+        boolean failed = run.lastFailed;
+        String message = run.lastMessage;
+        run.before = null;
+        return port.expand(run.obtain).thenCompose(expansion -> {
+            CompanionDiagnostics.event(port.trace(), "obtain_replanned", "step", index + 1, "action", run.obtain, "steps", expansion.steps(), "refusal", expansion.refusal());
+            if (expansion.refusal() != null) return giveUpObtain(run, index, expansion.refusal());
+            // The same steps as before the one that just ran: it gained nothing, success or not. One such step may be chance (a cow that
+            // dropped no leather); the same twice in a row is given up, with the failure's own message or, if both succeeded, a reason of ours.
+            if (before != null && before.equals(expansion.steps())) {
+                if (failed) run.noGainFailure = message;
+                if (++run.noGain >= NO_GAIN_LIMIT) return giveUpObtain(run, index, run.noGainFailure != null ? run.noGainFailure : "Два раза подряд ничего не прибавилось.");
+            } else { run.noGain = 0; run.noGainFailure = null; }
+            if (run.obtainSteps >= MAX_OBTAIN_STEPS)
+                return giveUpObtain(run, index, failed ? message : "слишком много шагов ради одного предмета.");
+            run.plan.subList(Math.min(index, run.plan.size()), Math.min(run.obtainEnd, run.plan.size())).clear();
+            run.plan.addAll(index, expansion.steps());
+            run.obtainEnd = index + expansion.steps().size();
+            return step(run, index, run.plan.get(index), false);
+        });
+    }
+
+    /**
+     * The running obtain_item is given up: its unfinished steps and the later steps of the plan that name the same item are dropped
+     * (reported as not done), the rest of the plan goes on. With nothing left to run it is the old whole-plan stop.
+     */
+    private static CompletableFuture<Integer> giveUpObtain(Run run, int index, String reason) {
+        PlannedAction obtain = run.obtain;
+        run.obtain = null;
+        int from = Math.min(index, run.plan.size());
+        run.plan.subList(from, Math.min(run.obtainEnd, run.plan.size())).clear();
+        List<PlannedAction> same = new ArrayList<>();
+        for (int i = run.plan.size() - 1; i >= from; i--)
+            if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item())) same.addFirst(run.plan.remove(i));
+        boolean earlier = !run.dropped.isEmpty();
+        run.dropped.add(obtain);
+        run.dropped.addAll(same);
+        boolean goesOn = from < run.plan.size();
+        String name = obtain.item() == null ? "" : "«" + CompanionDialogue.itemName(obtain.item()) + "»: ";
+        // The last part of a plan that gave parts up before is named too (the stop line follows with the same reason, said once by CompanionDialogue).
+        if (!goesOn && earlier) run.reports.add(CompanionDialogue.PARTIAL_PREFIX + name + reason);
+        run.reports.add((goesOn ? CompanionDialogue.PARTIAL_PREFIX + name : "План остановлен: ") + reason);
+        return step(run, from, goesOn ? run.plan.get(from) : null, false);
     }
 
     private static CompletableFuture<State> idle(Port port, PlannedAction action, int seconds) {
@@ -148,16 +230,30 @@ public final class CompanionPlanRunner {
         final List<PlannedAction> plan;
         final Port port;
         final List<String> reports = new ArrayList<>();
+        /** Given-up obtain_item orders and the later steps skipped with them. */
+        final List<PlannedAction> dropped = new ArrayList<>();
         int recoveries;
         boolean cancelled;
+        /** The obtain_item being run, where its unfinished steps end in the plan, and what the replan after the last step must know. */
+        PlannedAction obtain;
+        /** The unfinished steps before the step that ran last, whether it failed, and its message. */
+        List<PlannedAction> before;
+        boolean lastFailed;
+        String lastMessage;
+        int obtainEnd, obtainSteps, noGain;
+        /** The last failure message among the no-gain steps in a row, if any of them failed. */
+        String noGainFailure;
+        boolean replan;
         Run(List<PlannedAction> plan, Port port) { this.plan = new ArrayList<>(plan); this.port = port; }
 
         Outcome outcome(int stoppedAt) {
-            List<PlannedAction> skipped = cancelled ? List.of() : List.copyOf(plan.subList(Math.min(stoppedAt, plan.size()), plan.size()));
+            List<PlannedAction> skipped = new ArrayList<>(plan.subList(Math.min(stoppedAt, plan.size()), plan.size()));
+            skipped.addAll(dropped);
+            if (cancelled) skipped.clear();
             List<String> lines = new ArrayList<>(reports);
             if (!skipped.isEmpty()) CompanionDiagnostics.event(port.trace(), "step_skipped", "actions", skipped, "reason", "previous_step_failed");
             if (!skipped.isEmpty()) lines.add(CompanionDialogue.SKIPPED_PREFIX + CompanionDialogue.describeAll(skipped));
-            return new Outcome(String.join("\n", lines), skipped, recoveries);
+            return new Outcome(String.join("\n", lines), List.copyOf(skipped), recoveries);
         }
     }
 }

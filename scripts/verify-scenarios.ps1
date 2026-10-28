@@ -25,9 +25,9 @@ try {
         $runs += [ordered]@{ iteration=$iteration; exitCode=$exitCode; elapsedSeconds=[math]::Round(((Get-Date)-$started).TotalSeconds,2); passed=if($passed.Success){[int]$passed.Groups[1].Value}else{$null}; failed=@($failed); log=$outputPath; metrics=$metrics }
         # Which code was checked: the commit (and «+changes» if the tree was dirty) and the JAR built from it, if any.
         $commit = (git rev-parse --short HEAD 2>$null); if (git status --porcelain 2>$null) { $commit = "$commit+changes" }
-        $jar = Join-Path $projectRoot 'build/libs/aicompanion-0.0.1.jar'
+        $jar = Join-Path $projectRoot 'build/libs/aicompanion-0.0.2.jar'
         $jarHash = if (Test-Path -LiteralPath $jar) { (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash } else { $null }
-        $json = [ordered]@{ modVersion='0.0.1'; commit=$commit; jarSha256=$jarHash; scope='local deterministic GameTests; no LLM, voice or 10-hour stress certification'; runs=$runs } |
+        $json = [ordered]@{ modVersion='0.0.2'; commit=$commit; jarSha256=$jarHash; scope='local deterministic GameTests; no LLM, voice or 10-hour stress certification'; runs=$runs } |
             ConvertTo-Json -Depth 6
         # UTF-8 without BOM, so other tools read the JSON as is.
         [System.IO.File]::WriteAllText((Join-Path $reportDirectory 'verification-summary.json'), $json, (New-Object System.Text.UTF8Encoding $false))
