@@ -109,6 +109,7 @@ public final class CompanionWork {
     int huntKills;
     net.minecraft.world.phys.Vec3 orderProgressPosition;
     private BlockPos comeFailedAt;
+    private long comeFailedTime;
     long orderProgressTime;
     /**
      * Watchdog for every work (game log 21.10: two minutes on one spot with «Проверяю подход к камню», then a faceless
@@ -618,13 +619,14 @@ public final class CompanionWork {
         }
         owner.workStatus("Пытаюсь добраться до игрока.");
         // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
-        // far by the way. Legs that came to nothing in half a minute are not started again from the same spot: the self-rescue takes
-        // him over there (down a cave: up through the rock), and the order ends only when he stands still (stalled).
-        if (comeFailedAt == null || !comeFailedAt.closerThan(owner.blockPosition(), 3)) {
+        // far by the way. Legs that came to nothing are not started again from the same spot at once: the self-rescue takes him over
+        // there (down a cave: up through the rock), and the order ends only when he stands still (stalled). Five seconds on, they
+        // are tried again even from the same spot: the rescue may have opened the way a few blocks off, and he must walk it.
+        if (comeFailedAt == null || level.getGameTime() - comeFailedTime >= 100 || !comeFailedAt.closerThan(owner.blockPosition(), 3)) {
             var step = route.follow(player.blockPosition(), 2);
             if (step == CompanionTravel.Step.WALKING) { orderProgressPosition = null; return; }
             owner.travel().reset();
-            if (step == CompanionTravel.Step.FAILED) comeFailedAt = owner.blockPosition();
+            if (step == CompanionTravel.Step.FAILED) { comeFailedAt = owner.blockPosition(); comeFailedTime = level.getGameTime(); }
         }
         if (orderHasStalled(level, 240)) {
             // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.

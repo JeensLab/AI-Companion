@@ -95,6 +95,9 @@ final class CompanionTravel {
         // This tick's wide search went elsewhere: the leg he has is kept, the next one is looked for on the next tick.
         if (wideBusy) return Step.WALKING;
         leg = next;
+        // A whole way to the goal that is longer than the straight line promised: walking it counts as progress for as long as it takes.
+        if (leg != null && leg.canReach() && endDistance(leg) <= near + 2)
+            walkUntil = Math.max(walkUntil, now + CompanionRoute.farLimit(CompanionMiningNavigation.length(owner, leg)));
         if (leg == null) { owner.getNavigation().stop(); told("FAILED", "no leg found"); return Step.FAILED; }
         CompanionMiningNavigation.walk(owner, leg, speed);
         return Step.WALKING;

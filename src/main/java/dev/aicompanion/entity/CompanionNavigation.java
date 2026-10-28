@@ -48,14 +48,16 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     }
 
     /**
-     * The same search with three times the range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
-     * budget, so no dearer than one search that fails.
+     * The same search with a much longer range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
+     * budget, so no dearer than one search that fails. The game's search counts the distance walked so far, and re-counts it every
+     * time a cell is reached from another side, so along a wall the figure grows well beyond the way itself (a 190-block way round
+     * a wall ten blocks wide was cut off at three times the range of 80): six times keeps such ways in.
      */
     public Path wide(Set<BlockPos> targets, int accuracy) {
         long now = level.getGameTime();
         if (now != wideCountOf) { wideCountOf = now; tickWides = 0; }
         maxWides = Math.max(maxWides, ++tickWides);
-        return createPath(targets, 8, false, accuracy, (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 3));
+        return createPath(targets, 8, false, accuracy, (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 6));
     }
 
     private long wideTick = -1, wideCountOf = -1;

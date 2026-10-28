@@ -63,4 +63,41 @@ public final class CompanionMarathonFarTests {
                 });
         a.script.run("far-over-the-ridge", watch::summary);
     }
+
+    /**
+     * A floating stone platform (21 x 121) split lengthwise by a four-high wall that leaves a gap (z 116..125) at the far end only: the player ten
+     * blocks off by the line, about 190 on foot round the wall; its edges are a fall. Search radius 64, as in the game.
+     */
+    private static MarathonTerrain wallPlatform(GameTestHelper h, int wallEnd) {
+        var t = new MarathonTerrain(h, 32, 40, 132);
+        t.fill(5, 9, 5, 25, 9, 125, Blocks.STONE);
+        t.fill(15, 10, 5, 15, 13, wallEnd, Blocks.STONE);
+        return t;
+    }
+
+    @GameTest(template = "marathon_far", batch = "marathon", timeoutTicks = 3000)
+    public static void comesRoundALongWallOnAPlatform(GameTestHelper h) {
+        wallPlatform(h, 115);
+        var a = new MarathonArena(h, 32, 40, 132, 20, 25, 10, 25, 64);
+        a.script.ask("Иди ко мне", null, 20 * 100)
+                .check("came round the wall", () -> {
+                    a.expect(a.chat.said.getLast().report().contains("рядом"), "No «рядом» || " + a.chat.history());
+                    a.watch.assertWithPlayer(4);
+                });
+        a.script.run("come-round-wall", a.watch::summary);
+    }
+
+    /** The wall has no way round; a gap opens in it beside him a while after the order (what his self-rescue does): he must still arrive. */
+    @GameTest(template = "marathon_far", batch = "marathon", timeoutTicks = 3000)
+    public static void comesThroughAGapOpenedInTheWall(GameTestHelper h) {
+        var t = wallPlatform(h, 125);
+        var a = new MarathonArena(h, 32, 40, 132, 20, 25, 10, 25, 64);
+        h.runAfterDelay(100, () -> t.fill(15, 10, 24, 15, 13, 25, Blocks.AIR));
+        a.script.ask("Иди ко мне", null, 20 * 60)
+                .check("arrived", () -> {
+                    a.expect(a.chat.said.getLast().report().contains("рядом"), "No «рядом» || " + a.chat.history());
+                    a.watch.assertWithPlayer(4);
+                });
+        a.script.run("come-through-gap", a.watch::summary);
+    }
 }
