@@ -117,7 +117,9 @@ public final class CompanionLocalCommands {
         // «Стой и жди» and «жди 10 секунд» are no local commands (« и », a digit), yet they are orders for the model.
         return fighting && !OpenRouterClient.requiresAction(text)
                 && !normalized.matches("(?sU).*(убей|убива|бей\\b|атак|мочи\\b|защищ|прикр|помоги|помогай|спаси|беги|отойди|отступ|назад|уходи|сюда|ко мне|за мной|"
-                        + "\\b(по)?стой\\b|\\b(подо)?жди\\b|не двигайся|замри|останься|лечись|поешь|съешь|осторожн|сзади|крипер|скелет|зомби|паук|\\bмоб|монстр).*");
+                        + "\\b(по)?стой\\b|\\b(подо)?жди\\b|не двигайся|замри|останься|лечись|поешь|съешь|осторожн|сзади|крипер|скелет|зомби|паук|\\bмоб|монстр|"
+                        // «Дай мне еды» in a fight is a hand-over, not small talk.
+                        + "\\b(от|по|пере|вы)?дай(те)?\\b|\\bкинь|\\bброс(ь|ай)\\b|\\bверни|\\bпринеси|\\bдержи\\b).*");
     }
 
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {

@@ -74,8 +74,14 @@ public final class CompanionSoulTests {
         var soul=new CompanionSoul();
         String original=CompanionPersonality.style(soul.character());
         for(String rule:new String[]{"Ты язвительный","Мат — привычная часть твоей речи","на содержательный вопрос отвечай подробнее","ценишь запас факелов",
-                "Молчание не означает согласия","принятие поручения не означает его завершения","Не выдумывай биографию","зумерским сленгом","Twitch"})
+                "Молчание не означает согласия","принятие поручения не означает его завершения","Не выдумывай биографию","без молодёжного сленга","Twitch"})
             h.assertTrue(original.contains(rule),"Oleg without the soul model changed: "+rule);
+        // The owner's choice: no slang is demanded of Oleg as he is; it comes only once the player talks so himself.
+        h.assertTrue(!original.contains("Обязательно говори с")&&!original.contains("рил"),"Slang demanded without the player using it");
+        h.assertTrue(CompanionPersonality.style(Map.of(Trait.SLANG,2)).contains("Говори со сленгом")
+                &&CompanionPersonality.style(Map.of(Trait.SLANG,-2)).contains("Без молодёжного сленга совсем"),"Slang does not follow the player");
+        for(var topic:CompanionTopics.ALL)
+            h.assertTrue(!topic.text().matches("(?iU).*(\\bрил\\b|\\bбаза\\b|кринж|вайб|\\bимб|\\bбро\\b|тильт|рофл|чекн|душнил|хейт|топов).*"),"Slang in a bank opener: "+topic.text());
         soul.adapt(parsed.character(),parsed.topics());
         var c=soul.character();
         h.assertTrue(c.get(Trait.SWEARING)==1&&c.get(Trait.HUMOR)==1&&c.get(Trait.CURIOSITY)==-1,"Not one step per talk: "+c);
@@ -86,7 +92,7 @@ public final class CompanionSoulTests {
         String adapted=CompanionPersonality.style(c);
         h.assertTrue(adapted.contains("Мат — обычная часть почти каждой реплики")&&adapted.contains("Без подколов")&&!adapted.contains("Ты язвительный")
                 &&adapted.contains("Молчание не означает согласия")&&adapted.contains("принятие поручения не означает его завершения")
-                &&adapted.contains("зумерским сленгом")&&adapted.contains("Twitch"),"Adapted text wrong or fixed rules lost");
+                &&adapted.contains("без молодёжного сленга")&&adapted.contains("Twitch"),"Adapted text wrong or fixed rules lost");
         soul.adapt(Map.of(Trait.SWEARING,-2),List.of());
         h.assertTrue(soul.character().get(Trait.SWEARING)==-2&&CompanionPersonality.style(soul.character()).contains("Не матерись совсем"),"Asked to stop swearing, still swears");
         var own=soul.next(FIRST);
@@ -208,7 +214,8 @@ public final class CompanionSoulTests {
     public static void inAFightSmallTalkIsHushedButOrdersPass(GameTestHelper h) {
         h.assertTrue(CompanionLocalCommands.hushed(true,"Как дела, бро?")&&CompanionLocalCommands.hushed(true,"Что слушаешь?"),"Small talk in a fight");
         h.assertTrue(!CompanionLocalCommands.hushed(false,"Как дела, бро?"),"Hushed without a fight");
-        for(String order:new String[]{"убей зомби","помоги!","беги ко мне","сзади крипер","построй дом","добудь камня","стой и жди","Стой! И не двигайся","жди 10 секунд","подожди тут","постой, крафчу"})
+        for(String order:new String[]{"убей зомби","помоги!","беги ко мне","сзади крипер","построй дом","добудь камня","стой и жди","Стой! И не двигайся","жди 10 секунд","подожди тут","постой, крафчу",
+                "дай мне еды","Отдай меч","кинь стрелы!","передай факелы","брось мне хлеб","верни кирку","держи щит"})
             h.assertTrue(!CompanionLocalCommands.hushed(true,order),"Order hushed: "+order);
         h.assertTrue(CompanionLocalCommands.FIGHT_HUSH.equals("Помолчи, я тут занят мобом."),"Phrase changed"); h.succeed();
     }
