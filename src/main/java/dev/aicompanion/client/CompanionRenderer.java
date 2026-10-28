@@ -65,6 +65,16 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
                 new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), context.getModelManager()));
     }
 
+    /** The fast stroke lying flat, as the game turns a swimming player (PlayerRenderer); the arms are the model's own crawl. */
+    @Override
+    protected void setupRotations(CompanionEntity entity, com.mojang.blaze3d.vertex.PoseStack pose, float bob, float yBodyRot, float partialTick, float scale) {
+        super.setupRotations(entity, pose, bob, yBodyRot, partialTick, scale);
+        float swim = entity.getSwimAmount(partialTick);
+        if (swim <= 0) return;
+        pose.mulPose(com.mojang.math.Axis.XP.rotationDegrees(net.minecraft.util.Mth.lerp(swim, 0.0F, entity.isInWater() ? -90.0F - entity.getXRot() : -90.0F)));
+        if (entity.isVisuallySwimming()) pose.translate(0.0F, -1.0F, 0.3F);
+    }
+
     @Override
     public ResourceLocation getTextureLocation(CompanionEntity entity) {
         return TEXTURES[entity.expression().ordinal()];
