@@ -11,7 +11,7 @@ import net.minecraft.world.phys.AABB;
 /**
  * The moves of the companion's own search and what each costs in ticks: a step to the four sides, a diagonal when both cells
  * beside it can be walked, a climb of one block (two out of the water onto a bank), a drop of as far as he may fall (any
- * depth into water), swimming, a jump over a pit of one or two blocks. What a cell is (walkable, a door, a fence, danger, water) is the game's own judgement of it,
+ * depth into water; onto a ladder or vine too: he takes hold), swimming, a jump over a pit of one or two blocks, a climb up and down a ladder or vine. What a cell is (walkable, a door, a fence, danger, water) is the game's own judgement of it,
  * the evaluator's; which neighbour a step may come to follows the game's walking search, so the same routes are found.
  * A new move (dig, place) is one more method called from {@link #expand} that offers its cells with their cost.
  */
@@ -32,6 +32,8 @@ final class CompanionMoves {
     private static final int JUMP_WIDTH = 2;
     /** Extra ticks of a jump: the run-up, the take-off and the landing. */
     private static final float JUMP = 8;
+    /** Ticks a block of ladder takes: up by the game's climb, 0.2 a tick; down at the 0.15 a tick a climber's fall is held to. */
+    private static final float LADDER_UP = 5, LADDER_DOWN = 7;
 
     private final CompanionNodeEvaluator eval;
     private final Mob mob;
@@ -43,10 +45,14 @@ final class CompanionMoves {
         int x = from.x, y = from.y, z = from.z;
         PathType here = eval.typeAt(x, y, z);
         int up = mob.getPathfindingMalus(eval.typeAt(x, y + 1, z)) >= 0 && here != PathType.STICKY_HONEY ? Mth.floor(Math.max(1F, mob.maxUpStep())) : 0;
-        double floor = eval.floorAt(x, y, z);
+        boolean ladder = eval.climbableAt(x, y, z);
+        // Holding a vine (nothing under his feet in the game's eyes) he is at the level of its cell, as on a ladder.
+        double floor = ladder ? Math.max(eval.floorAt(x, y, z), y) : eval.floorAt(x, y, z);
         boolean floats = eval.typeAt(x, y - 1, z) == PathType.WATER;
         for (Direction d : Direction.Plane.HORIZONTAL) {
             Node to = accept(x + d.getStepX(), y, z + d.getStepZ(), up, floor, d, here, floats);
+            // Not off a ladder into a fall: his feet are anywhere in its cell, so the drop is more than the node's, and damage.
+            if (ladder && to != null && to.y < y) to = null;
             sides[d.get2DDataValue()] = to;
             if (to != null && (to.costMalus >= 0 || from.costMalus < 0)) sink.offer(to, cost(from, to));
         }
@@ -56,7 +62,19 @@ final class CompanionMoves {
             Node to = accept(x + d.getStepX() + e.getStepX(), y, z + d.getStepZ() + e.getStepZ(), up, floor, d, here, floats);
             if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0) sink.offer(to, cost(from, to));
         }
+        if (ladder) {
+            ladder(from, y + 1, LADDER_UP, sink);
+            ladder(from, y - 1, LADDER_DOWN, sink);
+        }
         if (here == PathType.WALKABLE && from.costMalus >= 0) for (Direction d : Direction.Plane.HORIZONTAL) jump(from, d, floor, sink);
+    }
+
+    /** Along the climbable column to the cell at {@code y} if it is climbable too (a vine or ladder needs no wall by it), with room for his head going up. */
+    private void ladder(Node from, int y, float ticks, Sink sink) {
+        if (!eval.climbableAt(from.x, y, from.z) || (y > from.y && eval.typeAt(from.x, y + 1, from.z) == PathType.BLOCKED)) return;
+        PathType type = eval.typeAt(from.x, y, from.z);
+        float malus = mob.getPathfindingMalus(type);
+        if (malus >= 0) sink.offer(eval.mark(from.x, y, from.z, type, malus), ticks);
     }
 
     /**
@@ -141,8 +159,11 @@ final class CompanionMoves {
 
     /** Down through air to the first cell with a floor: no deeper than he may fall, unless it is water. */
     private Node drop(int x, int y, int z) {
+        if (eval.climbableAt(x, y, z)) return eval.mark(x, y, z, PathType.OPEN, 0);
         for (int i = y - 1; i >= mob.level().getMinBuildHeight() && y - i <= WATER_DROP; i--) {
             PathType type = eval.typeAt(x, i, z);
+            // A fall onto a ladder or vine is held there: he takes hold, and a climber's fall distance is reset.
+            if (type == PathType.OPEN && eval.climbableAt(x, i, z) && y - i <= LAND_DROP) return eval.mark(x, i, z, PathType.OPEN, 0);
             if (type == PathType.OPEN) continue;
             float malus = mob.getPathfindingMalus(type);
             return malus < 0 || (y - i > LAND_DROP && type != PathType.WATER) ? null : eval.mark(x, i, z, type, malus);

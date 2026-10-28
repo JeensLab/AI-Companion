@@ -1,11 +1,12 @@
 package dev.aicompanion.entity;
 
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.pathfinder.Node;
 import net.minecraft.world.level.pathfinder.Path;
 
 /**
- * Walks the jumps of the companion's own route (CompanionMoves.jump). A jump is two nodes of the route more than a block apart (no
+ * Walks the jumps and ladder climbs of the companion's own route (CompanionMoves.jump). A jump is two nodes of the route more than a block apart (no
  * other move leaves a gap), so it needs no mark on the nodes and survives the route being cut or rebuilt. He walks to the edge as
  * the game's path following takes him, then presses the jump control, and the game's physics carries him over, as a player's jump
  * does: nothing is set but the key. A jump that needs the run of a sprint gets it through {@link #sprints()}, which the stroke
@@ -17,8 +18,11 @@ final class CompanionJumps {
     /** A jump of this many blocks and more between two nodes is run up to at a sprint (a walking jump clears a block less). */
     private static final int RUN_FROM = 3;
 
+    /** The speed modifier on and onto a ladder (of the walk, which is .2158 blocks a tick). */
+    private static final double SLOW = 1, OFF_WALL = .15;
+
     private final Mob mob;
-    private boolean sprints;
+    private boolean sprints, climbing;
 
     CompanionJumps(Mob mob) { this.mob = mob; }
 
@@ -40,5 +44,34 @@ final class CompanionJumps {
             if (landing == next && mob.onGround() && along >= EDGE) mob.getJumpControl().jump();
             return;
         }
+    }
+
+    /** On a ladder or vine, or the next node is one: not at a sprint (it carried him past the ladder, off it). Read by the stroke. */
+    boolean climbs() { return climbing; }
+
+    /**
+     * On a ladder or vine with the next node above him: press the jump control. The game climbs a living thing that is jumping (or
+     * pressed against a wall) up 0.2 a tick, and a vine has no collision to press against. Going down needs nothing: a climber falls
+     * at most 0.15 a tick.
+     */
+    void climb(Path path) {
+        climbing = false;
+        if (path == null || path.isDone()) return;
+        Node next = path.getNextNode();
+        climbing = mob.onClimbable() || mob.level().getBlockState(new net.minecraft.core.BlockPos(next.x, next.y, next.z)).is(net.minecraft.tags.BlockTags.CLIMBABLE);
+        // Off the ground he glides on whatever speed he left it with (a climber's horizontal speed is held to .15, the air takes .91 of it
+        // a tick): walked slowly onto a ladder he stays in its cell, run onto it he is a block past.
+        var move = mob.getMoveControl();
+        double x = move.getWantedX(), z = move.getWantedZ();
+        var at = mob.level().getBlockState(mob.blockPosition());
+        // On a ladder in the column of the next node, he holds off its plate (the cell's wall side, a hair from the centre): pressed
+        // to it he would climb on his own (a collision with a wall climbs), up the ladder he is meant to go down.
+        if (mob.onClimbable() && at.getBlock() instanceof net.minecraft.world.level.block.LadderBlock && next.x == mob.getBlockX() && next.z == mob.getBlockZ()) {
+            Direction open = at.getValue(net.minecraft.world.level.block.LadderBlock.FACING);
+            x = next.x + .5 + open.getStepX() * OFF_WALL; z = next.z + .5 + open.getStepZ() * OFF_WALL;
+        }
+        if (climbing) move.setWantedPosition(x, move.getWantedY(), z, SLOW);
+        if (!mob.onClimbable()) return;
+        if (!path.isDone() && path.getNextNode().y > mob.getY()) mob.getJumpControl().jump();
     }
 }

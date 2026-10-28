@@ -31,7 +31,7 @@ final class CompanionSwimming {
         boolean fast = (ahead || held) && !c.onGround() && !c.isPassenger() && c.isAlive();
         // The same flag runs on land (a long way, a sprinting player): set here, or this stroke would switch it off every tick.
         // Not wading: water at his feet, even before the game has noticed it, is walked through upright (knee-deep tests).
-        boolean sprint = fast || !c.isInWater() && c.level().getFluidState(c.blockPosition()).isEmpty() && !c.isPassenger() && c.isAlive() && (c.travel().running() || c.getNavigation() instanceof CompanionNavigation nav && nav.sprintsToJump());
+        boolean sprint = fast || !c.isInWater() && c.level().getFluidState(c.blockPosition()).isEmpty() && !c.isPassenger() && c.isAlive() && (c.travel().running() || c.getNavigation() instanceof CompanionNavigation nav && nav.sprintsToJump()) && !(c.getNavigation() instanceof CompanionNavigation ladder && ladder.climbs());
         if (c.isSprinting() != sprint) c.setSprinting(sprint);
         if (c.getPose() == (fast ? Pose.STANDING : Pose.SWIMMING)) c.setPose(fast ? Pose.SWIMMING : Pose.STANDING);
         // At a sprint the game sinks nothing in water (Entity.getFluidFallingAdjustedMovement): the float lifted him till he lay on
@@ -107,8 +107,23 @@ final class CompanionSwimming {
     static final class SwimmingMoveControl extends net.minecraft.world.entity.ai.control.MoveControl {
         final CompanionEntity c;
         SwimmingMoveControl(CompanionEntity c) { super(c); this.c = c; }
+        /**
+         * On a ladder the game's control hops whenever his feet are below the top of the ladder's block (it has a collision shape: a
+         * mob climbs a slab so), and the hop is then held forward, deaf to the route, until the ground: off the ladder. Here he only
+         * steers to the next point; up and down are the climb (CompanionJumps.climb) and the game's own hold of a climber.
+         */
+        private void climb() {
+            operation = Operation.WAIT;
+            double dx = wantedX - c.getX(), dz = wantedZ - c.getZ();
+            if (dx * dx + dz * dz < 2.5e-7) { c.setZza(0); return; }
+            c.setYRot(rotlerp(c.getYRot(), (float)(net.minecraft.util.Mth.atan2(dz, dx) * 57.2957763671875) - 90, 90));
+            c.setSpeed((float)(speedModifier * c.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED)));
+            c.setZza(1);
+        }
+
         @Override public void tick() {
             if (operation == Operation.JUMPING && (c.isInWater() || c.isInLava()) && !c.onGround()) operation = c.getNavigation().isDone() ? Operation.WAIT : Operation.MOVE_TO;
+            if (c.onClimbable() && operation != Operation.WAIT) { climb(); return; }
             super.tick();
         }
     }
