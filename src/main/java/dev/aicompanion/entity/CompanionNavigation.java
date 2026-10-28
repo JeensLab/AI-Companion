@@ -43,9 +43,9 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     // The game's own stuck flag and recompute target are private and set only by its createPath, which never runs: kept here instead.
     private boolean stuck;
     private BlockPos walkedTarget;
+    // What the walked path was searched with: its recompute asks for the same (a far route's, a search as wide as it was).
     private int walkedReach;
-    /** The accuracy each path was searched with (the walked one's recompute asks for the same). */
-    private final java.util.Map<Path, Integer> reachOf = new java.util.WeakHashMap<>();
+    private float walkedRange;
     /** The path a recompute replaced and the one that took its place: a goal that keeps walking its old object walks the new one. */
     private Path replaced, replacement;
 
@@ -55,7 +55,9 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         if (next != null && !next.sameAs(path)) {
             stuck = false;
             walkedTarget = next.getTarget();
-            walkedReach = reachOf.getOrDefault(next, 1);
+            walkedReach = next instanceof CompanionSearch.Found found ? found.accuracy : 1;
+            walkedRange = next instanceof CompanionSearch.Found found ? found.range : followRange(1);
+            timeoutCachedNode = net.minecraft.core.Vec3i.ZERO; timeoutTimer = 0; timeoutLimit = 0;
         }
         return super.moveTo(next, speed);
     }
@@ -66,6 +68,9 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     @Override protected void doStuckDetection(net.minecraft.world.phys.Vec3 at) {
         int checked = lastStuckCheck;
         net.minecraft.world.phys.Vec3 from = lastStuckCheckPos;
+        // The game times a path out when the time of all its nodes adds up to three times what the next one should take: its paths
+        // were short. A route round a long wall was cut off every fifteen seconds (show 28.10). Here the time is that of one node.
+        if (path != null && !path.isDone() && !path.getNextNodePos().equals(timeoutCachedNode)) timeoutTimer = 0;
         super.doStuckDetection(at);
         if (lastStuckCheck == checked) return;
         float speed = mob.getSpeed() >= 1.0F ? mob.getSpeed() : mob.getSpeed() * mob.getSpeed();
@@ -82,7 +87,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         if (level.getGameTime() - timeLastRecompute <= 20L) { hasDelayedRecomputation = true; return; }
         Path old = path;
         path = null;
-        Path found = search(Set.of(walkedTarget), walkedReach, followRange(1));
+        Path found = search(Set.of(walkedTarget), walkedReach, walkedRange);
         if (found == BUSY) { path = old; hasDelayedRecomputation = true; return; }
         path = found;
         if (found != null && old != null) { replaced = replaced != null && replacement == old ? replaced : old; replacement = found; }
@@ -134,7 +139,6 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         if (search.state() == CompanionSearch.State.RUNNING) return BUSY;
         ranOut = search.state() == CompanionSearch.State.EXHAUSTED && !search.complete();
         Path way = search.from(mob.position());
-        if (way != null) reachOf.put(way, accuracy);
         return way;
     }
 

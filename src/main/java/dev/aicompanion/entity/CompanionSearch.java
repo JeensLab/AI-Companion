@@ -35,7 +35,9 @@ final class CompanionSearch {
 
     /** A path of this search, told from the game's own (CompanionNavigation leaves it to be walked as it is). */
     static final class Found extends Path {
-        Found(List<Node> nodes, BlockPos target, boolean reached) { super(nodes, target, reached); }
+        /** How near its target the search had to come and how far it saw: a search of the same path again asks the same. */
+        final int accuracy; final float range;
+        Found(List<Node> nodes, BlockPos target, boolean reached, int accuracy, float range) { super(nodes, target, reached); this.accuracy = accuracy; this.range = range; }
     }
 
     private final CompanionNodeEvaluator eval;
@@ -171,7 +173,7 @@ final class CompanionSearch {
     }
 
     /** The path from the cell of it nearest to {@code at} (within three blocks); the whole path if there is none and {@code keep}, else null. */
-    private static Path trimmed(Path path, Vec3 at, boolean keep) {
+    private static Path trimmed(Found path, Vec3 at, boolean keep) {
         int best = -1; double least = 9;
         for (int i = 0; i < path.getNodeCount(); i++) {
             Node node = path.getNode(i);
@@ -181,7 +183,7 @@ final class CompanionSearch {
         if (best <= 0) return best == 0 || keep ? path : null;
         List<Node> nodes = new ArrayList<>(path.getNodeCount() - best);
         for (int i = best; i < path.getNodeCount(); i++) nodes.add(path.getNode(i));
-        return new Found(nodes, path.getTarget(), path.canReach());
+        return new Found(nodes, path.getTarget(), path.canReach(), path.accuracy, path.range);
     }
 
     /** The target this cell is at (within the accuracy, as the game counted it: blocks along the axes), or null. */
@@ -202,9 +204,9 @@ final class CompanionSearch {
         return (float)Math.max(0, Math.sqrt(dx * dx + dz * dz) - accuracy) * CompanionMoves.TICKS_PER_BLOCK;
     }
 
-    private static Found build(Node end, BlockPos target, boolean reached) {
+    private Found build(Node end, BlockPos target, boolean reached) {
         List<Node> nodes = new ArrayList<>();
         for (Node node = end; node != null; node = node.cameFrom) nodes.add(0, node);
-        return new Found(nodes, target, reached);
+        return new Found(nodes, target, reached, accuracy, range);
     }
 }

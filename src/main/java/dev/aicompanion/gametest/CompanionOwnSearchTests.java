@@ -242,6 +242,77 @@ public final class CompanionOwnSearchTests {
         });
     }
 
+    /**
+     * The show of 28.10: a platform 21 wide and 120 long with a plank wall of 110 along its middle, open at one end only; he stands
+     * at the wall, the target is a few blocks behind it, and the way round is some 180 blocks (the game's search ranges: radius 64).
+     */
+    private static CompanionEntity longWall(GameTestHelper h) {
+        box(h, 39, 0, 0, 72, 14, 171, Blocks.AIR);
+        box(h, 39, 1, 0, 39, 14, 122, Blocks.BARRIER);
+        box(h, 61, 1, 0, 61, 14, 122, Blocks.BARRIER);
+        box(h, 40, 1, 0, 60, 14, 0, Blocks.BARRIER);
+        box(h, 40, 1, 121, 60, 14, 121, Blocks.BARRIER);
+        box(h, 40, 1, 1, 60, 1, 120, Blocks.STONE);
+        box(h, 40, 2, 1, 60, 2, 120, Blocks.GRASS_BLOCK);
+        box(h, 50, 3, 1, 50, 6, 110, Blocks.OAK_PLANKS);
+        CompanionEntity c = spawn(h, 51, 3, 25);
+        c.setSearchRadius(64);
+        return c;
+    }
+
+    private static int planks(GameTestHelper h) {
+        int n = 0;
+        for (int z = 1; z <= 110; z++) for (int y = 3; y <= 6; y++) if (h.getBlockState(new BlockPos(50, y, z)).is(Blocks.OAK_PLANKS)) n++;
+        return n;
+    }
+
+    /**
+     * «Иди ко мне» to the player six blocks off behind the long wall while leaves come and go above the platform, as a felled tree's
+     * crown decays (show 28.10: he walked to and fro along the wall for three minutes). The route round it is walked in one go: a
+     * block change rebuilds it as wide as it was found, not as a part of one search's way that leads back to the wall, and the game's
+     * time-out of a path does not cut it off half-way.
+     */
+    @GameTest(template = "marathon_far", batch = "longwall", timeoutTicks = 3000)
+    public static void theWayRoundALongWallIsWalkedInOneGoWhileBlocksChangeBesideIt(GameTestHelper h) {
+        CompanionEntity c = longWall(h);
+        var player = player(c, h);
+        teleport(h, player, 45, 3, 22);
+        var nav = (CompanionNavigation)c.getNavigation();
+        int wall = planks(h);
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        boolean[] walking = {false};
+        h.onEachTick(() -> {
+            if (h.getTick() % 10 == 0 && h.getTick() < 900) h.setBlock(new BlockPos(53, 8, 30), h.getTick() % 20 == 0 ? Blocks.OAK_LEAVES : Blocks.AIR);
+            if (!c.isWorking()) return;
+            // Once he walks the whole way round, it is neither dropped half-way nor swapped for a part that does not get there.
+            Path way = nav.getPath();
+            String at = " at " + h.relativePos(c.blockPosition()).toShortString() + ", tick " + h.getTick();
+            if (way != null && !way.isDone() && way.canReach()) walking[0] = true;
+            else if (walking[0] && c.distanceToSqr(player) > 16) h.fail(way == null || way.isDone() ? "The walk round was cut off half-way" + at : "The walk round was swapped for a part of a short search" + at);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, "Still walking: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(planks(h) == wall, "Broke the wall: " + (wall - planks(h)) + " planks");
+        });
+    }
+
+    /** A tree eight blocks off behind the long wall, within the twelve of a near tree: walked round to and felled from the ground, no climb. */
+    @GameTest(template = "marathon_far", batch = "longwall", timeoutTicks = 3000)
+    public static void aNearTreeBehindALongWallIsWalkedRoundToAndFelled(GameTestHelper h) {
+        CompanionEntity c = longWall(h);
+        box(h, 45, 3, 20, 45, 5, 20, Blocks.OAK_LOG);
+        int wall = planks(h);
+        double top = c.getY();
+        double[] highest = {top};
+        h.onEachTick(() -> highest[0] = Math.max(highest[0], c.getY()));
+        c.startGatheringLogs(3);
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isGatheringTask() && !c.isWorking() && c.didLastTaskSucceed(), "Not felled: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(highest[0] <= top + .6, "He climbed: up to " + (highest[0] - top) + " blocks");
+            h.assertTrue(planks(h) == wall, "Broke the wall: " + (wall - planks(h)) + " planks");
+        });
+    }
+
     private static net.minecraft.world.entity.ai.goal.GoalSelector goals(CompanionEntity c) {
         try {
             var field = net.minecraft.world.entity.Mob.class.getDeclaredField("goalSelector");
