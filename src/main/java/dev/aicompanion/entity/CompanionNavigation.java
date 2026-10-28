@@ -18,8 +18,15 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     // The cell budget of one search (CompanionSearch.BUDGET unless a GameTest lowers it) and whether the last one ended at it.
     private int budget = CompanionSearch.BUDGET;
     private boolean ranOut;
+    private final CompanionJumps jumps = new CompanionJumps(mob);
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
+
+    /** A jump of the route is walked on the tick the game follows the path (CompanionJumps). */
+    @Override public void tick() { super.tick(); jumps.tick(path); }
+
+    /** Run up to a jump ahead: read by the stroke, which sets sprinting. */
+    boolean sprintsToJump() { return jumps.sprints(); }
 
     @Override protected PathFinder createPathFinder(int maxVisitedNodes) {
         this.evaluator = new CompanionNodeEvaluator();

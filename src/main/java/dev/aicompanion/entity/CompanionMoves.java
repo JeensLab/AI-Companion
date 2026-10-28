@@ -11,7 +11,7 @@ import net.minecraft.world.phys.AABB;
 /**
  * The moves of the companion's own search and what each costs in ticks: a step to the four sides, a diagonal when both cells
  * beside it can be walked, a climb of one block (two out of the water onto a bank), a drop of as far as he may fall (any
- * depth into water), swimming. What a cell is (walkable, a door, a fence, danger, water) is the game's own judgement of it,
+ * depth into water), swimming, a jump over a pit of one or two blocks. What a cell is (walkable, a door, a fence, danger, water) is the game's own judgement of it,
  * the evaluator's; which neighbour a step may come to follows the game's walking search, so the same routes are found.
  * A new move (dig, place) is one more method called from {@link #expand} that offers its cells with their cost.
  */
@@ -27,6 +27,11 @@ final class CompanionMoves {
     private static final int WATER_DROP = 20;
     /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). */
     private static final int LAND_DROP = 3;
+
+    /** The widest pit he jumps (a player's sprinting jump clears far more; two blocks leave room for a miss of a few tenths). */
+    private static final int JUMP_WIDTH = 2;
+    /** Extra ticks of a jump: the run-up, the take-off and the landing. */
+    private static final float JUMP = 8;
 
     private final CompanionNodeEvaluator eval;
     private final Mob mob;
@@ -51,6 +56,35 @@ final class CompanionMoves {
             Node to = accept(x + d.getStepX() + e.getStepX(), y, z + d.getStepZ() + e.getStepZ(), up, floor, d, here, floats);
             if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0) sink.offer(to, cost(from, to));
         }
+        if (here == PathType.WALKABLE && from.costMalus >= 0) for (Direction d : Direction.Plane.HORIZONTAL) jump(from, d, floor, sink);
+    }
+
+    /**
+     * Over a pit of one or two blocks to ground at the same level on its far side (CompanionJumps walks it: the route's two nodes
+     * more than a block apart are a jump). Only where a miss is safe: the pit's floor within the fall he may take and nothing in it
+     * that hurts, and head room over it for the whole arc.
+     */
+    private void jump(Node from, Direction d, double floor, Sink sink) {
+        for (int gap = 1; gap <= JUMP_WIDTH; gap++) {
+            int x = from.x + d.getStepX() * gap, z = from.z + d.getStepZ() * gap;
+            if (!safePit(x, from.y, z)) return;
+            int lx = x + d.getStepX(), lz = z + d.getStepZ();
+            if (eval.typeAt(lx, from.y, lz) != PathType.WALKABLE || eval.floorAt(lx, from.y, lz) != floor) continue;
+            Node to = cell(lx, from.y, lz, 0, floor, d);
+            if (to != null && to.type == PathType.WALKABLE && to.costMalus >= 0) sink.offer(to, (gap + 1) * TICKS_PER_BLOCK + JUMP);
+        }
+    }
+
+    /** Air over a floor no deeper than he may fall onto (land that does no harm, or water), with head room above for a jump. */
+    private boolean safePit(int x, int y, int z) {
+        // At the top of the jump his head is over three blocks up: a ceiling lower than four cuts the jump short over the pit.
+        for (int up = 0; up <= 3; up++) if (eval.typeAt(x, y + up, z) != PathType.OPEN) return false;
+        for (int i = y - 1; y - i <= LAND_DROP; i--) {
+            PathType type = eval.typeAt(x, i, z);
+            if (type == PathType.OPEN) continue;
+            return type == PathType.WALKABLE || type == PathType.WATER;
+        }
+        return false;
     }
 
     /** No corner cut through a wall: both cells beside the diagonal are walkable (or lower), and none is a door. */
