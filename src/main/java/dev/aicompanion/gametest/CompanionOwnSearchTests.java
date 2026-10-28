@@ -106,6 +106,44 @@ public final class CompanionOwnSearchTests {
         });
     }
 
+    /** The world is left and loaded again in the middle of a long walk: the way is searched anew, he arrives with his things, and he is the only one. */
+    @GameTest(template = "marathon_far", timeoutTicks = 3000)
+    public static void aReloadInTheMiddleOfALongWalkLeavesHimArrivingWithHisThings(GameTestHelper h) {
+        box(h, 40, 0, 0, 71, 14, 171, Blocks.AIR);
+        box(h, 39, 1, 0, 39, 14, 171, Blocks.BARRIER);
+        box(h, 72, 1, 0, 72, 14, 171, Blocks.BARRIER);
+        box(h, 40, 1, 0, 71, 1, 171, Blocks.STONE);
+        box(h, 40, 2, 0, 71, 2, 171, Blocks.GRASS_BLOCK);
+        box(h, 40, 3, 80, 69, 6, 81, Blocks.STONE);
+        CompanionEntity first = spawn(h, 56, 3, 10);
+        var player = player(first, h);
+        teleport(h, player, 56, 3, 160);
+        first.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIAMOND, 3));
+        h.assertTrue(first.startWork("come", "", 1).success(), "Come order not accepted");
+        CompanionEntity[] now = {first};
+        BlockPos startAt = first.blockPosition();
+        boolean[] reloaded = {false};
+        h.onEachTick(() -> {
+            if (reloaded[0] || now[0].distanceToSqr(startAt.getX() + .5, startAt.getY(), startAt.getZ() + .5) < 50 * 50) return;
+            reloaded[0] = true;
+            var saved = new net.minecraft.nbt.CompoundTag();
+            now[0].saveWithoutId(saved);
+            now[0].discard();
+            CompanionEntity replacement = AICompanionMod.COMPANION.get().create(h.getLevel());
+            replacement.load(saved);
+            h.assertTrue(h.getLevel().addFreshEntity(replacement), "Reloaded companion rejected");
+            now[0] = replacement;
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(reloaded[0], "Not at the middle of the walk yet: " + h.relativePos(now[0].blockPosition()).toShortString() + " tick " + h.getTick() + " " + now[0].getLastTaskResult());
+            CompanionEntity c = now[0];
+            h.assertTrue(c.distanceToSqr(player) <= 36, "Still walking: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(c.getItem(0).is(net.minecraft.world.item.Items.DIAMOND) && c.getItem(0).getCount() == 3, "Items after the reload: " + c.getItem(0));
+            long companions = h.getLevel().getEntitiesOfClass(CompanionEntity.class, new net.minecraft.world.phys.AABB(h.absolutePos(BlockPos.ZERO)).inflate(300)).stream().filter(e -> e.isAlive()).count();
+            h.assertTrue(companions == 1, "Companions after the reload: " + companions);
+        });
+    }
+
     /** The whole route to the player by the companion's own search. */
     private static Path search(CompanionEntity c, net.minecraft.server.level.ServerPlayer player) {
         return ((CompanionNavigation)c.getNavigation()).search(java.util.Set.of(player.blockPosition()), 1);

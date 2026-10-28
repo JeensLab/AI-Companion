@@ -9,9 +9,8 @@ import net.minecraft.world.level.pathfinder.PathFinder;
 import java.util.Set;
 
 /**
- * The game's ground navigation with the companion's own route search ({@link #search}: the single route uses it) beside the game's
- * walking search (the game's goals still use that one), and a meter on both: cells the searches expanded and the time they took
- * (the polygon of GameTests and the route-outcome event of the journal read it).
+ * The game's ground navigation (its path follower) with every path built by the companion's own route search ({@link #search}), and
+ * a meter on it: cells the searches expanded and the time they took (the polygon of GameTests and the route-outcome event read it).
  */
 public final class CompanionNavigation extends net.minecraft.world.entity.ai.navigation.GroundPathNavigation {
     private CompanionNodeEvaluator evaluator;
@@ -29,14 +28,14 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         return new PathFinder(this.nodeEvaluator, maxVisitedNodes);
     }
 
-    /** Every createPath variant ends here. */
+    /**
+     * Every createPath variant ends here, so the game's goals (stroll, doors, the melee chase) walk our routes too; the game's own
+     * search never runs. A search not done within this tick's share answers null: the goal asks again next tick.
+     * Ticket 13: these callers (combat, stroll) must pass «no world changes» to the search once it has dig/place moves.
+     */
     @Override protected Path createPath(Set<BlockPos> targets, int regionOffset, boolean offsetUpward, int accuracy, float followRange) {
-        long start = System.nanoTime();
-        try {
-            return super.createPath(targets, regionOffset, offsetUpward, accuracy, followRange);
-        } finally {
-            spent(System.nanoTime() - start, 0);
-        }
+        Path found = search(targets, accuracy, followRange);
+        return found == BUSY ? null : found;
     }
 
     /** The answer to a search that has not finished within this tick's cells: ask again next tick (the search goes on where it was). */
@@ -193,10 +192,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         public Meter since(Meter before) { return new Meter(nodes - before.nodes, nanos - before.nanos, maxTickNanos); }
     }
 
-    /** The game recomputes a path to the goal of its own last search when a block near it changes; ours is not recomputed so. */
-    @Override public void recomputePath() { if (!(path instanceof CompanionSearch.Found)) super.recomputePath(); }
-
-    public Meter meter() { return new Meter((evaluator == null ? 0 : evaluator.expanded()) + searched, nanos, maxTickNanos); }
+    public Meter meter() { return new Meter(searched, nanos, maxTickNanos); }
     public void resetMaxTick() { maxTickNanos = 0; maxTickCells = 0; }
     /** The most cells the shared searches of one tick expanded so far (the diagnosis of a failure, asked for the answer now, is not counted). */
     public long maxTickCells() { return maxTickCells; }

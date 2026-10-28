@@ -249,7 +249,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     String diagnosticState() { return diagnostics.diagnosticState(); }
     net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
-    /** The game's ground navigation, with the walking search that also climbs out of water onto a bank (CompanionNodeEvaluator). */
+    /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
     @Override protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
         // The search budget in force is the game's times 3 (the constructor sets it: 6144 cells). Marathon 23.10: the coal down in the
         // cave, 45 steps by its narrow way, was «out of reach» from the meadow above — the search spent its cells on the meadow first.
