@@ -40,13 +40,15 @@ final class CompanionRoute {
     private long began;
     private boolean far;
     private long farUntil;
-    private Path farPath;
+    // The paths chosen as far ones (by identity): the kind goes with the path, whichever search it came from.
+    private final Set<Path> farPaths = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private long failedAt = Long.MIN_VALUE / 2;
     private int failures;
     private CompanionNavigation.Meter failedMeter;
     private CompanionNavigation.Meter meter;
-    // Goals (by their cells) that a wide search did not reach, and when.
-    private final Map<Set<BlockPos>, Long> wideFailed = new HashMap<>();
+    /** A wide search of these cells: when, whether its failure holds for these cells alone (it ran out of budget) or for any subset, and the way it found. */
+    private record Wide(long at, boolean exact, Path path) { }
+    private final Map<Set<BlockPos>, Wide> wideFailed = new HashMap<>(), wideFound = new HashMap<>();
 
     CompanionRoute(CompanionWork w) { this.w = w; }
 
@@ -85,19 +87,30 @@ final class CompanionRoute {
             if (path == null) return new Reach(Kind.NONE, null, null, 0, "no route");
             // A goal that no wide search reaches is not searched wide again at once (a failed one costs a whole search): five seconds.
             long now = owner.level().getGameTime();
-            // Failed wide for these cells or for a set that holds them all (a group that failed has failed for each of its faces).
+            // Failed wide for these cells; for a set that holds them all too, if that search ran out of range (a group that failed has
+            // failed for each of its faces), not if it ran out of budget (it may have spent it on a near cell that cannot be reached).
             for (var entry : wideFailed.entrySet())
-                if (now - entry.getValue() < 100 && entry.getKey().containsAll(cells)) return new Reach(Kind.NONE, null, null, 0, "no route");
+                if (now - entry.getValue().at() < 100 && (entry.getValue().exact() ? entry.getKey().equals(cells) : entry.getKey().containsAll(cells)))
+                    return new Reach(Kind.NONE, null, null, 0, "no route");
             if (!(owner.getNavigation() instanceof CompanionNavigation nav)) return new Reach(Kind.NONE, null, null, 0, "no route");
-            if (!nav.takeWide()) return new Reach(Kind.NONE, null, null, 0, BUSY);
-            path = nav.wide(cells, accuracy);
-            if (!reaches(path, cells, accuracy)) {
-                if (wideFailed.size() > 64) wideFailed.values().removeIf(at -> now - at >= 100);
-                if (wideFailed.size() > 256) wideFailed.clear();
-                wideFailed.put(Set.copyOf(cells), now);
-                return new Reach(Kind.NONE, null, null, 0, "no route");
+            // The same cells found wide a moment ago: not searched again at once (the group would take every tick's wide search).
+            Wide hit = wideFound.get(cells);
+            if (hit != null && now - hit.at() < 40) path = hit.path().copy();
+            else {
+                if (!nav.takeWide()) return new Reach(Kind.NONE, null, null, 0, BUSY);
+                path = nav.wide(cells, accuracy);
+                if (!reaches(path, cells, accuracy)) {
+                    if (wideFailed.size() > 64) wideFailed.values().removeIf(old -> now - old.at() >= 100);
+                    if (wideFailed.size() > 256) wideFailed.clear();
+                    wideFailed.put(Set.copyOf(cells), new Wide(now, nav.lastSearchExhausted(), null));
+                    return new Reach(Kind.NONE, null, null, 0, "no route");
+                }
+                if (wideFound.size() > 16) wideFound.clear();
+                wideFound.put(Set.copyOf(cells), new Wide(now, false, path.copy()));
             }
-            kind = Kind.FAR; farPath = path;
+            kind = Kind.FAR;
+            if (farPaths.size() > 32) farPaths.clear();
+            farPaths.add(path);
         }
         return new Reach(kind, blockOf.apply(path.getTarget()), path, CompanionMiningNavigation.length(owner, path), kind == Kind.FAR ? "far" : "near");
     }
@@ -161,7 +174,7 @@ final class CompanionRoute {
     int approach(ServerLevel level, BlockPos block, Need need) {
         boolean forTheDrop = need.forTheDrop();
         if (!block.equals(goal)) begin(block);
-        if (w.path != null && w.path == farPath) setFar(w.path);
+        if (w.path != null && farPaths.contains(w.path)) setFar(w.path);
         double distance = w.owner.distanceToSqr(block.getCenter());
         if (distance <= 3.8D * 3.8D && CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), block)
                 && (!forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, w.owner.blockPosition()))) { w.owner.getNavigation().stop(); told("ARRIVED", far ? "far" : "near"); return 1; }

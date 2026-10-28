@@ -15,6 +15,11 @@ import java.util.Set;
 public final class CompanionNavigation extends net.minecraft.world.entity.ai.navigation.GroundPathNavigation {
     private CompanionNodeEvaluator evaluator;
     private long nanos, tickNanos, tickOf = -1, maxTickNanos;
+    // The cell budget of one search (the game's, times its multiplier) and what the searches took: the last one, and this tick's.
+    private int maxVisited;
+    private float multiplier = 1F;
+    private long lastCells, tickCells;
+    private int tickWides, maxWides;
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
 
@@ -22,17 +27,22 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         this.evaluator = new CompanionNodeEvaluator();
         this.nodeEvaluator = evaluator;
         this.nodeEvaluator.setCanPassDoors(true);
+        this.maxVisited = maxVisitedNodes;
         return new PathFinder(this.nodeEvaluator, maxVisitedNodes);
     }
 
+    /** A smaller cell budget for every search from now on (GameTests that need a search to run out of it). */
+    public void limitSearch(int cells) { multiplier = (float)cells / maxVisited; super.setMaxVisitedNodesMultiplier(multiplier); }
+
     /** Every createPath variant ends here. */
     @Override protected Path createPath(Set<BlockPos> targets, int regionOffset, boolean offsetUpward, int accuracy, float followRange) {
-        long start = System.nanoTime();
+        long start = System.nanoTime(), cellsBefore = evaluator.expanded();
         try {
             return super.createPath(targets, regionOffset, offsetUpward, accuracy, followRange);
         } finally {
             long spent = System.nanoTime() - start, now = level.getGameTime();
-            if (now != tickOf) { tickOf = now; tickNanos = 0; }
+            if (now != tickOf) { tickOf = now; tickNanos = 0; tickCells = 0; }
+            lastCells = evaluator.expanded() - cellsBefore; tickCells += lastCells;
             tickNanos += spent; maxTickNanos = Math.max(maxTickNanos, tickNanos); nanos += spent;
         }
     }
@@ -41,16 +51,24 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
      * The same search with three times the range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
      * budget, so no dearer than one search that fails.
      */
-    Path wide(Set<BlockPos> targets, int accuracy) {
+    public Path wide(Set<BlockPos> targets, int accuracy) {
+        long now = level.getGameTime();
+        if (now != wideCountOf) { wideCountOf = now; tickWides = 0; }
+        maxWides = Math.max(maxWides, ++tickWides);
         return createPath(targets, 8, false, accuracy, (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 3));
     }
 
-    private long wideTick = -1;
+    private long wideTick = -1, wideCountOf = -1;
     /** One wide search per companion per game tick: the first takes it, the rest are told «not now» (the choice loops multiplied them). */
     boolean takeWide() { long now = level.getGameTime(); if (wideTick == now) return false; wideTick = now; return true; }
     boolean wideSpent() { return wideTick == level.getGameTime(); }
-    /** The searches of this tick have taken this much already: a choice that goes on searching waits for the next one. */
-    boolean overBudget() { return tickOf == level.getGameTime() && tickNanos > 3_000_000; }
+    /** The searches of this tick have expanded this many cells already: a choice that goes on searching waits for the next tick. */
+    boolean overBudget() { return tickOf == level.getGameTime() && tickCells > CELLS_PER_TICK; }
+    private static final int CELLS_PER_TICK = 3000;
+    /** The last search stopped at its cell budget: it saw only part of what it could reach, so it proves nothing about the cells it did not get to. */
+    boolean lastSearchExhausted() { return lastCells >= (int)(maxVisited * multiplier) - 1; }
+    /** The most wide searches of one tick so far (at most one is allowed). */
+    public int maxWideSearchesPerTick() { return maxWides; }
 
     /** Cells expanded and nanoseconds spent in searches so far; the difference of two readings is the cost of what lay between. */
     public record Meter(long nodes, long nanos, long maxTickNanos) {
@@ -60,7 +78,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     }
 
     public Meter meter() { return new Meter(evaluator == null ? 0 : evaluator.expanded(), nanos, maxTickNanos); }
-    public void resetMaxTick() { maxTickNanos = 0; }
+    public void resetMaxTick() { maxTickNanos = 0; maxWides = 0; }
 
     static Meter meterOf(CompanionEntity owner) { return owner.getNavigation() instanceof CompanionNavigation nav ? nav.meter() : new Meter(0, 0, 0); }
 

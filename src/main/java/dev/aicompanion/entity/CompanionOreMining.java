@@ -185,7 +185,8 @@ final class CompanionOreMining {
             if (!w.oreOffFoot.contains(candidate) && (walk == null || !group.contains(candidate))) {
                 // Its own walk: beyond the compared group, or the group search spent its steps on an ore it cannot reach.
                 CompanionRoute.Reach own = w.route.to(candidate, APPROACH);
-                if (own.busy()) { w.oreChoosing = true; return null; }
+                // The tick's wide search is spent: the choice already found (the group's walk) stands, it is not cancelled.
+                if (own.busy()) { if (walk != null) break; w.oreChoosing = true; return null; }
                 boolean safe = safeOreApproach(own.path());
                 if (safe && (walk == null || own.length() < walk.length())) return chosenOre(candidate, own.path());
                 if (!safe) w.oreOffFoot.add(candidate);

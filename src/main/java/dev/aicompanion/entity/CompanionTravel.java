@@ -26,7 +26,7 @@ final class CompanionTravel {
     private final CompanionEntity owner;
     private BlockPos goal;
     private Path leg;
-    private double best, near;
+    private double best;
     private long lastProgress;
     // Walking counts as progress for three times the time the straight way takes (a way round is longer, not endless).
     private long walkUntil;
@@ -37,6 +37,7 @@ final class CompanionTravel {
     private net.minecraft.world.phys.Vec3 legMoved;
     // A wide search that found no whole way to this goal is not repeated at every leg: when it was, in game ticks.
     private long wideFailedAt = Long.MIN_VALUE / 2;
+    private boolean wideBusy;
     // The walk as the journal tells it: where and when it began, what the searches had cost by then; null once told.
     private BlockPos from;
     private long began;
@@ -75,7 +76,6 @@ final class CompanionTravel {
     private Step step(BlockPos target, double near) {
         if (!(owner.level() instanceof ServerLevel level)) return Step.FAILED;
         long now = level.getGameTime();
-        this.near = near;
         if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; walkUntil = now + (long)(3 * distance() / .19) + 200; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
         owner.movementIntent(goal);
         double distance = distance();
@@ -88,7 +88,11 @@ final class CompanionTravel {
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
         if (leg != null && !owner.getNavigation().isDone() && !owner.getNavigation().isStuck()) return Step.WALKING;
         // A leg is over (or there was none): the next one.
-        leg = nextLeg(level, distance);
+        wideBusy = false;
+        Path next = nextLeg(level, distance);
+        // This tick's wide search went elsewhere: the leg he has is kept, the next one is looked for on the next tick.
+        if (wideBusy) return Step.WALKING;
+        leg = next;
         if (leg == null) { owner.getNavigation().stop(); told("FAILED", "no leg found"); return Step.FAILED; }
         CompanionMiningNavigation.walk(owner, leg, speed);
         return Step.WALKING;
@@ -105,10 +109,10 @@ final class CompanionTravel {
             // out the wide search fails at its cell budget (3500 cells, 14 ms in one tick on the polygon's far hills) and finds nothing.
             boolean within = distance <= owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 1.5;
             Path round = within ? wideRound(level) : null;
-            if (round != null) return round;
+            if (round != null || wideBusy) return round;
             if (route != null && route.getNodeCount() > 1 && endDistance(route) + 3 <= distance) return route;
             round = within ? null : wideRound(level);
-            if (round != null) return round;
+            if (round != null || wideBusy) return round;
         }
         // Straight on towards it, a short leg at a time, as a player heads for what he sees (marathon 23.10, «берег»: back from the
         // island the long search through the water found no part that came nearer, and the side steps led him off across the sea).
@@ -145,6 +149,7 @@ final class CompanionTravel {
     private Path wideRound(ServerLevel level) {
         long now = level.getGameTime();
         if (!(owner.getNavigation() instanceof CompanionNavigation nav) || now - wideFailedAt < 100) return null;
+        if (!nav.takeWide()) { wideBusy = true; return null; }
         Path round = nav.wide(java.util.Set.of(goal), 2);
         if (round != null && round.getNodeCount() > 1 && round.canReach()) return round;
         wideFailedAt = now;
