@@ -94,7 +94,10 @@ final class CompanionToolSense {
         owner.movementIntent(bench);
         owner.getLookControl().setLookAt(bench.getX() + .5D, bench.getY() + .5D, bench.getZ() + .5D);
         if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
-            path = owner.work.route.to(bench, BENCH).path();
+            var reach = owner.work.route.to(bench, BENCH);
+            // The tick's cells went elsewhere: not «no way», ask again next tick (giveUpAt bounds the wait).
+            if (reach.busy()) return true;
+            path = reach.path();
             if (path == null) { bench = null; path = null; equipBest(); return false; }
         }
         owner.work.route.walk(path);

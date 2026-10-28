@@ -135,6 +135,9 @@ public final class CompanionWork {
     final Set<BlockPos> stoneCompared = new HashSet<>();
     final List<BlockPos> stoneSingles = new ArrayList<>();
     static final int STONE_GROUP = 8;
+    /** Searches that really ran (not «no stand cell») in one choice; with a face found, after this many he takes the best instead of comparing every face in reach. */
+    int stoneSearches;
+    static final int STONE_SEARCHES = 20;
     /** Farther than this a face with no route is walked to in legs (CompanionTravel). */
     static final int FAR_STONE = 12;
     static final int TRAVEL_SPOT = 10;

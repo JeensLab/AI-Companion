@@ -112,7 +112,8 @@ final class CompanionRoute {
                 return new Reach(Kind.NONE, null, null, 0, "no route");
             }
             kind = Kind.FAR;
-            if (farPaths.size() > 32) farPaths.clear();
+            // The path being walked keeps its far mark whatever is dropped.
+            if (farPaths.size() > 32) farPaths.removeIf(old -> old != w.path);
             farPaths.add(path);
         }
         return new Reach(kind, blockOf.apply(path.getTarget()), path, CompanionMiningNavigation.length(owner, path), kind == Kind.FAR ? "far" : "near");

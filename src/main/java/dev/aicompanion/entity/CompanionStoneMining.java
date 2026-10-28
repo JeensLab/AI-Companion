@@ -336,7 +336,7 @@ final class CompanionStoneMining {
                 group.add(pos);
                 if (group.size() >= CompanionWork.STONE_GROUP) break;
             }
-            if (group.isEmpty()) {
+            if (group.isEmpty() || w.stoneChoice != null && w.stoneSearches >= CompanionWork.STONE_SEARCHES) {
                 CompanionRoute.Reach best = w.stoneChoice;
                 endStoneChoice();
                 if (best == null) return null;
@@ -349,6 +349,7 @@ final class CompanionStoneMining {
             CompanionRoute.Reach found = w.route.nearest(group, APPROACH);
             // The search goes on next tick: the group is asked again then, not counted as compared.
             if (found.busy()) { w.stoneCompared.removeAll(group); if (single) w.stoneSingles.addFirst(group.get(0)); w.selectingStone = true; return null; }
+            if (found.found() || !"no stand cell".equals(found.reason())) w.stoneSearches++;
             if (!found.found()) found = null;
             // His own deed does not walk down into a pit for stone either: such faces are left, his own stairs come instead.
             if (found != null && keepUp && found.path().getTarget().getY() < w.workOrigin.getY() - KEEP_UP) {
@@ -404,7 +405,7 @@ final class CompanionStoneMining {
         w.stoneTravel = null; w.offFoot.clear(); endStoneChoice(); w.dryAnchor = null;
         return false;
     }
-    void endStoneChoice() { w.stoneChoice = null; w.stoneCompared.clear(); w.stoneSingles.clear(); }
+    void endStoneChoice() { w.stoneSearches = 0; w.stoneChoice = null; w.stoneCompared.clear(); w.stoneSingles.clear(); }
 
     static boolean isStone(BlockState state) {
         // Natural stone only: cobblestone is what walls and towers are made of (review 22.10, К2).
