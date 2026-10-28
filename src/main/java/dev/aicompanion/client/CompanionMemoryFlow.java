@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Fills long-term memory from the talk: the player's lines and the companion's answers go to the journal kept in the world,
  * which survives logout, and a model condenses the journal into memories every 12 player lines and once when a session starts.
+ * The same request moves the companion's character towards the player and gives him topics of his own (entity.CompanionSoul).
  * A condensed batch leaves the journal by its number, and only after its reply has been handled, so a failed, outdated,
  * empty or cut-off request leaves the lines for the next attempt. Lock order is always history lock, then {@link #LOCK};
  * nothing here calls the network or the server while holding either.
@@ -27,11 +28,13 @@ public final class CompanionMemoryFlow {
     }
 
     private static final int PLAYER_LINES_PER_BATCH = 12;
-    // Reasoning tokens count against max_tokens, and a full reply (five memories of 160 characters, likes, dislikes) in Russian is a few hundred tokens by itself.
-    private static final int COMPRESSION_TOKENS = 1200;
+    // Reasoning tokens count against max_tokens, and a full reply (five memories of 160 characters, likes, dislikes, five topics
+    // of 120 and the character) in Russian is several hundred tokens by itself.
+    private static final int COMPRESSION_TOKENS = 2000;
     private static final Set<String> MEMORY_COMMANDS = Set.of("companion memory forget", "companion memory show");
-    // Only answers to the player are talk; remarks about events, action summaries and acknowledgements would crowd the memory out.
-    private static final Set<String> ANSWER_SOURCES = Set.of("model", "clarification", "local_identity");
+    // Only answers to the player and his own topics, which the player answers, are talk; remarks about events, action summaries
+    // and acknowledgements would crowd the memory out.
+    private static final Set<String> ANSWER_SOURCES = Set.of("model", "clarification", "local_identity", "topic");
 
     private static final Object LOCK = new Object();
     private static int playerLines;
@@ -119,16 +122,16 @@ public final class CompanionMemoryFlow {
                 if (inFlight == gen) return;
                 inFlight = gen;
             }
-            request(t, gen, batchEpoch, lines, bonds.pendingEnd(t.owner()));
+            request(t, gen, batchEpoch, lines, bonds.pendingEnd(t.owner()), bonds.memory(t.owner()).soul().brief());
         });
     }
 
-    private static void request(Target t, long gen, long batchEpoch, List<CompanionMemory.Talk> lines, long end) {
+    private static void request(Target t, long gen, long batchEpoch, List<CompanionMemory.Talk> lines, long end, String soul) {
         String trace = CompanionDiagnostics.newTrace();
         CompanionDiagnostics.event(trace, "memory_compression_queued", "lines", lines.size());
         CompletableFuture<String> reply;
         try {
-            reply = completer.complete(CompanionMemoryCodec.request(lines), COMPRESSION_TOKENS, trace);
+            reply = completer.complete(CompanionMemoryCodec.request(lines, soul), COMPRESSION_TOKENS, trace);
         } catch (RuntimeException error) {
             reply = CompletableFuture.failedFuture(error);
         }
@@ -174,8 +177,10 @@ public final class CompanionMemoryFlow {
         if (!parsed.callMe().isEmpty()) bonds.setCallMe(t.owner(), parsed.callMe());
         parsed.likes().forEach(like -> bonds.addLike(t.owner(), like));
         parsed.dislikes().forEach(dislike -> bonds.addDislike(t.owner(), dislike));
+        bonds.adapt(t.owner(), parsed.character(), parsed.topics());
         CompanionDiagnostics.event(trace, "memory_compression_stored", "accepted", accepted,
-                "rejectedByCodec", parsed.rejected(), "rejectedByServer", parsed.memories().size() - accepted);
+                "rejectedByCodec", parsed.rejected(), "rejectedByServer", parsed.memories().size() - accepted,
+                "topics", parsed.topics().size(), "character", parsed.character());
     }
 
     private static void release(long gen) {

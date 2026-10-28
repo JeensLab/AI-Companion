@@ -18,6 +18,7 @@ final class CompanionSocial {
     private boolean initialized;
     private int timeBand = -1;
     private boolean rain;
+    private boolean attacked;
     private boolean environmentInitialized;
     private final CompanionUrgent urgent = new CompanionUrgent();
     private String urgentKey = "";
@@ -127,6 +128,8 @@ final class CompanionSocial {
                             monster -> CompanionHostiles.observed(player, monster, 12)).isEmpty();
             owner.nearbyExplosiveThreat = threats.stream().anyMatch(monster -> monster instanceof net.minecraft.world.entity.monster.Creeper creeper
                     && (creeper.getSwellDir() > 0 || creeper.distanceToSqr(owner) < 36));
+            // Endermen, zombified piglins and spiders by day are monsters too, but only one after him or the player makes a fight.
+            attacked = threats.stream().anyMatch(monster -> monster.getTarget() == owner || player != null && monster.getTarget() == player);
         }
         boolean danger = owner.getHealth() <= owner.getMaxHealth() * .35F || owner.isOnFire() || owner.isInLava() || owner.isUnderWater() && owner.getAirSupply() < 40
                 || owner.recovery.active() || owner.nearbyExplosiveThreat;
@@ -134,6 +137,8 @@ final class CompanionSocial {
         var expression = owner.expressions.update(owner.level().getGameTime(), danger, combat,
                 owner.hasActiveWorkOrder() || owner.isMiningAnimation() || owner.actionAnimation() != 0);
         owner.getEntityData().set(CompanionEntity.DATA_EXPRESSION, expression.ordinal());
+        // A hunt for meat is no fight; a monster he fights or one near him after either of them is.
+        owner.getEntityData().set(CompanionEntity.DATA_FIGHTING, combat && owner.getTarget() instanceof Monster || attacked);
         owner.getEntityData().set(CompanionEntity.DATA_SOCIAL_SAFE, !danger && !combat && !owner.nearbySocialThreat && owner.tickCount - owner.lastHurtTick > 200
                 && (owner.getOwnerPlayer() == null || owner.getOwnerPlayer().getHealth() > 8 && owner.getOwnerPlayer().hurtTime == 0));
     }

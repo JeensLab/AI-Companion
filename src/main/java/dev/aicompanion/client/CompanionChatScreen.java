@@ -65,6 +65,7 @@ public final class CompanionChatScreen extends Screen {
             runLocalCommand(action, trace);
             return;
         }
+        if (hushInFight(text, trace)) return;
         addLine(Component.literal("...").withStyle(ChatFormatting.GRAY));
         announceThinking(OpenRouterClient.isBusy());
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
@@ -172,6 +173,7 @@ public final class CompanionChatScreen extends Screen {
             runLocalCommand(action, trace);
             return;
         }
+        if (hushInFight(text, trace)) return;
 
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
@@ -242,7 +244,7 @@ public final class CompanionChatScreen extends Screen {
     private static void addVoiceReply(String text, String trace, String source) {
         CompanionMemoryFlow.companionSaid(source, text);
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
-        if ("autonomous".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
+        if ("autonomous".equals(source) || "topic".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
         else CompanionAmbientClient.replyDelivered(text);
         Minecraft minecraft = Minecraft.getInstance();
         Component reply = Component.literal(companionName() + ": " + text).withStyle(ChatFormatting.AQUA);
@@ -268,6 +270,22 @@ public final class CompanionChatScreen extends Screen {
     public static void autonomousReply(String text, String trace) {
         OpenRouterClient.recordSpokenLine(text);
         addVoiceReply(text, trace, "autonomous");
+    }
+
+    /** A topic of his own: unlike a remark on an event, it goes to the memory journal with the player's answers to it. */
+    static void ownTopic(String text, String trace) {
+        OpenRouterClient.recordSpokenLine(text);
+        addVoiceReply(text, trace, "topic");
+    }
+
+    /** A fight is no time to chat: small talk gets a short brush-off without a model request; orders still go through. */
+    private static boolean hushInFight(String text, String trace) {
+        var speaker = CompanionVoiceAudio.speaker();
+        if (!CompanionLocalCommands.hushed(speaker != null && speaker.fighting(), text)) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_fight_hush");
+        OpenRouterClient.recordLocalExchange(text, CompanionLocalCommands.FIGHT_HUSH);
+        addVoiceReply(CompanionLocalCommands.FIGHT_HUSH, trace, "fight_hush");
+        return true;
     }
 
     private static boolean answerMemoryCommand(String action, String trace) {

@@ -25,6 +25,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -157,7 +158,7 @@ public final class CompanionMemoryTests {
         h.assertTrue(top.get(2).text().contains("яблоки"), "Heaviest memory not next: " + top);
         h.assertTrue(top.get(3).kind().equals(CompanionMemory.PROMISE), "Promise not ahead of the rest: " + top);
 
-        var digest = new CompanionMemoryDigest.Digest(memory.entries(), "", List.of(), List.of(), List.of(), 20, "знакомый", List.of(), List.of());
+        var digest = new CompanionMemoryDigest.Digest(memory.entries(), "", List.of(), List.of(), List.of(), 20, "знакомый", List.of(), List.of(), Map.of());
         h.assertTrue(digest.relevant("железные инструменты", 5).equals(top), "Digest ranks differently from memory");
         h.succeed();
     }
@@ -739,7 +740,7 @@ public final class CompanionMemoryTests {
             likes.add(("нравится " + i + " ").repeat(30).substring(0, CompanionMemory.MAX_TEXT));
             dislikes.add(("не нравится " + i + " ").repeat(30).substring(0, CompanionMemory.MAX_TEXT));
         }
-        var digest = new CompanionMemoryDigest.Digest(memories, "Шеф", likes, dislikes, talk, 90, "лучший друг", List.of("подарок", "общее дело"), happenings);
+        var digest = new CompanionMemoryDigest.Digest(memories, "Шеф", likes, dislikes, talk, 90, "лучший друг", List.of("подарок", "общее дело"), happenings, Map.of());
 
         String section = PromptMemory.section(digest, "факт");
         h.assertTrue(section.length() <= 2500,
@@ -753,7 +754,7 @@ public final class CompanionMemoryTests {
 
     @GameTest(template="empty")
     public static void systemPromptNamesCompanionOnce(GameTestHelper h) {
-        String persona = OpenRouterClient.buildPersona("Весёлый напарник.", "Гоша");
+        String persona = OpenRouterClient.buildPersona("Весёлый напарник.", "Гоша", Map.of());
         String prompt = OpenRouterClient.buildSystemPrompt(persona, true, "лучший друг");
         int names = prompt.split("Тебя зовут", -1).length - 1;
         h.assertTrue(names == 1, "«Тебя зовут» appears " + names + " times");
@@ -777,7 +778,7 @@ public final class CompanionMemoryTests {
             memory.remember(CompanionMemory.PLAYER_FACT, fact);
         }
         h.assertTrue(memory.entries().size() == 4, "Fixture is wrong: " + memory.entries());
-        var digest = new CompanionMemoryDigest.Digest(memory.entries(), "Роб", List.of("яблоки", "арбузы."), List.of(), List.of(), 20, "знакомый", List.of(), List.of());
+        var digest = new CompanionMemoryDigest.Digest(memory.entries(), "Роб", List.of("яблоки", "арбузы."), List.of(), List.of(), 20, "знакомый", List.of(), List.of(), Map.of());
 
         String told = CompanionMemoryView.recall(digest);
         h.assertTrue(!told.contains(".;") && !told.contains("..") && !told.contains("!;"), "Punctuation doubled up: " + told);

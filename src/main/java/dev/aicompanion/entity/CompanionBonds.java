@@ -1,5 +1,7 @@
 package dev.aicompanion.entity;
 
+import dev.aicompanion.CompanionPersonality;
+import dev.aicompanion.CompanionTopics;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -12,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.random.RandomGenerator;
 
 /**
  * Memory, bond and happenings per OWNER, kept with the world: the companion is unloaded or replaced (a new UUID after death)
@@ -134,6 +137,21 @@ public final class CompanionBonds extends SavedData {
         boolean stored = slot(owner).memory.addDislike(thing);
         if (stored) setDirty();
         return stored;
+    }
+
+    /** The topic he opens now, taken out of the ones he has not raised yet. */
+    public CompanionTopics.Topic raiseTopic(UUID owner, RandomGenerator random) {
+        CompanionSoul soul = slot(owner).memory.soul();
+        CompanionTopics.Topic topic = soul.next(random);
+        soul.raised(topic);
+        setDirty();
+        return topic;
+    }
+
+    public void adapt(UUID owner, Map<CompanionPersonality.Trait, Integer> character, List<String> topics) {
+        if (character.isEmpty() && topics.isEmpty()) return;
+        slot(owner).memory.soul().adapt(character, topics);
+        setDirty();
     }
 
     /** Forgets what the companion remembers about the player; the bond and the happenings stay. */
