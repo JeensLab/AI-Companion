@@ -34,12 +34,15 @@ final class CompanionTravel {
     private BlockPos from;
     private long began;
     private CompanionNavigation.Meter meter;
+    // The caller restarts a failed walk on the next tick: at most one FAILED event per this many ticks.
+    private static final int FAILURE_EVENT_GAP = 200;
+    private long lastFailureEvent = Long.MIN_VALUE;
 
     CompanionTravel(CompanionEntity owner) { this.owner = owner; }
 
     BlockPos goal() { return goal; }
     /** Also the destination for a self-rescue: a goal given up must not look like a trap afterwards. */
-    void reset() { told("ABANDONED", "reset"); if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; }
+    void reset() { meter = null; if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; }
 
     /**
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
@@ -104,10 +107,15 @@ final class CompanionTravel {
         return null;
     }
 
-    /** The route-outcome event of the journal, once per walk. */
+    /** The route-outcome event of the journal, once per walk: arrived or failed; a walk dropped by reset() is not told. */
     private void told(String outcome, String reason) {
         if (meter == null || goal == null) return;
-        CompanionNavigation.outcome(owner, from, goal, outcome, reason, owner.level().getGameTime() - began, Math.sqrt(from.distSqr(goal)),
+        long now = owner.level().getGameTime();
+        if (outcome.equals("FAILED")) {
+            if (lastFailureEvent != Long.MIN_VALUE && now - lastFailureEvent < FAILURE_EVENT_GAP) { meter = null; return; }
+            lastFailureEvent = now;
+        }
+        CompanionNavigation.outcome(owner, from, goal, outcome, reason, now - began, Math.sqrt(from.distSqr(goal)),
                 CompanionNavigation.meterOf(owner).since(meter));
         meter = null;
     }

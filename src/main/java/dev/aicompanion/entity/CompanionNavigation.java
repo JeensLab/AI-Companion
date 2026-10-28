@@ -13,18 +13,12 @@ import java.util.Set;
  * they took (the polygon of GameTests and the route-outcome event of the journal read it). Nothing about the routes changes.
  */
 public final class CompanionNavigation extends net.minecraft.world.entity.ai.navigation.GroundPathNavigation {
-    private static final int FAILURE_EVENT_GAP = 200;
-
     private CompanionNodeEvaluator evaluator;
-    private long expandedBefore;
-    private long nodes, nanos, tickNanos, tickOf = -1, maxTickNanos;
-    private long failures, lastFailureEvent = Long.MIN_VALUE, failureNodes, failureNanos;
+    private long nanos, tickNanos, tickOf = -1, maxTickNanos;
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
 
     @Override protected PathFinder createPathFinder(int maxVisitedNodes) {
-        // The game builds a new search when the budget is set: the cells counted so far are kept.
-        if (evaluator != null) expandedBefore += evaluator.expanded();
         this.evaluator = new CompanionNodeEvaluator();
         this.nodeEvaluator = evaluator;
         this.nodeEvaluator.setCanPassDoors(true);
@@ -50,7 +44,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         public Meter since(Meter before) { return new Meter(nodes - before.nodes, nanos - before.nanos, maxTickNanos); }
     }
 
-    public Meter meter() { return new Meter(expandedBefore + (evaluator == null ? 0 : evaluator.expanded()), nanos, maxTickNanos); }
+    public Meter meter() { return new Meter(evaluator == null ? 0 : evaluator.expanded(), nanos, maxTickNanos); }
     public void resetMaxTick() { maxTickNanos = 0; }
 
     static Meter meterOf(CompanionEntity owner) { return owner.getNavigation() instanceof CompanionNavigation nav ? nav.meter() : new Meter(0, 0, 0); }
@@ -63,21 +57,5 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "route_outcome", "entity", owner.getUUID(),
                 "activity", owner.work.job == null ? "none" : owner.work.job.name(), "from", from, "to", to, "outcome", outcome,
                 "reason", reason, "ticks", ticks, "distance", Math.round(length), "nodes", spent.nodes(), "ms", Math.round(spent.ms() * 10) / 10.0);
-    }
-
-    /**
-     * A failed search for the way to a block, as one event: the first at once, then at most one per ten seconds with the
-     * failures counted in between (an approach is searched every few ticks and must not fill the journal).
-     */
-    static void approachFailed(CompanionEntity owner, BlockPos block, String reason) {
-        if (!(owner.getNavigation() instanceof CompanionNavigation nav)) return;
-        long now = owner.level().getGameTime();
-        nav.failures++;
-        if (now - nav.lastFailureEvent < FAILURE_EVENT_GAP) return;
-        Meter meter = nav.meter();
-        outcome(owner, owner.blockPosition(), block, "FAILED", reason + " (" + nav.failures + " searches)",
-                nav.lastFailureEvent == Long.MIN_VALUE ? 0 : now - nav.lastFailureEvent, owner.position().distanceTo(block.getCenter()),
-                new Meter(meter.nodes() - nav.failureNodes, meter.nanos() - nav.failureNanos, meter.maxTickNanos()));
-        nav.failures = 0; nav.lastFailureEvent = now; nav.failureNodes = meter.nodes(); nav.failureNanos = meter.nanos();
     }
 }

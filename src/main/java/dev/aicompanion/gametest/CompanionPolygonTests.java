@@ -35,7 +35,7 @@ import java.util.function.BooleanSupplier;
  * searches expanded and ms the time they took, maxTickMs the most the searches took in one tick. The search radius is 16, so one
  * search of the game reaches 32 blocks: the tightest in the tests. A variant red on the code as it was before the pathfinding
  * work is optional (required = false); the ticket that makes it green makes it required. Arenas are built by code, so a mirror is
- * a change of x. Read in .scratch/pathfinding/polygon.md.
+ * a change of x. The baseline numbers are in the pull request.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -46,7 +46,7 @@ public final class CompanionPolygonTests {
     /** The surface of the mine: the top layer, grass. */
     private static final int SURFACE = 19;
 
-    @GameTest(template = "tall_tree", timeoutTicks = 700)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 700)
     public static void flatControl(GameTestHelper h) {
         Grid g = new Grid(h, false);
         g.box(0, 0, 0, 31, HEIGHT - 1, 31, Blocks.AIR);
@@ -56,67 +56,67 @@ public final class CompanionPolygonTests {
         come(h, "flat", 0, 600, c, 20);
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void mineReturnV0(GameTestHelper h) { mine(h, 0, false, 36); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void mineReturnV1(GameTestHelper h) { mine(h, 1, false, 30); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void mineReturnV2(GameTestHelper h) { mine(h, 2, true, 36); }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 3700)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 3700)
     public static void caveOreV0(GameTestHelper h) { cave(h, 0, false, 4, 4); }
-    @GameTest(template = "tall_tree", timeoutTicks = 3700)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 3700)
     public static void caveOreV1(GameTestHelper h) { cave(h, 1, false, 9, 4); }
-    @GameTest(template = "tall_tree", timeoutTicks = 3700)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 3700)
     public static void caveOreV2(GameTestHelper h) { cave(h, 2, true, 4, 4); }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
     public static void cliffTrailV0(GameTestHelper h) { cliff(h, 0, false, 6, 6); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
     public static void cliffTrailV1(GameTestHelper h) { cliff(h, 1, false, 22, 3); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
     public static void cliffTrailV2(GameTestHelper h) { cliff(h, 2, true, 6, 6); }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void forestV0(GameTestHelper h) { forest(h, 0, false, 15); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void forestV1(GameTestHelper h) { forest(h, 1, false, 27); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void forestV2(GameTestHelper h) { forest(h, 2, true, 15); }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void riverBankV0(GameTestHelper h) { river(h, 0, false, 25); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void riverBankV1(GameTestHelper h) { river(h, 1, false, 8); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void riverBankV2(GameTestHelper h) { river(h, 2, true, 25); }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void villageV0(GameTestHelper h) { village(h, 0, false, 14); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void villageV1(GameTestHelper h) { village(h, 1, false, 28); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void villageV2(GameTestHelper h) { village(h, 2, true, 14); }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
     public static void towerV0(GameTestHelper h) { tower(h, 0, false, 16); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
     public static void towerV1(GameTestHelper h) { tower(h, 1, false, 26); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
     public static void towerV2(GameTestHelper h) { tower(h, 2, true, 16); }
 
-    @GameTest(template = "marathon_far", timeoutTicks = 3100)
+    @GameTest(batch = "polygon", template = "marathon_far", timeoutTicks = 3100)
     public static void farHillsV0(GameTestHelper h) { farHills(h, 0, false, 56); }
-    @GameTest(template = "marathon_far", timeoutTicks = 3100)
+    @GameTest(batch = "polygon", template = "marathon_far", timeoutTicks = 3100)
     public static void farHillsV1(GameTestHelper h) { farHills(h, 1, false, 44); }
-    @GameTest(template = "marathon_far", timeoutTicks = 3100)
+    @GameTest(batch = "polygon", template = "marathon_far", timeoutTicks = 3100)
     public static void farHillsV2(GameTestHelper h) { farHills(h, 2, true, 56); }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void longMineV0(GameTestHelper h) { longMine(h, 0, false, 58); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void longMineV1(GameTestHelper h) { longMine(h, 1, false, 52); }
-    @GameTest(template = "tall_tree", timeoutTicks = 2500)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void longMineV2(GameTestHelper h) { longMine(h, 2, true, 58); }
 
     /**
@@ -263,6 +263,8 @@ public final class CompanionPolygonTests {
             g.box(x, 1, z, x, top - 1, z, Blocks.STONE);
             g.box(x, top, z, x, top, z, Blocks.GRASS_BLOCK);
         }
+        // Beyond the strip the template floor is lower: a side step must not drop him where he cannot climb back.
+        g.box(39, 1, 0, 39, 14, 171, Blocks.BARRIER); g.box(72, 1, 0, 72, 14, 171, Blocks.BARRIER);
         CompanionEntity c = spawn(g, startX, hill(startX, 10) + 1, 10, 56, hill(56, 160) + 1, 160);
         come(h, "farhills", variant, 3000, c, Math.sqrt(sq(startX - 56) + sq(150)));
     }
