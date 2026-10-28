@@ -225,6 +225,9 @@ public final class CompanionDialogue {
         }
         var crafted = actions.stream().filter(action -> "craft_item".equals(action.type())).toList();
         if (actions.stream().anyMatch(action -> "build_house".equals(action.type()))) return "Дом готов, заебись! Пойдём посмотрим.";
+        // Made and handed over: «посмотри в сумке» would send the player to a bag the things already left (PR #29, the armour order).
+        if (!crafted.isEmpty() && actions.stream().anyMatch(action -> "give_items".equals(action.type()) || "give_wood".equals(action.type())))
+            return actions.stream().anyMatch(action -> "equip_item".equals(action.type())) ? "Готово: сделал, своё надел, твоё отдал." : "Готово, сделал и отдал тебе.";
         long tools = crafted.stream().filter(action -> action.item().matches(".*_(sword|pickaxe|axe|shovel|hoe)")).count();
         if (tools > 1) return "Готово, инструменты сделал.";
         if (!crafted.isEmpty()) {

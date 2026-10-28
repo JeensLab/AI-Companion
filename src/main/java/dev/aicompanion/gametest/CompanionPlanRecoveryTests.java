@@ -428,6 +428,20 @@ public final class CompanionPlanRecoveryTests {
         h.succeed();
     }
 
+    /** PR #29: a crafted order that he also put on and handed over ended «Можешь посмотреть в сумке» — the things were no longer there. */
+    @GameTest(template = "empty")
+    public static void aCraftedAndHandedOverOrderSaysItWasGiven(GameTestHelper h) {
+        var craft = new PlannedAction("craft_item", 0, 2, "minecraft:iron_helmet");
+        var give = new PlannedAction("give_items", 0, 1, "minecraft:iron_helmet");
+        String report = "Скрафтил 2 «Железный шлем».\nНадел: Железный шлем.\nОтдал тебе 1 «Железный шлем».";
+        String both = CompanionDialogue.summarize(List.of(craft, new PlannedAction("equip_item", 0, 1, "minecraft:iron_helmet"), give), report);
+        String given = CompanionDialogue.summarize(List.of(craft, give), "Скрафтил 2 «Железный шлем».\nОтдал тебе 2 «Железный шлем».");
+        h.assertTrue(both.equals("Готово: сделал, своё надел, твоё отдал.") && given.equals("Готово, сделал и отдал тебе."), both + " / " + given);
+        h.assertTrue(CompanionDialogue.summarize(List.of(craft), "Скрафтил 2 «Железный шлем».").equals("Готово, сделал. Можешь посмотреть в сумке."),
+                "A craft without a hand-over changed");
+        h.succeed();
+    }
+
     /** A shortage refusal of a craft becomes «get it» on (carried + asked); any other refusal of a craft stays a stop. */
     @GameTest(template = "empty", timeoutTicks = 100)
     public static void craftShortageBecomesObtainOnTopOfTheBag(GameTestHelper h) {
