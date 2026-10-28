@@ -5,6 +5,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.pathfinder.Path;
 
+import java.util.Set;
+
 /**
  * A long walk like a player's (game log 23.10, session aa07e605: the trees left were 70–90 blocks off over hills; the game's
  * pathfinder builds no route that long in one search, every tree was declared unreachable in 15 seconds without a single step).
@@ -26,6 +28,11 @@ final class CompanionTravel {
     private final CompanionEntity owner;
     private BlockPos goal;
     private Path leg;
+    // The leg is only the best part found so far by a search that is still going (the whole route replaces it when found); the search running.
+    private boolean legPartial;
+    private CompanionSearch waiting;
+    /** Nothing yet to walk: a search is under way (nextLeg's answer). */
+    private static final Path WAIT = CompanionNavigation.BUSY;
     private double best, near;
     private long lastProgress;
     // Walking counts as progress for three times the time the straight way takes (a way round is longer, not endless).
@@ -50,11 +57,13 @@ final class CompanionTravel {
 
     CompanionTravel(CompanionEntity owner) { this.owner = owner; }
 
+    private void drop() { if (waiting != null && owner.getNavigation() instanceof CompanionNavigation nav) nav.forget(waiting); waiting = null; }
+
     BlockPos goal() { return goal; }
     /** The walk ended where its caller needed it (the goal's level, not its distance): told as arrived, then over. */
     void arrived() { told("NEAR", "arrived"); reset(); }
     /** Also the destination for a self-rescue: a goal given up must not look like a trap afterwards. */
-    void reset() { meter = null; if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; legMoved = null; wideFailedAt = Long.MIN_VALUE / 2; }
+    void reset() { meter = null; if (goal != null) owner.movementIntent(null); drop(); goal = null; leg = null; legPartial = false; turn = 0; sideStep = false; legMoved = null; wideFailedAt = Long.MIN_VALUE / 2; }
 
     /**
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
@@ -86,26 +95,48 @@ final class CompanionTravel {
         if (leg != null && leg.canReach() && endDistance(leg) <= near + 2 && now < walkUntil && (legMoved == null || owner.position().distanceToSqr(legMoved) > .7 * .7)) { legMoved = owner.position(); lastProgress = now; }
         if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); told("FAILED", "no progress for half a minute"); return Step.FAILED; }
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
-        if (leg != null && !owner.getNavigation().isDone() && !owner.getNavigation().isStuck()) return Step.WALKING;
-        // A leg is over (or there was none): the next one.
-        leg = nextLeg(level, distance);
+        boolean over = leg == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck();
+        if (!over && !legPartial) return Step.WALKING;
+        // A leg is over (or there was none): the next one. A search still going on is given its share every tick, and while it goes
+        // on the best part of the way found so far is walked; the whole route takes over when it is found.
+        Path next = nextLeg(level, distance, !over);
+        if (next == WAIT) {
+            if (over) {
+                Path part = waiting == null ? null : waiting.partialFrom(owner.position());
+                if (part != null && part.getNodeCount() > 1 && endDistance(part) + 3 <= distance) { leg = part; legPartial = true; CompanionMiningNavigation.walk(owner, leg, speed); }
+            }
+            return Step.WALKING;
+        }
+        if (!over) {
+            if (next != null && next.canReach()) { leg = next; legPartial = false; CompanionMiningNavigation.walk(owner, leg, speed); }
+            return Step.WALKING;
+        }
+        leg = next; legPartial = false;
         if (leg == null) { owner.getNavigation().stop(); told("FAILED", "no leg found"); return Step.FAILED; }
         CompanionMiningNavigation.walk(owner, leg, speed);
         return Step.WALKING;
     }
 
-    private Path nextLeg(ServerLevel level, double distance) {
+    /**
+     * The next leg, or WAIT while the search for it is going on. {@code wholeOnly}: a leg is being walked (the best part so far),
+     * and only the whole route is wanted, no other kind of leg.
+     */
+    private Path nextLeg(ServerLevel level, double distance, boolean wholeOnly) {
         // The whole way, or the part of it that ends nearer the goal: on rough ground the search runs out of steps before it arrives.
         if (!sideStep) {
-            Path route = nav().search(goal, 2);
+            Set<BlockPos> cells = nav().cellsOf(goal);
+            CompanionSearch main = cells == null ? null : nav().advance(cells, 2, nav().followRange(1));
+            if (main != null && main.state() == CompanionSearch.State.RUNNING) { waiting = main; return WAIT; }
+            Path route = main == null ? null : main.from(owner.position());
             if (route != null && route.getNodeCount() > 1 && route.canReach()) return route;
             // The way round may be longer than one search walks (a mine winding up, a cave, a cliff trail): a wider one still finds it
             // whole. For a goal within its reach it is asked before a part of the short one that merely ends nearer, which can lead into
             // a dead end; a goal beyond it is walked to by the parts nearer, as before. Reach: half as far again as one search sees: farther
             // out the wide search fails at its cell budget (3500 cells, 14 ms in one tick on the polygon's far hills) and finds nothing.
             boolean within = distance <= owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 1.5;
-            Path round = within ? wideRound(level) : null;
+            Path round = within || wholeOnly ? wideRound(level) : null;
             if (round != null) return round;
+            if (wholeOnly) return null;
             if (route != null && route.getNodeCount() > 1 && endDistance(route) + 3 <= distance) return route;
             round = within ? null : wideRound(level);
             if (round != null) return round;
@@ -120,6 +151,7 @@ final class CompanionTravel {
                 if (level.hasChunkAt(column)) {
                     BlockPos point = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column);
                     Path ahead = nav().search(point, 2);
+                    if (ahead == WAIT) { waiting = null; return WAIT; }
                     if (ahead != null && ahead.getNodeCount() > 1 && endDistance(ahead) + 3 <= distance) return ahead;
                 }
             }
@@ -133,6 +165,7 @@ final class CompanionTravel {
             if (!level.hasChunkAt(new BlockPos(x, 0, z))) continue;
             BlockPos point = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, new BlockPos(x, 0, z));
             Path aside = nav().search(point, 2);
+            if (aside == WAIT) { turn--; waiting = null; return WAIT; }
             if (aside != null && aside.getNodeCount() > 3 && (aside.canReach() || endDistance(aside, point) + 6 <= SIDE_STEP)) {
                 sideStep = false;
                 return aside;
@@ -145,7 +178,9 @@ final class CompanionTravel {
     private Path wideRound(ServerLevel level) {
         long now = level.getGameTime();
         if (now - wideFailedAt < 100) return null;
-        Path round = nav().wide(java.util.Set.of(goal), 2);
+        CompanionSearch wide = nav().advance(Set.of(goal), 2, nav().followRange(3));
+        if (wide != null && wide.state() == CompanionSearch.State.RUNNING) { waiting = wide; return WAIT; }
+        Path round = wide == null ? null : wide.from(owner.position());
         if (round != null && round.getNodeCount() > 1 && round.canReach()) return round;
         wideFailedAt = now;
         return null;

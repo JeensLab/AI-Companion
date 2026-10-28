@@ -71,15 +71,22 @@ final class CompanionRoute {
      * The way to one of these cells (a drop's pickup spots, the place he came from): one search, else the wide one. The way itself
      * if it comes all the way ({@code accuracy}: how close counts), else none.
      */
-    Reach cells(Set<BlockPos> cells, int accuracy) {
-        Reach found = find(cells, accuracy, cell -> null);
+    Reach cells(Set<BlockPos> cells, int accuracy) { return cells(cells, accuracy, false); }
+
+    /** {@code whole}: the answer now, not by shares of this tick's cells (the diagnosis of a failure). */
+    private Reach cells(Set<BlockPos> cells, int accuracy, boolean whole) {
+        Reach found = find(cells, accuracy, cell -> null, whole);
         return found.found() || found.busy() || cells.isEmpty() ? found : failed(cells, found.reason());
     }
 
-    private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) {
+    private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) { return find(cells, accuracy, blockOf, false); }
+
+    private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf, boolean whole) {
         CompanionEntity owner = w.owner;
         Kind kind = Kind.WALK;
-        Path path = nav().search(cells, accuracy);
+        Path path = nav().search(cells, accuracy, nav().followRange(1), whole);
+        // The search goes on at the next tick (it keeps what it has found): not a failure.
+        if (path == CompanionNavigation.BUSY) return new Reach(Kind.NONE, null, null, 0, BUSY);
         if (!reaches(path, cells, accuracy)) {
             // No path at all: nothing was searched (he is in the air); that is no evidence of a far goal or of none.
             if (path == null) return new Reach(Kind.NONE, null, null, 0, "no route");
@@ -89,8 +96,9 @@ final class CompanionRoute {
             for (var entry : wideFailed.entrySet())
                 if (now - entry.getValue() < 100 && entry.getKey().containsAll(cells)) return new Reach(Kind.NONE, null, null, 0, "no route");
             if (!(owner.getNavigation() instanceof CompanionNavigation nav)) return new Reach(Kind.NONE, null, null, 0, "no route");
-            if (!nav.takeWide()) return new Reach(Kind.NONE, null, null, 0, BUSY);
-            path = nav.wide(cells, accuracy);
+            if (!whole && !nav.takeWide()) return new Reach(Kind.NONE, null, null, 0, BUSY);
+            path = nav.wide(cells, accuracy, whole);
+            if (path == CompanionNavigation.BUSY) return new Reach(Kind.NONE, null, null, 0, BUSY);
             if (!reaches(path, cells, accuracy)) {
                 if (wideFailed.size() > 64) wideFailed.values().removeIf(at -> now - at >= 100);
                 if (wideFailed.size() > 256) wideFailed.clear();
@@ -114,7 +122,7 @@ final class CompanionRoute {
     boolean noWayTo(BlockPos target) {
         double range = w.owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 1.5;
         if (w.owner.distanceToSqr(target.getCenter()) > range * range) return false;
-        Reach reach = cells(Set.of(target), 1);
+        Reach reach = cells(Set.of(target), 1, true);
         return !reach.found() && !reach.busy();
     }
 

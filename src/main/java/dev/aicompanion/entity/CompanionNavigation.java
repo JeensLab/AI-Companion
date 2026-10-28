@@ -36,64 +36,138 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         }
     }
 
+    /** The answer to a search that has not finished within this tick's cells: ask again next tick (the search goes on where it was). */
+    static final Path BUSY = new Path(java.util.List.of(), BlockPos.ZERO, false);
+    /** A finished search that did not arrive is kept (and not repeated) this many ticks; one in progress is dropped after this many. */
+    private static final int KEEP = 40, STALE = 80;
+    private record Key(Set<BlockPos> targets, int accuracy, float range) { }
+    private final java.util.Map<Key, CompanionSearch> searches = new java.util.LinkedHashMap<>();
+    /** Per range: the last search that expanded the whole region it could reach and found none of its targets. */
+    private final java.util.Map<Float, CompanionSearch> explored = new java.util.HashMap<>();
+
     /**
      * The companion's own search (CompanionSearch) to one of these cells, within {@code accuracy} blocks of it, as far as
      * {@code range} from here: what the game's createPath was, with the same limits. A path he is walking to one of them is kept.
+     * A search that needs more cells than this tick has left answers {@link #BUSY} and goes on at the next ask.
      */
-    Path search(Set<BlockPos> targets, int accuracy, float range) {
-        if (targets.isEmpty() || mob.getY() < level.getMinBuildHeight() || !canUpdatePath()) return null;
+    Path search(Set<BlockPos> targets, int accuracy, float range) { return search(targets, accuracy, range, false); }
+
+    /** {@code whole}: the answer is wanted now (the diagnosis of a failure, asked once in seconds): the search goes on to its end whatever this tick's share. */
+    Path search(Set<BlockPos> targets, int accuracy, float range, boolean whole) {
         if (path instanceof CompanionSearch.Found && !path.isDone() && targets.contains(path.getTarget())) return path;
+        CompanionSearch search = advance(targets, accuracy, range, whole, CHOICE_CELLS);
+        if (search == null) return null;
+        return search.state() == CompanionSearch.State.RUNNING ? BUSY : search.from(mob.position());
+    }
+
+    /**
+     * This tick's share of the search to these cells: the one begun before is gone on with, else a new one is begun (null if he
+     * has no cell to stand in). A finished one that did not arrive is given again for a while, not searched from scratch.
+     */
+    CompanionSearch advance(Set<BlockPos> targets, int accuracy, float range) { return advance(targets, accuracy, range, false, TICK_CELLS); }
+
+    private CompanionSearch advance(Set<BlockPos> targets, int accuracy, float range, boolean whole, int cap) {
+        if (targets.isEmpty() || mob.getY() < level.getMinBuildHeight() || !canUpdatePath()) return null;
+        long now = level.getGameTime();
+        Key key = new Key(Set.copyOf(targets), accuracy, range);
+        CompanionSearch search = searches.get(key);
+        if (search != null && stale(search, now)) { searches.remove(key); search = null; }
+        roll(now);
         long start = System.nanoTime();
-        CompanionSearch search = null;
-        Path found;
+        long cells = 0;
         try {
-            int i = (int)(range + 8);
-            BlockPos at = mob.blockPosition();
-            evaluator.prepare(new net.minecraft.world.level.PathNavigationRegion(level, at.offset(-i, -i, -i), at.offset(i, i, i)), mob);
-            try {
-                search = new CompanionSearch(evaluator, targets, accuracy, range);
-                found = search.run(mob);
-            } finally {
-                evaluator.done();
+            if (search == null) {
+                if (searches.size() >= 8) searches.values().removeIf(old -> stale(old, now) || old.state() == CompanionSearch.State.RUNNING && now - old.born > 20);
+                search = known(key, now);
+                if (search == null) search = begin(key, now);
+                if (search == null) return null;
+                searches.put(key, search);
             }
-            return found;
+            int share = whole ? CompanionSearch.BUDGET : (int)Math.max(0, cap - tickCells);
+            long before = search.expanded();
+            search.advance(share, now);
+            cells = search.expanded() - before;
+            searched += cells;
+            if (search.state() == CompanionSearch.State.FOUND) searches.remove(key);
+            else if (search.complete() && search.expanded() > 0) explored.put(key.range, search);
+            return search;
         } finally {
-            if (search != null) searched += search.expanded();
-            spent(System.nanoTime() - start, search == null ? 0 : search.expanded());
+            spent(System.nanoTime() - start, cells);
         }
     }
+
+    /** Gone on with no longer: running too long, or finished and not arrived for good (kept a while; not if he has moved on from where it ended). */
+    private boolean stale(CompanionSearch search, long now) {
+        if (search.state() == CompanionSearch.State.RUNNING) return now - search.born > STALE;
+        if (search.state() == CompanionSearch.State.FOUND) return true;
+        if (now - search.ended > KEEP) return true;
+        if (search.origin.distanceToSqr(mob.position()) <= 9) return false;
+        Path way = search.from(mob.position());
+        return way == null || way.getNodeCount() < 2;
+    }
+
+    /** The whole region reachable from here, expanded lately by a search that found none of its targets: the answer for others (none in it). */
+    private CompanionSearch known(Key key, long now) {
+        CompanionSearch whole = explored.get(key.range);
+        if (whole == null) return null;
+        if (now - whole.ended > KEEP || !whole.originBlock.equals(mob.blockPosition())) { explored.remove(key.range); return null; }
+        return whole.answer(key.targets, key.accuracy, now);
+    }
+
+    private CompanionSearch begin(Key key, long now) {
+        int i = (int)(key.range + 8);
+        BlockPos at = mob.blockPosition();
+        CompanionNodeEvaluator own = new CompanionNodeEvaluator();
+        own.setCanPassDoors(evaluator.canPassDoors()); own.setCanOpenDoors(evaluator.canOpenDoors());
+        own.setCanFloat(evaluator.canFloat()); own.setCanWalkOverFences(evaluator.canWalkOverFences());
+        own.prepare(new net.minecraft.world.level.PathNavigationRegion(level, at.offset(-i, -i, -i), at.offset(i, i, i)), mob);
+        CompanionSearch search = CompanionSearch.create(own, mob, key.targets, key.accuracy, key.range, now);
+        if (search == null) own.done();
+        return search;
+    }
+
+    /** The walk is over or its goal changed: the search to it is not gone on with. */
+    void forget(CompanionSearch search) { searches.values().remove(search); }
 
     public Path search(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(1)); }
 
     /** The same to one cell; a goal in the air is aimed at the ground under it, one in a wall at the air over it, as the game did. */
     Path search(BlockPos pos, int accuracy) {
+        Set<BlockPos> cells = cellsOf(pos);
+        return cells == null ? null : search(cells, accuracy);
+    }
+
+    /** The cell to search to for this goal (see {@link #search(BlockPos, int)}), or null if its chunk is not loaded. */
+    Set<BlockPos> cellsOf(BlockPos pos) {
         net.minecraft.world.level.chunk.LevelChunk chunk = level.getChunkSource().getChunkNow(net.minecraft.core.SectionPos.blockToSectionCoord(pos.getX()), net.minecraft.core.SectionPos.blockToSectionCoord(pos.getZ()));
         if (chunk == null) return null;
         if (chunk.getBlockState(pos).isAir()) {
             BlockPos below = pos.below();
             while (below.getY() > level.getMinBuildHeight() && chunk.getBlockState(below).isAir()) below = below.below();
-            if (below.getY() > level.getMinBuildHeight()) return search(Set.of(below.above()), accuracy);
+            if (below.getY() > level.getMinBuildHeight()) return Set.of(below.above());
             while (below.getY() < level.getMaxBuildHeight() && chunk.getBlockState(below).isAir()) below = below.above();
             pos = below;
         }
-        if (!chunk.getBlockState(pos).isSolid()) return search(Set.of(pos), accuracy);
+        if (!chunk.getBlockState(pos).isSolid()) return Set.of(pos);
         BlockPos above = pos.above();
         while (above.getY() < level.getMaxBuildHeight() && chunk.getBlockState(above).isSolid()) above = above.above();
-        return search(Set.of(above), accuracy);
+        return Set.of(above);
     }
 
     /**
      * The same search with three times the range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
      * budget, so no dearer than one search that fails.
      */
-    Path wide(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(3)); }
+    Path wide(Set<BlockPos> targets, int accuracy) { return wide(targets, accuracy, false); }
+    Path wide(Set<BlockPos> targets, int accuracy, boolean whole) { return search(targets, accuracy, followRange(3), whole); }
+    float followRange(int times) { return (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * times); }
 
-    private float followRange(int times) { return (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * times); }
 
     /** The time of a search, as the meter has it. */
+    private void roll(long now) { if (now != tickOf) { tickOf = now; tickNanos = tickCells = 0; } }
+
     private void spent(long spent, long cells) {
-        long now = level.getGameTime();
-        if (now != tickOf) { tickOf = now; tickNanos = tickCells = 0; }
+        roll(level.getGameTime());
         tickCells += cells; tickNanos += spent; maxTickNanos = Math.max(maxTickNanos, tickNanos); nanos += spent;
     }
 
@@ -102,9 +176,11 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     boolean takeWide() { long now = level.getGameTime(); if (wideTick == now) return false; wideTick = now; return true; }
     boolean wideSpent() { return wideTick == level.getGameTime(); }
     /** Cells one tick's searches may expand together: counted in cells, not ms, so the answer does not depend on the machine's speed. */
-    static final int TICK_CELLS = 3000;
+    static final int TICK_CELLS = 600;
+    /** Choices among many targets ask for the answer now and go through many searches; they get a larger share (a stone's faces: ten ticks to a search at 600 left him standing 10 s). */
+    static final int CHOICE_CELLS = 1500;
     /** The searches of this tick have expanded that many cells already: a choice that goes on searching waits for the next one. */
-    boolean overBudget() { return tickOf == level.getGameTime() && tickCells >= TICK_CELLS; }
+    boolean overBudget() { return tickOf == level.getGameTime() && tickCells >= CHOICE_CELLS; }
 
     /** Cells expanded and nanoseconds spent in searches so far; the difference of two readings is the cost of what lay between. */
     public record Meter(long nodes, long nanos, long maxTickNanos) {

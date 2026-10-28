@@ -70,7 +70,43 @@ public final class CompanionOwnSearchTests {
         });
     }
 
-    /** The whole way to the player by the companion's own search. */
+    /** A far goal is searched a share of cells a tick (ticket 09): he walks within ten ticks of the order, and no tick searches more than its share. */
+    private static final int TICK_CELLS = 600;
+
+    /**
+     * A goal 150 blocks away over an obstacle (a wall with a gap at its far side), past what one search sees: from the order to the
+     * first step towards it are at most ten ticks, no tick of the walk expands more cells than one tick's share, and he arrives.
+     */
+    @GameTest(template = "marathon_far", timeoutTicks = 3000)
+    public static void aFarGoalIsWalkedTowardsWithinTenTicksAndSearchedBySharesOfCells(GameTestHelper h) {
+        box(h, 40, 0, 0, 71, 14, 171, Blocks.AIR);
+        box(h, 39, 1, 0, 39, 14, 171, Blocks.BARRIER);
+        box(h, 72, 1, 0, 72, 14, 171, Blocks.BARRIER);
+        box(h, 40, 1, 0, 71, 1, 171, Blocks.STONE);
+        box(h, 40, 2, 0, 71, 2, 171, Blocks.GRASS_BLOCK);
+        box(h, 40, 3, 80, 69, 6, 81, Blocks.STONE);
+        CompanionEntity c = spawn(h, 56, 3, 10);
+        var player = player(c, h);
+        teleport(h, player, 56, 3, 160);
+        var nav = (CompanionNavigation)c.getNavigation();
+        double start = c.distanceToSqr(player);
+        long[] first = {-1}, most = {0}, cells = {nav.meter().nodes()};
+        var given = c.startWork("come", "", 1);
+        h.assertTrue(given.success(), "Come order not accepted: " + given);
+        long order = h.getTick();
+        h.onEachTick(() -> {
+            long nodes = nav.meter().nodes();
+            most[0] = Math.max(most[0], nodes - cells[0]); cells[0] = nodes;
+            if (first[0] < 0 && c.distanceToSqr(player) < start - 3) first[0] = h.getTick() - order;
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(first[0] >= 0 && first[0] <= 10, "The first step towards the goal after " + first[0] + " ticks");
+            h.assertTrue(most[0] <= TICK_CELLS, "One tick expanded " + most[0] + " cells");
+            h.assertTrue(c.distanceToSqr(player) <= 16, "Still walking: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+        });
+    }
+
+    /** The whole route to the player by the companion's own search. */
     private static Path search(CompanionEntity c, net.minecraft.server.level.ServerPlayer player) {
         return ((CompanionNavigation)c.getNavigation()).search(java.util.Set.of(player.blockPosition()), 1);
     }

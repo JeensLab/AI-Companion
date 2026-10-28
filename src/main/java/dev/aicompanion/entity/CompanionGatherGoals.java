@@ -231,6 +231,8 @@ final class CompanionGatherGoals {
                 // A far route's leg is over: the next search goes on from where he is.
                 if (approachPath != null && farApproach && c.work.route.done()) approachPath = null;
                 if (approachPath == null) approachPath = findApproachPath(target);
+                // The search goes on next tick: not yet «no route» (climbing, far legs and rejecting wait for it).
+                if (approachPath == null && searching) return;
                 if (approachPath != null && farApproach && c.tickCount < farUntil && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
                     farMoved = c.position(); lastProgressTick = targetStartedTick = c.tickCount;
                 }
@@ -249,6 +251,7 @@ final class CompanionGatherGoals {
                     c.work.route.legsEnd(step == CompanionTravel.Step.NEAR);
                     if (step == CompanionTravel.Step.FAILED) { rejectTarget(false); return; }
                     approachPath = findApproachPath(target);
+                    if (approachPath == null && searching) return;
                 }
                 if (approachPath == null) { tryClimbing(); return; }
                 c.work.route.walk(approachPath);
@@ -349,6 +352,7 @@ final class CompanionGatherGoals {
             List<BlockPos> group = nearest.stream().filter(candidate -> !walkTried.contains(candidate)
                     && trunks.add(BlockPos.asLong(candidate.getX(), 0, candidate.getZ()))).limit(8).toList();
             var walk = group.isEmpty() ? null : c.work.route.nearest(group, TRUNK);
+            if (walk != null && walk.busy()) return nearest.get(0);
             if (walk == null || !walk.found()) { walkTried.addAll(group); return nearest.get(0); }
             return walk.block();
         }
@@ -410,8 +414,10 @@ final class CompanionGatherGoals {
         }
 
         /** Find a reachable standing spot next to the log; never path into the solid log itself. */
+        private boolean searching;
         private Path findApproachPath(BlockPos log) {
             var reach = c.work.route.to(log, TRUNK);
+            searching = reach.busy();
             farApproach = reach.kind() == CompanionRoute.Kind.FAR;
             if (farApproach && farUntil == 0) farUntil = c.tickCount + (int)CompanionRoute.farLimit(reach.length());
             return reach.path();

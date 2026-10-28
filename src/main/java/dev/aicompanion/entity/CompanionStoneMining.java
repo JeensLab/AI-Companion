@@ -347,6 +347,8 @@ final class CompanionStoneMining {
             if (single) w.stoneSingles.removeFirst();
             w.stoneCompared.addAll(group);
             CompanionRoute.Reach found = w.route.nearest(group, APPROACH);
+            // The search goes on next tick: the group is asked again then, not counted as compared.
+            if (found.busy()) { w.stoneCompared.removeAll(group); if (single) w.stoneSingles.addFirst(group.get(0)); w.selectingStone = true; return null; }
             if (!found.found()) found = null;
             // His own deed does not walk down into a pit for stone either: such faces are left, his own stairs come instead.
             if (found != null && keepUp && found.path().getTarget().getY() < w.workOrigin.getY() - KEEP_UP) {
