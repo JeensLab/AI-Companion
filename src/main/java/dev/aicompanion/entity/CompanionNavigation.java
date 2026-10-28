@@ -9,12 +9,13 @@ import net.minecraft.world.level.pathfinder.PathFinder;
 import java.util.Set;
 
 /**
- * The game's ground navigation with the companion's walking search, and a meter on it: cells the searches expanded and the time
- * they took (the polygon of GameTests and the route-outcome event of the journal read it). Nothing about the routes changes.
+ * The game's ground navigation with the companion's own route search ({@link #search}: the single route uses it) beside the game's
+ * walking search (the game's goals still use that one), and a meter on both: cells the searches expanded and the time they took
+ * (the polygon of GameTests and the route-outcome event of the journal read it).
  */
 public final class CompanionNavigation extends net.minecraft.world.entity.ai.navigation.GroundPathNavigation {
     private CompanionNodeEvaluator evaluator;
-    private long nanos, tickNanos, tickOf = -1, maxTickNanos;
+    private long nanos, tickNanos, tickOf = -1, maxTickNanos, searched;
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
 
@@ -31,18 +32,69 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         try {
             return super.createPath(targets, regionOffset, offsetUpward, accuracy, followRange);
         } finally {
-            long spent = System.nanoTime() - start, now = level.getGameTime();
-            if (now != tickOf) { tickOf = now; tickNanos = 0; }
-            tickNanos += spent; maxTickNanos = Math.max(maxTickNanos, tickNanos); nanos += spent;
+            spent(System.nanoTime() - start);
         }
+    }
+
+    /**
+     * The companion's own search (CompanionSearch) to one of these cells, within {@code accuracy} blocks of it, as far as
+     * {@code range} from here: what the game's createPath was, with the same limits. A path he is walking to one of them is kept.
+     */
+    Path search(Set<BlockPos> targets, int accuracy, float range) {
+        if (targets.isEmpty() || mob.getY() < level.getMinBuildHeight() || !canUpdatePath()) return null;
+        if (path instanceof CompanionSearch.Found && !path.isDone() && targets.contains(path.getTarget())) return path;
+        long start = System.nanoTime();
+        CompanionSearch search = null;
+        Path found;
+        try {
+            int i = (int)(range + 8);
+            BlockPos at = mob.blockPosition();
+            evaluator.prepare(new net.minecraft.world.level.PathNavigationRegion(level, at.offset(-i, -i, -i), at.offset(i, i, i)), mob);
+            try {
+                search = new CompanionSearch(evaluator, targets, accuracy, range);
+                found = search.run(mob);
+            } finally {
+                evaluator.done();
+            }
+            return found;
+        } finally {
+            if (search != null) searched += search.expanded();
+            spent(System.nanoTime() - start);
+        }
+    }
+
+    public Path search(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(1)); }
+
+    /** The same to one cell; a goal in the air is aimed at the ground under it, one in a wall at the air over it, as the game did. */
+    Path search(BlockPos pos, int accuracy) {
+        net.minecraft.world.level.chunk.LevelChunk chunk = level.getChunkSource().getChunkNow(net.minecraft.core.SectionPos.blockToSectionCoord(pos.getX()), net.minecraft.core.SectionPos.blockToSectionCoord(pos.getZ()));
+        if (chunk == null) return null;
+        if (chunk.getBlockState(pos).isAir()) {
+            BlockPos below = pos.below();
+            while (below.getY() > level.getMinBuildHeight() && chunk.getBlockState(below).isAir()) below = below.below();
+            if (below.getY() > level.getMinBuildHeight()) return search(Set.of(below.above()), accuracy);
+            while (below.getY() < level.getMaxBuildHeight() && chunk.getBlockState(below).isAir()) below = below.above();
+            pos = below;
+        }
+        if (!chunk.getBlockState(pos).isSolid()) return search(Set.of(pos), accuracy);
+        BlockPos above = pos.above();
+        while (above.getY() < level.getMaxBuildHeight() && chunk.getBlockState(above).isSolid()) above = above.above();
+        return search(Set.of(above), accuracy);
     }
 
     /**
      * The same search with three times the range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
      * budget, so no dearer than one search that fails.
      */
-    Path wide(Set<BlockPos> targets, int accuracy) {
-        return createPath(targets, 8, false, accuracy, (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 3));
+    Path wide(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(3)); }
+
+    private float followRange(int times) { return (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * times); }
+
+    /** The time of a search, as the meter has it. */
+    private void spent(long spent) {
+        long now = level.getGameTime();
+        if (now != tickOf) { tickOf = now; tickNanos = 0; }
+        tickNanos += spent; maxTickNanos = Math.max(maxTickNanos, tickNanos); nanos += spent;
     }
 
     private long wideTick = -1;
@@ -59,7 +111,10 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         public Meter since(Meter before) { return new Meter(nodes - before.nodes, nanos - before.nanos, maxTickNanos); }
     }
 
-    public Meter meter() { return new Meter(evaluator == null ? 0 : evaluator.expanded(), nanos, maxTickNanos); }
+    /** The game recomputes a path to the goal of its own last search when a block near it changes; ours is not recomputed so. */
+    @Override public void recomputePath() { if (!(path instanceof CompanionSearch.Found)) super.recomputePath(); }
+
+    public Meter meter() { return new Meter((evaluator == null ? 0 : evaluator.expanded()) + searched, nanos, maxTickNanos); }
     public void resetMaxTick() { maxTickNanos = 0; }
 
     static Meter meterOf(CompanionEntity owner) { return owner.getNavigation() instanceof CompanionNavigation nav ? nav.meter() : new Meter(0, 0, 0); }

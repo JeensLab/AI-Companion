@@ -97,7 +97,7 @@ final class CompanionTravel {
     private Path nextLeg(ServerLevel level, double distance) {
         // The whole way, or the part of it that ends nearer the goal: on rough ground the search runs out of steps before it arrives.
         if (!sideStep) {
-            Path route = owner.getNavigation().createPath(goal, 2);
+            Path route = nav().search(goal, 2);
             if (route != null && route.getNodeCount() > 1 && route.canReach()) return route;
             // The way round may be longer than one search walks (a mine winding up, a cave, a cliff trail): a wider one still finds it
             // whole. For a goal within its reach it is asked before a part of the short one that merely ends nearer, which can lead into
@@ -119,7 +119,7 @@ final class CompanionTravel {
                 BlockPos column = BlockPos.containing(owner.getX() + dx / length * step, 0, owner.getZ() + dz / length * step);
                 if (level.hasChunkAt(column)) {
                     BlockPos point = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column);
-                    Path ahead = owner.getNavigation().createPath(point, 2);
+                    Path ahead = nav().search(point, 2);
                     if (ahead != null && ahead.getNodeCount() > 1 && endDistance(ahead) + 3 <= distance) return ahead;
                 }
             }
@@ -132,7 +132,7 @@ final class CompanionTravel {
             int x = (int) Math.floor(owner.getX() + Math.cos(angle) * SIDE_STEP), z = (int) Math.floor(owner.getZ() + Math.sin(angle) * SIDE_STEP);
             if (!level.hasChunkAt(new BlockPos(x, 0, z))) continue;
             BlockPos point = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, new BlockPos(x, 0, z));
-            Path aside = owner.getNavigation().createPath(point, 2);
+            Path aside = nav().search(point, 2);
             if (aside != null && aside.getNodeCount() > 3 && (aside.canReach() || endDistance(aside, point) + 6 <= SIDE_STEP)) {
                 sideStep = false;
                 return aside;
@@ -144,8 +144,8 @@ final class CompanionTravel {
     /** The whole way by the wide search, or null; a search that found none is not repeated for five seconds. */
     private Path wideRound(ServerLevel level) {
         long now = level.getGameTime();
-        if (!(owner.getNavigation() instanceof CompanionNavigation nav) || now - wideFailedAt < 100) return null;
-        Path round = nav.wide(java.util.Set.of(goal), 2);
+        if (now - wideFailedAt < 100) return null;
+        Path round = nav().wide(java.util.Set.of(goal), 2);
         if (round != null && round.getNodeCount() > 1 && round.canReach()) return round;
         wideFailedAt = now;
         return null;
@@ -169,6 +169,7 @@ final class CompanionTravel {
         meter = null;
     }
 
+    private CompanionNavigation nav() { return (CompanionNavigation)owner.getNavigation(); }
     private double distance() { return Math.sqrt(owner.distanceToSqr(goal.getCenter())); }
     private double endDistance(Path path) { return endDistance(path, goal); }
     private static double endDistance(Path path, BlockPos to) {

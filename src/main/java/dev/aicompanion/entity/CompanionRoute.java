@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * The single route: the one way the activities lead the companion to a goal. A walk to one of the cells from which a block is
  * worked, the nearest of many blocks on foot, a far goal in legs, and an outcome that tells «far, keep walking» from «no way».
- * The search behind it is still the game's; every walk it leads ends in one {@code route_outcome} event of the journal.
+ * The search behind it is the companion's own (CompanionSearch); every walk it leads ends in one {@code route_outcome} event of the journal.
  */
 final class CompanionRoute {
     /** What is wanted of the cells a block is worked from (see CompanionMiningNavigation.standCells). */
@@ -79,7 +79,7 @@ final class CompanionRoute {
     private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) {
         CompanionEntity owner = w.owner;
         Kind kind = Kind.WALK;
-        Path path = owner.getNavigation().createPath(cells, accuracy);
+        Path path = nav().search(cells, accuracy);
         if (!reaches(path, cells, accuracy)) {
             // No path at all: nothing was searched (he is in the air); that is no evidence of a far goal or of none.
             if (path == null) return new Reach(Kind.NONE, null, null, 0, "no route");
@@ -123,9 +123,11 @@ final class CompanionRoute {
 
     /** The same where coming within {@code accuracy} blocks of a cell counts. */
     Path toCells(Set<BlockPos> cells, int accuracy) {
-        Path path = w.owner.getNavigation().createPath(cells, accuracy);
+        Path path = nav().search(cells, accuracy);
         return path != null && path.canReach() ? path : null;
     }
+
+    private CompanionNavigation nav() { return (CompanionNavigation)w.owner.getNavigation(); }
 
     void walk(Path path) { CompanionMiningNavigation.walk(w.owner, path); }
     void walk(Path path, double speed) { CompanionMiningNavigation.walk(w.owner, path, speed); }

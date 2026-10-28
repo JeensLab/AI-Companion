@@ -180,15 +180,19 @@ public final class CompanionSingleRouteTests {
      * (no teleport, no second message over a minute and more); when the player steps out to a reachable place he goes to him.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 3600)
-    public static void followingAnUnreachablePlayerSaysOnceAndWaits(GameTestHelper h) {
+    public static void followingAnUnreachablePlayerSaysOnceAndWaits(GameTestHelper h) throws Exception {
         box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
         box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
         // Walled in all round: where the neighbouring tests stand is open ground, and he would walk round the world to find a way.
         box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
         box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
-        box(h, 21, 2, 21, 27, 7, 27, Blocks.BEDROCK);
+        // A thick wall: the nearest he can come is more than four blocks off (within four following ends by itself, silently, and
+        // whether it does depends on where the last step stops). The self-rescue is held off: it would try the wall, give up and
+        // let following start over, which says it again; that is a matter of its own.
+        box(h, 19, 2, 19, 29, 7, 29, Blocks.BEDROCK);
         box(h, 23, 2, 23, 25, 5, 25, Blocks.AIR);
         CompanionEntity c = spawn(h, 6, 2, 6);
+        var held = CompanionEntity.class.getDeclaredField("supportSoilTask"); held.setAccessible(true); held.setBoolean(c, true);
         var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         teleport(h, player, 24, 2, 24);
         int[] said = {0};
