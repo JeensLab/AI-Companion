@@ -141,6 +141,26 @@ public final class CompanionPaceTests {
         h.succeed();
     }
 
+    /** A player sprinting away for fifteen seconds: he runs after him, and the gap does not grow past where he caught up. */
+    @GameTest(template = "marathon_far", timeoutTicks = 400)
+    public static void heKeepsUpWithARunningPlayer(GameTestHelper h) {
+        strip(h);
+        CompanionEntity c = spawn(h, 56, 2, 10, 56, 2, 20);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        double[] widest = {0};
+        h.onEachTick(() -> {
+            player.setSprinting(true);
+            player.setYRot(0); player.setXRot(0);
+            player.travel(new Vec3(0, 0, .98));
+            // From tick 100: both up to speed, he following.
+            if (h.getTick() >= 100) widest[0] = Math.max(widest[0], c.distanceTo(player));
+        });
+        h.runAtTickTime(320, () -> {
+            h.assertTrue(widest[0] <= 12, String.format("Fell %.1f blocks behind a running player", widest[0]));
+            h.succeed();
+        });
+    }
+
     /** The player a hundred and fifty blocks off: on foot all the way, no jump of the position, no teleport. */
     @GameTest(template = "marathon_far", timeoutTicks = 1500)
     public static void aPlayerHundredAndFiftyBlocksOffIsWalkedTo(GameTestHelper h) {
