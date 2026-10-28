@@ -25,8 +25,9 @@ final class CompanionSwimming {
         boolean ahead = c.isInWater() && swimAhead(path);
         if (ahead) fastStrokeUntil = c.tickCount + 5;
         // Between two routes (one ends, the next comes a tick later), or bobbed out of the water by the float for a tick: still the
-        // same swim, not a stop (28.10: else he stood up and lay down again there).
-        boolean held = c.isSprinting() && c.tickCount < fastStrokeUntil && (path == null || path.isDone() || !c.isInWater());
+        // same swim, not a stop (28.10: else he stood up and lay down again there). A route taken away («стой», the player
+        // reached) is a stop: upright at once.
+        boolean held = c.isSprinting() && c.tickCount < fastStrokeUntil && (path != null && path.isDone() || !c.isInWater());
         boolean fast = (ahead || held) && !c.onGround() && !c.isPassenger() && c.isAlive();
         if (c.isSprinting() != fast) c.setSprinting(fast);
         if (c.getPose() == (fast ? Pose.STANDING : Pose.SWIMMING)) c.setPose(fast ? Pose.SWIMMING : Pose.STANDING);
@@ -38,7 +39,8 @@ final class CompanionSwimming {
     private boolean swimAhead(Path path) {
         if (path == null || path.isDone()) return false;
         int ahead = Math.min(path.getNodeCount(), path.getNextNodeIndex() + FAST_STROKE_AHEAD);
-        // A route the search cut short (sixteen blocks) goes on from its end: only the real end of the way slows him down.
+        // A route the search cut short goes on from its end (water costs the search more, and its steps ran out after fourteen
+        // blocks of the pool in the tests): only the real end of the way slows him down.
         if (ahead - path.getNextNodeIndex() < FAST_STROKE_AHEAD && path.canReach()) return false;
         for (int index = path.getNextNodeIndex(); index < ahead; index++) {
             BlockPos node = path.getNodePos(index);

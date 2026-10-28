@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -126,6 +127,84 @@ public final class CompanionSwimTests {
             for (Crossing run : runs) h.assertTrue(run.out >= 0, "Not out on the bank: " + run.where());
             String climbs = runs.stream().map(run -> String.valueOf(run.climb())).collect(java.util.stream.Collectors.joining(", "));
             for (Crossing run : runs) h.assertTrue(run.climb() <= 30, "From the bank to standing on it, ticks: " + climbs);
+        });
+    }
+
+    /**
+     * Across a lake, the player a hundred blocks off: farther than 32 he is followed leg by leg (CompanionTravel), and every
+     * leg's end is not the end of the way — he keeps the fast stroke the whole way over.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 1600)
+    public static void farAcrossALakeHeKeepsTheFastStroke(GameTestHelper h) {
+        for (int x = 0; x < 128; x++) for (int z = 0; z < 128; z++) for (int y = 0; y <= 4; y++) {
+            boolean edge = x == 0 || x == 127 || z == 0 || z == 127;
+            h.setBlock(new BlockPos(x, y, z), y == 0 || edge || x >= 104 ? Blocks.BEDROCK : Blocks.WATER);
+        }
+        CompanionEntity oleg = spawn(h, 6, 4, 64);
+        var at = h.absoluteVec(new Vec3(112.5, 5, 64.5));
+        player(h, oleg).teleportTo(at.x, at.y, at.z);
+        oleg.setFollowing(true);
+        int[] inWater = {0}, lying = {0}, changes = {0};
+        boolean[] sprinting = {false};
+        long[] from = {-1}, to = {-1};
+        h.onEachTick(() -> {
+            double x = oleg.getX() - h.absoluteVec(Vec3.ZERO).x;
+            if (x >= 99) return;
+            if (oleg.isInWater() && x >= 10) { inWater[0]++; if (oleg.getPose() == Pose.SWIMMING) lying[0]++; }
+            if (oleg.isSprinting() != sprinting[0]) { sprinting[0] = oleg.isSprinting(); changes[0]++; }
+            if (from[0] < 0 && x >= 20) from[0] = h.getTick();
+            if (to[0] < 0 && x >= 90) to[0] = h.getTick();
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(to[0] >= 0, "Not across yet: " + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+            double speed = 70 / ((to[0] - from[0]) / 20.0);
+            h.assertTrue(speed >= 3.2, "Crossed at " + String.format("%.2f", speed) + " blocks a second");
+            h.assertTrue(lying[0] * 10 >= inWater[0] * 9, "Lay flat only " + lying[0] + " of " + inWater[0] + " ticks in the water");
+            h.assertTrue(changes[0] <= 1, "The fast stroke went on and off " + changes[0] + " times on the way");
+        });
+    }
+
+    /**
+     * The player on a jetty three blocks over the water, five blocks back from its edge: no way up. At its foot he treads water
+     * upright — the short new routes the following makes there every moment are not a swim.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void atABankTooHighToClimbHeTreadsWaterUpright(GameTestHelper h) {
+        pool(h);
+        for (int x = 24; x <= 30; x++) for (int z = 2; z <= 29; z++) for (int y = 6; y <= 7; y++) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        CompanionEntity oleg = spawn(h, 8, 4, 16);
+        var at = h.absoluteVec(new Vec3(29.5, 8, 16.5));
+        player(h, oleg).teleportTo(at.x, at.y, at.z);
+        oleg.setFollowing(true);
+        long[] arrived = {-1};
+        int[] fast = {0};
+        h.onEachTick(() -> {
+            if (arrived[0] < 0 && oleg.getX() - h.absoluteVec(Vec3.ZERO).x >= 22.5) arrived[0] = h.getTick();
+            if (arrived[0] >= 0 && h.getTick() > arrived[0] + 40 && (oleg.isSprinting() || oleg.getPose() == Pose.SWIMMING)) fast[0]++;
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(arrived[0] >= 0 && h.getTick() >= arrived[0] + 200, "Not at the jetty long enough");
+            h.assertTrue(fast[0] == 0, "Lay flat at the foot of the jetty for " + fast[0] + " of 160 ticks");
+        });
+    }
+
+    /** «Стой» in the middle of a fast swim: he treads water upright at once, not gliding on flat. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void toldToStayMidSwimHeTreadsWaterUpright(GameTestHelper h) {
+        pool(h);
+        CompanionEntity oleg = spawn(h, 4, 4, 16);
+        var owner = player(h, oleg);
+        var at = h.absoluteVec(new Vec3(29.5, 6, 16.5));
+        owner.teleportTo(at.x, at.y, at.z);
+        oleg.setFollowing(true);
+        int[] fast = {0};
+        boolean[] wasFast = {false};
+        h.runAfterDelay(60, () -> { wasFast[0] = oleg.isSprinting(); CompanionEvents.executeAction(owner, "wait", "", 1); });
+        h.onEachTick(() -> { if (h.getTick() >= 63 && (oleg.isSprinting() || oleg.getPose() == Pose.SWIMMING)) fast[0]++; });
+        h.runAfterDelay(200, () -> {
+            h.assertTrue(wasFast[0], "Was not swimming fast when told to stay");
+            h.assertTrue(fast[0] == 0, "Still flat for " + fast[0] + " ticks after «стой»");
+            h.succeed();
         });
     }
 
