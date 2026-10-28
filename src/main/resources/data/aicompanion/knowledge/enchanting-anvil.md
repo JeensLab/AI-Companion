@@ -1,4 +1,4 @@
-keywords: зачар, чары, enchant, наковальн, anvil, мендинг, починк, шелков, острот, lapis, лазурит, книжн, шкаф, grindstone, точило, mending
+keywords: зачар*, чары, чар, enchant*, наковальн*, anvil*, мендинг*, mending, починк*, шелков*, острот*, lapis, лазурит*, книжн* шкаф*, книжн* полк*, grindstone, точил*
 source: https://minecraft.wiki/w/Enchanting https://minecraft.wiki/w/Anvil_mechanics
 
 Стол зачарований
