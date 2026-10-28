@@ -625,7 +625,11 @@ public final class CompanionWork {
             owner.travel().reset();
             if (step == CompanionTravel.Step.FAILED) comeFailedAt = owner.blockPosition();
         }
-        if (orderHasStalled(level, 240)) { finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return; }
+        if (orderHasStalled(level, 240)) {
+            // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
+            if (!route.cells(Set.of(player.blockPosition()), 1).found()) { finish(false, "Не могу к тебе пройти."); return; }
+            finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
+        }
     }
 
     void watchChase() { hunting.watchChase(); }
@@ -665,10 +669,10 @@ public final class CompanionWork {
                 if (!items.visibleFrom(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), block)) continue;
                 feet.add(pos);
             }
-            path = owner.getNavigation().createPath(feet, 0);
+            path = route.cells(feet, 0).path();
             standCells = feet;
         }
-        if (path != null && path.canReach() && owner.getNavigation().moveTo(path, 0.95D)) return true;
+        if (path != null && path.canReach()) { route.walk(path, 0.95D); return true; }
         // Arrived at a chosen cell, but its view was checked from the centre: step there instead of
         // reporting the bench or chest beside us as unreachable. The progress watchdog above still bounds this.
         BlockPos here = owner.blockPosition();

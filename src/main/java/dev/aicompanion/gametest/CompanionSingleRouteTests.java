@@ -219,6 +219,101 @@ public final class CompanionSingleRouteTests {
         });
     }
 
+    /** A chest at the far end of the corridor (a detour of sixty cells, inside his search radius): reached in legs, not given up. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void chestBeyondOneSearchIsReached(GameTestHelper h) {
+        BlockPos end = labyrinth(h); h.setBlock(end, Blocks.CHEST);
+        h.setBlock(end.above(), Blocks.AIR); // a chest under a solid block cannot be opened
+        h.assertTrue(h.getBlockEntity(end) instanceof net.minecraft.world.Container, "No chest block entity");
+        ((net.minecraft.world.Container) h.getBlockEntity(end)).setItem(0, new ItemStack(Items.OAK_LOG, 3));
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        h.assertTrue(c.startWork("take_items", "logs", 3).success(), "Take order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.OAK_LOG) == 3, c.getLastTaskResult());
+        });
+    }
+
+    /** A remembered bench at the far end of the corridor, within the bench trip: walked to in legs, none set down instead. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void benchBeyondOneSearchIsWalkedTo(GameTestHelper h) {
+        BlockPos bench = labyrinth(h); h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        c.rememberPlaced(h.absolutePos(bench));
+        c.setItem(0, new ItemStack(Items.STICK, 7));
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        h.assertTrue(CompanionEvents.executeAction(player, "craft_item", "minecraft:ladder", 1).success(), "Craft order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.LADDER) == 3, c.getLastTaskResult());
+            int benches = 0;
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 2, 0), new BlockPos(31, 3, 31))) if (h.getBlockState(pos).is(Blocks.CRAFTING_TABLE)) benches++;
+            h.assertTrue(benches == 1, "Another bench was set down: " + benches);
+        });
+    }
+
+    /**
+     * Ticket 06b: following keeps up with a player walking at walking pace (4.3 blocks a second): he walks as fast as he used to
+     * near the player (1.15), not slower. A strip of flat ground, the player twelve blocks off walking away along it.
+     */
+    @GameTest(template = "marathon_far", timeoutTicks = 700)
+    public static void followingKeepsUpWithAWalkingPlayer(GameTestHelper h) {
+        box(h, 40, 2, 0, 71, 12, 171, Blocks.AIR);
+        box(h, 40, 1, 0, 71, 1, 171, Blocks.STONE);
+        box(h, 39, 1, 0, 39, 14, 171, Blocks.BARRIER); box(h, 72, 1, 0, 72, 14, 171, Blocks.BARRIER);
+        CompanionEntity c = spawn(h, 56, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 56, 2, 22);
+        double[] z = {22};
+        h.onEachTick(() -> {
+            if (h.getTick() > 450) return;
+            z[0] += 4.3 / 20;
+            BlockPos at = h.absolutePos(new BlockPos(56, 2, 0));
+            player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + z[0]);
+        });
+        h.runAtTickTime(452, () -> {
+            h.assertTrue(c.distanceToSqr(player) <= 14 * 14, "Lagged behind: " + Math.round(Math.sqrt(c.distanceToSqr(player))) + " blocks");
+            h.succeed();
+        });
+    }
+
+    /** Within three blocks of the player but a wall between (no sight): one NEAR event of the journal, not one a tick. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void arrivedNearButNotSeenTellsOnce(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 11, 2, 0, 11, 12, 31, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 10, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 12, 2, 10);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(player, "give_items", "minecraft:stone_pickaxe", 1).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 300 && !c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            long near = routeEvents(c).stream().filter(line -> line.contains("\"NEAR\"")).count();
+            h.assertTrue(near == 1, near + " NEAR events for one walk: " + c.getLastTaskResult());
+        });
+    }
+
+    /** «Иди ко мне» to a player sealed in bedrock: it ends at once with the honest short answer, not with «Застрял». */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void comeToASealedPlayerSaysThereIsNoWay(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 21, 2, 21, 27, 7, 27, Blocks.BEDROCK);
+        box(h, 23, 2, 23, 25, 5, 25, Blocks.AIR);
+        CompanionEntity c = spawn(h, 6, 2, 6);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 24, 2, 24);
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().equals("Не могу к тебе пройти."), c.getLastTaskResult());
+        });
+    }
+
     private static String state(CompanionEntity c) {
         try { var m = CompanionEntity.class.getDeclaredMethod("diagnosticState"); m.setAccessible(true); return String.valueOf(m.invoke(c)); }
         catch (ReflectiveOperationException e) { return e.toString(); }

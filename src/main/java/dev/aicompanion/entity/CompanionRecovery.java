@@ -78,8 +78,7 @@ final class CompanionRecovery {
         long now = owner.level().getGameTime();
         if (!intent.equals(checkedIntent) || now >= nextRouteCheck) {
             checkedIntent = intent.immutable(); nextRouteCheck = now + 20;
-            Path route = owner.getNavigation().createPath(intent, 1);
-            missing = route == null || !route.canReach();
+            missing = owner.work.route.toCells(java.util.Set.of(intent), 1) == null;
         }
         return missing;
     }
@@ -106,8 +105,8 @@ final class CompanionRecovery {
         if (jumpCell != null) { jump(level); return; }
         if (stepUp != null) { stepUp(); return; }
         if (!owner.onGround()) return;
-        Path exit = owner.getNavigation().createPath(destination, 1);
-        if (exit != null && exit.canReach()) {
+        Path exit = owner.work.route.toCells(java.util.Set.of(destination), 1);
+        if (exit != null) {
             CompanionMiningNavigation.walk(owner, exit);
             // Finish an ascent toward the player before yielding: following may be inactive or cross its start threshold
             // between goal updates. Work destinations retain their existing movement handoff and time budget.

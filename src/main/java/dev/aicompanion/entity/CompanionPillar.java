@@ -26,6 +26,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /** A short, inventory-backed dirt pillar. Movement and falling use normal entity physics. */
 public final class CompanionPillar {
@@ -109,7 +110,7 @@ public final class CompanionPillar {
             // Follow the reachable route across that change instead of steering into the lip.
             if (supports.isEmpty() && (horizontal > 2.25D || Math.abs(owner.getY() - surfaceY) > .2D)) {
                 if (approach == null || owner.getNavigation().isDone() && attemptTicks % 20 == 0) {
-                    approach = owner.getNavigation().createPath(base, 0);
+                    approach = owner.work.route.toCells(Set.of(base));
                 }
                 if (approach == null || !approach.canReach()) return fail("Под опорой нет безопасного места");
                 CompanionMiningNavigation.walk(owner, approach);
@@ -268,8 +269,8 @@ public final class CompanionPillar {
                 if (steps > supply && steps <= MAX_SUPPORTS) failureReason = "Для подъёма не хватает земли в сумке";
                 if (steps <= 0 || steps > MAX_SUPPORTS || steps > supply || !columnClearable(level, feet, steps)) continue;
                 if (!level.getEntities(owner, new AABB(feet).expandTowards(0, steps + 2, 0), CompanionPillar::blocksSupport).isEmpty()) continue;
-                Path path = owner.getNavigation().createPath(feet, 0);
-                if (path == null || !path.canReach()) continue;
+                Path path = owner.work.route.toCells(Set.of(feet));
+                if (path == null) continue;
                 double score = feet.distSqr(origin) + steps * 4.0D + dx * dx + dz * dz;
                 if (best == null || score < best.score()) best = new Column(feet.immutable(), path, steps, score);
             }

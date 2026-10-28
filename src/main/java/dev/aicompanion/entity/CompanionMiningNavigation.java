@@ -40,21 +40,6 @@ final class CompanionMiningNavigation {
                 && level.getBlockState(hit.getBlockPos()).is(BlockTags.LEAVES) ? hit.getBlockPos().immutable() : null;
     }
 
-    static Path pathTo(CompanionEntity owner, BlockPos block, double reach, boolean clearLeaves) {
-        return pathTo(owner, block, reach, clearLeaves, false);
-    }
-
-    static Path pathTo(CompanionEntity owner, BlockPos block, double reach, boolean clearLeaves, boolean avoidStandingOnTarget) {
-        return pathTo(owner, block, reach, clearLeaves, avoidStandingOnTarget, false);
-    }
-
-    /** forTheDrop: only cells from which the mined block's drop can be picked up (stone and ore, see dropCollectable). */
-    static Path pathTo(CompanionEntity owner, BlockPos block, double reach, boolean clearLeaves, boolean avoidStandingOnTarget, boolean forTheDrop) {
-        Set<BlockPos> feet = standCells(owner, block, reach, clearLeaves, avoidStandingOnTarget);
-        if (forTheDrop) feet.removeIf(stand -> !dropCollectable(owner.level(), block, stand));
-        return feet.isEmpty() ? null : owner.getNavigation().createPath(feet, 0);
-    }
-
     /**
      * Where the drop of this block comes to rest once it is mined: its own cell if solid ground is under it, else as far as it
      * falls (six blocks at most). Null when it falls into water or down a shaft.
@@ -221,8 +206,10 @@ final class CompanionMiningNavigation {
         return level.noCollision(owner, new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8));
     }
 
-    static void walk(CompanionEntity owner, Path path) {
-        owner.getNavigation().moveTo(path, 1D);
+    static void walk(CompanionEntity owner, Path path) { walk(owner, path, 1D); }
+
+    static void walk(CompanionEntity owner, Path path, double speed) {
+        owner.getNavigation().moveTo(path, speed);
         var end = path.getEndNode();
         if (end != null && owner.distanceToSqr(end.x + .5, end.y, end.z + .5) < 1.5) {
             owner.getNavigation().stop();

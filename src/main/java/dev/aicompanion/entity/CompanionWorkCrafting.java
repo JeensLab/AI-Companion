@@ -7,7 +7,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.pathfinder.Path;
 
 final class CompanionWorkCrafting {
     final CompanionWork w;
@@ -130,8 +129,7 @@ final class CompanionWorkCrafting {
             for (BlockPos pos : w.owner.knownCraftingTables()) {
                 // Farther than a short trip, the travelling bench is set down here instead of a long walk back.
                 if (pos.distSqr(w.owner.blockPosition()) > CompanionWork.BENCH_TRIP * CompanionWork.BENCH_TRIP) continue;
-                Path route = CompanionMiningNavigation.pathTo(w.owner, pos, 2.8, false);
-                if (route != null && route.canReach()) { w.craftingStation = pos; break; }
+                if (w.route.to(pos, CompanionToolSense.BENCH).found()) { w.craftingStation = pos; break; }
             }
             w.resetApproach();
         }

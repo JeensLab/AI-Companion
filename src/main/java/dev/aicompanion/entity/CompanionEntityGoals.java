@@ -85,9 +85,9 @@ final class CompanionEntityGoals {
                 nearbyDestinations.add(feet);
                 if (feet.distSqr(c.blockPosition()) >= preferredDistance * preferredDistance) destinations.add(feet);
             }
-            Path path = c.getNavigation().createPath(destinations, 0);
-            if (path == null || !path.canReach()) path = c.getNavigation().createPath(nearbyDestinations, 0);
-            if (path != null && path.canReach()) c.getNavigation().moveTo(path, 0.9D);
+            Path path = c.work.route.toCells(destinations);
+            if (path == null) path = c.work.route.toCells(nearbyDestinations);
+            if (path != null) c.work.route.walk(path, 0.9D);
         }
 
         private BlockPos findStandingPosition(ServerLevel serverLevel, int x, int z) {
@@ -150,7 +150,7 @@ final class CompanionEntityGoals {
                 waitingFor = null;
             }
             if (!companion.onGround() && !companion.isInWater()) return;
-            var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR);
+            var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR, FOLLOW_SPEED);
             if (step == CompanionTravel.Step.WALKING) { travelling = true; return; }
             travelling = false;
             companion.travel().reset();
@@ -171,5 +171,7 @@ final class CompanionEntityGoals {
         // Where the player was when there was no way to him; he waits until the player is elsewhere.
         private BlockPos waitingFor;
         private static final int FOLLOW_NEAR = 3;
+        // A little above walking pace: he keeps up with a player who walks.
+        private static final double FOLLOW_SPEED = 1.15D;
     }
 }

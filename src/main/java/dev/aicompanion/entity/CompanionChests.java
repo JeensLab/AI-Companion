@@ -19,6 +19,7 @@ import net.minecraft.world.level.pathfinder.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 final class CompanionChests {
     final CompanionWork w;
@@ -108,9 +109,9 @@ final class CompanionChests {
             if (w.owner.level().getGameTime() - w.lastProgressTick > 160) {
                 w.finish(false, "Блок есть в сумке, но не смог вернуться к месту установки на " + w.placementAnchor.toShortString() + "."); return;
             }
-            Path route = w.owner.getNavigation().createPath(w.placementAnchor, w.insideHouse ? 0 : 1);
-            if (route == null || !route.canReach()) { w.owner.getNavigation().stop(); return; }
-            CompanionMiningNavigation.walk(w.owner, route); return;
+            Path route = w.route.cells(Set.of(w.placementAnchor), w.insideHouse ? 0 : 1).path();
+            if (route == null) { w.owner.getNavigation().stop(); return; }
+            w.route.walk(route); return;
         }
         if (w.insideHouse && !w.house.interiorAvailable((ServerLevel)w.owner.level())) { w.finish(false, "Дом изменился, место внутри больше не подтверждено."); return; }
         CompanionActionResult placed = w.owner.placeBlockNearResult(w.requestedItem, w.placementAnchor, pos -> !w.insideHouse || w.house.inside(pos));

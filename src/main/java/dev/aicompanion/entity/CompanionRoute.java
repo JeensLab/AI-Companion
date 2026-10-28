@@ -95,12 +95,16 @@ final class CompanionRoute {
     Reach to(BlockPos block, Need need) { return nearest(List.of(block), need); }
 
     /** One search to any of these cells: the way if it comes all the way, else null. For the short last steps, not for far goals. */
-    Path toCells(Set<BlockPos> cells) {
-        Path path = w.owner.getNavigation().createPath(cells, 0);
+    Path toCells(Set<BlockPos> cells) { return toCells(cells, 0); }
+
+    /** The same where coming within {@code accuracy} blocks of a cell counts. */
+    Path toCells(Set<BlockPos> cells, int accuracy) {
+        Path path = w.owner.getNavigation().createPath(cells, accuracy);
         return path != null && path.canReach() ? path : null;
     }
 
     void walk(Path path) { CompanionMiningNavigation.walk(w.owner, path); }
+    void walk(Path path, double speed) { CompanionMiningNavigation.walk(w.owner, path, speed); }
 
     /** The leg being walked is over (or he is stuck in it): time for the next search. */
     boolean legOver() { return done() || stuck(); }
@@ -114,7 +118,10 @@ final class CompanionRoute {
     CompanionTravel.Step legs(BlockPos target, double near) { return w.owner.travel().toward(target, near); }
 
     /** The same towards a goal that moves (the player): the legs and their progress are kept while it shifts by less than sixteen blocks. */
-    CompanionTravel.Step follow(BlockPos target, double near) { return w.owner.travel().follow(target, near); }
+    CompanionTravel.Step follow(BlockPos target, double near) { return w.owner.travel().follow(target, near, 1D); }
+
+    /** The same at this speed (the following keeps up with a walking player). */
+    CompanionTravel.Step follow(BlockPos target, double near, double speed) { return w.owner.travel().follow(target, near, speed); }
 
     /** The legs are over, the goal reached or not: the walk is told to the journal if it was not yet. */
     void legsEnd(boolean arrived) { if (arrived) w.owner.travel().arrived(); else w.owner.travel().reset(); }

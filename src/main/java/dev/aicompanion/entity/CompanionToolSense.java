@@ -21,7 +21,7 @@ final class CompanionToolSense {
     /** A known workbench within this many blocks is walked to instead of placing another one. */
     static final int BENCH_WALK = 16;
     private static final int WALK_TICKS = 20 * 20;
-    private static final double BENCH_REACH = 2.8D;
+    static final CompanionRoute.Need BENCH = new CompanionRoute.Need(2.8D, false, false, false);
     private final CompanionEntity owner;
     private final String kind;
     private final TagKey<Item> tag;
@@ -90,10 +90,10 @@ final class CompanionToolSense {
         owner.movementIntent(bench);
         owner.getLookControl().setLookAt(bench.getX() + .5D, bench.getY() + .5D, bench.getZ() + .5D);
         if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
-            path = CompanionMiningNavigation.pathTo(owner, bench, BENCH_REACH, false);
-            if (path == null || !path.canReach()) { bench = null; path = null; equipBest(); return false; }
+            path = owner.work.route.to(bench, BENCH).path();
+            if (path == null) { bench = null; path = null; equipBest(); return false; }
         }
-        CompanionMiningNavigation.walk(owner, path);
+        owner.work.route.walk(path);
         return true;
     }
 
@@ -158,8 +158,7 @@ final class CompanionToolSense {
     private BlockPos reachableBench() {
         for (BlockPos pos : owner.knownCraftingTables()) {
             if (pos.distSqr(owner.blockPosition()) > BENCH_WALK * BENCH_WALK) continue;
-            Path route = CompanionMiningNavigation.pathTo(owner, pos, BENCH_REACH, false);
-            if (route != null && route.canReach()) return pos;
+            if (owner.work.route.to(pos, BENCH).found()) return pos;
         }
         return null;
     }

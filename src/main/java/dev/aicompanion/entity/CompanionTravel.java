@@ -30,6 +30,8 @@ final class CompanionTravel {
     private long lastProgress;
     private int turn;
     private boolean sideStep;
+    // How fast the legs are walked: a walking player is kept up with at 1.15, other walks go at 1.
+    private double speed = 1D;
     private net.minecraft.world.phys.Vec3 legMoved;
     // A wide search that found no whole way to this goal is not repeated at every leg: when it was, in game ticks.
     private long wideFailedAt = Long.MIN_VALUE / 2;
@@ -40,6 +42,9 @@ final class CompanionTravel {
     // The caller restarts a failed walk on the next tick: at most one FAILED event per this many ticks.
     private static final int FAILURE_EVENT_GAP = 200;
     private long lastFailureEvent = Long.MIN_VALUE;
+    private static final int NEAR_EVENT_GAP = 1200;
+    private BlockPos lastNear;
+    private long lastNearAt;
 
     CompanionTravel(CompanionEntity owner) { this.owner = owner; }
 
@@ -53,13 +58,19 @@ final class CompanionTravel {
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
      * shifts by less than sixteen blocks; a larger jump starts a new walk.
      */
-    Step follow(BlockPos target, double near) {
+    Step follow(BlockPos target, double near, double speed) {
+        this.speed = speed;
         if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); }
-        return toward(target, near);
+        return step(target, near);
     }
 
     /** One tick of walking towards the goal; NEAR once within {@code near} blocks, the caller then works it as usual. */
     Step toward(BlockPos target, double near) {
+        speed = 1D;
+        return step(target, near);
+    }
+
+    private Step step(BlockPos target, double near) {
         if (!(owner.level() instanceof ServerLevel level)) return Step.FAILED;
         long now = level.getGameTime();
         if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
@@ -75,7 +86,7 @@ final class CompanionTravel {
         // A leg is over (or there was none): the next one.
         leg = nextLeg(level, distance);
         if (leg == null) { owner.getNavigation().stop(); told("FAILED", "no leg found"); return Step.FAILED; }
-        CompanionMiningNavigation.walk(owner, leg);
+        CompanionMiningNavigation.walk(owner, leg, speed);
         return Step.WALKING;
     }
 
@@ -86,8 +97,9 @@ final class CompanionTravel {
             if (route != null && route.getNodeCount() > 1 && route.canReach()) return route;
             // The way round may be longer than one search walks (a mine winding up, a cave, a cliff trail): a wider one still finds it
             // whole. For a goal within its reach it is asked before a part of the short one that merely ends nearer, which can lead into
-            // a dead end; a goal beyond it is walked to by the parts nearer, as before.
-            boolean within = distance <= owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 3;
+            // a dead end; a goal beyond it is walked to by the parts nearer, as before. Reach: half as far again as one search sees: farther
+            // out the wide search fails at its cell budget (3500 cells, 14 ms in one tick on the polygon's far hills) and finds nothing.
+            boolean within = distance <= owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 1.5;
             Path round = within ? wideRound(level) : null;
             if (round != null) return round;
             if (route != null && route.getNodeCount() > 1 && endDistance(route) + 3 <= distance) return route;
@@ -140,6 +152,11 @@ final class CompanionTravel {
         if (outcome.equals("FAILED")) {
             if (lastFailureEvent != Long.MIN_VALUE && now - lastFailureEvent < FAILURE_EVENT_GAP) { meter = null; return; }
             lastFailureEvent = now;
+        }
+        // Standing near a player he cannot see, the caller restarts the walk every tick: one NEAR per goal for a while.
+        if (outcome.equals("NEAR")) {
+            if (lastNear != null && lastNear.distSqr(goal) <= 4 && now - lastNearAt < NEAR_EVENT_GAP) { meter = null; return; }
+            lastNear = goal; lastNearAt = now;
         }
         CompanionNavigation.outcome(owner, from, goal, outcome, reason, now - began, Math.sqrt(from.distSqr(goal)),
                 CompanionNavigation.meterOf(owner).since(meter));
