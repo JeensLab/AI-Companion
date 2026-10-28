@@ -93,14 +93,18 @@ final class CompanionHouse {
     }
     Result ensureSite(ServerLevel level) {
         if (base != null) return null;
+        int busy = owner.work.route.busyAnswers();
         base = findSite(level);
-        return base == null ? Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.") : null;
+        // A site it could not search to for want of this tick's cells is not rejected: tick() looks again next tick.
+        return base == null && owner.work.route.busyAnswers() == busy ? Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.") : null;
     }
 
     Result tick(ServerLevel level) {
         if (!owner.onGround()) return Result.working();
         if (base == null) {
+            int busy = owner.work.route.busyAnswers();
             base = findSite(level);
+            if (base == null && owner.work.route.busyAnswers() != busy) return Result.working();
             if (base == null) return Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.");
         }
         if (!prepared) {

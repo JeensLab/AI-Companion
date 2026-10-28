@@ -51,6 +51,7 @@ final class CompanionRoute {
     /** A wide search of these cells that failed: when, and whether its failure holds for these cells alone (it ran out of budget) or for any subset. */
     private record Wide(long at, boolean exact) { }
     private final Map<Set<BlockPos>, Wide> wideFailed = new HashMap<>();
+    private long changesSeen;
 
     CompanionRoute(CompanionWork w) { this.w = w; }
 
@@ -75,20 +76,16 @@ final class CompanionRoute {
      * The way to one of these cells (a drop's pickup spots, the place he came from): one search, else the wide one. The way itself
      * if it comes all the way ({@code accuracy}: how close counts), else none.
      */
-    Reach cells(Set<BlockPos> cells, int accuracy) { return cells(cells, accuracy, false); }
 
-    /** {@code whole}: the answer now, not by shares of this tick's cells (the diagnosis of a failure). */
-    private Reach cells(Set<BlockPos> cells, int accuracy, boolean whole) {
-        Reach found = find(cells, accuracy, cell -> null, whole);
+    Reach cells(Set<BlockPos> cells, int accuracy) {
+        Reach found = find(cells, accuracy, cell -> null);
         return found.found() || found.busy() || cells.isEmpty() ? found : failed(cells, found.reason());
     }
 
-    private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) { return find(cells, accuracy, blockOf, false); }
-
-    private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf, boolean whole) {
+    private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) {
         CompanionEntity owner = w.owner;
         Kind kind = Kind.WALK;
-        Path path = nav().search(cells, accuracy, nav().followRange(1), whole);
+        Path path = nav().search(cells, accuracy, nav().followRange(1));
         // The search goes on at the next tick (it keeps what it has found): not a failure.
         if (path == CompanionNavigation.BUSY) return new Reach(Kind.NONE, null, null, 0, BUSY);
         if (!reaches(path, cells, accuracy)) {
@@ -96,13 +93,15 @@ final class CompanionRoute {
             if (path == null) return new Reach(Kind.NONE, null, null, 0, NOT_SEARCHED);
             // A goal that no wide search reaches is not searched wide again at once (a failed one costs a whole search): five seconds.
             long now = owner.level().getGameTime();
+            // A block changed near him since: what failed then may not fail now.
+            if (nav().changes() != changesSeen) { changesSeen = nav().changes(); wideFailed.clear(); }
             // Failed wide for these cells; for a set that holds them all too, if that search ran out of range (a group that failed has
             // failed for each of its faces), not if it ran out of budget (it may have spent it on a near cell that cannot be reached).
             for (var entry : wideFailed.entrySet())
                 if (now - entry.getValue().at() < 100 && (entry.getValue().exact() ? entry.getKey().equals(cells) : entry.getKey().containsAll(cells)))
                     return new Reach(Kind.NONE, null, null, 0, "no route");
             if (!(owner.getNavigation() instanceof CompanionNavigation nav)) return new Reach(Kind.NONE, null, null, 0, "no route");
-            path = nav.wide(cells, accuracy, whole);
+            path = nav.wide(cells, accuracy);
             // The wide search goes on at the next tick (this tick's cells are spent): not a failure.
             if (path == CompanionNavigation.BUSY) return new Reach(Kind.NONE, null, null, 0, BUSY);
             if (!reaches(path, cells, accuracy)) {
@@ -128,11 +127,18 @@ final class CompanionRoute {
      * «No way» is told only where the wide search can see: with the target within one and a half follow ranges in a straight line
      * and no whole route to it. Farther off it sees nothing at its cell budget, and a stuck walk is told as stuck, not as no way.
      */
-    boolean noWayTo(BlockPos target) {
+    boolean noWayTo(BlockPos target) { return Boolean.TRUE.equals(noWay(target)); }
+
+    /**
+     * The same, null while it is not known: the diagnosis searches by the shares of the ticks like any walk (a sealed player would cost
+     * two whole searches in one tick), so a caller that wants the answer asks again next tick.
+     */
+    Boolean noWay(BlockPos target) {
         double range = w.owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 1.5;
         if (w.owner.distanceToSqr(target.getCenter()) > range * range) return false;
-        Reach reach = cells(Set.of(target), 1, true);
-        return !reach.found() && !reach.busy() && !NOT_SEARCHED.equals(reach.reason());
+        Reach reach = cells(Set.of(target), 1);
+        if (reach.busy()) return null;
+        return !reach.found() && !NOT_SEARCHED.equals(reach.reason());
     }
 
     /** One search to any of these cells: the way if it comes all the way, else null. For the short last steps, not for far goals. */
@@ -141,8 +147,16 @@ final class CompanionRoute {
     /** The same where coming within {@code accuracy} blocks of a cell counts. */
     Path toCells(Set<BlockPos> cells, int accuracy) {
         Path path = nav().search(cells, accuracy);
+        if (path == CompanionNavigation.BUSY) { busyAnswers++; return null; }
         return path != null && path.canReach() ? path : null;
     }
+
+    private int busyAnswers;
+    /**
+     * How many times {@link #toCells} has answered null because this tick's cells were spent, not because there is no way. A caller
+     * that cannot tell the two apart from the answer reads it before and after: changed means "not known yet, ask again next tick".
+     */
+    int busyAnswers() { return busyAnswers; }
 
     private CompanionNavigation nav() { return (CompanionNavigation)w.owner.getNavigation(); }
 

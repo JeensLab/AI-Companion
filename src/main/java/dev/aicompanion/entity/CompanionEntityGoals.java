@@ -167,7 +167,10 @@ final class CompanionEntityGoals {
                 waitingFor = owner.blockPosition();
                 // Told only where the route search sees there is no way, once per place of the player; a stuck walk is the
                 // self-rescue's, silently (not «no way»), and is tried anew in a few seconds.
-                if (companion.work.route.noWayTo(owner.blockPosition())) {
+                Boolean none = companion.work.route.noWay(owner.blockPosition());
+                // Not known yet (the search goes by the shares of the ticks): asked again next tick.
+                if (none == null) { waitingFor = null; retryAt = companion.level().getGameTime() + 1; }
+                else if (none) {
                     if (toldAbout == null || toldAbout.distSqr(owner.blockPosition()) >= 9) {
                         toldAbout = owner.blockPosition();
                         companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься.", companion.hasActiveWorkOrder());

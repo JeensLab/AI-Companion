@@ -198,7 +198,10 @@ final class CompanionOreMining {
                 if (cells == null || cells.stream().anyMatch(cell -> blockedOreCell(level, cell))) continue;
                 tries++;
                 if (w.owner.autonomy().running() && w.oreExit != null && !CompanionMiningNavigation.canWalkBackUp(w.owner, stand, w.oreExit.getY())) continue;
+                int busy = w.route.busyAnswers();
                 Path way = w.owner.blockPosition().equals(stand) ? null : w.route.toCells(Set.of(stand));
+                // This tick's cells went elsewhere: the tunnel is not ruled out, the choice is made again next tick.
+                if (way == null && w.route.busyAnswers() != busy) { w.oreChoosing = true; return null; }
                 if (way == null && !w.owner.blockPosition().equals(stand)) continue;
                 // Each cell is a few swings; a walk to the ore in sight that is shorter wins.
                 if (walk != null && (way == null ? 0 : CompanionMiningNavigation.length(w.owner, way)) + cells.size() * 2 >= walk.length()) continue;

@@ -35,7 +35,77 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
      */
     @Override protected Path createPath(Set<BlockPos> targets, int regionOffset, boolean offsetUpward, int accuracy, float followRange) {
         Path found = search(targets, accuracy, followRange);
-        return found == BUSY ? null : found;
+        if (found == BUSY) return null;
+        if (found != null) stuck = false;
+        return found;
+    }
+
+    // The game's own stuck flag and recompute target are private and set only by its createPath, which never runs: kept here instead.
+    private boolean stuck;
+    private BlockPos walkedTarget;
+    private int walkedReach;
+    /** The accuracy each path was searched with (the walked one's recompute asks for the same). */
+    private final java.util.Map<Path, Integer> reachOf = new java.util.WeakHashMap<>();
+    /** The path a recompute replaced and the one that took its place: a goal that keeps walking its old object walks the new one. */
+    private Path replaced, replacement;
+
+    /** A new path is a new chance: whatever stopped the last one does not make this one stuck (what the game's createPath did). */
+    @Override public boolean moveTo(Path next, double speed) {
+        if (next != null && replaced == next) next = replacement;
+        if (next != null && !next.sameAs(path)) {
+            stuck = false;
+            walkedTarget = next.getTarget();
+            walkedReach = reachOf.getOrDefault(next, 1);
+        }
+        return super.moveTo(next, speed);
+    }
+
+    @Override public boolean isStuck() { return stuck; }
+
+    /** The game's check (a hundred ticks without moving a quarter of the way he would have walked) with the result kept here. */
+    @Override protected void doStuckDetection(net.minecraft.world.phys.Vec3 at) {
+        int checked = lastStuckCheck;
+        net.minecraft.world.phys.Vec3 from = lastStuckCheckPos;
+        super.doStuckDetection(at);
+        if (lastStuckCheck == checked) return;
+        float speed = mob.getSpeed() >= 1.0F ? mob.getSpeed() : mob.getSpeed() * mob.getSpeed();
+        double limit = speed * 100.0F * 0.25F;
+        stuck = at.distanceToSqr(from) < limit * limit;
+    }
+
+    /**
+     * A block changed near the walked path (a door closed, a block placed): the way to the same target is searched again, by this
+     * tick's share; no answer yet keeps the old path and asks again next tick.
+     */
+    @Override public void recomputePath() {
+        if (walkedTarget == null) return;
+        if (level.getGameTime() - timeLastRecompute <= 20L) { hasDelayedRecomputation = true; return; }
+        Path old = path;
+        path = null;
+        Path found = search(Set.of(walkedTarget), walkedReach, followRange(1));
+        if (found == BUSY) { path = old; hasDelayedRecomputation = true; return; }
+        path = found;
+        if (found != null && old != null) { replaced = replaced != null && replacement == old ? replaced : old; replacement = found; }
+        timeLastRecompute = level.getGameTime();
+        hasDelayedRecomputation = false;
+    }
+
+    private long changes;
+    /** How many block changes near him there have been (the route's own caches compare it to know their answers are old). */
+    long changes() { return changes; }
+
+    /**
+     * Every block change of the level is asked here: one near him (his own digging and placing too) makes what the finished searches
+     * saw of the world old, so they are dropped; a search still running goes on (dropping it at every change would never let it end).
+     */
+    @Override public boolean shouldRecomputePath(BlockPos pos) {
+        double range = followRange(3);
+        if (Math.abs(pos.getX() - mob.getX()) <= range && Math.abs(pos.getY() - mob.getY()) <= range && Math.abs(pos.getZ() - mob.getZ()) <= range) {
+            changes++;
+            searches.values().removeIf(old -> old.state() != CompanionSearch.State.RUNNING);
+            explored.clear();
+        }
+        return super.shouldRecomputePath(pos);
     }
 
     /** The answer to a search that has not finished within this tick's cells: ask again next tick (the search goes on where it was). */
@@ -56,14 +126,16 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
      */
     Path search(Set<BlockPos> targets, int accuracy, float range) { return search(targets, accuracy, range, false); }
 
-    /** {@code whole}: the answer is wanted now (the diagnosis of a failure, asked once in seconds): the search goes on to its end whatever this tick's share. */
+    /** {@code whole}: the answer is wanted now: the search goes on to its end whatever this tick's share. */
     Path search(Set<BlockPos> targets, int accuracy, float range, boolean whole) {
         if (path instanceof CompanionSearch.Found && !path.isDone() && targets.contains(path.getTarget())) return path;
         CompanionSearch search = advance(targets, accuracy, range, whole, CHOICE_CELLS);
         if (search == null) return null;
         if (search.state() == CompanionSearch.State.RUNNING) return BUSY;
         ranOut = search.state() == CompanionSearch.State.EXHAUSTED && !search.complete();
-        return search.from(mob.position());
+        Path way = search.from(mob.position());
+        if (way != null) reachOf.put(way, accuracy);
+        return way;
     }
 
     /**
@@ -138,6 +210,9 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
 
     public Path search(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(1)); }
 
+    /** The same, finished whatever this tick's share (for a GameTest that asks once and wants the answer, never BUSY). */
+    public Path searchNow(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(1), true); }
+
     /** The same to one cell; a goal in the air is aimed at the ground under it, one in a wall at the air over it, as the game did. */
     Path search(BlockPos pos, int accuracy) {
         Set<BlockPos> cells = cellsOf(pos);
@@ -165,8 +240,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
      * The same search with three times the range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
      * budget, so no dearer than one search that fails.
      */
-    public Path wide(Set<BlockPos> targets, int accuracy) { return wide(targets, accuracy, false); }
-    Path wide(Set<BlockPos> targets, int accuracy, boolean whole) { return search(targets, accuracy, followRange(3), whole); }
+    public Path wide(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(3)); }
     float followRange(int times) { return (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * times); }
 
 

@@ -87,7 +87,9 @@ final class CompanionHandOver {
                 // Legs that went and then stood half a minute without coming closer: the end (the player is out of reach, like behind
                 // a closed wall).
                 if (step == CompanionTravel.Step.FAILED && walked) {
-                    w.finish(false, w.route.noWayTo(player.blockPosition()) ? "Не могу к тебе пройти, вещи остались у меня."
+                    Boolean none = w.route.noWay(player.blockPosition());
+                    if (none == null) { legsWalked = true; return; }
+                    w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня."
                             : "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
                     return;
                 }
@@ -96,7 +98,9 @@ final class CompanionHandOver {
                 if (step == CompanionTravel.Step.FAILED) legsFailedAt = w.owner.blockPosition();
             }
             if (w.orderHasStalled(level, 240)) {
-                w.finish(false, w.route.noWayTo(player.blockPosition()) ? "Не могу к тебе пройти, вещи остались у меня." : "Не смог к тебе подойти, вещи остались у меня.");
+                Boolean none = w.route.noWay(player.blockPosition());
+                if (none == null) return;
+                w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня." : "Не смог к тебе подойти, вещи остались у меня.");
                 return;
             }
             w.owner.workStatus("Несу тебе вещи.");

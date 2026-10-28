@@ -78,8 +78,10 @@ public final class CompanionPillar {
             if (jumpCell == null && owner.onGround()) return Outcome.READY;
         }
         if (base == null) {
+            int busy = owner.work.route.busyAnswers();
             Column column = planColumn(level, log);
-            if (column == null) return Outcome.FAILED;
+            // A column it could not search to for want of this tick's cells is not one without a way: planned again next tick.
+            if (column == null) return owner.work.route.busyAnswers() != busy ? Outcome.WORKING : Outcome.FAILED;
             base = column.feet();
             approach = column.path();
             resetWatchdog(log);
@@ -110,7 +112,9 @@ public final class CompanionPillar {
             // Follow the reachable route across that change instead of steering into the lip.
             if (supports.isEmpty() && (horizontal > 2.25D || Math.abs(owner.getY() - surfaceY) > .2D)) {
                 if (approach == null || owner.getNavigation().isDone() && attemptTicks % 20 == 0) {
+                    int busy = owner.work.route.busyAnswers();
                     approach = owner.work.route.toCells(Set.of(base));
+                    if (approach == null && owner.work.route.busyAnswers() != busy) return Outcome.WORKING;
                 }
                 if (approach == null || !approach.canReach()) return fail("Под опорой нет безопасного места");
                 CompanionMiningNavigation.walk(owner, approach);

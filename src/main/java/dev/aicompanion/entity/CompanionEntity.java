@@ -251,7 +251,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
     @Override protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
-        // The search budget in force is the game's times 3 (the constructor sets it: 6144 cells). Marathon 23.10: the coal down in the
+        // Every path is built by our own search (CompanionSearch.BUDGET cells), not the game's. Marathon 23.10: the coal down in the
         // cave, 45 steps by its narrow way, was «out of reach» from the meadow above — the search spent its cells on the meadow first.
         return new CompanionNavigation(this, level);
     }
@@ -291,7 +291,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             }
         });
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
-        this.getNavigation().setMaxVisitedNodesMultiplier(3.0F);
         // Review 22.10, В1: vanilla «hit back whoever hurt me» also hit back the player after a stray blow.
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this) {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }

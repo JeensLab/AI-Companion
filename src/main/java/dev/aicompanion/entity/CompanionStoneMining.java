@@ -60,7 +60,9 @@ final class CompanionStoneMining {
             // not in the cut (marathon 23.10, «долина»: the bench stood on the step of his way back, no room was left for the
             // furnace and he had to dig his way out).
             if (w.job != CompanionWork.Job.STONE && w.workOrigin != null && w.owner.getY() < w.workOrigin.getY() - 1.5 && w.owner.onGround()) {
-                if (w.route.cells(Set.of(w.workOrigin), 0).found()) { w.exitCell = w.workOrigin; w.phase = CompanionWork.Phase.EXIT; w.resetApproach(); return; }
+                var home = w.route.cells(Set.of(w.workOrigin), 0);
+                if (home.busy()) return;
+                if (home.found()) { w.exitCell = w.workOrigin; w.phase = CompanionWork.Phase.EXIT; w.resetApproach(); return; }
             }
             afterMining();
             return;
@@ -117,12 +119,19 @@ final class CompanionStoneMining {
                 // After a pickup Oleg often stands on the very next stair cell. That is his own feet, not a
                 // hazard: step off it the same way as for stone instead of abandoning the whole descent.
                 if (!safeToMine(level, w.target) && safeToMine(level, w.target, true) && CompanionQuarry.diggable(level.getBlockState(w.target))) {
-                    if (w.path == null || w.route.legOver()) w.path = w.route.to(w.target, STEP_OFF).path();
+                    if (w.path == null || w.route.legOver()) {
+                        var step = w.route.to(w.target, STEP_OFF);
+                        if (step.busy()) return;
+                        w.path = step.path();
+                    }
                     if (w.path != null && w.path.canReach()) { w.route.walk(w.path); return; }
                 }
                 if (!safeToMine(level, w.target) && w.lastHarvestStand != null && CompanionMiningNavigation.standable(w.owner, w.lastHarvestStand)) {
+                    int busy = w.route.busyAnswers();
                     Path retreat = w.route.toCells(Set.of(w.lastHarvestStand));
                     if (retreat != null) { w.route.walk(retreat); return; }
+                    // This tick's cells went elsewhere: not "no way back" yet, asked again next tick.
+                    if (w.route.busyAnswers() != busy) return;
                 }
                 if (!CompanionQuarry.diggable(level.getBlockState(w.target)) || !CompanionQuarry.safeCell(level, w.target) || !safeToMine(level, w.target)) {
                     w.finish(false, "Не могу безопасно продолжить проход к камню. Вещи сохранил."); return;
@@ -132,7 +141,10 @@ final class CompanionStoneMining {
                 if (w.selectingStone) { w.owner.workStatus("Проверяю подход к камню, ищу другой выход."); return; }
                 if (!w.quarryTried && !w.returnRouteBlocked && (w.exitCell == null || w.workOrigin.getY() - w.owner.getY() < CompanionWork.MAX_MINE_DEPTH)) {
                     w.quarryTried = true;
+                    int busy = w.route.busyAnswers();
                     var quarry = CompanionQuarry.find(w.owner, w.wantedStone - w.gathered, w.rejected);
+                    // A start it could not search to for want of this tick's cells is not one without a way: the plan is made again next tick.
+                    if (quarry == null && w.route.busyAnswers() != busy) { w.quarryTried = false; return; }
                     if (quarry != null && quarry.cells().stream().allMatch(w.stoneMining::withinWorkDepth)) {
                         w.quarrySoil.addAll(quarry.cells()); w.quarrySupports.addAll(quarry.supports());
                         if (w.exitCell == null) w.exitCell = quarry.start();
@@ -157,7 +169,11 @@ final class CompanionStoneMining {
             // instead of declaring the entire newly opened seam inaccessible.
             if (w.breaking.swinging()) { w.rejectTarget(); return; }
             w.breaking.reset();
-            if (w.path == null || w.route.legOver()) w.path = w.route.to(w.target, STEP_OFF).path();
+            if (w.path == null || w.route.legOver()) {
+                var step = w.route.to(w.target, STEP_OFF);
+                if (step.busy()) return;
+                w.path = step.path();
+            }
             if (w.path == null || !w.path.canReach()) { w.rejectTarget(); return; }
             w.route.walk(w.path); return;
         }
