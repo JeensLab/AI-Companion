@@ -100,6 +100,34 @@ public final class CompanionClimbTests {
         h.runAtTickTime(580, () -> h.fail("Still at " + h.relativePos(c.blockPosition()).toShortString() + ", working " + c.isWorking() + ": " + c.getLastTaskResult()));
     }
 
+    /**
+     * A ladder that stops six blocks over the ground, the player below, no other way down: he does not climb down it to drop off
+     * its end (review 29.10: the part of the way nearest the player ended on its last rung, and he slid off it).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 500)
+    public static void heDoesNotClimbDownALadderThatEndsInMidAir(GameTestHelper h) {
+        arena(h, 16);
+        for (int y = 12; y <= 16; y++) h.setBlock(new BlockPos(14, y, 15), Blocks.LADDER.defaultBlockState().setValue(LadderBlock.FACING, Direction.WEST));
+        CompanionEntity c = spawn(h, 16, 17, 15);
+        teleport(h, player(c, h), new int[]{8, 6, 15});
+        float health = c.getHealth();
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.onEachTick(() -> h.assertTrue(c.getHealth() >= health && c.getY() >= h.absolutePos(new BlockPos(0, 12, 0)).getY(),
+                "Fell off the ladder's end: at " + h.relativePos(c.blockPosition()).toShortString() + ", " + c.getLastTaskResult()));
+        h.runAtTickTime(450, h::succeed);
+    }
+
+    /** Down the ladder to the player two blocks from its foot: the foot stands on the ground, so there he has come («Я рядом.»). */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void heComesDownToThePlayerByTheLaddersFoot(GameTestHelper h) {
+        arena(h, 16);
+        ladder(h, 16);
+        CompanionEntity c = spawn(h, 16, 17, 15);
+        teleport(h, player(c, h), new int[]{12, 6, 15});
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.succeedWhen(() -> h.assertTrue(!c.isWorking() && c.didLastTaskSucceed(), "Not come: " + c.getLastTaskResult()));
+    }
+
     /** A wall of stone across the arena (so no way round), vines on its west face the only way up. */
     @GameTest(template = "tall_tree", timeoutTicks = 1500)
     public static void heClimbsVinesUpAWallThatIsOtherwiseAClimbToNowhere(GameTestHelper h) {
