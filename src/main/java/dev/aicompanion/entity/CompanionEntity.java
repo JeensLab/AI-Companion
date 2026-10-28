@@ -67,6 +67,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_PLACES = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_DEEDS = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_FURNACES = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_ACTIVITY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Boolean> DATA_MINING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Integer> DATA_ACTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
@@ -106,6 +107,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
     final CompanionWork work = new CompanionWork(this);
+    private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
     final CompanionEquipment equipment = new CompanionEquipment(this);
     final CompanionPlacement placement = new CompanionPlacement(this);
@@ -198,6 +200,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void refreshPlaces() { if (!level().isClientSide) entityData.set(DATA_PLACES, places.summary()); refreshDeeds(); }
     /** Recent finished deeds with their real outcome, oldest first («12 мин назад: не вышло — …»). */
     public String getDeedsForAi() { return level().isClientSide ? entityData.get(DATA_DEEDS) : deeds.summary(level().getGameTime()); }
+    /** What his furnaces hold and how much is ready; empty when no batch is left. */
+    public String getFurnacesForAi() { return level().isClientSide ? entityData.get(DATA_FURNACES) : batches.forAi(); }
     public int deedCount() { return deeds.size(); }
     void noteDeed(String message, boolean ok) {
         if (level().isClientSide) return;
@@ -360,6 +364,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_STORAGE_CHEST, "пока не использовал");
         builder.define(DATA_PLACES, "известных рабочих мест нет");
         builder.define(DATA_DEEDS, "пока нет");
+        builder.define(DATA_FURNACES, "");
         builder.define(DATA_ACTIVITY, "состояние ещё не обновлено");
         builder.define(DATA_MINING, false);
         builder.define(DATA_ACTION, 0); builder.define(DATA_ACTION_UNTIL, 0L); builder.define(DATA_ACTION_ITEM, ItemStack.EMPTY);
@@ -495,6 +500,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean isVisiblyBusy() { return isSwingingAtBlock() || isMiningAnimation() || actionAnimation() != 0 || eatTicks > 0 || temporaryPillar.isActive() || temporaryPillar.isRecovering(); }
     public void enableProtectionForWork() { protecting = true; entityData.set(DATA_PROTECTING, true); }
     public long activeWorkId() { return work.activeTaskId(); }
+    public CompanionFurnaceBatches batches() { return batches; }
+    /** Lets the long smelt of this work be handed to a furnace batch instead of standing at the furnaces. */
+    public void markParkable(long workId) { batches.markParkable(workId); }
+    /** The same for a deed of his own: what it leaves in the furnaces is an orphan batch. */
+    void markDeedParkable(long workId) { batches.markDeedParkable(workId); }
+    public CompanionFurnaceBatches.State batchState(long id) { return batches.state(id); }
+    public String releaseBatch(long id) { return batches.release(id); }
     public CompanionActionResult workResult(long id) { return work.taskResult(id); }
     public boolean hasActiveWorkOrder() {
         return gatheringLogs || gatheringDirt || work.isActive() || temporaryPillar.isActive() || temporaryPillar.isRecovering();
@@ -657,6 +669,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         diagnostics.tick();
         if (tickCount % 100 == 0) refreshPlaces();
         if (tickCount % 20 == 0) {
+            if (level() instanceof ServerLevel serverLevel) { batches.tick(serverLevel); entityData.set(DATA_FURNACES, batches.forAi()); }
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }

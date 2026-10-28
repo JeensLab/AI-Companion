@@ -32,6 +32,8 @@ public final class CompanionAutonomy {
     public static final int LEASH = 24;
     /** A deed that did not work out is not taken up again for this long. */
     public static final int FAILURE_BREAK_TICKS = 20 * 60 * 5;
+    /** A collection that could not even be dispatched is tried again after this long. */
+    private static final int COLLECT_RETRY_TICKS = 20 * 30;
     /** Monsters this close to him or to the player: no deed, he keeps by the player. */
     public static final int THREAT_RANGE = 16;
     /** The player hurt or hitting something this recently is in a fight. */
@@ -59,7 +61,9 @@ public final class CompanionAutonomy {
         COAL("mine_ore", "добыть угля"), IRON("mine_ore", "добыть железа"),
         SMELT_IRON("smelt_items", "переплавить железо"), IRON_PICK("craft_item", "сделать железную кирку"),
         HUNT("hunt_animals", "добыть еду"),
-        TAKE_WOOD("take_items", "взять свои дрова"), TAKE_STONE("take_items", "взять свой камень");
+        TAKE_WOOD("take_items", "взять свои дрова"), TAKE_STONE("take_items", "взять свой камень"),
+        /** A batch left in its furnaces: started by the batches themselves, with deeds switched off too. */
+        COLLECT("collect_smelt", "забрать плавку из печей");
         final String action, what;
         Deed(String action, String what) { this.action = action; this.what = what; }
     }
@@ -68,6 +72,10 @@ public final class CompanionAutonomy {
     private boolean enabled;
     /** «Стоп» or «стой» came: nothing is taken up by itself until the next order or call. */
     private boolean held;
+    /** The hold came from «стоп» or «стой» itself, not from following, a call or a walk: such a hold keeps even a parked collect away. */
+    private boolean halted;
+    /** The player's own «стоп» or «стой»: unlike {@code halted} a «wait» step inside a plan does not lift it, so it keeps even orphans away until he is called. */
+    private boolean stopped;
     private BlockPos workArea;
     private String workDimension = "";
     private long nextSpeech = Long.MIN_VALUE;
@@ -89,6 +97,8 @@ public final class CompanionAutonomy {
 
     public boolean enabled() { return enabled; }
     public boolean held() { return held; }
+    public boolean halted() { return held && halted; }
+    public boolean playerStopped() { return held && stopped; }
     /** A deed of his own is running (or being started): searches keep to the workplace and his own places. */
     public boolean running() { return starting || deed != null; }
     public String deedName() { return deed == null ? "" : deed.what; }
@@ -161,7 +171,17 @@ public final class CompanionAutonomy {
             case "stop", "wait", "follow", "come", "protect", "wander" -> true;
             default -> false;
         };
+        halted = stopped = held && ("stop".equals(action) || "wait".equals(action));
         if (held != wasHeld) { owner.syncAutonomy(); event(held ? "autonomy_held" : "autonomy_released", "action", action); }
+    }
+
+    /** A «wait» inside a plan is a pause, not the player's «стой»: he stays where he is, but nothing waits for a call to move him again. */
+    public void clearHalt(boolean playerStopped) { halted = false; stopped = playerStopped; }
+
+    /** A running deed ends for work that is no new order of the player: his hold stays as it is. */
+    void dropDeed(String action) {
+        idleTicks = 0;
+        if (deed != null) drop("player_order:" + action);
     }
 
     /** Once a second on the server. */
@@ -186,6 +206,8 @@ public final class CompanionAutonomy {
         if (owner.reclaimOwnDrops(center(), LEASH) > 0) { idleTicks = Math.min(idleTicks, IDLE_TICKS - FIRST_DEED_TICKS); return; }
         idleTicks += 20;
         if (idleTicks < IDLE_TICKS) return;
+        // His own cooked batch comes before anything new: the rule of a plan's smelt holds for his deeds too.
+        if (owner.batches().ownReadyWaiting(level)) return;
         idleTicks = 0;
         Deed next = choose(level);
         if (next == null && explain) say(nothingToDo());
@@ -249,10 +271,10 @@ public final class CompanionAutonomy {
         boolean coal = available(Deed.COAL, now) && reserve(stack -> stack.is(ItemTags.COALS)) < COAL_RESERVE && oreNear(level, CompanionOre.Kind.COAL);
         boolean iron = available(Deed.IRON, now) && reserve(stack -> stack.is(Items.RAW_IRON) || stack.is(Items.IRON_INGOT)) < IRON_RESERVE && oreNear(level, CompanionOre.Kind.IRON);
         if (!hasPickaxe() && (stone || coal || iron) && available(Deed.PICK, now)) return Deed.PICK;
-        if (available(Deed.COOK, now) && rawMeat() > 0 && (stone() >= CompanionWork.stoneCost("minecraft:furnace")
-                || carries(Items.FURNACE) || ownFurnaceNear(level, center()))) return Deed.COOK;
+        if (available(Deed.COOK, now) && rawMeat() > 0 && !owner.batches().smelting(level, CompanionAutonomy::isMeat)
+                && (stone() >= CompanionWork.stoneCost("minecraft:furnace") || carries(Items.FURNACE) || ownFurnaceNear(level, center()))) return Deed.COOK;
         if (coal && hasPickaxe() && CompanionTools.count(owner, ItemTags.COALS) < COAL_STOCK) return Deed.COAL;
-        if (available(Deed.SMELT_IRON, now) && count(Items.RAW_IRON) > 0
+        if (available(Deed.SMELT_IRON, now) && count(Items.RAW_IRON) > 0 && !owner.batches().smelting(level, item -> item == Items.RAW_IRON)
                 && (stone() >= 8 || carries(Items.FURNACE) || ownFurnaceNear(level, center()))) return Deed.SMELT_IRON;
         if (available(Deed.IRON_PICK, now) && count(Items.IRON_INGOT) >= 3 && !hasIronPickaxe()) return Deed.IRON_PICK;
         if (available(Deed.HUNT, now) && reserve(stack -> stack.is(ItemTags.MEAT)) < FOOD_RESERVE && animalsNear(level)) return Deed.HUNT;
@@ -301,6 +323,7 @@ public final class CompanionAutonomy {
         return knownOre.getOrDefault(kind, List.of()).stream().anyMatch(pos -> inArea(pos) && pos.getY() >= center().getY() - CompanionOre.MAX_DROP
                 && level.hasChunkAt(pos) && kind.is(level.getBlockState(pos)));
     }
+    private static boolean isMeat(net.minecraft.world.item.Item item) { return new ItemStack(item).is(ItemTags.MEAT); }
     private boolean animalsNear(ServerLevel level) {
         return !level.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, new net.minecraft.world.phys.AABB(center()).inflate(LEASH,12,LEASH),
                 animal -> CompanionGame.Kind.of(animal) != null && inArea(animal.blockPosition())
@@ -310,9 +333,29 @@ public final class CompanionAutonomy {
     private boolean inArea(BlockPos pos) { return Math.hypot(pos.getX() - center().getX(), pos.getZ() - center().getZ()) <= LEASH; }
     private boolean hasIronPickaxe() { return carried().stream().anyMatch(stack -> stack.is(ItemTags.PICKAXES) && stack.isCorrectToolForDrops(Blocks.GOLD_ORE.defaultBlockState())); }
 
-    private void begin(ServerPlayer player, Deed next) {
+    /**
+     * Takes up a batch nobody waits for as a deed of his own, even with deeds switched off: it is his smelt, left in the furnaces.
+     * «Стоп» keeps him standing; a following, a call or a walk does not. False: nothing was tried.
+     */
+    boolean collectOrphan(long batch) {
+        long now = owner.level().getGameTime();
+        if (deed != null || starting || playerStopped() || !available(Deed.COLLECT, now) || !(owner.level() instanceof ServerLevel level)) return false;
+        ServerPlayer player = owner.getOwnerPlayer();
+        if (player == null || !player.isAlive() || player.isSpectator() || !owner.isFollowing() || owner.isProtecting() || owner.isRoaming()) return false;
+        if (owner.hasActiveWorkOrder() || owner.goals().outstanding() || owner.hasPendingLoot() || owner.isSelfRescuing() || owner.getTarget() != null || !owner.canCollectItems()
+                || danger(level, player) != null) return false;
+        if (owner.batches().collectRefusal(String.valueOf(batch)) != null) { owner.batches().collectRefused(batch); return true; }
+        begin(player, Deed.COLLECT, String.valueOf(batch));
+        // Refused at dispatch for a reason that is not the batch's (the call is not heard right now): try again later, count nothing, say nothing.
+        if (deed == null) breakUntil.put(Deed.COLLECT, now + COLLECT_RETRY_TICKS);
+        return true;
+    }
+
+    private void begin(ServerPlayer player, Deed next) { begin(player, next, null); }
+
+    private void begin(ServerPlayer player, Deed next, String forcedItem) {
         int count = switch (next) {
-            case STORE -> 1;
+            case STORE, COLLECT -> 1;
             case PICK -> 1;
             case IRON_PICK -> 1;
             case TAKE_WOOD -> 8;
@@ -324,7 +367,7 @@ public final class CompanionAutonomy {
             case STONE -> Math.max(1, Math.min(STONE_BATCH, STONE_RESERVE - reserve(ItemTags.STONE_TOOL_MATERIALS)));
             case COOK, SMELT_IRON -> CompanionWork.ALL_CARRIED;
         };
-        String item = switch (next) {
+        String item = forcedItem != null ? forcedItem : switch (next) {
             case STORE -> CompanionWork.SURPLUS;
             case PICK -> stone() >= 3 ? "minecraft:stone_pickaxe" : "minecraft:wooden_pickaxe";
             case IRON_PICK -> "minecraft:iron_pickaxe";
@@ -344,18 +387,20 @@ public final class CompanionAutonomy {
         } finally { starting = false; }
         long id = owner.activeWorkId();
         event("autonomy_deed_started", "deed", next.action, "item", item, "count", count, "accepted", result.success(), "workId", id, "message", result.message());
-        if (!result.success() || id == 0) { finished(next, result); return; }
+        if (!result.success() || id == 0) { if (next != Deed.COLLECT) finished(next, result); return; }
         deed = next; deedWorkId = id;
+        if (next == Deed.COOK || next == Deed.SMELT_IRON) owner.markDeedParkable(id);
     }
 
     /** Observe this workId. Distance to the owner never cancels work. */
     private void watchDeed(ServerLevel level) {
         ServerPlayer player = owner.getOwnerPlayer();
-        if (player == null || player.level() != owner.level() || !here()) {
+        boolean own = deed == Deed.COLLECT;
+        if (player == null || player.level() != owner.level() || !own && !here()) {
             drop("player_unavailable");
             return;
         }
-        if (!enabled) { drop("disabled"); return; }
+        if (!enabled && !own) { drop("disabled"); return; }
         String danger = danger(level, player);
         if (danger != null) { drop(danger); say(REASONS.get(danger)); return; }
         CompanionActionResult result = owner.workResult(deedWorkId);
@@ -374,6 +419,8 @@ public final class CompanionAutonomy {
         owner.syncAutonomy();
         event("autonomy_deed_finished", "deed", was.action, "success", result.success(), "status", result.status(), "message", result.message());
         if (result.status() == CompanionActionResult.Status.CANCELLED) return;
+        if (was == Deed.COLLECT) { report(result.message()); return; }
+        if (result.status() == CompanionActionResult.Status.PARKED) { reportedFailures.remove(was); report(result.message()); return; }
         if (result.success()) { reportedFailures.remove(was); return; }
         breakUntil.put(was, owner.level().getGameTime() + FAILURE_BREAK_TICKS);
         String issue = dev.aicompanion.CompanionFailureMessages.kind(result.message()).name();
@@ -396,11 +443,16 @@ public final class CompanionAutonomy {
         long now = owner.level().getGameTime();
         if (now < nextSpeech) return false;
         nextSpeech = now + 20 * 60 * 3;
+        report(text);
+        return true;
+    }
+
+    /** What he tells on his own account, outside the pause between remarks: the outcome of a batch he went for. */
+    void report(String text) {
         said.add(text);
         while (said.size() > 16) said.removeFirst();
         event("autonomy_said", "text", text);
         owner.autonomySay(text);
-        return true;
     }
 
     private void event(String name, Object... fields) {
@@ -449,6 +501,8 @@ public final class CompanionAutonomy {
     void save(CompoundTag tag) {
         tag.putBoolean("Autonomy", enabled);
         tag.putBoolean("AutonomyHeld", held);
+        tag.putBoolean("AutonomyHalted", halted);
+        tag.putBoolean("AutonomyStopped", stopped);
         if (workArea != null) {
             tag.putLong("AutonomyArea", workArea.asLong());
             tag.putString("AutonomyDimension", workDimension);
@@ -468,6 +522,8 @@ public final class CompanionAutonomy {
     void load(CompoundTag tag) {
         enabled = tag.getBoolean("Autonomy");
         held = tag.getBoolean("AutonomyHeld");
+        halted = tag.getBoolean("AutonomyHalted");
+        stopped = tag.contains("AutonomyStopped") ? tag.getBoolean("AutonomyStopped") : halted;
         workArea = tag.contains("AutonomyArea") ? BlockPos.of(tag.getLong("AutonomyArea")) : null;
         workDimension = tag.getString("AutonomyDimension");
         nextSpeech = owner.level().getGameTime() + Math.clamp(tag.getInt("AutonomySpeechDelay"), 0, 20 * 60 * 3);

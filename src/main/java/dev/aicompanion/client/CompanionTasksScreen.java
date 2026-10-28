@@ -76,15 +76,16 @@ public final class CompanionTasksScreen extends Screen {
         for (var task : CompanionActionExecutor.tasks()) {
             List<String> details = new ArrayList<>();
             boolean running = task.status() == CompanionTaskQueue.Status.RUNNING;
+            boolean waiting = task.status() == CompanionTaskQueue.Status.WAITING;
             boolean queued = task.status() == CompanionTaskQueue.Status.QUEUED;
             String state = switch (task.status()) {
                 case QUEUED -> "В очереди"; case RUNNING -> "Выполняется"; case CANCELLING -> "Отменяется";
-                case COMPLETED -> "Завершено"; case BLOCKED -> "Не выполнено"; case CANCELLED -> "Отменено";
+                case COMPLETED -> "Завершено"; case BLOCKED -> "Не выполнено"; case CANCELLED -> "Отменено"; case WAITING -> "Ждёт";
             };
-            details.add(state + (running && task.step() >= 0 ? " · шаг " + (task.step() + 1) + " из " + task.steps().size() : ""));
+            details.add(state + ((running || waiting) && task.step() >= 0 ? " · шаг " + (task.step() + 1) + " из " + task.steps().size() : ""));
             details.add("Приоритет: " + priorityName(task.priority()));
             details.add("");
-            for (int i = 0; i < task.steps().size(); i++) details.add((running && i == task.step() ? "▶ " : "")
+            for (int i = 0; i < task.steps().size(); i++) details.add(((running || waiting) && i == task.step() ? "▶ " : "")
                     + (i + 1) + ". " + CompanionDialogue.describe(task.steps().get(i)));
             details.add("");
             details.add(queued ? "Повышенный приоритет выполняется раньше. Текущее поручение завершится первым."
@@ -94,10 +95,10 @@ public final class CompanionTasksScreen extends Screen {
                 if (summary.isBlank()) summary = CompanionDialogue.speakable(task.report());
                 details.add(""); details.add("Результат: " + (fullReport && selected.equals("queue:" + task.id()) ? task.report() : summary));
             }
-            int color = queued ? 0xE6C77C : running ? 0x75D9CB : task.status() == CompanionTaskQueue.Status.COMPLETED ? 0x91C998 : 0xB6A8A8;
+            int color = queued || waiting ? 0xE6C77C : running ? 0x75D9CB : task.status() == CompanionTaskQueue.Status.COMPLETED ? 0x91C998 : 0xB6A8A8;
             result.add(new Row("queue:" + task.id(), CompanionDialogue.describe(task.steps().getFirst()), state, color,
-                    details, task.id(), queued ? task.priority() : -1,
-                    running || queued ? () -> { CompanionActionExecutor.cancelTask(task.id()); rebuild(); } : null, null));
+                    details, task.id(), queued || waiting ? task.priority() : -1,
+                    running || queued || waiting ? () -> { CompanionActionExecutor.cancelTask(task.id()); rebuild(); } : null, null));
         }
         if (snapshot != null && snapshot.goalState() != null) {
             boolean outstanding = snapshot.goalState() != CompanionGoals.State.COMPLETED && snapshot.goalState() != CompanionGoals.State.CANCELLED;
@@ -136,10 +137,13 @@ public final class CompanionTasksScreen extends Screen {
         CompanionNavigation.tabs(this, "Задачи", left, 31, panelWidth, this::addRenderableWidget);
         Button stop = addRenderableWidget(Button.builder(Component.literal("Прервать дело"), b -> {
             var active = CompanionActionExecutor.tasks().stream().filter(t -> t.status() == CompanionTaskQueue.Status.RUNNING).findFirst();
-            if (active.isPresent()) CompanionActionExecutor.cancelTask(active.get().id()); else control("cancel_work");
+            if (active.isPresent()) CompanionActionExecutor.cancelTask(active.get().id());
+            else if (snapshot != null && snapshot.work() > 0) control("cancel_work");
+            else CompanionActionExecutor.tasks().stream().filter(t -> t.status() == CompanionTaskQueue.Status.WAITING).findFirst()
+                    .ifPresent(t -> CompanionActionExecutor.cancelTask(t.id()));
             rebuild();
         }).bounds(left + panelWidth - 113, 65, 105, 20).build());
-        stop.active = snapshot != null && snapshot.work() > 0 || CompanionActionExecutor.tasks().stream().anyMatch(t -> t.status() == CompanionTaskQueue.Status.RUNNING);
+        stop.active = snapshot != null && snapshot.work() > 0 || CompanionActionExecutor.tasks().stream().anyMatch(t -> t.status() == CompanionTaskQueue.Status.RUNNING || t.status() == CompanionTaskQueue.Status.WAITING);
         stop.setTooltip(Tooltip.create(Component.literal("Прерывает текущее поручение и его оставшиеся шаги. Остальная очередь сохраняется.")));
         for (int i = listOffset; i < Math.min(rows.size(), listOffset + capacity()); i++) {
             Row row = rows.get(i); int y = listTop + (i - listOffset) * 36;

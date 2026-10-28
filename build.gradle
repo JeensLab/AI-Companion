@@ -80,6 +80,14 @@ neoForge {
             systemProperty 'aicompanion.goalRestartStage', providers.gradleProperty('goalRestartStage').orElse('disabled').get()
         }
 
+        // Separate, disposable dedicated world used only by the furnace-batch process-restart probe.
+        furnaceRestartServer {
+            server()
+            gameDirectory = project.file(providers.gradleProperty('furnaceRestartDirectory').orElse('run/furnace-restart'))
+            programArgument '--nogui'
+            systemProperty 'aicompanion.furnaceRestartStage', providers.gradleProperty('furnaceRestartStage').orElse('disabled').get()
+        }
+
         data {
             data()
             // example of overriding the workingDirectory set in configureEach above, uncomment if you want to use it

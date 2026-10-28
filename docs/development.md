@@ -96,6 +96,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
+| Партия плавки при настоящем перезапуске сервера | `.\scripts\verify-furnace-restart.ps1` после создания `build/diagnostics/` |
 | Самостоятельные реплики, свои темы Олега и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
 | Тихая работа, речь и восстановление поручений | `.\scripts\verify-quiet-work.ps1` |
 | Критические проверки длительной работы | `.\scripts\verify-endurance.ps1 -CriticalOnly -Repetitions 1` |

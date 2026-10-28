@@ -247,7 +247,8 @@ public final class CompanionWork {
     public long activeTaskId() { return isActive() ? taskId : 0; }
     public CompanionActionResult taskResult(long id) {
         if (completedId == id) return completedResult;
-        return isActive() && taskId == id ? null : CompanionActionResult.cancelled("Работа была прервана другой командой.");
+        CompanionActionResult parked = owner.batches().parkedResult(id);
+        return parked != null ? parked : isActive() && taskId == id ? null : CompanionActionResult.cancelled("Работа была прервана другой командой.");
     }
 
     public CompanionWork(CompanionEntity owner) {
@@ -434,6 +435,11 @@ public final class CompanionWork {
                 smeltCount = Math.min(count, carried);
                 job = Job.SMELT; phase = Phase.FURNACE;
             }
+            case "collect_smelt" -> {
+                String refused = owner.batches().collectRefusal(item);
+                if (refused != null) return CompanionActionResult.failed(refused);
+                job = Job.SMELT; phase = Phase.COOK;
+            }
             case "build_house" -> {
                 if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
                 job = Job.HOUSE; phase = Phase.BUILD; house.begin();
@@ -497,10 +503,20 @@ public final class CompanionWork {
         if (job == Job.WOOD) {
             afterWood = Phase.WOOD_DONE; woodBeforeRequest = owner.collectedLogs(); owner.startGatheringLogsForWork(count);
         }
+        if ("collect_smelt".equals(action)) return CompanionActionResult.accepted(owner.batches().restore(item, this, level));
         return CompanionActionResult.accepted(job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : "Сейчас подготовлюсь.");
     }
 
+    /** Handing the smelt to a batch is no finish: nothing credited, noted, packed or journalled as a failure. */
+    void park(CompanionActionResult result) {
+        completedId = taskId; completedResult = result;
+        cancel();
+        owner.finishFollowing();
+        owner.workStatus(result.message());
+    }
+
     public void cancel() {
+        owner.batches().reclaim(job != null && completedId == taskId);
         owner.allowNewBench(false); benchHere = false; packTarget = null;
         if (job != null && completedId != taskId) {
             completedId = taskId;
