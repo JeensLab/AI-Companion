@@ -249,17 +249,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     /** The game's ground navigation, with the walking search that also climbs out of water onto a bank (CompanionNodeEvaluator). */
     @Override protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
-        var navigation = new net.minecraft.world.entity.ai.navigation.GroundPathNavigation(this, level) {
-            @Override protected net.minecraft.world.level.pathfinder.PathFinder createPathFinder(int maxVisitedNodes) {
-                this.nodeEvaluator = new CompanionNodeEvaluator();
-                this.nodeEvaluator.setCanPassDoors(true);
-                return new net.minecraft.world.level.pathfinder.PathFinder(this.nodeEvaluator, maxVisitedNodes);
-            }
-        };
-        // Twice the game's budget of searched cells (marathon 23.10: the coal down in the cave, 45 steps by its narrow way, was
-        // «out of reach» from the meadow above — the search spent its 2048 cells on the meadow first).
-        navigation.setMaxVisitedNodesMultiplier(2F);
-        return navigation;
+        // The search budget in force is the game's times 3 (the constructor sets it: 6144 cells). Marathon 23.10: the coal down in the
+        // cave, 45 steps by its narrow way, was «out of reach» from the meadow above — the search spent its cells on the meadow first.
+        return new CompanionNavigation(this, level);
     }
 
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level) {

@@ -14,6 +14,12 @@ import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 final class CompanionNodeEvaluator extends WalkNodeEvaluator {
     /** The search climbs a cell at a time by calling itself: the one extra cell is given once, not at every cell of the climb. */
     private boolean lifting;
+    private long expanded;
+
+    long expanded() { return expanded; }
+
+    @Override
+    public int getNeighbors(Node[] neighbors, Node node) { expanded++; return super.getNeighbors(neighbors, node); }
 
     @Override
     protected Node findAcceptedNode(int x, int y, int z, int verticalDeltaLimit, double nodeFloorLevel, Direction direction, PathType pathType) {

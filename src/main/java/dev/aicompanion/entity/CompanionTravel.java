@@ -30,12 +30,16 @@ final class CompanionTravel {
     private long lastProgress;
     private int turn;
     private boolean sideStep;
+    // The walk as the journal tells it: where and when it began, what the searches had cost by then; null once told.
+    private BlockPos from;
+    private long began;
+    private CompanionNavigation.Meter meter;
 
     CompanionTravel(CompanionEntity owner) { this.owner = owner; }
 
     BlockPos goal() { return goal; }
     /** Also the destination for a self-rescue: a goal given up must not look like a trap afterwards. */
-    void reset() { if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; }
+    void reset() { told("ABANDONED", "reset"); if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; }
 
     /**
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
@@ -50,17 +54,17 @@ final class CompanionTravel {
     Step toward(BlockPos target, double near) {
         if (!(owner.level() instanceof ServerLevel level)) return Step.FAILED;
         long now = level.getGameTime();
-        if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; }
+        if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
         owner.movementIntent(goal);
         double distance = distance();
-        if (distance <= near) { owner.getNavigation().stop(); return Step.NEAR; }
+        if (distance <= near) { owner.getNavigation().stop(); told("NEAR", "arrived"); return Step.NEAR; }
         if (distance + PROGRESS <= best) { best = distance; lastProgress = now; turn = 0; }
-        if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); return Step.FAILED; }
+        if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); told("FAILED", "no progress for half a minute"); return Step.FAILED; }
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
         if (leg != null && !owner.getNavigation().isDone() && !owner.getNavigation().isStuck()) return Step.WALKING;
         // A leg is over (or there was none): the next one.
         leg = nextLeg(level, distance);
-        if (leg == null) { owner.getNavigation().stop(); return Step.FAILED; }
+        if (leg == null) { owner.getNavigation().stop(); told("FAILED", "no leg found"); return Step.FAILED; }
         CompanionMiningNavigation.walk(owner, leg);
         return Step.WALKING;
     }
@@ -98,6 +102,14 @@ final class CompanionTravel {
             }
         }
         return null;
+    }
+
+    /** The route-outcome event of the journal, once per walk. */
+    private void told(String outcome, String reason) {
+        if (meter == null || goal == null) return;
+        CompanionNavigation.outcome(owner, from, goal, outcome, reason, owner.level().getGameTime() - began, Math.sqrt(from.distSqr(goal)),
+                CompanionNavigation.meterOf(owner).since(meter));
+        meter = null;
     }
 
     private double distance() { return Math.sqrt(owner.distanceToSqr(goal.getCenter())); }

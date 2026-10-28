@@ -52,7 +52,10 @@ final class CompanionMiningNavigation {
     static Path pathTo(CompanionEntity owner, BlockPos block, double reach, boolean clearLeaves, boolean avoidStandingOnTarget, boolean forTheDrop) {
         Set<BlockPos> feet = standCells(owner, block, reach, clearLeaves, avoidStandingOnTarget);
         if (forTheDrop) feet.removeIf(stand -> !dropCollectable(owner.level(), block, stand));
-        return feet.isEmpty() ? null : owner.getNavigation().createPath(feet, 0);
+        if (feet.isEmpty()) { CompanionNavigation.approachFailed(owner, block, "no stand cell"); return null; }
+        Path path = owner.getNavigation().createPath(feet, 0);
+        if (path == null || !path.canReach()) CompanionNavigation.approachFailed(owner, block, "no route");
+        return path;
     }
 
     /**
@@ -138,9 +141,9 @@ final class CompanionMiningNavigation {
             BlockPos other = blockAt.get(stand);
             if (other == null || stand.distSqr(block) < stand.distSqr(other)) blockAt.put(stand, block.immutable());
         }
-        if (blockAt.isEmpty()) return null;
+        if (blockAt.isEmpty()) { if (!blocks.isEmpty()) CompanionNavigation.approachFailed(owner, blocks.iterator().next(), "no stand cell"); return null; }
         Path path = owner.getNavigation().createPath(blockAt.keySet(), 0);
-        if (path == null || !path.canReach() || !blockAt.containsKey(path.getTarget())) return null;
+        if (path == null || !path.canReach() || !blockAt.containsKey(path.getTarget())) { CompanionNavigation.approachFailed(owner, blocks.iterator().next(), "no route"); return null; }
         return new Choice(blockAt.get(path.getTarget()), path, length(owner, path));
     }
 
