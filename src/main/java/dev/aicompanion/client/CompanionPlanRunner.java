@@ -69,7 +69,8 @@ public final class CompanionPlanRunner {
     public record Attempt(CompanionActionResult result, boolean started) { }
     public enum Decision { CONTINUE, RETRY, STOP, PARK }
     public record Verdict(Decision decision, PlannedAction retry, String reason) { }
-    public record Outcome(String report, List<PlannedAction> skipped, int recoveries) { }
+    /** cancelled: the plan ended by its own cancel, not by what the steps did. */
+    public record Outcome(String report, List<PlannedAction> skipped, int recoveries, boolean cancelled) { }
 
     private CompanionPlanRunner() { }
 
@@ -417,7 +418,7 @@ public final class CompanionPlanRunner {
             List<String> lines = new ArrayList<>(reports.stream().filter(Objects::nonNull).toList());
             if (!skipped.isEmpty()) CompanionDiagnostics.event(port.trace(), "step_skipped", "actions", skipped, "reason", "previous_step_failed");
             if (!skipped.isEmpty()) lines.add(CompanionDialogue.SKIPPED_PREFIX + CompanionDialogue.describeAll(skipped));
-            return new Outcome(String.join("\n", lines), List.copyOf(skipped), recoveries);
+            return new Outcome(String.join("\n", lines), List.copyOf(skipped), recoveries, cancelled);
         }
     }
 }

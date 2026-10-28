@@ -504,7 +504,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Lets the long smelt of this work be handed to a furnace batch instead of standing at the furnaces. */
     public void markParkable(long workId) { batches.markParkable(workId); }
     /** The same for a deed of his own: what it leaves in the furnaces is an orphan batch. */
-    void markDeedParkable(long workId) { batches.markDeedParkable(workId); }
+    public void markDeedParkable(long workId) { batches.markDeedParkable(workId); }
     public CompanionFurnaceBatches.State batchState(long id) { return batches.state(id); }
     public String releaseBatch(long id) { return batches.release(id); }
     public CompanionActionResult workResult(long id) { return work.taskResult(id); }

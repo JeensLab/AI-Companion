@@ -47,6 +47,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private long haltedSince = -1;
     /** Whether a step was already dispatched: a «wait» after it is a pause inside the plan. Server thread only. */
     private boolean dispatched;
+    /** A long goal's own steps (CompanionAgenda): his own work, not orders of the player, and its smelts park as his own batches. */
+    private final boolean goal;
+    /** The plan as the runner has it now: the class of the whole request decides how it interrupts a long goal. */
+    private volatile List<PlannedAction> plan = List.of();
 
     public CompanionServerPlanPort(MinecraftServer server, UUID playerId, String trace, BooleanSupplier cancelled) {
         this(server, playerId, trace, cancelled, (plan, index) -> { });
@@ -60,11 +64,24 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     /** With a queue task the plan's long smelt parks: it gives the slot to other requests and takes it back when the batch is ready. */
     public CompanionServerPlanPort(MinecraftServer server, UUID playerId, String trace, BooleanSupplier cancelled,
             java.util.function.BiConsumer<java.util.List<PlannedAction>, Integer> progress, CompanionTaskQueue.Task task, CompanionParkLink link) {
-        this.server = server; this.playerId = playerId; this.trace = trace; this.cancelled = cancelled;
-        this.progress = progress; this.task = task; this.link = link;
+        this(server, playerId, trace, cancelled, progress, task, link, false);
     }
 
-    @Override public void progress(java.util.List<PlannedAction> plan, int index) { progress.accept(plan, index); }
+    private CompanionServerPlanPort(MinecraftServer server, UUID playerId, String trace, BooleanSupplier cancelled,
+            java.util.function.BiConsumer<java.util.List<PlannedAction>, Integer> progress, CompanionTaskQueue.Task task, CompanionParkLink link, boolean goal) {
+        this.server = server; this.playerId = playerId; this.trace = trace; this.cancelled = cancelled;
+        this.progress = progress; this.task = task; this.link = link; this.goal = goal;
+    }
+
+    /** The port of a long goal's run: called on the server thread by CompanionAgenda, which owns the cancel. */
+    public static CompanionServerPlanPort forGoal(MinecraftServer server, UUID playerId, String trace, BooleanSupplier cancelled) {
+        return new CompanionServerPlanPort(server, playerId, trace, cancelled, (plan, index) -> { }, null, null, true);
+    }
+
+    /** The work this port started last; the goal stops it on an interrupt only while it is still the active one. */
+    public long ownedWorkId() { return ownedWorkId; }
+
+    @Override public void progress(java.util.List<PlannedAction> plan, int index) { this.plan = List.copyOf(plan); progress.accept(plan, index); }
 
     /** Ordered on the same server executor as dispatch, restricted to this request's own work ID. */
     public void cancelWork() {
@@ -76,10 +93,15 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         });
     }
 
-    @Override public boolean parkable() { return task != null; }
+    @Override public boolean parkable() { return task != null || goal; }
     @Override public void own(long batchId) { if (task != null) task.own(batchId); }
     @Override public CompletableFuture<Void> park(long batchId) {
+        if (goal) return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("Цель прервана."));
         return task == null ? CompletableFuture.completedFuture(null) : task.await(batchId, () -> collectable(batchId));
+    }
+
+    private void markParkable(CompanionEntity companion, long workId) {
+        if (goal) companion.markDeedParkable(workId); else companion.markParkable(workId);
     }
     @Override public void collected(long batchId) { if (task != null) task.collected(batchId); }
 
@@ -157,13 +179,21 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             CompanionEntity before = CompanionEvents.getOwnedCompanion(player);
             long previousWork = before == null ? 0 : before.activeWorkId();
             boolean stoppedBefore = before != null && before.autonomy().playerStopped();
-            CompanionActionResult result = CompanionEvents.executeAction(player, action.type(), action.item(), action.count(), action.slot(), trace, action.location());
+            if (!goal) dev.aicompanion.entity.CompanionAgenda.request(playerId, plan.stream().map(PlannedAction::type).toList());
+            CompanionActionResult result;
+            try {
+                result = goal
+                        ? CompanionEvents.executeGoal(player, action.type(), action.item(), action.count(), action.slot(), trace, action.location())
+                        : CompanionEvents.executeAction(player, action.type(), action.item(), action.count(), action.slot(), trace, action.location());
+            } finally {
+                if (!goal) dev.aicompanion.entity.CompanionAgenda.request(playerId, List.of());
+            }
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (dispatched && "wait".equals(action.type()) && companion != null) companion.autonomy().clearHalt(before != null && stoppedBefore);
             dispatched = true;
             long work = companion == null ? 0 : companion.activeWorkId();
             if (result.success() && work != previousWork) ownedWorkId = work;
-            if (parkable() && work > 0 && result.success() && work != previousWork && PARKABLE_WORK.contains(action.type())) companion.markParkable(work);
+            if (parkable() && work > 0 && result.success() && work != previousWork && PARKABLE_WORK.contains(action.type())) markParkable(companion, work);
             return new Dispatch(result, result.success() && work != previousWork ? work : 0, player.level().getGameTime());
         }).thenCompose(dispatch -> {
             CompanionActionResult result = dispatch.result();
@@ -199,6 +229,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
 
     /** Pauses count server ticks: they stop while singleplayer is paused and follow the GameTest tick rate. */
     @Override public CompletableFuture<Void> pause(int seconds) {
+        lease();
         CompletableFuture<Void> wake = new CompletableFuture<>();
         if (!server.isRunning()) wake.completeExceptionally(new IllegalStateException("Мир закрыт, поручение остановлено."));
         else SLEEPERS.add(new Sleeper(server, server.getTickCount() + seconds * 20, wake));
@@ -248,14 +279,16 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         return onServer(player -> {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (companion == null) return CompanionActionResult.failed("Компаньон выгружен из мира.");
-            if (parkable()) companion.markParkable(workId);
+            if (parkable() && companion.activeWorkId() == workId) markParkable(companion, workId);
             CompanionActionResult result = companion.workResult(workId);
             if (result != null) {
                 if (result.status() == CompanionActionResult.Status.PARKED) parkedSeen(result);
                 return result;
             }
             if (player.level().getGameTime() - startTick >= limitSeconds * 20L) {
-                companion.diagnosticSnapshot("step_timeout"); companion.stopGathering();
+                companion.diagnosticSnapshot("step_timeout");
+                // workResult is null only while this work is the active one; the guard still protects a newer order of the player or a goal's step.
+                if (companion.activeWorkId() == workId) companion.stopGathering();
                 return CompanionActionResult.timeout("Остановил работу по тайм-ауту.");
             }
             return (CompanionActionResult) null;
@@ -305,7 +338,14 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         return pause(1).thenCompose(unused -> waitSeconds(remaining - 1, result));
     }
 
+    /**
+     * Every move of the player's request (a step, a poll, a pause between steps, a «wait N») renews the lease that keeps a long
+     * goal from stepping in between; the lease outlives the request by a few seconds, which also spans the gap to the next request.
+     */
+    private void lease() { if (!goal) dev.aicompanion.entity.CompanionAgenda.lease(server, playerId); }
+
     private <T> CompletableFuture<T> onServer(Function<ServerPlayer, T> action) {
+        lease();
         CompletableFuture<T> result = new CompletableFuture<>();
         if (!server.isRunning()) {
             result.completeExceptionally(new IllegalStateException("Для действий компаньона нужен открытый одиночный мир."));

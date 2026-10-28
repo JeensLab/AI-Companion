@@ -110,7 +110,7 @@ public final class CompanionAutonomy {
         if (!(owner.level() instanceof ServerLevel level)) return "";
         var player = owner.getOwnerPlayer();
         if (player == null) return "Ожидает возвращения игрока";
-        if (owner.goals().outstanding()) return "После сохранённой цели — проверить запасы и порядок";
+        if (owner.goals().outstanding() || CompanionAgenda.suppressesDeeds(owner)) return "После сохранённой цели — проверить запасы и порядок";
         String why = notNow(level, player);
         if (why != null) return REASONS.getOrDefault(why, "Ожидает окончания текущей работы");
         Deed next = choose(level);
@@ -187,7 +187,7 @@ public final class CompanionAutonomy {
     /** Once a second on the server. */
     void tick() {
         if (owner.tickCount % 20 != 0 || !(owner.level() instanceof ServerLevel level)) return;
-        if (owner.goals().outstanding()) return;
+        if (owner.goals().outstanding() || CompanionAgenda.suppressesDeeds(owner)) return;
         if (deed != null) { watchDeed(level); return; }
         if (!enabled || held) { idleTicks = 0; return; }
         // Old saves had only the mode flag. Adopt the existing location once, without moving him.
@@ -342,7 +342,7 @@ public final class CompanionAutonomy {
         if (deed != null || starting || playerStopped() || !available(Deed.COLLECT, now) || !(owner.level() instanceof ServerLevel level)) return false;
         ServerPlayer player = owner.getOwnerPlayer();
         if (player == null || !player.isAlive() || player.isSpectator() || !owner.isFollowing() || owner.isProtecting() || owner.isRoaming()) return false;
-        if (owner.hasActiveWorkOrder() || owner.goals().outstanding() || owner.hasPendingLoot() || owner.isSelfRescuing() || owner.getTarget() != null || !owner.canCollectItems()
+        if (owner.hasActiveWorkOrder() || owner.goals().outstanding() || CompanionAgenda.suppressesDeeds(owner) || owner.hasPendingLoot() || owner.isSelfRescuing() || owner.getTarget() != null || !owner.canCollectItems()
                 || danger(level, player) != null) return false;
         if (owner.batches().collectRefusal(String.valueOf(batch)) != null) { owner.batches().collectRefused(batch); return true; }
         begin(player, Deed.COLLECT, String.valueOf(batch));

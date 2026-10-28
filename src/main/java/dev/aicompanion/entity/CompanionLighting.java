@@ -40,7 +40,8 @@ public final class CompanionLighting {
         if (place == null) return;
         int slot = torchSlot();
         // Do not consume a just-completed order's coal before its workId result is observed.
-        if (slot < 0 && freeTicks >= 100 && hasFuel() && hasStickMaterials()) {
+        // A long goal owns his sticks and coal: its smelt and crafts need them.
+        if (slot < 0 && freeTicks >= 100 && hasFuel() && hasStickMaterials() && !CompanionAgenda.suppressesDeeds(owner)) {
             var result = owner.craftFromBag("minecraft:torch", 4);
             if (result.success()) slot = torchSlot();
             else nextPlacement = level.getGameTime() + COOLDOWN;
