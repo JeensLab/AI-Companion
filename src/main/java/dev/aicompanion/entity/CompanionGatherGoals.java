@@ -551,7 +551,8 @@ final class CompanionGatherGoals {
 
             c.dirtBreaking.reset();
 
-            if (c.work.route.stuck()) {
+            // Stuck on his own way to this block, not on a walk before it (following, a hand-over).
+            if (approachPath != null && c.work.route.stuck()) {
                 unreachable.add(target.immutable());
                 target = null;
                 approachPath = null;
@@ -561,6 +562,8 @@ final class CompanionGatherGoals {
                 return;
             }
             if (approachPath == null || c.work.route.done()) approachPath = findDirtApproachPath(target);
+            // The search goes on at the next tick: not a failed try.
+            if (approachPath == null && searching) return;
             // A far route first leads away from the block: walking on is progress.
             if (approachPath != null && farApproach && c.tickCount < farUntil && (farMoved == null || c.position().distanceToSqr(farMoved) > .7 * .7)) {
                 farMoved = c.position(); targetProgress = c.tickCount;
@@ -609,10 +612,12 @@ final class CompanionGatherGoals {
             return best;
         }
 
+        private boolean searching;
         private Path findDirtApproachPath(BlockPos block) {
             // The previous adjacent-cell search could end behind a ledge with no view of the block, endlessly alternating
             // a single swing and the same walk. Use the common visible approach with a collectable physical drop.
             var reach = c.work.route.to(block, DIRT);
+            searching = reach.busy();
             farApproach = reach.kind() == CompanionRoute.Kind.FAR;
             if (farApproach && farUntil == 0) farUntil = c.tickCount + (int)CompanionRoute.farLimit(reach.length());
             return reach.path();

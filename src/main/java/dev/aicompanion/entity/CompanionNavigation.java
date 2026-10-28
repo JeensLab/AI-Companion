@@ -64,6 +64,13 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
 
     @Override public boolean isStuck() { return stuck; }
 
+    /** A stopped walk is not searched again: a recompute put off before the stop would lead him back to its target. */
+    @Override public void stop() {
+        super.stop();
+        walkedTarget = null;
+        hasDelayedRecomputation = false;
+    }
+
     /** The game's check (a hundred ticks without moving a quarter of the way he would have walked) with the result kept here. */
     @Override protected void doStuckDetection(net.minecraft.world.phys.Vec3 at) {
         int checked = lastStuckCheck;
@@ -211,6 +218,15 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
 
     /** The walk is over or its goal changed: the search to it is not gone on with. */
     void forget(CompanionSearch search) { searches.values().remove(search); }
+
+    /**
+     * Whether a search to these cells is going on: a wide one sees all a short one would, so the short one, dropped by a block
+     * change, is not begun again under it (with blocks changing every few ticks the wide one would else never get its share).
+     */
+    boolean running(Set<BlockPos> targets, int accuracy, float range) {
+        CompanionSearch search = searches.get(new Key(Set.copyOf(targets), accuracy, range));
+        return search != null && search.state() == CompanionSearch.State.RUNNING && !stale(search, level.getGameTime());
+    }
 
     public Path search(Set<BlockPos> targets, int accuracy) { return search(targets, accuracy, followRange(1)); }
 

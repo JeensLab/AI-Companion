@@ -23,11 +23,7 @@ public final class CompanionOwnSearchTests {
     /** A plateau four blocks over the meadow with steps down on its east side; the player waits on its west side below. */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void aDropOfFourOntoLandIsNotTakenHeGoesRoundByTheSteps(GameTestHelper h) {
-        box(h, 0, 0, 0, 31, 12, 31, Blocks.AIR);
-        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
-        box(h, 0, 2, 0, 31, 2, 31, Blocks.GRASS_BLOCK);
-        box(h, 12, 3, 12, 15, 6, 19, Blocks.STONE);
-        for (int step = 0; step < 4; step++) box(h, 16 + step, 3, 12, 16 + step, 5 - step, 19, Blocks.STONE);
+        plateau(h);
         CompanionEntity c = spawn(h, 13, 7, 15);
         var player = player(c, h);
         teleport(h, player, 8, 3, 15);
@@ -44,6 +40,33 @@ public final class CompanionOwnSearchTests {
             h.assertTrue(c.distanceToSqr(player) <= 16, c.getLastTaskResult());
             h.assertTrue(fall[0] < 3.5, "Jumped down: fell " + fall[0] + " blocks");
         });
+    }
+
+    /** The same with a target set (a hunt, a fight): the game lets a mob with one drop up to twelve blocks; he still takes the steps. */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void aDropOfFourOntoLandIsNotTakenWithATargetEither(GameTestHelper h) {
+        plateau(h);
+        CompanionEntity c = spawn(h, 13, 7, 15);
+        var player = player(c, h);
+        teleport(h, player, 8, 3, 15);
+        var cow = h.spawn(net.minecraft.world.entity.EntityType.COW, 8, 3, 18);
+        h.runAfterDelay(5, () -> {
+            c.setTarget(cow);
+            h.assertTrue(c.getTarget() == cow, "No target set");
+            Path way = search(c, player);
+            h.assertTrue(way != null && way.canReach(), "No way to the player");
+            for (int i = 1; i < way.getNodeCount(); i++) h.assertTrue(way.getNode(i - 1).y - way.getNode(i).y <= 3, "The way drops " + (way.getNode(i - 1).y - way.getNode(i).y) + " blocks at once");
+            h.succeed();
+        });
+    }
+
+    /** A plateau four blocks over the meadow with steps down on its east side. */
+    private static void plateau(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 12, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 2, 31, Blocks.GRASS_BLOCK);
+        box(h, 12, 3, 12, 15, 6, 19, Blocks.STONE);
+        for (int step = 0; step < 4; step++) box(h, 16 + step, 3, 12, 16 + step, 5 - step, 19, Blocks.STONE);
     }
 
     /** A pillar nine blocks over a lake: the only way off it is down into the water (a fall into water does no harm). */
@@ -290,6 +313,24 @@ public final class CompanionOwnSearchTests {
             if (way != null && !way.isDone() && way.canReach()) walking[0] = true;
             else if (walking[0] && c.distanceToSqr(player) > 16) h.fail(way == null || way.isDone() ? "The walk round was cut off half-way" + at : "The walk round was swapped for a part of a short search" + at);
         });
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, "Still walking: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(planks(h) == wall, "Broke the wall: " + (wall - planks(h)) + " planks");
+        });
+    }
+
+    /**
+     * The same walk while a block near him changes every other tick all the way (villagers at their doors, the player digging beside
+     * him): each change drops the finished searches, and the wide search that finds the way round must still come to its end.
+     */
+    @GameTest(template = "marathon_far", batch = "longwall", timeoutTicks = 3000)
+    public static void theWayRoundALongWallIsFoundWhileABlockBesideHimChangesEveryOtherTick(GameTestHelper h) {
+        CompanionEntity c = longWall(h);
+        var player = player(c, h);
+        teleport(h, player, 45, 3, 22);
+        int wall = planks(h);
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.onEachTick(() -> { if (h.getTick() % 2 == 0) h.setBlock(new BlockPos(53, 8, 30), h.getTick() % 4 == 0 ? Blocks.OAK_LEAVES : Blocks.AIR); });
         h.succeedWhen(() -> {
             h.assertTrue(!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, "Still walking: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
             h.assertTrue(planks(h) == wall, "Broke the wall: " + (wall - planks(h)) + " planks");

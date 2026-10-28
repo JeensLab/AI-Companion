@@ -61,10 +61,12 @@ final class CompanionEntityGoals {
     static final class RoamGoal extends Goal {
         final CompanionEntity c;
         private int nextAttempt;
+        // The places picked for a walk, kept while the search to them goes on (a new pick would be a new search, never finished).
+        private Set<BlockPos> picked, pickedNear;
         RoamGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
         @Override public boolean canUse() { return c.roaming && c.inventoryViewers == 0; }
         @Override public boolean canContinueToUse() { return canUse(); }
-        @Override public void start() { nextAttempt = 0; }
+        @Override public void start() { nextAttempt = 0; picked = pickedNear = null; }
         @Override public void tick() {
             if (!(c.level() instanceof ServerLevel serverLevel)) return;
             if (!c.onGround() && !c.isInWater()) return;
@@ -72,6 +74,7 @@ final class CompanionEntityGoals {
             if (c.tickCount < nextAttempt) return;
             nextAttempt = c.tickCount + 60;
             if (c.roamOrigin == null) c.roamOrigin = c.blockPosition();
+            if (picked != null) { walkTo(picked, pickedNear); return; }
             Set<BlockPos> destinations = new HashSet<>();
             Set<BlockPos> nearbyDestinations = new HashSet<>();
             double preferredDistance = Math.max(8.0D, c.searchRadius * 0.7D);
@@ -85,8 +88,16 @@ final class CompanionEntityGoals {
                 nearbyDestinations.add(feet);
                 if (feet.distSqr(c.blockPosition()) >= preferredDistance * preferredDistance) destinations.add(feet);
             }
+            walkTo(destinations, nearbyDestinations);
+        }
+
+        private void walkTo(Set<BlockPos> destinations, Set<BlockPos> nearbyDestinations) {
+            int busy = c.work.route.busyAnswers();
             Path path = c.work.route.toCells(destinations);
             if (path == null) path = c.work.route.toCells(nearbyDestinations);
+            boolean searching = path == null && c.work.route.busyAnswers() != busy;
+            picked = searching ? destinations : null; pickedNear = searching ? nearbyDestinations : null;
+            if (searching) nextAttempt = c.tickCount + 1;
             if (path != null) c.work.route.walk(path, 0.9D);
         }
 

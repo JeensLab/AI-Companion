@@ -138,7 +138,8 @@ final class CompanionTravel {
         // The whole way, or the part of it that ends nearer the goal: on rough ground the search runs out of steps before it arrives.
         if (!sideStep) {
             Set<BlockPos> cells = nav().cellsOf(goal);
-            CompanionSearch main = cells == null ? null : nav().advance(cells, 2, nav().followRange(1));
+            boolean wideGoing = nav().running(Set.of(goal), 2, nav().followRange(3));
+            CompanionSearch main = cells == null || wideGoing ? null : nav().advance(cells, 2, nav().followRange(1));
             if (main != null && main.state() == CompanionSearch.State.RUNNING) { waiting = main; return WAIT; }
             Path route = main == null ? null : main.from(owner.position());
             if (route != null && route.getNodeCount() > 1 && route.canReach()) return route;

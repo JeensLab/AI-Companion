@@ -85,12 +85,13 @@ final class CompanionRoute {
     private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) {
         CompanionEntity owner = w.owner;
         Kind kind = Kind.WALK;
-        Path path = nav().search(cells, accuracy, nav().followRange(1));
+        boolean wideGoing = nav().running(cells, accuracy, nav().followRange(3));
+        Path path = wideGoing ? null : nav().search(cells, accuracy, nav().followRange(1));
         // The search goes on at the next tick (it keeps what it has found): not a failure.
         if (path == CompanionNavigation.BUSY) return new Reach(Kind.NONE, null, null, 0, BUSY);
-        if (!reaches(path, cells, accuracy)) {
+        if (wideGoing || !reaches(path, cells, accuracy)) {
             // No path at all: nothing was searched (he is in the air); that is no evidence of a far goal or of none.
-            if (path == null) return new Reach(Kind.NONE, null, null, 0, NOT_SEARCHED);
+            if (path == null && !wideGoing) return new Reach(Kind.NONE, null, null, 0, NOT_SEARCHED);
             // A goal that no wide search reaches is not searched wide again at once (a failed one costs a whole search): five seconds.
             long now = owner.level().getGameTime();
             // A block changed near him since: what failed then may not fail now.
@@ -223,7 +224,7 @@ final class CompanionRoute {
     }
 
     /** The walk to this goal is over by other means (the goal was dropped, the work ended). */
-    void abandon() { told("ABANDONED", "goal dropped"); }
+    void abandon() { told("ABANDONED", "goal dropped"); goal = null; }
 
     private void begin(BlockPos block) {
         told("ABANDONED", "replaced");

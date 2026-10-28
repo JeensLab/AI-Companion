@@ -25,6 +25,8 @@ final class CompanionMoves {
     private static final float CLIMB = 6, DROP = 2;
     /** The deepest drop into water that is taken (a fall into water does no harm). */
     private static final int WATER_DROP = 20;
+    /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). */
+    private static final int LAND_DROP = 3;
 
     private final CompanionNodeEvaluator eval;
     private final Mob mob;
@@ -109,7 +111,7 @@ final class CompanionMoves {
             PathType type = eval.typeAt(x, i, z);
             if (type == PathType.OPEN) continue;
             float malus = mob.getPathfindingMalus(type);
-            return malus < 0 || (y - i > mob.getMaxFallDistance() && type != PathType.WATER) ? null : eval.mark(x, i, z, type, malus);
+            return malus < 0 || (y - i > LAND_DROP && type != PathType.WATER) ? null : eval.mark(x, i, z, type, malus);
         }
         return null;
     }
