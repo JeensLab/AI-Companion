@@ -19,8 +19,8 @@ final class CompanionMoves {
     /** A cell offered by a move and the ticks it takes to get there. */
     interface Sink { void offer(Node to, float ticks); }
 
-    /** A block on foot takes this long (0.19 blocks a tick, measured on the polygon's flat arena). */
-    static final float TICKS_PER_BLOCK = 1 / .19F;
+    /** A block on foot takes this long (a player's walk, 0.2158 blocks a tick; a long way is run, faster). */
+    static final float TICKS_PER_BLOCK = 1 / .2158F;
     /** Extra for a jump up one block and for each block of a drop. */
     private static final float CLIMB = 6, DROP = 2;
     /** The deepest drop into water that is taken (a fall into water does no harm). */

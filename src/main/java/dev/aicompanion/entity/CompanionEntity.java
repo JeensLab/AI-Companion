@@ -364,7 +364,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
         event.put(AICompanionMod.COMPANION.get(), createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 20.0D)
-                .add(Attributes.MOVEMENT_SPEED, 0.30D)
+                .add(Attributes.MOVEMENT_SPEED, 0.313D)
                 .add(Attributes.FOLLOW_RANGE, 128.0D)
                 .add(Attributes.ATTACK_DAMAGE, 1.0D)
                 .add(Attributes.ATTACK_KNOCKBACK, 0.0D)
@@ -614,6 +614,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     int nextWaterJump, lastInWaterTick = -100;
     float jumpPower() { return getJumpPower(); }
+    /**
+     * A mob moves by the square of its speed (the move control sets it and also feeds it in as the push): 0.313 walks at a player's
+     * 0.2158 blocks a tick, but the sprint's +30% would make 0.365 where a player's is 0.2806. The square root of 1.3 gives it.
+     */
+    @Override public void setSpeed(float speed) { super.setSpeed(isSprinting() ? speed / 1.1402F : speed); }
     /**
      * In the water a mob's stroke is its walking speed (0.3), a player's the whole push of the key (0.98): in water to the knee,
      * where no bobbing helps, he waded a block in two seconds and fell behind the player swimming to the island (marathon

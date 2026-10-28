@@ -41,8 +41,12 @@ final class CompanionTravel {
     private long walkUntil;
     private int turn;
     private boolean sideStep;
-    // How fast the legs are walked: a walking player is kept up with at 1.15, other walks go at 1.
-    private double speed = 1D;
+    // The player followed is sprinting: run as he does, however near.
+    private boolean runs;
+    // He runs (sprints) up to this tick: set by every step that wants it, so it lapses by itself when the walk ends.
+    private int runUntil;
+    /** A walk this far from its goal is run, like a player holding Ctrl on a long way; nearer, at a walk. */
+    private static final int RUN_FROM = 12;
     private net.minecraft.world.phys.Vec3 legMoved;
     // A wide search that found no whole way to this goal is not repeated at every leg: when it was, in game ticks.
     private long wideFailedAt = Long.MIN_VALUE / 2;
@@ -62,6 +66,8 @@ final class CompanionTravel {
     private void drop() { if (waiting != null && owner.getNavigation() instanceof CompanionNavigation nav) nav.forget(waiting); waiting = null; }
 
     BlockPos goal() { return goal; }
+    /** He is to sprint now (the swimming stroke applies it every tick, together with the fast swim). */
+    boolean running() { return owner.tickCount < runUntil; }
     /** The last step was only waiting for a search: he stands and the order's stall time goes on. */
     boolean searchOnly() { return searchOnly; }
     /** The walk ended where its caller needed it (the goal's level, not its distance): told as arrived, then over. */
@@ -74,16 +80,17 @@ final class CompanionTravel {
     /**
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
      * shifts by less than sixteen blocks (so does its time bound: a player on the move does not extend it); a larger jump starts a new walk.
+     * {@code runs}: the player is sprinting, so is he.
      */
-    Step follow(BlockPos target, double near, double speed) {
-        this.speed = speed;
+    Step follow(BlockPos target, double near, boolean runs) {
+        this.runs = runs;
         if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); }
         return step(target, near);
     }
 
     /** One tick of walking towards the goal; NEAR once within {@code near} blocks, the caller then works it as usual. */
     Step toward(BlockPos target, double near) {
-        speed = 1D;
+        runs = false;
         return step(target, near);
     }
 
@@ -94,6 +101,7 @@ final class CompanionTravel {
         owner.movementIntent(goal);
         double distance = distance();
         if (distance <= near) { owner.getNavigation().stop(); told("NEAR", "arrived"); return Step.NEAR; }
+        if (runs || distance > RUN_FROM) runUntil = owner.tickCount + 3;
         if (distance + PROGRESS <= best) { best = distance; lastProgress = now; turn = 0; }
         // Along a whole route that winds away from the goal (a mine, a tunnel) the straight distance first grows: walking counts.
         // Only on a leg that arrives (its end within the search's accuracy of the goal), not on side steps and parts that only head that way.
@@ -110,18 +118,18 @@ final class CompanionTravel {
             searchOnly = over;
             if (over) {
                 Path part = waiting == null ? null : waiting.partialFrom(owner.position());
-                if (part != null && part.getNodeCount() > 1 && endDistance(part) + 3 <= distance) { leg = part; legPartial = true; searchOnly = false; CompanionMiningNavigation.walk(owner, leg, speed); }
+                if (part != null && part.getNodeCount() > 1 && endDistance(part) + 3 <= distance) { leg = part; legPartial = true; searchOnly = false; CompanionMiningNavigation.walk(owner, leg); }
             }
             return Step.WALKING;
         }
         if (!over) {
-            if (next != null && next.canReach()) { leg = next; legPartial = false; walkUntil = Math.max(walkUntil, bound(now, near)); CompanionMiningNavigation.walk(owner, leg, speed); }
+            if (next != null && next.canReach()) { leg = next; legPartial = false; walkUntil = Math.max(walkUntil, bound(now, near)); CompanionMiningNavigation.walk(owner, leg); }
             return Step.WALKING;
         }
         leg = next; legPartial = false;
         walkUntil = Math.max(walkUntil, bound(now, near));
         if (leg == null) { owner.getNavigation().stop(); told("FAILED", "no leg found"); return Step.FAILED; }
-        CompanionMiningNavigation.walk(owner, leg, speed);
+        CompanionMiningNavigation.walk(owner, leg);
         return Step.WALKING;
     }
 
