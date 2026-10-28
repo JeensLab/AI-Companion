@@ -148,7 +148,7 @@ final class CompanionEntityGoals {
         @Override
         public boolean canContinueToUse() {
             return !companion.autonomy.staysAtWork() && (companion.following || companion.protecting) && companion.inventoryViewers == 0 && owner != null && owner.isAlive()
-                    && owner.level() == companion.level() && companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D);
+                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D) || companion.onClimbable());
         }
 
         @Override

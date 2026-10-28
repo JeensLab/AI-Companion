@@ -620,7 +620,7 @@ public final class CompanionWork {
         var player = owner.getOwnerPlayer();
         if (player == null) { finish(false, "Не вижу тебя в этом измерении."); return; }
         owner.movementIntent(player.blockPosition());
-        if (owner.distanceToSqr(player) <= 9 && Math.abs(owner.getY() - player.getY()) <= 1.25 && owner.hasLineOfSight(player)) {
+        if (owner.distanceToSqr(player) <= 9 && Math.abs(owner.getY() - player.getY()) <= 1.25 && owner.hasLineOfSight(player) && !owner.onClimbable()) {
             finish(true, "Я рядом."); return;
         }
         owner.workStatus("Пытаюсь добраться до игрока.");

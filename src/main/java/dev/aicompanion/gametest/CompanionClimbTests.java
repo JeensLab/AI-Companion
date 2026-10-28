@@ -77,6 +77,29 @@ public final class CompanionClimbTests {
         trips(h, true, 17);
     }
 
+    /**
+     * The player stands by the top of the ladder, near enough to be «рядом» from the ladder itself: he comes off it onto the tower and
+     * stays there (game 28.10: «Я рядом.» on the ladder, and he slid down it, then climbed again to the follow, up and down).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void heStepsOffTheLadderOntoTheTowerAndStaysThere(GameTestHelper h) {
+        arena(h, 16);
+        ladder(h, 16);
+        CompanionEntity c = spawn(h, 8, 6, 15);
+        teleport(h, player(c, h), new int[]{15, 17, 15});
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        long[] doneAt = {-1};
+        h.onEachTick(() -> {
+            if (doneAt[0] < 0) { if (!c.isWorking()) doneAt[0] = h.getTick(); return; }
+            if (h.getTick() - doneAt[0] < 60) return;
+            h.assertTrue(c.didLastTaskSucceed(), "Come failed: " + c.getLastTaskResult());
+            h.assertTrue(c.onGround() && c.getY() >= h.absolutePos(new BlockPos(0, 17, 0)).getY(),
+                    "Not up on the tower three seconds after «" + c.getLastTaskResult() + "»: at " + h.relativePos(c.blockPosition()).toShortString());
+            h.succeed();
+        });
+        h.runAtTickTime(580, () -> h.fail("Still at " + h.relativePos(c.blockPosition()).toShortString() + ", working " + c.isWorking() + ": " + c.getLastTaskResult()));
+    }
+
     /** A wall of stone across the arena (so no way round), vines on its west face the only way up. */
     @GameTest(template = "tall_tree", timeoutTicks = 1500)
     public static void heClimbsVinesUpAWallThatIsOtherwiseAClimbToNowhere(GameTestHelper h) {

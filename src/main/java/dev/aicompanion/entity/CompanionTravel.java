@@ -105,7 +105,8 @@ final class CompanionTravel {
         if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; walkUntil = now + (long)(3 * distance() / .19) + 200; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
         owner.movementIntent(goal);
         double distance = distance();
-        if (distance <= near) { owner.getNavigation().stop(); told("NEAR", "arrived"); return Step.NEAR; }
+        // Not while on a ladder or vine: stopped there he slides down it (game 28.10: «Я рядом.» by the top, then down and up again).
+        if (distance <= near && !owner.onClimbable()) { owner.getNavigation().stop(); told("NEAR", "arrived"); return Step.NEAR; }
         if (runs || distance > RUN_FROM) runUntil = owner.tickCount + 3;
         // At the player's own pace the follow still lost him: each new leg costs a few ticks, and the gap to a sprinting player grew
         // by a third of a block a second (game 28.10: 9.6 to 14.6 blocks in 18 s). Fallen behind, he runs a little faster to catch up.

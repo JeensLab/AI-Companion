@@ -188,6 +188,8 @@ final class CompanionSearch {
 
     /** The target this cell is at (within the accuracy, as the game counted it: blocks along the axes), or null. */
     private BlockPos reached(Node node) {
+        // Hanging on a ladder or vine (nothing under his feet) is no place to end a route: there he slides down it (game 28.10).
+        if (node.type == net.minecraft.world.level.pathfinder.PathType.OPEN) return null;
         if (accuracy == 0) { BlockPos at = node.asBlockPos(); return targets.contains(at) ? at : null; }
         if (node.x < minX - accuracy || node.x > maxX + accuracy || node.z < minZ - accuracy || node.z > maxZ + accuracy) return null;
         BlockPos hit = null; float least = Float.MAX_VALUE;
