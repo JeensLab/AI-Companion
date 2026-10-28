@@ -219,6 +219,17 @@ public final class CompanionSoulTests {
             h.assertTrue(!CompanionLocalCommands.hushed(true,order),"Order hushed: "+order);
         h.assertTrue(CompanionLocalCommands.FIGHT_HUSH.equals("Помолчи, я тут занят мобом."),"Phrase changed"); h.succeed();
     }
+    /** The player 28.10: a thin mood panel on the right. Every face and trait has its own short word, so a row fits the panel. */
+    @GameTest(template="empty")
+    public static void theMoodPanelNamesEveryFaceAndTrait(GameTestHelper h) {
+        var words=new HashSet<String>();
+        for(var face:CompanionExpression.values())
+            h.assertTrue(!CompanionMood.of(face).isBlank()&&CompanionMood.of(face).length()<=12&&(CompanionMood.color(face)>>>24)!=0,"Face without a word or colour: "+face);
+        for(var trait:Trait.values())
+            h.assertTrue(words.add(CompanionMood.of(trait))&&CompanionMood.of(trait).length()<=10,"Trait word missing, repeated or too long: "+trait);
+        h.assertTrue(CompanionMood.bond("приятель").equals("Приятель")&&CompanionMood.bond("").equals("Связь: —"),"Bond tier not shown: "+CompanionMood.bond("приятель"));
+        h.succeed();
+    }
     @GameTest(template="tall_tree",timeoutTicks=100)
     public static void onlyAMonsterAfterOneOfThemIsAFight(GameTestHelper h) {
         for(int x=0;x<32;x++) for(int z=0;z<32;z++) h.setBlock(new BlockPos(x,0,z),Blocks.BEDROCK);

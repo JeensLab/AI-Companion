@@ -5,6 +5,7 @@
   "key.aicompanion.open_interface": "Open companion interface and tasks",
   "key.aicompanion.push_to_talk": "Talk without opening chat (V)",
   "key.aicompanion.toggle_marker": "Companion outline through walls on/off (G)",
+  "key.aicompanion.toggle_mood": "Companion mood panel on/off (N)",
   "key.categories.aicompanion": "AI Companion",
   "config.aicompanion.api_key": "API key",
   "config.aicompanion.model": "Model",

@@ -5,6 +5,7 @@
   "key.aicompanion.open_interface": "Открыть интерфейс и задачи компаньона",
   "key.aicompanion.push_to_talk": "Говорить с компаньоном, не открывая чат (V)",
   "key.aicompanion.toggle_marker": "Контур компаньона сквозь стены: вкл./выкл. (G)",
+  "key.aicompanion.toggle_mood": "Полоска настроения компаньона: вкл./выкл. (N)",
   "key.categories.aicompanion": "ИИ-компаньон",
   "config.aicompanion.api_key": "Ключ API",
   "config.aicompanion.model": "Модель",
