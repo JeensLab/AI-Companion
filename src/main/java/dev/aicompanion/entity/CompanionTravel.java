@@ -30,6 +30,9 @@ final class CompanionTravel {
     private long lastProgress;
     private int turn;
     private boolean sideStep;
+    private net.minecraft.world.phys.Vec3 legMoved;
+    // A wide search that found no whole way to this goal is not repeated at every leg: when it was, in game ticks.
+    private long wideFailedAt = Long.MIN_VALUE / 2;
     // The walk as the journal tells it: where and when it began, what the searches had cost by then; null once told.
     private BlockPos from;
     private long began;
@@ -44,7 +47,7 @@ final class CompanionTravel {
     /** The walk ended where its caller needed it (the goal's level, not its distance): told as arrived, then over. */
     void arrived() { told("NEAR", "arrived"); reset(); }
     /** Also the destination for a self-rescue: a goal given up must not look like a trap afterwards. */
-    void reset() { meter = null; if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; }
+    void reset() { meter = null; if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; legMoved = null; wideFailedAt = Long.MIN_VALUE / 2; }
 
     /**
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
@@ -64,6 +67,8 @@ final class CompanionTravel {
         double distance = distance();
         if (distance <= near) { owner.getNavigation().stop(); told("NEAR", "arrived"); return Step.NEAR; }
         if (distance + PROGRESS <= best) { best = distance; lastProgress = now; turn = 0; }
+        // Along a whole route that winds away from the goal (a mine, a tunnel) the straight distance first grows: walking counts.
+        if (leg != null && leg.canReach() && (legMoved == null || owner.position().distanceToSqr(legMoved) > .7 * .7)) { legMoved = owner.position(); lastProgress = now; }
         if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); told("FAILED", "no progress for half a minute"); return Step.FAILED; }
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
         if (leg != null && !owner.getNavigation().isDone() && !owner.getNavigation().isStuck()) return Step.WALKING;
@@ -78,12 +83,16 @@ final class CompanionTravel {
         // The whole way, or the part of it that ends nearer the goal: on rough ground the search runs out of steps before it arrives.
         if (!sideStep) {
             Path route = owner.getNavigation().createPath(goal, 2);
-            if (route != null && route.getNodeCount() > 1 && (route.canReach() || endDistance(route) + 3 <= distance)) return route;
-            // The way round may be longer than one search walks (a mine winding up, a cave): a wider one still finds it whole.
-            if (owner.getNavigation() instanceof CompanionNavigation nav) {
-                Path round = nav.wide(java.util.Set.of(goal), 2);
-                if (round != null && round.getNodeCount() > 1 && round.canReach()) return round;
-            }
+            if (route != null && route.getNodeCount() > 1 && route.canReach()) return route;
+            // The way round may be longer than one search walks (a mine winding up, a cave, a cliff trail): a wider one still finds it
+            // whole. For a goal within its reach it is asked before a part of the short one that merely ends nearer, which can lead into
+            // a dead end; a goal beyond it is walked to by the parts nearer, as before.
+            boolean within = distance <= owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 3;
+            Path round = within ? wideRound(level) : null;
+            if (round != null) return round;
+            if (route != null && route.getNodeCount() > 1 && endDistance(route) + 3 <= distance) return route;
+            round = within ? null : wideRound(level);
+            if (round != null) return round;
         }
         // Straight on towards it, a short leg at a time, as a player heads for what he sees (marathon 23.10, «берег»: back from the
         // island the long search through the water found no part that came nearer, and the side steps led him off across the sea).
@@ -111,6 +120,16 @@ final class CompanionTravel {
                 return aside;
             }
         }
+        return null;
+    }
+
+    /** The whole way by the wide search, or null; a search that found none is not repeated for five seconds. */
+    private Path wideRound(ServerLevel level) {
+        long now = level.getGameTime();
+        if (!(owner.getNavigation() instanceof CompanionNavigation nav) || now - wideFailedAt < 100) return null;
+        Path round = nav.wide(java.util.Set.of(goal), 2);
+        if (round != null && round.getNodeCount() > 1 && round.canReach()) return round;
+        wideFailedAt = now;
         return null;
     }
 

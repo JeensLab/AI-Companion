@@ -142,28 +142,34 @@ final class CompanionEntityGoals {
         public void tick() {
             if (owner == null) return;
             companion.getLookControl().setLookAt(owner, 20.0F, 30.0F);
-            // Far off, like a player who lost sight of a friend: walked to in legs, round walls and over ridges, never a teleport
-            // (marathon 23.10: beyond 128 blocks he used to appear beside the player). Near, the game's own following.
-            if (companion.distanceToSqr(owner) > FAR_FOLLOW * FAR_FOLLOW) {
-                if (!companion.onGround() && !companion.isInWater()) return;
-                var step = companion.travel().follow(owner.blockPosition(), FAR_FOLLOW - 8);
-                // Half a minute without coming closer: start the walk anew (the self-rescue takes over where he is stuck).
-                if (step != CompanionTravel.Step.WALKING) companion.travel().reset();
-                travelling = step == CompanionTravel.Step.WALKING;
-                return;
+            // Like a player who lost sight of a friend: on foot, in legs round walls and over ridges, as far as the way goes and with
+            // no time limit while he is in this world; never a teleport (marathon 23.10). With no way, he says so once and waits
+            // where he stands until the player moves, then tries again.
+            if (waitingFor != null) {
+                if (owner.blockPosition().distSqr(waitingFor) < 9) return;
+                waitingFor = null;
             }
-            if (travelling) { companion.travel().reset(); travelling = false; }
-            companion.getNavigation().moveTo(owner, 1.15D);
+            if (!companion.onGround() && !companion.isInWater()) return;
+            var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR);
+            if (step == CompanionTravel.Step.WALKING) { travelling = true; return; }
+            travelling = false;
+            companion.travel().reset();
+            if (step == CompanionTravel.Step.FAILED) {
+                companion.getNavigation().stop();
+                waitingFor = owner.blockPosition();
+                if (!told) { told = true; companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься."); }
+            } else told = false;
         }
 
         @Override
         public void stop() {
-            owner = null;
+            owner = null; waitingFor = null; told = false;
             if (travelling) { companion.travel().reset(); travelling = false; }
             companion.getNavigation().stop();
         }
-        private boolean travelling;
-        /** Farther than this the following goes in legs (CompanionTravel). */
-        private static final int FAR_FOLLOW = 32;
+        private boolean travelling, told;
+        // Where the player was when there was no way to him; he waits until the player is elsewhere.
+        private BlockPos waitingFor;
+        private static final int FOLLOW_NEAR = 3;
     }
 }

@@ -107,6 +107,7 @@ public final class CompanionWork {
     final Set<java.util.UUID> huntDead = new HashSet<>();
     int huntKills;
     net.minecraft.world.phys.Vec3 orderProgressPosition;
+    private BlockPos comeFailedAt;
     long orderProgressTime;
     /**
      * Watchdog for every work (game log 21.10: two minutes on one spot with «Проверяю подход к камню», then a faceless
@@ -458,7 +459,7 @@ public final class CompanionWork {
         if (insideHouse) placementAnchor = house.interiorAnchor();
         placementMoving = false;
         placedChests.clear();
-        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); huntTargets.clear(); huntDead.clear(); huntKills = 0;
+        orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); comeFailedAt = null; huntTargets.clear(); huntDead.clear(); huntKills = 0;
         if (job == Job.HUNT) {
             for (var monster : level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
                     new AABB(placementAnchor).inflate(18), monster -> monster.isAlive() && monster.distanceToSqr(placementAnchor.getCenter()) <= 18 * 18
@@ -615,19 +616,16 @@ public final class CompanionWork {
             finish(true, "Я рядом."); return;
         }
         owner.workStatus("Пытаюсь добраться до игрока.");
-        // Far off: in legs round walls and ridges, like the following (CompanionTravel); it gives up after half a minute without
-        // coming closer, and says so.
-        if (owner.distanceToSqr(player) > 32 * 32 && (owner.onGround() || owner.isInWater())) {
-            var step = owner.travel().follow(player.blockPosition(), 24);
-            if (step == CompanionTravel.Step.FAILED) { owner.travel().reset(); finish(false, "Не смог добраться до тебя: полминуты не мог подойти ближе, остановился на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return; }
+        // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
+        // far by the way. Legs that came to nothing in half a minute are not started again from the same spot: the self-rescue takes
+        // him over there (down a cave: up through the rock), and the order ends only when he stands still (stalled).
+        if (comeFailedAt == null || !comeFailedAt.closerThan(owner.blockPosition(), 3)) {
+            var step = route.follow(player.blockPosition(), 2);
             if (step == CompanionTravel.Step.WALKING) { orderProgressPosition = null; return; }
             owner.travel().reset();
+            if (step == CompanionTravel.Step.FAILED) comeFailedAt = owner.blockPosition();
         }
         if (orderHasStalled(level, 240)) { finish(false, "Не смог добраться до тебя. Застрял на " + owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return; }
-        Path route = owner.getNavigation().createPath(player, 1);
-        if (route != null && route.getNodeCount() > 1) CompanionMiningNavigation.walk(owner, route);
-        // No new route this tick (bobbing in the water at a bank, marathon 23.10): keep walking the one he has.
-        else if (owner.onGround() && !owner.isInWater()) owner.getNavigation().stop();
     }
 
     void watchChase() { hunting.watchChase(); }

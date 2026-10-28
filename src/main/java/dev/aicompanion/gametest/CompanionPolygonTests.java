@@ -70,11 +70,11 @@ public final class CompanionPolygonTests {
     @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 3700)
     public static void caveOreV2(GameTestHelper h) { cave(h, 2, true, 4, 4); }
 
-    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void cliffTrailV0(GameTestHelper h) { cliff(h, 0, false, 6, 6); }
-    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void cliffTrailV1(GameTestHelper h) { cliff(h, 1, false, 22, 3); }
-    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500, required = false)
+    @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)
     public static void cliffTrailV2(GameTestHelper h) { cliff(h, 2, true, 6, 6); }
 
     @GameTest(batch = "polygon", template = "tall_tree", timeoutTicks = 2500)

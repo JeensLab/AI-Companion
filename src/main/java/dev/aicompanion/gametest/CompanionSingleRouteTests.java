@@ -156,6 +156,79 @@ public final class CompanionSingleRouteTests {
         h.succeedWhen(() -> h.assertTrue(count(c, Items.COBBLESTONE) == 1, "Drop not picked up: " + c.getLastTaskResult()));
     }
 
+    /**
+     * Ticket 06a: «иди ко мне» when the player is twelve blocks off by the straight line behind a wall that is walked round
+     * only at its far end: a way of about sixty blocks, longer than one search; the walk goes in legs and he arrives.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void comeBeyondOneSearchArrives(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 3, 2, 16, 31, 12, 16, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 28, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 28, 2, 22);
+        h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.assertTrue(c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, c.getLastTaskResult());
+        });
+    }
+
+    /**
+     * Following a player who stands sealed in bedrock: he walks up to the wall, says once that there is no way, and waits there
+     * (no teleport, no second message over a minute and more); when the player steps out to a reachable place he goes to him.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void followingAnUnreachablePlayerSaysOnceAndWaits(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        // Walled in all round: where the neighbouring tests stand is open ground, and he would walk round the world to find a way.
+        box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 21, 2, 21, 27, 7, 27, Blocks.BEDROCK);
+        box(h, 23, 2, 23, 25, 5, 25, Blocks.AIR);
+        CompanionEntity c = spawn(h, 6, 2, 6);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 24, 2, 24);
+        int[] said = {0};
+        h.onEachTick(() -> {
+            if (h.getTick() == 1100) said[0] = c.autonomyLineSerial();
+            if (h.getTick() > 1100 && h.getTick() < 2300) h.assertTrue(c.autonomyLineSerial() == said[0], "Spoke again while waiting");
+            if (h.getTick() == 2300) {
+                h.assertTrue(said[0] == 1, "Told " + said[0] + " times, not once: " + c.autonomyLine() + " | " + c.getLastTaskResult() + " | " + state(c) + " at " + h.relativePos(c.blockPosition()).toShortString());
+                h.assertTrue(c.distanceToSqr(player) > 16, "Reached the sealed player?");
+                teleport(h, player, 8, 2, 28);
+            }
+        });
+        h.runAtTickTime(3400, () -> h.assertTrue(c.distanceToSqr(player) <= 36, "Did not go to the player who moved: " + h.relativePos(c.blockPosition()).toShortString()));
+        h.runAtTickTime(3401, h::succeed);
+    }
+
+    /** A cow at the far end of the corridor, a detour of sixty cells: hunted in legs, not given up as unreachable. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void animalBeyondOneSearchIsHunted(GameTestHelper h) {
+        BlockPos end = labyrinth(h).west();
+        h.spawn(net.minecraft.world.entity.EntityType.COW, end.getX(), end.getY(), end.getZ());
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        h.assertTrue(c.startWork("hunt_animals", "minecraft:cow", 1).success(), "Hunt order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still hunting: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.BEEF) >= 1, c.getLastTaskResult());
+        });
+    }
+
+    private static String state(CompanionEntity c) {
+        try { var m = CompanionEntity.class.getDeclaredMethod("diagnosticState"); m.setAccessible(true); return String.valueOf(m.invoke(c)); }
+        catch (ReflectiveOperationException e) { return e.toString(); }
+    }
+
+    private static void teleport(GameTestHelper h, net.minecraft.server.level.ServerPlayer player, int x, int y, int z) {
+        BlockPos stand = h.absolutePos(new BlockPos(x, y, z));
+        player.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+    }
+
     private static int solidCount(GameTestHelper h) {
         int n = 0;
         for (int x = 0; x < 32; x++) for (int y = 1; y < SURFACE; y++) for (int z = 0; z < 32; z++) if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.STONE)) n++;

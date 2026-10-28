@@ -113,6 +113,9 @@ final class CompanionRoute {
     /** A far goal in legs (CompanionTravel); NEAR once within {@code near} blocks of it. */
     CompanionTravel.Step legs(BlockPos target, double near) { return w.owner.travel().toward(target, near); }
 
+    /** The same towards a goal that moves (the player): the legs and their progress are kept while it shifts by less than sixteen blocks. */
+    CompanionTravel.Step follow(BlockPos target, double near) { return w.owner.travel().follow(target, near); }
+
     /** The legs are over, the goal reached or not: the walk is told to the journal if it was not yet. */
     void legsEnd(boolean arrived) { if (arrived) w.owner.travel().arrived(); else w.owner.travel().reset(); }
 
