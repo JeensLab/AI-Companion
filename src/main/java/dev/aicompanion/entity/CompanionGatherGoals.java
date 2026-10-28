@@ -40,6 +40,7 @@ final class CompanionGatherGoals {
         private int farUntil;
         /** The approach path is one longer than a search: walked in legs, its start leads away from the trunk. */
         private boolean farApproach;
+        private boolean approachBusy;
         private net.minecraft.world.phys.Vec3 farMoved;
         private boolean resumeAfterCleanup;
         private int taskVersion;
@@ -250,7 +251,8 @@ final class CompanionGatherGoals {
                     if (step == CompanionTravel.Step.FAILED) { rejectTarget(false); return; }
                     approachPath = findApproachPath(target);
                 }
-                if (approachPath == null) { tryClimbing(); return; }
+                // The tick's wide search went elsewhere: wait for the next tick, do not start climbing.
+                if (approachPath == null) { if (!approachBusy) tryClimbing(); return; }
                 c.work.route.walk(approachPath);
             }
         }
@@ -349,6 +351,8 @@ final class CompanionGatherGoals {
             List<BlockPos> group = nearest.stream().filter(candidate -> !walkTried.contains(candidate)
                     && trunks.add(BlockPos.asLong(candidate.getX(), 0, candidate.getZ()))).limit(8).toList();
             var walk = group.isEmpty() ? null : c.work.route.nearest(group, TRUNK);
+            // No wide search left this tick: the choice waits for the next one, the group is not written off.
+            if (walk != null && walk.busy()) return null;
             if (walk == null || !walk.found()) { walkTried.addAll(group); return nearest.get(0); }
             return walk.block();
         }
@@ -412,6 +416,7 @@ final class CompanionGatherGoals {
         /** Find a reachable standing spot next to the log; never path into the solid log itself. */
         private Path findApproachPath(BlockPos log) {
             var reach = c.work.route.to(log, TRUNK);
+            approachBusy = reach.busy();
             farApproach = reach.kind() == CompanionRoute.Kind.FAR;
             if (farApproach && farUntil == 0) farUntil = c.tickCount + (int)CompanionRoute.farLimit(reach.length());
             return reach.path();

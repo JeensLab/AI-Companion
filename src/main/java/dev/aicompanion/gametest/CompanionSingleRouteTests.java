@@ -443,6 +443,179 @@ public final class CompanionSingleRouteTests {
         });
     }
 
+    /** Round 2, F1a: the player stands on a carpet, the cells round his feet are carpets too (they have a collision shape). */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void handOverToAPlayerOnACarpetSucceeds(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 11, 2, 10, 11, 5, 10, Blocks.BEDROCK);
+        box(h, 12, 2, 9, 13, 2, 11, Blocks.WHITE_CARPET);
+        CompanionEntity c = spawn(h, 9, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 12, 2, 10);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(player, "give_items", "minecraft:stone_pickaxe", 1).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed(), c.getLastTaskResult());
+        });
+    }
+
+    /** Round 2, F1b: the player is in a small house two blocks behind its wall, the door is eleven blocks aside: the way in is longer than a short step. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void handOverToAPlayerInAHouseBehindItsWallSucceeds(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 6, 2, 14, 26, 6, 18, Blocks.BEDROCK);
+        box(h, 7, 2, 15, 25, 5, 17, Blocks.AIR);
+        box(h, 25, 2, 14, 25, 3, 14, Blocks.AIR);
+        CompanionEntity c = spawn(h, 14, 2, 13);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 14, 2, 15);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(player, "give_items", "minecraft:stone_pickaxe", 1).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed(), c.getLastTaskResult());
+        });
+    }
+
+    /** Round 2, F7: legs that went and then stood still, towards a player sealed in bedrock: the honest «no way», not «застрял». */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void handOverToASealedPlayerAfterWalkingSaysThereIsNoWay(GameTestHelper h) {
+        sealedArena(h);
+        CompanionEntity c = spawn(h, 10, 2, 10);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 24, 2, 24);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(CompanionEvents.executeAction(player, "give_items", "minecraft:stone_pickaxe", 1).success(), "Hand-over not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().equals("Не могу к тебе пройти, вещи остались у меня."), c.getLastTaskResult());
+        });
+    }
+
+    /** Round 2, F9: the walk's time bound is not renewed when the followed player shifts a block. */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void followingShiftsDoNotRenewTheWalkBound(GameTestHelper h) throws Exception {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        Object travel = field(c, "travel");
+        var follow = travel.getClass().getDeclaredMethod("follow", BlockPos.class, double.class, double.class);
+        follow.setAccessible(true);
+        BlockPos goal = h.absolutePos(new BlockPos(24, 2, 24));
+        follow.invoke(travel, goal, 3D, 1D);
+        long first = (Long) field(travel, "walkUntil");
+        h.runAtTickTime(40, () -> {
+            try {
+                follow.invoke(travel, goal.east(), 3D, 1D);
+                h.assertTrue((Long) field(travel, "walkUntil") == first, "The bound was renewed by a shift of one block");
+            } catch (Exception e) { throw new IllegalStateException(e); }
+            h.succeed();
+        });
+    }
+
+    /** Round 2, Н5: told once, he is then with the player (the following ends near him); the player leaves for the same sealed place: told again. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4200)
+    public static void followPhraseIsSaidAgainAfterTheFollowingEndedNearThePlayer(GameTestHelper h) {
+        sealedArena(h);
+        // Thicker walls: he waits farther than four blocks from the player, where the following does not end by itself.
+        box(h, 19, 2, 19, 29, 7, 29, Blocks.BEDROCK); box(h, 23, 2, 23, 25, 5, 25, Blocks.AIR);
+        CompanionEntity c = spawn(h, 6, 2, 6);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 24, 2, 24);
+        h.runAtTickTime(1100, () -> {
+            h.assertTrue(c.autonomyLineSerial() == 1, "Told " + c.autonomyLineSerial() + " times by now: " + c.autonomyLine());
+            BlockPos home = h.absolutePos(new BlockPos(6, 2, 6));
+            c.setPos(home.getX() + .5, home.getY(), home.getZ() + .5);
+            player.teleportTo(home.getX() + 2.5, home.getY(), home.getZ() + .5);
+        });
+        h.runAtTickTime(1200, () -> teleport(h, player, 24, 2, 24));
+        h.runAtTickTime(3900, () -> {
+            h.assertTrue(c.autonomyLineSerial() == 2, "Told " + c.autonomyLineSerial() + " times, not twice: " + c.autonomyLine() + " | " + state(c) + " at " + h.relativePos(c.blockPosition()).toShortString());
+            h.succeed();
+        });
+    }
+
+    /** Round 2, Н6: in the air nothing is searched: «no way» is not said. On the ground the same sealed player is told. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void noWayIsNotToldWhileInTheAir(GameTestHelper h) throws Exception {
+        sealedArena(h);
+        CompanionEntity c = spawn(h, 15, 12, 15);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        teleport(h, player, 24, 2, 24);
+        BlockPos target = h.absolutePos(new BlockPos(24, 2, 24));
+        h.assertTrue(!c.onGround(), "Not in the air at the start");
+        h.assertTrue(!noWayTo(c, target), "«No way» told in the air");
+        // Polled: one wide search is allowed per tick, and the companion's own following may have taken this tick's.
+        h.succeedWhen(() -> h.assertTrue(h.getTick() > 100 && c.onGround() && noWayTo(c, target), "On the ground «no way» is expected"));
+    }
+
+    /** Round 2, Н3: the tick's wide search is spent for a while (the route answers «busy»): he waits for a trunk beyond one search, he does not start climbing it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void trunkAskedWhileBusyIsWaitedFor(GameTestHelper h) {
+        BlockPos trunk = labyrinth(h); h.setBlock(trunk, Blocks.OAK_LOG);
+        CompanionEntity c = spawn(h, 6, 2, 4);
+        forceBusy(h, c, 80);
+        c.startGatheringLogs(1);
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isGatheringTask() && !c.isWorking(), "Still gathering: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.OAK_LOG) == 1 && h.getBlockState(trunk).isAir(), c.getLastTaskResult());
+        });
+    }
+
+    /** Round 2, Н4: the same for the remembered bench: «busy» is not «no way», no «cannot go there now». */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void benchAskedWhileBusyIsWaitedFor(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 7, 31, Blocks.BEDROCK);
+        box(h, 4, 2, 4, 24, 3, 4, Blocks.AIR);
+        box(h, 24, 2, 5, 24, 3, 8, Blocks.AIR);
+        box(h, 7, 2, 8, 24, 3, 8, Blocks.AIR);
+        BlockPos bench = new BlockPos(7, 2, 8); h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        c.rememberPlaced(h.absolutePos(bench));
+        c.setItem(0, new ItemStack(Items.STICK, 7));
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        forceBusy(h, c, 60);
+        h.assertTrue(CompanionEvents.executeAction(player, "craft_item", "minecraft:ladder", 1).success(), "Craft order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.LADDER) == 3, c.getLastTaskResult());
+        });
+    }
+
+    /** Until this tick of the test the companion's wide search is taken before it can ask: every search that needs it is told «busy». */
+    private static void forceBusy(GameTestHelper h, CompanionEntity c, int untilTick) {
+        h.onEachTick(() -> {
+            if (h.getTick() > untilTick) return;
+            try {
+                var nav = c.getNavigation();
+                var wideTick = nav.getClass().getDeclaredField("wideTick"); wideTick.setAccessible(true);
+                wideTick.setLong(nav, c.level().getGameTime() + 1);
+            } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+        });
+    }
+
+    private static boolean noWayTo(CompanionEntity c, BlockPos target) {
+        try {
+            Object route = field(field(c, "work"), "route");
+            var method = route.getClass().getDeclaredMethod("noWayTo", BlockPos.class); method.setAccessible(true);
+            return (boolean) method.invoke(route, target);
+        } catch (Exception e) { throw new IllegalStateException(e); }
+    }
+
+    /** A bedrock arena with a sealed cell (23..25) in its corner: the player in it cannot be reached. */
+    private static void sealedArena(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
+        box(h, 21, 2, 21, 27, 7, 27, Blocks.BEDROCK);
+        box(h, 23, 2, 23, 25, 5, 25, Blocks.AIR);
+    }
+
     private static void setInventoryViewers(CompanionEntity c, int viewers) {
         try { var f = CompanionEntity.class.getDeclaredField("inventoryViewers"); f.setAccessible(true); f.setInt(c, viewers); }
         catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }

@@ -31,6 +31,8 @@ final class CompanionRoute {
 
     private static final int PATIENCE = 160;
     static final String BUSY = "busy";
+    /** Not even the short search ran (he is on a ladder or in a jump): neither a far goal nor no way is known. */
+    static final String NOT_SEARCHED = "not searched";
     /** How far a far walk counts walking as progress: twice the time its length takes at his pace, and ten seconds more. */
     static long farLimit(double length) { return (long)(2 * length / .19) + 200; }
 
@@ -84,7 +86,7 @@ final class CompanionRoute {
         Path path = owner.getNavigation().createPath(cells, accuracy);
         if (!reaches(path, cells, accuracy)) {
             // No path at all: nothing was searched (he is in the air); that is no evidence of a far goal or of none.
-            if (path == null) return new Reach(Kind.NONE, null, null, 0, "no route");
+            if (path == null) return new Reach(Kind.NONE, null, null, 0, NOT_SEARCHED);
             // A goal that no wide search reaches is not searched wide again at once (a failed one costs a whole search): five seconds.
             long now = owner.level().getGameTime();
             // Failed wide for these cells; for a set that holds them all too, if that search ran out of range (a group that failed has
@@ -128,7 +130,7 @@ final class CompanionRoute {
         double range = w.owner.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 1.5;
         if (w.owner.distanceToSqr(target.getCenter()) > range * range) return false;
         Reach reach = cells(Set.of(target), 1);
-        return !reach.found() && !reach.busy();
+        return !reach.found() && !reach.busy() && !NOT_SEARCHED.equals(reach.reason());
     }
 
     /** One search to any of these cells: the way if it comes all the way, else null. For the short last steps, not for far goals. */

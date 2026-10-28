@@ -54,16 +54,18 @@ final class CompanionTravel {
     BlockPos goal() { return goal; }
     /** The walk ended where its caller needed it (the goal's level, not its distance): told as arrived, then over. */
     void arrived() { told("NEAR", "arrived"); reset(); }
+    /** The leg being walked comes all the way to the goal: a route to it exists. */
+    boolean onRoute() { return leg != null && leg.canReach(); }
     /** Also the destination for a self-rescue: a goal given up must not look like a trap afterwards. */
     void reset() { meter = null; if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; legMoved = null; wideFailedAt = Long.MIN_VALUE / 2; }
 
     /**
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
-     * shifts by less than sixteen blocks; a larger jump starts a new walk.
+     * shifts by less than sixteen blocks (so does its time bound: a player on the move does not extend it); a larger jump starts a new walk.
      */
     Step follow(BlockPos target, double near, double speed) {
         this.speed = speed;
-        if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); walkUntil = owner.level().getGameTime() + (long)(3 * distance() / .19) + 200; }
+        if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); }
         return step(target, near);
     }
 

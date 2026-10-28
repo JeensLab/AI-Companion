@@ -27,6 +27,7 @@ final class CompanionToolSense {
     private final TagKey<Item> tag;
     private final BlockState sample;
     private int evaluated = Integer.MIN_VALUE;
+    private boolean benchBusy;
     private int reservedStone;
     private BlockPos bench;
     private Path path;
@@ -66,7 +67,10 @@ final class CompanionToolSense {
         if (target == null) { equipBest(); return false; }
         boolean replacing = bestSpeed() <= 0;
         if (owner.hasCraftingTableNearby()) return craft(target);
+        benchBusy = false;
         BlockPos known = walks < MAX_WALKS ? reachableBench() : null;
+        // The tick's wide search went elsewhere: not «no bench», ask again next tick.
+        if (benchBusy) { evaluated = Integer.MIN_VALUE; return false; }
         if (known != null) {
             bench = known; wanted = target; giveUpAt = level.getGameTime() + WALK_TICKS; path = null; walks++;
             owner.workStatus("Схожу к верстаку на " + known.toShortString() + ", сделаю " + label(target) + ".");
@@ -160,6 +164,7 @@ final class CompanionToolSense {
             if (pos.distSqr(owner.blockPosition()) > BENCH_WALK * BENCH_WALK) continue;
             // A bench behind a long way round is not near: that walk costs more than a new bench (twice the straight radius at most).
             var reach = owner.work.route.to(pos, BENCH);
+            if (reach.busy()) { benchBusy = true; return null; }
             if (reach.found() && reach.length() <= 2 * BENCH_WALK) return pos;
         }
         return null;

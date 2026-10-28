@@ -75,6 +75,7 @@ public final class CompanionWork {
     long lastProgressTick;
     double bestDistance;
     net.minecraft.world.phys.Vec3 approachMoved;
+    long approachUntil;
     BlockPos target;
     Path path;
     Set<BlockPos> standCells = Set.of();
@@ -656,7 +657,7 @@ public final class CompanionWork {
         double distance = owner.distanceToSqr(block.getCenter());
         if (distance + 0.05D < bestDistance) { bestDistance = distance; lastProgressTick = level.getGameTime(); }
         // A path up a slope or around a hill can lead away from the target for a while. Walking is progress too.
-        if (approachMoved == null || owner.position().distanceToSqr(approachMoved) > .7 * .7) { approachMoved = owner.position(); lastProgressTick = level.getGameTime(); }
+        if ((approachUntil == 0 || level.getGameTime() < approachUntil) && (approachMoved == null || owner.position().distanceToSqr(approachMoved) > .7 * .7)) { approachMoved = owner.position(); lastProgressTick = level.getGameTime(); }
         if (level.getGameTime() - lastProgressTick > 80) return false;
         if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
             Set<BlockPos> feet = new HashSet<>();
@@ -673,6 +674,8 @@ public final class CompanionWork {
             // This tick's wide search went elsewhere: he keeps walking, the cells are asked again next tick.
             if (found.busy()) return true;
             path = found.path();
+            // Walking counts as progress for as long as the first route found takes at his pace, twice over, and ten seconds more.
+            if (path != null && approachUntil == 0) approachUntil = level.getGameTime() + CompanionRoute.farLimit(found.length());
             standCells = feet;
         }
         if (path != null && path.canReach()) { route.walk(path, 0.95D); return true; }
@@ -706,7 +709,7 @@ public final class CompanionWork {
         // The old target is no destination any more: a self-rescue must not take it for one while he looks for the next.
         owner.movementIntent(null);
     }
-    void resetApproach() { path = null; standCells = Set.of(); approachMoved = null; bestDistance = Double.MAX_VALUE; lastProgressTick = owner.level().getGameTime(); }
+    void resetApproach() { path = null; standCells = Set.of(); approachMoved = null; approachUntil = 0; bestDistance = Double.MAX_VALUE; lastProgressTick = owner.level().getGameTime(); }
     void clearCracks() { breaking.reset(); }
     void closeChest() {
         if (openedChest != null && owner.level() instanceof ServerLevel level && level.hasChunkAt(openedChest)
