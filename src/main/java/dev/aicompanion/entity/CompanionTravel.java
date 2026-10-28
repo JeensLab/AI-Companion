@@ -41,6 +41,8 @@ final class CompanionTravel {
     CompanionTravel(CompanionEntity owner) { this.owner = owner; }
 
     BlockPos goal() { return goal; }
+    /** The walk ended where its caller needed it (the goal's level, not its distance): told as arrived, then over. */
+    void arrived() { told("NEAR", "arrived"); reset(); }
     /** Also the destination for a self-rescue: a goal given up must not look like a trap afterwards. */
     void reset() { meter = null; if (goal != null) owner.movementIntent(null); goal = null; leg = null; turn = 0; sideStep = false; }
 
@@ -77,6 +79,11 @@ final class CompanionTravel {
         if (!sideStep) {
             Path route = owner.getNavigation().createPath(goal, 2);
             if (route != null && route.getNodeCount() > 1 && (route.canReach() || endDistance(route) + 3 <= distance)) return route;
+            // The way round may be longer than one search walks (a mine winding up, a cave): a wider one still finds it whole.
+            if (owner.getNavigation() instanceof CompanionNavigation nav) {
+                Path round = nav.wide(java.util.Set.of(goal), 2);
+                if (round != null && round.getNodeCount() > 1 && round.canReach()) return round;
+            }
         }
         // Straight on towards it, a short leg at a time, as a player heads for what he sees (marathon 23.10, «берег»: back from the
         // island the long search through the water found no part that came nearer, and the side steps led him off across the sea).

@@ -35,6 +35,7 @@ public final class CompanionWork {
     final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
+    final CompanionRoute route = new CompanionRoute(this);
     final CompanionChests chests = new CompanionChests(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
     final CompanionHandOver handOver = new CompanionHandOver(this);
@@ -696,7 +697,7 @@ public final class CompanionWork {
                 "reason", "terrain_changed_after_route_recovery", "attempt", recoveryReplans, "collected", gathered, "requested", wantedStone);
     }
     void resetTarget() {
-        clearCracks(); target = null; resetApproach();
+        clearCracks(); target = null; resetApproach(); route.abandon();
         // The old target is no destination any more: a self-rescue must not take it for one while he looks for the next.
         owner.movementIntent(null);
     }

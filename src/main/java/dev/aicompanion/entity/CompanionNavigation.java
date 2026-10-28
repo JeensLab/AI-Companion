@@ -37,6 +37,14 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         }
     }
 
+    /**
+     * The same search with three times the range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
+     * budget, so no dearer than one search that fails.
+     */
+    Path wide(Set<BlockPos> targets, int accuracy) {
+        return createPath(targets, 8, false, accuracy, (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * 3));
+    }
+
     /** Cells expanded and nanoseconds spent in searches so far; the difference of two readings is the cost of what lay between. */
     public record Meter(long nodes, long nanos, long maxTickNanos) {
         public double ms() { return nanos / 1e6; }
