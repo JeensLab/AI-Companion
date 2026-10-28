@@ -40,7 +40,7 @@ public final class CompanionActionExecutor {
             task.onCancel(port::cancelWork);
             return CompanionPlanRunner.run(actions, port).thenApply(outcome -> {
                 CompanionDiagnostics.event(trace, "plan_outcome", "recoveries", outcome.recoveries(), "skipped", outcome.skipped());
-                return new CompanionTaskQueue.Result(outcome.report(), !outcome.report().contains("План остановлен:"));
+                return new CompanionTaskQueue.Result(outcome.report(), !outcome.report().contains("План остановлен:") && !outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX));
             }).whenComplete((report, error) -> {
                 if (error != null) CompanionDiagnostics.failure(trace, "plan_execution", error);
                 CompanionDiagnostics.event(trace, "plan_finished", "elapsedMs", (System.nanoTime() - started) / 1_000_000,

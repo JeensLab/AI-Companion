@@ -125,6 +125,17 @@ public final class CompanionBanterToolsTests {
         });
     }
     @GameTest(template="tall_tree",timeoutTicks=900)
+    public static void spareIronAndDiamondsAreNotMadeIntoAShovelWhileMining(GameTestHelper h) {
+        var c=coalWall(h,Items.STONE_PICKAXE);for(int z=14;z<=18;z++)for(int y=1;y<=3;y++)h.setBlock(new BlockPos(19,y,z),Blocks.DIRT);
+        c.setItem(0,new ItemStack(Items.IRON_INGOT,2));c.setItem(1,new ItemStack(Items.DIAMOND,1));c.setItem(2,new ItemStack(Items.STICK,2));
+        c.setItem(3,new ItemStack(Items.WOODEN_SHOVEL));
+        c.startWork("mine_ore","coal",1);
+        h.succeedWhen(()->{
+            done(h,c);h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COAL)>=1,"No coal: "+c.getLastTaskResult());
+            h.assertTrue(count(c,Items.IRON_SHOVEL)==0&&count(c,Items.DIAMOND_SHOVEL)==0&&count(c,Items.IRON_INGOT)==2&&count(c,Items.DIAMOND)==1,"Shovel made on its own: "+c.getStoredItemsSummary());
+        });
+    }
+    @GameTest(template="tall_tree",timeoutTicks=900)
     public static void availableDiamondsUpgradeIronWithoutDiscardingIt(GameTestHelper h) {
         var c=coalWall(h,Items.IRON_PICKAXE);
         c.setItem(0,new ItemStack(Items.DIAMOND,3));c.setItem(1,new ItemStack(Items.STICK,2));

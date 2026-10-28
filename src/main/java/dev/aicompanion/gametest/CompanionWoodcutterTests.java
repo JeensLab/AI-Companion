@@ -144,6 +144,23 @@ public final class CompanionWoodcutterTests {
         });
     }
 
+    /** Iron and diamond upgrades are for the pickaxe only; a player does not forge an iron axe for chopping. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void spareIngotsAreNotMadeIntoAnAxeWhileChopping(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        BlockPos bench = new BlockPos(10, 1, 16); h.setBlock(bench, Blocks.CRAFTING_TABLE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_AXE));
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 4)); companion.setItem(1, new ItemStack(Items.STICK, 4));
+        for (int y = 1; y <= 4; y++) h.setBlock(new BlockPos(21, y, 16), Blocks.OAK_LOG);
+        companion.startGatheringLogs(3);
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && trunkLeft(h, 21, 16) == 0, companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.IRON_AXE) == 0 && count(companion, Items.IRON_INGOT) == 4 && count(companion, Items.STONE_AXE) == 1,
+                    "Iron axe made on its own: " + companion.getStoredItemsSummary());
+        });
+    }
+
     /** The trunk is gone and the crown hangs: the only climb is right under it, which used to be excluded. */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void hangingCrownIsReachedFromDirectlyBelow(GameTestHelper h) {

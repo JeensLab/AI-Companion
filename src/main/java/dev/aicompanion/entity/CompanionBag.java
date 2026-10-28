@@ -119,6 +119,14 @@ final class CompanionBag {
         return have >= count ? CompanionActionResult.ok("Готово: «" + name + "» у меня, " + have + " шт.")
                 : CompanionActionResult.failed("Добыл не всё: «" + name + "» у меня " + have + " из " + count + ".");
     }
+    /** How many of the item he carries, as obtain_item counts them. */
+    public int carriedCount(String item) {
+        var id = net.minecraft.resources.ResourceLocation.tryParse(item);
+        var wanted = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+        int have = 0;
+        if (wanted != null) for (ItemStack stack : carriedForPlan()) if (stack.is(wanted)) have += stack.getCount();
+        return have;
+    }
     List<ItemStack> carriedForPlan() {
         List<ItemStack> carried = new java.util.ArrayList<>();
         for (int slot = 0; slot < c.getContainerSize(); slot++) carried.add(c.getItem(slot));

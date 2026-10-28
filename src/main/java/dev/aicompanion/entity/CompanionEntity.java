@@ -601,6 +601,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean didLastTaskSucceed() { return lastTaskSucceeded; }
 
     public CompanionObtain.Plan obtainPlan(String item, int count) { return bag.obtainPlan(item, count); }
+    public int carriedCount(String item) { return bag.carriedCount(item); }
     public CompanionActionResult carriedCheck(String item, int count) { return bag.carriedCheck(item, count); }
     public String getStoredItemsSummary() { return bag.getStoredItemsSummary(); }
     public String getStoredItemsForAi() { return bag.getStoredItemsForAi(); }

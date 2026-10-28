@@ -103,7 +103,8 @@ final class CompanionToolSense {
         if (!(owner.level() instanceof ServerLevel level)) return null;
         // Use the real detached recipe planner, including existing sticks and hand-held materials.
         // Optional upgrades never start another gathering/smelting order.
-        for (String material : new String[]{"diamond", "iron", "stone", "wooden"}) {
+        // Like a player: iron and diamonds go into a pickaxe on their own, other tools from them only on request.
+        for (String material : kind.equals("pickaxe") ? new String[]{"diamond", "iron", "stone", "wooden"} : new String[]{"stone", "wooden"}) {
             String id = "minecraft:" + material + "_" + kind;
             if (speed(id) <= best || blocked(id) || material.equals("wooden") && best > 0 || woodOnly && !material.equals("wooden")) continue;
             boolean available = switch (material) {
