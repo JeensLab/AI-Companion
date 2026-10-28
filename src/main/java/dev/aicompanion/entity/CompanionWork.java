@@ -128,7 +128,7 @@ public final class CompanionWork {
     final java.util.Map<BlockPos, BlockPos> offFoot = new java.util.HashMap<>();
     static final int OFF_FOOT_MOVE = 4;
     /** Choosing a face over a few ticks: the nearest on foot so far and the faces already compared. */
-    CompanionMiningNavigation.Choice stoneChoice;
+    CompanionRoute.Reach stoneChoice;
     final Set<BlockPos> stoneCompared = new HashSet<>();
     final List<BlockPos> stoneSingles = new ArrayList<>();
     static final int STONE_GROUP = 8;

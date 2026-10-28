@@ -118,32 +118,6 @@ final class CompanionMiningNavigation {
         return feet;
     }
 
-    /** A block chosen by the walk to a cell it can be worked from, that walk, and its length in blocks. */
-    record Choice(BlockPos block, Path path, double length) { }
-
-    /**
-     * The block a player would go to first (game log 22.10: «камень перед ним, а идёт далеко в другую сторону»): one route
-     * search to the cells of all of them at once. The pathfinder stops at the first cell it reaches, so the nearest block on
-     * foot wins, not the nearest by the straight line, and a climb counts. Null when none can be reached from here.
-     */
-    static Choice nearestOnFoot(CompanionEntity owner, java.util.Collection<BlockPos> blocks, double reach, boolean clearLeaves, boolean avoidStandingOnTarget) {
-        return nearestOnFoot(owner, blocks, reach, clearLeaves, avoidStandingOnTarget, false);
-    }
-
-    /** forTheDrop: stand cells only where the block's drop can then be picked up (dropCollectable). */
-    static Choice nearestOnFoot(CompanionEntity owner, java.util.Collection<BlockPos> blocks, double reach, boolean clearLeaves, boolean avoidStandingOnTarget, boolean forTheDrop) {
-        java.util.Map<BlockPos, BlockPos> blockAt = new java.util.HashMap<>();
-        for (BlockPos block : blocks) for (BlockPos stand : standCells(owner, block, reach, clearLeaves, avoidStandingOnTarget)) {
-            if (forTheDrop && !dropCollectable(owner.level(), block, stand)) continue;
-            BlockPos other = blockAt.get(stand);
-            if (other == null || stand.distSqr(block) < stand.distSqr(other)) blockAt.put(stand, block.immutable());
-        }
-        if (blockAt.isEmpty()) return null;
-        Path path = owner.getNavigation().createPath(blockAt.keySet(), 0);
-        if (path == null || !path.canReach() || !blockAt.containsKey(path.getTarget())) return null;
-        return new Choice(blockAt.get(path.getTarget()), path, length(owner, path));
-    }
-
     /**
      * A route down into a hole: a drop of two blocks or more on the way (walked down, not walked back up) and the end three or
      * more blocks below the start. A drop into a pit at his own level is no such hole: the way back is round it.

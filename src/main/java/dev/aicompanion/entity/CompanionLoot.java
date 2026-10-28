@@ -39,6 +39,9 @@ final class CompanionLoot {
     private final Map<UUID, Long> retryAt = new HashMap<>();
     private long nextRoute;
     private Vec3 routedItem;
+    // The way to the drop is longer than one search: walked in legs, and where he was when last seen moving on.
+    private boolean farRoute;
+    private Vec3 farMoved;
     private record Site(BlockPos pos, List<ItemStack> drops, long expires) { }
     private final java.util.Deque<Site> sites = new java.util.ArrayDeque<>();
     /** A leaf of a tree between him and a drop, being broken out of the way. */
@@ -181,7 +184,7 @@ final class CompanionLoot {
         if (target == null || !target.isAlive() || !pending.contains(target.getUUID()) || unreachable.contains(target.getUUID())) {
             target = pending.stream().filter(id -> chaseable(level, id)).map(level::getEntity).filter(e -> e instanceof ItemEntity).map(e -> (ItemEntity)e)
                     .min(java.util.Comparator.comparingDouble(owner::distanceToSqr)).orElse(null);
-            path = null; pickupPoint = null; nextRoute = 0; routedItem = null; lastProgress = level.getGameTime(); bestDistance = Double.MAX_VALUE;
+            path = null; pickupPoint = null; nextRoute = 0; routedItem = null; farRoute = false; farMoved = null; lastProgress = level.getGameTime(); bestDistance = Double.MAX_VALUE;
             dropLeaf();
         }
         if (target == null) return;
@@ -191,23 +194,25 @@ final class CompanionLoot {
         owner.getLookControl().setLookAt(target.getX(), target.getY(), target.getZ());
         double distance = owner.distanceToSqr(target);
         if (distance + .05 < bestDistance) { bestDistance = distance; lastProgress = level.getGameTime(); }
+        // Along a route longer than one search the distance to the drop first grows: walking on is progress there.
+        if (farRoute && path != null && (farMoved == null || owner.position().distanceToSqr(farMoved) > .7 * .7)) { farMoved = owner.position(); lastProgress = level.getGameTime(); }
         if (level.getGameTime() - lastProgress > (path == null ? 16 : 45)) {
             UUID id = target.getUUID();
             if (attempts.merge(id, 1, Integer::sum) >= 3) giveUpFromHere(level, id);
             retryAt.put(id, level.getGameTime() + 20);
-            target = null; owner.getNavigation().stop(); return;
+            target = null; owner.work.route.stop(); return;
         }
-        if (touches(owner.position(), target)) { owner.getNavigation().stop(); return; }
+        if (touches(owner.position(), target)) { owner.work.route.stop(); return; }
         // Swimming after a drop in the water is walking too; only in the air no route is made.
         if (!owner.onGround() && !owner.isInWater()) return;
         if (routedItem != null && routedItem.distanceToSqr(target.position()) > .16) { path = null; pickupPoint = null; }
         if (pickupPoint != null && path != null && path.getEndNode() != null
                 && owner.blockPosition().equals(path.getTarget()) && owner.position().distanceToSqr(pickupPoint) < 2.25) {
-            owner.getNavigation().stop();
+            owner.work.route.stop();
             owner.getMoveControl().setWantedPosition(pickupPoint.x, pickupPoint.y, pickupPoint.z, .65);
             return;
         }
-        if ((path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) && level.getGameTime() >= nextRoute) {
+        if ((path == null || owner.work.route.legOver()) && level.getGameTime() >= nextRoute) {
             nextRoute = level.getGameTime() + 5; routedItem = target.position();
             Set<BlockPos> feet = new HashSet<>(); BlockPos center = target.blockPosition();
             Map<BlockPos, Vec3> points = new HashMap<>();
@@ -226,7 +231,8 @@ final class CompanionLoot {
                     }
                 }
             }
-            path = feet.isEmpty() ? null : owner.getNavigation().createPath(feet, 0);
+            var reach = feet.isEmpty() ? null : owner.work.route.cells(feet, 0);
+            path = reach == null ? null : reach.path(); farRoute = reach != null && reach.kind() == CompanionRoute.Kind.FAR;
             pickupPoint = path == null ? null : points.get(path.getTarget());
             // Marathon 23.10: drops in crevices of a ravine got three tries of standing a second or two each, though from here
             // there was no way to them at all. A drop at rest with no cell to take it from, or no route to one, is given up
@@ -240,19 +246,21 @@ final class CompanionLoot {
                 if (blocking != null) {
                     leaf = blocking; leavesCleared.merge(target.getUUID(), 1, Integer::sum);
                     leafBest = owner.distanceToSqr(leaf.getCenter()); leafProgress = level.getGameTime();
-                    path = null; owner.getNavigation().stop(); return;
+                    path = null; owner.work.route.stop(); return;
                 }
                 giveUpFromHere(level, target.getUUID());
-                target = null; path = null; owner.getNavigation().stop(); return;
+                target = null; path = null; owner.work.route.stop(); return;
             }
         }
-        if (path != null && path.canReach()) CompanionMiningNavigation.walk(owner, path);
+        if (path != null && path.canReach()) owner.work.route.walk(path);
     }
     void pause() { target = null; path = null; pickupPoint = null; dropLeaf(); }
     /** Only a leaf really under way is let go: the reset also clears the mining look the other work may be showing. */
     private void dropLeaf() { if (leaf != null) { leaf = null; leafBreaking.reset(); } }
 
     private static final int LEAVES_PER_DROP = 6;
+    /** Where a leaf in the way is broken from: within reach and sight, off its own cell. */
+    private static final CompanionRoute.Need LEAF_STAND = new CompanionRoute.Need(3.5, false, true, false);
     private static final double REACH = 4.5;
     /** Leaves that grew on a tree; those a player set (persistent) are his, not in the way. */
     private static boolean naturalLeaves(net.minecraft.world.level.block.state.BlockState state) {
@@ -315,14 +323,13 @@ final class CompanionLoot {
             leafBreaking.reset();
             double distance = owner.distanceToSqr(leaf.getCenter());
             if (distance + .05 < leafBest) { leafBest = distance; leafProgress = level.getGameTime(); }
-            if (level.getGameTime() - leafProgress > 45) { giveUpFromHere(level, target.getUUID()); leaf = null; path = null; owner.getNavigation().stop(); return; }
-            if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck())
-                path = CompanionMiningNavigation.pathTo(owner, leaf, 3.5, false, true);
-            if (path == null || !path.canReach()) { giveUpFromHere(level, target.getUUID()); leaf = null; path = null; owner.getNavigation().stop(); return; }
+            if (level.getGameTime() - leafProgress > 45) { giveUpFromHere(level, target.getUUID()); leaf = null; path = null; owner.work.route.stop(); return; }
+            if (path == null || owner.work.route.legOver()) path = owner.work.route.to(leaf, LEAF_STAND).path();
+            if (path == null || !path.canReach()) { giveUpFromHere(level, target.getUUID()); leaf = null; path = null; owner.work.route.stop(); return; }
             owner.workStatus("Подойду к листве, чтобы достать вещь.");
-            CompanionMiningNavigation.walk(owner, path); return;
+            owner.work.route.walk(path); return;
         }
-        owner.getNavigation().stop();
+        owner.work.route.stop();
         owner.getLookControl().setLookAt(leaf.getX() + .5, leaf.getY() + .5, leaf.getZ() + .5);
         owner.workStatus("Раздвигаю листву, чтобы достать вещь.");
         lastProgress = level.getGameTime();

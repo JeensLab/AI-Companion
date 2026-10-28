@@ -39,6 +39,8 @@ final class CompanionRoute {
     private long failedAt;
     private int failures;
     private CompanionNavigation.Meter meter;
+    // Goals (by their cells) that a wide search did not reach, and when.
+    private final Map<Set<BlockPos>, Long> wideFailed = new HashMap<>();
 
     CompanionRoute(CompanionWork w) { this.w = w; }
 
@@ -55,15 +57,39 @@ final class CompanionRoute {
             if (other == null || stand.distSqr(block) < stand.distSqr(other)) blockAt.put(stand, block.immutable());
         }
         if (blockAt.isEmpty()) return failed(blocks, "no stand cell");
+        Reach found = find(blockAt.keySet(), 0, blockAt::get);
+        return found.found() ? found : failed(blocks, found.reason());
+    }
+
+    /**
+     * The way to one of these cells (a drop's pickup spots, the place he came from): one search, else the wide one. The way itself
+     * if it comes all the way ({@code accuracy}: how close counts), else none.
+     */
+    Reach cells(Set<BlockPos> cells, int accuracy) {
+        Reach found = find(cells, accuracy, cell -> null);
+        return found.found() || cells.isEmpty() ? found : failed(cells, found.reason());
+    }
+
+    private Reach find(Set<BlockPos> cells, int accuracy, java.util.function.Function<BlockPos, BlockPos> blockOf) {
+        CompanionEntity owner = w.owner;
         Kind kind = Kind.WALK;
-        Path path = owner.getNavigation().createPath(blockAt.keySet(), 0);
-        if (!reaches(path, blockAt)) {
-            kind = Kind.FAR;
-            path = owner.getNavigation() instanceof CompanionNavigation nav ? nav.wide(blockAt.keySet(), 0) : null;
-            if (!reaches(path, blockAt)) return failed(blocks, "no route");
-            farPath = path;
+        Path path = owner.getNavigation().createPath(cells, accuracy);
+        if (!reaches(path, cells, accuracy)) {
+            // No path at all: nothing was searched (he is in the air); that is no evidence of a far goal or of none.
+            if (path == null) return new Reach(Kind.NONE, null, null, 0, "no route");
+            // A goal that no wide search reaches is not searched wide again at once (a failed one costs a whole search): five seconds.
+            long now = owner.level().getGameTime();
+            Long failedWide = wideFailed.get(cells);
+            if (failedWide != null && now - failedWide < 100) return new Reach(Kind.NONE, null, null, 0, "no route");
+            path = owner.getNavigation() instanceof CompanionNavigation nav ? nav.wide(cells, accuracy) : null;
+            if (!reaches(path, cells, accuracy)) {
+                if (wideFailed.size() > 64) wideFailed.clear();
+                wideFailed.put(Set.copyOf(cells), now);
+                return new Reach(Kind.NONE, null, null, 0, "no route");
+            }
+            kind = Kind.FAR; farPath = path;
         }
-        return new Reach(kind, blockAt.get(path.getTarget()), path, CompanionMiningNavigation.length(owner, path), kind == Kind.FAR ? "far" : "near");
+        return new Reach(kind, blockOf.apply(path.getTarget()), path, CompanionMiningNavigation.length(owner, path), kind == Kind.FAR ? "far" : "near");
     }
 
     Reach to(BlockPos block, Need need) { return nearest(List.of(block), need); }
@@ -77,7 +103,10 @@ final class CompanionRoute {
     void walk(Path path) { CompanionMiningNavigation.walk(w.owner, path); }
 
     /** The leg being walked is over (or he is stuck in it): time for the next search. */
-    boolean legOver() { return w.owner.getNavigation().isDone() || w.owner.getNavigation().isStuck(); }
+    boolean legOver() { return done() || stuck(); }
+    /** The leg is walked to its end / he cannot get on along it. */
+    boolean done() { return w.owner.getNavigation().isDone(); }
+    boolean stuck() { return w.owner.getNavigation().isStuck(); }
 
     void stop() { w.owner.getNavigation().stop(); }
 
@@ -92,7 +121,11 @@ final class CompanionRoute {
      * drop, where it can be picked up), 0 walking, -1 no way or no progress. A walk that needed a wider search counts walking as
      * progress; the others, coming closer to the block.
      */
-    int approach(ServerLevel level, BlockPos block, boolean forTheDrop) {
+    int approach(ServerLevel level, BlockPos block, boolean forTheDrop) { return approach(level, block, new Need(3.5, false, true, forTheDrop)); }
+
+    /** The same for a block worked from other cells than ore is (the stairs down: standing on the dug cell is allowed). */
+    int approach(ServerLevel level, BlockPos block, Need need) {
+        boolean forTheDrop = need.forTheDrop();
         if (!block.equals(goal)) begin(block);
         if (w.path != null && w.path == farPath) far = true;
         double distance = w.owner.distanceToSqr(block.getCenter());
@@ -104,7 +137,7 @@ final class CompanionRoute {
         if (far && (w.approachMoved == null || w.owner.position().distanceToSqr(w.approachMoved) > .7 * .7)) { w.approachMoved = w.owner.position(); w.lastProgressTick = level.getGameTime(); }
         if (level.getGameTime() - w.lastProgressTick > PATIENCE) { told("FAILED", "no progress"); return -1; }
         if (w.path == null || legOver()) {
-            Reach reach = to(block, new Need(3.5, false, true, forTheDrop));
+            Reach reach = to(block, need);
             w.path = reach.path();
             if (reach.kind() == Kind.FAR) far = true;
             // A failed search was told by nearest() already.
@@ -145,7 +178,7 @@ final class CompanionRoute {
         return new Reach(Kind.NONE, null, null, 0, reason);
     }
 
-    private static boolean reaches(Path path, Map<BlockPos, BlockPos> blockAt) {
-        return path != null && path.canReach() && blockAt.containsKey(path.getTarget());
+    private static boolean reaches(Path path, Set<BlockPos> cells, int accuracy) {
+        return path != null && path.canReach() && (accuracy > 0 || cells.contains(path.getTarget()));
     }
 }

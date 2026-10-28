@@ -95,6 +95,67 @@ public final class CompanionSingleRouteTests {
         });
     }
 
+    /**
+     * Ticket 05: stone, a trunk, dirt and a drop that lie thirteen blocks off by the straight line, inside the scan, behind a
+     * corridor of about 60 cells (bedrock all round, nothing to dig): the way is longer than one search, so they are far, not lost.
+     */
+    private static BlockPos labyrinth(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 7, 31, Blocks.BEDROCK);
+        box(h, 4, 2, 4, 24, 3, 4, Blocks.AIR);
+        box(h, 24, 2, 5, 24, 3, 8, Blocks.AIR);
+        box(h, 4, 2, 8, 24, 3, 8, Blocks.AIR);
+        box(h, 4, 2, 9, 4, 3, 12, Blocks.AIR);
+        box(h, 4, 2, 12, 13, 3, 12, Blocks.AIR);
+        return new BlockPos(14, 2, 12);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void stoneBeyondOneSearchIsWalkedTo(GameTestHelper h) {
+        BlockPos stone = labyrinth(h); h.setBlock(stone, Blocks.STONE);
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE));
+        h.assertTrue(c.startWork("gather_stone", "", 1).success(), "Stone order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.COBBLESTONE) == 1 && h.getBlockState(stone).isAir(), c.getLastTaskResult());
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void trunkBeyondOneSearchIsWalkedTo(GameTestHelper h) {
+        BlockPos trunk = labyrinth(h); h.setBlock(trunk, Blocks.OAK_LOG);
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        c.startGatheringLogs(1);
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isGatheringTask() && !c.isWorking(), "Still gathering: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.OAK_LOG) == 1 && h.getBlockState(trunk).isAir(), c.getLastTaskResult());
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void dirtBeyondOneSearchIsWalkedTo(GameTestHelper h) throws Exception {
+        BlockPos dirt = labyrinth(h); h.setBlock(dirt, Blocks.DIRT);
+        box(h, 14, 3, 12, 14, 7, 12, Blocks.AIR); // soil is dug only with a free cover above it (CompanionQuarry.safeCell)
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        var gather = CompanionEntity.class.getDeclaredMethod("startGatheringDirtForWork", int.class); gather.setAccessible(true); gather.invoke(c, 1);
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isGatheringTask(), "Still gathering: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.DIRT) == 1 && h.getBlockState(dirt).isAir(), c.getLastTaskResult());
+        });
+    }
+
+    /** A drop of his harvest that came to rest at the far end of the corridor is picked up: the walk to it is in legs. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void dropBeyondOneSearchIsPickedUp(GameTestHelper h) throws Exception {
+        BlockPos spot = labyrinth(h).west();
+        CompanionEntity c = spawn(h, 4, 2, 4);
+        Object loot = field(c, "loot");
+        var drop = loot.getClass().getDeclaredMethod("drop", BlockPos.class, List.class); drop.setAccessible(true);
+        drop.invoke(loot, h.absolutePos(spot), List.of(new ItemStack(Items.COBBLESTONE)));
+        h.succeedWhen(() -> h.assertTrue(count(c, Items.COBBLESTONE) == 1, "Drop not picked up: " + c.getLastTaskResult()));
+    }
+
     private static int solidCount(GameTestHelper h) {
         int n = 0;
         for (int x = 0; x < 32; x++) for (int y = 1; y < SURFACE; y++) for (int z = 0; z < 32; z++) if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.STONE)) n++;
