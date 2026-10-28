@@ -128,6 +128,8 @@ final class CompanionEntityGoals {
                 return false;
             }
             owner = serverLevel.getServer().getPlayerList().getPlayer(companion.ownerId);
+            // Near him again (the following ends at four blocks, or was interrupted before): the next time he is out of reach is a new occasion to say so.
+            if (owner != null && owner.level() == companion.level() && companion.distanceToSqr(owner) <= 16) toldAbout = null;
             return owner != null && owner.level() == companion.level()
                     && companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64);
         }
@@ -152,7 +154,12 @@ final class CompanionEntityGoals {
             if (companion.level().getGameTime() < retryAt) return;
             if (!companion.onGround() && !companion.isInWater()) return;
             var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR, FOLLOW_SPEED);
-            if (step == CompanionTravel.Step.WALKING) { travelling = true; return; }
+            if (step == CompanionTravel.Step.WALKING) {
+                travelling = true;
+                // A whole route to him exists again: the next time there is none is a new occasion to say so.
+                if (companion.travel().onRoute()) toldAbout = null;
+                return;
+            }
             travelling = false;
             companion.travel().reset();
             if (step == CompanionTravel.Step.FAILED) {

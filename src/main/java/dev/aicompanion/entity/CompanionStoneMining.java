@@ -37,7 +37,7 @@ final class CompanionStoneMining {
                 // A way back longer than one search is a way back (the wide search finds it).
                 var back = w.route.cells(Set.of(w.workOrigin), 1);
                 boolean blocked = !back.found();
-                // Not searched (the tick's wide search went elsewhere) is neither a miss nor a way: asked again in two seconds.
+                // Not searched (the tick's cells went elsewhere) is neither a miss nor a way: asked again in two seconds.
                 w.returnMisses = back.busy() ? w.returnMisses : blocked ? w.returnMisses + 1 : 0;
                 boolean confirmed = w.returnMisses >= 2;
                 if (confirmed && !w.returnRouteBlocked) w.returnBlockedSince = level.getGameTime();

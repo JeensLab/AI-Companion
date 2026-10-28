@@ -15,7 +15,10 @@ import java.util.Set;
  */
 public final class CompanionNavigation extends net.minecraft.world.entity.ai.navigation.GroundPathNavigation {
     private CompanionNodeEvaluator evaluator;
-    private long nanos, tickNanos, tickCells, tickOf = -1, maxTickNanos, searched;
+    private long nanos, tickNanos, tickCells, tickOf = -1, maxTickNanos, maxTickCells, tickShared, searched;
+    // The cell budget of one search (CompanionSearch.BUDGET unless a GameTest lowers it) and whether the last one ended at it.
+    private int budget = CompanionSearch.BUDGET;
+    private boolean ranOut;
 
     CompanionNavigation(Mob mob, Level level) { super(mob, level); }
 
@@ -38,6 +41,8 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
 
     /** The answer to a search that has not finished within this tick's cells: ask again next tick (the search goes on where it was). */
     static final Path BUSY = new Path(java.util.List.of(), BlockPos.ZERO, false);
+    /** The last search that finished found none and stopped at its cell budget: it saw only part of what it could reach, so it proves nothing about the cells it did not get to. */
+    boolean lastSearchExhausted() { return ranOut; }
     /** A finished search that did not arrive is kept (and not repeated) this many ticks; one in progress is dropped after this many. */
     private static final int KEEP = 40, STALE = 80;
     private record Key(Set<BlockPos> targets, int accuracy, float range) { }
@@ -57,7 +62,9 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         if (path instanceof CompanionSearch.Found && !path.isDone() && targets.contains(path.getTarget())) return path;
         CompanionSearch search = advance(targets, accuracy, range, whole, CHOICE_CELLS);
         if (search == null) return null;
-        return search.state() == CompanionSearch.State.RUNNING ? BUSY : search.from(mob.position());
+        if (search.state() == CompanionSearch.State.RUNNING) return BUSY;
+        ranOut = search.state() == CompanionSearch.State.EXHAUSTED && !search.complete();
+        return search.from(mob.position());
     }
 
     /**
@@ -83,7 +90,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
                 if (search == null) return null;
                 searches.put(key, search);
             }
-            int share = whole ? CompanionSearch.BUDGET : (int)Math.max(0, cap - tickCells);
+            int share = whole ? Integer.MAX_VALUE : (int)Math.max(0, cap - tickCells);
             long before = search.expanded();
             search.advance(share, now);
             cells = search.expanded() - before;
@@ -93,6 +100,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
             return search;
         } finally {
             spent(System.nanoTime() - start, cells);
+            if (!whole) { tickShared += cells; maxTickCells = Math.max(maxTickCells, tickShared); }
         }
     }
 
@@ -122,7 +130,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         own.setCanFloat(evaluator.canFloat()); own.setCanWalkOverFences(evaluator.canWalkOverFences());
         own.prepare(new net.minecraft.world.level.PathNavigationRegion(level, at.offset(-i, -i, -i), at.offset(i, i, i)), mob);
         CompanionSearch search = CompanionSearch.create(own, mob, key.targets, key.accuracy, key.range, now);
-        if (search == null) own.done();
+        if (search == null) own.done(); else search.budget = Math.min(search.budget, budget);
         return search;
     }
 
@@ -158,27 +166,23 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
      * The same search with three times the range: a goal beyond one search is far, not lost, when this one finds the way. Same cell
      * budget, so no dearer than one search that fails.
      */
-    Path wide(Set<BlockPos> targets, int accuracy) { return wide(targets, accuracy, false); }
+    public Path wide(Set<BlockPos> targets, int accuracy) { return wide(targets, accuracy, false); }
     Path wide(Set<BlockPos> targets, int accuracy, boolean whole) { return search(targets, accuracy, followRange(3), whole); }
     float followRange(int times) { return (float)(mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) * times); }
 
 
     /** The time of a search, as the meter has it. */
-    private void roll(long now) { if (now != tickOf) { tickOf = now; tickNanos = tickCells = 0; } }
+    private void roll(long now) { if (now != tickOf) { tickOf = now; tickNanos = tickCells = tickShared = 0; } }
 
     private void spent(long spent, long cells) {
         roll(level.getGameTime());
         tickCells += cells; tickNanos += spent; maxTickNanos = Math.max(maxTickNanos, tickNanos); nanos += spent;
     }
 
-    private long wideTick = -1;
-    /** One wide search per companion per game tick: the first takes it, the rest are told «not now» (the choice loops multiplied them). */
-    boolean takeWide() { long now = level.getGameTime(); if (wideTick == now) return false; wideTick = now; return true; }
-    boolean wideSpent() { return wideTick == level.getGameTime(); }
     /** Cells one tick's searches may expand together: counted in cells, not ms, so the answer does not depend on the machine's speed. */
     static final int TICK_CELLS = 600;
     /** Choices among many targets ask for the answer now and go through many searches; they get a larger share (a stone's faces: ten ticks to a search at 600 left him standing 10 s). */
-    static final int CHOICE_CELLS = 1500;
+    public static final int CHOICE_CELLS = 1500;
     /** The searches of this tick have expanded that many cells already: a choice that goes on searching waits for the next one. */
     boolean overBudget() { return tickOf == level.getGameTime() && tickCells >= CHOICE_CELLS; }
 
@@ -193,7 +197,11 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     @Override public void recomputePath() { if (!(path instanceof CompanionSearch.Found)) super.recomputePath(); }
 
     public Meter meter() { return new Meter((evaluator == null ? 0 : evaluator.expanded()) + searched, nanos, maxTickNanos); }
-    public void resetMaxTick() { maxTickNanos = 0; }
+    public void resetMaxTick() { maxTickNanos = 0; maxTickCells = 0; }
+    /** The most cells the shared searches of one tick expanded so far (the diagnosis of a failure, asked for the answer now, is not counted). */
+    public long maxTickCells() { return maxTickCells; }
+    /** A smaller cell budget for every search from now on (GameTests that need a search to run out of it). */
+    public void limitSearch(int cells) { budget = cells; }
 
     static Meter meterOf(CompanionEntity owner) { return owner.getNavigation() instanceof CompanionNavigation nav ? nav.meter() : new Meter(0, 0, 0); }
 

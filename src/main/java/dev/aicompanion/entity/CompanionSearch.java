@@ -28,6 +28,8 @@ final class CompanionSearch {
     static final float WEIGHT = 1.5F;
     /** A goal farther than the range is not seen by the search: it stops once a cell this share of the range nearer to it is found (the next leg searches on from there). */
     static final float FAR_LEG = .5F;
+    /** This search's own cell budget: BUDGET, lowered by a GameTest only. */
+    int budget = BUDGET;
 
     enum State { RUNNING, FOUND, EXHAUSTED }
 
@@ -116,7 +118,7 @@ final class CompanionSearch {
     /** Expands up to {@code cells} more cells (and no more than the budget of the whole search). */
     State advance(int cells, long now) {
         if (state != State.RUNNING) return state;
-        long limit = Math.min(BUDGET, expanded + cells);
+        long limit = Math.min(budget, expanded + cells);
         while (!open.isEmpty() && expanded < limit) {
             Node node = open.pop();
             if (node.closed) continue;
@@ -131,7 +133,7 @@ final class CompanionSearch {
             }
             if (node.distanceTo(start) < range) { current = node; moves.expand(node, sink); } else limited = true;
         }
-        if (open.isEmpty() || expanded >= BUDGET) { complete = open.isEmpty() && stopAt < 0; finish(State.EXHAUSTED, nearest(), now); }
+        if (open.isEmpty() || expanded >= budget) { complete = open.isEmpty() && stopAt < 0; finish(State.EXHAUSTED, nearest(), now); }
         return state;
     }
 

@@ -194,7 +194,8 @@ public final class CompanionHandOverTests {
         h.assertTrue(CompanionEvents.executeAction(owner, "give_items", "minecraft:iron_helmet", 2).success(), "Hand-over not accepted");
         h.succeedWhen(() -> {
             h.assertTrue(!companion.isWorking(), "Still walking: " + companion.getLastTaskResult());
-            h.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Не смог к тебе подойти"), companion.getLastTaskResult());
+            // Our search proves the box sealed (the game's could only give up): «no way» is the honest end; stuck is the other.
+            h.assertTrue(!companion.didLastTaskSucceed() && (companion.getLastTaskResult().contains("Не смог к тебе подойти") || companion.getLastTaskResult().contains("Не могу к тебе пройти")), companion.getLastTaskResult());
             h.assertTrue(count(companion, Items.IRON_HELMET) == 2, "Helmets left him");
         });
     }

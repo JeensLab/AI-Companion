@@ -37,8 +37,8 @@ final class CompanionGatherGoals {
         private int lastProgressTick;
         private int targetStartedTick;
         private double bestTargetDistance;
-        /** The approach path is one longer than a search: walked in legs, its start leads away from the trunk. */
         private int farUntil;
+        /** The approach path is one longer than a search: walked in legs, its start leads away from the trunk. */
         private boolean farApproach;
         private net.minecraft.world.phys.Vec3 farMoved;
         private boolean resumeAfterCleanup;

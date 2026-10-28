@@ -16,7 +16,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
  * Review of the single route (pass B): a far walk that first leads away is still a far walk, a failed choice costs at most one
- * wide search per tick, a far bench is accepted only if the walk to it is short, and a far walk is not progress without end.
+ * share of cells per tick, a far bench is accepted only if the walk to it is short, and a far walk is not progress without end.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -37,20 +37,26 @@ public final class CompanionRouteLimitsTests {
         CompanionSingleRouteTests.box(h, 29, 2, 3, 29, 3, 16, Blocks.AIR);
         CompanionSingleRouteTests.box(h, 2, 2, 16, 28, 3, 16, Blocks.AIR);
         CompanionSingleRouteTests.box(h, 2, 2, 7, 2, 3, 15, Blocks.AIR);
-        BlockPos stone = new BlockPos(2, 2, 6); h.setBlock(stone, Blocks.STONE);
+        // Eight faces nearest by the straight line make the first group; the ninth, at the end of a dead end a little longer, the second:
+        // its wide search is the last one made, and it is not the way he walks.
+        CompanionSingleRouteTests.box(h, 3, 2, 7, 7, 3, 7, Blocks.AIR);
+        for (BlockPos pos : new BlockPos[] {new BlockPos(2, 2, 6), new BlockPos(2, 3, 6), new BlockPos(1, 2, 7), new BlockPos(1, 3, 7),
+                new BlockPos(1, 2, 8), new BlockPos(1, 3, 8), new BlockPos(3, 2, 8), new BlockPos(3, 3, 8), new BlockPos(8, 2, 7)}) h.setBlock(pos, Blocks.STONE);
         CompanionEntity c = CompanionSingleRouteTests.spawn(h, 2, 2, 2);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE));
         h.assertTrue(c.startWork("gather_stone", "", 1).success(), "Stone order not accepted");
         h.succeedWhen(() -> {
             h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
-            h.assertTrue(c.didLastTaskSucceed() && CompanionSingleRouteTests.count(c, Items.COBBLESTONE) == 1 && h.getBlockState(stone).isAir(), c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && CompanionSingleRouteTests.count(c, Items.COBBLESTONE) == 1, c.getLastTaskResult());
+            h.assertTrue(CompanionSingleRouteTests.routeEvents(c).stream().noneMatch(line -> line.contains("no progress")),
+                    "The first walk was told as given up for no progress: " + CompanionSingleRouteTests.routeEvents(c));
         });
     }
 
     /**
      * F6: a sealed stone room (twelve blocks tall, stone lines its inside, no way in) nearer than the one stone he can reach: its faces make more than
      * five groups of eight, each a failed search and a failed wide one. He still gets the reachable stone, and no tick of his
-     * searches costs more than a couple of them.
+     * searches holds more cells than the tick's share.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void unreachableStoneGroupsDoNotCostATickEach(GameTestHelper h) {
@@ -68,16 +74,107 @@ public final class CompanionRouteLimitsTests {
         CompanionEntity c = CompanionSingleRouteTests.spawn(h, 15, 2, 29);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE));
         var nav = (CompanionNavigation) c.getNavigation();
-        // The first searches of a cold JVM are slow: warmed up on the sealed room, then the meter starts.
-        for (int i = 0; i < 12; i++) nav.createPath(h.absolutePos(new BlockPos(15, 2, 15)), 1);
         nav.resetMaxTick();
         h.assertTrue(c.startWork("gather_stone", "", 1).success(), "Stone order not accepted");
         h.succeedWhen(() -> {
             h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
             h.assertTrue(c.didLastTaskSucceed() && CompanionSingleRouteTests.count(c, Items.COBBLESTONE) == 1 && h.getBlockState(stone).isAir(), c.getLastTaskResult());
-            double ms = nav.meter().maxTickMs();
-            System.out.println("[route-limits] unreachableStoneGroups max search ms per tick: " + ms);
-            h.assertTrue(ms < 8, "The searches of one tick took " + ms + " ms");
+            h.assertTrue(nav.maxTickCells() <= CompanionNavigation.CHOICE_CELLS, nav.maxTickCells() + " cells searched in one tick");
+        });
+    }
+
+    /**
+     * Review 2, N1: a vein of eighteen ores along the last corridor of a winding way (longer than one search). The nearest eight make the
+     * group that is walked to by the wide search; the ninth and the rest are asked after it in the same tick: that must not cancel the
+     * walk to the group, nor may the group take the tick's cells over and over.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aVeinBehindADetourIsMinedWhateverItsSize(GameTestHelper h) {
+        sealedArena(h);
+        CompanionSingleRouteTests.box(h, 4, 2, 4, 24, 3, 4, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 24, 2, 5, 24, 3, 8, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 4, 2, 8, 24, 3, 8, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 4, 2, 9, 4, 3, 12, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 4, 2, 12, 13, 3, 12, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 5, 2, 13, 13, 3, 13, Blocks.IRON_ORE);
+        CompanionEntity c = CompanionSingleRouteTests.spawn(h, 4, 2, 4);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && CompanionSingleRouteTests.count(c, Items.RAW_IRON) == 1, c.getLastTaskResult());
+        });
+    }
+
+    /**
+     * Review 2, N2: the cells of a sealed pocket in a big room next to him (the room is more cells than a search has) and the cells at the
+     * end of a winding way. The search to both runs out of its budget in the room, not of its range: that proves nothing about the far
+     * cells, which a search of their own reaches. The budget is set between what the two searches take; the route is asked directly.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aNearSealedGoalDoesNotHideAFarReachableOne(GameTestHelper h) {
+        sealedArena(h);
+        CompanionSingleRouteTests.box(h, 4, 2, 4, 24, 3, 4, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 24, 2, 5, 24, 3, 8, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 4, 2, 8, 24, 3, 8, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 4, 2, 9, 4, 3, 12, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 4, 2, 12, 13, 3, 12, Blocks.AIR);
+        // The way to the room, the room, and the sealed pocket in it.
+        CompanionSingleRouteTests.box(h, 2, 2, 4, 3, 3, 4, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 2, 2, 5, 2, 3, 16, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 2, 2, 17, 28, 3, 30, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 12, 2, 18, 20, 3, 26, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 15, 2, 21, 17, 3, 23, Blocks.AIR);
+        CompanionEntity c = CompanionSingleRouteTests.spawn(h, 4, 2, 4);
+        c.setSearchRadius(24);
+        java.util.Set<BlockPos> far = java.util.Set.of(h.absolutePos(new BlockPos(13, 2, 12)));
+        java.util.Set<BlockPos> both = java.util.Set.of(h.absolutePos(new BlockPos(13, 2, 12)), h.absolutePos(new BlockPos(16, 2, 21)));
+        // A search is made only by one that stands on the ground: a few ticks first.
+        h.runAfterDelay(10, () -> {
+            var nav = (CompanionNavigation) c.getNavigation();
+            long before = nav.meter().nodes();
+            nav.wide(far, 0);
+            long alone = nav.meter().nodes() - before;
+            before = nav.meter().nodes();
+            nav.wide(both, 0);
+            long together = nav.meter().nodes() - before;
+            h.assertTrue(together > alone + 40, "The room does not cost the search to both more than the far cells alone: " + together + " cells against " + alone);
+            // The finished searches are kept for two seconds: let them go, so the route searches anew within the lower budget.
+            h.runAfterDelay(60, () -> {
+            nav.limitSearch((int)(alone + together) / 2);
+            Object route; java.lang.reflect.Method cells, found;
+            try {
+                route = CompanionSingleRouteTests.field(CompanionSingleRouteTests.field(c, "work"), "route");
+                cells = route.getClass().getDeclaredMethod("cells", java.util.Set.class, int.class); cells.setAccessible(true);
+                found = cells.getReturnType().getDeclaredMethod("found"); found.setAccessible(true);
+                h.assertTrue(!(boolean) found.invoke(cells.invoke(route, both, 0)), "The search to both found the way: the budget is not short of it");
+                h.runAfterDelay(2, () -> {
+                    try { h.assertTrue((boolean) found.invoke(cells.invoke(route, far, 0)), "The far cells are written off with the room's"); }
+                    catch (Exception e) { throw new IllegalStateException(e); }
+                    h.succeed();
+                });
+            } catch (Exception e) { throw new IllegalStateException(e); }
+            });
+        });
+    }
+
+    /** Review 2, F6: following a player sealed in bedrock, the leg search and the "no way" question share the cells of a tick. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    public static void followingASealedPlayerSearchesOnlyATicksShare(GameTestHelper h) {
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
+        CompanionSingleRouteTests.box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 2, 0, 31, 12, 0, Blocks.BEDROCK); CompanionSingleRouteTests.box(h, 0, 2, 31, 31, 12, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 0, 2, 0, 0, 12, 31, Blocks.BEDROCK); CompanionSingleRouteTests.box(h, 31, 2, 0, 31, 12, 31, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 21, 2, 21, 27, 7, 27, Blocks.BEDROCK);
+        CompanionSingleRouteTests.box(h, 23, 2, 23, 25, 5, 25, Blocks.AIR);
+        CompanionEntity c = CompanionSingleRouteTests.spawn(h, 6, 2, 6);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        CompanionSingleRouteTests.teleport(h, player, 24, 2, 24);
+        var nav = (CompanionNavigation) c.getNavigation();
+        nav.resetMaxTick();
+        h.runAtTickTime(1400, () -> {
+            h.assertTrue(nav.maxTickCells() <= CompanionNavigation.CHOICE_CELLS, nav.maxTickCells() + " cells searched in one tick");
+            h.succeed();
         });
     }
 
@@ -100,7 +197,7 @@ public final class CompanionRouteLimitsTests {
         var chasing = loot.getClass().getDeclaredMethod("canChase"); chasing.setAccessible(true);
         h.runAtTickTime(100, () -> CompanionSingleRouteTests.box(h, 24, 2, 6, 24, 3, 6, Blocks.BEDROCK));
         h.runAtTickTime(1100, () -> {
-            boolean still; try { still = (boolean) chasing.invoke(loot); } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+            boolean still; try { still = (boolean) chasing.invoke(loot); } catch (Exception e) { throw new IllegalStateException(e); }
             h.assertTrue(!still, "Still chasing the drop at " + h.relativePos(c.blockPosition()).toShortString());
             h.succeed();
         });

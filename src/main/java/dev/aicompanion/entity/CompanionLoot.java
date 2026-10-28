@@ -233,7 +233,7 @@ final class CompanionLoot {
                 }
             }
             var reach = feet.isEmpty() ? null : owner.work.route.cells(feet, 0);
-            // The tick's wide search went elsewhere: asked again next tick, the drop is not given up for it.
+            // The tick's cells went elsewhere: asked again next tick, the drop is not given up for it.
             if (reach != null && reach.busy()) { nextRoute = level.getGameTime() + 1; return; }
             path = reach == null ? null : reach.path(); farRoute = reach != null && reach.kind() == CompanionRoute.Kind.FAR;
             if (farRoute && farUntil == 0) farUntil = level.getGameTime() + CompanionRoute.farLimit(reach.length());

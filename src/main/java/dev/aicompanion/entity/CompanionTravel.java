@@ -31,9 +31,11 @@ final class CompanionTravel {
     // The leg is only the best part found so far by a search that is still going (the whole route replaces it when found); the search running.
     private boolean legPartial;
     private CompanionSearch waiting;
+    // The last step was only waiting for a search (no leg is being walked): the walk makes no progress meanwhile.
+    private boolean searchOnly;
     /** Nothing yet to walk: a search is under way (nextLeg's answer). */
     private static final Path WAIT = CompanionNavigation.BUSY;
-    private double best, near;
+    private double best;
     private long lastProgress;
     // Walking counts as progress for three times the time the straight way takes (a way round is longer, not endless).
     private long walkUntil;
@@ -60,18 +62,22 @@ final class CompanionTravel {
     private void drop() { if (waiting != null && owner.getNavigation() instanceof CompanionNavigation nav) nav.forget(waiting); waiting = null; }
 
     BlockPos goal() { return goal; }
+    /** The last step was only waiting for a search: he stands and the order's stall time goes on. */
+    boolean searchOnly() { return searchOnly; }
     /** The walk ended where its caller needed it (the goal's level, not its distance): told as arrived, then over. */
     void arrived() { told("NEAR", "arrived"); reset(); }
+    /** The leg being walked comes all the way to the goal: a route to it exists. */
+    boolean onRoute() { return leg != null && leg.canReach(); }
     /** Also the destination for a self-rescue: a goal given up must not look like a trap afterwards. */
     void reset() { meter = null; if (goal != null) owner.movementIntent(null); drop(); goal = null; leg = null; legPartial = false; turn = 0; sideStep = false; legMoved = null; wideFailedAt = Long.MIN_VALUE / 2; }
 
     /**
      * Towards a goal that moves on (the player walking): the walk keeps its legs and its measure of progress while the goal
-     * shifts by less than sixteen blocks; a larger jump starts a new walk.
+     * shifts by less than sixteen blocks (so does its time bound: a player on the move does not extend it); a larger jump starts a new walk.
      */
     Step follow(BlockPos target, double near, double speed) {
         this.speed = speed;
-        if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); walkUntil = owner.level().getGameTime() + (long)(3 * distance() / .19) + 200; }
+        if (goal != null && !target.equals(goal) && goal.distSqr(target) <= 16 * 16) { goal = target.immutable(); best = Math.min(best, distance()); }
         return step(target, near);
     }
 
@@ -84,7 +90,6 @@ final class CompanionTravel {
     private Step step(BlockPos target, double near) {
         if (!(owner.level() instanceof ServerLevel level)) return Step.FAILED;
         long now = level.getGameTime();
-        this.near = near;
         if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; walkUntil = now + (long)(3 * distance() / .19) + 200; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
         owner.movementIntent(goal);
         double distance = distance();
@@ -96,25 +101,33 @@ final class CompanionTravel {
         if (now - lastProgress > PATIENCE) { owner.getNavigation().stop(); told("FAILED", "no progress for half a minute"); return Step.FAILED; }
         if (!owner.onGround() && !owner.isInWater()) return Step.WALKING;
         boolean over = leg == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck();
+        searchOnly = false;
         if (!over && !legPartial) return Step.WALKING;
         // A leg is over (or there was none): the next one. A search still going on is given its share every tick, and while it goes
         // on the best part of the way found so far is walked; the whole route takes over when it is found.
         Path next = nextLeg(level, distance, !over);
         if (next == WAIT) {
+            searchOnly = over;
             if (over) {
                 Path part = waiting == null ? null : waiting.partialFrom(owner.position());
-                if (part != null && part.getNodeCount() > 1 && endDistance(part) + 3 <= distance) { leg = part; legPartial = true; CompanionMiningNavigation.walk(owner, leg, speed); }
+                if (part != null && part.getNodeCount() > 1 && endDistance(part) + 3 <= distance) { leg = part; legPartial = true; searchOnly = false; CompanionMiningNavigation.walk(owner, leg, speed); }
             }
             return Step.WALKING;
         }
         if (!over) {
-            if (next != null && next.canReach()) { leg = next; legPartial = false; CompanionMiningNavigation.walk(owner, leg, speed); }
+            if (next != null && next.canReach()) { leg = next; legPartial = false; walkUntil = Math.max(walkUntil, bound(now, near)); CompanionMiningNavigation.walk(owner, leg, speed); }
             return Step.WALKING;
         }
         leg = next; legPartial = false;
+        walkUntil = Math.max(walkUntil, bound(now, near));
         if (leg == null) { owner.getNavigation().stop(); told("FAILED", "no leg found"); return Step.FAILED; }
         CompanionMiningNavigation.walk(owner, leg, speed);
         return Step.WALKING;
+    }
+
+    /** A whole way to the goal that is longer than the straight line promised: walking it counts as progress for as long as it takes (else the walk bound cuts it off). */
+    private long bound(long now, double near) {
+        return leg != null && leg.canReach() && endDistance(leg) <= near + 2 ? now + CompanionRoute.farLimit(CompanionMiningNavigation.length(owner, leg)) : 0;
     }
 
     /**

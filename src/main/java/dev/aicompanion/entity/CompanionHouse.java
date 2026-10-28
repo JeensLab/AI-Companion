@@ -134,7 +134,7 @@ final class CompanionHouse {
                 if (canPlaceFromHere(level, step)) { select(index, level); break; }
                 Path route = route(level, step);
                 if (route != null && route.canReach()) { select(index, level); path = route; break; }
-                // The tick's wide search went elsewhere: the rest of the steps are asked next tick, none is written off.
+                // The tick's cells went elsewhere: the rest of the steps are asked next tick, none is written off.
                 if (route == null && routeBusy) return Result.working();
                 unreachable.add(index);
             }

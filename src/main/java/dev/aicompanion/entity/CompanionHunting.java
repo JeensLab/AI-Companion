@@ -52,7 +52,7 @@ final class CompanionHunting {
             if (w.gameTravel != null && travelToGame(level)) return;
             List<net.minecraft.world.entity.animal.Animal> game = huntable(level);
             if (!game.isEmpty()) current = nearestGameOnFoot(game);
-            // The tick's wide search went elsewhere: the animals are asked again next tick, none is skipped.
+            // The tick's cells went elsewhere: the animals are asked again next tick, none is skipped.
             if (current == null && !game.isEmpty() && gameBusy) return;
             if (current == null && w.gameTravel != null) { travelToGame(level); return; }
             if (current == null) {

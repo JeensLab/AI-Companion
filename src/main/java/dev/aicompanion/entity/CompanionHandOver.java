@@ -31,6 +31,12 @@ final class CompanionHandOver {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem);
     }
 
+    /** A cell he can stand in by its floor: nothing in the way, or a low block (carpet, slab, path, farmland) with room above it. */
+    private static boolean standable(ServerLevel level, BlockPos cell) {
+        var shape = level.getBlockState(cell).getCollisionShape(level, cell);
+        return shape.isEmpty() || shape.max(net.minecraft.core.Direction.Axis.Y) < 1 && level.getBlockState(cell.above()).getCollisionShape(level, cell.above()).isEmpty();
+    }
+
     /** Walk up to the player and toss the items at their feet: a real item on the ground, picked up by the player. */
     void handOver(ServerLevel level) {
         var player = w.owner.getOwnerPlayer();
@@ -57,7 +63,7 @@ final class CompanionHandOver {
             boolean elsewhere = legsFailedAt == null || !legsFailedAt.closerThan(w.owner.blockPosition(), 3);
             if ((walking || elsewhere) && (w.owner.onGround() || w.owner.isInWater())) {
                 var step = w.route.follow(player.blockPosition(), 3);
-                if (step == CompanionTravel.Step.WALKING) { legsWalked = true; w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
+                if (step == CompanionTravel.Step.WALKING) { legsWalked = true; if (!w.owner.travel().searchOnly()) w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
                 w.owner.travel().reset();
                 w.owner.movementIntent(player.blockPosition());
                 // Near by the legs' measure (to the block's centre) is not yet in hand-over reach (to his feet) and sight: a short step
@@ -66,16 +72,23 @@ final class CompanionHandOver {
                     var feet = player.blockPosition();
                     java.util.Set<BlockPos> round = new java.util.HashSet<>();
                     for (BlockPos cell : new BlockPos[]{feet, feet.north(), feet.south(), feet.east(), feet.west()})
-                        if (level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) round.add(cell);
+                        if (standable(level, cell)) round.add(cell);
                     var close = w.route.toCells(round, 0);
-                    if (close != null && close.getNodeCount() > 1 && close.getNodeCount() <= 12) { w.route.walk(close); closing = true; legsWalked = true; w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
+                    if (close == null || close.getNodeCount() <= 1 || close.getNodeCount() > 12) {
+                        // The short step does not come (a wall between, the door far aside): on through the route to those cells, as far as it goes.
+                        var reach = w.route.cells(round, 0);
+                        if (reach.busy()) { w.owner.workStatus("Несу тебе вещи."); return; }
+                        close = reach.found() && reach.path().getNodeCount() > 1 ? reach.path() : null;
+                    }
+                    if (close != null) { w.route.walk(close); closing = true; legsWalked = true; w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
                 }
                 boolean walked = legsWalked;
                 legsWalked = false;
                 // Legs that went and then stood half a minute without coming closer: the end (the player is out of reach, like behind
                 // a closed wall).
                 if (step == CompanionTravel.Step.FAILED && walked) {
-                    w.finish(false, "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
+                    w.finish(false, w.route.noWayTo(player.blockPosition()) ? "Не могу к тебе пройти, вещи остались у меня."
+                            : "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
                     return;
                 }
                 // No leg at all from here (down a mine, game 28.10): the self-rescue takes the walk over while the work waits (the
