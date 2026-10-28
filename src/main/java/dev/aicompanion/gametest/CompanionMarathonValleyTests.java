@@ -189,6 +189,28 @@ public final class CompanionMarathonValleyTests {
         a.script.run("valley-meat-cooked", watch::summary);
     }
 
+    /**
+     * The furnace step from where the faster hunt ended (marathon, 2-3 runs of 10 stood still 16-21 s choosing stone for it, and 15 s
+     * on the way back up his stairs when the bench stood on their first cell): the
+     * plain in the east, no stone within reach, raw meat and the hunt's other loot in the bag. He must walk or dig at once.
+     */
+    @GameTest(template = "marathon_valley", batch = "marathon", timeoutTicks = 4000)
+    public static void furnaceStoneChoiceFromTheHuntsEndDoesNotStall(GameTestHelper h) {
+        valley(h);
+        var a = new MarathonArena(h, X, Y, Z, 87, 62, 75, 58, 40);
+        a.oleg.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new net.minecraft.world.item.ItemStack(Items.STONE_SWORD));
+        a.oleg.setItem(0, new net.minecraft.world.item.ItemStack(Items.OAK_LOG, 4));
+        a.oleg.setItem(1, new net.minecraft.world.item.ItemStack(Items.STONE_PICKAXE));
+        a.oleg.setItem(2, new net.minecraft.world.item.ItemStack(Items.BEEF, 7));
+        a.oleg.setItem(3, new net.minecraft.world.item.ItemStack(Items.PORKCHOP, 6));
+        a.oleg.setItem(4, new net.minecraft.world.item.ItemStack(Items.LEATHER, 6));
+        var watch = a.watch;
+        a.script
+                .ask("Пожарь мясо", "[{\"action\":\"smelt_items\",\"item\":\"minecraft:meat\"}]", 20 * 400)
+                .check("never stood still: choosing stone, nor on the way back up", () -> watch.assertNoLongIdle(10));
+        a.script.run("valley-furnace-stone-choice", watch::summary);
+    }
+
     /** A bag full to the last slot: «добудь дерева» is answered honestly and at once, nothing thrown away. */
     @GameTest(template = "marathon_valley", batch = "marathon", timeoutTicks = 4000)
     public static void aFullBagIsSaidAtOnce(GameTestHelper h) {
