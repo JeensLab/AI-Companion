@@ -201,8 +201,8 @@ public final class CompanionSingleRouteTests {
                 teleport(h, player, 8, 2, 28);
             }
         });
-        h.runAtTickTime(3400, () -> h.assertTrue(c.distanceToSqr(player) <= 36, "Did not go to the player who moved: " + h.relativePos(c.blockPosition()).toShortString()));
-        h.runAtTickTime(3401, h::succeed);
+        // He may stroll up to eight blocks from the player once he has come (the idle stroll's own bound): reaching him counts, not staying.
+        h.succeedWhen(() -> h.assertTrue(h.getTick() > 2300 && c.distanceToSqr(player) <= 36, "Did not go to the player who moved: " + h.relativePos(c.blockPosition()).toShortString()));
     }
 
     /** A cow at the far end of the corridor, a detour of sixty cells: hunted in legs, not given up as unreachable. */
