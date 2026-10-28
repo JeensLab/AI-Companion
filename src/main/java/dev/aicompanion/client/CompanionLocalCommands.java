@@ -111,15 +111,18 @@ public final class CompanionLocalCommands {
     }
 
     public static final String FIGHT_HUSH = "Помолчи, я тут занят мобом.";
-    /** In a fight he does not chat: small talk gets FIGHT_HUSH, while orders and calls for help still reach him. */
+    /**
+     * In a fight he does not chat: a question of small talk gets FIGHT_HUSH. Whatever asks nothing may be an order and reaches him as
+     * always («дай мне меч», «бежим», «иди домой» were hushed — review of PR #28), and so does a question asking for help or a deed.
+     */
     public static boolean hushed(boolean fighting, String text) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
-        // «Стой и жди» and «жди 10 секунд» are no local commands (« и », a digit), yet they are orders for the model.
-        return fighting && !OpenRouterClient.requiresAction(text)
-                && !normalized.matches("(?sU).*(убей|убива|бей\\b|атак|мочи\\b|защищ|прикр|помоги|помогай|спаси|беги|отойди|отступ|назад|уходи|сюда|ко мне|за мной|"
-                        + "\\b(по)?стой\\b|\\b(подо)?жди\\b|не двигайся|замри|останься|лечись|поешь|съешь|осторожн|сзади|крипер|скелет|зомби|паук|\\bмоб|монстр|"
+        return fighting && normalized.contains("?") && !OpenRouterClient.requiresAction(text)
+                && !normalized.matches("(?sU).*(убей|убь|убива|бей\\b|атак|мочи\\b|дерис|драт|драк|защищ|защит|охран|прикр|помог|помож|спаси|"
+                        + "беги|бежим|валим|отойди|отступ|назад|уходи|уйди|сюда|ко мне|за мной|\\bиди\\b|идем|пошли|пойдем|домой|"
+                        + "\\b(по)?стой\\b|\\b(подо)?жди\\b|подожд|не двигайся|замри|останься|лечись|поешь|съешь|осторожн|сзади|крипер|скелет|зомби|паук|\\bмоб|монстр|"
                         // «Дай мне еды» in a fight is a hand-over, not small talk.
-                        + "\\b(от|по|пере|вы)?дай(те)?\\b|\\bкинь|\\bброс(ь|ай)\\b|\\bверни|\\bпринеси|\\bдержи\\b).*");
+                        + "\\b(от|по|пере|вы)?да(й|йте|шь)\\b|\\bкин(ь|ешь)|\\bброс(ь|ай|ишь)\\b|\\bверн(и|ешь)|\\bпринес|\\bдержи\\b).*");
     }
 
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {

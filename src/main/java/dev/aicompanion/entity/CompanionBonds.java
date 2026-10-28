@@ -139,10 +139,10 @@ public final class CompanionBonds extends SavedData {
         return stored;
     }
 
-    /** The topic he opens now, taken out of the ones he has not raised yet. */
-    public CompanionTopics.Topic raiseTopic(UUID owner, RandomGenerator random) {
+    /** The topic he opens now, taken out of the ones he has not raised yet; without {@code questions}, one that asks nothing. */
+    public CompanionTopics.Topic raiseTopic(UUID owner, RandomGenerator random, boolean questions) {
         CompanionSoul soul = slot(owner).memory.soul();
-        CompanionTopics.Topic topic = soul.next(random);
+        CompanionTopics.Topic topic = soul.next(random, questions);
         soul.raised(topic);
         setDirty();
         return topic;

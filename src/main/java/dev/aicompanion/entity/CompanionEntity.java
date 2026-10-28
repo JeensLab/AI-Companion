@@ -636,6 +636,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "left_vehicle", "entity", getUUID(), "vehicle", getVehicle().getType().toShortString());
             stopRiding();
         }
+        swimming.stroke();
         swimming.climbOutOfWater();
         meals.tickEating();
         loot.tickNearby();

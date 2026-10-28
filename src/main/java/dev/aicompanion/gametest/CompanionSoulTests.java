@@ -49,15 +49,15 @@ public final class CompanionSoulTests {
     public static void noTopicIsRaisedTwiceUntilTheBankRunsOut(GameTestHelper h) {
         var soul=new CompanionSoul(); var raised=new ArrayList<String>(); var random=new Random(7);
         for(int i=0;i<CompanionTopics.ALL.size();i++) {
-            var topic=soul.next(random); h.assertTrue(!raised.contains(topic.key()),"Topic repeated: "+topic.text()); raised.add(topic.key()); soul.raised(topic);
+            var topic=soul.next(random,true); h.assertTrue(!raised.contains(topic.key()),"Topic repeated: "+topic.text()); raised.add(topic.key()); soul.raised(topic);
         }
-        var again=soul.next(random);
+        var again=soul.next(random,true);
         h.assertTrue(again.key().equals(raised.getFirst()),"After the bank the topic raised longest ago is not first: "+again.text());
         var reloaded=CompanionSoul.load(soul.save());
-        h.assertTrue(reloaded.next(random).key().equals(again.key()),"Oldest topic not first to come back after reload");
+        h.assertTrue(reloaded.next(random,true).key().equals(again.key()),"Oldest topic not first to come back after reload");
         var fresh=new CompanionSoul(); fresh.raised(CompanionTopics.ALL.getFirst());
         var restored=CompanionSoul.load(fresh.save());
-        for(int i=0;i<500;i++) h.assertTrue(!restored.next(random).key().equals(CompanionTopics.ALL.getFirst().key()),"Raised topic repeated after reload");
+        for(int i=0;i<500;i++) h.assertTrue(!restored.next(random,true).key().equals(CompanionTopics.ALL.getFirst().key()),"Raised topic repeated after reload");
         h.succeed();
     }
     @GameTest(template="empty")
@@ -95,21 +95,31 @@ public final class CompanionSoulTests {
                 &&adapted.contains("без молодёжного сленга")&&adapted.contains("Twitch"),"Adapted text wrong or fixed rules lost");
         soul.adapt(Map.of(Trait.SWEARING,-2),List.of());
         h.assertTrue(soul.character().get(Trait.SWEARING)==-2&&CompanionPersonality.style(soul.character()).contains("Не матерись совсем"),"Asked to stop swearing, still swears");
-        var own=soul.next(FIRST);
+        var own=soul.next(FIRST,true);
         h.assertTrue(own.category().equals("own")&&own.text().equals("Бро, как там твой велик, не тильтанул?"),"His own topic not preferred: "+own);
-        soul.raised(own); var next=soul.next(FIRST);
+        soul.raised(own); var next=soul.next(FIRST,true);
         h.assertTrue(next.text().equals("Какой фонк-трек сейчас качает тебя больше всего?"),"Second own topic lost: "+next.text());
-        soul.raised(next); h.assertTrue(!soul.next(FIRST).category().equals("own"),"Only two of the topics were valid");
+        soul.raised(next); h.assertTrue(!soul.next(FIRST,true).category().equals("own"),"Only two of the topics were valid");
         soul.adapt(Map.of(),List.of("Бро, как там твой велик, не тильтанул?!",CompanionTopics.ALL.getFirst().text()));
         h.assertTrue(soul.ownTopics().isEmpty(),"An own topic already raised came back reworded, or a bank topic was taken as his own: "+soul.ownTopics());
         h.succeed();
     }
     @GameTest(template="empty")
+    public static void overAnUnansweredQuestionHeSharesInsteadOfAsking(GameTestHelper h) {
+        h.assertTrue(CompanionTopics.ALL.stream().filter(topic->!topic.text().contains("?")).count()>=40,"Too few topics that ask nothing");
+        var soul=new CompanionSoul(); soul.adapt(Map.of(),List.of("Какой фонк-трек качает тебя больше всего?","Фонк в наушниках здорово помогает в любой игре, я проверял."));
+        h.assertTrue(soul.next(FIRST,false).text().equals("Фонк в наушниках здорово помогает в любой игре, я проверял."),"His own thought not shared");
+        var random=new Random(3);
+        for(int i=0;i<300;i++) { var topic=soul.next(random,false); h.assertTrue(!topic.text().contains("?"),"Asked over an unanswered question: "+topic.text()); soul.raised(topic); }
+        h.assertTrue(soul.next(FIRST,true).text().equals("Какой фонк-трек качает тебя больше всего?"),"Questions did not come back once the player answered");
+        h.succeed();
+    }
+    @GameTest(template="empty")
     public static void theSoulIsKeptInTheWorldMemoryAndForgottenWithIt(GameTestHelper h) {
         var server=h.getLevel().getServer(); UUID owner=UUID.randomUUID(); var bonds=CompanionBonds.get(server);
-        var first=bonds.raiseTopic(owner,FIRST);
+        var first=bonds.raiseTopic(owner,FIRST,true);
         bonds.recordTalk(owner,true,"Фонк на репите"); bonds.recordTalk(owner,false,"База."); bonds.recordTalk(owner,true,"Ещё люблю гонять на велике");
-        var second=bonds.raiseTopic(owner,FIRST);
+        var second=bonds.raiseTopic(owner,FIRST,true);
         h.assertTrue(!second.key().equals(first.key())&&bonds.memory(owner).soul().taste(first.category())==1,"Two answers did not raise the subject's weight");
         bonds.adapt(owner,Map.of(Trait.SWEARING,2),List.of("Как там Барсик, чилит?"));
         h.assertTrue(CompanionMemoryDigest.of(server,owner,true,0).character().get(Trait.SWEARING)==1,"The client does not get the shifted character");
@@ -153,7 +163,10 @@ public final class CompanionSoulTests {
                     String sent=requests.getFirst().toString();
                     h.assertTrue(sent.contains("Компаньон: Что слушаешь, бро?")&&!sent.contains("Начался дождь")&&sent.contains("Реплика игрока 11"),"His topic missing from the journal or a remark in it: "+sent);
                     h.assertTrue(sent.contains("humor=1")&&sent.contains("Как там Барсик, чилит?"),"The request does not carry his character and topics: "+sent);
-                    h.assertTrue(sent.contains("ничего не утверждай о текущей обстановке")&&sent.contains("Суди только по репликам «Игрок»")&&sent.contains("Twitch"),"Topic and character rules missing: "+sent);
+                    h.assertTrue(sent.contains("ничего не утверждай о текущей обстановке")&&sent.contains("Суди только по репликам «Игрок»")&&sent.contains("Twitch")
+                            &&sent.contains("совсем без вопроса")&&sent.contains("не признак характера"),"Topic and character rules missing: "+sent);
+                    // Review of PR #28: a model copying «−1» or «+1» writes no JSON, and the whole batch would leave the journal unread.
+                    h.assertTrue(!sent.contains("−")&&sent.contains("-2, -1, 0, 1, 2 (без знака плюс)"),"The prompt shows numbers that are not JSON: "+sent);
                     var memory=bonds.memory(owner);
                     h.assertTrue(memory.entries().stream().anyMatch(e->e.text().equals("Любит фонк")),"Memory not stored: "+memory.entries());
                     h.assertTrue(memory.soul().character().get(Trait.SWEARING)==1&&memory.soul().character().get(Trait.HUMOR)==1
@@ -188,9 +201,10 @@ public final class CompanionSoulTests {
         h.assertTrue(!c.topicReady(3199,Scene.TRAVEL)&&c.topicReady(3200,Scene.TRAVEL),"A topic without a question held up the next one");
         c.initiativeDelivered("Начался дождь.",3300,0);
         h.assertTrue(!c.topicReady(4499,Scene.IDLE)&&c.topicReady(4500,Scene.IDLE),"A remark on an event put his topic off past the next free slot");
-        // Silence is no answer and no consent (main): no new topic of his own until the player speaks; remarks on events go on.
+        // Silence is no answer and no consent (main): he asks nothing until the player speaks, but goes on sharing, as remarks on events do.
         c.talked(5000,0); c.initiativeDelivered("Что слушаешь, бро?",5000,0);
-        h.assertTrue(!c.topicReady(5000+CompanionConversation.ANSWER_WAIT,Scene.TRAVEL)&&!c.topicReady(1_000_000,Scene.IDLE)&&!c.canAskQuestion(),"New topic over an unanswered question");
+        h.assertTrue(!c.topicReady(5000+CompanionConversation.ANSWER_WAIT-1,Scene.TRAVEL)&&c.topicReady(5000+CompanionConversation.ANSWER_WAIT,Scene.TRAVEL)
+                &&!c.canAskQuestion(),"A topic while waiting for the answer, none after the wait, or a question allowed again");
         h.assertTrue(c.ready(1_000_000),"Unanswered question silenced remarks on events");
         c.playerMessage(20000,0);
         h.assertTrue(c.canAskQuestion()&&!c.topicReady(21199,Scene.TRAVEL)&&c.topicReady(21200,Scene.TRAVEL),"An answer did not reset the pause");
@@ -208,14 +222,23 @@ public final class CompanionSoulTests {
             }
             h.assertTrue(topics>=(scene==Scene.WORK?3:4)&&events>=2,"Topics crowded out by remarks on events in "+scene+": "+topics+" topics, "+events+" remarks");
         }
+        // Review of PR #28: a remark on chests ended in a question, the player kept silent, and no topic came for eight minutes.
+        var silent=new CompanionConversation(); silent.reset(0,600); silent.initiativeDelivered("Может, сундуки разберём?",0,600); int shared=0;
+        for(long t=1;t<=20*60*16;t++) if(silent.topicReady(t,Scene.IDLE)) {
+            h.assertTrue(!silent.canAskQuestion(),"Silence became permission to ask"); shared++; silent.talked(t,600); silent.initiativeDelivered("Мысль номер "+t+".",t,600);
+        }
+        h.assertTrue(shared>=4,"An unanswered question silenced his topics: "+shared);
         h.succeed();
     }
     @GameTest(template="empty")
     public static void inAFightSmallTalkIsHushedButOrdersPass(GameTestHelper h) {
         h.assertTrue(CompanionLocalCommands.hushed(true,"Как дела, бро?")&&CompanionLocalCommands.hushed(true,"Что слушаешь?"),"Small talk in a fight");
         h.assertTrue(!CompanionLocalCommands.hushed(false,"Как дела, бро?"),"Hushed without a fight");
+        // Review of PR #28: orders the list did not know were hushed. Whatever asks nothing reaches him, and so does a question asking for a deed.
         for(String order:new String[]{"убей зомби","помоги!","беги ко мне","сзади крипер","построй дом","добудь камня","стой и жди","Стой! И не двигайся","жди 10 секунд","подожди тут","постой, крафчу",
-                "дай мне еды","Отдай меч","кинь стрелы!","передай факелы","брось мне хлеб","верни кирку","держи щит"})
+                "дай мне еды","Отдай меч","кинь стрелы!","передай факелы","брось мне хлеб","верни кирку","держи щит",
+                "охраняй меня","дай мне меч","хватит драться","дерись!","бежим","иди домой","Валим отсюда",
+                "Охранишь меня?","Дашь меч?","Поможешь?","Пойдём домой?","Убьёшь его?","Можешь меня защитить?","Подождёшь меня?","Кинешь стрелы?","Вернёшь кирку?"})
             h.assertTrue(!CompanionLocalCommands.hushed(true,order),"Order hushed: "+order);
         h.assertTrue(CompanionLocalCommands.FIGHT_HUSH.equals("Помолчи, я тут занят мобом."),"Phrase changed"); h.succeed();
     }
@@ -237,12 +260,13 @@ public final class CompanionSoulTests {
         var player=h.makeMockServerPlayerInLevel(); var spot=h.absolutePos(new BlockPos(14,1,16));
         player.teleportTo(spot.getX()+.5,spot.getY(),spot.getZ()+.5); c.setOwnerId(player.getUUID());
         var piglin=h.spawn(EntityType.ZOMBIFIED_PIGLIN,20,1,16); piglin.setNoAi(true); piglin.setInvulnerable(true);
-        h.runAtTickTime(40,()->{
-            h.assertTrue(!c.fighting()&&!c.sociallySafe(),"A peaceful zombified piglin in sight became a fight, or chatter safe beside it");
-            piglin.setTarget(player);
-        });
         // The invulnerable piglin is removed, or it stays beside a later marathon arena: Oleg then fights it for ever and the
         // marathons failed «Иди ко мне» (3 of 5 full runs after PR #28, none before). The batch cleanup only takes companions.
+        h.runAtTickTime(40,()->{
+            try { h.assertTrue(!c.fighting()&&!c.sociallySafe(),"A peaceful zombified piglin in sight became a fight, or chatter safe beside it"); }
+            catch (RuntimeException error) { piglin.discard(); throw error; }
+            piglin.setTarget(player);
+        });
         h.runAtTickTime(80,()->{boolean fight=c.fighting(); piglin.discard(); h.assertTrue(fight,"A monster after the player is no fight");h.succeed();});
     }
     private static void resetFlow() {

@@ -80,9 +80,11 @@ final class CompanionAmbientClient {
         if (server == null) return;
         pending = true;
         Object capturedWorld = world; UUID capturedCompanion = companion, owner = client.player.getUUID(); long activity = conversation.revision();
+        // Over a question left unanswered he does not ask again (main), he shares a thought instead.
+        boolean questions = conversation.canAskQuestion();
         server.execute(() -> {
             if (!server.isRunning()) return;
-            var topic = dev.aicompanion.entity.CompanionBonds.get(server).raiseTopic(owner, java.util.concurrent.ThreadLocalRandom.current());
+            var topic = dev.aicompanion.entity.CompanionBonds.get(server).raiseTopic(owner, java.util.concurrent.ThreadLocalRandom.current(), questions);
             client.execute(() -> {
                 if (world != capturedWorld || client.level != capturedWorld) return;
                 pending = false;
