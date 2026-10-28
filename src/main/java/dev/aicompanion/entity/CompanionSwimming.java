@@ -32,8 +32,9 @@ final class CompanionSwimming {
         if (c.isSprinting() != fast) c.setSprinting(fast);
         if (c.getPose() == (fast ? Pose.STANDING : Pose.SWIMMING)) c.setPose(fast ? Pose.SWIMMING : Pose.STANDING);
         // At a sprint the game sinks nothing in water (Entity.getFluidFallingAdjustedMovement): the float lifted him till he lay on
-        // the water and now and then out of it. The ordinary sinking keeps him in it at the usual depth.
-        if (fast && c.isInWater()) c.setDeltaMovement(c.getDeltaMovement().add(0, -c.getGravity() / 16, 0));
+        // the water and now and then out of it. The ordinary sinking keeps him in it at the usual depth. The game takes it off after
+        // the water's drag (0.8), here it comes before: a fifth more, or the float still lifted him out now and then (2 of 100 swims).
+        if (fast && c.isInWater()) c.setDeltaMovement(c.getDeltaMovement().add(0, -c.getGravity() / 16 / .8, 0));
     }
 
     private boolean swimAhead(Path path) {

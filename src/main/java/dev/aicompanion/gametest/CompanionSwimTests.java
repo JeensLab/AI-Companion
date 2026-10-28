@@ -60,8 +60,9 @@ public final class CompanionSwimTests {
                 Vec3 rel = oleg.position().subtract(h.absoluteVec(Vec3.ZERO));
                 double swum = Math.hypot(rel.x - from.x, rel.z - from.z);
                 if (oleg.isInWater()) { inWater++; if (oleg.getPose() == Pose.SWIMMING) lying++; }
-                // Out of the water and back in on the way, once settled after the start: lying on the water instead of in it.
-                if (wasInWater && !oleg.isInWater() && rel.x < 23 && swum >= 4) outOfWaterMidway++;
+                // Out of the water and back in on the way, once settled after the start: lying on the water instead of in it. Spawned
+                // under water, he bobs up and over it the first two times or so (6 of 100 swims within 4 blocks, at any sinking).
+                if (wasInWater && !oleg.isInWater() && rel.x < 23 && swum >= 6) outOfWaterMidway++;
                 wasInWater = oleg.isInWater();
                 if (oleg.isSprinting() != sprinting) {
                     sprinting = oleg.isSprinting(); sprintChanges++;
