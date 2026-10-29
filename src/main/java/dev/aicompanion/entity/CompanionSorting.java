@@ -48,7 +48,7 @@ final class CompanionSorting {
 
     CompanionSorting(CompanionWork w) { this.w = w; }
 
-    /** The set is fixed at the request: ordinary chests (not trapped, not barrels) within six blocks of the player, nearest first, a double one once. */
+    /** The set is fixed at the request: ordinary chests (not trapped, not barrels, not under a block) within six blocks of the player, nearest first, a double one once. */
     void begin(ServerLevel level) {
         chests.clear(); carried.clear(); opened.clear(); closing = false; started = false; tidyOnly = false; reordered = false; idle = 0; shown = ItemStack.EMPTY;
         var player = w.owner.getOwnerPlayer();
@@ -56,7 +56,8 @@ final class CompanionSorting {
         List<BlockPos> found = new ArrayList<>();
         for (BlockPos pos : w.chests.blockEntitiesNear(level)) {
             BlockState state = level.getBlockState(pos);
-            if (state.getBlock() != Blocks.CHEST || state.getValue(ChestBlock.TYPE) == ChestType.RIGHT || pos.getCenter().distanceToSqr(from) > RADIUS * RADIUS) continue;
+            if (state.getBlock() != Blocks.CHEST || state.getValue(ChestBlock.TYPE) == ChestType.RIGHT || pos.getCenter().distanceToSqr(from) > RADIUS * RADIUS
+                    || w.chests.chestAt(level, pos) == null) continue;
             found.add(pos.immutable());
         }
         found.sort(Comparator.comparingDouble(pos -> pos.getCenter().distanceToSqr(from)));
@@ -77,7 +78,8 @@ final class CompanionSorting {
             w.target = next; w.resetApproach();
         }
         Container chest = w.chests.chestAt(level, w.target);
-        if (chest == null) { chests.remove(w.target); w.resetTarget(); return; }
+        // A broken chest stays in the set (its place keeps the numbers of the report) and is skipped: the plan is made from the live ones.
+        if (chest == null) { w.resetTarget(); return; }
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2D * 3.2D || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
             if (!w.approach(level, w.target, 2.8D)) w.finish(false, "Не смог дойти до одного из сундуков. Что нёс — у меня в сумке.");
             return;
@@ -127,7 +129,7 @@ final class CompanionSorting {
         List<Container> live = live(level);
         Map<Group, List<Integer>> plan = CompanionSortGroups.plan(infos(live), carriedVolume());
         if (idle >= MAX_IDLE) {
-            w.finish(false, "Не получилось разложить всё: часть сундуков забита." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке."));
+            w.finish(false, "Не получилось разложить всё: часть сундуков забита." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке.") + goneNote(live));
             return null;
         }
         // With a load, the chests that take some of it first; else (or when none has room) the nearest with something out of place, to free room.
@@ -145,7 +147,7 @@ final class CompanionSorting {
             }
         }
         if (best != null) return best;
-        if (!carried.isEmpty()) { w.finish(false, "Не получилось разложить всё: некуда донести вещи. Они у меня в сумке."); return null; }
+        if (!carried.isEmpty()) { w.finish(false, "Не получилось разложить всё: некуда донести вещи. Они у меня в сумке." + goneNote(live)); return null; }
         // The last step: the order inside the chests the trips never opened (all of them, when there is one chest or all is in place).
         for (int i = 0; i < chests.size(); i++) {
             if (live.get(i) == null || opened.contains(chests.get(i))) continue;
@@ -171,14 +173,23 @@ final class CompanionSorting {
             }
             if (any) used++;
         }
-        if (where.isEmpty()) return "В сундуках пусто, раскладывать нечего.";
+        if (where.isEmpty()) return "В сундуках пусто, раскладывать нечего." + goneNote(live);
         // The groups of one chest together: «руда и металлы, еда — в ближнем», not the same chest named for each.
         Map<String, List<String>> byChest = new LinkedHashMap<>();
         where.forEach((group, at) -> byChest.computeIfAbsent(String.join(" и ", at.stream().map(i -> NEAR[i]).toList()), chest -> new ArrayList<>()).add(group.label));
         List<String> parts = new ArrayList<>();
         byChest.forEach((chest, groups) -> parts.add(String.join(", ", groups) + " — " + chest));
-        return (w.transferred == 0 && !reordered ? "Всё уже лежит по группам: " : "Разложил по " + used + (used == 1 ? " сундуку: " : " сундукам: ")) + String.join("; ", parts) + ".";
+        return (w.transferred == 0 && !reordered ? "Всё уже лежит по группам: " : "Разложил по " + used + (used == 1 ? " сундуку: " : " сундукам: ")) + String.join("; ", parts) + "." + goneNote(live);
     }
+
+    /** For the answer to the player: the chests of the set that were broken or built over meanwhile. */
+    private static String goneNote(List<Container> live) {
+        long gone = live.stream().filter(chest -> chest == null).count();
+        return gone == 0 ? "" : gone == 1 ? " Пропустил сундук, которого больше нет." : " Пропустил сундуки, которых больше нет: " + gone + ".";
+    }
+
+    /** What the answer to «stop» adds: what he carries stays in his bag. */
+    String stopNote(boolean sorting) { return sorting && !carried.isEmpty() ? " Часть вещей у меня в сумке." : ""; }
 
     /** The chests of the set as they are now, by their place in the set; null for one that is gone. */
     private List<Container> live(ServerLevel level) {

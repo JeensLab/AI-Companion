@@ -266,6 +266,20 @@ public final class CompanionSortingTests {
         });
     }
 
+    /** A chest under a solid block does not open (for the player either): it is not in the set, and the report does not call it gone. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void chestUnderABlockIsNotInTheSet(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper);
+        helper.setBlock(new BlockPos(15, 2, 13), Blocks.STONE);
+        Map<Item, Integer> blocked = totals(chests[2]);
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(companion.getLastTaskResult().startsWith("Разложил по 2 сундукам") && !companion.getLastTaskResult().contains("Пропустил"), companion.getLastTaskResult());
+            helper.assertTrue(totals(chests[2]).equals(blocked), "The chest under the block was touched");
+        });
+    }
+
     // ---- pure functions ----
 
     @GameTest(template = "empty")
@@ -388,14 +402,14 @@ public final class CompanionSortingTests {
 
     // ---- helpers ----
 
-    private static Container[] mixedThree(GameTestHelper helper) {
+    static Container[] mixedThree(GameTestHelper helper) {
         Container a = chest(helper, 9), b = chest(helper, 12), c = chest(helper, 15);
         a.setItem(0, new ItemStack(Items.COBBLESTONE, 64)); a.setItem(1, new ItemStack(Items.OAK_LOG, 20)); a.setItem(2, new ItemStack(Items.IRON_ORE, 8)); a.setItem(3, new ItemStack(Items.BREAD, 5));
         b.setItem(0, new ItemStack(Items.BONE, 6)); b.setItem(1, new ItemStack(Items.COBBLESTONE, 40)); b.setItem(2, new ItemStack(Items.DIRT, 10)); b.setItem(3, new ItemStack(Items.COOKED_BEEF, 4)); b.setItem(4, new ItemStack(Items.OAK_LOG, 12));
         c.setItem(0, new ItemStack(Items.IRON_ORE, 12)); c.setItem(1, new ItemStack(Items.OAK_LOG, 30)); c.setItem(2, new ItemStack(Items.BONE, 3)); c.setItem(3, new ItemStack(Items.APPLE, 2));
         return new Container[]{a, b, c};
     }
-    private static void bagOf(CompanionEntity companion) { companion.setItem(0, new ItemStack(Items.STICK, 7)); companion.setItem(1, new ItemStack(Items.DIAMOND, 3)); }
+    static void bagOf(CompanionEntity companion) { companion.setItem(0, new ItemStack(Items.STICK, 7)); companion.setItem(1, new ItemStack(Items.DIAMOND, 3)); }
     private static CompanionSortGroups.Chest chestInfo(int index, double distance, Map<Group, Double> cells) { return new CompanionSortGroups.Chest(index, distance, 27, cells); }
 
     private static EnumSet<Group> groups(Container chest) {
@@ -403,13 +417,13 @@ public final class CompanionSortingTests {
         for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) found.add(CompanionSortGroups.of(chest.getItem(slot)));
         return found;
     }
-    private static int chestsHolding(Container[] chests, Group group) { int n = 0; for (Container chest : chests) if (groups(chest).contains(group)) n++; return n; }
-    private static Map<Item, Integer> totals(Container... containers) {
+    static int chestsHolding(Container[] chests, Group group) { int n = 0; for (Container chest : chests) if (groups(chest).contains(group)) n++; return n; }
+    static Map<Item, Integer> totals(Container... containers) {
         Map<Item, Integer> sum = new HashMap<>();
         for (Container container : containers) for (int slot = 0; slot < container.getContainerSize(); slot++) { ItemStack stack = container.getItem(slot); if (!stack.isEmpty()) sum.merge(stack.getItem(), stack.getCount(), Integer::sum); }
         return sum;
     }
-    private static Map<Item, Integer> totals(CompanionEntity companion, Container[] chests) {
+    static Map<Item, Integer> totals(CompanionEntity companion, Container[] chests) {
         Container[] all = new Container[chests.length + 1]; System.arraycopy(chests, 0, all, 0, chests.length); all[chests.length] = companion;
         return totals(all);
     }
@@ -430,12 +444,12 @@ public final class CompanionSortingTests {
         }
         return true;
     }
-    private static CompanionEntity setup(GameTestHelper helper) {
+    static CompanionEntity setup(GameTestHelper helper) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) helper.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
         var player = helper.makeMockServerPlayerInLevel(); player.teleportTo(companion.getX() - 5, companion.getY(), companion.getZ() - 5); companion.setOwnerId(player.getUUID());
         player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID()); CompanionEvents.getOwnedCompanion(player); return companion;
     }
-    private static Container chest(GameTestHelper helper, int x) { BlockPos pos = new BlockPos(x, 1, 13); helper.setBlock(pos, Blocks.CHEST); return (Container)helper.getBlockEntity(pos); }
-    private static int count(Container bag, Item item) { int count = 0; for (int slot = 0; slot < bag.getContainerSize(); slot++) if (bag.getItem(slot).is(item)) count += bag.getItem(slot).getCount(); return count; }
+    static Container chest(GameTestHelper helper, int x) { BlockPos pos = new BlockPos(x, 1, 13); helper.setBlock(pos, Blocks.CHEST); return (Container)helper.getBlockEntity(pos); }
+    static int count(Container bag, Item item) { int count = 0; for (int slot = 0; slot < bag.getContainerSize(); slot++) if (bag.getItem(slot).is(item)) count += bag.getItem(slot).getCount(); return count; }
 }
