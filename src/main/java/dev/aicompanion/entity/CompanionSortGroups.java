@@ -25,7 +25,7 @@ public final class CompanionSortGroups {
         Group(String label) { this.label = label; }
     }
 
-    /** A chest of the set: its place in the order of nearness to the player, its size and how many cells of each group it holds now. */
+    /** A chest of the set: its place in the order of nearness to the player, its size and how much of each group it holds now (in cells, by pieces: where a group lies most). */
     public record Chest(int index, double distance, int size, Map<Group, Double> cells) { }
 
     private static final Set<Item> MOB_DROPS = Set.of(Items.ROTTEN_FLESH, Items.BONE, Items.BONE_MEAL, Items.STRING, Items.GUNPOWDER, Items.SPIDER_EYE, Items.FEATHER,
@@ -51,22 +51,33 @@ public final class CompanionSortGroups {
         return Group.OTHER;
     }
 
-    /** What a stack takes of a chest, in cells: the group's volume counts by cells, not by pieces. */
-    public static double cells(ItemStack stack) { return stack.isEmpty() ? 0 : (double) stack.getCount() / stack.getMaxStackSize(); }
+    /** What a group of stacks takes of a chest, in cells: by kinds of item, as the chest keeps them (the unfinished stacks of one kind merge). */
+    public static Map<Group, Double> volume(Iterable<ItemStack> stacks) {
+        Map<Group, Double> volume = new EnumMap<>(Group.class);
+        List<ItemStack> kinds = new ArrayList<>(); List<Integer> counts = new ArrayList<>();
+        for (ItemStack stack : stacks) {
+            if (stack.isEmpty()) continue;
+            int at = 0;
+            while (at < kinds.size() && !ItemStack.isSameItemSameComponents(kinds.get(at), stack)) at++;
+            if (at == kinds.size()) { kinds.add(stack); counts.add(stack.getCount()); } else counts.set(at, counts.get(at) + stack.getCount());
+        }
+        for (int i = 0; i < kinds.size(); i++) volume.merge(of(kinds.get(i)), Math.ceil((double) counts.get(i) / kinds.get(i).getMaxStackSize()), Double::sum);
+        return volume;
+    }
 
     /**
      * Which chests (by index, in the order they fill) take each group of the set. The biggest group picks first, the chest where it
-     * already lies most (the nearer one on a tie); a group that does not fit goes on into the next chest. With fewer chests than
-     * groups the big ones keep a chest each and all the rest share the last. Chests no group needs stay out of the plan.
-     * {@code carried} is what the bag holds now: it counts into the size of the groups, so the order does not change on the way.
+     * already lies most (the nearer one on a tie), and goes on into more chests while its volume does not fit their sizes; with
+     * fewer chests than groups the big ones keep a chest each and all the rest share the last. A group that still does not fit
+     * shares the next chest too. Chests no group needs stay out of the plan.
+     * {@code volume} is the cells each group takes, chests and what the bag carries together ({@link #volume}): the order does not change on the way.
      */
-    public static Map<Group, List<Integer>> plan(List<Chest> chests, Map<Group, Double> carried) {
-        Map<Group, Double> volume = new EnumMap<>(Group.class);
-        for (Chest chest : chests) chest.cells().forEach((group, cells) -> volume.merge(group, cells, Double::sum));
-        carried.forEach((group, cells) -> volume.merge(group, cells, Double::sum));
+    public static Map<Group, List<Integer>> plan(List<Chest> chests, Map<Group, Double> volume) {
+        volume = new EnumMap<>(volume);
         volume.values().removeIf(cells -> cells <= 0);
+        Map<Group, Double> sizes = volume;
         List<Group> order = new ArrayList<>(volume.keySet());
-        order.sort(Comparator.comparing((Group group) -> -volume.get(group)).thenComparing(Enum::ordinal));
+        order.sort(Comparator.comparing((Group group) -> -sizes.get(group)).thenComparing(Enum::ordinal));
         List<Chest> free = new ArrayList<>(chests);
         Map<Group, List<Integer>> result = new EnumMap<>(Group.class);
         for (int i = 0; i < order.size() && !free.isEmpty(); i++) {
@@ -74,16 +85,24 @@ public final class CompanionSortGroups {
             if (free.size() == 1) { for (int j = i; j < order.size(); j++) result.put(order.get(j), List.of(free.getFirst().index())); break; }
             double rest = 0;
             for (int j = i + 1; j < order.size(); j++) rest += volume.get(order.get(j));
-            int size = free.getFirst().size();
-            int reserve = i + 1 < order.size() ? Math.max(1, (int) Math.ceil(rest / size)) : 0;
-            int take = Math.max(1, Math.min((int) Math.ceil(volume.get(group) / size), free.size() - reserve));
+            double average = free.stream().mapToInt(Chest::size).average().orElse(1);
+            int reserve = i + 1 < order.size() ? Math.max(1, (int) Math.ceil(rest / average)) : 0;
+            int limit = Math.max(1, free.size() - reserve);
+            double need = volume.get(group);
             List<Integer> mine = new ArrayList<>();
-            for (int k = 0; k < take; k++) {
-                Chest best = free.stream().min(Comparator.comparing((Chest chest) -> -chest.cells().getOrDefault(group, 0.0)).thenComparingDouble(Chest::distance).thenComparingInt(Chest::index)).orElseThrow();
-                free.remove(best); mine.add(best.index());
+            while (need > 0 && mine.size() < limit) {
+                Chest best = nearestWith(free, group);
+                free.remove(best); mine.add(best.index()); need -= best.size();
             }
+            // Did not fit the chests it could take: it shares the next one with the groups after it.
+            if (need > 0 && !free.isEmpty()) mine.add(nearestWith(free, group).index());
             result.put(group, mine);
         }
         return result;
+    }
+
+    /** The chest where the group already lies most; the nearer one on a tie. */
+    private static Chest nearestWith(List<Chest> free, Group group) {
+        return free.stream().min(Comparator.comparing((Chest chest) -> -chest.cells().getOrDefault(group, 0.0)).thenComparingDouble(Chest::distance).thenComparingInt(Chest::index)).orElseThrow();
     }
 }

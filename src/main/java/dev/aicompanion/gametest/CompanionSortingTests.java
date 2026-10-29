@@ -298,7 +298,7 @@ public final class CompanionSortingTests {
 
     @GameTest(template = "empty")
     public static void plannerGivesTheGroupTheChestWhereItIsMost(GameTestHelper helper) {
-        var plan = CompanionSortGroups.plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 5.0)), chestInfo(1, 2, Map.of(Group.WOOD, 4.0, Group.STONE, 1.0)), chestInfo(2, 3, Map.of())), Map.of());
+        var plan = plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 5.0)), chestInfo(1, 2, Map.of(Group.WOOD, 4.0, Group.STONE, 1.0)), chestInfo(2, 3, Map.of())), Map.of());
         helper.assertTrue(plan.get(Group.STONE).equals(List.of(0)) && plan.get(Group.WOOD).equals(List.of(1)), "Wrong plan: " + plan);
         helper.assertTrue(plan.size() == 2, "Chests without a group got one: " + plan);
         helper.succeed();
@@ -306,14 +306,14 @@ public final class CompanionSortingTests {
 
     @GameTest(template = "empty")
     public static void plannerTakesTheNearerChestOnATie(GameTestHelper helper) {
-        var plan = CompanionSortGroups.plan(List.of(chestInfo(0, 5, Map.of(Group.STONE, 3.0)), chestInfo(1, 2, Map.of(Group.STONE, 3.0))), Map.of());
+        var plan = plan(List.of(chestInfo(0, 5, Map.of(Group.STONE, 3.0)), chestInfo(1, 2, Map.of(Group.STONE, 3.0))), Map.of());
         helper.assertTrue(plan.get(Group.STONE).equals(List.of(1)), "The farther chest won a tie: " + plan);
         helper.succeed();
     }
 
     @GameTest(template = "empty")
     public static void plannerWithFewerChestsThanGroupsGivesBigOnesTheirOwnAndTheRestTheLast(GameTestHelper helper) {
-        var plan = CompanionSortGroups.plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 10.0, Group.FOOD, 1.0)), chestInfo(1, 2, Map.of(Group.WOOD, 6.0, Group.MOB, 1.0))), Map.of());
+        var plan = plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 10.0, Group.FOOD, 1.0)), chestInfo(1, 2, Map.of(Group.WOOD, 6.0, Group.MOB, 1.0))), Map.of());
         helper.assertTrue(plan.get(Group.STONE).equals(List.of(0)), "The biggest group has no chest of its own: " + plan);
         helper.assertTrue(plan.get(Group.WOOD).equals(List.of(1)) && plan.get(Group.FOOD).equals(List.of(1)) && plan.get(Group.MOB).equals(List.of(1)), "The rest not together in the last chest: " + plan);
         helper.succeed();
@@ -321,7 +321,7 @@ public final class CompanionSortingTests {
 
     @GameTest(template = "empty")
     public static void plannerSpillsAGroupThatDoesNotFitIntoTheNextChest(GameTestHelper helper) {
-        var plan = CompanionSortGroups.plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 14.0, Group.WOOD, 13.0)), chestInfo(1, 2, Map.of(Group.STONE, 13.0, Group.WOOD, 5.0)),
+        var plan = plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 14.0, Group.WOOD, 13.0)), chestInfo(1, 2, Map.of(Group.STONE, 13.0, Group.WOOD, 5.0)),
                 chestInfo(2, 3, Map.of(Group.STONE, 13.0))), Map.of());
         helper.assertTrue(plan.get(Group.STONE).equals(List.of(0, 1)) && plan.get(Group.WOOD).equals(List.of(2)), "Wrong spill: " + plan);
         helper.succeed();
@@ -330,9 +330,9 @@ public final class CompanionSortingTests {
     @GameTest(template = "empty")
     public static void plannerCountsWhatIsCarriedIntoTheSizeOfAGroup(GameTestHelper helper) {
         // Stone is the bigger group in the chests, but wood in the bag makes wood the bigger one: it picks first (chest 0, where it is), stone gets the other.
-        var loaded = CompanionSortGroups.plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 3.0, Group.WOOD, 2.5)), chestInfo(1, 2, Map.of(Group.STONE, 2.5))), Map.of(Group.WOOD, 5.0));
+        var loaded = plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 3.0, Group.WOOD, 2.5)), chestInfo(1, 2, Map.of(Group.STONE, 2.5))), Map.of(Group.WOOD, 5.0));
         helper.assertTrue(loaded.get(Group.WOOD).equals(List.of(0)) && loaded.get(Group.STONE).equals(List.of(1)), "The load was not counted: " + loaded);
-        var plain = CompanionSortGroups.plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 3.0, Group.WOOD, 2.5)), chestInfo(1, 2, Map.of(Group.STONE, 2.5))), Map.of());
+        var plain = plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 3.0, Group.WOOD, 2.5)), chestInfo(1, 2, Map.of(Group.STONE, 2.5))), Map.of());
         helper.assertTrue(plain.get(Group.STONE).equals(List.of(0)) && plain.get(Group.WOOD).equals(List.of(1)), "Plan without the load: " + plain);
         helper.succeed();
     }
@@ -410,9 +410,16 @@ public final class CompanionSortingTests {
         return new Container[]{a, b, c};
     }
     static void bagOf(CompanionEntity companion) { companion.setItem(0, new ItemStack(Items.STICK, 7)); companion.setItem(1, new ItemStack(Items.DIAMOND, 3)); }
+    /** The plan for chests that hold the cells they say and a load of these cells: the volume of a group is both together. */
+    static Map<Group, List<Integer>> plan(List<CompanionSortGroups.Chest> chests, Map<Group, Double> carried) {
+        Map<Group, Double> volume = new EnumMap<>(Group.class);
+        for (var chest : chests) chest.cells().forEach((group, cells) -> volume.merge(group, cells, Double::sum));
+        carried.forEach((group, cells) -> volume.merge(group, cells, Double::sum));
+        return CompanionSortGroups.plan(chests, volume);
+    }
     private static CompanionSortGroups.Chest chestInfo(int index, double distance, Map<Group, Double> cells) { return new CompanionSortGroups.Chest(index, distance, 27, cells); }
 
-    private static EnumSet<Group> groups(Container chest) {
+    static EnumSet<Group> groups(Container chest) {
         EnumSet<Group> found = EnumSet.noneOf(Group.class);
         for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) found.add(CompanionSortGroups.of(chest.getItem(slot)));
         return found;
@@ -428,9 +435,9 @@ public final class CompanionSortingTests {
         return totals(all);
     }
     private static int stacksOf(Container bag, Item item) { int n = 0; for (int slot = 0; slot < bag.getContainerSize(); slot++) if (bag.getItem(slot).is(item)) n++; return n; }
-    private static String describe(Container chest) { StringBuilder sb = new StringBuilder(); for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) sb.append(slot).append(':').append(chest.getItem(slot)).append(' '); return sb.toString(); }
+    static String describe(Container chest) { StringBuilder sb = new StringBuilder(); for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) sb.append(slot).append(':').append(chest.getItem(slot)).append(' '); return sb.toString(); }
     /** Filled from the first cell without gaps, by group and then by item. */
-    private static boolean inOrder(Container chest) {
+    static boolean inOrder(Container chest) {
         ItemStack previous = ItemStack.EMPTY; boolean gap = false;
         for (int slot = 0; slot < chest.getContainerSize(); slot++) {
             ItemStack stack = chest.getItem(slot);

@@ -252,9 +252,12 @@ final class CompanionChests {
 
     /** Block entities of loaded chunks within the container search radius (at most 32 blocks). */
     List<BlockPos> blockEntitiesNear(ServerLevel level) {
+        return blockEntitiesNear(level, w.owner.blockPosition(), Math.min(32, w.owner.getSearchRadius()));
+    }
+
+    /** The same around another centre and within another radius (sorting looks around the player, wherever Oleg stands). */
+    List<BlockPos> blockEntitiesNear(ServerLevel level, BlockPos center, int radius) {
         List<BlockPos> found = new ArrayList<>();
-        int radius = Math.min(32, w.owner.getSearchRadius());
-        BlockPos center = w.owner.blockPosition();
         for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++) {
             for (int cz = (center.getZ() - radius) >> 4; cz <= (center.getZ() + radius) >> 4; cz++) {
                 var chunk = level.getChunkSource().getChunkNow(cx, cz);

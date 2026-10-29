@@ -28,6 +28,7 @@ import java.util.TreeSet;
  * group. Each trip is one chest opened: what he carries for it is put in, what lies there out of place is taken into free bag slots.
  * The plan is made again from the chests as they are at every opening (the player may move things meanwhile). The set and what he
  * carries are kept here, for one work; his own things in the bag are never touched: only the carried list is put back.
+ * At a full chest he swaps: a carried stack goes into the cell of one that lies there out of place, which takes its place in the bag.
  */
 final class CompanionSorting {
     private static final double RADIUS = 6;
@@ -36,6 +37,8 @@ final class CompanionSorting {
     private static final int MAX_IDLE = 3;
     /** Free bag cells needed to start: a trip carries out more than one stack. */
     private static final int MIN_FREE = 3;
+    /** Openings allowed per stack of the set, and a few more: past that something keeps undoing the work (a hopper, a player), and he gives up. */
+    private static final int TRIPS_PER_STACK = 3, TRIPS_SPARE = 6;
     private static final String[] NEAR = {"в ближнем", "во втором", "в третьем", "в четвёртом", "в пятом", "в шестом", "в седьмом", "в восьмом", "в девятом"};
 
     private final CompanionWork w;
@@ -43,18 +46,18 @@ final class CompanionSorting {
     private final List<ItemStack> carried = new ArrayList<>();
     private final Set<BlockPos> opened = new HashSet<>();
     private boolean closing, started, tidyOnly, reordered;
-    private int idle;
+    private int idle, trips, tripLimit;
     private ItemStack shown = ItemStack.EMPTY;
 
     CompanionSorting(CompanionWork w) { this.w = w; }
 
     /** The set is fixed at the request: ordinary chests (not trapped, not barrels, not under a block) within six blocks of the player, nearest first, a double one once. */
     void begin(ServerLevel level) {
-        chests.clear(); carried.clear(); opened.clear(); closing = false; started = false; tidyOnly = false; reordered = false; idle = 0; shown = ItemStack.EMPTY;
+        chests.clear(); carried.clear(); opened.clear(); closing = false; started = false; tidyOnly = false; reordered = false; idle = 0; trips = 0; tripLimit = 0; shown = ItemStack.EMPTY;
         var player = w.owner.getOwnerPlayer();
         Vec3 from = player == null ? w.owner.position() : player.position();
         List<BlockPos> found = new ArrayList<>();
-        for (BlockPos pos : w.chests.blockEntitiesNear(level)) {
+        for (BlockPos pos : w.chests.blockEntitiesNear(level, BlockPos.containing(from), (int) RADIUS + 1)) {
             BlockState state = level.getBlockState(pos);
             if (state.getBlock() != Blocks.CHEST || state.getValue(ChestBlock.TYPE) == ChestType.RIGHT || pos.getCenter().distanceToSqr(from) > RADIUS * RADIUS
                     || w.chests.chestAt(level, pos) == null) continue;
@@ -71,6 +74,7 @@ final class CompanionSorting {
         if (!started) {
             started = true;
             if (freeBagCells() < MIN_FREE) { w.finish(false, "Сумка забита, сначала сложить мои вещи?"); return; }
+            tripLimit = TRIPS_PER_STACK * stacksInSet(level) + TRIPS_SPARE;
         }
         if (w.target == null) {
             BlockPos next = nextChest(level);
@@ -90,8 +94,8 @@ final class CompanionSorting {
         w.animateChest(level, w.openedChest, 1);
         level.playSound(null, w.openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
         List<Container> live = live(level);
-        int moved = visit(chest, chests.indexOf(w.target), CompanionSortGroups.plan(infos(live), carriedVolume()));
-        w.transferred += moved;
+        int moved = visit(chest, chests.indexOf(w.target), plan(live));
+        w.transferred += moved; trips++;
         if (!tidyOnly) idle = moved == 0 ? idle + 1 : 0;
         w.owner.animateAction(3, w.target, shown);
         chest.setChanged(); w.owner.setChanged();
@@ -102,6 +106,7 @@ final class CompanionSorting {
     /** Puts in what he carries for this chest, takes out what lies here out of place; returns how many pieces moved. */
     private int visit(Container chest, int index, Map<Group, List<Integer>> plan) {
         int moved = 0; shown = ItemStack.EMPTY;
+        List<ItemStack> swapped = new ArrayList<>();
         for (var it = carried.iterator(); it.hasNext(); ) {
             ItemStack load = it.next();
             if (!plan.getOrDefault(CompanionSortGroups.of(load), List.of()).contains(index)) continue;
@@ -109,8 +114,17 @@ final class CompanionSorting {
             load.setCount(Math.min(load.getCount(), inBag(load)));
             int put = insert(chest, load);
             if (put > 0) { removeFromBag(load, put); load.shrink(put); moved += put; shown = load.copyWithCount(1); }
+            // A full chest: the load takes the cell of a stack that lies here out of place, and that one takes its cell of the bag (as with the cursor).
+            int bagSlot = load.isEmpty() ? -1 : bagSlotOf(load);
+            for (int slot = 0; bagSlot >= 0 && !load.isEmpty() && slot < chest.getContainerSize(); slot++) {
+                ItemStack out = chest.getItem(slot);
+                if (out.isEmpty() || plan.getOrDefault(CompanionSortGroups.of(out), List.of()).contains(index)) continue;
+                w.owner.setItem(bagSlot, out.copy()); swapped.add(out.copy()); chest.setItem(slot, load.copy());
+                moved += load.getCount() + out.getCount(); shown = load.copyWithCount(1); load.setCount(0);
+            }
             if (load.isEmpty()) it.remove();
         }
+        carried.addAll(swapped);
         for (int slot = 0; slot < chest.getContainerSize(); slot++) {
             ItemStack stack = chest.getItem(slot);
             if (stack.isEmpty() || plan.getOrDefault(CompanionSortGroups.of(stack), List.of()).contains(index)) continue;
@@ -127,7 +141,11 @@ final class CompanionSorting {
     private BlockPos nextChest(ServerLevel level) {
         tidyOnly = false;
         List<Container> live = live(level);
-        Map<Group, List<Integer>> plan = CompanionSortGroups.plan(infos(live), carriedVolume());
+        Map<Group, List<Integer>> plan = plan(live);
+        if (trips > tripLimit) {
+            w.finish(false, "Не получилось разложить всё: вещи в сундуках всё время меняются, остановился." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке.") + goneNote(live));
+            return null;
+        }
         if (idle >= MAX_IDLE) {
             w.finish(false, "Не получилось разложить всё: часть сундуков забита." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке.") + goneNote(live));
             return null;
@@ -140,14 +158,14 @@ final class CompanionSorting {
                 Container chest = live.get(i);
                 if (chest == null) continue;
                 boolean fit = false;
-                if (pass == 0) for (ItemStack load : carried) fit |= plan.getOrDefault(CompanionSortGroups.of(load), List.of()).contains(i) && room(chest, load);
+                if (pass == 0) for (ItemStack load : carried) fit |= plan.getOrDefault(CompanionSortGroups.of(load), List.of()).contains(i) && (room(chest, load) || bagSlotOf(load) >= 0 && misplaced(chest, i, plan));
                 if (!(pass == 0 ? fit : misplaced(chest, i, plan))) continue;
                 double distance = w.owner.distanceToSqr(chests.get(i).getCenter());
                 if (distance < bestDistance) { best = chests.get(i); bestDistance = distance; }
             }
         }
         if (best != null) return best;
-        if (!carried.isEmpty()) { w.finish(false, "Не получилось разложить всё: некуда донести вещи. Они у меня в сумке." + goneNote(live)); return null; }
+        if (!carried.isEmpty()) { w.finish(false, "Не получилось разложить всё: не поместилось " + carried.stream().mapToInt(ItemStack::getCount).sum() + ", они у меня в сумке." + goneNote(live)); return null; }
         // The last step: the order inside the chests the trips never opened (all of them, when there is one chest or all is in place).
         for (int i = 0; i < chests.size(); i++) {
             if (live.get(i) == null || opened.contains(chests.get(i))) continue;
@@ -205,17 +223,24 @@ final class CompanionSorting {
             Map<Group, Double> cells = new EnumMap<>(Group.class);
             for (int slot = 0; slot < live.get(i).getContainerSize(); slot++) {
                 ItemStack stack = live.get(i).getItem(slot);
-                if (!stack.isEmpty()) cells.merge(CompanionSortGroups.of(stack), CompanionSortGroups.cells(stack), Double::sum);
+                if (!stack.isEmpty()) cells.merge(CompanionSortGroups.of(stack), (double) stack.getCount() / stack.getMaxStackSize(), Double::sum);
             }
             infos.add(new CompanionSortGroups.Chest(i, i, live.get(i).getContainerSize(), cells));
         }
         return infos;
     }
 
-    private Map<Group, Double> carriedVolume() {
-        Map<Group, Double> volume = new EnumMap<>(Group.class);
-        for (ItemStack load : carried) volume.merge(CompanionSortGroups.of(load), CompanionSortGroups.cells(load), Double::sum);
-        return volume;
+    /** The plan from the chests as they are and what he carries, sized by the cells each group takes (by kinds of item). */
+    private Map<Group, List<Integer>> plan(List<Container> live) {
+        List<ItemStack> all = new ArrayList<>(carried);
+        for (Container chest : live) if (chest != null) for (int slot = 0; slot < chest.getContainerSize(); slot++) all.add(chest.getItem(slot));
+        return CompanionSortGroups.plan(infos(live), CompanionSortGroups.volume(all));
+    }
+
+    private int stacksInSet(ServerLevel level) {
+        int stacks = 0;
+        for (Container chest : live(level)) if (chest != null) for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) stacks++;
+        return stacks;
     }
 
     private static boolean misplaced(Container chest, int index, Map<Group, List<Integer>> plan) {
@@ -283,6 +308,15 @@ final class CompanionSorting {
 
     private int freeBagSlot() {
         for (int slot = 0; slot < w.owner.getContainerSize(); slot++) if (w.owner.getItem(slot).isEmpty()) return slot;
+        return -1;
+    }
+
+    /** The bag cell that holds exactly this load (the one he put it in), or -1. */
+    private int bagSlotOf(ItemStack load) {
+        for (int slot = 0; slot < w.owner.getContainerSize(); slot++) {
+            ItemStack stack = w.owner.getItem(slot);
+            if (ItemStack.isSameItemSameComponents(stack, load) && stack.getCount() == load.getCount()) return slot;
+        }
         return -1;
     }
 
