@@ -19,6 +19,7 @@ final class CompanionAmbientClient {
     static void conversationActivity() { conversation.activity(now(), jitter()); }
     static void transcriptionStarted() { transcriptions++; conversationActivity(); }
     static void transcriptionFinished() { transcriptions = Math.max(0, transcriptions - 1); conversationActivity(); }
+    static boolean transcribing() { return transcriptions > 0; }
     private static boolean busy() { return pending || transcriptions > 0 || AICompanionClient.recordingSpeech() || OpenRouterClient.isBusy(); }
     static void playerMessage() { conversation.playerMessage(now(), jitter()); }
     static void replyDelivered(String text) {

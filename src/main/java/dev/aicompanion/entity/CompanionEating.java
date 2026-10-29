@@ -48,6 +48,8 @@ final class CompanionEating {
         c.eating = ItemStack.EMPTY;
     }
 
+    static boolean hasFood(CompanionEntity c) { return !new CompanionEating(c).bestFood(1F, false).isEmpty(); }
+
     /**
      * His own food first. The player's food he carries from the chests only when he has none and is at half health or less: then a
      * friend eats what there is rather than die (Oleg, 29.10; in the game he ate it at 15 and died at night with it uneaten).

@@ -27,8 +27,12 @@ public final class CompanionEnduranceTests {
         level.getServer().tickRateManager().requestGameToSprint(130*MINUTE);
     }
 
+    // The sprint ends here, between batches: left running, it ended inside a later batch and the parked-smelt furnace test there failed.
     @AfterBatch(batch="endurance")
-    public static void cleanup(net.minecraft.server.level.ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    public static void cleanup(net.minecraft.server.level.ServerLevel level) {
+        level.getServer().tickRateManager().stopSprinting();
+        CompanionFixtureCleanup.afterAtomicTests(level);
+    }
 
     /** Reproduces e003a157: a new batch must not turn the previous descent into its new surface. */
     @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)

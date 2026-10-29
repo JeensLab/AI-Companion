@@ -27,6 +27,13 @@ public final class CompanionLocalCommands {
                 || normalized.contains("займись делом") || normalized.contains("найди себе дело") || normalized.contains("занимайся сам")))
             // «Займись чем-нибудь, но сначала добудь камня» is a request with steps: the model plans it.
             if (!normalized.matches("(?sU).*\\b(но|сначала|потом|затем)\\b.*")) return "companion autonomy on";
+        // The long goal is named before «стоп» and «отмени»: «отмени цель» ends the goal, while «отмени задачу» stays a stop of the work.
+        if (normalized.matches("(?sU).*\\bотложи\\b(\\s+\\p{L}+){0,3}?\\s+цель\\b.*")) return "companion goal defer";
+        if (normalized.matches("(?sU).*\\b(вернись|вернемся)\\s+к\\b(\\s+\\p{L}+){0,2}?\\s+цели\\b.*")) return "companion goal resume";
+        if (normalized.matches("(?sU).*\\bкак\\s+там\\b(\\s+\\p{L}+){0,2}?\\s+цель\\b.*")) return "companion goal status";
+        // A cancel is terminal: only filler words may stand between the verb and the goal, and «не забудь про цель» is no cancel.
+        if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(отмени|отмена|забудь)\\b[\\s,]*(?:(?:эту|ту|мою|нашу|долгую|большую|всю|про|пожалуйста)\\b[\\s,]*)*(?:цель|цели|дракона)\\b.*"))
+            return "companion goal cancel";
         if (normalized.matches("(?sU).*\\b(стоп|отмена|отмени|остановись)\\b.*")
                 || normalized.contains("перестань рубить") || normalized.contains("прекрати рубить")
                 || normalized.contains("хватит рубить") || normalized.contains("брось рубить")
@@ -39,6 +46,8 @@ public final class CompanionLocalCommands {
             return "companion stop";
         }
         if (normalized.matches("(?sU).*\\b(продолжай|продолжи|возобнови)\\s+(работу|заказ|цель|дело)\\b.*")) return "companion goal resume";
+        // His own hints say «скажи «продолжай»»: the bare word, alone or after his name, resumes what waits; «продолжай рассказ» is not it.
+        if (normalized.matches("(?sU)\\s*(?:" + java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е')) + "[\\s,!]+)?(?:давай\\s+|ну\\s+)?(?:продолжай|продолжи|продолжаем)[\\s.!]*")) return "companion goal resume";
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
@@ -105,7 +114,7 @@ public final class CompanionLocalCommands {
     /** Every local command but a work request, and the model's plans that start with these, replace the plans in the queue. */
     public static boolean cancelsPlans(String command) {
         // The mode of his own deeds is no order to drop the plans the player gave.
-        if (command.equals("companion goal status")) return false;
+        if (command.equals("companion goal status") || command.equals("companion goal cancel") || command.equals("companion goal defer")) return false;
         if (command.startsWith("companion memory ")) return false;
         return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ");
     }

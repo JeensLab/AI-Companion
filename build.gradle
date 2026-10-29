@@ -80,6 +80,14 @@ neoForge {
             systemProperty 'aicompanion.goalRestartStage', providers.gradleProperty('goalRestartStage').orElse('disabled').get()
         }
 
+        // Separate, disposable dedicated world used only by the long-goal process-restart probe.
+        agendaRestartServer {
+            server()
+            gameDirectory = project.file(providers.gradleProperty('agendaRestartDirectory').orElse('run/agenda-restart'))
+            programArgument '--nogui'
+            systemProperty 'aicompanion.agendaRestartStage', providers.gradleProperty('agendaRestartStage').orElse('disabled').get()
+        }
+
         // Separate, disposable dedicated world used only by the furnace-batch process-restart probe.
         furnaceRestartServer {
             server()

@@ -15,7 +15,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop",
-            "gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "obtain_item");
+            "gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "obtain_item", "pursue_goal");
     private static final Pattern DSML = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>.*?"
             + "<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>.*?</\\|DSML\\|invoke>");
 
@@ -58,6 +58,7 @@ public final class CompanionPlanCodec {
             } catch (RuntimeException exception) { throw invalid(); }
         }
         if (actions.size() > MAX_STEPS) throw invalid();
+        requireGoalAlone(actions);
         reply = CompanionDialogue.cleanReply(reply);
         if (reply.isBlank() || (!actions.isEmpty() && reply.matches("(?s).*(План принят|Понял, выполняю|Результат сообщу после действий).*"))) {
             if (actions.isEmpty()) throw new IllegalStateException("Модель вернула пустой ответ без команд. Попробуй повторить просьбу или выбрать другую модель в настройках.");
@@ -88,6 +89,8 @@ public final class CompanionPlanCodec {
                 if (("build_house".equals(type) || "sort_chests".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
+                // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
+                if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
                 if ("place_block".equals(type) && !"minecraft:chest".equals(item) && count != 1) throw invalid();
                 if (("store_items".equals(type) || "take_items".equals(type)) && !item.isEmpty() && !Set.of("resources", "all", "logs", "stone").contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
@@ -117,8 +120,14 @@ public final class CompanionPlanCodec {
                 } else result.add(new PlannedAction(type, "wait".equals(type) ? seconds : 0, count, item, slot, location));
                 if (result.size() > MAX_STEPS) throw invalid();
             }
+            requireGoalAlone(result);
             return List.copyOf(result);
         } catch (RuntimeException exception) { throw invalid(); }
+    }
+
+    /** A long goal runs on the server by itself: it is the only step of its plan, or the whole plan is invalid. */
+    private static void requireGoalAlone(List<PlannedAction> steps) {
+        if (steps.size() > 1 && steps.stream().anyMatch(step -> "pursue_goal".equals(step.type()))) throw invalid();
     }
 
     private static String textContent(JsonElement content) {
