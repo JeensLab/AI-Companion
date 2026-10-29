@@ -18,13 +18,14 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.Map;
 
+import static dev.aicompanion.gametest.CompanionSortingInterruptionTests.outOfReach;
 import static dev.aicompanion.gametest.CompanionSortingTests.bagOf;
 import static dev.aicompanion.gametest.CompanionSortingTests.count;
 import static dev.aicompanion.gametest.CompanionSortingTests.mixedThree;
 import static dev.aicompanion.gametest.CompanionSortingTests.setup;
 import static dev.aicompanion.gametest.CompanionSortingTests.totals;
 
-/** What he carries for the player in the middle of sorting is not his: not eaten, not wielded (issue 32, ticket 06b). */
+/** What he carries for the player in the middle of sorting is not his: not eaten, not wielded; at a stop it goes back into a chest, and what could not is his (issue 32, tickets 06b, 09). */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionSortingCarriedTests {
@@ -51,11 +52,11 @@ public final class CompanionSortingCarriedTests {
         });
     }
 
-    /** In the game (29.10): «иди ко мне» ended the sorting, and he, hurt, ate two breads he carried for the player. Stopped, they are still the player's. */
+    /** In the game (29.10): «иди ко мне» ended the sorting, and he, hurt, ate two breads he carried for the player. Stopped at a chest, they are back in it, so there is nothing to eat. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
-    public static void carriedFoodIsNotEatenAfterTheStop(GameTestHelper helper) {
+    public static void carriedFoodIsInTheChestAfterTheStopAndNotEaten(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
-        Map<Item, Integer> before = totals(companion, chests);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
         long[] stoppedAt = {-1};
         helper.onEachTick(() -> {
             Map<Item, Integer> bag = totals(companion);
@@ -67,33 +68,61 @@ public final class CompanionSortingCarriedTests {
         companion.startWork("sort_chests", "", 1);
         helper.succeedWhen(() -> {
             helper.assertTrue(stoppedAt[0] >= 0 && helper.getTick() > stoppedAt[0] + 140, "Waiting: he never carried food, or he is still hurt");
-            helper.assertTrue(totals(companion, chests).equals(before), "The player's food eaten after the stop: " + totals(companion, chests) + " vs " + before);
+            helper.assertTrue(totals(companion).equals(bagBefore), "The player's food is still in his bag: " + totals(companion) + " vs " + bagBefore);
+            helper.assertTrue(totals(companion, chests).equals(before), "The player's food eaten or lost after the stop: " + totals(companion, chests) + " vs " + before);
         });
     }
 
-    /** Oleg (29.10): at half health or less, with no food of his own, he eats the player's food he carries rather than die. */
+    /** Oleg (29.10): at half health or less, with no food of his own, he eats the player's food he carries rather than die (while sorting: the mark is only for it). */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void carriedFoodIsEatenAtHalfHealthWithNoOwnFood(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
-        int[] food = {-1}; long[] stoppedAt = {-1};
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        int[] food = {-1}; long[] hurtAt = {-1};
         helper.onEachTick(() -> {
-            if (stoppedAt[0] >= 0) return;
+            if (hurtAt[0] >= 0) return;
             int carried = count(companion, Items.BREAD) + count(companion, Items.APPLE) + count(companion, Items.COOKED_BEEF);
             if (!companion.hasActiveWorkOrder() || carried == 0) return;
-            companion.stopGathering(); companion.setHealth(8); food[0] = carried; stoppedAt[0] = helper.getTick();
+            companion.setHealth(8); food[0] = foodIn(companion, chests); hurtAt[0] = helper.getTick();
         });
         companion.startWork("sort_chests", "", 1);
         helper.succeedWhen(() -> {
-            helper.assertTrue(stoppedAt[0] >= 0, "He never carried food");
-            int now = count(companion, Items.BREAD) + count(companion, Items.APPLE) + count(companion, Items.COOKED_BEEF);
-            helper.assertTrue(now < food[0] && companion.getHealth() > 8, "At four hearts he did not eat the player's food: " + now + " of " + food[0] + ", health " + companion.getHealth());
+            helper.assertTrue(hurtAt[0] >= 0, "He never carried food");
+            helper.assertTrue(foodIn(companion, chests) < food[0] && companion.getHealth() > 8, "At four hearts he did not eat the player's food: " + foodIn(companion, chests) + " of " + food[0] + ", health " + companion.getHealth());
         });
     }
 
-    /** In the game (29.10): stopped with the player's logs in his bag, he made planks of one to climb to the player on a ledge. They are not his to build with. */
+    /** Pieces of food the player's chests and his bag hold together. */
+    private static int foodIn(CompanionEntity companion, Container[] chests) {
+        Map<Item, Integer> all = totals(companion, chests);
+        return all.getOrDefault(Items.BREAD, 0) + all.getOrDefault(Items.APPLE, 0) + all.getOrDefault(Items.COOKED_BEEF, 0);
+    }
+
+    /** The player's pickaxe, better than his own, carried at a stop far from the chests: it is his now, «накопай камня» is mined with it. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
-    public static void carriedLogsAreNotMadeIntoSupportsAfterTheStop(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
+    public static void playersPickaxeLeftInTheBagIsHisForTheNextStoneJob(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        chests[0].setItem(4, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos stone = new BlockPos(28, 1, 30);
+        boolean[] stopped = {false};
+        helper.onEachTick(() -> {
+            if (stopped[0] || !companion.hasActiveWorkOrder() || count(companion, Items.DIAMOND_PICKAXE) == 0) return;
+            outOfReach(helper, companion);
+            companion.stopGathering();
+            helper.assertTrue(count(companion, Items.DIAMOND_PICKAXE) == 1, "The pickaxe is not in his bag after a stop out of reach");
+            helper.setBlock(stone, Blocks.STONE);
+            companion.startWork("gather_stone", "", 1); stopped[0] = true;
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stopped[0], "He never carried the pickaxe");
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed() && helper.getBlockState(stone).isAir(), "The stone job: " + companion.getLastTaskResult());
+        });
+    }
+
+    /** In the game (29.10): stopped with the player's logs in his bag, he made planks of one to climb to the player on a ledge. Stopped at a chest, the logs are back in it, none are made into planks. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void carriedLogsAreInTheChestAfterTheStopNotMadeIntoSupports(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
         int[] logs = {-1}; long[] at = {-1};
         helper.onEachTick(() -> {
             if (at[0] >= 0 || !companion.hasActiveWorkOrder() || count(companion, Items.OAK_LOG) == 0) return;
@@ -106,8 +135,8 @@ public final class CompanionSortingCarriedTests {
         companion.startWork("sort_chests", "", 1);
         helper.succeedWhen(() -> {
             helper.assertTrue(at[0] >= 0 && helper.getTick() > at[0] + 400, "Waiting: he never carried logs, or the climb is not over");
-            helper.assertTrue(count(companion, Items.OAK_LOG) == logs[0] && count(companion, Items.OAK_PLANKS) == 0,
-                    "The player's logs went into supports: logs " + count(companion, Items.OAK_LOG) + " of " + logs[0] + ", planks " + count(companion, Items.OAK_PLANKS));
+            helper.assertTrue(count(companion, Items.OAK_LOG) == 0 && count(companion, Items.OAK_PLANKS) == 0 && totals(companion, chests).get(Items.OAK_LOG) == 62,
+                    "The player's logs are not back in the chests or went into supports: bag logs " + count(companion, Items.OAK_LOG) + " (carried " + logs[0] + "), planks " + count(companion, Items.OAK_PLANKS) + ", all " + totals(companion, chests));
         });
     }
 }

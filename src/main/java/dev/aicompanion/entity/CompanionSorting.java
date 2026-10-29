@@ -30,11 +30,13 @@ import java.util.TreeSet;
  * what he carries that it lacks goes in, what it holds above its share comes out into the bag, in turns while anything moves; at a full
  * chest and a full bag he trades a stack for a stack. The next chest is the one where a trip, tried on copies, moves the most.
  * The layout is made once and again only when the set changes from outside (the player, a hopper, a broken chest): trips keep the totals.
- * The set is kept here for one work, what he carries until a sorting puts it away (a stopped one leaves it to the next); his own things
- * in the bag are never touched: only what he carries is put back.
+ * The set is kept here for one work, what he carries until a sorting puts it away (a stopped one puts it back into the chests within reach,
+ * the rest is left to the next sorting); his own things in the bag are never touched: only what he carries is put back.
  */
 final class CompanionSorting {
     private static final double RADIUS = 6;
+    /** How far he puts things back at a stop: the reach of a player's arm. */
+    private static final double REACH = 4.5;
     private static final int MAX_CHESTS = 9;
     /** Openings in a row that moved nothing before the work gives up (every other chest is full, or the bag is). */
     private static final int MAX_IDLE = 3;
@@ -271,11 +273,38 @@ final class CompanionSorting {
         return gone == 0 ? "" : gone == 1 ? " Пропустил сундук, которого больше нет." : " Пропустил сундуки, которых больше нет: " + gone + ".";
     }
 
-    /** What the answer to «stop» adds: what he carries stays in his bag. */
+    /** At a stop what he carries goes back into the chests of the set within reach, at once; the answer to «stop» adds what is still in his bag. */
     String stopNote(boolean sorting) {
+        // What the player took out of his bag meanwhile is neither put back nor left in it.
+        for (ItemStack carry : carried) carry.setCount(Math.min(carry.getCount(), count(w.owner, carry)));
+        carried.removeIf(ItemStack::isEmpty);
+        if (sorting && !carried.isEmpty() && w.owner.level() instanceof ServerLevel level) putBack(level);
         if (!sorting || carried.isEmpty()) return "";
         left = true; leftAt = w.owner.level().getGameTime();
         return LEFT_NOTE;
+    }
+
+    /** Chests of the set the way a player's arm reaches (in sight, 4.5 blocks), nearest first: as much as fits goes in, with the lid raised and put down again. */
+    private void putBack(ServerLevel level) {
+        Vec3 eye = w.owner.getEyePosition();
+        w.closeChest();
+        for (BlockPos pos : chests.stream().sorted(Comparator.comparingDouble((BlockPos at) -> at.getCenter().distanceToSqr(eye))).toList()) {
+            Container chest = w.chests.chestAt(level, pos);
+            if (carried.isEmpty() || chest == null || pos.getCenter().distanceToSqr(eye) > REACH * REACH || !w.items.visibleFrom(level, eye, pos)) continue;
+            boolean put = false;
+            for (ItemStack carry : carried) {
+                int in = insert(chest, carry.copy());
+                if (in > 0) { remove(w.owner, carry, in); carry.shrink(in); put = true; }
+            }
+            carried.removeIf(ItemStack::isEmpty);
+            if (!put) continue;
+            chest.setChanged(); w.owner.setChanged();
+            w.animateChest(level, pos, 1);
+            level.playSound(null, pos, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
+            w.openedChest = pos.immutable();
+            // Only the last chest is left to cancel's closeChest.
+            if (!carried.isEmpty()) w.closeChest();
+        }
     }
 
     /** The same note for the order that ended the work, once and only just after: the work's own cancel answer is read by nobody («стоп» says its own). */
@@ -401,11 +430,11 @@ final class CompanionSorting {
     }
 
     /**
-     * True while the bag holds no more of this kind than he carries for the player: nothing of it is his own, so nothing of it is spent.
-     * A stopped sorting leaves it the player's too, until a sorting puts it away (in the game 29.10 he ate the player's bread after «иди ко мне»).
+     * True during a sorting while the bag holds no more of this kind than he carries for the player: nothing of it is his own, so nothing of it is spent.
+     * At a stop it goes back into a chest; what did not fit is his own (bag items are interchangeable, a mark that stayed would lock his tools) until the next sorting.
      */
     boolean onlyCarried(ItemStack like) {
-        if (like.isEmpty()) return false;
+        if (like.isEmpty() || w.job != CompanionWork.Job.SORT) return false;
         int count = 0;
         for (ItemStack load : carried) if (ItemStack.isSameItemSameComponents(load, like)) count += load.getCount();
         return count > 0 && count >= count(w.owner, like);

@@ -20,6 +20,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -38,7 +39,13 @@ import static dev.aicompanion.gametest.CompanionSortingTests.totals;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionSortingInterruptionTests {
-    /** «Стоп» while he carries things: they stay in his bag, the answer says so, and he does not touch the chests any more. */
+    /** Takes him out of the reach of every chest (they lie at z = 13, he goes to the far corner), as a player's arm does not reach them. */
+    static void outOfReach(GameTestHelper helper, CompanionEntity companion) {
+        Vec3 corner = helper.absoluteVec(new Vec3(30.5, 1, 30.5));
+        companion.teleportTo(corner.x, corner.y, corner.z);
+    }
+
+    /** «Стоп» while he carries things and no chest is in reach: they stay in his bag, the answer says so, and he does not touch the chests any more. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void stopWhileCarryingLeavesThingsInBagAndSaysSo(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
@@ -47,6 +54,7 @@ public final class CompanionSortingInterruptionTests {
         helper.onEachTick(() -> {
             if (stopped[0] != null || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
             long id = companion.activeWorkId();
+            outOfReach(helper, companion);
             companion.setFollowing(true);
             stopped[0] = companion.workResult(id); stopped[1] = totals(chests); at[0] = helper.getTick();
         });
@@ -58,6 +66,55 @@ public final class CompanionSortingInterruptionTests {
             helper.assertTrue(said.contains("в сумке"), "The stop does not say things are in his bag: " + said);
             helper.assertTrue(!companion.hasActiveWorkOrder() && totals(chests).equals(stopped[1]), "He kept working the chests after the stop");
             helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /** «Стоп» at a chest of the set: what he carried for the player is in the chests at once (nothing lost or doubled), his bag is as before, and the answer has no note. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void stopNextToAChestPutsThingsBackAndSaysNothing(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
+        String[] said = {null, null, null}; long[] at = {0};
+        helper.onEachTick(() -> {
+            if (said[0] != null || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+            long id = companion.activeWorkId();
+            companion.stopGathering();
+            said[0] = companion.workResult(id).message();
+            said[1] = CompanionEvents.executeAction(player, "stop", "", 1).message();
+            said[2] = CompanionDialogue.summarize(List.of(new PlannedAction("stop", 0, 1)), said[1]);
+            at[0] = helper.getTick();
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(said[0] != null, "He never carried anything to stop on");
+            helper.assertTrue(helper.getTick() > at[0] + 10, "Waiting to see nothing more happens");
+            helper.assertTrue(!companion.hasActiveWorkOrder() && totals(companion).equals(bagBefore), "Things of the player stay in his bag: " + totals(companion) + " vs " + bagBefore);
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
+            helper.assertTrue(!said[0].contains("в сумке") && !said[1].contains("в сумке") && !said[2].contains("в сумке"), "A note with nothing left: " + said[0] + " / " + said[1] + " / " + said[2]);
+            helper.assertTrue(said[2].equals("Ладно, остановился."), "The stop answer is not plain: " + said[2]);
+        });
+    }
+
+    /** The player took what he carried out of his bag (his inventory screen), then «стоп» out of reach: nothing of it is left, so no note. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void stopAfterThePlayerTookWhatHeCarriedSaysNothing(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> bagBefore = totals(companion);
+        String[] said = {null};
+        helper.onEachTick(() -> {
+            if (said[0] != null || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            long id = companion.activeWorkId();
+            for (int slot = 0; slot < companion.getContainerSize(); slot++) companion.setItem(slot, ItemStack.EMPTY);
+            bagOf(companion);
+            outOfReach(helper, companion);
+            companion.stopGathering();
+            said[0] = companion.workResult(id).message();
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(said[0] != null, "He never carried anything to stop on");
+            helper.assertTrue(!said[0].contains("в сумке"), "A note of things the player already took: " + said[0]);
         });
     }
 
@@ -73,6 +130,7 @@ public final class CompanionSortingInterruptionTests {
         helper.onEachTick(() -> {
             if (said[0] != null || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
             var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+            outOfReach(helper, companion);
             companion.stopGathering();
             said[0] = CompanionEvents.executeAction(player, "stop", "", 1).message();
             said[1] = CompanionDialogue.summarize(List.of(new PlannedAction("stop", 0, 1)), said[0]);
@@ -87,28 +145,37 @@ public final class CompanionSortingInterruptionTests {
         });
     }
 
-    /** Review round 4, finding 1: «Отменить» in the tasks window while he carries things: the player hears the note with the stop. */
+    /** Review round 4, finding 1: «Отменить» in the tasks window while he carries things out of reach of the chests: the player hears the note with the stop. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
-    public static void cancelFromTheTasksWindowSaysThingsAreInTheBag(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
-        Map<Item, Integer> bagBefore = totals(companion);
+    public static void cancelFromTheTasksWindowSaysThingsAreInTheBag(GameTestHelper helper) { cancelFromTheTasksWindow(helper, true); }
+
+    /** The same at a chest: the things are back in it, the player hears no note. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void cancelFromTheTasksWindowNextToAChestSaysNothing(GameTestHelper helper) { cancelFromTheTasksWindow(helper, false); }
+
+    private static void cancelFromTheTasksWindow(GameTestHelper helper, boolean far) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
         List<PlannedAction> plan = List.of(new PlannedAction("sort_chests", 0, 1));
         CompanionParkLink link = new CompanionParkLink(); link.bind(helper.getLevel().getServer(), companion.getOwnerId());
         var report = link.submit(plan, "gametest-sort-window-cancel", () -> false);
         boolean[] cancelled = {false};
         helper.onEachTick(() -> {
             if (cancelled[0] || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            if (far) outOfReach(helper, companion);
             cancelled[0] = link.cancel(link.tasks().getFirst().id());
         });
         helper.succeedWhen(() -> {
             helper.assertTrue(cancelled[0] && report.isDone(), "The plan was not cancelled while he carried things");
             String heard = CompanionDialogue.heard(plan, CompanionDialogue.summarize(plan, report.join()), true, false);
             link.close();
-            helper.assertTrue(heard.contains(CompanionDialogue.BAG_NOTE), "The player hears «" + heard + "», the report: " + report.join());
+            helper.assertTrue(heard.contains(CompanionDialogue.BAG_NOTE) == far, "The player hears «" + heard + "», the report: " + report.join());
+            helper.assertTrue(totals(companion).equals(bagBefore) != far, "The bag after the cancel: " + totals(companion) + " vs " + bagBefore);
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
         });
     }
 
-    /** Review round 4, finding 3: «стоп», then «разложи» again: what he carried for the player goes back into the chests, his bag is as before. */
+    /** Review round 4, finding 3: «стоп» out of reach of the chests, then «разложи» again: what he carried for the player goes back into the chests, his bag is as before. */
     @GameTest(template = "tall_tree", timeoutTicks = 4000)
     public static void sortingAgainAfterTheStopPutsBackWhatHeCarried(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
@@ -116,7 +183,9 @@ public final class CompanionSortingInterruptionTests {
         boolean[] again = {false};
         helper.onEachTick(() -> {
             if (again[0] || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            outOfReach(helper, companion);
             companion.stopGathering();
+            helper.assertTrue(!totals(companion).equals(bagBefore), "He put the things back with no chest in reach");
             companion.startWork("sort_chests", "", 1); again[0] = true;
         });
         companion.startWork("sort_chests", "", 1);
@@ -129,19 +198,24 @@ public final class CompanionSortingInterruptionTests {
 
     /** Review round 3, finding 1: «иди ко мне» ends the sorting, and the plan port waits for the walk; the note of the bag outlives the wait. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
-    public static void comeRightAfterTheStopStillSaysThingsAreInTheBag(GameTestHelper helper) { orderAfterTheStopSaysTheNote(helper, "come"); }
+    public static void comeRightAfterTheStopStillSaysThingsAreInTheBag(GameTestHelper helper) { orderAfterTheStop(helper, "come", true); }
+
+    /** «Иди ко мне» at a chest: the things are put back first, and nothing is said about the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void comeRightAfterTheStopNextToAChestSaysNothing(GameTestHelper helper) { orderAfterTheStop(helper, "come", false); }
 
     /** The same for «убей мобов»: its work is waited for too. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
-    public static void huntMobsRightAfterTheStopStillSaysThingsAreInTheBag(GameTestHelper helper) { orderAfterTheStopSaysTheNote(helper, "hunt_mobs"); }
+    public static void huntMobsRightAfterTheStopStillSaysThingsAreInTheBag(GameTestHelper helper) { orderAfterTheStop(helper, "hunt_mobs", true); }
 
-    private static void orderAfterTheStopSaysTheNote(GameTestHelper helper, String order) {
-        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
-        Map<Item, Integer> bagBefore = totals(companion);
+    private static void orderAfterTheStop(GameTestHelper helper, String order, boolean far) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
         List<PlannedAction> plan = List.of(new PlannedAction(order, 0, 1));
         List<java.util.concurrent.CompletableFuture<CompanionPlanRunner.Outcome>> run = new java.util.ArrayList<>();
         helper.onEachTick(() -> {
             if (!run.isEmpty() || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            if (far) outOfReach(helper, companion);
             companion.stopGathering();
             run.add(CompanionPlanRunner.run(plan, new CompanionServerPlanPort(helper.getLevel().getServer(), companion.getOwnerId(), "gametest-sort-then-" + order, () -> false)));
         });
@@ -149,7 +223,8 @@ public final class CompanionSortingInterruptionTests {
         helper.succeedWhen(() -> {
             helper.assertTrue(!run.isEmpty() && run.getFirst().isDone() && !run.getFirst().isCompletedExceptionally(), "The order after the stop is not done: " + companion.getLastTaskResult());
             String report = run.getFirst().join().report(), heard = CompanionDialogue.summarize(plan, report);
-            helper.assertTrue(heard.contains("в сумке"), "The player hears «" + heard + "», the report: " + report);
+            helper.assertTrue(heard.contains("в сумке") == far, "The player hears «" + heard + "», the report: " + report);
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
         });
     }
 
