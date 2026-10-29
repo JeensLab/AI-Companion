@@ -374,7 +374,8 @@ public final class CompanionWork {
             case "gather_dirt" -> { job = Job.DIRT; phase = Phase.SHOVEL; ground = CompanionGround.SOIL; }
             case "gather_loose" -> {
                 CompanionGround loose = CompanionGround.of(item);
-                if (loose == null || !loose.isLoose()) return CompanionActionResult.failed("Умею копать только песок, красный песок и гравий.");
+                if (loose == null || !loose.isLoose()) return CompanionActionResult.failed("Умею копать только песок, красный песок, гравий и кремень.");
+                if (loose == CompanionGround.FLINT && count > CompanionFlint.MAX_ORDER) return CompanionActionResult.failed("Кремня за раз можно добыть от 1 до " + CompanionFlint.MAX_ORDER + ".");
                 job = Job.DIRT; phase = Phase.SHOVEL; ground = loose;
             }
             case "gather_wood" -> { job = Job.WOOD; phase = Phase.WOOD; }

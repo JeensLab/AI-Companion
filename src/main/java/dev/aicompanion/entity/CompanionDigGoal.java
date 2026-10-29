@@ -29,6 +29,7 @@ final class CompanionDigGoal extends Goal {
     private int taskVersion;
     private boolean resume;
     private final CompanionToolSense shovelSense;
+    private final CompanionFlint flint;
     private int targetSince, targetProgress;
     private int farUntil;
     private boolean farApproach;
@@ -40,12 +41,14 @@ final class CompanionDigGoal extends Goal {
     CompanionDigGoal(CompanionEntity c) {
         this.c = c;
         shovelSense = new CompanionToolSense(c, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
+        flint = new CompanionFlint(c);
         setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
     }
     /** Loose blocks above a cell fall into it once it is dug: the top block of a column is the easier to take. */
     private static final double BURIED_PENALTY = 2.0;
 
     private CompanionGround ground() { return c.gathering.ground; }
+    private boolean flintMode() { return ground() == CompanionGround.FLINT; }
 
     @Override public boolean requiresUpdateEveryTick() { return true; }
     @Override public boolean canUse() { return c.gatheringDirt && c.inventoryViewers == 0; }
@@ -63,21 +66,26 @@ final class CompanionDigGoal extends Goal {
         inventoryTarget = ground().count(c) + c.logsRemaining;
         shovelSense.reset();
         unreachable.clear();
+        flint.begin();
     }
 
     @Override public void tick() {
         if (!c.gatheringDirt) return;
         if (c.actionAnimation() != 0) return;
-        if (++elapsedTicks > 20 * 180) { finish("Остановил добычу " + ground().genitive() + " по тайм-ауту."); return; }
+        if (++elapsedTicks > (flintMode() ? CompanionFlint.timeoutTicks(c.requestedLogs) : 20 * 180)) {
+            finish(flintMode() ? flint.report(c.requestedLogs, "время вышло. Попроси ещё раз.") : "Остановил добычу " + ground().genitive() + " по тайм-ауту."); return;
+        }
         if (c.getOwnerPlayer() == null) { finish("Я потерял связь с тобой и остановил добычу " + ground().genitive() + "."); return; }
         c.logsRemaining = Math.max(0, inventoryTarget - ground().count(c));
         c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
-        if (c.logsRemaining <= 0 && !c.loot.hasPending()) { finish("Добыча " + ground().genitive() + " завершена: добыл " + gathered + " блоков. В сумке: " + c.getStoredItemsSummary() + "."); return; }
+        if (c.logsRemaining <= 0 && !c.loot.hasPending()) {
+            finish("Добыча " + ground().genitive() + " завершена: " + (flintMode() ? "выпало " + flint.found() + " кремня" : "добыл " + gathered + " блоков") + ". В сумке: " + c.getStoredItemsSummary() + "."); return;
+        }
         if (c.logsRemaining > 0 && c.loot.incoming(ground()) >= c.logsRemaining) { c.dirtBreaking.reset(); c.work.route.stop(); return; }
         // Soil for a support under a crown: by hand, a shovel would eat the wood just cut (marathon 23.10: «добудь дерева» ended
         // with fewer logs than asked, one gone into a shovel for six blocks of dirt).
         if (!c.supportSoilTask && shovelSense.tick()) { c.dirtBreaking.reset(); approachPath = null; return; }
-        CompanionTools.equip(c, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
+        if (flintMode()) flint.arm(); else CompanionTools.equip(c, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
         if (retryDelay > 0) { retryDelay--; return; }
 
         if (target != null && !ground().safeCell((ServerLevel)c.level(), target, c)) {
@@ -85,13 +93,15 @@ final class CompanionDigGoal extends Goal {
         }
         if (target == null || !c.level().hasChunkAt(target) || !ground().matches(c.level().getBlockState(target))) {
             c.dirtBreaking.reset();
-            target = findNearestDirt();
+            target = flintMode() ? flintTarget() : findNearestDirt();
             approachPath = null;
             pathFailTicks = 0;
             targetSince = targetProgress = c.tickCount; targetBest = Double.MAX_VALUE; farUntil = 0;
         }
         if (target == null) {
-            if (++noDirtTicks >= 80) finish(ground().isLoose()
+            if (flintMode() && flintHolds()) return;
+            if (++noDirtTicks >= 80) finish(flintMode() ? flint.report(c.requestedLogs, "гравия или места для него поблизости больше нет. Отведи меня к открытому участку гравия и попроси снова.")
+                    : ground().isLoose()
                     ? "Нашёл только " + gathered + " из " + c.requestedLogs + " блоков " + ground().genitive()
                             + " поблизости. Отведи меня от воды к открытому участку " + ground().genitive() + " и попроси снова."
                     : "Нашёл только " + gathered + " из " + c.requestedLogs
@@ -112,13 +122,15 @@ final class CompanionDigGoal extends Goal {
         if (distance <= CompanionEntity.LOG_INTERACTION_RANGE_SQR && CompanionMiningNavigation.visible(c, c.getEyePosition(), target)
                 && CompanionMiningNavigation.dropCollectable((ServerLevel)c.level(), target, c.blockPosition())) {
             c.work.route.stop();
-            c.selectToolForBlock(c.level().getBlockState(target));
+            if (flintMode()) flint.arm(); else c.selectToolForBlock(c.level().getBlockState(target));
             if (!c.dirtBreaking.tick((ServerLevel)c.level(), target)) return;
             if (c.gathering.mineDirt(target)) {
                 gathered++;
+                if (flintMode()) flint.countBreak();
                 c.logsRemaining = Math.max(0, inventoryTarget - ground().count(c));
                 c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
-                c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Добыл " + gathered + " из " + c.requestedLogs + " блоков " + ground().genitive() + ".");
+                c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, flintMode() ? "Выпало " + flint.found() + " из " + c.requestedLogs + " кремня, разбито блоков гравия: " + gathered + "."
+                        : "Добыл " + gathered + " из " + c.requestedLogs + " блоков " + ground().genitive() + ".");
             } else {
                 unreachable.add(target.immutable());
                 c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Не удалось сломать этот блок " + ground().genitive() + ", ищу другой.");
@@ -192,6 +204,27 @@ final class CompanionDigGoal extends Goal {
             }
         }
         return best;
+    }
+
+    /** Flint mode: gravel he put down comes first, then one from the bag goes down; natural gravel is dug only while he carries none. */
+    private BlockPos flintTarget() {
+        ServerLevel level = (ServerLevel)c.level();
+        BlockPos placed = flint.placedTarget(level, unreachable);
+        if (placed != null) return placed;
+        if (flint.exhausted(c.requestedLogs) || c.loot.incoming(CompanionGround.GRAVEL) > 0) return null;
+        BlockPos spot = flint.carriesGravel() ? flint.place(level) : null;
+        if (spot == null) return findNearestDirt();
+        unreachable.remove(spot);
+        return spot;
+    }
+
+    /** Between two cells of the flint loop: the budget is spent, or the last gravel is still on its way to the bag. */
+    private boolean flintHolds() {
+        if (flint.exhausted(c.requestedLogs)) {
+            if (!c.loot.hasPending()) finish(flint.exhaustedReport(c.requestedLogs));
+            return true;
+        }
+        return c.loot.incoming(CompanionGround.GRAVEL) > 0;
     }
 
     private boolean searching;

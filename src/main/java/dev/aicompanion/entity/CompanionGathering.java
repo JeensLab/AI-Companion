@@ -66,6 +66,7 @@ final class CompanionGathering {
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, true);
         c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, ground == CompanionGround.SOIL ? "Ищу землю, нужно добыть " + c.requestedLogs + " блоков."
+                : ground == CompanionGround.FLINT ? "Ищу гравий, нужно добыть " + c.requestedLogs + " кремня."
                 : "Ищу " + ground.accusative() + ", нужно добыть " + c.requestedLogs + " блоков.");
         c.getNavigation().stop();
     }
@@ -111,7 +112,7 @@ final class CompanionGathering {
         BlockState state = serverLevel.getBlockState(pos);
         if (!ground.matches(state) || !ground.safeCell(serverLevel, pos, c)) return false;
         if (!CompanionMiningNavigation.preservesAutonomousReturn(c, pos)) return false;
-        c.selectToolForBlock(state);
+        if (ground != CompanionGround.FLINT) c.selectToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
         var drops = Block.getDrops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
         if (!canStoreDrops(drops)) return false;

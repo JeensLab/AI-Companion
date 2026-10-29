@@ -18,6 +18,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -246,6 +247,102 @@ public final class CompanionLooseTests {
         });
     }
 
+    /**
+     * Flint is a gravel block's one-in-ten drop (one in four with Fortune III, which keeps two flint within the break budget).
+     * Every gravel block is one unit: dug it becomes a gravel or a flint item, so blocks plus items stay constant, and the natural
+     * patch loses about one block per flint because the gravel taken out of the bag is put down and dug again.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void digsFlintByPuttingGravelBackDown(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        companion.setItem(1, enchanted(helper, Items.STONE_SHOVEL, Enchantments.FORTUNE, 3));
+        gravelPatch(helper);
+        int before = blocksInWorld(helper, Blocks.GRAVEL), units = units(helper, companion);
+        var drops = trackDrops(helper);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 2);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask(), diagnostic(companion));
+            int flint = count(companion, Items.FLINT);
+            helper.assertTrue(companion.didLastTaskSucceed() && flint >= 2, diagnostic(companion));
+            helper.assertTrue(units(helper, companion) == units, "Gravel units " + units + " became " + units(helper, companion) + ": " + diagnostic(companion));
+            helper.assertTrue(onGround(helper, Items.GRAVEL) + onGround(helper, Items.FLINT) == 0, "Gravel or flint was left on the ground");
+            helper.assertTrue(fallingBlocks(helper) == 0, "A gravel block is still falling");
+            helper.assertTrue(before - blocksInWorld(helper, Blocks.GRAVEL) <= flint + 1, "The patch lost " + (before - blocksInWorld(helper, Blocks.GRAVEL)) + " blocks for " + flint + " flint");
+            helper.assertTrue(drops.size() >= flint, "Fewer drops " + drops.size() + " than flint " + flint);
+        });
+    }
+
+    /** Without Fortune the order may run out of its budget; either way the balance holds and the landscape pays one block per flint at most. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6500)
+    public static void flintCostsTheLandscapeOneBlockPerFlint(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        gravelPatch(helper);
+        int before = blocksInWorld(helper, Blocks.GRAVEL), units = units(helper, companion);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 2);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            int flint = count(companion, Items.FLINT);
+            helper.assertTrue(companion.didLastTaskSucceed() == (flint >= 2), "Success does not match the flint " + flint + ": " + diagnostic(companion));
+            helper.assertTrue(units(helper, companion) == units, "Gravel units " + units + " became " + units(helper, companion) + ": " + diagnostic(companion));
+            helper.assertTrue(onGround(helper, Items.GRAVEL) + onGround(helper, Items.FLINT) == 0, "Gravel or flint was left on the ground");
+            helper.assertTrue(before - blocksInWorld(helper, Blocks.GRAVEL) <= flint + 1, "The patch lost " + (before - blocksInWorld(helper, Blocks.GRAVEL)) + " blocks for " + flint + " flint");
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void flintOrderWithoutGravelEndsHonestlyAndPlacesNothing(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 2);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().startsWith("Выпало 0 из 2 кремня"), "Not an honest refusal: " + diagnostic(companion));
+            helper.assertTrue(units(helper, companion) == 0 && blocksInWorld(helper, Blocks.GRAVEL) == 0, "Gravel appeared from nothing: " + diagnostic(companion));
+        });
+    }
+
+    /** One gravel block is one flint at most: the order for eight ends honestly once it has become flint, far inside the break budget. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void flintBudgetEndsHonestlyWithOneGravelBlock(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        companion.setItem(1, enchanted(helper, Items.STONE_SHOVEL, Enchantments.FORTUNE, 3));
+        helper.setBlock(new BlockPos(19, 1, 20), Blocks.GRAVEL);
+        var drops = trackDrops(helper);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 8);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            int flint = count(companion, Items.FLINT);
+            helper.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().startsWith("Выпало " + flint + " из 8 кремня"), "Not an honest result: " + diagnostic(companion));
+            helper.assertTrue(flint <= 1 && units(helper, companion) == 1, "One gravel block became " + units(helper, companion) + " units, flint " + flint);
+            helper.assertTrue(onGround(helper, Items.GRAVEL) + onGround(helper, Items.FLINT) == 0 && fallingBlocks(helper) == 0, "Gravel or flint was left outside the bag");
+            helper.assertTrue(drops.size() <= 30 * 8, "More breaks than the budget: " + drops.size());
+        });
+    }
+
+    /** Silk Touch would turn every gravel block into gravel for good: the plain shovel is the one in his hand at each break. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void flintIsNeverDugWithASilkTouchShovel(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        companion.setItem(1, enchanted(helper, Items.IRON_SHOVEL, Enchantments.SILK_TOUCH, 1)); companion.setItem(2, new ItemStack(Items.WOODEN_SHOVEL));
+        gravelPatch(helper);
+        int[] last = {blocksInWorld(helper, Blocks.GRAVEL)}; String[] silk = {null};
+        helper.onEachTick(() -> {
+            int now = blocksInWorld(helper, Blocks.GRAVEL);
+            if (now < last[0] && silk[0] == null && companion.getMainHandItem().is(Items.IRON_SHOVEL)) silk[0] = "Gravel was dug with " + companion.getMainHandItem();
+            last[0] = now;
+        });
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 1);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(silk[0] == null, silk[0]);
+            helper.assertTrue(last[0] < 25, "No gravel was dug");
+        });
+    }
+
     /** Sand that is not to be taken: a brushable block, sand beside water, sand under a chest the player placed. */
     private record Hazards(BlockPos[] suspicious, BlockPos[] ring, BlockPos water, BlockPos underChest, BlockPos chest) {
         void assertUntouched(GameTestHelper helper) {
@@ -267,6 +364,36 @@ public final class CompanionLooseTests {
         return new Hazards(suspicious, ring, water, underChest, underChest.above());
     }
 
+    private static ItemStack enchanted(GameTestHelper helper, Item item, net.minecraft.resources.ResourceKey<net.minecraft.world.item.enchantment.Enchantment> enchantment, int level) {
+        ItemStack stack = new ItemStack(item);
+        stack.enchant(helper.getLevel().registryAccess().holderOrThrow(enchantment), level);
+        return stack;
+    }
+    private static void gravelPatch(GameTestHelper helper) {
+        for (int x = 18; x <= 22; x++) for (int z = 19; z <= 23; z++) helper.setBlock(new BlockPos(x, 1, z), Blocks.GRAVEL);
+    }
+    private static int blocksInWorld(GameTestHelper helper, Block block) {
+        int total = 0;
+        for (int x = 0; x < 32; x++) for (int y = 1; y <= 12; y++) for (int z = 0; z < 32; z++) if (helper.getBlockState(new BlockPos(x, y, z)).is(block)) total++;
+        return total;
+    }
+    private static int fallingBlocks(GameTestHelper helper) {
+        return helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.FallingBlockEntity.class, helper.getBounds().inflate(3)).size();
+    }
+    /** Gravel blocks, gravel and flint items anywhere in the plot: a gravel block dug becomes exactly one of the items. */
+    private static int units(GameTestHelper helper, CompanionEntity companion) {
+        return blocksInWorld(helper, Blocks.GRAVEL) + count(companion, Items.GRAVEL) + count(companion, Items.FLINT)
+                + onGround(helper, Items.GRAVEL) + onGround(helper, Items.FLINT) + fallingBlocks(helper);
+    }
+    /** Every gravel or flint item that ever lay on the ground: one per block he broke, at least. */
+    private static java.util.Set<java.util.UUID> trackDrops(GameTestHelper helper) {
+        java.util.Set<java.util.UUID> seen = new java.util.HashSet<>();
+        helper.onEachTick(() -> {
+            for (ItemEntity entity : helper.getLevel().getEntitiesOfClass(ItemEntity.class, helper.getBounds().inflate(3), found -> found.getItem().is(Items.GRAVEL) || found.getItem().is(Items.FLINT)))
+                seen.add(entity.getUUID());
+        });
+        return seen;
+    }
     private static BlockPos[] sandPatch(GameTestHelper helper) {
         BlockPos[] patch = new BlockPos[25]; int index = 0;
         for (int x = 18; x <= 22; x++) for (int z = 19; z <= 23; z++) { patch[index] = new BlockPos(x, 1, z); helper.setBlock(patch[index++], Blocks.SAND); }

@@ -17,7 +17,9 @@ public enum CompanionGround {
     SOIL("minecraft:dirt", null, Items.DIRT, "землю", "земли"),
     SAND("minecraft:sand", Blocks.SAND, Items.SAND, "песок", "песка"),
     RED_SAND("minecraft:red_sand", Blocks.RED_SAND, Items.RED_SAND, "красный песок", "красного песка"),
-    GRAVEL("minecraft:gravel", Blocks.GRAVEL, Items.GRAVEL, "гравий", "гравия");
+    GRAVEL("minecraft:gravel", Blocks.GRAVEL, Items.GRAVEL, "гравий", "гравия"),
+    /** Flint falls out of gravel blocks at random: counted by the flint in the bag; gravel is dug, put down again and re-dug. */
+    FLINT("minecraft:flint", Blocks.GRAVEL, Items.FLINT, "кремень", "кремня");
 
     /** How far down a column is followed to the first solid block: past it the world has nothing to fall into. */
     private static final int COLUMN_DEPTH = 48;
