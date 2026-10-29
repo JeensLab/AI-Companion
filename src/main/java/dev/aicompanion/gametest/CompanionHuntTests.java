@@ -207,6 +207,27 @@ public final class CompanionHuntTests {
         });
     }
 
+    /** Review 29.10: in a plan with stone or ore the hunt's words take only the hunt's count, not the blocks of the other step. */
+    @GameTest(template = "empty")
+    public static void theHuntIsSaidByItsOwnCountInAMixedPlan(GameTestHelper h) {
+        var stoneThenHunt = CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "[{\"action\":\"gather_stone\",\"count\":8},{\"action\":\"hunt_animals\",\"item\":\"minecraft:cow\",\"count\":2}]"));
+        String said = dev.aicompanion.client.CompanionDialogue.summarize(stoneThenHunt,
+                "Добыл 8 блоков камня\nГотово, добыл 2 коровы: в сумке прибавилось 2 «Кожа», 3 «Сырая говядина».");
+        h.assertTrue(said.equals("Готово, добыл 2 коровы."), "Said: " + said);
+        var huntThenStone = CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "[{\"action\":\"hunt_animals\",\"item\":\"any\",\"count\":3},{\"action\":\"gather_stone\",\"count\":8}]"));
+        said = dev.aicompanion.client.CompanionDialogue.summarize(huntThenStone, "Готово, добыл 3 свиньи: в сумке прибавилось 5 «Сырая свинина».\n"
+                + "План остановлен: Добыл 0 из 8. Проверил доступные выходы камня в пределах 16 блоков; безопасного подхода или неглубокого спуска не нашёл.");
+        h.assertTrue(said.equals("Камня не добыл — не нашёл, как безопасно к нему подобраться."), "Said: " + said);
+        var huntThenOre = CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "[{\"action\":\"hunt_animals\",\"item\":\"any\",\"count\":3},{\"action\":\"mine_ore\",\"item\":\"minecraft:iron_ore\",\"count\":3}]"));
+        said = dev.aicompanion.client.CompanionDialogue.summarize(huntThenOre, "Готово, добыл 3 свиньи: в сумке прибавилось 5 «Сырая свинина».\n"
+                + "План остановлен: Добыл 1 из 3 блоков «железная руда»: в сумке прибавилось 1 «Рудное железо». Больше доступной руды «железная руда» рядом нет.");
+        h.assertTrue(said.startsWith("Накопал только 1 из 3"), "Said: " + said);
+        h.succeed();
+    }
+
     /**
      * «Добудь мяса и пожарь» as the model may send it: the kind by its meat is accepted, a missing furnace step is added, the
      * number said in words wins, an unknown kind spoils the whole plan.
