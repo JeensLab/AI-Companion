@@ -62,6 +62,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь, приоритеты, отмена, восстановление плана | `client/CompanionTaskQueue.java`, `CompanionActionExecutor.java`, `CompanionPlanRunner.java`, `CompanionServerPlanPort.java` |
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |
 | Компоненты после разделения больших классов | `entity/CompanionGathering.java`, `CompanionGatherGoals.java`, `CompanionStoneMining.java`, `CompanionOreMining.java`, `CompanionWorkCrafting.java`, `CompanionHunting.java` |
+| Песок, красный песок, гравий и кремень (`gather_loose`; стекло и огниво выходят из них через `obtain_item`) | `entity/CompanionGround.java` (каталог сыпучих блоков и их правила), `CompanionDigGoal.java` (копание лопатой), `CompanionFlint.java` (кремень: поставить гравий из сумки и выкопать), `CompanionObtain.java`; тесты `gametest/CompanionLooseTests.java`, `CompanionFlintProtocolTests.java`, `CompanionObtainTests.java` |
 | Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
@@ -103,6 +104,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
+| Сыпучие блоки, кремень, стекло, огниво | `.\scripts\verify-loose.ps1` (всегда `CompanionLooseTests`; `-Classes CompanionObtainTests,...` добавляет другие классы, `-Repetitions N` повторы; временно переписывает эти файлы, запускать последовательно) |
 | Долгая цель: движок, этапы, фразы, строка для модели, доска задач | `.\scripts\verify-agenda.ps1 -Repetitions 1` (`CompanionAgendaTests`, `CompanionAgendaModelTests`, `CompanionAgendaBoardTests`; по умолчанию 3 повтора; временно переписывает эти три файла, запускать последовательно, нужны загруженные зависимости: Gradle идёт с `--offline`) |
 | Долгая цель при настоящем перезапуске сервера | `.\scripts\verify-agenda-restart.ps1`: этапы prepare, resume, verify; каталог `build/diagnostics/` скрипт создаёт сам |
 | Партия плавки при настоящем перезапуске сервера | `.\scripts\verify-furnace-restart.ps1` после создания `build/diagnostics/` |
