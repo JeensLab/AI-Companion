@@ -344,17 +344,23 @@ public final class OpenRouterClient {
         return details != null && details.isJsonObject() ? scalar(details.getAsJsonObject(), "reasoning_tokens") : "unknown";
     }
 
-    /** The rest of the clause (to «,» «.» «!» «?» «;» or a line break) does not put the sorting off («потом», «в следующий раз») and is not «разложи по полочкам» (explain). */
-    private static final String SORT_NOW = "(?![^,.!?;\r\n]*(?:потом|позже|завтра|некогда|следующий раз|по полочкам))";
+    /** Words that put the sorting off («потом», «в следующий раз», not «потому») or make it «разложи по полочкам» (explain). */
+    private static final String PUT_OFF = "(?:потом(?![а-я])|позже|завтра|некогда|следующий раз|по полочкам)";
+    /**
+     * After the sort verb: no putting-off word in the rest of its clause (to «,» «.» «!» «?» «;» «:» «—» or a line break), and the next clause is not
+     * just «но/только/а потом» («Разложи сундуки, но позже»); «…, а потом приходи ко мне» or «…, мне некогда» is another clause, the order stands.
+     */
+    private static final String SORT_NOW = "(?![^,.!?;:—\r\n]*(?:" + PUT_OFF + "|,\\s*(?:но|только|а)\\s+(?:только\\s+)?(?:не\\s+сейчас|потом|(?:по)?позже|завтра)\\s*(?:[,.!?;:—\r\n]|$)))";
 
     public static boolean requiresAction(String text) {
-        String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        // «, пожалуйста,» is no clause boundary («Разложи, пожалуйста, сундуки потом» is put off).
+        String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').replaceAll(",?\\s*пожалуйста\\s*,?", " пожалуйста ");
         boolean request = normalized.matches("(?s).*(сделай|скрафт|создай|изготовь|построй|дострой|строить|стройку|поставь|установи|добудь|дабудь|переплав|пожарь|зажарь|наруби|сруби|накопай|возьми|достань|надень|экипируй|сложи|выгрузи|положи|(?:разложи|отсортируй|рассортируй)(?:те)?(?![а-я])" + SORT_NOW
                 + "|наведи(?:те)?\\s+(?:порядок\\s+во?\\s+(?:[а-я]+\\s+)?сундук|во?\\s+(?:[а-я]+\\s+)?сундук[а-я]*\\s+порядок)|убей|перебей|поубивай|убивай|уничтожь).*")
                 || normalized.matches("(?s).*(можешь|сможешь|давай|пожалуйста).*(добыть|собрать|поставить|взять|сделать|скрафтить|построить|убить|поубивать|убивать).*")
-                // Sorting asked right after «давай» or «можешь», at most three words between (not «объясни», not «сможешь ли»), and not put off in its clause («Давай потом разложим сундуки» is no order).
-                || normalized.matches("(?s).*(?:(?:можешь|сможешь)(?!\\s+ли(?![а-я]))|давай(?:те)?(?:-ка)?(?![а-я])|пожалуйста)" + SORT_NOW
-                + "[ \t,]+(?:(?!объясн|расска[жз]|скаж|сказ)[а-я]+[ \t,]+){0,3}(?:разложить|разложим|отсортировать|отсортируем).*");
+                // Sorting asked after «давай» or «можешь», at most three words between (none of them «как», «объясни» or a putting-off word; not «сможешь ли»), and not put off after the verb.
+                || normalized.matches("(?s).*(?<![а-я])(?:можешь|сможешь(?!\\s+ли(?![а-я]))|давай(?:те)?(?:-ка)?(?![а-я])|пожалуйста)"
+                + "[ \t,]+(?:(?!объясн|расска[жз]|скаж|сказ|как(?![а-я])|" + PUT_OFF + ")[а-я]+[ \t,]+){0,3}(?:разложить|разложим|отсортировать|отсортируем)" + SORT_NOW + ".*");
         return request
                 && normalized.matches("(?s).*(дом|стройку|верстак|меч|кирк|топор|лопат|мотыг|палк|доск|бревн|дерев|земл|инструмент|сундук|факел|щит|брон|шлем|нагрудник|понож|ботин|камень|камня|камен|булыж|моб|монстр|руд|желез|угол|угл|медь|меди|золот|алмаз|изумруд|лазурит|редстоун).*");
     }

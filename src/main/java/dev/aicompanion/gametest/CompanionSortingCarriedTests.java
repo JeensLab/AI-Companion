@@ -17,6 +17,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static dev.aicompanion.gametest.CompanionSortingInterruptionTests.outOfReach;
 import static dev.aicompanion.gametest.CompanionSortingTests.bagOf;
@@ -70,6 +71,34 @@ public final class CompanionSortingCarriedTests {
             helper.assertTrue(stoppedAt[0] >= 0 && helper.getTick() > stoppedAt[0] + 140, "Waiting: he never carried food, or he is still hurt");
             helper.assertTrue(totals(companion).equals(bagBefore), "The player's food is still in his bag: " + totals(companion) + " vs " + bagBefore);
             helper.assertTrue(totals(companion, chests).equals(before), "The player's food eaten or lost after the stop: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /**
+     * Review of 09: a sorting that ends by a refusal, not a stop («Потерял связь с игроком», «Не смог дойти…», the deadline) puts the carried things
+     * back too; before, the mark went with the work and he, hurt, ate the player's bread left in his bag.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void carriedFoodIsPutBackWhenTheSortingEndsByARefusal(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
+        UUID owner = companion.getOwnerId();
+        long[] id = {-1}, endedAt = {-1};
+        helper.onEachTick(() -> {
+            Map<Item, Integer> bag = totals(companion);
+            if (id[0] < 0 && companion.hasActiveWorkOrder() && (bag.containsKey(Items.BREAD) || bag.containsKey(Items.APPLE) || bag.containsKey(Items.COOKED_BEEF))) {
+                id[0] = companion.activeWorkId(); companion.setOwnerId(UUID.randomUUID());
+            }
+            if (id[0] >= 0 && endedAt[0] < 0 && !companion.hasActiveWorkOrder()) { endedAt[0] = helper.getTick(); companion.setOwnerId(owner); }
+            if (endedAt[0] >= 0 && helper.getTick() < endedAt[0] + 100) companion.setHealth(12);
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(endedAt[0] >= 0 && helper.getTick() > endedAt[0] + 140, "Waiting: he never carried food, the work did not end, or he is still hurt");
+            String said = companion.workResult(id[0]).message();
+            helper.assertTrue(said.equals("Потерял связь с игроком, остановился."), "The refusal: " + said);
+            helper.assertTrue(totals(companion).equals(bagBefore), "The player's things are still in his bag: " + totals(companion) + " vs " + bagBefore);
+            helper.assertTrue(totals(companion, chests).equals(before), "The player's food eaten or lost after the refusal: " + totals(companion, chests) + " vs " + before);
         });
     }
 

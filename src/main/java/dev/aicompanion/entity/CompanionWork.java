@@ -772,7 +772,7 @@ public final class CompanionWork {
         owner.allowNewBench(false);
         boolean returning = job == Job.COME;
         if (!success && job == Job.STORE && transferred > 0) message = "Сложил " + transferred + " предметов. " + message + " Остальное осталось в моей сумке.";
-        message += furnaces.furnaceNote();
+        message += (job == Job.SORT ? sorting.endNote() : "") + furnaces.furnaceNote();
         completedId = taskId;
         completedResult = new CompanionActionResult(success, message, result.status(), result.evidence());
         cancel();

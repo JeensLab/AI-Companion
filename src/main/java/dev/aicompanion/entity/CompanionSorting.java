@@ -101,7 +101,7 @@ final class CompanionSorting {
         // A broken chest stays in the set (its place keeps the numbers of the report) and is skipped: the plan is made from the live ones.
         if (chest == null) { w.resetTarget(); return; }
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2D * 3.2D || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
-            if (!w.approach(level, w.target, 2.8D)) w.finish(false, "Не смог дойти до одного из сундуков." + (carried.isEmpty() ? "" : " Что нёс — у меня в сумке."));
+            if (!w.approach(level, w.target, 2.8D)) w.finish(false, "Не смог дойти до одного из сундуков.");
             return;
         }
         w.owner.getNavigation().stop();
@@ -205,11 +205,11 @@ final class CompanionSorting {
         List<Container> live = live(level);
         layout(live);
         if (trips > tripLimit) {
-            w.finish(false, "Не получилось разложить всё: вещи в сундуках всё время меняются, остановился." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке.") + goneNote(live));
+            w.finish(false, "Не получилось разложить всё: вещи в сундуках всё время меняются, остановился." + goneNote(live));
             return null;
         }
         if (idle >= MAX_IDLE) {
-            w.finish(false, "Не получилось разложить всё: часть сундуков забита." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке.") + goneNote(live));
+            w.finish(false, "Не получилось разложить всё: часть сундуков забита." + goneNote(live));
             return null;
         }
         BlockPos best = null; int bestMoved = 0; double bestDistance = Double.MAX_VALUE;
@@ -231,7 +231,8 @@ final class CompanionSorting {
             if (moved > bestMoved || moved > 0 && moved == bestMoved && distance < bestDistance) { best = chests.get(i); bestMoved = moved; bestDistance = distance; }
         }
         if (best != null) return best;
-        if (!carried.isEmpty()) { w.finish(false, "Не получилось разложить всё: не поместилось " + carried.stream().mapToInt(ItemStack::getCount).sum() + ", они у меня в сумке." + goneNote(live)); return null; }
+        // What is still carried goes back at the end where it can (finish → endNote), the note says what is left in the bag.
+        if (!carried.isEmpty()) { w.finish(false, "Не получилось разложить всё: не поместилось " + carried.stream().mapToInt(ItemStack::getCount).sum() + "." + goneNote(live)); return null; }
         if (over) { w.finish(false, "Не получилось разложить всё: часть сундуков забита." + goneNote(live)); return null; }
         // The last step: the order inside the chests the trips never opened (all of them, when there is one chest or all is in place).
         for (int i = 0; i < chests.size(); i++) {
@@ -275,13 +276,22 @@ final class CompanionSorting {
 
     /** At a stop what he carries goes back into the chests of the set within reach, at once; the answer to «stop» adds what is still in his bag. */
     String stopNote(boolean sorting) {
+        if (!sorting) return "";
+        String note = endNote();
+        if (!note.isEmpty()) { left = true; leftAt = w.owner.level().getGameTime(); }
+        return note;
+    }
+
+    /**
+     * Any end of the sorting, a stop or a refusal («Не смог дойти…», the deadline): what he carries goes back into the chests within reach;
+     * the note if some of it is still in his bag (review of 09: a refusal left the player's bread unmarked in the bag, and he ate it).
+     */
+    String endNote() {
         // What the player took out of his bag meanwhile is neither put back nor left in it.
         for (ItemStack carry : carried) carry.setCount(Math.min(carry.getCount(), count(w.owner, carry)));
         carried.removeIf(ItemStack::isEmpty);
-        if (sorting && !carried.isEmpty() && w.owner.level() instanceof ServerLevel level) putBack(level);
-        if (!sorting || carried.isEmpty()) return "";
-        left = true; leftAt = w.owner.level().getGameTime();
-        return LEFT_NOTE;
+        if (!carried.isEmpty() && w.owner.level() instanceof ServerLevel level) putBack(level);
+        return carried.isEmpty() ? "" : LEFT_NOTE;
     }
 
     /** Chests of the set the way a player's arm reaches (in sight, 4.5 blocks), nearest first: as much as fits goes in, with the lid raised and put down again. */
@@ -299,6 +309,8 @@ final class CompanionSorting {
             carried.removeIf(ItemStack::isEmpty);
             if (!put) continue;
             chest.setChanged(); w.owner.setChanged();
+            w.owner.getLookControl().setLookAt(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            w.owner.animateAction(3, pos, ItemStack.EMPTY);
             w.animateChest(level, pos, 1);
             level.playSound(null, pos, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
             w.openedChest = pos.immutable();
