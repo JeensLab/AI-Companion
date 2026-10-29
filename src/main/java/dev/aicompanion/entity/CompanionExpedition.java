@@ -22,7 +22,7 @@ final class CompanionExpedition {
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
-    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, CLIMB_TICKS = 20 * 120;
+    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, CLIMB_TICKS = 20 * 120, UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 2.5;
 
     private final CompanionWork w;
@@ -59,6 +59,9 @@ final class CompanionExpedition {
 
     boolean active() { return active; }
 
+    /** Below the mine's entrance: there a monster comes up the tunnel and is fought off wherever the player is. */
+    boolean underground() { return active && w.mine.exists() && owner.getY() < w.mine.entrance().getY() - UNDERGROUND_DEPTH; }
+
     void begin(ServerLevel level) {
         reset();
         active = true;
@@ -93,7 +96,9 @@ final class CompanionExpedition {
         CompanionChunkTicket.follow(owner);
         if (level.getGameTime() >= stepEnd) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
-        if (cave.tick(level, plan == null ? List.of() : plan.cells(), digging)) {
+        boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
+        if (cave.takeCut() && plan != null) { plan.why = "дальше пещера"; blocked(); }
+        if (caveTurn) {
             if (cave.failure() != null) end(Ending.BLOCKED, cave.failure());
             return;
         }
@@ -123,6 +128,7 @@ final class CompanionExpedition {
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */
     private void startRetreat(ServerLevel level, String why) {
         plan = null;
+        cave.close();
         lead.clear();
         dig.reset();
         stepEnd = Math.max(stepEnd, level.getGameTime() + CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
