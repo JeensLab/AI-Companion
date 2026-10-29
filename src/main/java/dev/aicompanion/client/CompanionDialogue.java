@@ -233,6 +233,13 @@ public final class CompanionDialogue {
             if (failure.contains("недостаточно") || failure.contains("не хватает") || failure.contains("Не хватает")) return "На всё пока не хватает материалов.";
             if (failure.contains("дерев") || failure.contains("брёвен")) return "Доступного дерева больше не нашёл. Давай поищем в другом месте.";
             if (failure.contains("безопасное место")) return "Здесь не получается поставить. Нужно место посвободнее.";
+            // The engine's own words for a reason that has no kind, if short, as in failedParts (game 29.10: «Не нашёл ровную свободную
+            // площадку 7×7 рядом…» for a house was heard as «С этим пока не справился»): its first line, spoken without IDs or
+            // coordinates; a receipt with Latin letters besides known item IDs («предмета «sword»», an unknown ID) is not said.
+            String first = failure.lines().findFirst().orElse(""), own = speakable(first);
+            String raw = ID.matcher(first).replaceAll(id -> itemName(id.group()).equals(id.group()) ? java.util.regex.Matcher.quoteReplacement(id.group()) : "");
+            if (dev.aicompanion.CompanionFailureMessages.kind(first) == dev.aicompanion.CompanionFailureMessages.Kind.OTHER && !own.isEmpty()
+                    && own.length() <= 100 && !raw.matches("(?s).*[A-Za-z].*")) return Character.toUpperCase(own.charAt(0)) + own.substring(1);
             return dev.aicompanion.CompanionFailureMessages.explain(actions.isEmpty() ? "" : actions.getFirst().type(), failure);
         }
         var crafted = actions.stream().filter(action -> "craft_item".equals(action.type())).toList();
