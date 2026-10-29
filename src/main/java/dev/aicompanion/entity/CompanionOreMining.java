@@ -21,6 +21,8 @@ final class CompanionOreMining {
     /** Where ore is worked from: within reach, in sight, not on the ore's own block, where its drop can be picked up. */
     private static final CompanionRoute.Need APPROACH = new CompanionRoute.Need(3.5, false, true, true);
     final CompanionWork w;
+    /** Ores left alone this order, for the report: lava runs in and he has nothing to plug it with / the ore lies on lava. */
+    private final Set<BlockPos> lackedPlugs = new HashSet<>(), overLava = new HashSet<>();
 
     CompanionOreMining(CompanionWork w) { this.w = w; }
 
@@ -83,7 +85,7 @@ final class CompanionOreMining {
         if (w.job == CompanionWork.Job.ORE && w.goalOre == null) {
             w.goalOre = w.ore; w.goalOreWanted = w.oreWanted; w.goalOreMined = w.oreMined; w.goalOreDropsBefore = w.oreDropsBefore; w.goalOreExit = w.oreExit;
         }
-        w.ore = CompanionOre.Kind.IRON; w.oreWanted = missing; w.oreMined = w.oreFound = w.oreLiquid = w.oreUnreachable = w.orePickaxeAttempts = 0;
+        w.ore = CompanionOre.Kind.IRON; w.oreWanted = missing; w.oreMined = w.oreFound = w.oreUnreachable = w.orePickaxeAttempts = 0;
         w.oreDone = w.oreChoosing = w.oreLootRetried = false; w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = null;
         w.oreDropsBefore = w.items.countCarried(Items.RAW_IRON);
         w.ironPrep = true; w.phase = CompanionWork.Phase.ORE_PICK; w.resetTarget();
@@ -95,7 +97,7 @@ final class CompanionOreMining {
         w.ironPrep = false;
         if (w.goalOre != null) {
             w.ore = w.goalOre; w.oreWanted = w.goalOreWanted; w.oreMined = w.goalOreMined; w.oreDropsBefore = w.goalOreDropsBefore;
-            w.oreFound = w.oreLiquid = w.oreUnreachable = w.orePickaxeAttempts = 0; w.oreDone = w.oreChoosing = w.oreLootRetried = false;
+            w.oreFound = w.oreUnreachable = w.orePickaxeAttempts = 0; w.oreDone = w.oreChoosing = w.oreLootRetried = false;
             w.oreSearch = null; w.oreCandidates = null; w.oreRejected.clear(); w.oreOffFoot.clear(); w.oreNoTunnel.clear(); w.oreTunnel.clear(); w.oreExit = w.goalOreExit; w.goalOre = null;
         }
         w.phase = CompanionWork.Phase.IRON; w.resetTarget();
@@ -110,7 +112,10 @@ final class CompanionOreMining {
         }
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
         if (w.oreCandidates == null) {
-            if (w.oreSearch == null) w.oreSearch = new CompanionOre.Search(level, w.owner.blockPosition(), w.owner.getSearchRadius(), w.ore);
+            if (w.oreSearch == null) {
+                w.oreSearch = new CompanionOre.Search(level, w.owner.blockPosition(), w.owner.getSearchRadius(), w.ore);
+                lackedPlugs.clear(); overLava.clear();
+            }
             if (!w.oreSearch.scan(level)) { w.owner.workStatus("Ищу «" + w.ore.oreName + "» в пределах " + w.oreSearch.radius() + " блоков."); return; }
             w.oreCandidates = new ArrayList<>(w.oreSearch.results(level)); w.oreFound = w.oreCandidates.size();
         }
@@ -125,7 +130,7 @@ final class CompanionOreMining {
         }
         BlockState state = level.getBlockState(w.target);
         if (!w.ore.is(state)) { w.resetTarget(); return; }
-        if (CompanionOre.lavaNear(level, w.target)) { w.oreLiquid++; rejectOre(); return; }
+        if (!opensSafely(level, w.target)) { rejectOre(); return; }
         if (!safeOreSwing(level, w.target)) return;
         if (w.items.prepareMiningTool(state)) return;
         if (!w.owner.getMainHandItem().isCorrectToolForDrops(state)) {
@@ -160,7 +165,7 @@ final class CompanionOreMining {
             if (w.oreRejected.contains(candidate) || !w.owner.leashAllows(candidate)
                     || w.owner.autonomy().running() && candidate.getY() < w.owner.autonomy().center().getY() - CompanionOre.MAX_DROP
                     || !level.hasChunkAt(candidate) || !w.ore.is(level.getBlockState(candidate))) { iterator.remove(); continue; }
-            if (CompanionOre.lavaNear(level, candidate)) { w.oreLiquid++; w.oreRejected.add(candidate); iterator.remove(); continue; }
+            if (!opensSafely(level, candidate)) { w.oreRejected.add(candidate); iterator.remove(); continue; }
             // Neither on foot nor by a tunnel from here.
             if (w.oreOffFoot.contains(candidate) && w.oreNoTunnel.contains(candidate)) { w.oreUnreachable++; w.oreRejected.add(candidate); iterator.remove(); }
         }
@@ -192,10 +197,12 @@ final class CompanionOreMining {
                 if (!safe) w.oreOffFoot.add(candidate);
             }
             int tries = 0;
+            boolean lacked = false;
             for (BlockPos stand : CompanionOre.stands(w.owner, candidate)) {
                 if (tries >= 6) break;
                 List<BlockPos> cells = CompanionOre.tunnel(level, stand, candidate);
                 if (cells == null || cells.stream().anyMatch(cell -> blockedOreCell(level, cell))) continue;
+                if (lacksPlugs(level, cells, candidate)) { lacked = true; continue; }
                 tries++;
                 if (w.owner.autonomy().running() && w.oreExit != null && !CompanionMiningNavigation.canWalkBackUp(w.owner, stand, w.oreExit.getY())) continue;
                 int busy = w.route.busyAnswers();
@@ -212,7 +219,8 @@ final class CompanionOreMining {
                 return chosenOre(candidate, null);
             }
             w.oreNoTunnel.add(candidate);
-            if (w.oreOffFoot.contains(candidate)) { w.oreUnreachable++; w.oreRejected.add(candidate); w.oreCandidates.remove(candidate); }
+            if (lacked) lackedPlugs.add(candidate.immutable());
+            if (w.oreOffFoot.contains(candidate)) { if (!lacked) w.oreUnreachable++; w.oreRejected.add(candidate); w.oreCandidates.remove(candidate); }
         }
         return walk == null ? null : chosenOre(walk.block(), walk.path());
     }
@@ -243,6 +251,7 @@ final class CompanionOreMining {
         if (state.isAir() || state.canBeReplaced() && !state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) { w.oreTunnel.removeFirst(); w.resetApproach(); return; }
         // The world may have changed since planning: never dig into lava, under sand or into something built.
         if (!CompanionOre.tunnelable(state) || !CompanionOre.safeTunnelCell(level, cell)) { w.oreUnreachable++; rejectOre(); return; }
+        if (lacksPlugs(level, List.of(cell), null)) { if (w.target != null) lackedPlugs.add(w.target.immutable()); rejectOre(); return; }
         if (!safeOreSwing(level, cell)) return;
         if (w.items.prepareMiningTool(state)) return;
         w.owner.selectToolForBlock(state);
@@ -264,9 +273,12 @@ final class CompanionOreMining {
         ItemStack tool = w.owner.getMainHandItem();
         var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);
         if (!drops.isEmpty() && !w.items.canStore(drops)) { w.finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return false; }
+        // Lava that runs in when this cell is open: plugged in this very tick, before it moves.
+        List<BlockPos> lava = CompanionLava.inflow(level, pos);
         if (!level.destroyBlock(pos, false, w.owner, 512)) { blockOreCell(level, pos, "destroy_rejected"); return false; }
         tool.getItem().mineBlock(tool, level, state, pos, w.owner);
         w.owner.dropHarvest(pos, drops);
+        CompanionLava.plug(w.owner, level, lava);
         if (w.ore.is(state)) {
             w.oreMined++;
             w.owner.observeEvent("ore", "Добыл блок руды «" + w.ore.oreName + "», подбираю выпавшее. Работа ещё может продолжаться.");
@@ -277,6 +289,28 @@ final class CompanionOreMining {
             }
         }
         return true;
+    }
+
+    /** The ore may be broken now: not on lava, and with plugs enough for the lava that runs in. If not, the reason is kept for the report. */
+    private boolean opensSafely(ServerLevel level, BlockPos ore) {
+        switch (CompanionLava.opening(w.owner, level, ore)) {
+            case OVER_LAVA -> overLava.add(ore.immutable());
+            case NO_PLUG -> lackedPlugs.add(ore.immutable());
+            case SAFE -> { return true; }
+        }
+        return false;
+    }
+
+    /** More lava runs into these cells (and into the ore at their end, if any) than he has plugs for. */
+    private boolean lacksPlugs(ServerLevel level, List<BlockPos> cells, BlockPos ore) {
+        var lava = CompanionLava.inflow(level, cells);
+        if (ore != null) lava.addAll(CompanionLava.inflow(level, ore));
+        return lava.size() > CompanionLava.plugsCarried(w.owner);
+    }
+
+    /** How many of these ores still stand: the ones he took after all are no refusal. */
+    private int standing(Set<BlockPos> ores) {
+        return (int) ores.stream().filter(pos -> w.ore.is(w.owner.level().getBlockState(pos))).count();
     }
 
     private void rejectOre() {
@@ -356,7 +390,8 @@ final class CompanionOreMining {
         int radius = w.oreSearch == null ? w.owner.getSearchRadius() : w.oreSearch.radius(), depth = w.oreSearch == null ? CompanionOre.MAX_DROP : w.oreSearch.depth();
         String why = w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» не нашёл в пределах " + radius + " блоков и до " + depth + " блоков вниз."
                 : " Больше доступной руды «" + w.ore.oreName + "» рядом нет.";
-        if (w.oreLiquid > 0) why += " У " + CompanionWorkItems.blocks(w.oreLiquid) + " рядом лава — их не трогал.";
+        if (standing(overLava) > 0) why += " " + CompanionWorkItems.blocks(standing(overLava)) + " руды над лавой — не трогал, добыча сгорит.";
+        if (standing(lackedPlugs) > 0) why += " У " + CompanionWorkItems.blocks(standing(lackedPlugs)) + " рядом лава, заткнуть нечем — нужен булыжник или земля.";
         if (w.oreUnreachable > 0) why += " К " + w.oreUnreachable + " не нашёл безопасного хода: не глубже " + CompanionOre.MAX_DROP
                 + " блоков, без гравия, песка и лавы рядом.";
         if (w.ironPrep) {

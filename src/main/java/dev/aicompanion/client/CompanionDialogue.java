@@ -306,7 +306,9 @@ public final class CompanionDialogue {
                     : java.util.Arrays.stream(dev.aicompanion.entity.CompanionOre.Kind.values())
                     .filter(value -> last.contains(value.oreName)).findFirst().orElse(null);
             String what = kind == null ? "руды" : kind.genitive;
-            String why = last.contains("рядом лава") ? "остальная у лавы, туда не полез"
+            String why = last.contains("заткнуть нечем") ? "у остальной лава рядом, а заткнуть её нечем — нужен булыжник или земля"
+                    : last.contains("над лавой") ? "остальная руда над лавой, добыча бы сгорела"
+                    : last.contains("рядом лава") ? "остальная у лавы, туда не полез"
                     : last.contains("безопасного хода") ? "до остальной не докопаться безопасно"
                     : "больше " + what + " рядом не нашёл";
             if (!got.equals("0")) return "Накопал только " + got + " из " + wanted + " — " + why + ".";

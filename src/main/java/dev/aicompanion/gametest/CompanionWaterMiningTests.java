@@ -88,7 +88,7 @@ public final class CompanionWaterMiningTests {
         });
     }
 
-    /** Lava beside the ore is still refused (ticket 04 will plug it); the reason names lava only. */
+    /** Lava beside the ore and no plug in the bag: refused; the reason names lava only. */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
     public static void lavaBesideTheOreIsStillRefusedAndTheReasonIsLavaOnly(GameTestHelper h) {
         CompanionEntity c = flat(h);

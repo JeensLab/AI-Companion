@@ -87,19 +87,16 @@ public final class CompanionOre {
                 || state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
     }
 
-    /** Lava next to the ore: digging it would let the lava in (water is no harm: he swims). */
-    static boolean lavaNear(ServerLevel level, BlockPos pos) {
-        for (Direction side : Direction.values()) if (CompanionLava.at(level, pos.relative(side))) return true;
-        return CompanionLava.at(level, pos);
-    }
-
-    /** A cell of the own tunnel: no lava, sand or gravel around, no chest or furnace beside it. */
+    /**
+     * A cell of the own tunnel: no lava in it or under it, no sand or gravel around, no chest or furnace beside it. Lava above or
+     * beside it is no bar here: it is plugged when the cell is opened (CompanionLava.plug), if he has the blocks.
+     */
     static boolean safeTunnelCell(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || level.isOutsideBuildHeight(pos)) return false;
         if (CompanionLava.at(level, pos) || level.getBlockEntity(pos) != null) return false;
         for (Direction side : Direction.values()) {
             BlockPos near = pos.relative(side);
-            if (!level.hasChunkAt(near) || CompanionLava.at(level, near) || level.getBlockEntity(near) != null
+            if (!level.hasChunkAt(near) || side == Direction.DOWN && CompanionLava.at(level, near) || level.getBlockEntity(near) != null
                     || level.getBlockState(near).is(Blocks.CRAFTING_TABLE) || CompanionBuildings.crafted(level.getBlockState(near))) return false;
             if (side != Direction.DOWN && level.getBlockState(near).getBlock() instanceof FallingBlock) return false;
         }

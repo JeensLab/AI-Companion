@@ -1,0 +1,206 @@
+package dev.aicompanion.gametest;
+
+import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionEvents;
+import net.minecraft.core.BlockPos;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+/**
+ * Ore at lava like a player takes it: the cell that lets lava in is plugged at once with a block from his bag; ore on top of lava
+ * (its drop would burn) and lava with nothing to plug it are left and said so; stone at lava stays skipped (Q7).
+ */
+@GameTestHolder(AICompanionMod.MOD_ID)
+@PrefixGameTestTemplate(false)
+public final class CompanionLavaPlugTests {
+    /** The lava is given this long to stop (a fluid in the Overworld is touched every 30 ticks). */
+    private static final int SETTLE = 60;
+    /** Lava in the Nether is touched every 10 ticks: the plug must be in before that. */
+    private static final int NETHER_LAVA_TICKS = 10;
+
+    private CompanionLavaPlugTests() { }
+
+    /** Iron with a lava source right behind it in the wall: mined, a cobblestone stands where the lava was, one cobblestone gone, no lava, no burn. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void lavaBesideTheOreIsPluggedAndTheOreMined(GameTestHelper h) {
+        CompanionEntity c = wallArena(h);
+        BlockPos ore = new BlockPos(20, 1, 16), lava = new BlockPos(21, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(lava, Blocks.LAVA);
+        h.setBlock(ore.above(), Blocks.AIR); // open above: no stone is dug first, so the cobblestone count is the plugs' alone
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        Watch watch = watch(h, c, ore, lava);
+        order(h, c);
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > SETTLE && idle(c) && c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c));
+            h.assertTrue(h.getBlockState(lava).is(Blocks.COBBLESTONE), "No plug where the lava was: " + h.getBlockState(lava));
+            h.assertTrue(count(c, Items.COBBLESTONE) == 2, "Plugs left in the bag: " + count(c, Items.COBBLESTONE));
+            noLava(h, watch, c);
+        });
+    }
+
+    /**
+     * A lake of lava lies inside the wall, one block above the roof of every way to a buried ore (from either side): each cell of his tunnel that
+     * has lava over it is dug, plugged on the spot, and the ore is reached and mined without a drop of lava coming in.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void lavaAboveTunnelCellsIsPlugged(GameTestHelper h) {
+        CompanionEntity c = wallArena(h);
+        BlockPos ore = new BlockPos(23, 1, 16), over = new BlockPos(21, 3, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        box(h, 21, 3, 11, 25, 3, 21, Blocks.LAVA);
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 6));
+        Watch watch = watch(h, c, ore, over);
+        order(h, c);
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > SETTLE && idle(c) && c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c));
+            int plugs = 0;
+            for (int x = 21; x <= 25; x++) for (int z = 11; z <= 21; z++) if (h.getBlockState(new BlockPos(x, 3, z)).is(Blocks.COBBLESTONE)) plugs++;
+            h.assertTrue(plugs >= 1, "No plug in the lake over his tunnel: " + report(c));
+            noLava(h, watch, c);
+        });
+    }
+
+    /** The plug stands within a few ticks of the cell being opened: far inside the 10 ticks after which lava of the Nether moves. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void thePlugLandsBeforeLavaOfTheNetherCouldMove(GameTestHelper h) {
+        CompanionEntity c = wallArena(h);
+        BlockPos ore = new BlockPos(20, 1, 16), lava = new BlockPos(21, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(lava, Blocks.LAVA);
+        h.setBlock(ore.above(), Blocks.AIR); // open above: no stone is dug first, so the cobblestone count is the plugs' alone
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        Watch watch = watch(h, c, ore, lava);
+        order(h, c);
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > SETTLE && idle(c) && c.didLastTaskSucceed(), report(c));
+            h.assertTrue(watch.opened > 0 && watch.plugged > 0, "Ore not opened or lava not plugged: " + report(c));
+            h.assertTrue(watch.plugged - watch.opened < NETHER_LAVA_TICKS / 2, "Plug came " + (watch.plugged - watch.opened) + " ticks after the opening");
+        });
+    }
+
+    /** Ore lying on lava: the drop would fall in and burn. Not touched, even with plugs in the bag; the reason is said. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void oreOnTopOfLavaIsLeftAndTheReasonIsSaid(GameTestHelper h) {
+        CompanionEntity c = wallArena(h);
+        BlockPos ore = new BlockPos(20, 2, 16), lava = new BlockPos(20, 1, 16);
+        h.setBlock(ore, Blocks.DIAMOND_ORE); h.setBlock(lava, Blocks.LAVA);
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        order(h, c, "minecraft:diamond_ore");
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > SETTLE && idle(c), "Work still active: " + c.getLastTaskResult());
+            String said = c.getLastTaskResult();
+            h.assertTrue(!c.didLastTaskSucceed() && said.contains("над лавой"), said);
+            h.assertTrue(h.getBlockState(ore).is(Blocks.DIAMOND_ORE) && count(c, Items.COBBLESTONE) == 5, "Ore dug or plugs spent: " + report(c));
+        });
+    }
+
+    /** Lava beside the ore and nothing in the bag fit to plug it (sand falls through lava, gold is no plug): left alone, told what he needs, the bag untouched. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void withNothingToPlugWithTheOreIsLeftAndHeAsksForCobblestone(GameTestHelper h) {
+        CompanionEntity c = wallArena(h);
+        BlockPos ore = new BlockPos(20, 1, 16), lava = new BlockPos(21, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(lava, Blocks.LAVA);
+        c.setItem(0, new ItemStack(Items.SAND, 5)); c.setItem(1, new ItemStack(Items.GRAVEL, 3)); c.setItem(2, new ItemStack(Items.GOLD_INGOT, 4));
+        order(h, c);
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > SETTLE && idle(c), "Work still active: " + c.getLastTaskResult());
+            String said = c.getLastTaskResult();
+            h.assertTrue(!c.didLastTaskSucceed() && said.contains("заткнуть нечем") && said.contains("булыжник") && said.contains("земля"), said);
+            h.assertTrue(h.getBlockState(ore).is(Blocks.IRON_ORE) && h.getBlockState(lava).is(Blocks.LAVA), "Ore dug or lava changed");
+            h.assertTrue(count(c, Items.SAND) == 5 && count(c, Items.GRAVEL) == 3 && count(c, Items.GOLD_INGOT) == 4, "Bag changed: " + c.getStoredItemsSummary());
+        });
+    }
+
+    /** Stone at lava is still skipped, not plugged (Q7): both stones touch lava, and the dirt in the bag stays in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void stoneBesideLavaIsSkippedNotPlugged(GameTestHelper h) {
+        CompanionEntity c = wallArena(h);
+        BlockPos stone = new BlockPos(20, 1, 16), lava = new BlockPos(21, 1, 16);
+        box(h, 20, 1, 10, 26, 6, 22, Blocks.AIR);
+        h.setBlock(stone, Blocks.STONE); h.setBlock(lava, Blocks.LAVA);
+        box(h, 21, 2, 16, 21, 2, 16, Blocks.STONE);
+        c.setItem(0, new ItemStack(Items.DIRT, 3));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.runAfterDelay(SETTLE, () -> h.assertTrue(c.startWork("gather_stone", "", 2).success(), "Stone order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > SETTLE && idle(c), "Work still active: " + c.getLastTaskResult());
+            h.assertTrue(h.getBlockState(stone).is(Blocks.STONE) && h.getBlockState(lava).is(Blocks.LAVA), "Stone dug or lava plugged");
+            h.assertTrue(count(c, Items.DIRT) == 3, "Plugs spent on stone: " + c.getStoredItemsSummary());
+            h.assertTrue(c.isAlive() && c.getHealth() >= c.getMaxHealth(), "Hurt: " + c.getHealth());
+        });
+    }
+
+    // ---- Arena and measures ----
+
+    /**
+     * Bedrock floor and ceiling, air between; a stone wall x 20..26, y 1..6 across the arena at z 10..22. Oleg stands at x 16 on the
+     * west side, the ore is in the wall at x 20 or deeper. The lava is set by the test and has time to stop before the order.
+     */
+    private static CompanionEntity wallArena(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 7, 0, 31, 7, 31, Blocks.BEDROCK);
+        box(h, 20, 1, 10, 26, 6, 22, Blocks.STONE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
+        ServerPlayer owner = h.makeMockServerPlayerInLevel();
+        BlockPos at = h.absolutePos(new BlockPos(13, 1, 13));
+        owner.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        owner.setInvulnerable(true);
+        c.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        c.setSearchRadius(16);
+        c.setLifestyle(false, false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        return c;
+    }
+
+    private static void order(GameTestHelper h, CompanionEntity c) { order(h, c, "minecraft:iron_ore"); }
+    private static void order(GameTestHelper h, CompanionEntity c, String ore) {
+        h.runAfterDelay(SETTLE, () -> h.assertTrue(c.startWork("mine_ore", ore, 1).success(), "Ore order not accepted"));
+    }
+
+    /** What the world and he did each tick: the tick the ore cell opened, the tick the lava cell became solid, lava in the opened cell, burns. */
+    private static final class Watch { long opened, plugged; boolean lavaInside, burnt; }
+
+    private static Watch watch(GameTestHelper h, CompanionEntity c, BlockPos ore, BlockPos lava) {
+        Watch watch = new Watch();
+        h.onEachTick(() -> {
+            if (watch.opened == 0 && !h.getBlockState(ore).is(Blocks.IRON_ORE) && h.getTick() > SETTLE) watch.opened = h.getTick();
+            if (watch.plugged == 0 && h.getBlockState(lava).is(Blocks.COBBLESTONE)) watch.plugged = h.getTick();
+            for (int x = 19; x <= 27; x++) for (int y = 1; y <= 2; y++) for (int z = 15; z <= 17; z++) {
+                BlockPos cell = new BlockPos(x, y, z);
+                watch.lavaInside |= !cell.equals(lava) && h.getLevel().getFluidState(h.absolutePos(cell)).is(FluidTags.LAVA);
+            }
+            watch.burnt |= c.isOnFire() || c.isInLava();
+        });
+        return watch;
+    }
+
+    private static void noLava(GameTestHelper h, Watch watch, CompanionEntity c) {
+        h.assertTrue(!watch.lavaInside, "Lava ran into the opened cells");
+        h.assertTrue(!watch.burnt && c.isAlive() && c.getHealth() >= c.getMaxHealth(), "Burnt: " + c.getHealth());
+    }
+
+    private static void box(GameTestHelper h, int x1, int y1, int z1, int x2, int y2, int z2, Block block) {
+        for (int x = x1; x <= x2; x++) for (int y = y1; y <= y2; y++) for (int z = z1; z <= z2; z++) h.setBlock(new BlockPos(x, y, z), block);
+    }
+    private static boolean idle(CompanionEntity c) { return !c.isGatheringTask() && !c.isWorking(); }
+    private static String report(CompanionEntity c) { return c.getLastTaskResult() + " | " + c.getDeedsForAi() + " | bag: " + c.getStoredItemsSummary(); }
+    private static int count(CompanionEntity c, Item item) {
+        int count = 0;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) count += c.getItem(slot).getCount();
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (c.getItemBySlot(slot).is(item)) count += c.getItemBySlot(slot).getCount();
+        return count;
+    }
+}
