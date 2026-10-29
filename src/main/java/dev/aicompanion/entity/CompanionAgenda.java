@@ -244,9 +244,7 @@ public final class CompanionAgenda {
             Goal deferred = data.deferred(owner);
             // A working long goal is cancelled first; with only a deferred one left, an outstanding pickaxe order takes the cancel, as it takes «продолжай».
             if (deferred == null || c.goals().outstanding()) return null;
-            data.setDeferred(owner, null);
-            c.noteDeed("Отменил отложенную долгую цель: " + deferred.book().title() + ".", true);
-            return CompanionActionResult.ok("Отменил отложенную цель «" + deferred.book().title() + "».");
+            return dropDeferred(data, owner, c, deferred);
         }
         cancelRun(owner, c);
         goal.state = State.CANCELLED; goal.reason = "Отменено игроком.";
@@ -255,6 +253,21 @@ public final class CompanionAgenda {
         Goal deferred = data.deferred(owner);
         return CompanionActionResult.ok("Отменил цель «" + goal.book().title() + "»."
                 + (deferred == null ? "" : " Отложенная «" + deferred.book().title() + "» ждёт: скажи «продолжай»."));
+    }
+
+    /** The screen's «Отменить цель» on the row of goal {@code id}: that goal ends, even beside an outstanding pickaxe order. Null: it is no longer his. */
+    public static CompanionActionResult cancelShown(ServerPlayer player, CompanionEntity c, UUID id) {
+        UUID owner = player.getUUID();
+        CompanionAgendaData data = CompanionAgendaData.get(player.server);
+        Goal goal = data.active(owner), deferred = data.deferred(owner);
+        if (goal != null && goal.state.outstanding()) return goal.id.equals(id) ? cancel(player, c) : null;
+        return deferred != null && deferred.id.equals(id) ? dropDeferred(data, owner, c, deferred) : null;
+    }
+
+    private static CompanionActionResult dropDeferred(CompanionAgendaData data, UUID owner, CompanionEntity c, Goal deferred) {
+        data.setDeferred(owner, null);
+        c.noteDeed("Отменил отложенную долгую цель: " + deferred.book().title() + ".", true);
+        return CompanionActionResult.ok("Отменил отложенную цель «" + deferred.book().title() + "».");
     }
 
     /** What the goal is about, for «что делаешь» and the model. Null when the pickaxe order is the one to answer. */

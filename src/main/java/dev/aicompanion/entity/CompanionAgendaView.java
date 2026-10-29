@@ -13,6 +13,7 @@ import java.util.UUID;
  * against the facts, immutable, so neither side holds the live goal. Only a goal that is not over is shown.
  */
 public final class CompanionAgendaView {
+    private static final int OBSTACLE_LIMIT = 200;
     public enum Mark { DONE, CURRENT, LATER, CANNOT, OBSTACLE }
 
     public record Line(String label, Mark mark) { }
@@ -23,11 +24,14 @@ public final class CompanionAgendaView {
      * @param now           what he does, or why he does not
      * @param obstacle      why the goal does not advance; empty when nothing stands in its way
      * @param deferredTitle the other goal in the deferred slot; empty when there is none
+     * @param pickaxesFirst an outstanding pickaxe order takes «продолжай» first, so the long goal cannot be resumed yet
      */
     public record View(UUID goal, String title, State state, boolean deferredOnly, String now, String obstacle,
-                       List<Line> lines, String deferredTitle) {
+                       List<Line> lines, String deferredTitle, boolean pickaxesFirst) {
         /** «Продолжай» changes something: a paused, held or blocked goal goes on, a deferred one comes back. */
-        public boolean canResume() { return deferredOnly || state == State.HELD || state == State.INTERRUPTED || state == State.BLOCKED; }
+        public boolean canResume() {
+            return !pickaxesFirst && (deferredOnly || state == State.HELD || state == State.INTERRUPTED || state == State.BLOCKED);
+        }
 
         /** The deferred slot holds one goal; a working goal can step aside only into an empty one. */
         public boolean canDefer() { return !deferredOnly && deferredTitle.isEmpty(); }
@@ -90,8 +94,10 @@ public final class CompanionAgendaView {
         // A goal that stops at what he cannot do yet is not hindered: there is no step to go wrong, and the list says so.
         boolean stuckOnSkill = stage.isEmpty() && goal.state == State.BLOCKED;
         String obstacle = hindered && !stage.isEmpty() ? goal.reason.strip() : "";
+        // The reason is the tail of a mechanics report: kept short, it goes into every prompt and into synced entity data.
+        if (obstacle.length() > OBSTACLE_LIMIT) obstacle = obstacle.substring(0, OBSTACLE_LIMIT - 1) + "…";
         return new View(goal.id, goal.book().title(), goal.state, deferredOnly, now(goal.state, deferredOnly, stuckOnSkill, stage),
-                obstacle, List.copyOf(lines), other == null ? "" : other.book().title());
+                obstacle, List.copyOf(lines), other == null ? "" : other.book().title(), c.goals().outstanding());
     }
 
     /** The context line for the entity's synced data; empty when there is no long goal. */

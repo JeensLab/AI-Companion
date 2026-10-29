@@ -111,6 +111,20 @@ public final class CompanionAgendaBoardTests {
         CompanionTaskBoard.control(f.p, CompanionTaskBoard.read(f.p), "cancel_pickaxes");
         h.assertTrue(f.c.goals().state() == CompanionGoals.State.CANCELLED && f.goal().state() == CompanionAgenda.State.HELD,
                 "Pickaxe row cancelled the wrong goal: " + f.c.goals().state() + " / " + f.goal().state());
+
+        // The goal row beside an outstanding pickaxe order acts on the long goal only, never on the order by falling through.
+        h.assertTrue(f.order("goal_pickaxes").status() == CompanionActionResult.Status.ACCEPTED, "Second pickaxe order refused");
+        f.order("stop");
+        var beside = CompanionTaskBoard.read(f.p);
+        h.assertTrue(f.c.goals().state() == CompanionGoals.State.PAUSED_PLAYER && !beside.agenda().canResume(),
+                "«Продолжить» is offered on the goal row while the pickaxe order goes first: " + f.c.goals().state() + " / " + beside.agenda());
+        CompanionTaskBoard.control(f.p, beside, "resume_goal");
+        h.assertTrue(f.c.goals().state() == CompanionGoals.State.PAUSED_PLAYER && f.goal().state() == CompanionAgenda.State.HELD,
+                "Goal row «Продолжить» reached the pickaxe order: " + f.c.goals().state() + " / " + f.goal().state());
+        f.order("goal_defer");
+        CompanionTaskBoard.control(f.p, CompanionTaskBoard.read(f.p), "cancel_goal");
+        h.assertTrue(f.c.goals().state() == CompanionGoals.State.PAUSED_PLAYER && f.agenda().contains("deferred=-"),
+                "Goal row «Отменить цель» on a deferred goal: pickaxes " + f.c.goals().state() + ", agenda " + f.agenda());
         h.succeed();
     }
 

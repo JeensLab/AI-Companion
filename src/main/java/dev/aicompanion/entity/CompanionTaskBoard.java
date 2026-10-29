@@ -20,18 +20,21 @@ public final class CompanionTaskBoard {
         var c = CompanionEvents.getOwnedCompanion(player);
         if (c == null || shown == null || !c.getUUID().equals(shown.companion())) return;
         switch (command) {
-            // The three buttons of a long goal act as the phrases do; a screen that shows an older goal changes nothing.
+            // The three buttons of a long goal act on that goal only, as the phrases do; a screen that shows an older goal changes
+            // nothing. A screen without a long goal keeps the old meaning of these buttons: the pickaxe order.
             case "cancel_goal" -> {
-                if (agendaShown(c, shown) && CompanionAgenda.cancel(player, c) != null) return;
-                cancelPickaxes(c, shown);
+                if (shown.agenda() != null) CompanionAgenda.cancelShown(player, c, shown.agenda().goal());
+                else cancelPickaxes(c, shown);
             }
             case "resume_goal" -> {
-                // «Продолжай» also ends a deed of his own and lifts his hold, as the phrase does.
-                if (agendaShown(c, shown) || pickaxesShown(c, shown)) c.autonomy().playerOrder("goal_resume");
-                if (agendaShown(c, shown) && CompanionAgenda.resume(player, c) != null) return;
-                resumePickaxes(c, shown);
+                if (shown.agenda() == null) resumePickaxes(c, shown);
+                else if (live(c, shown) instanceof CompanionAgendaView.View now && now.canResume()) {
+                    // «Продолжай» also ends a deed of his own and lifts his hold, as the phrase does.
+                    c.autonomy().playerOrder("goal_resume");
+                    CompanionAgenda.resume(player, c);
+                }
             }
-            case "defer_goal" -> { if (agendaShown(c, shown) && shown.agenda().canDefer()) CompanionAgenda.defer(player, c); }
+            case "defer_goal" -> { if (live(c, shown) instanceof CompanionAgendaView.View now && now.canDefer()) CompanionAgenda.defer(player, c); }
             // The row of the pickaxe order: its buttons never touch a long goal that waits beside it.
             case "cancel_pickaxes" -> cancelPickaxes(c, shown);
             case "resume_pickaxes" -> resumePickaxes(c, shown);
@@ -45,12 +48,18 @@ public final class CompanionTaskBoard {
             default -> { }
         }
     }
-    private static boolean agendaShown(CompanionEntity c, Snapshot shown) {
-        return shown.agenda() != null && shown.agenda().goal().equals(CompanionAgendaView.target(c));
+    /** The goal as it is now, if it is still the one the screen shows: the buttons act on what is true, not on what was drawn. */
+    private static CompanionAgendaView.View live(CompanionEntity c, Snapshot shown) {
+        var now = shown.agenda() == null ? null : CompanionAgendaView.of(c);
+        return now != null && now.goal().equals(shown.agenda().goal()) ? now : null;
     }
     private static boolean pickaxesShown(CompanionEntity c, Snapshot shown) {
         return shown.goal() != null && shown.goal().equals(c.goals().id());
     }
     private static void cancelPickaxes(CompanionEntity c, Snapshot shown) { if (pickaxesShown(c, shown)) c.goals().cancel(); }
-    private static void resumePickaxes(CompanionEntity c, Snapshot shown) { if (pickaxesShown(c, shown)) c.goals().resume(); }
+    private static void resumePickaxes(CompanionEntity c, Snapshot shown) {
+        if (!pickaxesShown(c, shown)) return;
+        c.autonomy().playerOrder("goal_resume");
+        c.goals().resume();
+    }
 }
