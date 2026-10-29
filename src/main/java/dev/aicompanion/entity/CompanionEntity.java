@@ -708,6 +708,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         super.die(source);
     }
+    @Override public void remove(RemovalReason reason) { CompanionChunkTicket.release(this); super.remove(reason); }
 
 
     /** Food in the bag heals, like a player who eats: nothing is conjured, the food is eaten (review 22.10: he never healed). */
