@@ -191,7 +191,8 @@ public final class CompanionMineFoundationTests {
     }
 
     /** The ticket follows him across a chunk border and leaves no forced chunk behind when released. */
-    @GameTest(template = "marathon_cave")
+    // Own batch: the level-wide check below must not see the tickets of expeditions running beside it.
+    @GameTest(template = "marathon_cave", batch = "mine_chunk_ticket")
     public static void chunkTicketHoldsFollowsAndReleases(GameTestHelper h) {
         var level = h.getLevel();
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 4, 2, 4);
