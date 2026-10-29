@@ -31,8 +31,8 @@ public final class CompanionWorkCommands {
             int count = amount(said.count(), 8, 64, 32);
             return count >= 1 && count <= 64 ? new PlannedAction("gather_loose", 0, count, item) : null;
         }
-        var flint = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|накопай|набери|выкопай)(?: мне| нам| себе)?\s+(?:(?:штук|штуки)\s+)?"
-                + "(кремня|кремень|кремний|кремню)(?:\s+(?:штук))?(?:\s+(?:рядом|поблизости))?$").matcher(bare);
+        var flint = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|накопай|набери|выкопай)(?: мне| нам| себе)?\\s+(?:(?:штук|штуки)\\s+)?"
+                + "(кремня|кремень|кремний|кремню)(?:\\s+(?:штук))?(?:\\s+(?:рядом|поблизости))?$").matcher(bare);
         if (flint.matches()) {
             int count = amount(said.count(), 2, CompanionPlanCodec.FLINT_STEP, 4);
             return count >= 1 && count <= CompanionPlanCodec.FLINT_STEP ? new PlannedAction("gather_loose", 0, count, CompanionPlanCodec.FLINT) : null;

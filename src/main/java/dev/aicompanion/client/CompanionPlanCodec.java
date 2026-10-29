@@ -19,6 +19,7 @@ public final class CompanionPlanCodec {
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
+    static final int FLINT_DEFAULT = 2;
     /** The items a gather_loose order may name: the loose blocks the server digs with a shovel, and the flint in gravel. */
     private static final Set<String> LOOSE_ITEMS = Set.of("minecraft:sand", "minecraft:red_sand", "minecraft:gravel", FLINT);
     private static final Pattern DSML = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>.*?"
@@ -85,7 +86,9 @@ public final class CompanionPlanCodec {
                 if (!ACTIONS.contains(type)) throw invalid();
                 // No number from the model: what the prompt promises it (ore 4, stone 8), not a single block (game log 22.10).
                 int count = step.has("count") ? step.get("count").getAsBigDecimal().intValueExact()
-                        : "mine_ore".equals(type) ? CompanionPlanRequirements.DEFAULT_ORE : ("gather_stone".equals(type) || "gather_loose".equals(type)) ? 8
+                        : "mine_ore".equals(type) ? CompanionPlanRequirements.DEFAULT_ORE
+                        : "gather_loose".equals(type) && FLINT.equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? FLINT_DEFAULT
+                        : ("gather_stone".equals(type) || "gather_loose".equals(type)) ? 8
                         : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
                 if (count < 1 || count > 64) throw invalid();

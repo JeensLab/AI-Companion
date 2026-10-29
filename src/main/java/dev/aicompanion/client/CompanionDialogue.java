@@ -305,6 +305,14 @@ public final class CompanionDialogue {
             return got.find() ? "Добыл только " + got.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
         }
         var loose = actions.stream().filter(action -> "gather_loose".equals(action.type())).findFirst();
+        if (loose.isPresent() && CompanionPlanCodec.FLINT.equals(loose.get().item())) {
+            var dropped = Pattern.compile("Выпало (\\d+) из (\\d+) кремня(?:: (.*))?").matcher(last);
+            if (dropped.find()) {
+                String why = dropped.group(3) == null || dropped.group(3).isBlank() ? "." : ": " + dropped.group(3).strip();
+                return dropped.group(1).equals("0") ? "Кремень так и не выпал" + why
+                        : "Кремня выпало только " + dropped.group(1) + " из " + dropped.group(2) + why;
+            }
+        }
         if (loose.isPresent() && last.contains(looseGenitive(loose.get()))) {
             var found = Pattern.compile("(?:Добыл|Нашёл только) (\\d+) из (\\d+)").matcher(last);
             if (found.find()) return found.group(1).equals("0")
@@ -350,13 +358,18 @@ public final class CompanionDialogue {
         return count + (last == 1 && tens != 11 ? " блок" : last >= 2 && last <= 4 && (tens < 12 || tens > 14) ? " блока" : " блоков");
     }
 
+    /** Fewer flints than ordered: a craft made of flint cannot go on, and its own failure would hide the honest flint report. */
+    private static boolean needsMissingFlint(PlannedAction gather, PlannedAction next) {
+        return CompanionPlanCodec.FLINT.equals(gather.item()) && ("minecraft:flint_and_steel".equals(next.item()) || "minecraft:arrow".equals(next.item()));
+    }
+
     public static boolean continueAfterPartialGather(PlannedAction action, List<PlannedAction> later, boolean success) {
         return continueAfterPartialGather(action, later, success, "");
     }
 
     public static boolean continueAfterPartialGather(PlannedAction action, List<PlannedAction> later, boolean success, String report) {
         return success || (("gather_wood".equals(action.type()) || "gather_dirt".equals(action.type()) || "gather_loose".equals(action.type()))
-                && !later.isEmpty() && "craft_item".equals(later.getFirst().type()))
+                && !later.isEmpty() && "craft_item".equals(later.getFirst().type()) && !needsMissingFlint(action, later.getFirst()))
                 // Fewer animals than asked: what was taken still goes into the furnace. Nothing taken: the hunt's own reason is
                 // the answer (game log 22.10: «У меня нет сырого мяса, жарить нечего» hid «nobody within reach»).
                 || "hunt_animals".equals(action.type()) && !later.isEmpty() && "smelt_items".equals(later.getFirst().type())
