@@ -38,6 +38,8 @@ final class CompanionExpeditionDig {
     private int cellTicks, unseen, walkTicks;
     /** Blocks broken so far: a counter the stall watchdog sees move. */
     int broken;
+    /** The cell broken last, to see what it opened onto. */
+    BlockPos lastBroken;
     /** Cells walked into so far: the same for walking. */
     int walked;
     /** The last NO_TOOL was for an ore (it needs a better pickaxe), not for rock (it needs a stone pickaxe). */
@@ -85,6 +87,7 @@ final class CompanionExpeditionDig {
         if (!level.destroyBlock(pos, false, owner, 512)) return Status.STUCK;
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         broken++;
+        lastBroken = pos.immutable();
         List<ItemStack> kept = new ArrayList<>(), spare = new ArrayList<>();
         int room = SEAL_RESERVE - CompanionSeal.available(owner) - heldCount();
         for (ItemStack stack : drops) {
@@ -158,7 +161,7 @@ final class CompanionExpeditionDig {
 
     void reset() {
         flush();
-        cell = walking = null;
+        cell = walking = lastBroken = null;
         cellTicks = unseen = walkTicks = 0;
         w.breaking.reset();
     }
