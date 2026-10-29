@@ -7,7 +7,6 @@ import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -26,7 +25,7 @@ public final class CompanionShaftPlan {
     public static final int MAX_TUNNEL_CELLS = 64;
     /** Eye height of a standing companion above his feet cell's floor, for judging reach from a stand he is not on yet. */
     private static final double EYE = 1.62;
-    private static final int WATER_AROUND = 6;
+    private static final int WATER_AROUND = 6, SURFACE_SCAN_UP = 8, SURFACE_SCAN_DOWN = 24;
 
     private CompanionShaftPlan() { }
 
@@ -121,8 +120,8 @@ public final class CompanionShaftPlan {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
                 BlockPos column = from.offset(dx, 0, dz);
                 if (!level.hasChunkAt(column)) continue;
-                BlockPos feet = new BlockPos(column.getX(), level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()), column.getZ());
-                Entrance entrance = entranceAt(level, feet);
+                BlockPos feet = topOpenCell(level, column);
+                Entrance entrance = feet == null ? null : entranceAt(level, feet);
                 if (entrance != null) return entrance;
             }
         }
@@ -130,6 +129,16 @@ public final class CompanionShaftPlan {
     }
 
     public record Entrance(BlockPos feet, Direction direction) { }
+
+    /** The first open cell with something under it, looking down from a few blocks above the column's given height. */
+    private static BlockPos topOpenCell(ServerLevel level, BlockPos column) {
+        for (int y = column.getY() + SURFACE_SCAN_UP; y > column.getY() - SURFACE_SCAN_DOWN; y--) {
+            BlockPos feet = new BlockPos(column.getX(), y, column.getZ());
+            if (level.isOutsideBuildHeight(feet.below()) || !level.hasChunkAt(feet)) return null;
+            if (!open(level, feet.below())) return open(level, feet) ? feet : null;
+        }
+        return null;
+    }
 
     private static Entrance entranceAt(ServerLevel level, BlockPos feet) {
         if (!groundSolid(level, feet) || !columnOpen(level, feet) || nearBuilding(level, feet) || waterNear(level, feet)) return null;
