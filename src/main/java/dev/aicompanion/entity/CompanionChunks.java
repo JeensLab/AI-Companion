@@ -36,6 +36,11 @@ public final class CompanionChunks {
                 if (!level.getWorldBorder().isWithinBounds(pos.getWorldPosition())) continue;
                 level.getChunkSource().addRegionTicket(TYPE, pos, 2, companion.getUUID(), true); chunks.add(pos.toLong());
             }
+            for (long packed : companion.batches().chunks(level)) {
+                ChunkPos pos = new ChunkPos(packed);
+                if (!level.getWorldBorder().isWithinBounds(pos.getWorldPosition())) continue;
+                if (chunks.add(packed)) level.getChunkSource().addRegionTicket(TYPE, pos, 2, companion.getUUID(), true);
+            }
             Lease previous = LEASES.put(companion.getUUID(), new Lease(level, chunks));
             if (previous != null) for (long old : previous.chunks) if (previous.level != level || !chunks.contains(old))
                 previous.level.getChunkSource().removeRegionTicket(TYPE, new ChunkPos(old), 2, companion.getUUID(), true);
@@ -58,6 +63,8 @@ public final class CompanionChunks {
         }
     }
     public static int ticketCount(UUID id) { Lease lease = LEASES.get(id); return lease == null ? 0 : lease.chunks.size(); }
+    /** Whether the chunk (packed as ChunkPos.asLong) is in the companion's current lease. */
+    public static boolean leases(UUID id, long chunk) { Lease lease = LEASES.get(id); return lease != null && lease.chunks.contains(chunk); }
     public static void release(UUID id) {
         Lease old = LEASES.remove(id);
         if (old != null) for (long pos : old.chunks) old.level.getChunkSource().removeRegionTicket(TYPE, new ChunkPos(pos), 2, id, true);

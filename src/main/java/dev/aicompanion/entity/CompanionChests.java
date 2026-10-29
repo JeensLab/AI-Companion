@@ -59,7 +59,7 @@ final class CompanionChests {
         }
         Container chest = chestAt(level, w.target);
         if (chest == null) { w.triedChests.add(w.target); w.resetTarget(); return; }
-        if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2D * 3.2D || !CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), w.target)) {
+        if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2D * 3.2D || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
             if (!w.approach(level, w.target, 2.8D)) { w.triedChests.add(w.target); w.resetTarget(); }
             return;
         }
@@ -153,7 +153,7 @@ final class CompanionChests {
         Container chest = chestAt(level, w.target);
         if (chest == null) { w.triedChests.add(w.target); w.resetTarget(); return; }
         w.owner.movementIntent(w.target);
-        if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2 * 3.2 || !CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), w.target)) {
+        if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2 * 3.2 || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
             if (!w.approach(level, w.target, 2.8)) { w.triedChests.add(w.target); w.resetTarget(); }
             return;
         }

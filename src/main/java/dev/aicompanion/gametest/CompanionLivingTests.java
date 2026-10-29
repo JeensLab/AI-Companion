@@ -10,6 +10,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.*;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.block.state.properties.SlabType;
 import net.neoforged.neoforge.gametest.*;
 
 @GameTestHolder(AICompanionMod.MOD_ID)
@@ -170,6 +172,26 @@ public final class CompanionLivingTests {
         helper.succeedWhen(() -> { done(helper, companion);
             helper.assertTrue(count(companion, Items.OAK_LOG) == 7 && count(companion, Items.DIRT) == 6 && companion.getTemporarySupportCount() == 0,
                     "Tree or support drop left behind: " + companion.getStoredItemsSummary() + " " + companion.getLastTaskResult()); });
+    }
+    /** A cell diagonally behind a block beside the chest shows the chest only past that block's corner: the stand cell and the reach check must call that in sight alike. */
+    @GameTest(template = "tall_tree", timeoutTicks = 500, batch = "chest_cell_sight")
+    public static void chestIsTakenFromACellBesideTheBlockNextToIt(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container chest = chestBesideABlock(helper, companion); chest.setItem(0, new ItemStack(Items.OAK_LOG, 4));
+        companion.startWork("take_items", "logs", 4);
+        helper.succeedWhen(() -> { done(helper, companion); helper.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 4 && chest.isEmpty(), companion.getLastTaskResult()); });
+    }
+    @GameTest(template = "tall_tree", timeoutTicks = 500, batch = "chest_cell_sight_store")
+    public static void chestIsStoredIntoFromACellBesideTheBlockNextToIt(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container chest = chestBesideABlock(helper, companion); companion.setItem(0, new ItemStack(Items.OAK_LOG, 4));
+        companion.startWork("store_items", "logs", 4);
+        helper.succeedWhen(() -> { done(helper, companion); helper.assertTrue(companion.didLastTaskSucceed() && count(chest, Items.OAK_LOG) == 4 && count(companion, Items.OAK_LOG) == 0, companion.getLastTaskResult()); });
+    }
+    private static Container chestBesideABlock(GameTestHelper helper, CompanionEntity companion) {
+        BlockPos chest = new BlockPos(10, 2, 20), cell = helper.absolutePos(new BlockPos(9, 1, 18));
+        helper.setBlock(new BlockPos(10, 1, 20), Blocks.STONE); helper.setBlock(new BlockPos(10, 1, 19), Blocks.STONE);
+        helper.setBlock(new BlockPos(10, 2, 19), Blocks.STONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.TOP)); helper.setBlock(chest, Blocks.CHEST);
+        companion.teleportTo(cell.getX() + .5, cell.getY(), cell.getZ() + .5);
+        return (Container)helper.getBlockEntity(chest);
     }
     private static CompanionEntity setup(GameTestHelper helper) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) helper.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);

@@ -233,8 +233,12 @@ public final class CompanionEvents {
         }
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         if (!autonomousDispatch && !goalDispatch) {
-            companion.goals().playerOrder(action);
-            if (!action.equals("goal_status")) companion.autonomy().playerOrder(action);
+            // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
+            if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
+            else {
+                companion.goals().playerOrder(action);
+                if (!action.equals("goal_status")) companion.autonomy().playerOrder(action);
+            }
         }
         String previousTrace = companion.diagnosticTrace();
         boolean wasWorking = companion.isGatheringTask();
@@ -285,6 +289,7 @@ public final class CompanionEvents {
             case "give_wood" -> companion.startWork("give_items", "logs", 64);
             case "give_items" -> companion.startWork("give_items", item, count);
             case "smelt_items" -> companion.startWork("smelt_items", item, count);
+            case "collect_smelt" -> companion.startWork("collect_smelt", item, 1);
             case "mine_ore" -> companion.startWork("mine_ore", item, count);
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
             case "verify_item" -> companion.carriedCheck(item, count);

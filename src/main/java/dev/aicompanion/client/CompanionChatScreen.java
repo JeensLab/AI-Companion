@@ -61,7 +61,7 @@ public final class CompanionChatScreen extends Screen {
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
-            if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
+            if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
             runLocalCommand(action, trace);
             return;
         }
@@ -169,7 +169,7 @@ public final class CompanionChatScreen extends Screen {
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
-            if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, "local_command");
+            if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
             runLocalCommand(action, trace);
             return;
         }

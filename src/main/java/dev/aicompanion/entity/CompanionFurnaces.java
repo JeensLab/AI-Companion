@@ -8,8 +8,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.block.AbstractFurnaceBlock;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 
@@ -17,16 +15,16 @@ import java.util.Comparator;
 import java.util.List;
 
 final class CompanionFurnaces {
+    private static final int FAR_LOT = 24;
+    /** Time on top of the cooking itself for walking to the furnace, loading it and taking the product out. */
+    static final int SERVICE_ALLOWANCE_TICKS = 20 * 120;
     final CompanionWork w;
 
     CompanionFurnaces(CompanionWork w) { this.w = w; }
 
     String furnaceNote() {
         // Smelting as its own order or as the iron step of a tool: either way the furnaces are ours.
-        if (w.lots.isEmpty()) return "";
-        List<String> open = w.lots.stream().filter(lot -> lot.loaded && !lot.emptied).map(lot -> lot.pos.toShortString()).toList();
-        return open.isEmpty() ? "" : " Сырьё и топливо остались в " + (open.size() == 1 ? "печи на " + open.getFirst() : "печах на " + String.join("; ", open))
-                + " — переплавленное можно забрать оттуда.";
+        return CompanionFurnaceReader.note(w.lots);
     }
     private int loadedTotal() { return w.lots.stream().filter(lot -> lot.loaded).mapToInt(lot -> lot.count).sum(); }
     int smeltReady() { return w.lots.stream().mapToInt(lot -> lot.ready).sum(); }
@@ -113,7 +111,7 @@ final class CompanionFurnaces {
         BlockPos group = w.lots.isEmpty() ? null : w.lots.getFirst().pos;
         return w.chests.blockEntitiesNear(level).stream().filter(pos -> !w.triedFurnaces.contains(pos)
                         && (!w.owner.ownPlacesOnly() || w.owner.placedByMe(pos) && w.owner.leashAllows(pos))
-                        && w.lots.stream().noneMatch(lot -> lot.pos.equals(pos))
+                        && w.lots.stream().noneMatch(lot -> lot.pos.equals(pos)) && !w.owner.batches().reserved(level, pos)
                         && (group == null || pos.distSqr(group) <= CompanionWork.FURNACE_GROUP * CompanionWork.FURNACE_GROUP)
                         && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven))
                 .min(Comparator.comparingDouble(pos -> pos.distSqr(center))).map(BlockPos::immutable).orElse(null);
@@ -135,16 +133,14 @@ final class CompanionFurnaces {
         w.heading = null; w.resetApproach();
     }
 
-    private AbstractFurnaceBlockEntity oven(ServerLevel level, CompanionWork.Lot lot) {
-        return level.hasChunkAt(lot.pos) && level.getBlockEntity(lot.pos) instanceof FurnaceBlockEntity oven ? oven : null;
-    }
+    private AbstractFurnaceBlockEntity oven(ServerLevel level, CompanionWork.Lot lot) { return CompanionFurnaceReader.oven(level, lot); }
 
     void cook(ServerLevel level) {
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
         for (CompanionWork.Lot lot : List.copyOf(w.lots)) {
             if (oven(level, lot) != null) continue;
             if (!lot.loaded) dropLot(lot);
-            else if (lot.open()) { lot.gaveUp = true; w.owner.workStatus("Печь на " + lot.pos.toShortString() + " пропала или выгрузилась, пока плавилось."); }
+            else if (lot.open() && CompanionFurnaceReader.gone(level, lot)) { lot.gaveUp = true; w.owner.workStatus("Печь на " + lot.pos.toShortString() + " пропала или выгрузилась, пока плавилось."); }
         }
         int remaining = w.smeltCount - loadedTotal();
         CompanionWork.Lot next;
@@ -157,12 +153,13 @@ final class CompanionFurnaces {
             if (w.lots.stream().noneMatch(CompanionWork.Lot::open)) { finishSmelt(level); return; }
             next = w.lots.stream().filter(lot -> lot.open() && needsHands(level, lot))
                     .min(Comparator.comparingDouble(lot -> w.owner.distanceToSqr(lot.pos.getCenter()))).orElse(null);
-            if (next == null) { waitAtFurnaces(level); return; }
+            if (next == null) { if (!w.owner.batches().parkIfLong(w, level)) waitAtFurnaces(level); return; }
         }
         if (!next.pos.equals(w.heading)) { w.heading = next.pos; w.resetApproach(); }
+        if (travelTo(level, next)) return;
         w.owner.movementIntent(next.pos);
         w.owner.getLookControl().setLookAt(next.pos.getX() + .5D, next.pos.getY() + .5D, next.pos.getZ() + .5D);
-        if (w.owner.distanceToSqr(next.pos.getCenter()) > 3.2D * 3.2D || !CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), next.pos)) {
+        if (w.owner.distanceToSqr(next.pos.getCenter()) > 3.2D * 3.2D || !w.items.visibleFrom(level, w.owner.getEyePosition(), next.pos)) {
             if (w.approach(level, next.pos, 2.8D)) { w.owner.workStatus(next.loaded ? "Иду к печи на " + next.pos.toShortString() + "." : "Иду к печи на " + next.pos.toShortString() + " закладывать."); return; }
             // A cow at the furnace or a crowd on the way blocks for a moment, not for good: once more, then another furnace.
             if (!next.loaded && ++next.misses < 2) { w.resetApproach(); w.owner.workStatus("К печи на " + next.pos.toShortString() + " не подойти, попробую ещё раз."); return; }
@@ -173,6 +170,16 @@ final class CompanionFurnaces {
         w.owner.getNavigation().stop();
         AbstractFurnaceBlockEntity oven = oven(level, next);
         if (!next.loaded) loadLot(level, next, oven, remaining); else serviceLot(level, next, oven);
+    }
+
+    /** A furnace far off, or in a chunk nobody has loaded yet, is walked to leg by leg: the plain approach only knows the loaded neighbourhood. */
+    private boolean travelTo(ServerLevel level, CompanionWork.Lot lot) {
+        boolean far = !level.hasChunkAt(lot.pos) || w.owner.distanceToSqr(lot.pos.getCenter()) > FAR_LOT * FAR_LOT;
+        if (!far) { if (w.owner.travel().goal() != null) w.owner.travel().reset(); return false; }
+        var step = w.owner.travel().toward(lot.pos, FAR_LOT - 8);
+        if (step == CompanionTravel.Step.WALKING) { w.owner.workStatus("Иду к печи на " + lot.pos.toShortString() + "."); return true; }
+        w.owner.travel().reset();
+        return !level.hasChunkAt(lot.pos); // no chunk to approach into: keep trying until the work's own deadline
     }
 
     /** Raw material into the top slot, fuel under it: the same two slots a player fills. */
@@ -204,7 +211,7 @@ final class CompanionFurnaces {
         oven.setChanged();
         lot.loaded = true; lot.progressTick = level.getGameTime();
         // The recipe's own cooking time: ten seconds an item for ordinary smelting.
-        w.deadline = Math.max(w.deadline, level.getGameTime() + (long) lot.count * w.smelt.cookTicks() + 20 * 120);
+        w.deadline = Math.max(w.deadline, level.getGameTime() + (long) lot.count * w.smelt.cookTicks() + SERVICE_ALLOWANCE_TICKS);
         if (!lot.placed) w.owner.rememberObserved(lot.pos);
         w.owner.animateAction(3, lot.pos, new ItemStack(w.smelt.input()));
         dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "furnace_loaded", "entity", w.owner.getUUID(), "position", lot.pos,
@@ -248,24 +255,11 @@ final class CompanionFurnaces {
         lot.fuelPut = fuel.item(); lot.fuelOurs = added.getCount(); lot.fuelTheirs = theirs;
     }
 
-    /** Reads a loaded furnace: new product counts as progress. Ticks in which the furnace could not run don't count towards a stall. */
-    private void watch(ServerLevel level, CompanionWork.Lot lot) {
-        long chunk = ChunkPos.asLong(lot.pos);
-        if (!level.shouldTickBlocksAt(chunk) || !level.areEntitiesLoaded(chunk)) { lot.progressTick = level.getGameTime(); return; }
-        int ready = product(lot, oven(level, lot)) / w.smelt.result().getCount();
-        if (ready > lot.ready) { lot.ready = ready; lot.progressTick = level.getGameTime(); }
-    }
-
-    private int left(CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven) { return oven.getItem(0).is(w.smelt.input()) ? oven.getItem(0).getCount() : 0; }
-    private boolean lit(ServerLevel level, CompanionWork.Lot lot) { return level.getBlockState(lot.pos).getValue(AbstractFurnaceBlock.LIT); }
-    private boolean stalled(ServerLevel level, CompanionWork.Lot lot) { return level.getGameTime() - lot.progressTick > w.smelt.cookTicks() * 2L + 20 * 30; }
-
-    /** Done, out of fuel or stuck: the furnace needs him standing at it. */
-    private boolean needsHands(ServerLevel level, CompanionWork.Lot lot) {
-        AbstractFurnaceBlockEntity oven = oven(level, lot);
-        int left = left(lot, oven);
-        return left == 0 || lot.ready >= lot.count || stalled(level, lot) || !lit(level, lot) && oven.getItem(1).isEmpty();
-    }
+    private void watch(ServerLevel level, CompanionWork.Lot lot) { CompanionFurnaceReader.watch(level, w.smelt, lot); }
+    private int left(CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven) { return CompanionFurnaceReader.left(w.smelt, oven); }
+    private boolean lit(ServerLevel level, CompanionWork.Lot lot) { return CompanionFurnaceReader.lit(level, lot); }
+    private boolean stalled(ServerLevel level, CompanionWork.Lot lot) { return CompanionFurnaceReader.stalled(level, w.smelt, lot); }
+    private boolean needsHands(ServerLevel level, CompanionWork.Lot lot) { return CompanionFurnaceReader.needsHands(level, w.smelt, lot); }
 
     private void serviceLot(ServerLevel level, CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven) {
         int left = left(lot, oven);
@@ -305,11 +299,7 @@ final class CompanionFurnaces {
         w.owner.workStatus("Плавлю «" + CompanionWork.itemName(w.smelt.input()) + "»" + (furnaces > 1 ? " в " + furnaces + " печах" : "") + ": готово " + smeltReady() + " из " + w.smeltCount + ".");
     }
 
-    /** Our product: what the output slot gained since loading. */
-    private int product(CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven) {
-        ItemStack out = oven.getItem(2);
-        return ItemStack.isSameItemSameComponents(out, w.smelt.result()) ? Math.max(0, out.getCount() - lot.outputBefore) : 0;
-    }
+    private int product(CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven) { return CompanionFurnaceReader.product(w.smelt, lot, oven); }
 
     /** Like a player at the furnace: the product, raw material still left and his own unburnt fuel go back into the bag. */
     private void emptyLot(ServerLevel level, CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven, String reason) {
@@ -369,6 +359,7 @@ final class CompanionFurnaces {
                     + " «" + outName + "»." + where + rest + " В сумке: " + w.owner.getStoredItemsSummary() + "."); return;
         }
         String why = used.stream().anyMatch(lot -> lot.stalled) ? " Печь перестала плавить."
+                : used.stream().anyMatch(lot -> lot.gaveUp) ? " Печь пропала или недоступна: что в ней было, не забрать."
                 : w.furnacesShort ? " Свободных печей на всё не хватило, остальное сырьё у меня."
                 : w.smeltCount < w.requestedCount ? " Сырья было только " + w.smeltCount + " — на остальное не хватает." : "";
         w.finish(false, "Переплавил " + taken / per + " из " + w.requestedCount + " «" + inName + "», забрал из печи " + taken + " «" + outName + "»." + why

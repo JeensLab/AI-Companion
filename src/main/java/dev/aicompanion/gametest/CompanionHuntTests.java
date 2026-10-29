@@ -141,8 +141,11 @@ public final class CompanionHuntTests {
         });
     }
 
-    /** Lambs, a named sheep and a leashed one are not game; the four grown free ones are. */
-    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    /**
+     * Lambs, a named sheep and a leashed one are not game; the four grown free ones are. Own batch: the hunt looks 32 blocks around him,
+     * past the arena walls, so a free sheep of a neighbouring test in the grid turns "only the spared ones are left" into "no path to the rest".
+     */
+    @GameTest(template = "tall_tree", batch = "hunt_sheep_spared", timeoutTicks = 1600)
     public static void lambsNamedAndLeashedSheepAreSpared(GameTestHelper h) {
         ground(h);
         for (int i = 0; i < 4; i++) h.spawn(EntityType.SHEEP, 19 + i * 2, GROUND + 1, 10);

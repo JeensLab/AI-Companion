@@ -110,6 +110,15 @@ public final class CompanionLocalCommands {
         return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ");
     }
 
+    /** The reason {@code cancelPendingPlans} gets for a cancel word: the queue ends its tasks as the player's cancel, so a parked smelt is released. */
+    public static final String PLAYER_CANCEL = "player_cancel";
+
+    /** «Отмена» and «отмени…» cancel for good; «стоп» and the other stop words only stop, and a smelt parked meanwhile is orphaned for him to collect. */
+    public static String cancelReason(String text, String action) {
+        boolean cancel = "companion stop".equals(action) && text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').matches("(?sU).*\\b(отмена|отмени)\\b.*");
+        return cancel ? PLAYER_CANCEL : "local_command";
+    }
+
     public static final String FIGHT_HUSH = "Помолчи, я тут занят мобом.";
     /**
      * In a fight he does not chat: a question of small talk gets FIGHT_HUSH. Whatever asks nothing may be an order and reaches him as

@@ -7,7 +7,9 @@ public record CompanionActionResult(boolean success, String message, Status stat
                            java.util.UUID operation, java.util.UUID itemEntity) { }
     public enum Status { ACCEPTED, SUCCESS, FAILED, BLOCKED, TIMEOUT, CANCELLED,
         /** A craft refused at once for lack of materials (not a full bag, not a too long chain): the plan may get them instead. */
-        SHORTAGE }
+        SHORTAGE,
+        /** A long smelt was handed to a furnace batch: the order is not done, the product is collected later. Never a success. */
+        PARKED }
     public CompanionActionResult(boolean success, String message, Status status) { this(success, message, status, null); }
     public CompanionActionResult(boolean success, String message) { this(success, message, success ? Status.SUCCESS : Status.FAILED); }
     public CompanionActionResult {
@@ -21,6 +23,7 @@ public record CompanionActionResult(boolean success, String message, Status stat
     public static CompanionActionResult timeout(String message) { return new CompanionActionResult(false, message, Status.TIMEOUT); }
     public static CompanionActionResult shortage(String message) { return new CompanionActionResult(false, message, Status.SHORTAGE); }
     public static CompanionActionResult cancelled(String message) { return new CompanionActionResult(false, message, Status.CANCELLED); }
+    public static CompanionActionResult parked(String message, Evidence facts) { return new CompanionActionResult(false, message, Status.PARKED, facts); }
     public CompanionActionResult withEvidence(Evidence facts) { return new CompanionActionResult(success, message, status, facts); }
     public net.minecraft.nbt.CompoundTag save() {
         var tag = new net.minecraft.nbt.CompoundTag(); tag.putString("Status", status.name()); tag.putString("Message", message);

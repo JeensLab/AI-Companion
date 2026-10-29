@@ -72,6 +72,7 @@ public final class GameContext {
                         + ", его экипировка=" + companions.getFirst().getEquipmentForAi()
                         + ", последний использованный сундук=" + companions.getFirst().getStorageForAi()
                         + ", память о местах=" + companions.getFirst().getPlacesForAi()
+                        + (companions.getFirst().getFurnacesForAi().isEmpty() ? "" : ", его печи=" + companions.getFirst().getFurnacesForAi())
                         + ", установленный верстак рядом=" + companions.getFirst().hasCraftingTableNearby()
                         + ", исторический отчёт (не описание текущей экипировки)=" + (companions.getFirst().getLastTaskResult().isBlank()
                         ? "пока нет" : companions.getFirst().getLastTaskResult())

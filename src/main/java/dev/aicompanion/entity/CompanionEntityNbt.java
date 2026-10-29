@@ -33,6 +33,7 @@ final class CompanionEntityNbt {
         ContainerHelper.saveAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.temporaryPillar.save(tag);
         c.work.save(tag);
+        c.batches().save(tag);
         c.places.save(tag);
         c.deeds.save(tag);
         c.autonomy.save(tag);
@@ -80,6 +81,7 @@ final class CompanionEntityNbt {
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, c.gatheringLogs || c.gatheringDirt);
         c.temporaryPillar.load(tag);
         c.work.load(tag);
+        c.batches().load(tag);
         c.setCanPickUpLoot(false);
         if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {
             c.setFollowing(true);
@@ -109,7 +111,7 @@ final class CompanionEntityNbt {
         CompoundTag full = new CompoundTag(), memory = new CompoundTag();
         c.addAdditionalSaveData(full);
         for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "Deeds",
-                "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
+                "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
         return memory;
     }
 
@@ -118,7 +120,7 @@ final class CompanionEntityNbt {
         if (memory.contains("SearchRadius")) c.setSearchRadius(memory.getInt("SearchRadius"));
         c.chunkLoading = !memory.contains("ChunkLoading") || memory.getBoolean("ChunkLoading");
         c.autonomousSpeech = !memory.contains("AutonomousSpeech") || memory.getBoolean("AutonomousSpeech");
-        c.deeds.load(memory); c.places.load(memory); c.work.load(memory); c.autonomy.load(memory); c.refreshPlaces();
+        c.deeds.load(memory); c.places.load(memory); c.work.load(memory); c.batches().load(memory); c.autonomy.load(memory); c.refreshPlaces();
         c.goals.load(memory);
         c.noteDeed("Вернулся к тебе после гибели. Вещи, что были при мне, остались там, где я погиб.", true);
     }
