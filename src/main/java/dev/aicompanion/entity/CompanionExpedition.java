@@ -23,17 +23,19 @@ import java.util.Set;
  * it ends honestly with what was found, why it stopped and what is left undone.
  */
 final class CompanionExpedition {
-    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH }
+    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, CLIMB }
 
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT }
 
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, SCAN_RADIUS = 4, ORE_PATIENCE = 600, CRAFT_EVERY = 200;
     private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, TORCHES_ENOUGH = 16;
-    private static final double ENTRANCE_NEAR = 1.5, TUNNEL_NEAR = 1.2;
+    private static final double ENTRANCE_NEAR = 2.5;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
     private final CompanionExpeditionDig dig;
+    private final CompanionExpeditionClimb climb;
+    private final CompanionExpeditionWalk lead;
     private final Set<BlockPos> skipped = new HashSet<>();
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
@@ -41,7 +43,7 @@ final class CompanionExpedition {
     private boolean active, scan, hadStone, missedDiamond, unheld;
     private long stepEnd, nextCraft;
     private int startDiamonds, progress, stairSteps, turns, oreTicks, routeIndex;
-    private BlockPos stand, head, go, oreTarget;
+    private BlockPos stand, head, oreTarget;
     private Direction dir, tunnel;
     private String tunnelWhy = "";
 
@@ -49,10 +51,12 @@ final class CompanionExpedition {
         this.w = w;
         this.owner = w.owner;
         this.dig = new CompanionExpeditionDig(w);
+        this.climb = new CompanionExpeditionClimb(w, dig);
+        this.lead = new CompanionExpeditionWalk(dig);
     }
 
     /** What the stall watchdog sees move: blocks broken and steps finished. */
-    int progress() { return progress + dig.broken; }
+    int progress() { return progress + dig.broken + dig.walked; }
 
     void begin(ServerLevel level) {
         reset();
@@ -67,13 +71,15 @@ final class CompanionExpedition {
 
     void reset() {
         dig.reset();
+        climb.reset();
+        lead.clear();
         CompanionChunkTicket.release(owner);
         active = scan = hadStone = missedDiamond = unheld = false;
         tunnelWhy = "";
         stage = Stage.LOCATE;
         plan = null;
         route = List.of();
-        stand = head = go = oreTarget = null;
+        stand = head = oreTarget = null;
         dir = tunnel = null;
         skipped.clear();
         progress = stairSteps = turns = oreTicks = routeIndex = 0;
@@ -93,6 +99,7 @@ final class CompanionExpedition {
             case WALK_DOWN -> walkDown(level);
             case DESCEND -> descend();
             case BRANCH -> branch();
+            case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) end(Ending.SUPPLIES, climb.text()); }
         }
     }
 
@@ -177,11 +184,9 @@ final class CompanionExpedition {
     private void branch() {
         if (plan == null) {
             if (tunnel == null && !startTunnel()) return;
-            if (go != null) {
-                CompanionTravel.Step walk = w.route.legs(go, TUNNEL_NEAR);
-                if (walk == CompanionTravel.Step.FAILED) { end(Ending.BLOCKED, "Не смог вернуться в свой тоннель."); return; }
-                if (walk == CompanionTravel.Step.WALKING) return;
-                go = null;
+            if (!lead.done()) {
+                if (lead.tick() == CompanionExpeditionWalk.Result.STUCK) end(Ending.BLOCKED, "Не смог вернуться в свой тоннель.");
+                return;
             }
             List<CompanionMineSite.Tunnel> tunnels = w.mine.tunnels();
             if (tunnels.get(tunnels.size() - 1).length() >= CompanionShaftPlan.MAX_TUNNEL_CELLS) { tunnel = null; return; }
@@ -196,7 +201,8 @@ final class CompanionExpedition {
         if (tunnels.isEmpty()) { tunnel = null; return; }
         CompanionMineSite.Tunnel last = tunnels.get(tunnels.size() - 1);
         tunnel = last.direction();
-        head = go = w.mine.foot().relative(tunnel, last.length());
+        head = w.mine.foot().relative(tunnel, last.length());
+        lead.inTunnel(w.mine.foot(), last, true);
     }
 
     /** The next direction from the stairs' foot; the way back is skipped, it would break through the step above. */
@@ -205,8 +211,9 @@ final class CompanionExpedition {
         int used = w.mine.tunnels().size();
         if (used >= order.size() - 1) { end(Ending.BLOCKED, "Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")") + "."); return false; }
         tunnel = order.get(used);
+        if (used > 0) lead.inTunnel(w.mine.foot(), w.mine.tunnels().get(used - 1), false);
         w.mine.openTunnel(tunnel);
-        head = go = w.mine.foot();
+        head = w.mine.foot();
         return true;
     }
 
@@ -215,16 +222,13 @@ final class CompanionExpedition {
             case WORKING -> { }
             case DONE -> arrived();
             case BLOCKED -> blocked();
-            case NO_TOOL -> end(Ending.SUPPLIES, noToolText());
+            case NO_TOOL -> {
+                plan = null;
+                stage = Stage.CLIMB;
+                climb.begin(CompanionExpeditionClimb.shortage(dig.lackedOre, hadStone), owner.blockPosition());
+            }
             case FULL -> end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
         }
-    }
-
-    private String noToolText() {
-        if (dig.lackedOre) return "Эту руду на пути нечем взять: нужна кирка покрепче, чем у меня. Остался на месте.";
-        if (!hadStone) return "Каменной кирки у меня нет, а камень копаю только ею.";
-        return "Подходящих кирок не осталось: для камня нужна каменная, для алмазов железная. "
-                + "Подняться за новыми пока не умею, остался на месте.";
     }
 
     private void arrived() {
