@@ -59,6 +59,9 @@ final class CompanionExpeditionStep {
     /** The cells this advance opens. */
     List<BlockPos> cells() { return cells; }
 
+    /** A plug in this cell strands the advance: he must walk through it (the second lane of a tunnel is beside the walk). */
+    boolean needs(BlockPos cell) { return kind != Kind.TUNNEL || cells.indexOf(cell) < 2; }
+
     Result tick(ServerLevel level) {
         if (!safe) return check(level);
         if (index < stepAt) return open(level, stepAt);
