@@ -58,8 +58,7 @@ final class CompanionQuarry {
                     }
                     if (stone == 0 || cells.isEmpty() || cells.size() > 3 * MAX_DEPTH) continue;
                     if (owner.autonomy().running() && !CompanionMiningNavigation.preservesAutonomousReturn(owner, cells.getFirst())) continue;
-                    var path = owner.getNavigation().createPath(start, 0);
-                    if (path != null && path.canReach()) return new Plan(List.copyOf(cells), start.immutable(), java.util.Set.copyOf(supports), stone);
+                    if (owner.work.route.toCells(java.util.Set.of(start)) != null) return new Plan(List.copyOf(cells), start.immutable(), java.util.Set.copyOf(supports), stone);
                 }
             }
         }

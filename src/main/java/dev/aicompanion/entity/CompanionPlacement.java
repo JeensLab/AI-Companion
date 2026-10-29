@@ -46,7 +46,7 @@ final class CompanionPlacement {
             return recordActionResult(CompanionActionResult.failed("Верстак рядом, но я сейчас не у него. Попроси ещё раз — дойду до него и сделаю."));
         // With a bench already at the base, a bench set down out here is a travelling one: taken along after use.
         boolean fieldBench = plan.placeTable() && c.hasKnownCraftingTable();
-        BlockPos tablePosition = plan.placeTable() ? findPlacementPosition(serverLevel, Blocks.CRAFTING_TABLE) : null;
+        BlockPos tablePosition = plan.placeTable() ? findPlacementPosition(serverLevel, Blocks.CRAFTING_TABLE, c.blockPosition(), pos -> true) : null;
         if (plan.placeTable() && (tablePosition == null
                 || !serverLevel.setBlock(tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState(), 3))) {
             return recordActionResult(CompanionActionResult.failed("Не нашёл свободное безопасное место для верстака. Материалы сохранены."));
@@ -150,14 +150,6 @@ final class CompanionPlacement {
         return null;
     }
 
-    private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block) {
-        return findPlacementPosition(serverLevel, block, c.blockPosition());
-    }
-
-    private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin) {
-        return findPlacementPosition(serverLevel, block, origin, pos -> true);
-    }
-
     private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
         BlockState state = block.defaultBlockState();
         int returnHeight = CompanionMiningNavigation.provenReturnHeight(c);
@@ -169,6 +161,9 @@ final class CompanionPlacement {
                 if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
                 BlockPos pos = origin.offset(dx, dy, dz);
                 if (!allowed.test(pos)) continue;
+                // Not on the cell his own stairs begin from or on a step of them: a bench there shut his way back up (marathon, 15 s on the stairs).
+                // A step dug already has left quarrySoil, but the block it stands on is still in quarrySupports.
+                if (pos.equals(c.work.exitCell) || c.work.quarrySoil.contains(pos) || c.work.quarrySupports.contains(pos.below())) continue;
                 if (!serverLevel.hasChunkAt(pos) || !serverLevel.getBlockState(pos).canBeReplaced()) continue;
                 if (!serverLevel.getFluidState(pos).isEmpty() || !serverLevel.getWorldBorder().isWithinBounds(pos)) continue;
                 if (!serverLevel.getBlockState(pos.below()).isFaceSturdy(serverLevel, pos.below(), Direction.UP)) continue;

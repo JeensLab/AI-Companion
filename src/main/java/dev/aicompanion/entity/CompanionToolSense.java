@@ -21,12 +21,13 @@ final class CompanionToolSense {
     /** A known workbench within this many blocks is walked to instead of placing another one. */
     static final int BENCH_WALK = 16;
     private static final int WALK_TICKS = 20 * 20;
-    private static final double BENCH_REACH = 2.8D;
+    static final CompanionRoute.Need BENCH = new CompanionRoute.Need(2.8D, false, false, false);
     private final CompanionEntity owner;
     private final String kind;
     private final TagKey<Item> tag;
     private final BlockState sample;
     private int evaluated = Integer.MIN_VALUE;
+    private boolean benchBusy;
     private int reservedStone;
     private BlockPos bench;
     private Path path;
@@ -66,7 +67,10 @@ final class CompanionToolSense {
         if (target == null) { equipBest(); return false; }
         boolean replacing = bestSpeed() <= 0;
         if (owner.hasCraftingTableNearby()) return craft(target);
+        benchBusy = false;
         BlockPos known = walks < MAX_WALKS ? reachableBench() : null;
+        // The tick's cells went elsewhere: not «no bench», ask again next tick.
+        if (benchBusy) { evaluated = Integer.MIN_VALUE; return false; }
         if (known != null) {
             bench = known; wanted = target; giveUpAt = level.getGameTime() + WALK_TICKS; path = null; walks++;
             owner.workStatus("Схожу к верстаку на " + known.toShortString() + ", сделаю " + label(target) + ".");
@@ -90,10 +94,13 @@ final class CompanionToolSense {
         owner.movementIntent(bench);
         owner.getLookControl().setLookAt(bench.getX() + .5D, bench.getY() + .5D, bench.getZ() + .5D);
         if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
-            path = CompanionMiningNavigation.pathTo(owner, bench, BENCH_REACH, false);
-            if (path == null || !path.canReach()) { bench = null; path = null; equipBest(); return false; }
+            var reach = owner.work.route.to(bench, BENCH);
+            // The tick's cells went elsewhere: not «no way», ask again next tick (giveUpAt bounds the wait).
+            if (reach.busy()) return true;
+            path = reach.path();
+            if (path == null) { bench = null; path = null; equipBest(); return false; }
         }
-        CompanionMiningNavigation.walk(owner, path);
+        owner.work.route.walk(path);
         return true;
     }
 
@@ -158,8 +165,10 @@ final class CompanionToolSense {
     private BlockPos reachableBench() {
         for (BlockPos pos : owner.knownCraftingTables()) {
             if (pos.distSqr(owner.blockPosition()) > BENCH_WALK * BENCH_WALK) continue;
-            Path route = CompanionMiningNavigation.pathTo(owner, pos, BENCH_REACH, false);
-            if (route != null && route.canReach()) return pos;
+            // A bench behind a long way round is not near: that walk costs more than a new bench (twice the straight radius at most).
+            var reach = owner.work.route.to(pos, BENCH);
+            if (reach.busy()) { benchBusy = true; return null; }
+            if (reach.found() && reach.length() <= 2 * BENCH_WALK) return pos;
         }
         return null;
     }

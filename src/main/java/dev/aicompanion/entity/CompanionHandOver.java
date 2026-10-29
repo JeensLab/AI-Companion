@@ -11,7 +11,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.pathfinder.Path;
 
 final class CompanionHandOver {
     final CompanionWork w;
@@ -20,6 +19,8 @@ final class CompanionHandOver {
     private long legsTask = -1;
     /** The walk in legs went at least one leg in this order since it was last reset. */
     private boolean legsWalked;
+    /** Near by the legs' measure but not yet within reach and sight: the last short step to the player's feet is being walked. */
+    private boolean closing;
 
     CompanionHandOver(CompanionWork w) { this.w = w; }
 
@@ -30,6 +31,12 @@ final class CompanionHandOver {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem);
     }
 
+    /** A cell he can stand in by its floor: nothing in the way, or a low block (carpet, slab, path, farmland) with room above it. */
+    private static boolean standable(ServerLevel level, BlockPos cell) {
+        var shape = level.getBlockState(cell).getCollisionShape(level, cell);
+        return shape.isEmpty() || shape.max(net.minecraft.core.Direction.Axis.Y) < 1 && level.getBlockState(cell.above()).getCollisionShape(level, cell.above()).isEmpty();
+    }
+
     /** Walk up to the player and toss the items at their feet: a real item on the ground, picked up by the player. */
     void handOver(ServerLevel level) {
         var player = w.owner.getOwnerPlayer();
@@ -38,41 +45,65 @@ final class CompanionHandOver {
         for (int slot = 0; slot < w.owner.getContainerSize(); slot++) if (giftMatches(w.owner.getItem(slot))) carried += w.owner.getItem(slot).getCount();
         if (giftMatches(w.owner.getMainHandItem())) carried += w.owner.getMainHandItem().getCount();
         if (carried == 0) { w.finish(false, "У меня нет того, что нужно отдать."); return; }
-        if (legsTask != w.taskId) { legsTask = w.taskId; legsFailedAt = null; legsWalked = false; }
+        if (legsTask != w.taskId) { legsTask = w.taskId; legsFailedAt = null; legsWalked = false; closing = false; }
         w.owner.movementIntent(player.blockPosition());
         w.owner.getLookControl().setLookAt(player, 30, 30);
         if (w.owner.distanceToSqr(player) > 3.2 * 3.2 || !w.owner.hasLineOfSight(player)) {
             boolean walking = w.owner.travel().goal() != null;
-            // In a jump the leg stays as it is: the direct path below would replace it (CompanionEntityGoals, FollowPlayerGoal).
+            // In a jump the leg stays as it is.
             if (walking && !w.owner.onGround() && !w.owner.isInWater()) return;
-            // Far off, or no whole way to him from here (a wall between): in legs round walls and ridges, like «иди ко мне»
-            // (CompanionWork.returnToPlayer). A short search would give up while the way round is longer than it walks.
-            // While the legs go, the direct path is not searched for every tick.
-            boolean far = w.owner.distanceToSqr(player) > 32 * 32;
-            Path route = far || walking ? null : w.owner.getNavigation().createPath(player, 1);
+            // In legs round walls and ridges, as far as the way goes, like «иди ко мне» (CompanionWork.returnToPlayer): a short
+            // search would give up while the way round is longer than it walks.
+            if (closing && !w.route.legOver()) {
+                w.owner.workStatus("Несу тебе вещи.");
+                if (w.orderHasStalled(level, 240)) w.finish(false, "Не смог к тебе подойти, вещи остались у меня.");
+                return;
+            }
+            closing = false;
             boolean elsewhere = legsFailedAt == null || !legsFailedAt.closerThan(w.owner.blockPosition(), 3);
-            if ((walking || elsewhere && (far || route == null || !route.canReach())) && (w.owner.onGround() || w.owner.isInWater())) {
-                var step = w.owner.travel().follow(player.blockPosition(), far ? 24 : 3);
-                if (step == CompanionTravel.Step.WALKING) { legsWalked = true; w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
+            if ((walking || elsewhere) && (w.owner.onGround() || w.owner.isInWater())) {
+                var step = w.route.follow(player.blockPosition(), 3);
+                if (step == CompanionTravel.Step.WALKING) { legsWalked = true; if (!w.owner.travel().searchOnly()) w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
                 w.owner.travel().reset();
                 w.owner.movementIntent(player.blockPosition());
+                // Near by the legs' measure (to the block's centre) is not yet in hand-over reach (to his feet) and sight: a short step
+                // through the route to the free cells round his feet (exact cells: with accuracy 1 he stayed behind the corner), as far as it goes.
+                if (step == CompanionTravel.Step.NEAR) {
+                    var feet = player.blockPosition();
+                    java.util.Set<BlockPos> round = new java.util.HashSet<>();
+                    for (BlockPos cell : new BlockPos[]{feet, feet.north(), feet.south(), feet.east(), feet.west()})
+                        if (standable(level, cell)) round.add(cell);
+                    var close = w.route.toCells(round, 0);
+                    if (close == null || close.getNodeCount() <= 1 || close.getNodeCount() > 12) {
+                        // The short step does not come (a wall between, the door far aside): on through the route to those cells, as far as it goes.
+                        var reach = w.route.cells(round, 0);
+                        if (reach.busy()) { w.owner.workStatus("Несу тебе вещи."); return; }
+                        close = reach.found() && reach.path().getNodeCount() > 1 ? reach.path() : null;
+                    }
+                    if (close != null) { w.route.walk(close); closing = true; legsWalked = true; w.orderProgressPosition = null; w.owner.workStatus("Несу тебе вещи."); return; }
+                }
                 boolean walked = legsWalked;
                 legsWalked = false;
                 // Legs that went and then stood half a minute without coming closer: the end (the player is out of reach, like behind
-                // a closed wall); circling «legs, direct, legs» to the deadline helped no one.
+                // a closed wall).
                 if (step == CompanionTravel.Step.FAILED && walked) {
-                    w.finish(false, "Не смог к тебе подойти: полминуты не мог подойти ближе, остановился на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
+                    Boolean none = w.route.noWay(player.blockPosition());
+                    if (none == null) { legsWalked = true; return; }
+                    w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня."
+                            : "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
                     return;
                 }
-                // No leg at all from here (down a mine, game 28.10): the direct try below, where the self-rescue cuts steps up first
-                // (it takes the walk over while the work waits: the hand-over does not give up at once without a leg); new legs only
-                // from another spot.
+                // No leg at all from here (down a mine, game 28.10): the self-rescue takes the walk over while the work waits (the
+                // hand-over does not give up at once without a leg); new legs only from another spot.
                 if (step == CompanionTravel.Step.FAILED) legsFailedAt = w.owner.blockPosition();
             }
-            if (w.orderHasStalled(level, 240)) { w.finish(false, "Не смог к тебе подойти, вещи остались у меня."); return; }
+            if (w.orderHasStalled(level, 240)) {
+                Boolean none = w.route.noWay(player.blockPosition());
+                if (none == null) return;
+                w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня." : "Не смог к тебе подойти, вещи остались у меня.");
+                return;
+            }
             w.owner.workStatus("Несу тебе вещи.");
-            if (route == null) route = w.owner.getNavigation().createPath(player, 1);
-            if (route != null && route.getNodeCount() > 1) CompanionMiningNavigation.walk(w.owner, route); else if (w.owner.onGround() && !w.owner.isInWater()) w.owner.getNavigation().stop();
             return;
         }
         if (w.owner.travel().goal() != null) w.owner.travel().reset();

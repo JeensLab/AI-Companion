@@ -14,11 +14,11 @@ public final class CompanionFailureMessages {
     public static Kind kind(String report) {
         String text = primary(report).toLowerCase(Locale.ROOT).replace('ё','е');
         if (text.contains("нет места") || text.contains("сумка заполнена") || text.contains("сумка забита")) return Kind.BAG;
-        if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи")) return Kind.HANDOVER;
+        if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи") || text.contains("к тебе пройти, вещи")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
-                || text.contains("не добраться") || text.contains("подъем") || text.contains("выбрался")) return Kind.ROUTE;
+                || text.contains("не добраться") || text.contains("подъем") || text.contains("выбрался") || text.contains("к тебе пройти")) return Kind.ROUTE;
         if (text.contains("не хватает") || text.contains("недостаточно")) return Kind.MATERIALS;
         if (text.contains("руды") || text.contains("руду") || text.contains("рудного")) return Kind.ORE;
         if (text.contains("камня") || text.contains("камень")) return Kind.STONE;
@@ -32,7 +32,9 @@ public final class CompanionFailureMessages {
             case BAG -> "У меня сумка забита. Нужно освободить немного места.";
             case WOOD -> "Доступного дерева здесь больше не нашёл.";
             case MATERIALS -> "Пока не хватает материалов, чтобы закончить.";
+            // No way at all to the player, as the wide search proved it: said as such, not as a lost way.
             case ROUTE -> primary(report).contains("выбрался") ? "Я пока внизу, ищу безопасный выход."
+                    : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти."
                     : action.equals("mine_ore") ? "До оставшейся руды безопасно не добраться."
                     : "Здесь не нашёл безопасного пути.";
             case ORE -> "Больше доступной руды поблизости не нашёл.";
@@ -40,7 +42,8 @@ public final class CompanionFailureMessages {
             case FOOD -> "Больше подходящей добычи поблизости не нашёл.";
             case PLACE -> "Здесь тесно, нужно место посвободнее.";
             case TIMEOUT -> "С этим затянулось. Пока отложу.";
-            case HANDOVER -> primary(report).toLowerCase(Locale.ROOT).contains("не вижу") ? "Не вижу тебя рядом, вещи остались у меня." : "Не дошёл до тебя, вещи остались у меня.";
+            case HANDOVER -> primary(report).toLowerCase(Locale.ROOT).contains("не вижу") ? "Не вижу тебя рядом, вещи остались у меня."
+                    : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти, вещи остались у меня." : "Не дошёл до тебя, вещи остались у меня.";
             case OTHER -> "С этим пока не справился.";
         };
     }

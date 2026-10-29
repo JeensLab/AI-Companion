@@ -3,7 +3,6 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
@@ -34,8 +33,8 @@ final class CompanionHunting {
         var target = remaining.stream().min(Comparator.comparingDouble(w.owner::distanceToSqr)).orElseThrow();
         w.owner.selectWeaponForCombat(); w.owner.setTarget(target); w.owner.movementIntent(target.blockPosition());
         w.owner.workStatus("Разбираюсь с ближайшими монстрами, осталось целей: " + remaining.size() + ".");
-        Path route = w.owner.getNavigation().createPath(target, 1);
-        if (route != null && route.canReach()) CompanionMiningNavigation.walk(w.owner, route);
+        // In legs, as far as the way goes; on a leg that fails the stall check above ends the order.
+        if (w.route.follow(target.blockPosition(), 2) != CompanionTravel.Step.WALKING) w.owner.travel().reset();
     }
 
     /**
@@ -53,13 +52,25 @@ final class CompanionHunting {
             if (w.gameTravel != null && travelToGame(level)) return;
             List<net.minecraft.world.entity.animal.Animal> game = huntable(level);
             if (!game.isEmpty()) current = nearestGameOnFoot(game);
+            // The tick's cells went elsewhere: the animals are asked again next tick, none is skipped.
+            if (current == null && !game.isEmpty() && gameBusy) return;
+            if (current == null && w.gameTravel != null) { travelToGame(level); return; }
             if (current == null) {
                 // None within one route: walk towards the nearest in legs (game log 23.10: «пускай ищет даже если еда далеко»).
                 w.gameSkipped.clear();
                 List<net.minecraft.world.entity.animal.Animal> any = huntable(level);
                 if (any.isEmpty()) { finishHunt(level); return; }
                 if (w.gameTravels >= 3) { w.finish(false, gameReport(false) + " К остальным животным не нашёл пути."); return; }
-                w.gameTravel = any.stream().min(Comparator.comparingDouble(w.owner::distanceToSqr)).orElseThrow().blockPosition();
+                // Not towards one the wide search has gone round and found no way to: that walk only ends in a corner.
+                BlockPos to = null;
+                for (var animal : any.stream().sorted(Comparator.comparingDouble(w.owner::distanceToSqr)).toList()) {
+                    Boolean none = w.route.provenNoWay(animal.blockPosition());
+                    if (none == null) return;
+                    if (!none) { to = animal.blockPosition(); break; }
+                    w.gameSkipped.put(animal.getUUID(), level.getGameTime() + 20 * 30);
+                }
+                if (to == null) { w.finish(w.gameKills >= w.gameWanted || w.gameForFood && w.gameKills > 0, gameReport(false) + " К остальным животным пути нет."); return; }
+                w.gameTravel = to;
                 travelToGame(level);
                 return;
             }
@@ -71,8 +82,10 @@ final class CompanionHunting {
     }
 
     /** The walk to game far off; true while walking. On arrival the nearest is chosen again; a failed walk skips them for a while. */
+    // The walk to game is to an animal itself (one beyond a search of the game's), not to a place near the herd.
+    private boolean gameTravelFar;
     private boolean travelToGame(ServerLevel level) {
-        var step = w.owner.travel().toward(w.gameTravel, 10);
+        var step = w.route.legs(w.gameTravel, gameTravelFar ? 3 : 10);
         if (step == CompanionTravel.Step.WALKING) { w.owner.workStatus("Иду к животным подальше, добыл " + w.gameKills + " из " + w.gameWanted + "."); return true; }
         w.owner.travel().reset();
         // Each trip counts, arrived or not: an animal near but unreachable (in water) must not send him back and forth.
@@ -81,7 +94,7 @@ final class CompanionHunting {
             for (var animal : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, new AABB(w.gameTravel).inflate(12)))
                 w.gameSkipped.put(animal.getUUID(), level.getGameTime() + 20 * 30);
         }
-        w.gameTravel = null;
+        w.gameTravel = null; gameTravelFar = false;
         return false;
     }
 
@@ -122,19 +135,27 @@ final class CompanionHunting {
     }
 
     /** One route search to all of them at once: the animal nearest on foot, not across the river by the straight line. */
+    private boolean gameBusy;
     private net.minecraft.world.entity.animal.Animal nearestGameOnFoot(List<net.minecraft.world.entity.animal.Animal> game) {
+        gameBusy = false;
         java.util.Map<BlockPos, net.minecraft.world.entity.animal.Animal> at = new java.util.HashMap<>();
         for (var animal : game) at.putIfAbsent(animal.blockPosition(), animal);
-        Path route = w.owner.getNavigation().createPath(at.keySet(), 1);
-        if (route != null && route.canReach() && at.containsKey(route.getTarget())) return at.get(route.getTarget());
-        // That search may spend its steps on one it cannot reach: the nearest few on their own.
-        var nearest = game.stream().sorted(Comparator.comparingDouble(w.owner::distanceToSqr)).limit(3).toList();
-        for (var animal : nearest) {
-            Path single = w.owner.getNavigation().createPath(animal, 1);
-            if (single != null && single.canReach()) return animal;
-            w.gameSkipped.put(animal.getUUID(), w.owner.level().getGameTime() + 20 * 10);
+        var reach = w.route.cells(at.keySet(), 1);
+        if (reach.busy()) { gameBusy = true; return null; }
+        var best = reach.found() ? at.get(reach.path().getTarget()) : null;
+        if (best == null && reach.found()) best = game.stream().min(Comparator.comparingDouble(w.owner::distanceToSqr)).orElse(null);
+        if (best == null) {
+            // That search may spend its steps on one it cannot reach: the nearest few on their own.
+            for (var animal : game.stream().sorted(Comparator.comparingDouble(w.owner::distanceToSqr)).limit(3).toList()) {
+                var single = w.route.cells(java.util.Set.of(animal.blockPosition()), 1);
+                if (single.busy()) { gameBusy = true; break; }
+                if (single.found()) { best = animal; reach = single; break; }
+                w.gameSkipped.put(animal.getUUID(), w.owner.level().getGameTime() + 20 * 10);
+            }
         }
-        return null;
+        // Beyond one search: not lost but far, walked to in legs (travelToGame), then chosen again from close by.
+        if (best != null && reach.kind() == CompanionRoute.Kind.FAR) { w.gameTravel = best.blockPosition(); gameTravelFar = true; return null; }
+        return best;
     }
 
     /** Nothing more to take here: an honest account of who was left and why. */

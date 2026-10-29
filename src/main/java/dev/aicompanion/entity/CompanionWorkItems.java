@@ -28,16 +28,7 @@ final class CompanionWorkItems {
     int reachBlock(ServerLevel level, BlockPos block, boolean forTheDrop) {
         w.owner.movementIntent(block);
         w.owner.getLookControl().setLookAt(block.getX() + .5D, block.getY() + .5D, block.getZ() + .5D);
-        double distance = w.owner.distanceToSqr(block.getCenter());
-        if (distance <= 3.8D * 3.8D && CompanionMiningNavigation.visible(w.owner, w.owner.getEyePosition(), block)
-                && (!forTheDrop || CompanionMiningNavigation.dropCollectable(level, block, w.owner.blockPosition()))) { w.owner.getNavigation().stop(); return 1; }
-        w.breaking.reset();
-        if (distance + .05 < w.bestDistance) { w.bestDistance = distance; w.lastProgressTick = level.getGameTime(); }
-        if (level.getGameTime() - w.lastProgressTick > 160) return -1;
-        if (w.path == null || w.owner.getNavigation().isDone() || w.owner.getNavigation().isStuck()) w.path = CompanionMiningNavigation.pathTo(w.owner, block, 3.5, false, true, forTheDrop);
-        if (w.path == null || !w.path.canReach()) return -1;
-        CompanionMiningNavigation.walk(w.owner, w.path);
-        return 0;
+        return w.route.approach(level, block, forTheDrop);
     }
 
     boolean prepareMiningTool(BlockState state) {

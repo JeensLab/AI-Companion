@@ -77,9 +77,12 @@ final class CompanionRecovery {
     private boolean routeMissing(BlockPos intent) {
         long now = owner.level().getGameTime();
         if (!intent.equals(checkedIntent) || now >= nextRouteCheck) {
+            int busy = owner.work.route.busyAnswers();
+            boolean none = owner.work.route.toCells(java.util.Set.of(intent), 1) == null;
+            // This tick's cells went elsewhere: not an answer, asked again next tick.
+            if (owner.work.route.busyAnswers() != busy) return missing;
             checkedIntent = intent.immutable(); nextRouteCheck = now + 20;
-            Path route = owner.getNavigation().createPath(intent, 1);
-            missing = route == null || !route.canReach();
+            missing = none;
         }
         return missing;
     }
@@ -106,8 +109,11 @@ final class CompanionRecovery {
         if (jumpCell != null) { jump(level); return; }
         if (stepUp != null) { stepUp(); return; }
         if (!owner.onGround()) return;
-        Path exit = owner.getNavigation().createPath(destination, 1);
-        if (exit != null && exit.canReach()) {
+        int busy = owner.work.route.busyAnswers();
+        Path exit = owner.work.route.toCells(java.util.Set.of(destination), 1);
+        // This tick's cells went elsewhere: no way is not known yet, he does not dig or climb for it.
+        if (exit == null && owner.work.route.busyAnswers() != busy) return;
+        if (exit != null) {
             CompanionMiningNavigation.walk(owner, exit);
             // Finish an ascent toward the player before yielding: following may be inactive or cross its start threshold
             // between goal updates. Work destinations retain their existing movement handoff and time budget.

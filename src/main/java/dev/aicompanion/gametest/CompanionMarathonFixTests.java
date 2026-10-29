@@ -117,7 +117,7 @@ public final class CompanionMarathonFixTests {
         h.succeedWhen(() -> {
             var result = oleg.workResult(id);
             h.assertTrue(result != null, "Still trying: " + oleg.getLastTaskResult());
-            h.assertTrue(!result.success() && result.message().contains("Не смог"), "Unexpected: " + result.message());
+            h.assertTrue(!result.success() && (result.message().contains("Не смог") || result.message().equals("Не могу к тебе пройти.")), "Unexpected: " + result.message());
             h.assertTrue(oleg.isFollowing(), "Gave up following after a failed «иди ко мне»");
         });
     }

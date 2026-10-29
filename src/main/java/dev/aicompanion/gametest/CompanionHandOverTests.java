@@ -168,6 +168,19 @@ public final class CompanionHandOverTests {
         h.succeed();
     }
 
+    /** Game 28.10: the player shut in glass heard «С этим пока не справился» for «Не могу к тебе пройти»; no way is said as no way. */
+    @GameTest(template = "empty")
+    public static void noWayToThePlayerIsSaidAsSuch(GameTestHelper h) {
+        String come = dev.aicompanion.client.CompanionDialogue.summarize(List.of(new PlannedAction("come", 0, 1)), "План остановлен: Не могу к тебе пройти.");
+        h.assertTrue(come.equals("Не могу к тебе пройти."), come);
+        String give = dev.aicompanion.client.CompanionDialogue.summarize(List.of(new PlannedAction("give_items", 0, 2, "minecraft:iron_helmet")),
+                "План остановлен: Не могу к тебе пройти, вещи остались у меня.");
+        h.assertTrue(give.equals("Не могу к тебе пройти, вещи остались у меня."), give);
+        // Things left with him for another reason keep their kind.
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind("Работа прервалась выходом из мира. Вещи остались у меня.") == dev.aicompanion.CompanionFailureMessages.Kind.OTHER, "world exit");
+        h.succeed();
+    }
+
     /**
      * The player is shut in a bedrock box 50 blocks off. The walk in legs gets up to the wall and stands there: that is the end, not a
      * reason to start the walk again from another spot until the ten-minute deadline (review of 28.10).
@@ -194,7 +207,8 @@ public final class CompanionHandOverTests {
         h.assertTrue(CompanionEvents.executeAction(owner, "give_items", "minecraft:iron_helmet", 2).success(), "Hand-over not accepted");
         h.succeedWhen(() -> {
             h.assertTrue(!companion.isWorking(), "Still walking: " + companion.getLastTaskResult());
-            h.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("Не смог к тебе подойти"), companion.getLastTaskResult());
+            // Our search proves the box sealed (the game's could only give up): «no way» is the honest end; stuck is the other.
+            h.assertTrue(!companion.didLastTaskSucceed() && (companion.getLastTaskResult().contains("Не смог к тебе подойти") || companion.getLastTaskResult().contains("Не могу к тебе пройти")), companion.getLastTaskResult());
             h.assertTrue(count(companion, Items.IRON_HELMET) == 2, "Helmets left him");
         });
     }

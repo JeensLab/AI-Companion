@@ -93,14 +93,18 @@ final class CompanionHouse {
     }
     Result ensureSite(ServerLevel level) {
         if (base != null) return null;
+        int busy = owner.work.route.busyAnswers();
         base = findSite(level);
-        return base == null ? Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.") : null;
+        // A site it could not search to for want of this tick's cells is not rejected: tick() looks again next tick.
+        return base == null && owner.work.route.busyAnswers() == busy ? Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.") : null;
     }
 
     Result tick(ServerLevel level) {
         if (!owner.onGround()) return Result.working();
         if (base == null) {
+            int busy = owner.work.route.busyAnswers();
             base = findSite(level);
+            if (base == null && owner.work.route.busyAnswers() != busy) return Result.working();
             if (base == null) return Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.");
         }
         if (!prepared) {
@@ -134,6 +138,8 @@ final class CompanionHouse {
                 if (canPlaceFromHere(level, step)) { select(index, level); break; }
                 Path route = route(level, step);
                 if (route != null && route.canReach()) { select(index, level); path = route; break; }
+                // The tick's cells went elsewhere: the rest of the steps are asked next tick, none is written off.
+                if (route == null && routeBusy) return Result.working();
                 unreachable.add(index);
             }
             if (target < 0) return Result.failed("Не могу подойти к оставшимся блокам дома. Освободи проход и скажи «дострой дом».");
@@ -173,12 +179,7 @@ final class CompanionHouse {
             }
             if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) path = route(level, step);
             if (path != null) {
-                owner.getNavigation().moveTo(path, 1D);
-                var end = path.getEndNode();
-                if (end != null && owner.distanceToSqr(end.x + .5, end.y, end.z + .5) < 1.5) {
-                    owner.getNavigation().stop();
-                    owner.getMoveControl().setWantedPosition(end.x + .5, end.y, end.z + .5, .7);
-                }
+                owner.work.route.walk(path);
             }
         }
         return Result.working();
@@ -256,7 +257,7 @@ final class CompanionHouse {
             Step station = new Step(workbench, Blocks.CRAFTING_TABLE.defaultBlockState(), 0);
             Path returnPath = route(level, station);
             if (returnPath != null && returnPath.canReach()) {
-                owner.getNavigation().moveTo(returnPath, 1);
+                owner.work.route.walk(returnPath);
                 owner.workStatus("Вернусь к верстаку подготовить материалы для дома.");
                 return Result.working();
             }
@@ -345,8 +346,7 @@ final class CompanionHouse {
             for (int y = 0; y <= 5; y++) if (!replaceable(level, corner.offset(x, y, z))) return false;
         }
         if (!level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner.offset(-1, 0, -1)), Vec3.atLowerCornerOf(corner.offset(6, 6, 6))), entity -> entity.isAlive()).isEmpty()) return false;
-        Path approach = owner.getNavigation().createPath(Set.of(corner.offset(2, 0, -1), corner.offset(-1, 0, 2), corner.offset(5, 0, 2)), 0);
-        return approach != null && approach.canReach();
+        return owner.work.route.toCells(Set.of(corner.offset(2, 0, -1), corner.offset(-1, 0, 2), corner.offset(5, 0, 2))) != null;
     }
 
     private Result checkBlueprint(ServerLevel level) {
@@ -396,6 +396,7 @@ final class CompanionHouse {
         }
         return false;
     }
+    private boolean routeBusy;
     private Path route(ServerLevel level, Step step) {
         Set<BlockPos> feet = new java.util.HashSet<>();
         for (int y = 0; y <= 1; y++) for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
@@ -408,7 +409,9 @@ final class CompanionHouse {
             if (!level.noCollision(owner, body) || !visible(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), step.pos)) continue;
             feet.add(pos);
         }
-        return feet.isEmpty() ? null : owner.getNavigation().createPath(feet, 0);
+        var reach = feet.isEmpty() ? null : owner.work.route.cells(feet, 0);
+        routeBusy = reach != null && reach.busy();
+        return reach == null ? null : reach.path();
     }
 
     void save(CompoundTag tag) {
