@@ -14,7 +14,6 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.item.Item;
@@ -58,7 +57,7 @@ public final class CompanionAgenda {
      */
     private static final long IDLE_SAY_TICKS = 20L * 60 * 5, IDLE_BLOCK_TICKS = 20L * 60 * 30;
     /** The things of a dead companion are searched this far round his death place, and fetched from no farther than a trip he can make. */
-    private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4;
+    private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, VOID_MARGIN = 4;
     private static final String COLLECT = "collect";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
@@ -580,13 +579,17 @@ public final class CompanionAgenda {
         String why = !level.dimension().equals(goal.deathDimension) ? "это другое измерение"
                 : !level.isLoaded(place) ? "туда не дойти, место не загружено"
                 : c.blockPosition().distSqr(place) > RECOVER_RANGE * RECOVER_RANGE ? "до них слишком далеко"
-                : unsafe(level, place) ? "там лава или пустота" : null;
+                : place.getY() < level.getMinBuildHeight() + VOID_MARGIN ? "там пустота" : null;
         goal.deathPlace = null; goal.deathDimension = null;
         data.setDirty();
         List<ItemEntity> mine = why != null ? List.of() : level.getEntitiesOfClass(ItemEntity.class, new AABB(place).inflate(RECOVER_RADIUS),
                 item -> item.isAlive() && item.getPersistentData().hasUUID(CompanionBag.BELONGINGS)
                         && item.getPersistentData().getUUID(CompanionBag.BELONGINGS).equals(owner));
-        CompanionDiagnostics.event(c.diagnosticTrace(), "goal_belongings", "goal", goal.playbook, "place", place.toShortString(), "found", mine.size(), "why", why == null ? "" : why);
+        // Lava is judged by what it does (CompanionLava): his things in it, or with lava running beside them, are left where they are.
+        int found = mine.size();
+        mine = mine.stream().filter(item -> CompanionLava.safeToFetch(level, item.blockPosition())).toList();
+        if (mine.isEmpty() && found > 0) why = "они лежат в лаве или рядом течёт лава";
+        CompanionDiagnostics.event(c.diagnosticTrace(), "goal_belongings", "goal", goal.playbook, "place", place.toShortString(), "found", found, "why", why == null ? "" : why);
         if (mine.isEmpty()) {
             c.autonomy().report("Мои вещи остались там, где я погиб (" + place.toShortString() + "): " + (why == null ? "я их там уже не нашёл" : why) + ".");
             return false;
@@ -594,13 +597,6 @@ public final class CompanionAgenda {
         c.loot.claim(mine);
         c.autonomy().report("Иду за своими вещами, что выпали на " + place.toShortString() + ".");
         return true;
-    }
-
-    private static boolean unsafe(ServerLevel level, BlockPos place) {
-        if (place.getY() < level.getMinBuildHeight() + VOID_MARGIN) return true;
-        for (BlockPos pos : BlockPos.betweenClosed(place.offset(-LAVA_RADIUS, -LAVA_RADIUS, -LAVA_RADIUS), place.offset(LAVA_RADIUS, 1, LAVA_RADIUS)))
-            if (level.isLoaded(pos) && level.getFluidState(pos).is(FluidTags.LAVA)) return true;
-        return false;
     }
 
     /** Ends the current run; its own work stops only if it is still the active one, so a newer order is never cut. */
