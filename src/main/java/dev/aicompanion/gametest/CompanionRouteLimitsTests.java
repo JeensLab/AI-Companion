@@ -131,6 +131,9 @@ public final class CompanionRouteLimitsTests {
         java.util.Set<BlockPos> both = java.util.Set.of(h.absolutePos(new BlockPos(13, 2, 12)), h.absolutePos(new BlockPos(16, 2, 21)));
         // A search is made only by one that stands on the ground: a few ticks first.
         h.runAfterDelay(10, () -> {
+            // The budget is measured from where he stands: kept still on the ground from here on, or a few blocks walked in between (seen in a
+            // full run) change what a search costs.
+            c.setNoAi(true);
             var nav = (CompanionNavigation) c.getNavigation();
             long before = nav.meter().nodes();
             nav.wide(far, 0);
