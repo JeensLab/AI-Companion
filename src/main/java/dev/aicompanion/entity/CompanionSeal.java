@@ -31,9 +31,12 @@ public final class CompanionSeal {
     /** Sealing blocks in the bag. */
     public static int available(CompanionEntity owner) {
         int count = 0;
-        for (ItemStack stack : owner.companionInventory) if (PREFERENCE.contains(stack.getItem())) count += stack.getCount();
+        for (ItemStack stack : owner.companionInventory) if (seals(stack)) count += stack.getCount();
         return count;
     }
+
+    /** A kind of block he plugs liquid with. */
+    public static boolean seals(ItemStack stack) { return PREFERENCE.contains(stack.getItem()); }
 
     /** The cell takes a block: air, a plant or other replaceable block, or a liquid. */
     public static boolean replaceable(ServerLevel level, BlockPos cell) {

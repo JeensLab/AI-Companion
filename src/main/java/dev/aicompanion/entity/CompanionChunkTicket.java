@@ -8,6 +8,7 @@ import net.neoforged.neoforge.common.world.chunk.RegisterTicketControllersEvent;
 import net.neoforged.neoforge.common.world.chunk.TicketController;
 import net.neoforged.neoforge.common.world.chunk.TicketHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,23 +22,45 @@ import java.util.UUID;
 public final class CompanionChunkTicket {
     private static final TicketController CONTROLLER = new TicketController(
             ResourceLocation.fromNamespaceAndPath(AICompanionMod.MOD_ID, "expedition"), CompanionChunkTicket::validate);
-    private record Held(ServerLevel level, ChunkPos chunk) { }
+    private record Held(ServerLevel level, ChunkPos chunk) {
+        /** His chunk and its eight neighbours: a step over a border must not leave him in a chunk that does not tick. */
+        List<ChunkPos> around() {
+            List<ChunkPos> chunks = new ArrayList<>(9);
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) chunks.add(new ChunkPos(chunk.x + dx, chunk.z + dz));
+            return chunks;
+        }
+    }
     private static final Map<UUID, Held> ACTIVE = new HashMap<>();
 
     private CompanionChunkTicket() { }
 
     public static void register(RegisterTicketControllersEvent event) { event.register(CONTROLLER); }
 
-    /** Holds the chunk he stands in; moves an existing ticket. False when the level refuses it. */
+    /** Holds the chunk he stands in and its neighbours; moves an existing ticket. False when the level refuses it (the old ticket stays). */
     public static boolean hold(CompanionEntity companion) {
         if (!(companion.level() instanceof ServerLevel level)) return false;
         UUID id = companion.getUUID();
         ChunkPos chunk = companion.chunkPosition();
         Held old = ACTIVE.get(id);
         if (old != null && old.level == level && old.chunk.equals(chunk)) return true;
-        if (!CONTROLLER.forceChunk(level, id, chunk.x, chunk.z, true, true)) return false;
-        ACTIVE.put(id, new Held(level, chunk));
-        if (old != null) CONTROLLER.forceChunk(old.level, id, old.chunk.x, old.chunk.z, false, true);
+        Held next = new Held(level, chunk);
+        List<ChunkPos> had = old != null && old.level == level ? old.around() : List.of();
+        List<ChunkPos> added = new ArrayList<>(9);
+        for (ChunkPos wanted : next.around()) {
+            if (had.contains(wanted)) continue;
+            if (!CONTROLLER.forceChunk(level, id, wanted.x, wanted.z, true, true)) {
+                for (ChunkPos undo : added) CONTROLLER.forceChunk(level, id, undo.x, undo.z, false, true);
+                return false;
+            }
+            added.add(wanted);
+        }
+        ACTIVE.put(id, next);
+        if (old != null) {
+            List<ChunkPos> keep = next.around();
+            for (ChunkPos gone : old.around()) {
+                if (old.level != level || !keep.contains(gone)) CONTROLLER.forceChunk(old.level, id, gone.x, gone.z, false, true);
+            }
+        }
         return true;
     }
 
@@ -50,7 +73,7 @@ public final class CompanionChunkTicket {
 
     public static void release(UUID id) {
         Held held = ACTIVE.remove(id);
-        if (held != null) CONTROLLER.forceChunk(held.level, id, held.chunk.x, held.chunk.z, false, true);
+        if (held != null) for (ChunkPos chunk : held.around()) CONTROLLER.forceChunk(held.level, id, chunk.x, chunk.z, false, true);
     }
 
     public static boolean held(UUID id) { return ACTIVE.containsKey(id); }

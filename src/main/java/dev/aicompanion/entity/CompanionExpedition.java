@@ -38,11 +38,12 @@ final class CompanionExpedition {
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, scan;
+    private boolean active, scan, hadStone, missedDiamond, unheld;
     private long stepEnd, nextCraft;
     private int startDiamonds, progress, stairSteps, turns, oreTicks, routeIndex;
     private BlockPos stand, head, go, oreTarget;
     private Direction dir, tunnel;
+    private String tunnelWhy = "";
 
     CompanionExpedition(CompanionWork w) {
         this.w = w;
@@ -59,13 +60,16 @@ final class CompanionExpedition {
         stepEnd = level.getGameTime() + STEP_TICKS;
         w.deadline = stepEnd + 40;
         startDiamonds = w.items.countCarried(Items.DIAMOND);
-        CompanionChunkTicket.hold(owner);
+        hadStone = w.items.countCarried(Items.STONE_PICKAXE) > 0;
+        unheld = !CompanionChunkTicket.hold(owner);
+        if (unheld) owner.workStatus("Не смог удержать чанки вокруг шахты загруженными: если уйти далеко, могу встать.");
     }
 
     void reset() {
         dig.reset();
         CompanionChunkTicket.release(owner);
-        active = scan = false;
+        active = scan = hadStone = missedDiamond = unheld = false;
+        tunnelWhy = "";
         stage = Stage.LOCATE;
         plan = null;
         route = List.of();
@@ -103,6 +107,7 @@ final class CompanionExpedition {
             route = new ArrayList<>(List.of(mine.entrance()));
             route.addAll(mine.stands());
             routeIndex = nearest(here);
+            if (routeIndex < 0 && atTunnel(here)) routeIndex = route.size() - 1;
             if (routeIndex >= 0 || here.distSqr(mine.entrance()) <= FAR_ENTRANCE * FAR_ENTRANCE) { stage = Stage.CHECK_NEAR; return; }
         }
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
@@ -121,6 +126,16 @@ final class CompanionExpedition {
             if (distance <= bestDistance) { best = i; bestDistance = distance; }
         }
         return best;
+    }
+
+    /** Standing in one of the dug tunnels, away from the stairs: the route's last stand leads on into it. */
+    private boolean atTunnel(BlockPos here) {
+        for (CompanionMineSite.Tunnel t : w.mine.tunnels()) {
+            for (int k = 0; k <= t.length(); k++) {
+                if (w.mine.foot().relative(t.direction(), k).distSqr(here) <= SAME_SPOT) return true;
+            }
+        }
+        return false;
     }
 
     private void walkDown(ServerLevel level) {
@@ -188,7 +203,7 @@ final class CompanionExpedition {
     private boolean startTunnel() {
         List<Direction> order = CompanionShaftPlan.tunnelOrder(dir);
         int used = w.mine.tunnels().size();
-        if (used >= order.size() - 1) { end(Ending.BLOCKED, "Все тоннели от лестницы пройдены."); return false; }
+        if (used >= order.size() - 1) { end(Ending.BLOCKED, "Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")") + "."); return false; }
         tunnel = order.get(used);
         w.mine.openTunnel(tunnel);
         head = go = w.mine.foot();
@@ -200,10 +215,16 @@ final class CompanionExpedition {
             case WORKING -> { }
             case DONE -> arrived();
             case BLOCKED -> blocked();
-            case NO_TOOL -> end(Ending.SUPPLIES, "Подходящих кирок не осталось: для камня нужна каменная, для алмазов железная. "
-                    + "Подняться за новыми пока не умею, остался на месте.");
+            case NO_TOOL -> end(Ending.SUPPLIES, noToolText());
             case FULL -> end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
         }
+    }
+
+    private String noToolText() {
+        if (dig.lackedOre) return "Эту руду на пути нечем взять: нужна кирка покрепче, чем у меня. Остался на месте.";
+        if (!hadStone) return "Каменной кирки у меня нет, а камень копаю только ею.";
+        return "Подходящих кирок не осталось: для камня нужна каменная, для алмазов железная. "
+                + "Подняться за новыми пока не умею, остался на месте.";
     }
 
     private void arrived() {
@@ -240,11 +261,11 @@ final class CompanionExpedition {
         switch (failed.kind) {
             case STAIR -> {
                 Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), stand, dir, w.mine.seals());
-                if (side == null) end(Ending.BLOCKED, "Дальше лестницу не прокопать: впереди жидкость, постройка или неустойчивый грунт.");
+                if (side == null) end(Ending.BLOCKED, "Дальше лестницу не прокопать: " + failed.why + ".");
                 else plan = CompanionExpeditionStep.landing(w, dig, stand, side);
             }
-            case LANDING -> end(Ending.BLOCKED, "Свернуть в сторону тоже не вышло.");
-            case TUNNEL -> tunnel = null;
+            case LANDING -> end(Ending.BLOCKED, "Свернуть в сторону тоже не вышло: " + failed.why + ".");
+            case TUNNEL -> { tunnel = null; tunnelWhy = failed.why; }
         }
     }
 
@@ -264,7 +285,10 @@ final class CompanionExpedition {
         switch (dig.dig(level, oreTarget)) {
             case WORKING -> { }
             case DONE -> { dig.flush(); oreTarget = null; }
-            case FULL -> end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
+            case FULL -> {
+                if (level.getBlockState(oreTarget).is(BlockTags.DIAMOND_ORES)) end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
+                else skip();
+            }
             default -> skip();
         }
         return true;
@@ -273,6 +297,7 @@ final class CompanionExpedition {
     private void skip() {
         skipped.add(oreTarget);
         oreTarget = null;
+        dig.forget();
     }
 
     private BlockPos findOre(ServerLevel level, boolean far) {
@@ -287,7 +312,8 @@ final class CompanionExpedition {
             BlockState state = level.getBlockState(pos);
             if (!state.is(BlockTags.DIAMOND_ORES) && !(coal && state.is(BlockTags.COAL_ORES))) continue;
             double distance = eye.distanceToSqr(pos.getCenter());
-            if (distance >= bestDistance || !exposed(level, pos) || CompanionOre.liquidNear(level, pos) || !dig.hasTool(state)) continue;
+            if (distance >= bestDistance || !exposed(level, pos) || CompanionOre.liquidNear(level, pos)) continue;
+            if (!dig.hasTool(state)) { missedDiamond |= state.is(BlockTags.DIAMOND_ORES); continue; }
             if (!far && !withinHands(level, eye, feet, pos, distance)) continue;
             best = pos.immutable();
             bestDistance = distance;
@@ -327,7 +353,10 @@ final class CompanionExpedition {
 
     private void end(Ending ending, String why) {
         dig.flush();
-        String text = (report() + " " + why).strip();
+        String text = report() + " " + why;
+        if (missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
+        if (unheld) text += " Чанки вокруг шахты удержать не удалось.";
+        text = text.strip();
         w.finish(switch (ending) {
             case FOUND -> CompanionActionResult.ok(text);
             case SUPPLIES -> CompanionActionResult.shortage(text);

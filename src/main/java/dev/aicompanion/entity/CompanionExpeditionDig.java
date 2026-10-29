@@ -22,9 +22,9 @@ import java.util.List;
  * until its column is done and then fall as one harvest, so a pickup does not pull him off the stand mid-column.
  */
 final class CompanionExpeditionDig {
-    enum Status { WORKING, DONE, NO_TOOL, FULL, STUCK }
+    enum Status { WORKING, DONE, NO_TOOL, NO_HAND, FULL, STUCK }
 
-    /** Sealing blocks worth keeping in the bag; rock beyond them is left lying, untagged, so the work never waits for it. */
+    /** Sealing blocks worth keeping in the bag; every other rock and the sealing blocks beyond them are left lying, untagged, so the work never waits for them. */
     static final int SEAL_RESERVE = 64;
     private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40;
     private static final double CENTRED = .35, RESTING = .1;
@@ -38,6 +38,8 @@ final class CompanionExpeditionDig {
     private int cellTicks, unseen, walkTicks;
     /** Blocks broken so far: a counter the stall watchdog sees move. */
     int broken;
+    /** The last NO_TOOL was for an ore (it needs a better pickaxe), not for rock (it needs a stone pickaxe). */
+    boolean lackedOre;
 
     CompanionExpeditionDig(CompanionWork w) {
         this.w = w;
@@ -46,13 +48,24 @@ final class CompanionExpeditionDig {
 
     boolean hasTool(BlockState state) { return toolFor(state) != null; }
 
+    /** Forgets the cell being worked on, so a second try at it starts with fresh patience. */
+    void forget() { cell = null; cellTicks = unseen = 0; }
+
+    private Status done() {
+        forget();
+        return Status.DONE;
+    }
+
     /** One tick of breaking the cell. DONE once it is open (broken now or before). */
     Status dig(ServerLevel level, BlockPos pos) {
-        if (CompanionShaftPlan.open(level, pos)) return Status.DONE;
+        if (CompanionShaftPlan.open(level, pos)) return done();
         if (!pos.equals(cell)) { cell = pos.immutable(); cellTicks = unseen = 0; }
         if (++cellTicks > CELL_PATIENCE || !level.getFluidState(pos).isEmpty()) return Status.STUCK;
         BlockState state = level.getBlockState(pos);
-        if (!holdTool(state)) return Status.NO_TOOL;
+        Item tool = toolFor(state);
+        lackedOre = tool == null && state.is(Tags.Blocks.ORES);
+        if (tool == null) return Status.NO_TOOL;
+        if (!holdTool(tool)) return Status.NO_HAND;
         Vec3 eye = owner.getEyePosition();
         owner.getLookControl().setLookAt(pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5);
         if (eye.distanceTo(pos.getCenter()) > CompanionSeal.REACH || !CompanionMiningNavigation.visible(owner, eye, pos)) {
@@ -70,9 +83,15 @@ final class CompanionExpeditionDig {
         if (!level.destroyBlock(pos, false, owner, 512)) return Status.STUCK;
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         broken++;
-        boolean keep = ore || CompanionSeal.available(owner) + heldCount() < SEAL_RESERVE && w.items.canStore(drops);
-        if (keep) held.add(new Held(pos.immutable(), drops)); else toss(level, pos, drops);
-        return Status.DONE;
+        List<ItemStack> kept = new ArrayList<>(), spare = new ArrayList<>();
+        int room = SEAL_RESERVE - CompanionSeal.available(owner) - heldCount();
+        for (ItemStack stack : drops) {
+            boolean keep = ore || CompanionSeal.seals(stack) && room > 0 && w.items.canStore(List.of(stack));
+            if (keep) { kept.add(stack); if (!ore) room -= stack.getCount(); } else spare.add(stack);
+        }
+        if (!kept.isEmpty()) held.add(new Held(pos.immutable(), kept));
+        toss(level, pos, spare);
+        return done();
     }
 
     /** The held drops fall where their blocks stood, to be picked up like any harvest. */
@@ -99,9 +118,7 @@ final class CompanionExpeditionDig {
         }
     }
 
-    private boolean holdTool(BlockState state) {
-        Item tool = toolFor(state);
-        if (tool == null) return false;
+    private boolean holdTool(Item tool) {
         return owner.getMainHandItem().is(tool) || owner.equipForWork(BuiltInRegistries.ITEM.getKey(tool).toString()).success();
     }
 
