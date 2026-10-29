@@ -111,6 +111,8 @@ public final class CompanionDialogue {
             case "wander" -> "осмотреться";
             case "goal_pickaxes" -> "сделать каменные кирки для вас обоих";
             case "goal_resume" -> "продолжить сохранённую цель";
+            case "goal_cancel" -> "отменить цель";
+            case "goal_defer" -> "отложить цель";
             case "goal_status" -> "проверить сохранённую цель";
             case "autonomy" -> "on".equals(action.item()) ? "заняться полезными делами" : "закончить самостоятельную работу";
             case "stop" -> "остановиться";

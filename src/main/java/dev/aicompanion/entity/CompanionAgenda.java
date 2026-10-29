@@ -46,6 +46,11 @@ public final class CompanionAgenda {
     private static final int PAUSE_LIMIT_TICKS = 20 * 60;
     /** Working time without a single milestone met: the goal stops and says so rather than going round in circles. */
     private static final long STALL_TICKS = 20L * 60 * 60;
+    /**
+     * A goal that waits for the player's batch or his furnace says so once, and stops after a wait that long: the usual wait clears
+     * by itself within minutes, so only a stuck one reaches the limit.
+     */
+    private static final long IDLE_SAY_TICKS = 20L * 60 * 5, IDLE_BLOCK_TICKS = 20L * 60 * 30;
     private static final String COLLECT = "collect";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
@@ -76,12 +81,16 @@ public final class CompanionAgenda {
     public static CompanionActionResult accept(ServerPlayer player, CompanionEntity c, String id, int tier) {
         var book = CompanionPlaybooks.of(id, tier);
         if (book == null) return CompanionActionResult.failed("Такой большой цели я не знаю.");
-        if (c.goals().outstanding()) return CompanionActionResult.blocked("Сначала закончу заказ на кирки, потом возьмусь за «" + book.title() + "».");
+        if (c.goals().outstanding()) {
+            // A «стоп» leaves the pickaxe order paused for good: without this hint the player has no way out of the refusal.
+            String way = c.goals().state() == CompanionGoals.State.PAUSED_PLAYER ? " Скажи «отмени цель», если кирки больше не нужны." : "";
+            return CompanionActionResult.blocked("Сначала закончу заказ на кирки, потом возьмусь за «" + book.title() + "»." + way);
+        }
         UUID owner = player.getUUID();
         CompanionAgendaData data = CompanionAgendaData.get(player.server);
         Goal current = data.active(owner);
         if (current != null && current.state.outstanding() && current.playbook.equals(book.id()) && current.tier == book.tier())
-            return current.state == State.HELD || current.state == State.BLOCKED ? resume(player, c) : CompanionActionResult.ok(statusText(data, owner, c));
+            return current.state == State.HELD || current.state == State.BLOCKED ? resume(player, c, false) : CompanionActionResult.ok(statusText(data, owner, c));
         String note = "";
         if (current != null && current.state.outstanding()) {
             cancelRun(owner, c);
@@ -108,17 +117,26 @@ public final class CompanionAgenda {
         Boolean requestHolds = REQUESTS.remove(owner);
         if (NEUTRAL.contains(action) || action.startsWith("goal_")) return;
         lease(player.server, owner);
-        CompanionAgendaData data = CompanionAgendaData.get(player.server);
+        interrupt(player.server, owner, c, requestHolds != null ? requestHolds : MODES.contains(action), action);
+    }
+
+    /** The queue's port made its first call, before any order reached the server: the goal's step must not run on beside the request. */
+    public static void requestStarted(ServerPlayer player, CompanionEntity c, List<String> types) {
+        Boolean holds = holds(types);
+        if (holds != null) interrupt(player.server, player.getUUID(), c, holds, "request");
+    }
+
+    private static void interrupt(MinecraftServer server, UUID owner, CompanionEntity c, boolean holds, String by) {
+        CompanionAgendaData data = CompanionAgendaData.get(server);
         Goal goal = data.active(owner);
         if (goal == null || !goal.state.suppressesDeeds()) return;
-        boolean holds = requestHolds != null ? requestHolds : MODES.contains(action);
         cancelRun(owner, c);
         State next = holds ? State.HELD : State.INTERRUPTED;
         if (goal.state == next) return;
         goal.state = next;
         goal.reason = holds ? "Жду: скажи «продолжай», и вернусь к цели." : "";
         data.setDirty();
-        CompanionDiagnostics.event(c.diagnosticTrace(), "goal_interrupted", "goal", goal.playbook, "by", action, "state", next);
+        CompanionDiagnostics.event(c.diagnosticTrace(), "goal_interrupted", "goal", goal.playbook, "by", by, "state", next);
     }
 
     /** The queue's port, on the server thread right before it dispatches a step: the class of the whole request. */
@@ -138,7 +156,11 @@ public final class CompanionAgenda {
         return mode ? Boolean.TRUE : null;
     }
 
-    /** The player's request is running: the goal takes no step until this lapses. Renewed by every move of the request. */
+    /**
+     * The player's request is running: the goal takes no step until this lapses. Renewed by every move of the request. A parked smelt
+     * makes no moves, so the lease lapses and the goal may work while that batch cooks, on purpose: a cooked batch stops new goal steps
+     * (readyForQueue) and the player's collection cancels a step that runs, so nothing is lost.
+     */
     public static void lease(MinecraftServer server, UUID owner) {
         if (server != null && owner != null) LEASES.put(owner, server.getTickCount() + LEASE_TICKS);
     }
@@ -149,7 +171,10 @@ public final class CompanionAgenda {
     }
 
     /** «Продолжай»: the held, interrupted or blocked goal goes on, or the deferred one comes back. Null: no long goal, or the pickaxe order resumes first. */
-    public static CompanionActionResult resume(ServerPlayer player, CompanionEntity c) {
+    public static CompanionActionResult resume(ServerPlayer player, CompanionEntity c) { return resume(player, c, true); }
+
+    /** {@code explicit}: the player said «продолжай»; a goal the model asks for again must not get fresh attempts from that. */
+    private static CompanionActionResult resume(ServerPlayer player, CompanionEntity c, boolean explicit) {
         UUID owner = player.getUUID();
         CompanionAgendaData data = CompanionAgendaData.get(player.server);
         Goal goal = data.active(owner);
@@ -164,24 +189,57 @@ public final class CompanionAgenda {
         goal = candidate;
         String title = goal.book().title();
         if (goal.state == State.ACTIVE || goal.state == State.PAUSED_DANGER) return CompanionActionResult.ok(statusText(data, owner, c));
-        if (goal.state == State.BLOCKED) {
-            Milestone next = next(goal, CompanionFacts.of(c));
-            if (next != null && goal.counter(next.key())[0] >= MAX_ATTEMPTS)
-                return CompanionActionResult.blocked("Лимит попыток исчерпан: " + next.label(goal.fallback) + ". " + goal.reason);
+        // An explicit «продолжай» is a fresh start, whatever state the goal was in (a deferred one comes back HELD even if it was blocked):
+        // the player has seen the reason and says to go on.
+        if (explicit) {
+            Milestone next = pick(goal, CompanionFacts.of(c), c);
+            if (next != null) { int[] counter = goal.counter(next.key()); counter[0] = 0; counter[1] = 0; }
+        }
+        if (explicit || goal.state == State.BLOCKED) {
             goal.counters.values().forEach(counter -> counter[1] = 0);
             goal.workTicks = 0; goal.deaths = 0;
         }
-        goal.state = State.ACTIVE; goal.reason = ""; goal.pausedTicks = 0;
+        goal.state = State.ACTIVE; goal.reason = ""; goal.pausedTicks = 0; goal.idleTicks = 0; goal.idleSaid = false;
         data.setDirty();
         return CompanionActionResult.accepted("Продолжаю: " + title + ".");
     }
 
-    /** «Отмени цель»: only an explicit cancel ends a long goal. Null: no long goal to cancel. */
+    /**
+     * «Отложи цель»: the long goal steps aside into the one deferred slot, or the pickaxe order is parked. A second goal is never
+     * pushed out of that slot by this: the player says «отмени цель» if the first one is not needed.
+     */
+    public static CompanionActionResult defer(ServerPlayer player, CompanionEntity c) {
+        UUID owner = player.getUUID();
+        CompanionAgendaData data = CompanionAgendaData.get(player.server);
+        Goal goal = data.active(owner), deferred = data.deferred(owner);
+        if (goal != null && goal.state.outstanding()) {
+            if (deferred != null)
+                return CompanionActionResult.failed("Уже отложена цель «" + deferred.book().title() + "»; вторую отложить не могу. Скажи «отмени цель», если эта не нужна.");
+            cancelRun(owner, c);
+            goal.state = State.HELD; goal.reason = "Отложена по твоей просьбе.";
+            data.setDeferred(owner, goal);
+            data.setActive(owner, null);
+            c.noteDeed("Отложил долгую цель: " + goal.book().title() + ".", true);
+            return CompanionActionResult.ok("Отложил цель «" + goal.book().title() + "». Скажи «продолжай», когда вернуться к ней.");
+        }
+        if (!c.goals().outstanding()) return CompanionActionResult.failed("Нет цели, которую можно отложить.");
+        c.goals().playerOrder("stop");
+        return CompanionActionResult.ok("Отложил заказ на кирки. Скажи «продолжай работу», когда вернуться к нему.");
+    }
+
+    /** «Отмени цель»: only an explicit cancel ends a long goal; with none working, the deferred one goes. Null: no long goal to cancel. */
     public static CompanionActionResult cancel(ServerPlayer player, CompanionEntity c) {
         UUID owner = player.getUUID();
         CompanionAgendaData data = CompanionAgendaData.get(player.server);
         Goal goal = data.active(owner);
-        if (goal == null || !goal.state.outstanding()) return null;
+        if (goal == null || !goal.state.outstanding()) {
+            Goal deferred = data.deferred(owner);
+            // A working long goal is cancelled first; with only a deferred one left, an outstanding pickaxe order takes the cancel, as it takes «продолжай».
+            if (deferred == null || c.goals().outstanding()) return null;
+            data.setDeferred(owner, null);
+            c.noteDeed("Отменил отложенную долгую цель: " + deferred.book().title() + ".", true);
+            return CompanionActionResult.ok("Отменил отложенную цель «" + deferred.book().title() + "».");
+        }
         cancelRun(owner, c);
         goal.state = State.CANCELLED; goal.reason = "Отменено игроком.";
         data.setDirty();
@@ -302,7 +360,9 @@ public final class CompanionAgenda {
             data.setDirty();
         }
         if (run != null) { goal.workTicks += 20; return; }
-        if (leased(server, owner) || !free(c) || c.batches().readyForQueue()) return;
+        if (leased(server, owner)) return;
+        if (!free(c)) { waiting(data, owner, goal, c, "занят другим делом"); return; }
+        if (c.batches().readyForQueue()) { waiting(data, owner, goal, c, "жду готовую партию из печи по твоей просьбе"); return; }
         if (goal.state == State.INTERRUPTED) {
             goal.state = State.ACTIVE;
             data.setDirty();
@@ -322,7 +382,7 @@ public final class CompanionAgenda {
         CompanionFacts facts = CompanionFacts.of(c);
         int done = (int) all.stream().filter(milestone -> milestone.satisfied(facts, goal.fallback, all)).count();
         if (done != goal.done) {
-            if (done > goal.done) goal.workTicks = 0;
+            if (done > goal.done) { goal.workTicks = 0; goal.idleTicks = 0; goal.idleSaid = false; }
             goal.done = done;
             data.setDirty();
         }
@@ -334,17 +394,8 @@ public final class CompanionAgenda {
             block(data, owner, goal, c, "дальше пока не умею: " + String.join(", ", cannot) + ".");
             return;
         }
-        // What his own furnaces are cooking is not made again: the first milestone that does not wait for it goes first.
-        List<Item> cooking = level == null ? List.of() : c.batches().cookingOutputs(level);
-        Milestone pick = null;
-        for (Milestone milestone : all) {
-            if (milestone.satisfied(facts, goal.fallback, all)) continue;
-            if (!milestone.supported()) break;
-            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) continue;
-            pick = milestone;
-            break;
-        }
-        if (pick == null) return;
+        Milestone pick = pick(goal, facts, c);
+        if (pick == null) { waiting(data, owner, goal, c, "жду, пока в печи доготовится партия"); return; }
         int[] counter = goal.counter(pick.key());
         if (counter[0] >= MAX_ATTEMPTS) { block(data, owner, goal, c, pick.label(goal.fallback) + " — попытки исчерпаны. " + goal.reason); return; }
         if (goal.workTicks >= STALL_TICKS) { block(data, owner, goal, c, "давно нет продвижения: " + pick.label(goal.fallback) + "."); return; }
@@ -358,6 +409,28 @@ public final class CompanionAgenda {
         start(server, owner, goal, c, pick.key(), pick.progress(facts, goal.fallback, all), plan);
     }
 
+    /** What his own furnaces are cooking is not made again: the first unmet milestone that does not wait for it, null when there is none. */
+    private static Milestone pick(Goal goal, CompanionFacts facts, CompanionEntity c) {
+        List<Milestone> all = goal.book().milestones();
+        List<Item> cooking = c.level() instanceof ServerLevel level ? c.batches().cookingOutputs(level) : List.of();
+        for (Milestone milestone : all) {
+            if (milestone.satisfied(facts, goal.fallback, all)) continue;
+            if (!milestone.supported()) return null;
+            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) continue;
+            return milestone;
+        }
+        return null;
+    }
+
+    /** One second of a goal that cannot step: the player hears of it after five minutes, and after half an hour the goal stops and says so. */
+    private static void waiting(CompanionAgendaData data, UUID owner, Goal goal, CompanionEntity c, String why) {
+        goal.idleTicks += 20;
+        if (goal.idleTicks >= IDLE_BLOCK_TICKS) { block(data, owner, goal, c, "давно жду: " + why + "."); return; }
+        if (goal.idleTicks < IDLE_SAY_TICKS || goal.idleSaid) return;
+        goal.idleSaid = true;
+        c.autonomySay("Цель «" + goal.book().title() + "» пока ждёт: " + why + ".");
+    }
+
     private static Milestone next(Goal goal, CompanionFacts facts) {
         List<Milestone> all = goal.book().milestones();
         for (Milestone milestone : all) if (!milestone.satisfied(facts, goal.fallback, all)) return milestone;
@@ -367,6 +440,7 @@ public final class CompanionAgenda {
     private static void start(MinecraftServer server, UUID owner, Goal goal, CompanionEntity c, String milestone, List<Integer> progress,
                               List<PlannedAction> plan) {
         Run run = new Run(goal.id, c.getUUID(), c.getId(), milestone, progress);
+        goal.idleTicks = 0; goal.idleSaid = false;
         String trace = CompanionDiagnostics.newTrace();
         run.port = CompanionServerPlanPort.forGoal(server, owner, trace, () -> run.cancelled || !server.isRunning());
         RUNS.put(owner, run);

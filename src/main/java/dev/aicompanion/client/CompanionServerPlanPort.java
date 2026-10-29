@@ -47,6 +47,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private long haltedSince = -1;
     /** Whether a step was already dispatched: a «wait» after it is a pause inside the plan. Server thread only. */
     private boolean dispatched;
+    /** Whether the request's first move already told the agenda (CompanionAgenda.requestStarted). Server thread only. */
+    private boolean began;
     /** A long goal's own steps (CompanionAgenda): his own work, not orders of the player, and its smelts park as his own batches. */
     private final boolean goal;
     /** The plan as the runner has it now: the class of the whole request decides how it interrupts a long goal. */
@@ -200,7 +202,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             if (!result.success()) return CompletableFuture.completedFuture(new Attempt(result, false));
             CompletableFuture<CompanionActionResult> verified;
             if (dispatch.workId() > 0 && TRACKED_WORK.contains(action.type())) verified = waitForWork(dispatch.workId(), dispatch.tick(), limitSeconds(action));
-            else if ("gather_wood".equals(action.type())) verified = waitForGathering(dispatch.tick());
+            else if ("gather_wood".equals(action.type())) verified = waitForGathering(dispatch.workId(), dispatch.tick());
             else if ("wait".equals(action.type())) verified = waitSeconds(action.seconds(), result);
             else verified = CompletableFuture.completedFuture(result);
             return verified.thenApply(done -> new Attempt(done, true));
@@ -273,6 +275,13 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         return ironChain ? WORK_LIMIT_SECONDS + 900 : WORK_LIMIT_SECONDS;
     }
 
+    /** Stops the companion only while the active work is still {@code workId} (0: the legacy gathering): a late timeout never cuts a newer order of the player or a goal's step. */
+    public static boolean stopOwnWork(CompanionEntity companion, long workId) {
+        if (companion.activeWorkId() != workId) return false;
+        companion.stopGathering();
+        return true;
+    }
+
     // Limits count game ticks, not wall seconds: a paused singleplayer game must not time out real work.
     private CompletableFuture<CompanionActionResult> waitForWork(long workId, long startTick, int limitSeconds) {
         if (cancelled()) return parkable() ? parkedBeforeCancel(workId) : CompletableFuture.completedFuture(CompanionActionResult.cancelled("План отменён."));
@@ -287,8 +296,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             }
             if (player.level().getGameTime() - startTick >= limitSeconds * 20L) {
                 companion.diagnosticSnapshot("step_timeout");
-                // workResult is null only while this work is the active one; the guard still protects a newer order of the player or a goal's step.
-                if (companion.activeWorkId() == workId) companion.stopGathering();
+                stopOwnWork(companion, workId);
                 return CompanionActionResult.timeout("Остановил работу по тайм-ауту.");
             }
             return (CompanionActionResult) null;
@@ -316,19 +324,19 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         }).exceptionally(error -> CompanionActionResult.cancelled("План отменён."));
     }
 
-    private CompletableFuture<CompanionActionResult> waitForGathering(long startTick) {
+    private CompletableFuture<CompanionActionResult> waitForGathering(long workId, long startTick) {
         if (cancelled()) return CompletableFuture.completedFuture(CompanionActionResult.cancelled("План отменён."));
         return onServer(player -> {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (companion == null) return new GatherState(false, CompanionActionResult.failed("Компаньон выгружен из мира."));
             if (player.level().getGameTime() - startTick >= GATHER_LIMIT_SECONDS * 20L && companion.isGatheringTask()) {
                 companion.diagnosticSnapshot("step_timeout");
-                companion.stopGathering();
+                stopOwnWork(companion, workId);
                 return new GatherState(false, CompanionActionResult.timeout("Остановил работу по тайм-ауту."));
             }
             return new GatherState(companion.isGatheringTask(),
                     new CompanionActionResult(companion.didLastTaskSucceed(), companion.getLastTaskResult()));
-        }).thenCompose(state -> state.active() ? pause(1).thenCompose(unused -> waitForGathering(startTick))
+        }).thenCompose(state -> state.active() ? pause(1).thenCompose(unused -> waitForGathering(workId, startTick))
                 : CompletableFuture.completedFuture(state.result()));
     }
 
@@ -344,6 +352,21 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
      */
     private void lease() { if (!goal) dev.aicompanion.entity.CompanionAgenda.lease(server, playerId); }
 
+    /** The first move of a player's request: a long goal's step stops now, not only at the first order, which can come after a busy poll or a pause. */
+    private void begin(ServerPlayer player) {
+        if (began || goal || plan.isEmpty()) return;
+        began = true;
+        if (cancelled()) return;
+        CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+        if (companion == null) return;
+        try {
+            dev.aicompanion.entity.CompanionAgenda.requestStarted(player, companion, plan.stream().map(PlannedAction::type).toList());
+        } catch (RuntimeException exception) {
+            // The goal's bookkeeping must never fail the first step of the player's own request.
+            dev.aicompanion.AICompanionMod.LOGGER.warn("The long goal could not be paused for the player's request", exception);
+        }
+    }
+
     private <T> CompletableFuture<T> onServer(Function<ServerPlayer, T> action) {
         lease();
         CompletableFuture<T> result = new CompletableFuture<>();
@@ -355,6 +378,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             try {
                 ServerPlayer player = server.getPlayerList().getPlayer(playerId);
                 if (player == null) throw new IllegalStateException("Игрок вышел из мира.");
+                begin(player);
                 result.complete(action.apply(player));
             } catch (Exception exception) { result.completeExceptionally(exception); }
         });

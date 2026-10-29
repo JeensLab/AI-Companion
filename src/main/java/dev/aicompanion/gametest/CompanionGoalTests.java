@@ -110,7 +110,7 @@ public final class CompanionGoalTests {
     public static void savedCancellationNeverRestarts(GameTestHelper h) {
         var f=fixture(h); materials(f,h); f.start();
         int[] picks={-1},stone={-1};
-        h.runAfterDelay(10,()->{f.order("stop");picks[0]=f.c.goals().countPicks();stone[0]=count(f.c,Items.COBBLESTONE);f.reload();});
+        h.runAfterDelay(10,()->{f.order("stop");h.assertTrue(f.c.goals().state()==CompanionGoals.State.PAUSED_PLAYER,"Stop did not only pause the order: "+f.c.goals().status());f.order("goal_cancel");picks[0]=f.c.goals().countPicks();stone[0]=count(f.c,Items.COBBLESTONE);f.reload();});
         h.succeedWhen(()->{h.assertTrue(h.getTick()>200,"Observe cancellation");
             h.assertTrue(f.c.goals().state()==CompanionGoals.State.CANCELLED && f.c.goals().countPicks()==picks[0] && f.ground()==0,"Cancelled goal worked after load: "+f.c.goals().status());
             h.assertTrue(count(f.c,Items.COBBLESTONE)==stone[0],"Cancelled order consumed recipe");

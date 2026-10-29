@@ -247,7 +247,8 @@ public final class CompanionEvents {
             else {
                 // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order.
                 if (!action.equals("pursue_goal")) companion.goals().playerOrder(action);
-                if (!action.equals("goal_status")) companion.autonomy().playerOrder(action);
+                // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
+                if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
             // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
             CompanionAgenda.playerOrder(player, companion, action);
@@ -272,6 +273,7 @@ public final class CompanionEvents {
                 companion.goals().cancel();
                 yield CompanionActionResult.ok("Отменил заказ на кирки.");
             }
+            case "goal_defer" -> CompanionAgenda.defer(player, companion);
             case "goal_status" -> {
                 CompanionActionResult status = CompanionAgenda.status(player, companion);
                 yield status != null ? status : CompanionActionResult.ok(companion.goals().status());
