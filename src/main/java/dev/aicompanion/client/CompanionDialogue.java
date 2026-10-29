@@ -252,7 +252,7 @@ public final class CompanionDialogue {
         if (lower.contains("отменён") || lower.contains("остановки")) return "Ладно, остановился.";
         int stoppedAt = report.lastIndexOf("План остановлен:");
         String last = stoppedAt >= 0 ? report.substring(stoppedAt) : report.substring(report.lastIndexOf('\n') + 1);
-        // Sorting words its own refusals («Рядом с тобой сундуков не вижу.», «…они у меня в сумке»): they are said as they are; the raw line of another step of the plan is not.
+        // Sorting words its own refusals («Рядом с тобой сундуков не вижу.», «…Что не разложил — у меня в сумке.»): they are said as they are; the raw line of another step of the plan is not.
         if (sorting && last.contains("План остановлен:")) {
             String own = last.substring(last.indexOf("План остановлен:") + "План остановлен:".length()).strip();
             if (SORT_OWN.stream().anyMatch(own::startsWith)) return own;

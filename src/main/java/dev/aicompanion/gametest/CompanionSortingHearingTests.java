@@ -29,7 +29,7 @@ public final class CompanionSortingHearingTests {
     @GameTest(template = "empty")
     public static void sortRefusalsReachThePlayerAsTheyAre(GameTestHelper helper) {
         for (String said : List.of("Рядом с тобой сундуков не вижу.", "Сумка забита, сначала сложить мои вещи?",
-                "Не смог дойти до одного из сундуков. Часть вещей у меня в сумке.", "Не получилось разложить всё: не поместилось 3. Часть вещей у меня в сумке.",
+                "Не смог дойти до одного из сундуков. Что не разложил — у меня в сумке.", "Не получилось разложить всё: не поместилось 3. Что не разложил — у меня в сумке.",
                 "Не успел закончить работу. Остановился, вещи у меня.")) {
             String heard = CompanionDialogue.summarize(SORT, "План остановлен: " + said);
             helper.assertTrue(heard.equals(said), "Heard «" + heard + "» instead of «" + said + "»");

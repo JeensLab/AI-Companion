@@ -122,6 +122,33 @@ public final class CompanionSortingInterruptionTests {
     }
 
     /**
+     * In the game (29.10): «стоп» out of reach, then «разложи» into full chests: the refusal «…не поместилось 192.» lost its note of the bag, because
+     * the chat says the stop's note once in 30 s. A refusal says what is left in its own words, which the chat keeps.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void refusalOutOfReachSaysWhatIsLeftRightAfterAStopNote(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
+        java.util.UUID owner = companion.getOwnerId();
+        long[] id = {-1};
+        boolean[] ended = {false};
+        helper.onEachTick(() -> {
+            if (id[0] < 0 && companion.hasActiveWorkOrder() && !totals(companion).equals(bagBefore)) {
+                id[0] = companion.activeWorkId(); outOfReach(helper, companion); companion.setOwnerId(java.util.UUID.randomUUID());
+            }
+            if (id[0] >= 0 && !ended[0] && !companion.hasActiveWorkOrder()) { ended[0] = true; companion.setOwnerId(owner); }
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(ended[0], "He never carried anything, or the work did not end");
+            String said = companion.workResult(id[0]).message();
+            String heard = CompanionDialogue.heard(List.of(new PlannedAction("sort_chests", 0, 1)), said, false, true);
+            helper.assertTrue(heard.contains("у меня в сумке"), "Right after a stop note the player does not hear the things are in the bag: «" + heard + "» of «" + said + "»");
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /**
      * The real path of «стоп»: the plan port cancels the work first (stopGathering), then the command arrives. The command's own answer is what the
      * player hears, and it must carry the note: the work is already gone by then.
      */

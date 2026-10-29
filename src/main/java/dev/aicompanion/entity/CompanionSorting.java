@@ -44,7 +44,7 @@ final class CompanionSorting {
     private static final int MIN_FREE = 3;
     /** Openings allowed per stack of the set, and a few more: past that something keeps undoing the work (a hopper, a player), and he gives up. */
     private static final int TRIPS_PER_STACK = 3, TRIPS_SPARE = 6;
-    private static final String LEFT_NOTE = " Часть вещей у меня в сумке.";
+    private static final String LEFT_NOTE = " Часть вещей у меня в сумке.", KEPT_NOTE = " Что не разложил — у меня в сумке.";
     private static final String[] NEAR = {"в ближнем", "во втором", "в третьем", "в четвёртом", "в пятом", "в шестом", "в седьмом", "в восьмом", "в девятом"};
 
     private final CompanionWork w;
@@ -276,22 +276,24 @@ final class CompanionSorting {
 
     /** At a stop what he carries goes back into the chests of the set within reach, at once; the answer to «stop» adds what is still in his bag. */
     String stopNote(boolean sorting) {
-        if (!sorting) return "";
-        String note = endNote();
-        if (!note.isEmpty()) { left = true; leftAt = w.owner.level().getGameTime(); }
-        return note;
+        if (!sorting || !leftAfterPutBack()) return "";
+        left = true; leftAt = w.owner.level().getGameTime();
+        return LEFT_NOTE;
     }
 
     /**
-     * Any end of the sorting, a stop or a refusal («Не смог дойти…», the deadline): what he carries goes back into the chests within reach;
-     * the note if some of it is still in his bag (review of 09: a refusal left the player's bread unmarked in the bag, and he ate it).
+     * A refusal («Не смог дойти…», the deadline) puts back too (review of 09: it left the player's bread unmarked in the bag, and he ate it), and
+     * says what is left in its own words: the chat says the stop's note once in 30 s and dropped it after a stop (in the game 29.10).
      */
-    String endNote() {
+    String endNote() { return leftAfterPutBack() ? KEPT_NOTE : ""; }
+
+    /** What he carries goes back into the chests within reach; true if some of it is still in his bag. */
+    private boolean leftAfterPutBack() {
         // What the player took out of his bag meanwhile is neither put back nor left in it.
         for (ItemStack carry : carried) carry.setCount(Math.min(carry.getCount(), count(w.owner, carry)));
         carried.removeIf(ItemStack::isEmpty);
         if (!carried.isEmpty() && w.owner.level() instanceof ServerLevel level) putBack(level);
-        return carried.isEmpty() ? "" : LEFT_NOTE;
+        return !carried.isEmpty();
     }
 
     /** Chests of the set the way a player's arm reaches (in sight, 4.5 blocks), nearest first: as much as fits goes in, with the lid raised and put down again. */
