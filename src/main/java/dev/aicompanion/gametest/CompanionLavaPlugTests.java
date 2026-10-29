@@ -193,6 +193,8 @@ public final class CompanionLavaPlugTests {
         h.setBlock(new BlockPos(24, 10, 17), Blocks.LAVA);
         BlockPos ore = new BlockPos(27, 2, 16);
         h.setBlock(ore, Blocks.IRON_ORE);
+        // The ore search reads loaded chunks only, and nothing else holds the arena's far side: kept loaded for the test.
+        arenaLoaded(h, true);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 14, 2, 16);
         bindAt(h, c, 12, 2, 12);
         c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
@@ -213,6 +215,7 @@ public final class CompanionLavaPlugTests {
             // Either he went round the fall by a tunnel of his own (the ore taken, dry), or he left the ore and said why.
             h.assertTrue(!h.getBlockState(ore).is(Blocks.IRON_ORE) || c.getLastTaskResult().contains("лавопад") && count(c, Items.COBBLESTONE) == 3,
                     "The ore stands and the fall is not named, or a plug was spent: " + report(c));
+            arenaLoaded(h, false);
         });
     }
 
@@ -276,6 +279,12 @@ public final class CompanionLavaPlugTests {
         c.setLifestyle(false, false);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         return c;
+    }
+
+    private static void arenaLoaded(GameTestHelper h, boolean on) {
+        BlockPos from = h.absolutePos(BlockPos.ZERO), to = h.absolutePos(new BlockPos(31, 0, 31));
+        for (int cx = Math.min(from.getX(), to.getX()) >> 4; cx <= Math.max(from.getX(), to.getX()) >> 4; cx++)
+            for (int cz = Math.min(from.getZ(), to.getZ()) >> 4; cz <= Math.max(from.getZ(), to.getZ()) >> 4; cz++) h.getLevel().setChunkForced(cx, cz, on);
     }
 
     /** Binds an owner to a companion already standing in a world the test built itself. */
