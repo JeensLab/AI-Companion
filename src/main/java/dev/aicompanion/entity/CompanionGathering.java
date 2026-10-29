@@ -73,9 +73,10 @@ final class CompanionGathering {
         c.requestedLogs = 0;
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, false);
         c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, 0);
-        c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Предыдущую задачу остановил. В сумке: " + c.getStoredItemsSummary() + ".");
         c.getNavigation().stop();
         c.setFollowing(true);
+        // After the cancel: a stopped sorting puts the player's things back, the bag is what is left.
+        c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Предыдущую задачу остановил. В сумке: " + c.getStoredItemsSummary() + ".");
     }
 
     /** Room for one more log: an empty slot, or a stack of logs not yet full. */

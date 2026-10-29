@@ -110,8 +110,11 @@ final class CompanionLava {
         return inflow(level, ore).size() <= plugsCarried(owner) ? Opening.SAFE : Opening.NO_PLUG;
     }
 
-    /** The rank of the plug in this slot (0 is the cheapest), or -1 if what lies there is no plug. */
-    private static int plugRank(CompanionEntity owner, int slot) { return PLUGS.indexOf(owner.getItem(slot).getItem()); }
+    /** The rank of the plug in this slot (0 is the cheapest), or -1 if what lies there is no plug or is carried for the player. */
+    private static int plugRank(CompanionEntity owner, int slot) {
+        ItemStack stack = owner.getItem(slot);
+        return owner.carriedForPlayer(stack) ? -1 : PLUGS.indexOf(stack.getItem());
+    }
 
     /**
      * Plugs each of these lava cells with a block from his bag, the cheapest first, like a player who puts a cobblestone into the

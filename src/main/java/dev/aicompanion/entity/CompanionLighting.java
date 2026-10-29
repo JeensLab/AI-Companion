@@ -60,17 +60,18 @@ public final class CompanionLighting {
 
     public boolean dark(ServerLevel level) { return level.getMaxLocalRawBrightness(owner.blockPosition()) <= DARK; }
     private boolean hasFuel() {
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(ItemTags.COALS)) return true;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(ItemTags.COALS) && !owner.carriedForPlayer(owner.getItem(slot))) return true;
         return false;
     }
     private int torchSlot() {
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH)) return slot;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH) && !owner.carriedForPlayer(owner.getItem(slot))) return slot;
         return -1;
     }
     private boolean hasStickMaterials() {
         int planks = 0;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             var stack = owner.getItem(slot);
+            if (owner.carriedForPlayer(stack)) continue;
             if (stack.is(Items.STICK) || stack.is(ItemTags.LOGS)) return true;
             if (stack.is(ItemTags.PLANKS)) planks += stack.getCount();
         }

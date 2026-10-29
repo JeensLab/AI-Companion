@@ -54,6 +54,8 @@ final class CompanionHouse {
     private int cooldown;
     private Path path;
     private BlockPos workbench;
+    /** His house in another dimension, kept as saved until he is back there: a summon across dimensions goes through the save. */
+    private CompoundTag elsewhere;
     private long progressTime;
     private double bestDistance;
     private final java.util.HashSet<Integer> unreachable = new java.util.HashSet<>();
@@ -415,7 +417,7 @@ final class CompanionHouse {
     }
 
     void save(CompoundTag tag) {
-        if (base == null) return;
+        if (base == null) { if (elsewhere != null) tag.put("SmallHouse", elsewhere.copy()); return; }
         CompoundTag data = new CompoundTag();
         data.putLong("Base", base.asLong());
         data.putString("Wood", wood);
@@ -425,9 +427,10 @@ final class CompanionHouse {
         tag.put("SmallHouse", data);
     }
     void load(CompoundTag tag) {
-        base = null; workbench = null; placed.clear(); begin();
+        base = null; workbench = null; placed.clear(); begin(); elsewhere = null;
         CompoundTag data = tag.getCompound("SmallHouse");
-        if (!data.contains("Base") || !WOODS.contains(data.getString("Wood")) || !owner.level().dimension().location().toString().equals(data.getString("Dimension"))) return;
+        if (!data.contains("Base") || !WOODS.contains(data.getString("Wood"))) return;
+        if (!owner.level().dimension().location().toString().equals(data.getString("Dimension"))) { elsewhere = data.copy(); return; }
         base = BlockPos.of(data.getLong("Base")); wood = data.getString("Wood"); steps = blueprint();
         if (data.contains("Workbench")) workbench = BlockPos.of(data.getLong("Workbench"));
         placed.or(BitSet.valueOf(data.getLongArray("Placed")));

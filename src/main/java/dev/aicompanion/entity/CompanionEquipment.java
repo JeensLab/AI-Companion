@@ -53,7 +53,7 @@ final class CompanionEquipment {
         double best = -Double.MAX_VALUE;
         for (int index = 0; index < c.companionInventory.size(); index++) {
             ItemStack stack = c.companionInventory.get(index);
-            if (!matchesEquipment(stack, requested)) continue;
+            if (!matchesEquipment(stack, requested) || c.carriedForPlayer(stack)) continue;
             EquipmentSlot destination = explicit == null ? c.getEquipmentSlotForItem(stack) : explicit;
             if (!java.util.Arrays.asList(CompanionEquipmentContainer.SLOTS).contains(destination)) continue;
             if (destination.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && !stack.canEquip(destination, c)) continue;
@@ -180,7 +180,7 @@ final class CompanionEquipment {
         }
         double best = equipmentScore(c.getMainHandItem(), EquipmentSlot.MAINHAND);
         ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : c.companionInventory) if ((stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES))
+        for (ItemStack stack : c.companionInventory) if ((stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES)) && !c.carriedForPlayer(stack)
                 && equipmentScore(stack, EquipmentSlot.MAINHAND) > best) {
             best = equipmentScore(stack, EquipmentSlot.MAINHAND);
             choice = stack;

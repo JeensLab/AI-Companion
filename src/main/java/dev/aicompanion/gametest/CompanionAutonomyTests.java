@@ -238,6 +238,11 @@ public final class CompanionAutonomyTests {
         h.setBlock(playerChest, Blocks.CHEST);
         var chest = (ChestBlockEntity) h.getBlockEntity(playerChest);
         chest.setItem(0, new ItemStack(Items.DIAMOND, 3));
+        // Protective: a player's chest that already holds stone (the group of the surplus) is no more his to fill (issue 32, store by group).
+        BlockPos stoneChestPos = a.cell(48, a.ground(48, 38), 38);
+        h.setBlock(stoneChestPos, Blocks.CHEST);
+        var stoneChest = (ChestBlockEntity) h.getBlockEntity(stoneChestPos);
+        stoneChest.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
         // Almost full (four slots free): resources over his stock, 4 logs for a chest of his own, his tools.
         a.oleg.setItem(1, new ItemStack(Items.OAK_LOG, 4));
         Item[] junk = {Items.COBBLESTONE, Items.DIRT, Items.GRAVEL, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.FLINT, Items.SAND};
@@ -248,6 +253,8 @@ public final class CompanionAutonomyTests {
                 .check("in a chest of his own, not the player's", () -> {
                     a.expect(chest.getItem(0).is(Items.DIAMOND) && chest.getItem(0).getCount() == 3, "The player's chest changed: " + chest.getItem(0));
                     for (int slot = 1; slot < chest.getContainerSize(); slot++) a.expect(chest.getItem(slot).isEmpty(), "Put into the player's chest: " + chest.getItem(slot));
+                    a.expect(stoneChest.getItem(0).is(Items.COBBLESTONE) && stoneChest.getItem(0).getCount() == 5, "The player's stone chest changed: " + stoneChest.getItem(0));
+                    for (int slot = 1; slot < stoneChest.getContainerSize(); slot++) a.expect(stoneChest.getItem(slot).isEmpty(), "Put into the player's stone chest: " + stoneChest.getItem(slot));
                     a.expect(freeSlots(a.oleg) > CompanionAutonomy.BAG_FREE_SLOTS, "Bag still full: " + a.oleg.getStoredItemsSummary());
                     a.expect(stone(a) >= CompanionAutonomy.STONE_STOCK, "Kept stone not kept: " + stone(a));
                 })

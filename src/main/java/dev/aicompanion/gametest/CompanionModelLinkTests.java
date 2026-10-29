@@ -2,8 +2,10 @@ package dev.aicompanion.gametest;
 
 import com.google.gson.JsonObject;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionReply;
 import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.client.OpenRouterRetry;
+import dev.aicompanion.client.PlannedAction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -118,6 +120,24 @@ public final class CompanionModelLinkTests {
                 "The OpenRouter model for an own server is not explained");
         h.assertTrue(OpenRouterClient.modelNote(ollama, "llama3.1:8b").isEmpty()
                 && OpenRouterClient.modelNote(OpenRouterClient.endpoint(""), "openrouter/auto").isEmpty(), "A fitting model is questioned");
+        h.succeed();
+    }
+
+    /**
+     * In game 29.10: «Как думаешь, что лучше построить первым делом — дом или шахту?» made a plan obligatory («строить» in «построить»
+     * and «дом»); the model answered in words and the player got «не передала команды» instead. A question gets the words, an order still needs a plan.
+     */
+    @GameTest(template = "empty")
+    public static void aQuestionGetsTheWordsAnOrderStillNeedsAPlan(GameTestHelper h) {
+        var words = new CompanionReply("Я бы сначала дерево, без него ни дома, ни кирки.", List.of());
+        for (String question : new String[]{"Как думаешь, что лучше построить первым делом — дом или шахту?", "Как построить дом?",
+                "Можно скрафтить алмазную кирку?", "Ты умеешь строить дом?", "Стоит ли строить дом из камня?"})
+            h.assertTrue(!OpenRouterClient.wordsRefused(question, true, words), "A question lost its answer: " + question);
+        for (String order : new String[]{"построй дом", "Олег, скрафти мне меч.", "Добудь железа!", "Можешь построить дом?", "Сможешь добыть железо?", "Пожалуйста, сделай кирку?"})
+            h.assertTrue(OpenRouterClient.wordsRefused(order, true, words), "An order was answered without a plan: " + order);
+        var plan = new CompanionReply("Строю.", List.of(new PlannedAction("build_house", 0, 1, "")));
+        h.assertTrue(!OpenRouterClient.wordsRefused("построй дом", true, plan) && !OpenRouterClient.wordsRefused("привет", false, words),
+                "A plan or a chat was refused");
         h.succeed();
     }
 

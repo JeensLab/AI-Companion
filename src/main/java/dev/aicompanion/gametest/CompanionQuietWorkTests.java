@@ -84,7 +84,34 @@ public final class CompanionQuietWorkTests {
     public static void inventoryWordsCannotInventAFailureReason(GameTestHelper h) {
         String spoken=CompanionDialogue.summarize(List.of(new PlannedAction("place_block",0,1,"minecraft:chest")),
                 "План остановлен: Не удалось завершить работу. В сумке: 11 брёвен, 32 камня, 4 рудного железа.");
-        h.assertTrue(spoken.equals("С этим пока не справился."),"Inventory invented a blocker: "+spoken);h.succeed();
+        // A reason without a kind is said in the engine's own words (game 29.10); the bag is neither a reason nor said.
+        h.assertTrue(spoken.equals("Не удалось завершить работу."),"Inventory invented a blocker: "+spoken);h.succeed();
+    }
+    /** Game 29.10: «Можешь построить дом?» on a dark-oak canopy stopped with the engine's reason, the player heard only «С этим пока не справился». */
+    @GameTest(template="empty")
+    public static void aStoppedPlanSaysTheEnginesOwnReason(GameTestHelper h) {
+        String house=CompanionDialogue.summarize(List.of(new PlannedAction("build_house",0,1,"")),
+                "План остановлен: Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.");
+        h.assertTrue(house.equals("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее."),"The reason was lost: "+house);
+        String bench=CompanionDialogue.summarize(List.of(new PlannedAction("craft_item",0,1,"minecraft:stone_pickaxe")),
+                "План остановлен: Верстак рядом, но я сейчас не у него. Попроси ещё раз — дойду до него и сделаю.");
+        h.assertTrue(bench.equals("Верстак рядом, но я сейчас не у него. Попроси ещё раз — дойду до него и сделаю."),"The reason was lost: "+bench);
+        String receipt=CompanionDialogue.summarize(List.of(new PlannedAction("build_house",0,1,"")),"План остановлен: "+"Очень длинное объяснение без ключевых слов. ".repeat(4));
+        h.assertTrue(receipt.equals("С этим пока не справился."),"A long receipt was spoken: "+receipt);
+        // Review: the words go through speakable, IDs and coordinates stay in the journal, Latin leftovers are not said, one line only.
+        var craft=List.of(new PlannedAction("craft_item",0,1,"minecraft:stone_pickaxe"));
+        String bench2=CompanionDialogue.summarize(craft,"План остановлен: Не смог добраться до верстака на 12, 64, -30.");
+        h.assertTrue(bench2.equals("Не смог добраться до верстака."),"Coordinates were spoken: "+bench2);
+        String torch=CompanionDialogue.summarize(List.of(new PlannedAction("place_block",0,1,"minecraft:torch")),"План остановлен: Нет блока minecraft:torch в сумке, его подготовку пока не умею.");
+        h.assertTrue(torch.equals("Нет блока "+CompanionDialogue.itemName("minecraft:torch")+" в сумке, его подготовку пока не умею."),"An ID was spoken: "+torch);
+        String invented=CompanionDialogue.summarize(craft,"План остановлен: Неизвестный предмет: minecraft:steel_sword.");
+        h.assertTrue(invented.equals("С этим пока не справился."),"An unknown ID was spoken: "+invented);
+        String sword=CompanionDialogue.summarize(List.of(new PlannedAction("equip_item",0,1,"sword")),"План остановлен: В моей сумке нет подходящего предмета «sword» для этого слота.");
+        h.assertTrue(sword.equals("С этим пока не справился."),"English was spoken: "+sword);
+        String steps=CompanionDialogue.summarize(List.of(new PlannedAction("obtain_item",0,1,"minecraft:iron_helmet")),"План остановлен: слишком много шагов ради одного предмета.");
+        h.assertTrue(steps.equals("Слишком много шагов ради одного предмета."),"Lowercase start: "+steps);
+        String smelt=CompanionDialogue.summarize(craft,"План остановлен: Не удалось забрать плавку из печи.\nДобыча земли завершена: добыл 4 блоков.");
+        h.assertTrue(smelt.equals("Не удалось забрать плавку из печи."),"A later line was spoken: "+smelt);h.succeed();
     }
     private static CompanionEntity companion(GameTestHelper h) {
         var c=h.spawn(AICompanionMod.COMPANION.get(),2,1,2);c.setNoAi(true);return c;

@@ -48,15 +48,24 @@ final class CompanionEating {
         c.eating = ItemStack.EMPTY;
     }
 
-    static boolean hasFood(CompanionEntity c) { return !new CompanionEating(c).bestFood(1F).isEmpty(); }
+    static boolean hasFood(CompanionEntity c) { return !new CompanionEating(c).bestFood(1F, false).isEmpty(); }
+
+    /**
+     * His own food first. The player's food he carries from the chests only when he has none and is at half health or less: then a
+     * friend eats what there is rather than die (Oleg, 29.10; in the game he ate it at 15 and died at night with it uneaten).
+     */
+    private ItemStack bestFood(float missing) {
+        ItemStack own = bestFood(missing, false);
+        return own.isEmpty() && c.getHealth() <= c.getMaxHealth() / 2 ? bestFood(missing, true) : own;
+    }
 
     /** Safe food only (no rotten flesh, spider eyes, poison, chorus fruit); the one that best fits the missing health. */
-    private ItemStack bestFood(float missing) {
+    private ItemStack bestFood(float missing, boolean playersToo) {
         ItemStack best = ItemStack.EMPTY;
         int bestScore = Integer.MIN_VALUE;
         for (ItemStack stack : c.companionInventory) {
             var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
-            if (stack.isEmpty() || food == null || stack.is(net.minecraft.world.item.Items.CHORUS_FRUIT) || stack.is(net.minecraft.world.item.Items.SUSPICIOUS_STEW)) continue;
+            if (stack.isEmpty() || food == null || !playersToo && c.carriedForPlayer(stack) || stack.is(net.minecraft.world.item.Items.CHORUS_FRUIT) || stack.is(net.minecraft.world.item.Items.SUSPICIOUS_STEW)) continue;
             if (food.effects().stream().anyMatch(effect -> !effect.effect().getEffect().value().isBeneficial())) continue;
             int score = Math.round(Math.min(missing, food.nutrition()) * 10 + food.saturation());
             if (score > bestScore) { bestScore = score; best = stack; }

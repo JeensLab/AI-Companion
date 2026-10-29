@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
     public static final int GATHER_LIMIT_SECONDS = 185;
-    private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items",
+    private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items", "sort_chests",
             "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
@@ -205,7 +205,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             else if ("gather_wood".equals(action.type())) verified = waitForGathering(dispatch.workId(), dispatch.tick());
             else if ("wait".equals(action.type())) verified = waitSeconds(action.seconds(), result);
             else verified = CompletableFuture.completedFuture(result);
-            return verified.thenApply(done -> new Attempt(done, true));
+            // The bag note of a sorting this order ended came with the acceptance; the player hears the outcome (review round 3, finding 1).
+            boolean note = result.message().contains(CompanionDialogue.BAG_NOTE);
+            return verified.thenApply(done -> new Attempt(!note || done.message().contains(CompanionDialogue.BAG_NOTE) ? done
+                    : new CompanionActionResult(done.success(), done.message() + " " + CompanionDialogue.BAG_NOTE, done.status(), done.evidence()), true));
         });
     }
 
@@ -297,7 +300,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             if (player.level().getGameTime() - startTick >= limitSeconds * 20L) {
                 companion.diagnosticSnapshot("step_timeout");
                 stopOwnWork(companion, workId);
-                return CompanionActionResult.timeout("Остановил работу по тайм-ауту.");
+                return CompanionActionResult.timeout("Остановил работу по тайм-ауту." + companion.takeSortNote());
             }
             return (CompanionActionResult) null;
         }).thenCompose(result -> result == null ? pause(1).thenCompose(unused -> waitForWork(workId, startTick, limitSeconds))
