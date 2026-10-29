@@ -1,7 +1,7 @@
 param([ValidateRange(1,20)][int]$Repetitions=3)
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot
-$taskSources=@('CompanionAgendaTests.java','CompanionAgendaModelTests.java') | ForEach-Object {Join-Path $taskRoot "src/main/java/dev/aicompanion/gametest/$_"}
+$taskSources=@('CompanionAgendaTests.java','CompanionAgendaModelTests.java','CompanionAgendaBoardTests.java') | ForEach-Object {Join-Path $taskRoot "src/main/java/dev/aicompanion/gametest/$_"}
 $taskOriginals=@{};foreach($taskSource in $taskSources){$taskOriginals[$taskSource]=[IO.File]::ReadAllText($taskSource)}
 $taskFixtures=Join-Path $taskRoot 'src/main/resources/data/aicompanion_agenda'
 $taskReports=Join-Path $taskRoot 'build/diagnostics'

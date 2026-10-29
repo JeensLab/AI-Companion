@@ -68,6 +68,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private static final EntityDataAccessor<String> DATA_PLACES = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_DEEDS = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_FURNACES = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_GOAL = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_ACTIVITY = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Boolean> DATA_MINING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Integer> DATA_ACTION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
@@ -202,6 +203,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String getDeedsForAi() { return level().isClientSide ? entityData.get(DATA_DEEDS) : deeds.summary(level().getGameTime()); }
     /** What his furnaces hold and how much is ready; empty when no batch is left. */
     public String getFurnacesForAi() { return level().isClientSide ? entityData.get(DATA_FURNACES) : batches.forAi(); }
+    /** The long goal as the model is told of it (set once a second on the server, so a client reads it unchanged); empty without a goal. */
+    public String getGoalForAi() { return entityData.get(DATA_GOAL); }
     public int deedCount() { return deeds.size(); }
     void noteDeed(String message, boolean ok) {
         if (level().isClientSide) return;
@@ -365,6 +368,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_PLACES, "известных рабочих мест нет");
         builder.define(DATA_DEEDS, "пока нет");
         builder.define(DATA_FURNACES, "");
+        builder.define(DATA_GOAL, "");
         builder.define(DATA_ACTIVITY, "состояние ещё не обновлено");
         builder.define(DATA_MINING, false);
         builder.define(DATA_ACTION, 0); builder.define(DATA_ACTION_UNTIL, 0L); builder.define(DATA_ACTION_ITEM, ItemStack.EMPTY);
@@ -669,7 +673,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         diagnostics.tick();
         if (tickCount % 100 == 0) refreshPlaces();
         if (tickCount % 20 == 0) {
-            if (level() instanceof ServerLevel serverLevel) { batches.tick(serverLevel); entityData.set(DATA_FURNACES, batches.forAi()); }
+            if (level() instanceof ServerLevel serverLevel) { batches.tick(serverLevel); entityData.set(DATA_FURNACES, batches.forAi()); entityData.set(DATA_GOAL, CompanionAgendaView.line(this)); }
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
