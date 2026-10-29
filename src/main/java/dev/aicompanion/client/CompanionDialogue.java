@@ -54,6 +54,7 @@ public final class CompanionDialogue {
             case "gather_dirt" -> "Окей, накопаю земли.";
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
             case "store_items" -> "Сейчас сложу в сундук.";
+            case "sort_chests" -> "Сейчас разложу по сундукам.";
             case "take_items" -> "Сейчас заберу из сундука.";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
             case "craft_item" -> "Сейчас сделаю.";
@@ -73,6 +74,19 @@ public final class CompanionDialogue {
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
+    }
+
+    /** The note of a sorting that an order ended while he carried things (CompanionSorting): said whatever step of the plan it came with. */
+    public static final String BAG_NOTE = "Часть вещей у меня в сумке.";
+
+    /**
+     * What the chat says of a finished plan: a local order with nothing to report says its acknowledgement, and the bag note goes after
+     * it («стой» → «Ладно, жду здесь. Часть вещей…»), unless the player heard it just now from the stop itself (review round 3, M2).
+     */
+    public static String heard(List<PlannedAction> actions, String spoken, boolean local, boolean noteSaidLately) {
+        String bare = spoken.replace(" " + BAG_NOTE, "").replace(BAG_NOTE, "").strip();
+        if (local && bare.isBlank()) bare = acknowledge(actions);
+        return spoken.contains(BAG_NOTE) && !noteSaidLately ? (bare + " " + BAG_NOTE).strip() : bare;
     }
 
     /** Engine report line listing plan steps that were not started after a stop. */
@@ -100,6 +114,7 @@ public final class CompanionDialogue {
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";
             case "unequip_item" -> "убрать предмет из руки";
             case "store_items" -> "сложить вещи в сундук";
+            case "sort_chests" -> "разложить по сундукам";
             case "take_items" -> "забрать вещи из сундука";
             case "build_house" -> "построить дом";
             case "hunt_mobs" -> "разобраться с монстрами";
@@ -158,6 +173,12 @@ public final class CompanionDialogue {
     }
 
     public static String summarize(List<PlannedAction> actions, String report) {
+        String spoken = summarizeReport(actions, report);
+        // Review round 3, finding 1: the note came with the step that ended the sorting («стоп», «за мной»), the plan ended with another one.
+        return report != null && report.contains(BAG_NOTE) && !spoken.contains("у меня в сумке") ? (spoken + " " + BAG_NOTE).strip() : spoken;
+    }
+
+    private static String summarizeReport(List<PlannedAction> actions, String report) {
         if (report == null || report.isBlank()) return "";
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
@@ -214,6 +235,10 @@ public final class CompanionDialogue {
         return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
+    /** How the refusals of the sorting itself begin (CompanionSorting); any other stop of a plan with sorting in it goes the usual way. */
+    private static final List<String> SORT_OWN = List.of("Рядом с тобой сундуков", "Не смог дойти до", "Не получилось разложить", "Сумка забита, сначала", "Пропустил",
+            "Не успел закончить работу");
+
     /** The reply of a goal order is said whole: its summary names what he cannot yet, and a cut sentence would not. */
     private static boolean isGoalAction(PlannedAction action) {
         return action.type().startsWith("goal_") || "pursue_goal".equals(action.type());
@@ -224,9 +249,17 @@ public final class CompanionDialogue {
         if (actions.stream().anyMatch(CompanionDialogue::isGoalAction)) return report.replace("План остановлен: ", "");
         String lower = report.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains("такое поручение уже выполняется")) return "Я уже занимаюсь этим поручением.";
+        boolean sorting = actions.stream().anyMatch(action -> "sort_chests".equals(action.type()));
+        // A stop in the middle of sorting: the server's note that things are in his bag is part of the answer (game rule: nothing lost silently).
+        if (sorting && lower.contains("работа прервана")) return "Ладно, остановился." + (lower.contains("в сумке") ? " Часть вещей у меня в сумке." : "");
         if (lower.contains("отменён") || lower.contains("остановки")) return "Ладно, остановился.";
         int stoppedAt = report.lastIndexOf("План остановлен:");
         String last = stoppedAt >= 0 ? report.substring(stoppedAt) : report.substring(report.lastIndexOf('\n') + 1);
+        // Sorting words its own refusals («Рядом с тобой сундуков не вижу.», «…Что не разложил — у меня в сумке.»): they are said as they are; the raw line of another step of the plan is not.
+        if (sorting && last.contains("План остановлен:")) {
+            String own = last.substring(last.indexOf("План остановлен:") + "План остановлен:".length()).strip();
+            if (SORT_OWN.stream().anyMatch(own::startsWith)) return own;
+        }
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
             String partial = partialGather(actions, failure);
@@ -286,6 +319,7 @@ public final class CompanionDialogue {
             return (stone > 0 ? "Готово, накопал камня: " + stone + "." : "Камень добыл, он у меня.")
                     + (report.contains("наверх пока не выбрался") ? " Я пока внизу, на своей лестнице." : "");
         }
+        if (actions.stream().anyMatch(action -> "sort_chests".equals(action.type()))) return last.strip();
         if (actions.stream().anyMatch(action -> "store_items".equals(action.type()))) return last.contains("Лишних вещей") ? "Лишних вещей для сундука сейчас нет." : "Сложил вещи в сундук.";
         if (actions.stream().anyMatch(action -> "take_items".equals(action.type()))) return "Забрал вещи, они у меня в сумке.";
         if (actions.stream().anyMatch(action -> "place_block".equals(action.type()) && "minecraft:chest".equals(action.item()))) {

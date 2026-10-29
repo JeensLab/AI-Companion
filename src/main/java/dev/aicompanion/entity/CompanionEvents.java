@@ -312,7 +312,7 @@ public final class CompanionEvents {
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "store_items", "take_items", "build_house" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "store_items", "take_items", "sort_chests", "build_house" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -353,6 +353,9 @@ public final class CompanionEvents {
             case "autonomy" -> companion.autonomy().setEnabled("on".equals(item));
             default -> CompanionActionResult.failed("Неподдерживаемое действие: " + action);
         };
+        // What he carries of a sorting this order has just ended is said once, in the answer of the order: the work's own cancel answer is read by nobody.
+        String carriedNote = autonomousDispatch || goalDispatch ? "" : companion.takeSortNote();
+        if (!carriedNote.isEmpty()) dispatchResult = new CompanionActionResult(dispatchResult.success(), dispatchResult.message() + carriedNote, dispatchResult.status(), dispatchResult.evidence());
         dev.aicompanion.CompanionDiagnostics.event(trace, "server_acknowledgement", "action", action,
                 "success", dispatchResult.success(), "status", dispatchResult.status(), "message", dispatchResult.message(), "workStillActive", companion.isGatheringTask(),
                 "workId", companion.activeWorkId());
