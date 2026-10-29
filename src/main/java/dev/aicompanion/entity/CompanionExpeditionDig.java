@@ -38,6 +38,8 @@ final class CompanionExpeditionDig {
     private int cellTicks, unseen, walkTicks;
     /** Blocks broken so far: a counter the stall watchdog sees move. */
     int broken;
+    /** Cells walked into so far: the same for walking. */
+    int walked;
     /** The last NO_TOOL was for an ore (it needs a better pickaxe), not for rock (it needs a stone pickaxe). */
     boolean lackedOre;
 
@@ -138,7 +140,7 @@ final class CompanionExpeditionDig {
     /** Steps towards the cell with the move control (neighbouring cells of his own mine); true once he stands in it. */
     boolean walkTo(BlockPos to) {
         boolean inside = owner.onGround() && owner.blockPosition().equals(to);
-        if (inside && (centred(to) || to.equals(walking) && walkTicks > WALK_PATIENCE / 2)) { walking = null; walkTicks = 0; return true; }
+        if (inside && (centred(to) || to.equals(walking) && walkTicks > WALK_PATIENCE / 2)) { walking = null; walkTicks = 0; walked++; return true; }
         if (!to.equals(walking)) { walking = to.immutable(); walkTicks = 0; }
         walkTicks++;
         Vec3 centre = Vec3.atBottomCenterOf(to);
