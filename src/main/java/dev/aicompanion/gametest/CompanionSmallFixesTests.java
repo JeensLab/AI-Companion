@@ -71,7 +71,7 @@ public final class CompanionSmallFixesTests {
      * Here the other way round (a new Nether area takes too long to come up in a test): he waits in the Nether, the player calls him from
      * the Overworld. He comes over to the player's world, one of him, with his bag, and the chopping he was on is dropped.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void summonFromAnotherDimensionBringsHimOver(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity first = spawn(h, 1);
@@ -81,7 +81,8 @@ public final class CompanionSmallFixesTests {
         var nether = server.getLevel(Level.NETHER);
         h.assertTrue(nether != null, "No Nether to test with");
         var owner = server.getPlayerList().getPlayer(first.getOwnerId());
-        // A closed room, so that neither netherrack nor lava is round him; a portal's ticket, renewed every tick, keeps it loaded.
+        // A closed room, so that neither netherrack nor lava is round him; a portal's ticket, renewed every tick, keeps it loaded. The entities
+        // of a new Nether chunk take from 0 to some hundreds of ticks to load in a test server: he is waited for, not timed.
         BlockPos room = BlockPos.containing(first.getX(), 64, first.getZ());
         for (BlockPos pos : BlockPos.betweenClosed(room.offset(-2, -1, -2), room.offset(2, 3, 2)))
             nether.setBlockAndUpdate(pos, Math.abs(pos.getX() - room.getX()) == 2 || Math.abs(pos.getZ() - room.getZ()) == 2 || pos.getY() == room.getY() - 1
