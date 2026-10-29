@@ -1,7 +1,9 @@
-param([ValidateRange(1,20)][int]$Repetitions=1)
+param([ValidateRange(1,20)][int]$Repetitions=1,[string[]]$Classes=@())
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot
-$taskSources=@('CompanionLooseTests.java') | ForEach-Object {Join-Path $taskRoot "src/main/java/dev/aicompanion/gametest/$_"}
+$taskClasses=@('CompanionLooseTests')+@($Classes | ForEach-Object {$_ -split ','} | ForEach-Object {$_.Trim()} | Where-Object {$_})
+foreach($taskClass in $taskClasses){if($taskClass -notmatch '^[A-Za-z0-9_]+$' -or !(Test-Path -LiteralPath (Join-Path $PSScriptRoot "../src/main/java/dev/aicompanion/gametest/$taskClass.java"))){throw "Unknown gametest class: $taskClass"}}
+$taskSources=@($taskClasses | Select-Object -Unique | ForEach-Object {"$_.java"}) | ForEach-Object {Join-Path $taskRoot "src/main/java/dev/aicompanion/gametest/$_"}
 $taskOriginals=@{};foreach($taskSource in $taskSources){$taskOriginals[$taskSource]=[IO.File]::ReadAllText($taskSource)}
 $taskFixtures=Join-Path $taskRoot 'src/main/resources/data/aicompanion_loose'
 $taskReports=Join-Path $taskRoot 'build/diagnostics'
@@ -10,7 +12,8 @@ New-Item -ItemType Directory -Path $taskReports -Force | Out-Null
 if(Test-Path -LiteralPath $taskFixtures){throw 'Loose fixture directory already exists'}
 [IO.File]::WriteAllText($taskInit,"gradle.projectsEvaluated { rootProject.neoForge.runs.gameTestServer { gameDirectory = rootProject.file('run/loose-tests'); systemProperty 'neoforge.enabledGameTestNamespaces', 'aicompanion_loose' } }",[Text.UTF8Encoding]::new($false))
 New-Item -ItemType Directory -Path "$taskFixtures/structure" | Out-Null
-Copy-Item -LiteralPath (Join-Path $taskRoot 'src/main/resources/data/aicompanion/structure/tall_tree.nbt') -Destination "$taskFixtures/structure"
+$taskTemplates=@('tall_tree')+@($taskSources | ForEach-Object {[regex]::Matches([IO.File]::ReadAllText($_),'template\s*=\s*"([^"]+)"') | ForEach-Object {$_.Groups[1].Value}}) | Select-Object -Unique
+foreach($taskTemplate in $taskTemplates){$taskStructure=Join-Path $taskRoot "src/main/resources/data/aicompanion/structure/$taskTemplate.nbt";if(Test-Path -LiteralPath $taskStructure){Copy-Item -LiteralPath $taskStructure -Destination "$taskFixtures/structure"}}
 $taskRuns=@()
 Push-Location $taskRoot
 try {

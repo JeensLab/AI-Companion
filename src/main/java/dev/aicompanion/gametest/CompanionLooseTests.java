@@ -8,6 +8,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -33,6 +34,28 @@ public final class CompanionLooseTests {
             helper.assertTrue(hasShovel(companion), "No shovel was prepared or carried");
             int left = 0; for (BlockPos at : patch) if (helper.getBlockState(at).is(Blocks.SAND)) left++;
             helper.assertTrue(left <= patch.length - 8, "Sand blocks are still in the world: " + left);
+        });
+    }
+
+    /** A gravel block drops gravel or flint at random, so the check is a balance: every block removed is in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void digsGravelCountsOnlyGravelAndKeepsFlint(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        BlockPos[] patch = new BlockPos[25]; int index = 0;
+        for (int x = 18; x <= 22; x++) for (int z = 19; z <= 23; z++) { patch[index] = new BlockPos(x, 1, z); helper.setBlock(patch[index++], Blocks.GRAVEL); }
+        var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        var started = CompanionEvents.executeAction(player, "gather_loose", "minecraft:gravel", 8);
+        helper.assertTrue(started.success(), "Gravel order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask(), diagnostic(companion));
+            int gravel = count(companion, Items.GRAVEL), flint = count(companion, Items.FLINT);
+            helper.assertTrue(companion.didLastTaskSucceed() && gravel >= 8, diagnostic(companion));
+            helper.assertTrue(hasShovel(companion), "No shovel was prepared or carried");
+            int left = 0; for (BlockPos at : patch) if (helper.getBlockState(at).is(Blocks.GRAVEL)) left++;
+            helper.assertTrue(patch.length - left >= gravel + flint, "Dug blocks " + (patch.length - left) + " are fewer than the bag holds: gravel " + gravel + ", flint " + flint);
+            helper.assertTrue(patch.length - left <= gravel + flint, "Dug blocks " + (patch.length - left) + " are more than the bag holds: gravel " + gravel + ", flint " + flint);
+            helper.assertTrue(helper.getLevel().getEntitiesOfClass(ItemEntity.class, helper.getBounds().inflate(3), item -> item.getItem().is(Items.FLINT)).isEmpty(),
+                    "Flint was left on the ground");
         });
     }
 

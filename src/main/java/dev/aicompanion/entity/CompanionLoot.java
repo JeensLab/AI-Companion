@@ -32,6 +32,7 @@ final class CompanionLoot {
     private int collectedLogs;
     private int collectedStone;
     private int collectedSoil;
+    private final int[] collectedLoose = new int[CompanionGround.values().length];
     private long rescanUntil;
     private boolean collecting;
     private long lastScan = Long.MIN_VALUE;
@@ -116,6 +117,7 @@ final class CompanionLoot {
             if (item.getItem().is(ItemTags.LOGS)) collectedLogs += moved;
             if (item.getItem().is(ItemTags.STONE_TOOL_MATERIALS)) collectedStone += moved;
             if (CompanionTools.soilItem(item.getItem())) collectedSoil += moved;
+            for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose() && ground.counts(item.getItem())) collectedLoose[ground.ordinal()] += moved;
             owner.take(item, moved);
             level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
             if (offered.isEmpty()) { item.discard(); pending.remove(id); } else item.setItem(offered);
@@ -365,6 +367,10 @@ final class CompanionLoot {
     int collectedSoil() { return collectedSoil; }
     int incomingLogs() { return incoming(stack -> stack.is(ItemTags.LOGS)); }
     int incomingSoil() { return incoming(CompanionTools::soilItem); }
+    /** Picked up of one ground, loose or soil. */
+    int collected(CompanionGround ground) { return ground == CompanionGround.SOIL ? collectedSoil : collectedLoose[ground.ordinal()]; }
+    int collectedLoose() { int total = 0; for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose()) total += collectedLoose[ground.ordinal()]; return total; }
+    int incoming(CompanionGround ground) { return incoming(ground::counts); }
     private int incoming(java.util.function.Predicate<ItemStack> matches) {
         if (!(owner.level() instanceof ServerLevel level)) return 0;
         int amount = 0;

@@ -25,6 +25,7 @@ final class CompanionEntityNbt {
         if (c.roamOrigin != null) tag.putLong("RoamOrigin", c.roamOrigin.asLong());
         tag.putBoolean("GatheringLogs", c.gatheringLogs);
         tag.putBoolean("GatheringDirt", c.gatheringDirt);
+        tag.putString("GatheringGround", c.gathering.ground.name());
         tag.putBoolean("SupportSoilTask", c.supportSoilTask);
         tag.putInt("LogsRemaining", c.logsRemaining);
         tag.putInt("RequestedLogs", c.requestedLogs);
@@ -61,6 +62,8 @@ final class CompanionEntityNbt {
         c.getEntityData().set(CompanionEntity.DATA_PROTECTING, c.protecting);
         c.gatheringLogs = tag.getBoolean("GatheringLogs");
         c.gatheringDirt = tag.getBoolean("GatheringDirt");
+        c.gathering.ground = java.util.Arrays.stream(CompanionGround.values()).filter(ground -> ground.name().equals(tag.getString("GatheringGround")))
+                .findFirst().orElse(CompanionGround.SOIL);
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, c.gatheringLogs || c.gatheringDirt);
         c.logsRemaining = Math.max(0, Math.min(64, tag.getInt("LogsRemaining")));
         c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);

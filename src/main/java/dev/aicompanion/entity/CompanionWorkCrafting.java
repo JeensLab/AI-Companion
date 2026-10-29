@@ -15,12 +15,12 @@ final class CompanionWorkCrafting {
 
     void prepareShovel() {
         if (CompanionTools.equip(w.owner, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState())) {
-            w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(w.requestedCount); return;
+            w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(w.requestedCount, w.ground); return;
         }
         if (approachCraftingTable()) return;
         if (!w.items.moveHandMaterialsToBag()) return;
         if (CompanionTools.craft(w.owner, "shovel", Blocks.DIRT.defaultBlockState(), ItemTags.SHOVELS)) {
-            w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(w.requestedCount);
+            w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(w.requestedCount, w.ground);
         } else requestWood(CompanionWork.Phase.SHOVEL, 2);
     }
 

@@ -178,7 +178,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String getActivityForAi() {
         if (level().isClientSide) return entityData.get(DATA_ACTIVITY);
         return (recovery.active() ? "пытается выбраться" : temporaryPillar.isRecovering() ? "спускается с опоры"
-                : work.isActive() ? work.currentDescription() : gatheringLogs ? "собирает дерево" : gatheringDirt ? "собирает землю"
+                : work.isActive() ? work.currentDescription() : gatheringLogs ? "собирает дерево" : gatheringDirt ? "собирает " + gathering.ground.accusative()
                 : protecting ? "режим охраны" : following ? "режим следования" : roaming ? "гуляет" : "ожидает")
                 + "; позиция=" + blockPosition().toShortString() + "; за последнюю секунду=" + (activityMoved ? "перемещался" : "стоял")
                 + "; маршрут=" + (getNavigation().isDone() ? "сейчас не выполняется" : "выполняется")
@@ -195,7 +195,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (recovery.active() || temporaryPillar.isRecovering()) return "Выбирается в безопасное место";
         if (work.isActive()) return work.taskDescription();
         return gatheringLogs ? "Собирает дерево · осталось " + logsRemaining
-                : gatheringDirt ? "Собирает землю · осталось " + logsRemaining
+                : gatheringDirt ? "Собирает " + gathering.ground.accusative() + " · осталось " + logsRemaining
                 : protecting ? "Охраняет тебя" : roaming ? "Осматривается" : following ? "Следует за тобой" : "Ожидает";
     }
     public void rememberPlaced(BlockPos pos) { places.remember(pos, true); refreshPlaces(); }
@@ -283,7 +283,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
-        this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherDirtGoal(this));
+        this.goalSelector.addGoal(3, new CompanionDigGoal(this));
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
@@ -562,6 +562,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             case "gather_wood" -> loot.collectedLogs();
             case "gather_stone" -> loot.collectedStone();
             case "gather_dirt" -> loot.collectedSoil();
+            case "gather_loose" -> loot.collectedLoose();
             default -> -1;
         };
     }
@@ -748,6 +749,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void startGatheringLogs(int count) { gathering.startGatheringLogs(count); }
     void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count); }
     void startGatheringDirtForWork(int count) { gathering.startGatheringDirtForWork(count); }
+    void startGatheringDirtForWork(int count, CompanionGround ground) { gathering.startGatheringDirtForWork(count, ground); }
     public void stopGathering() { gathering.stopGathering(); }
 
     ServerPlayer getOwnerPlayer() {

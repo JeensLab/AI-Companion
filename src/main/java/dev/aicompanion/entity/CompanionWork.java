@@ -63,6 +63,8 @@ public final class CompanionWork {
     Phase phase;
     Phase afterWood;
     String requestedItem = "";
+    /** What a digging job gathers: soil for gather_dirt, the ordered loose block for gather_loose. */
+    CompanionGround ground = CompanionGround.SOIL;
     int requestedCount;
     int wantedStone;
     int gathered;
@@ -312,7 +314,7 @@ public final class CompanionWork {
             case TAKE -> "взятие вещей из сундука";
             case PLACE_CHEST -> "установку" + item;
             case HOUSE -> "стройку дома";
-            case DIRT -> "добычу земли";
+            case DIRT -> "добычу " + ground.genitive();
             case COME -> "путь к тебе";
             case HUNT -> "бой с монстрами";
             case GAME -> "охоту (" + gameKills + " из " + gameWanted + ")";
@@ -369,7 +371,12 @@ public final class CompanionWork {
         if (insideHouse && !house.interiorAvailable(level)) return CompanionActionResult.blocked("Не могу подтвердить, где сейчас наш дом. Снаружи вместо этого ставить не буду.");
         switch (action) {
             case "gather_stone" -> { job = Job.STONE; phase = Phase.PICKAXE; wantedStone = count; }
-            case "gather_dirt" -> { job = Job.DIRT; phase = Phase.SHOVEL; }
+            case "gather_dirt" -> { job = Job.DIRT; phase = Phase.SHOVEL; ground = CompanionGround.SOIL; }
+            case "gather_loose" -> {
+                CompanionGround loose = CompanionGround.of(item);
+                if (loose == null || !loose.isLoose()) return CompanionActionResult.failed("Умею копать только песок, красный песок и гравий.");
+                job = Job.DIRT; phase = Phase.SHOVEL; ground = loose;
+            }
             case "gather_wood" -> { job = Job.WOOD; phase = Phase.WOOD; }
             case "prepare_craft" -> {
                 if (!CompanionCraftCosts.supportsCraft(item, count)) return CompanionActionResult.failed("Эту цепочку пока не умею подготавливать самостоятельно.");
