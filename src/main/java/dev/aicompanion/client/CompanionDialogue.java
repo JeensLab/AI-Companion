@@ -15,6 +15,9 @@ public final class CompanionDialogue {
     }
 
     private static final Pattern ID = Pattern.compile("\\b(?:minecraft|aicompanion):([a-z0-9_/.]+)");
+    /** «добыл 2 коровы», «Добыл 1 свинью из 3», «3 животных»: the hunt's own count, not the blocks of stone or ore in the same report. */
+    private static final Pattern HUNTED = Pattern.compile("(?iu)добыл (\\d+ (?:" + java.util.Arrays.stream(dev.aicompanion.entity.CompanionGame.Kind.values())
+            .flatMap(kind -> java.util.stream.Stream.of(kind.one, kind.few, kind.many)).collect(java.util.stream.Collectors.joining("|")) + "|животное|животных))(?![а-яё])");
 
     /** «minecraft:crafting_table» becomes «Верстак»: a friend says the name, not the ID (game log 22.10). */
     static String names(String text) {
@@ -258,7 +261,7 @@ public final class CompanionDialogue {
         }
         if (actions.stream().anyMatch(action -> "obtain_item".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type()))) {
-            var got = Pattern.compile("(?iu)добыл (d+ [^ :.,]+)").matcher(report);
+            var got = HUNTED.matcher(report);
             boolean cooked = actions.stream().anyMatch(action -> "smelt_items".equals(action.type()));
             return (got.find() ? "Готово, добыл " + got.group(1) : "С охотой закончил") + (cooked ? " и пожарил мясо." : ".");
         }
@@ -297,11 +300,12 @@ public final class CompanionDialogue {
 
     /** «Добыл 1 из 5» for ore or stone, said like a person: how many, of how many, and the plain reason. */
     private static String partialGather(List<PlannedAction> actions, String last) {
-        if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type())) && last.matches("(?s).*(Добыл|Никого не добыл).*")) {
+        var hunt = HUNTED.matcher(last);
+        boolean hunted = hunt.find();
+        if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type())) && (hunted || last.contains(dev.aicompanion.entity.CompanionWork.NOTHING_HUNTED))) {
             String why = last.contains("детёныш") ? "остальные — детёныши"
                     : last.contains("чьи-то") ? "остальные чьи-то, с именем или на поводке" : last.contains("не нашёл пути") ? "до остальных не добраться" : "больше рядом не нашёл";
-            var got = Pattern.compile("Добыл (d+ [^ :.,]+)").matcher(last);
-            return got.find() ? "Добыл только " + got.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
+            return hunted ? "Добыл только " + hunt.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
         }
         var counts = Pattern.compile("Добыл (\\d+) из (\\d+)").matcher(last);
         if (!counts.find()) return null;
