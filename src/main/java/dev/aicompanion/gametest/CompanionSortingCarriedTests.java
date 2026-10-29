@@ -28,7 +28,7 @@ import static dev.aicompanion.gametest.CompanionSortingTests.totals;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionSortingCarriedTests {
-    /** Hurt and with a zombie as the target, he has no own food and weapon: the carried beef stays, the carried sword stays out of his hand. */
+    /** Hurt (above half health) and with a zombie as the target, he has no own food and weapon: the carried beef stays, the carried sword stays out of his hand. */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void carriedFoodAndSwordAreNotSpentInAFight(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
@@ -41,7 +41,7 @@ public final class CompanionSortingCarriedTests {
             if (!companion.hasActiveWorkOrder()) return;
             if (!totals(companion).equals(bagBefore)) carried[0] = true;
             if (!carried[0]) return;
-            if (stress[0]++ < 60) { companion.setHealth(6); companion.setTarget(zombie); } else companion.setTarget(null);
+            if (stress[0]++ < 60) { companion.setHealth(12); companion.setTarget(zombie); } else companion.setTarget(null);
         });
         companion.startWork("sort_chests", "", 1);
         helper.succeedWhen(() -> {
@@ -62,12 +62,31 @@ public final class CompanionSortingCarriedTests {
             if (stoppedAt[0] < 0 && companion.hasActiveWorkOrder() && (bag.containsKey(Items.BREAD) || bag.containsKey(Items.APPLE) || bag.containsKey(Items.COOKED_BEEF))) {
                 companion.stopGathering(); stoppedAt[0] = helper.getTick();
             }
-            if (stoppedAt[0] >= 0 && helper.getTick() < stoppedAt[0] + 100) companion.setHealth(6);
+            if (stoppedAt[0] >= 0 && helper.getTick() < stoppedAt[0] + 100) companion.setHealth(12);
         });
         companion.startWork("sort_chests", "", 1);
         helper.succeedWhen(() -> {
             helper.assertTrue(stoppedAt[0] >= 0 && helper.getTick() > stoppedAt[0] + 140, "Waiting: he never carried food, or he is still hurt");
             helper.assertTrue(totals(companion, chests).equals(before), "The player's food eaten after the stop: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /** Oleg (29.10): at half health or less, with no food of his own, he eats the player's food he carries rather than die. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void carriedFoodIsEatenAtHalfHealthWithNoOwnFood(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
+        int[] food = {-1}; long[] stoppedAt = {-1};
+        helper.onEachTick(() -> {
+            if (stoppedAt[0] >= 0) return;
+            int carried = count(companion, Items.BREAD) + count(companion, Items.APPLE) + count(companion, Items.COOKED_BEEF);
+            if (!companion.hasActiveWorkOrder() || carried == 0) return;
+            companion.stopGathering(); companion.setHealth(8); food[0] = carried; stoppedAt[0] = helper.getTick();
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stoppedAt[0] >= 0, "He never carried food");
+            int now = count(companion, Items.BREAD) + count(companion, Items.APPLE) + count(companion, Items.COOKED_BEEF);
+            helper.assertTrue(now < food[0] && companion.getHealth() > 8, "At four hearts he did not eat the player's food: " + now + " of " + food[0] + ", health " + companion.getHealth());
         });
     }
 
