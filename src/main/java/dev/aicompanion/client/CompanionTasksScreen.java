@@ -181,6 +181,8 @@ public final class CompanionTasksScreen extends Screen {
         g.fill(left - 5, 24, left + panelWidth + 5, bottom + 2, 0xF0151C27);
         g.drawCenteredString(font, snapshot == null ? title : Component.literal(snapshot.name() + " · задачи"), width / 2, 12, 0xF1F5FA);
         g.drawString(font, "СЕЙЧАС", left + 8, 57, 0x75D9CB, false);
+        // Issue #32: on stream the player opened this screen to see why he was silent, and nothing here said so.
+        if (CompanionThinking.waiting()) g.drawString(font, "· думает над твоей просьбой…" + CompanionThinking.seconds(), left + 12 + font.width("СЕЙЧАС"), 57, 0xE3C26A, false);
         int activityWidth = panelWidth - 138;
         g.enableScissor(left + 8, 72, left + 8 + activityWidth, listTop - 17);
         g.drawWordWrap(font, Component.literal(snapshot == null ? notice.isEmpty() ? "Ожидаю данные компаньона…" : notice : snapshot.activity()), left + 8, 72, activityWidth, 0xF1F5FA);
