@@ -13,6 +13,7 @@ import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionSortGroups;
 import dev.aicompanion.entity.CompanionSortGroups.Group;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.Container;
@@ -20,6 +21,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -154,6 +157,112 @@ public final class CompanionSortingTests {
             Map<Item, Integer> now = totals(companion, chests);
             taken.forEach((item, count) -> now.merge(item, count, Integer::sum));
             helper.assertTrue(now.equals(before), "Items doubled or lost: " + now + " vs " + before);
+        });
+    }
+
+    /** One chest next to the player: the order inside it, put in place by opening it, nothing carried out. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2000)
+    public static void oneChestIsPutInOrderInside(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); bagOf(companion); Container a = chest(helper, 12);
+        for (int i = 0; i < 5; i++) a.setItem(i * 2, new ItemStack(Items.COBBLESTONE, 10 + i));
+        a.setItem(1, new ItemStack(Items.OAK_LOG, 20)); a.setItem(3, new ItemStack(Items.IRON_ORE, 8)); a.setItem(5, new ItemStack(Items.OAK_LOG, 30)); a.setItem(7, new ItemStack(Items.COAL, 4));
+        Map<Item, Integer> before = totals(companion, a), bagBefore = totals(companion);
+        boolean[] gesture = {false};
+        helper.onEachTick(() -> { if (companion.actionAnimation() != 0) gesture[0] = true; });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(gesture[0], "He never opened the chest");
+            helper.assertTrue(totals(companion, a).equals(before) && totals(companion).equals(bagBefore), "Items moved to or from the bag");
+            helper.assertTrue(count(a, Items.COBBLESTONE) == 60 && stacksOf(a, Items.COBBLESTONE) == 1 && stacksOf(a, Items.OAK_LOG) == 1, "Stacks not merged: " + describe(a));
+            helper.assertTrue(inOrder(a), "Not in order inside: " + describe(a));
+            helper.assertTrue(companion.getLastTaskResult().startsWith("Разложил по 1 сундуку"), companion.getLastTaskResult());
+        });
+    }
+
+    /** The last step: a chest the trips never open (its group is already in it) is put in order too. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void chestsTheTripsDidNotOpenAreTidiedAtTheEnd(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); bagOf(companion);
+        Container a = chest(helper, 9), b = chest(helper, 12), c = chest(helper, 15);
+        a.setItem(0, new ItemStack(Items.COBBLESTONE, 20)); a.setItem(1, new ItemStack(Items.BONE, 3)); a.setItem(2, new ItemStack(Items.COBBLESTONE, 30));
+        b.setItem(0, new ItemStack(Items.OAK_LOG, 10)); b.setItem(5, new ItemStack(Items.BIRCH_PLANKS, 5)); b.setItem(9, new ItemStack(Items.OAK_LOG, 20));
+        c.setItem(2, new ItemStack(Items.BREAD, 3)); c.setItem(7, new ItemStack(Items.BREAD, 4));
+        Container[] chests = {a, b, c}; Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(totals(companion, chests).equals(before) && totals(companion).equals(bagBefore), "Items lost, doubled or left in the bag");
+            for (Container chest : chests) helper.assertTrue(inOrder(chest) && stacksOf(chest, Items.OAK_LOG) <= 1 && stacksOf(chest, Items.BREAD) <= 1 && stacksOf(chest, Items.COBBLESTONE) <= 1, "Not in order inside: " + describe(chest));
+        });
+    }
+
+    /** Protective: refused on main as well (no chest in the set). A chest farther than six blocks from the player is not in it and is left alone. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1000)
+    public static void noChestInRangeIsRefusedAndTheFarOneUntouched(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container far = chest(helper, 27);
+        far.setItem(0, new ItemStack(Items.COBBLESTONE, 10)); far.setItem(1, new ItemStack(Items.OAK_LOG, 3)); far.setItem(2, new ItemStack(Items.COBBLESTONE, 5));
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && !companion.didLastTaskSucceed(), "Not refused: " + companion.getLastTaskResult());
+            helper.assertTrue(companion.getLastTaskResult().equals("Рядом с тобой сундуков не вижу."), companion.getLastTaskResult());
+            helper.assertTrue(count(far, Items.COBBLESTONE) == 15 && stacksOf(far, Items.COBBLESTONE) == 2 && far.getItem(1).is(Items.OAK_LOG), "The far chest was touched: " + describe(far));
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1000)
+    public static void fullBagIsRefusedAtOnceAndChestsUntouched(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper);
+        for (int slot = 0; slot < companion.getContainerSize() - 2; slot++) companion.setItem(slot, new ItemStack(Items.STICK, 1 + slot));
+        Map<Item, Integer> before = totals(companion, chests), chestsBefore = totals(chests[0], chests[1], chests[2]);
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && !companion.didLastTaskSucceed(), "Not refused: " + companion.getLastTaskResult());
+            helper.assertTrue(companion.getLastTaskResult().equals("Сумка забита, сначала сложить мои вещи?"), companion.getLastTaskResult());
+            helper.assertTrue(totals(companion, chests).equals(before) && totals(chests[0], chests[1], chests[2]).equals(chestsBefore) && chests[0].getItem(0).is(Items.COBBLESTONE) && chests[0].getItem(1).is(Items.OAK_LOG), "Something was touched");
+        });
+    }
+
+    /** Protective: passes since ticket 01. A double chest is one chest of the set (54 cells, its right half is not taken again); sorted together with a single one. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void doubleChestIsOneChestOfFiftyFourCells(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); bagOf(companion);
+        var facing = net.minecraft.core.Direction.NORTH;
+        BlockPos left = new BlockPos(9, 1, 13);
+        helper.setBlock(left, Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, facing).setValue(ChestBlock.TYPE, ChestType.LEFT));
+        helper.setBlock(new BlockPos(10, 1, 13), Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, facing).setValue(ChestBlock.TYPE, ChestType.RIGHT));
+        Container big = ChestBlock.getContainer((ChestBlock)Blocks.CHEST, helper.getBlockState(left), helper.getLevel(), helper.absolutePos(left), true);
+        Container single = chest(helper, 14);
+        helper.assertTrue(big != null && big.getContainerSize() == 54, "Not a double chest");
+        for (int slot = 0; slot < 30; slot++) big.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        for (int slot = 30; slot < 40; slot++) big.setItem(slot, new ItemStack(Items.OAK_LOG, 64));
+        big.setItem(40, new ItemStack(Items.BREAD, 5)); single.setItem(0, new ItemStack(Items.BREAD, 5)); single.setItem(1, new ItemStack(Items.COBBLESTONE, 7));
+        Container[] chests = {big, single}; Map<Item, Integer> before = totals(companion, chests);
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(companion.getLastTaskResult().startsWith("Разложил по 2 сундукам"), companion.getLastTaskResult());
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled");
+            helper.assertTrue(groups(big).equals(EnumSet.of(Group.STONE)) && count(big, Items.COBBLESTONE) == 1927, "The big chest is not for stone alone: " + groups(big));
+            helper.assertTrue(groups(single).equals(EnumSet.of(Group.WOOD, Group.FOOD)) && inOrder(big) && inOrder(single), "The single chest: " + describe(single));
+        });
+    }
+
+    /** Protective: a trapped chest and a barrel are not in the set, whatever lies in them. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2000)
+    public static void trappedChestAndBarrelAreLeftAlone(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); bagOf(companion);
+        Container a = chest(helper, 9);
+        helper.setBlock(new BlockPos(12, 1, 13), Blocks.TRAPPED_CHEST); helper.setBlock(new BlockPos(15, 1, 13), Blocks.BARREL);
+        Container trap = (Container)helper.getBlockEntity(new BlockPos(12, 1, 13)), barrel = (Container)helper.getBlockEntity(new BlockPos(15, 1, 13));
+        a.setItem(0, new ItemStack(Items.COBBLESTONE, 10)); a.setItem(1, new ItemStack(Items.OAK_LOG, 5)); a.setItem(2, new ItemStack(Items.COBBLESTONE, 20));
+        trap.setItem(0, new ItemStack(Items.BONE, 3)); trap.setItem(1, new ItemStack(Items.COBBLESTONE, 9)); barrel.setItem(0, new ItemStack(Items.BREAD, 4)); barrel.setItem(1, new ItemStack(Items.BONE, 2)); barrel.setItem(2, new ItemStack(Items.BREAD, 1));
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(stacksOf(a, Items.COBBLESTONE) == 1 && inOrder(a), "The plain chest is not in order: " + describe(a));
+            helper.assertTrue(trap.getItem(0).is(Items.BONE) && trap.getItem(1).is(Items.COBBLESTONE) && trap.getItem(0).getCount() == 3 && trap.getItem(1).getCount() == 9, "The trapped chest was touched: " + describe(trap));
+            helper.assertTrue(barrel.getItem(0).is(Items.BREAD) && barrel.getItem(1).is(Items.BONE) && barrel.getItem(2).is(Items.BREAD) && count(barrel, Items.BREAD) == 5, "The barrel was touched: " + describe(barrel));
         });
     }
 
@@ -303,6 +412,23 @@ public final class CompanionSortingTests {
     private static Map<Item, Integer> totals(CompanionEntity companion, Container[] chests) {
         Container[] all = new Container[chests.length + 1]; System.arraycopy(chests, 0, all, 0, chests.length); all[chests.length] = companion;
         return totals(all);
+    }
+    private static int stacksOf(Container bag, Item item) { int n = 0; for (int slot = 0; slot < bag.getContainerSize(); slot++) if (bag.getItem(slot).is(item)) n++; return n; }
+    private static String describe(Container chest) { StringBuilder sb = new StringBuilder(); for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) sb.append(slot).append(':').append(chest.getItem(slot)).append(' '); return sb.toString(); }
+    /** Filled from the first cell without gaps, by group and then by item. */
+    private static boolean inOrder(Container chest) {
+        ItemStack previous = ItemStack.EMPTY; boolean gap = false;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+            ItemStack stack = chest.getItem(slot);
+            if (stack.isEmpty()) { gap = true; continue; }
+            if (gap) return false;
+            if (!previous.isEmpty()) {
+                int g = CompanionSortGroups.of(previous).compareTo(CompanionSortGroups.of(stack));
+                if (g > 0 || g == 0 && BuiltInRegistries.ITEM.getId(previous.getItem()) > BuiltInRegistries.ITEM.getId(stack.getItem())) return false;
+            }
+            previous = stack;
+        }
+        return true;
     }
     private static CompanionEntity setup(GameTestHelper helper) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) helper.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
