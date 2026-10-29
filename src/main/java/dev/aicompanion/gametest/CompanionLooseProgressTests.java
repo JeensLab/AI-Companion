@@ -53,6 +53,10 @@ public final class CompanionLooseProgressTests {
         helper.succeedWhen(() -> {
             helper.assertTrue(mismatch[0] == null, String.valueOf(mismatch[0]));
             helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + companion.getLastTaskResult());
+            int flint = count(companion, Items.FLINT);
+            helper.assertTrue(companion.didLastTaskSucceed() == (flint >= 2), "Outcome " + companion.didLastTaskSucceed() + " with " + flint + " flint: " + companion.getLastTaskResult());
+            helper.assertTrue(flint >= 2 || companion.getLastTaskResult().contains("кремня"), "Short of flint without an honest report: " + companion.getLastTaskResult());
+            helper.assertTrue(companion.planProgress("gather_loose") == flint, "Progress " + companion.planProgress("gather_loose") + " for " + flint + " flint at the end");
         });
     }
 

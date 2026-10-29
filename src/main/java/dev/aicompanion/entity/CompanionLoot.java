@@ -388,8 +388,8 @@ final class CompanionLoot {
     }
     private static final int FALL_SCAN = 8;
 
-    /** A column that is really coming down is over in a second or two; past this the wait is a false alarm and the stuck detector takes over. */
-    private static final int FALL_HOLD_LIMIT = 60;
+    /** A tall column comes down block by block, a few seconds for a desert one; past this the wait is a false alarm and the stuck detector takes over. */
+    private static final int FALL_HOLD_LIMIT = 200;
     private UUID heldTarget;
     private int heldTicks;
 
