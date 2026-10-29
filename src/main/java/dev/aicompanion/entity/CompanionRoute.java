@@ -17,7 +17,7 @@ import java.util.Set;
  * worked, the nearest of many blocks on foot, a far goal in legs, and an outcome that tells «far, keep walking» from «no way».
  * The search behind it is the companion's own (CompanionSearch); every walk it leads ends in one {@code route_outcome} event of the journal.
  */
-final class CompanionRoute {
+public final class CompanionRoute {
     /** What is wanted of the cells a block is worked from (see CompanionMiningNavigation.standCells). */
     record Need(double reach, boolean clearLeaves, boolean avoidStandingOnTarget, boolean forTheDrop) { }
 
@@ -66,12 +66,12 @@ final class CompanionRoute {
         Map<BlockPos, BlockPos> blockAt = new HashMap<>();
         for (BlockPos block : blocks) for (BlockPos stand : CompanionMiningNavigation.standCells(owner, block, need.reach(), need.clearLeaves(), need.avoidStandingOnTarget())) {
             if (need.forTheDrop() && !CompanionMiningNavigation.dropCollectable(owner.level(), block, stand)) continue;
-            if (occupied(owner, stand)) continue;
             BlockPos other = blockAt.get(stand);
             if (other == null || stand.distSqr(block) < stand.distSqr(other)) blockAt.put(stand, block.immutable());
         }
         if (blockAt.isEmpty()) return failed(blocks, "no stand cell");
-        Reach found = find(blockAt.keySet(), 0, blockAt::get);
+        Map<BlockPos, BlockPos> chosen = unoccupied(owner, blockAt);
+        Reach found = find(chosen.keySet(), 0, chosen::get);
         return found.found() || found.busy() ? found : failed(blocks, found.reason());
     }
 
@@ -129,10 +129,27 @@ final class CompanionRoute {
 
     Reach to(BlockPos block, Need need) { return nearest(List.of(block), need); }
 
-    /** Somebody already stands there: walking into him only pushes him about, and the way never ends (the player beside a sand column). */
-    private static boolean occupied(CompanionEntity owner, BlockPos stand) {
-        var body = new AABB(stand.getX() + .2, stand.getY(), stand.getZ() + .2, stand.getX() + .8, stand.getY() + owner.getBbHeight(), stand.getZ() + .8);
-        return !owner.level().getEntities(owner, body, entity -> entity instanceof LivingEntity living && living.isAlive()).isEmpty();
+    /**
+     * Somebody standing in a stand cell: walking into him only pushes him about, and the way never ends (the player beside a sand column).
+     * The free cells are preferred; when every cell is taken they all stay, as he can push the player or an animal aside. One entity query for all cells.
+     */
+    public static Map<BlockPos, BlockPos> unoccupied(CompanionEntity owner, Map<BlockPos, BlockPos> stands) {
+        Map<BlockPos, AABB> bodies = new HashMap<>();
+        AABB all = null;
+        for (BlockPos stand : stands.keySet()) {
+            var body = new AABB(stand.getX() + .2, stand.getY(), stand.getZ() + .2, stand.getX() + .8, stand.getY() + owner.getBbHeight(), stand.getZ() + .8);
+            bodies.put(stand, body);
+            all = all == null ? body : all.minmax(body);
+        }
+        if (all == null) return stands;
+        var standing = owner.level().getEntities(owner, all, entity -> entity instanceof LivingEntity living && living.isAlive());
+        if (standing.isEmpty()) return stands;
+        Map<BlockPos, BlockPos> free = new HashMap<>();
+        for (var entry : stands.entrySet()) {
+            AABB body = bodies.get(entry.getKey());
+            if (standing.stream().noneMatch(entity -> entity.getBoundingBox().intersects(body))) free.put(entry.getKey(), entry.getValue());
+        }
+        return free.isEmpty() ? stands : free;
     }
 
     /**

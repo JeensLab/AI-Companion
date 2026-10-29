@@ -121,7 +121,7 @@ final class CompanionLoot {
             if (item.getItem().is(ItemTags.LOGS)) collectedLogs += moved;
             if (item.getItem().is(ItemTags.STONE_TOOL_MATERIALS)) collectedStone += moved;
             if (CompanionTools.soilItem(item.getItem())) collectedSoil += moved;
-            for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose() && ground.counts(item.getItem())) collectedLoose[ground.ordinal()] += moved;
+            for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose() && ground == owner.gathering.ground && ground.counts(item.getItem())) collectedLoose[ground.ordinal()] += moved;
             owner.take(item, moved);
             level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
             if (offered.isEmpty()) { item.discard(); pending.remove(id); } else item.setItem(offered);

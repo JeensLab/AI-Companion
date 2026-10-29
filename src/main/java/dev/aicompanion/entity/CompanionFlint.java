@@ -33,6 +33,8 @@ final class CompanionFlint {
     private static final int BREAKS_PER_FLINT = 30;
     private static final int TIMEOUT_BASE_TICKS = 20 * 60;
     private static final int TIMEOUT_PER_FLINT_TICKS = 20 * 100;
+    /** Under the 600 s work deadline (CompanionWork.start) with room for the shovel and the walk, so the honest flint report ends the order. */
+    private static final int TIMEOUT_MAX_TICKS = 20 * 480;
     private static final int SPOT_RADIUS = 1;
 
     private final CompanionEntity c;
@@ -45,7 +47,7 @@ final class CompanionFlint {
 
     void begin() { placed.clear(); breaks = 0; flintAtStart = CompanionGround.FLINT.count(c); }
 
-    static int timeoutTicks(int ordered) { return TIMEOUT_BASE_TICKS + TIMEOUT_PER_FLINT_TICKS * ordered; }
+    static int timeoutTicks(int ordered) { return Math.min(TIMEOUT_MAX_TICKS, TIMEOUT_BASE_TICKS + TIMEOUT_PER_FLINT_TICKS * ordered); }
 
     void countBreak() { breaks++; }
     boolean exhausted(int ordered) { return breaks >= BREAKS_PER_FLINT * ordered; }
@@ -82,8 +84,8 @@ final class CompanionFlint {
         return spot;
     }
 
-    /** A Silk Touch shovel drops the block itself, never flint: the best other shovel goes into the hand, else bare hands. */
-    void arm() {
+    /** A Silk Touch shovel drops the block itself, never flint: the best other shovel goes into the hand, else bare hands. False when it cannot leave the hand (full bag). */
+    boolean arm() {
         ItemStack hand = c.getMainHandItem();
         BlockState gravel = Blocks.GRAVEL.defaultBlockState();
         double speed = hand.is(ItemTags.SHOVELS) && !silkTouch(hand) ? hand.getDestroySpeed(gravel) : -1;
@@ -97,7 +99,9 @@ final class CompanionFlint {
             c.companionInventory.set(best, hand);
             c.setItemSlot(EquipmentSlot.MAINHAND, chosen);
             c.refreshInventorySummary();
-        } else if (silkTouch(hand)) c.unequipForSupport("mainhand");
+            return true;
+        }
+        return !silkTouch(hand) || c.unequipForSupport("mainhand").success();
     }
 
     private boolean silkTouch(ItemStack stack) {

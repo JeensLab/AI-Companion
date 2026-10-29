@@ -85,7 +85,9 @@ final class CompanionDigGoal extends Goal {
         // Soil for a support under a crown: by hand, a shovel would eat the wood just cut (marathon 23.10: «добудь дерева» ended
         // with fewer logs than asked, one gone into a shovel for six blocks of dirt).
         if (!c.supportSoilTask && shovelSense.tick()) { c.dirtBreaking.reset(); approachPath = null; return; }
-        if (flintMode()) flint.arm(); else CompanionTools.equip(c, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
+        if (flintMode()) {
+            if (!flint.arm()) { finish(flint.report(c.requestedLogs, "в сумке нет места убрать лопату с «Шёлковым касанием», она не даёт кремня. Освободи ячейку.")); return; }
+        } else CompanionTools.equip(c, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
         if (retryDelay > 0) { retryDelay--; return; }
 
         if (target != null && !ground().safeCell((ServerLevel)c.level(), target, c)) {
