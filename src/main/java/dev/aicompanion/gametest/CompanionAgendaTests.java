@@ -414,11 +414,14 @@ public final class CompanionAgendaTests {
                 {"отмени, пожалуйста, цель", cancel}, {"отмени пожалуйста эту большую цель", cancel},
                 {"отложи цель", defer}, {"отложи пока нашу цель", defer}, {"вернись к цели", "companion goal resume"}, {"как там цель", "companion goal status"},
                 {"отмени и вернись к цели", "companion goal resume"}, {"отмени бег до цели", stop},
+                {"продолжай", "companion goal resume"}, {"Олег, продолжай!", "companion goal resume"}, {"давай продолжай", "companion goal resume"},
                 {"стоп", stop}, {"Олег, отмени задачу", stop}, {"отмена", stop}};
         for (String[] route : routes) {
             String routed = CompanionLocalCommands.route(route[0], "Олег");
             h.assertTrue(route[1].equals(routed), "«" + route[0] + "» went to " + routed + ", not " + route[1]);
         }
+        for (String other : new String[] {"продолжай рассказ", "не продолжай", "Олег, продолжай заниматься своими делами"})
+            h.assertTrue(!"companion goal resume".equals(CompanionLocalCommands.route(other, "Олег")), "«" + other + "» resumed the goal");
         for (String negation : new String[] {"не забудь убить дракона", "Олег, не забудь про цель", "не забудь про цель!"}) {
             String routed = CompanionLocalCommands.route(negation, "Олег");
             h.assertTrue(!cancel.equals(routed) && !defer.equals(routed), "«" + negation + "» ended or parked the goal: " + routed);
