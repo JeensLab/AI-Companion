@@ -120,6 +120,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
+    final CompanionBreath breath = new CompanionBreath(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     BlockPos movementIntent;
@@ -280,6 +281,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
+        this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
