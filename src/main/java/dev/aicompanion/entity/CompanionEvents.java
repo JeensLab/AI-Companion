@@ -17,6 +17,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public final class CompanionEvents {
@@ -57,7 +58,13 @@ public final class CompanionEvents {
                 .then(Commands.literal("summon").executes(context -> {
                     ServerPlayer player = context.getSource().getPlayerOrException();
                     CompanionEntity companion = resolveCanonical(player, true);
-                    if (companion != null) companion.teleportTo(player.getX() + 1.0D, player.getY(), player.getZ() + 1.0D);
+                    if (companion != null && companion.level() != player.level()) {
+                        // Game 29.10: from the Nether he went to the same numbers in his own world and fell into a forest. He comes over
+                        // as with a vanilla /tp; the work of the world he leaves stops there, as on «иди за мной».
+                        companion.goals().playerOrder("follow"); companion.autonomy().playerOrder("follow");
+                        CompanionAgenda.playerOrder(player, companion, "follow"); companion.setFollowing(true);
+                        companion.teleportTo(player.serverLevel(), player.getX() + 1.0D, player.getY(), player.getZ() + 1.0D, Set.of(), companion.getYRot(), companion.getXRot());
+                    } else if (companion != null) companion.teleportTo(player.getX() + 1.0D, player.getY(), player.getZ() + 1.0D);
                     context.getSource().sendSuccess(() -> Component.literal(companion == null
                             ? "Компаньон сейчас выгружен из мира; он не создан повторно."
                             : "Компаньон рядом."), false);
