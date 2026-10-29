@@ -5,8 +5,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.tags.ItemTags;
@@ -191,6 +194,8 @@ final class CompanionLoot {
             dropLeaf();
         }
         if (target == null) return;
+        // The column of loose blocks above a dug cell is still coming down: whoever walks in for the drop is buried in it.
+        if (fallingOver(level, target)) { owner.work.route.stop(); lastProgress = level.getGameTime(); return; }
         owner.movementIntent(target.blockPosition());
         if (leaf != null) { clearLeaf(level); return; }
         owner.workStatus("Подбираю добытые вещи.");
@@ -377,6 +382,17 @@ final class CompanionLoot {
         for (UUID id : pending) if (!unreachable.contains(id) && level.getEntity(id) instanceof ItemEntity item && item.isAlive() && matches.test(item.getItem())) amount += item.getItem().getCount();
         return amount;
     }
+    private static final int FALL_SCAN = 8;
+
+    private static boolean fallingOver(ServerLevel level, ItemEntity item) {
+        if (!level.getEntitiesOfClass(FallingBlockEntity.class, item.getBoundingBox().inflate(.5, 0, .5).expandTowards(0, FALL_SCAN, 0)).isEmpty()) return true;
+        for (BlockPos above = item.blockPosition().above(); above.getY() <= item.blockPosition().getY() + FALL_SCAN; above = above.above()) {
+            BlockState state = level.getBlockState(above);
+            if (!state.isAir()) return state.getBlock() instanceof FallingBlock;
+        }
+        return false;
+    }
+
     private boolean chaseable(ServerLevel level, UUID id) {
         if (unreachable.contains(id)) {
             // Given up from one spot only: four blocks away the drop is tried again.
