@@ -46,4 +46,24 @@ public final class CompanionSortingCarriedTests {
             helper.assertTrue(ItemStack.matches(companion.getMainHandItem(), handBefore), "The hand changed: " + companion.getMainHandItem());
         });
     }
+
+    /** In the game (29.10): «иди ко мне» ended the sorting, and he, hurt, ate two breads he carried for the player. Stopped, they are still the player's. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void carriedFoodIsNotEatenAfterTheStop(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests);
+        long[] stoppedAt = {-1};
+        helper.onEachTick(() -> {
+            Map<Item, Integer> bag = totals(companion);
+            if (stoppedAt[0] < 0 && companion.hasActiveWorkOrder() && (bag.containsKey(Items.BREAD) || bag.containsKey(Items.APPLE) || bag.containsKey(Items.COOKED_BEEF))) {
+                companion.stopGathering(); stoppedAt[0] = helper.getTick();
+            }
+            if (stoppedAt[0] >= 0 && helper.getTick() < stoppedAt[0] + 100) companion.setHealth(6);
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stoppedAt[0] >= 0 && helper.getTick() > stoppedAt[0] + 140, "Waiting: he never carried food, or he is still hurt");
+            helper.assertTrue(totals(companion, chests).equals(before), "The player's food eaten after the stop: " + totals(companion, chests) + " vs " + before);
+        });
+    }
 }

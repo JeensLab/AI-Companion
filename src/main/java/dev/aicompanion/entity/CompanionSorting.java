@@ -400,9 +400,12 @@ final class CompanionSorting {
         return free;
     }
 
-    /** True while he sorts and the bag holds no more of this kind than he carries: nothing of it is his own, so nothing of it is spent. */
+    /**
+     * True while the bag holds no more of this kind than he carries for the player: nothing of it is his own, so nothing of it is spent.
+     * A stopped sorting leaves it the player's too, until a sorting puts it away (in the game 29.10 he ate the player's bread after «иди ко мне»).
+     */
     boolean onlyCarried(ItemStack like) {
-        if (w.job != CompanionWork.Job.SORT || like.isEmpty()) return false;
+        if (like.isEmpty()) return false;
         int count = 0;
         for (ItemStack load : carried) if (ItemStack.isSameItemSameComponents(load, like)) count += load.getCount();
         return count > 0 && count >= count(w.owner, like);
