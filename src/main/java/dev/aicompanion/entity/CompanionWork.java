@@ -104,6 +104,8 @@ public final class CompanionWork {
     boolean placementMoving;
     boolean insideHouse;
     final List<BlockPos> placedChests = new ArrayList<>();
+    /** The diamond mine he dug: saved with him, outlives a single work. */
+    final CompanionMineSite mine = new CompanionMineSite();
     BlockPos workOrigin;
     boolean returnRouteBlocked;
     long nextReturnCheck;
