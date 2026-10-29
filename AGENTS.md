@@ -83,6 +83,9 @@
 (`client/CompanionTaskQueue`) → `client/CompanionPlanRunner` → `client/CompanionServerPlanPort`
 → серверная механика (`entity/`) → результат с фактами (`entity/CompanionActionResult`)
 → сообщение игроку. Сохраняемая цель `entity/CompanionGoals` живёт на сервере отдельно.
+Долгая цель (действие `pursue_goal`) — тоже на сервере: движок `entity/CompanionAgenda`,
+закрытый каталог `CompanionPlaybooks`, этапы по фактам `CompanionMilestones`; очередь
+закрывает её задачу на `ACCEPTED`.
 Игровые регрессии — `gametest/` и `entity/CompanionStairApproachTests.java`;
 структуры — `src/main/resources/data/aicompanion/structure/`.
 
