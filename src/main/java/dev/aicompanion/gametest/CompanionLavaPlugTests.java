@@ -176,6 +176,84 @@ public final class CompanionLavaPlugTests {
         });
     }
 
+    /**
+     * A closed lava fall in the rock (a spring on top, its foot on the stone floor); his tunnel to iron runs past it. Lava at the
+     * foot stands on stone, so it would be an inflow, but a plug there only lifts the spill: the fall above gets a floor and spreads
+     * into the open cell beside it. A fall is not plugged: the ore is left, the report says «лавопад».
+     */
+    @GameTest(template = "large_search", timeoutTicks = 2600)
+    public static void aLavaFallFootBesideTheTunnelIsNotOpenedAndNamed(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 12, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 1, 31, Blocks.STONE);
+        // The rock fills the arena east of x 17 from wall to wall: the only way to the ore is a tunnel from the cave in the west.
+        box(h, 18, 2, 0, 31, 11, 31, Blocks.STONE);
+        box(h, 0, 2, 0, 17, 11, 0, Blocks.BEDROCK); box(h, 0, 2, 31, 17, 11, 31, Blocks.BEDROCK); box(h, 0, 2, 0, 0, 11, 31, Blocks.BEDROCK);
+        box(h, 24, 2, 17, 24, 9, 17, Blocks.AIR);
+        h.setBlock(new BlockPos(24, 10, 17), Blocks.LAVA);
+        BlockPos ore = new BlockPos(27, 2, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 14, 2, 16);
+        bindAt(h, c, 12, 2, 12);
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        boolean[] inTunnel = {false}, burnt = {false}, fixture = {false}; long[] done = {-1};
+        h.onEachTick(() -> {
+            boolean now = false;
+            for (int x = 18; x <= 26; x++) for (int y = 2; y <= 3; y++) now |= h.getLevel().getFluidState(h.absolutePos(new BlockPos(x, y, 16))).is(FluidTags.LAVA);
+            if (h.getTick() == 390) fixture[0] = !now;
+            inTunnel[0] |= now;
+            burnt[0] |= c.isOnFire() || c.isInLava();
+            if (done[0] < 0 && h.getTick() > 410 && (idle(c) || !c.isAlive())) done[0] = h.getTick();
+        });
+        h.runAfterDelay(400, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(fixture[0], "Fixture: lava in the tunnel row before the order");
+            h.assertTrue(done[0] > 0 && h.getTick() > done[0] + SETTLE, "Still working: " + report(c));
+            h.assertTrue(!inTunnel[0] && !burnt[0] && c.isAlive() && c.getHealth() >= c.getMaxHealth(), "Lava came into his tunnel=" + inTunnel[0] + " burnt=" + burnt[0] + " " + report(c));
+            // Either he went round the fall by a tunnel of his own (the ore taken, dry), or he left the ore and said why.
+            h.assertTrue(!h.getBlockState(ore).is(Blocks.IRON_ORE) || c.getLastTaskResult().contains("лавопад") && count(c, Items.COBBLESTONE) == 3,
+                    "The ore stands and the fall is not named, or a plug was spent: " + report(c));
+        });
+    }
+
+    /**
+     * The iron lies on the cave floor beside the foot of a lava fall (a stone lip closes the foot from the cave). Mined, and the foot
+     * plugged, the fall would spill over the plug into the cave and burn him: the ore is left, the report says «лавопад».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void anOreBesideTheFootOfALavaFallIsNotTakenAndNamed(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 12, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 1, 31, Blocks.STONE);
+        box(h, 20, 2, 8, 26, 9, 24, Blocks.STONE);
+        box(h, 20, 2, 17, 20, 9, 17, Blocks.AIR);
+        h.setBlock(new BlockPos(19, 2, 17), Blocks.STONE);
+        h.setBlock(new BlockPos(21, 9, 17), Blocks.LAVA);
+        BlockPos ore = new BlockPos(20, 2, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 14, 2, 16);
+        bindAt(h, c, 12, 2, 12);
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        boolean[] spilled = {false}, burnt = {false}, fixture = {false}; long[] done = {-1};
+        h.onEachTick(() -> {
+            boolean now = false;
+            for (int x = 10; x <= 20; x++) for (int y = 2; y <= 9; y++) for (int z = 12; z <= 22; z++)
+                now |= !(x == 20 && z == 17) && h.getLevel().getFluidState(h.absolutePos(new BlockPos(x, y, z))).is(FluidTags.LAVA);
+            if (h.getTick() == 390) fixture[0] = !now;
+            spilled[0] |= now;
+            burnt[0] |= c.isOnFire() || c.isInLava();
+            if (done[0] < 0 && h.getTick() > 410 && (idle(c) || !c.isAlive())) done[0] = h.getTick();
+        });
+        h.runAfterDelay(400, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(fixture[0], "Fixture: lava in the cave before the order");
+            h.assertTrue(done[0] > 0 && h.getTick() > done[0] + 200, "Still working: " + report(c));
+            h.assertTrue(!spilled[0] && !burnt[0] && c.isAlive() && c.getHealth() >= c.getMaxHealth(), "Lava spilled into the cave=" + spilled[0] + " burnt=" + burnt[0] + " " + report(c));
+            h.assertTrue(h.getBlockState(ore).is(Blocks.IRON_ORE) && count(c, Items.COBBLESTONE) == 3, "Ore dug or a plug spent: " + report(c));
+            h.assertTrue(c.getLastTaskResult().contains("лавопад"), "The fall is not named: " + report(c));
+        });
+    }
+
     // ---- Arena and measures ----
 
     /**

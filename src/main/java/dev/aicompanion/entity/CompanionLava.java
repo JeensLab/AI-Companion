@@ -35,8 +35,8 @@ final class CompanionLava {
     private static final List<Item> PLUGS = List.of(Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.DIRT, Items.NETHERRACK,
             Items.STONE, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF);
 
-    /** Why an ore may not be opened now: its drop would fall into lava, or lava would run in and there is nothing to plug it with. */
-    enum Opening { SAFE, OVER_LAVA, NO_PLUG }
+    /** Why an ore may not be opened now: its drop would fall into lava, lava would run in and there is nothing to plug it with, or a lava fall stands beside it. */
+    enum Opening { SAFE, OVER_LAVA, NO_PLUG, FALL }
 
     private CompanionLava() {}
 
@@ -75,6 +75,20 @@ final class CompanionLava {
         return level.isLoaded(under) && !at(level, under) && !level.getBlockState(under).canBeReplaced();
     }
 
+    /**
+     * A lava fall stands at the foot of this cell: lava that runs in is flowing lava with flowing lava over it. A plug there only
+     * lifts the spill by a block (the fall above gets a floor and spreads into the opened cell), so such a cell is not opened at
+     * all. A source over it (a lake two layers deep) is not a fall: its plug holds.
+     */
+    static boolean besideFall(Level level, Collection<BlockPos> opened) {
+        for (BlockPos cell : opened)
+            for (BlockPos lava : inflow(level, cell)) {
+                BlockPos above = lava.above();
+                if (!level.getFluidState(lava).isSource() && level.isLoaded(above) && at(level, above) && !level.getFluidState(above).isSource()) return true;
+            }
+        return false;
+    }
+
     /** The lava cells that run in when all these cells are opened (a cell next to two of them is counted once). */
     static Set<BlockPos> inflow(Level level, Collection<BlockPos> opened) {
         Set<BlockPos> cells = new LinkedHashSet<>();
@@ -92,6 +106,7 @@ final class CompanionLava {
     /** Whether he may break this ore: not on lava, and with enough plugs for the lava that runs in once it is gone. */
     static Opening opening(CompanionEntity owner, Level level, BlockPos ore) {
         if (at(level, ore.below())) return Opening.OVER_LAVA;
+        if (besideFall(level, List.of(ore))) return Opening.FALL;
         return inflow(level, ore).size() <= plugsCarried(owner) ? Opening.SAFE : Opening.NO_PLUG;
     }
 

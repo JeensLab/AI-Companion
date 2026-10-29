@@ -58,7 +58,7 @@ final class CompanionEntityGoals {
         @Override public void stop() { c.recovery.cancel(); c.getNavigation().stop(); }
     }
 
-    /** Low on air under water: the work waits while he swims to air and breathes (CompanionBreath). Not on JUMP: FloatGoal holds it. */
+    /** Low on air under water: the work waits while he swims to air and breathes (CompanionBreath). The float goal beside it holds no flag (WadingFloatGoal). */
     static final class BreatheGoal extends Goal {
         final CompanionEntity c;
         BreatheGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }

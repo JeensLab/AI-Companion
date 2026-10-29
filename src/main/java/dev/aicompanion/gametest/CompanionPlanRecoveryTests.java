@@ -438,9 +438,11 @@ public final class CompanionPlanRecoveryTests {
                 + " У 3 блока рядом лава, заткнуть нечем — нужен булыжник или земля. К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.";
         String overLava = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
                 + " 2 блока руды над лавой — не трогал, добыча сгорит.";
+        String fall = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 2 блока рядом лавопад — пробкой его не остановить, не трогал.";
         var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
         String helmet = CompanionDialogue.itemName("minecraft:iron_helmet"), boots = CompanionDialogue.itemName("minecraft:iron_boots");
-        for (String why : List.of(noPlug, overLava)) {
+        for (String why : List.of(noPlug, overLava, fall)) {
             String report = CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: " + why + "\n" + CompanionDialogue.PARTIAL_PREFIX + "«" + boots + "»: " + why;
             String said = CompanionDialogue.summarize(plan, report);
             h.assertTrue(said.contains("лав") && !said.contains("больше доступной руды") && !said.contains("безопасно не добраться"), "Plan parts do not say lava: " + said);
@@ -449,6 +451,20 @@ public final class CompanionPlanRecoveryTests {
         }
         String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: " + noPlug);
         h.assertTrue(said.contains("булыжник") || said.contains("земл"), "Does not say what to bring: " + said);
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", fall).equals("Рядом лавопад, пробкой его не остановить. Руду не трогал."),
+                "The fall is not said: " + dev.aicompanion.CompanionFailureMessages.explain("mine_ore", fall));
+        h.succeed();
+    }
+
+    /** A lava reason and «Наверх пока не выбрался» in one report: the player hears that he is still down there, not only the lava. */
+    @GameTest(template = "empty")
+    public static void stuckBelowIsSaidBeforeTheLavaReason(GameTestHelper h) {
+        String report = "Добыл 0 из 4 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 1 блок рядом лава, заткнуть нечем — нужен булыжник или земля. Наверх пока не выбрался: стою на 10, 20, 30. В сумке: 1 Каменная кирка.";
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String parts = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_boots") + "»: " + report);
+        String spoken = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", report);
+        h.assertTrue(spoken.contains("внизу") && parts.contains("внизу"), "Stuck below not said: " + spoken + " | " + parts);
         h.succeed();
     }
 

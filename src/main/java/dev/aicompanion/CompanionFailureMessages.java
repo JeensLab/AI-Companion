@@ -17,8 +17,10 @@ public final class CompanionFailureMessages {
         if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи") || text.contains("к тебе пройти, вещи")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
+        // Not yet up from his own tunnel: said before any ore reason, the player should know he is still down there.
+        if (text.contains("выбрался")) return Kind.ROUTE;
         // Ahead of the route: the engine puts the lava reason beside «не нашёл безопасного хода», and lava is the one to name.
-        if (text.contains("заткнуть нечем") || text.contains("над лавой")) return Kind.LAVA;
+        if (text.contains("заткнуть нечем") || text.contains("над лавой") || text.contains("лавопад")) return Kind.LAVA;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
                 || text.contains("не добраться") || text.contains("подъем") || text.contains("выбрался") || text.contains("к тебе пройти")) return Kind.ROUTE;
         if (text.contains("не хватает") || text.contains("недостаточно")) return Kind.MATERIALS;
@@ -36,6 +38,7 @@ public final class CompanionFailureMessages {
             case MATERIALS -> "Пока не хватает материалов, чтобы закончить.";
             case LAVA -> primary(report).contains("заткнуть нечем")
                     ? "Рядом лава, а заткнуть её нечем. Нужен булыжник или земля." + (primary(report).contains("над лавой") ? " И руда лежит над лавой, добыча сгорит." : "")
+                    : primary(report).contains("лавопад") ? "Рядом лавопад, пробкой его не остановить. Руду не трогал."
                     : "Руда лежит над лавой, добыча сгорит. Не трогал.";
             // No way at all to the player, as the wide search proved it: said as such, not as a lost way.
             case ROUTE -> primary(report).contains("выбрался") ? "Я пока внизу, ищу безопасный выход."
