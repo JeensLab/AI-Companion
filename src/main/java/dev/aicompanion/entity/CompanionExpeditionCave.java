@@ -23,7 +23,7 @@ final class CompanionExpeditionCave {
     private enum Phase { IDLE, WAIT, EXPLORE, BACK, SEAL }
 
     private static final int EXPLORE_RANGE = 16, EXPLORE_TICKS = 20 * 120, SPACING = 5, SETTLE = 30, PIT_TRIES = 60, SEAL_PATIENCE = 200, WATCH_EVERY = 10, LOOK_EVERY = 5, NOTES = 6;
-    private static final double MELEE = 3, ARRIVED = 2.5;
+    private static final double ARRIVED = 2.5;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -39,6 +39,8 @@ final class CompanionExpeditionCave {
     private String failure;
     private long until;
     private int seenBroken, idle, settle, taken, work, tries;
+    /** Mobs were in the cave when it opened: what lives there comes for him, so the breach is plugged before it is opened wider. */
+    private boolean hostile;
 
     CompanionExpeditionCave(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionOre ore, BooleanSupplier enough) {
         this.w = w;
@@ -78,6 +80,7 @@ final class CompanionExpeditionCave {
         ore.limit(pos -> true);
         seenBroken = dig.broken;
         idle = settle = taken = work = tries = 0;
+        hostile = false;
     }
 
     /**
@@ -119,6 +122,7 @@ final class CompanionExpeditionCave {
         touch = mine;
         CompanionCaveSense.Facts facts = CompanionCaveSense.sense(w, level, cave, false);
         CompanionCaveSense.Danger danger = CompanionCaveSense.judge(cave, facts);
+        hostile = facts.hostiles() > 0;
         note("Наткнулся на пещеру (" + CompanionCaveSense.describe(cave, facts) + ").");
         // VERY_DANGEROUS is sealed like DANGEROUS for now; the retreat up his stairs to rest is the next step and starts here.
         phase = danger == CompanionCaveSense.Danger.SAFE ? Phase.WAIT : Phase.SEAL;
@@ -242,6 +246,7 @@ final class CompanionExpeditionCave {
         List<BlockPos> open = openTouching(level);
         if (open.isEmpty()) return finish("Пролом заделал.");
         if (++idle > SEAL_PATIENCE) return finish("Пролом заделать до конца не вышло.");
+        if (cave.air().contains(owner.blockPosition())) return stepBack(level, open.get(0));
         boolean occupied = false;
         for (BlockPos cell : open) {
             if (!CompanionSeal.replaceable(level, cell)) { level.destroyBlock(cell, true, owner); return true; }
@@ -252,10 +257,43 @@ final class CompanionExpeditionCave {
                 default -> { }
             }
         }
-        if (occupied) return true;
+        if (occupied) { plugBreach(level, planCells); return true; }
         BlockPos stand = standFor(level, open.get(0));
-        if (stand == null) return planCells.isEmpty();
+        if (stand == null) return hostile && plugBreach(level, planCells) || planCells.isEmpty();
         if (!dig.walkTo(stand) && dig.walkStuck()) idle = SEAL_PATIENCE;
+        return true;
+    }
+
+    /**
+     * The cave side cannot be plugged now: out of sight past the half-opened advance (only the feet cell is broken) of a cave with mobs,
+     * or a mob stands in it. The block goes back into the hole on his side at once, instead of opening the rest of the breach or waiting while what lives
+     * there comes for him.
+     */
+    private boolean plugBreach(ServerLevel level, List<BlockPos> planCells) {
+        for (BlockPos cell : planCells) {
+            if (!CompanionShaftPlan.open(level, cell) || !facesCave(level, cell)) continue;
+            if (!CompanionSeal.replaceable(level, cell) || !CompanionSeal.plug(owner, cell).placed()) continue;
+            w.mine.sealed(cell);
+            sealed.add(cell);
+            work++;
+            idle = 0;
+            return true;
+        }
+        return false;
+    }
+
+    private boolean facesCave(ServerLevel level, BlockPos cell) {
+        for (Direction side : Direction.values()) {
+            BlockPos next = cell.relative(side);
+            if (cave.air().contains(next) && CompanionShaftPlan.open(level, next)) return true;
+        }
+        return false;
+    }
+
+    /** The plug is never laid with him on the cave side: first back to a cell of his mine. */
+    private boolean stepBack(ServerLevel level, BlockPos target) {
+        BlockPos stand = standFor(level, target);
+        if (stand != null && !dig.walkTo(stand)) idle = dig.walkStuck() ? SEAL_PATIENCE : idle;
         return true;
     }
 
@@ -274,7 +312,8 @@ final class CompanionExpeditionCave {
         for (BlockPos cell : cave.air()) {
             if (!level.isLoaded(cell) || !CompanionShaftPlan.open(level, cell)) continue;
             for (Direction side : Direction.values()) {
-                if (touch.contains(cell.relative(side))) { cells.add(cell); break; }
+                BlockPos next = cell.relative(side);
+                if (touch.contains(next) && !sealed.contains(next)) { cells.add(cell); break; }
             }
         }
         cells.sort((a, b) -> Double.compare(owner.distanceToSqr(Vec3.atCenterOf(a)), owner.distanceToSqr(Vec3.atCenterOf(b))));
@@ -306,9 +345,21 @@ final class CompanionExpeditionCave {
     /** He never strikes a creeper, and a chase does not lead him into the cave. */
     private void calm() {
         LivingEntity target = owner.getTarget();
-        if (target == null) return;
-        boolean chase = phase != Phase.EXPLORE && cave != null && cave.air().contains(target.blockPosition()) && owner.distanceToSqr(target) > MELEE * MELEE;
-        if (target instanceof Creeper || chase) owner.setTarget(null);
+        if (target instanceof Creeper || shuns(target)) owner.setTarget(null);
+    }
+
+    /** A target standing in the cave while he is not exploring it: the melee goal runs ahead of the work, so it must not follow it in. */
+    boolean guards(LivingEntity target) {
+        return target != null && phase != Phase.IDLE && phase != Phase.EXPLORE && cave != null && cave.air().contains(target.blockPosition());
+    }
+
+    /**
+     * No fight now: the target is in the cave and out of reach (in reach, he strikes it where he stands, see {@link #guards}), or he is
+     * himself on the cave side while the plug is yet to be laid, and the way back to his mine comes first.
+     */
+    boolean shuns(LivingEntity target) {
+        boolean outside = (phase == Phase.SEAL || phase == Phase.BACK) && cave != null && cave.air().contains(owner.blockPosition());
+        return target != null && (outside || guards(target) && !owner.isWithinMeleeAttackRange(target));
     }
 
     private void note(String text) {

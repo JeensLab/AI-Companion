@@ -28,8 +28,8 @@ final class CompanionCombat {
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
         private int nextSwing;
         /** At range the bow has him, when he has one (CompanionArchery). */
-        @Override public boolean canUse() { return !c.archery.wants(c.getTarget()) && super.canUse(); }
-        @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
+        @Override public boolean canUse() { return !c.archery.wants(c.getTarget()) && super.canUse() && !c.work.expedition.shuns(c.getTarget()); }
+        @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget()); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
