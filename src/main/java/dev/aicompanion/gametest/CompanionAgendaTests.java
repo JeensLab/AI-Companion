@@ -21,10 +21,12 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -73,6 +75,11 @@ public final class CompanionAgendaTests {
     @AfterBatch(batch = "agenda_late") public static void afterLate(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_first_call") public static void afterFirstCall(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_exhausted") public static void afterExhausted(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_death_loot") public static void afterDeathLoot(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_death_place") public static void afterDeathPlace(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_orphan") public static void afterOrphan(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_held_batch") public static void afterHeldBatch(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_blocked_batch") public static void afterBlockedBatch(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** The probe of the plan: raw iron and coal in the bag, a bench and furnaces near; nothing is handed out. */
     @GameTest(template = "tall_tree", batch = "agenda_gear", timeoutTicks = 6000)
@@ -532,6 +539,99 @@ public final class CompanionAgendaTests {
         h.succeedWhen(() -> { h.assertTrue(resumes[0] >= 1, "The goal never spent its attempts"); gearDone(f); });
     }
 
+    /** He dies in the middle of the goal: what fell from him is fetched by the one who comes back, picked up for real, and the goal ends with exact counts. */
+    @GameTest(template = "tall_tree", batch = "agenda_death_loot", timeoutTicks = 3600)
+    public static void deathPicksUpOwnDrops(GameTestHelper h) {
+        var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
+        UUID[] oldId = {null}; int[] fallen = {0};
+        h.onEachTick(() -> {
+            if (oldId[0] != null || count(f.c, Items.IRON_PICKAXE) != 1) return;
+            oldId[0] = f.c.getUUID(); f.c.kill();
+            fallen[0] = belongingsOnGround(h, f.p.getUUID());
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(oldId[0] != null && fallen[0] > 0, "His things did not fall tagged as the owner's: " + fallen[0]);
+            var back = CompanionEvents.getOwnedCompanion(f.p);
+            h.assertTrue(back != null && !back.getUUID().equals(oldId[0]), "He did not come back");
+            gearDone(f);
+            h.assertTrue(f.goal().deaths() == 1 && f.goal().deathPlace() == null, "Death or place not settled: " + f.goal().deaths() + " " + f.goal().deathPlace());
+            h.assertTrue(belongingsOnGround(h, f.p.getUUID()) == 0, "His things are still on the ground");
+        });
+    }
+
+    /** The place of a death is tried once: it survives a save, nothing found there is said, and the goal does not wait for it. */
+    @GameTest(template = "tall_tree", batch = "agenda_death_place", timeoutTicks = 3000)
+    public static void deathPlaceIsTriedOnceAndGoalGoesOn(GameTestHelper h) {
+        var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
+        var server = h.getLevel().getServer();
+        BlockPos place = h.absolutePos(new BlockPos(3, 1, 3));
+        CompanionAgenda.died(server, f.p.getUUID(), h.getLevel().dimension(), place);
+        var saved = CompanionAgendaData.get(server).save(new CompoundTag(), h.getLevel().registryAccess());
+        var loaded = CompanionAgendaData.load(saved, h.getLevel().registryAccess()).active(f.p.getUUID());
+        h.assertTrue(loaded != null && place.equals(loaded.deathPlace()), "The death place did not survive a save: " + (loaded == null ? null : loaded.deathPlace()));
+        h.succeedWhen(() -> {
+            gearDone(f);
+            h.assertTrue(f.goal().deathPlace() == null, "The place was kept after its one try: " + f.goal().deathPlace());
+            h.assertTrue(f.c.autonomy().said().stream().filter(line -> line.contains("Мои вещи остались там")).count() == 1, "Not said once: " + f.c.autonomy().said());
+        });
+    }
+
+    /** A cooked batch of his own, collected at the goal's step boundary (his deeds are shut while the goal works): the goal needs those four ingots to end. */
+    @GameTest(template = "tall_tree", batch = "agenda_orphan", timeoutTicks = 3600)
+    public static void orphanIsCollectedWhileGoalRuns(GameTestHelper h) {
+        var f = fixture(h); f.c.setItem(0, new ItemStack(Items.IRON_INGOT, 25)); f.c.setItem(1, new ItemStack(Items.STICK, 3));
+        parkOrphan(f); f.start("gear_up", 1);
+        boolean[] deed = {false};
+        h.onEachTick(() -> deed[0] |= f.c.autonomy().running());
+        h.succeedWhen(() -> {
+            gearDone(f);
+            h.assertTrue(!deed[0], "A deed of his own ran beside the goal");
+            h.assertTrue(f.c.batches().summaries().isEmpty() && count(f.c, Items.RAW_IRON) == 0 && ((net.minecraft.world.Container) h.getBlockEntity(FURNACE)).isEmpty(),
+                    "Batch or furnace left over: " + f.c.batches().summaries());
+        });
+    }
+
+    /** A goal held by «иди за мной» lets go of the batch it parked: he collects it the ordinary way and the goal stays held. */
+    @GameTest(template = "tall_tree", batch = "agenda_held_batch", timeoutTicks = 3000)
+    public static void heldGoalReleasesItsParkedBatch(GameTestHelper h) {
+        var f = fixture(h); parkOrphan(f);
+        boolean[] held = {false, false};
+        h.onEachTick(() -> {
+            if (!held[0] && parked(f)) {
+                f.start("gear_up", 1); f.order("follow");
+                h.assertTrue(f.goal().state() == CompanionAgenda.State.HELD, "Follow did not hold the goal: " + f.goal().state());
+                held[0] = true;
+            }
+            held[1] |= CompanionAgenda.running(f.p.getUUID());
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(held[0], "The batch never parked");
+            h.assertTrue(count(f.c, Items.IRON_INGOT) == 4 && f.c.batches().summaries().isEmpty(), "Not collected the ordinary way: " + f.c.getStoredItemsSummary());
+            h.assertTrue(f.goal().state() == CompanionAgenda.State.HELD && !held[1], "The held goal moved: " + f.goal().state());
+        });
+    }
+
+    /** A goal that stands blocked («нужна твоя помощь») shuts nothing: the batch he parks after that is collected by his own deed. */
+    @GameTest(template = "tall_tree", batch = "agenda_blocked_batch", timeoutTicks = 3000)
+    public static void blockedGoalDoesNotFreezeDeeds(GameTestHelper h) {
+        var f = fixture(h); diamondsDone(f);
+        f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
+        f.start("prepare_nether", 0);
+        boolean[] seen = {false, false};
+        h.onEachTick(() -> {
+            if (seen[0]) { seen[1] |= f.c.autonomy().running(); return; }
+            if (f.goal().state() != CompanionAgenda.State.BLOCKED) return;
+            parkOrphan(f);
+            seen[0] = true;
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(seen[0], "The goal never blocked");
+            h.assertTrue(seen[1], "The batch was not collected by a deed of his own");
+            h.assertTrue(count(f.c, Items.IRON_INGOT) == 4 && f.c.batches().summaries().isEmpty(), "The blocked goal froze his deeds: " + f.c.getStoredItemsSummary() + " " + f.goal().state());
+            h.assertTrue(f.goal().state() == CompanionAgenda.State.BLOCKED, "The goal is not blocked any more: " + f.goal().state() + " " + f.goal().reason());
+        });
+    }
+
     /** A mode order or a stop holds the goal (it is not cancelled, nothing restarts it) until the player says «продолжай». */
     private static void holdsUntilResume(GameTestHelper h, String order) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
@@ -595,6 +695,26 @@ public final class CompanionAgendaTests {
 
     private static void ingots(Fixture f, GameTestHelper h) {
         f.c.setItem(0, new ItemStack(Items.IRON_INGOT, 29)); f.c.setItem(1, new ItemStack(Items.STICK, 3));
+    }
+
+    private static final BlockPos FURNACE = new BlockPos(19, 1, 16);
+
+    /** Four raw iron in the only furnace cook 800 ticks, so the smelt parks as a batch of his own (a deed's, not a queue task's). */
+    private static void parkOrphan(Fixture f) {
+        f.h.setBlock(FURNACE, Blocks.FURNACE);
+        f.c.setItem(5, new ItemStack(Items.RAW_IRON, 4)); f.c.setItem(6, new ItemStack(Items.COAL, 2));
+        f.h.assertTrue(CompanionEvents.executeAction(f.p, "smelt_items", "minecraft:raw_iron", 4).success(), "Smelt order not accepted");
+        f.c.markDeedParkable(f.c.activeWorkId());
+    }
+
+    private static boolean parked(Fixture f) {
+        var batches = f.c.batches().summaries();
+        return batches.size() == 1 && batches.getFirst().orphan() && !f.c.hasActiveWorkOrder();
+    }
+
+    private static int belongingsOnGround(GameTestHelper h, UUID owner) {
+        return h.getLevel().getEntities(EntityTypeTest.forClass(ItemEntity.class),
+                item -> item.getPersistentData().hasUUID("aicompanion:belongings") && item.getPersistentData().getUUID("aicompanion:belongings").equals(owner)).size();
     }
 
     private static void furnaces(GameTestHelper h) {

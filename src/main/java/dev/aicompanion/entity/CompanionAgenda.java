@@ -9,11 +9,17 @@ import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionAgendaData.Goal;
 import dev.aicompanion.entity.CompanionMilestones.Kind;
 import dev.aicompanion.entity.CompanionMilestones.Milestone;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import java.util.HashMap;
@@ -51,6 +57,8 @@ public final class CompanionAgenda {
      * by itself within minutes, so only a stuck one reaches the limit.
      */
     private static final long IDLE_SAY_TICKS = 20L * 60 * 5, IDLE_BLOCK_TICKS = 20L * 60 * 30;
+    /** The things of a dead companion are searched this far round his death place, and fetched from no farther than a trip he can make. */
+    private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4;
     private static final String COLLECT = "collect";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
@@ -375,6 +383,7 @@ public final class CompanionAgenda {
     /** A boundary of the goal's steps: first a cooked batch nobody waits for, then the first unmet milestone from the facts. */
     private static void reconcile(MinecraftServer server, CompanionAgendaData data, UUID owner, Goal goal, CompanionEntity c) {
         ServerLevel level = c.level() instanceof ServerLevel here ? here : null;
+        if (level != null && recover(data, goal, c, level)) return;
         long orphan = level == null ? -1 : c.batches().readyOrphan(level);
         if (orphan > 0) { start(server, owner, goal, c, COLLECT, null, List.of(new PlannedAction("collect_smelt", 0, 1, String.valueOf(orphan)))); return; }
         var book = goal.book();
@@ -535,6 +544,50 @@ public final class CompanionAgenda {
         c.noteDeed("Долгая цель выполнена: " + title + ".", true);
         c.autonomySay("Готово: " + title + "." + (deferred == null ? "" : " Вернуться к цели «" + deferred.book().title() + "»? Скажи «продолжай»."));
         CompanionDiagnostics.event(c.diagnosticTrace(), "goal_completed", "goal", goal.playbook);
+    }
+
+    /** The companion died with things on him (they fell tagged as the owner's): the goal remembers where, for the one try to fetch them. */
+    public static void died(MinecraftServer server, UUID owner, ResourceKey<Level> dimension, BlockPos place) {
+        CompanionAgendaData data = CompanionAgendaData.get(server);
+        Goal goal = data.active(owner);
+        if (goal == null || !goal.state.outstanding()) return;
+        goal.deathPlace = place.immutable(); goal.deathDimension = dimension;
+        data.setDirty();
+    }
+
+    /**
+     * A boundary of the goal's steps after a death. One try per death place, so neither a reload nor a second death can make the goal
+     * wait for them: his things within reach on a safe spot go on his pickup list (he walks to them and takes them up like his own
+     * harvest; nothing is made anew), anything else is said once, with the place. True: the pickup begins and the goal waits for it.
+     */
+    private static boolean recover(CompanionAgendaData data, Goal goal, CompanionEntity c, ServerLevel level) {
+        BlockPos place = goal.deathPlace;
+        if (place == null) return false;
+        UUID owner = c.getOwnerId();
+        String why = !level.dimension().equals(goal.deathDimension) ? "это другое измерение"
+                : !level.isLoaded(place) ? "туда не дойти, место не загружено"
+                : c.blockPosition().distSqr(place) > RECOVER_RANGE * RECOVER_RANGE ? "до них слишком далеко"
+                : unsafe(level, place) ? "там лава или пустота" : null;
+        goal.deathPlace = null; goal.deathDimension = null;
+        data.setDirty();
+        List<ItemEntity> mine = why != null ? List.of() : level.getEntitiesOfClass(ItemEntity.class, new AABB(place).inflate(RECOVER_RADIUS),
+                item -> item.isAlive() && item.getPersistentData().hasUUID(CompanionBag.BELONGINGS)
+                        && item.getPersistentData().getUUID(CompanionBag.BELONGINGS).equals(owner));
+        CompanionDiagnostics.event(c.diagnosticTrace(), "goal_belongings", "goal", goal.playbook, "place", place.toShortString(), "found", mine.size(), "why", why == null ? "" : why);
+        if (mine.isEmpty()) {
+            c.autonomy().report("Мои вещи остались там, где я погиб (" + place.toShortString() + "): " + (why == null ? "я их там уже не нашёл" : why) + ".");
+            return false;
+        }
+        c.loot.claim(mine);
+        c.autonomy().report("Иду за своими вещами, что выпали на " + place.toShortString() + ".");
+        return true;
+    }
+
+    private static boolean unsafe(ServerLevel level, BlockPos place) {
+        if (place.getY() < level.getMinBuildHeight() + VOID_MARGIN) return true;
+        for (BlockPos pos : BlockPos.betweenClosed(place.offset(-LAVA_RADIUS, -LAVA_RADIUS, -LAVA_RADIUS), place.offset(LAVA_RADIUS, 1, LAVA_RADIUS)))
+            if (level.isLoaded(pos) && level.getFluidState(pos).is(FluidTags.LAVA)) return true;
+        return false;
     }
 
     /** Ends the current run; its own work stops only if it is still the active one, so a newer order is never cut. */

@@ -10,6 +10,8 @@ import net.minecraft.world.level.block.Block;
 import java.util.List;
 
 final class CompanionBag {
+    /** On every item that fell from him at death: the owner's UUID, so the goal that outlives him can fetch its own things (CompanionAgenda.died). */
+    static final String BELONGINGS = "aicompanion:belongings";
     final CompanionEntity c;
 
     CompanionBag(CompanionEntity c) { this.c = c; }
@@ -97,7 +99,11 @@ final class CompanionBag {
         for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) { belongings.add(c.getItemBySlot(slot)); c.setItemSlot(slot, ItemStack.EMPTY); }
         for (ItemStack stack : belongings) if (!stack.isEmpty()) {
             var item = c.spawnAtLocation(stack.copy(), 0.5F);
-            if (item != null) { item.setUnlimitedLifetime(); any = true; }
+            if (item != null) {
+                item.setUnlimitedLifetime();
+                if (c.getOwnerId() != null) item.getPersistentData().putUUID(BELONGINGS, c.getOwnerId());
+                any = true;
+            }
         }
         refreshInventorySummary();
         return any;

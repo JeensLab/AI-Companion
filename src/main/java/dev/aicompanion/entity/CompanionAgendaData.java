@@ -2,11 +2,16 @@ package dev.aicompanion.entity;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionAgenda.State;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.ArrayList;
@@ -37,6 +42,9 @@ public final class CompanionAgendaData extends SavedData {
         UUID companion;
         String announced = "";
         int done;
+        /** Where the companion died with things on him, until the one try to fetch them is made (CompanionAgenda.recover); null otherwise. */
+        BlockPos deathPlace;
+        ResourceKey<Level> deathDimension;
         long workTicks;
         final Map<String, int[]> counters = new LinkedHashMap<>();
         final List<CompoundTag> results = new ArrayList<>();
@@ -56,6 +64,7 @@ public final class CompanionAgendaData extends SavedData {
         public String reason() { return reason; }
         public boolean fallback() { return fallback; }
         public int deaths() { return deaths; }
+        public BlockPos deathPlace() { return deathPlace; }
         public int resultCount() { return results.size(); }
         /** {attempts, failures in a row} of the milestone. */
         public int[] counter(String key) { return counters.computeIfAbsent(key, unused -> new int[2]); }
@@ -75,6 +84,9 @@ public final class CompanionAgendaData extends SavedData {
             tag.putString("State", state.name()); tag.putString("Reason", reason); tag.putBoolean("Fallback", fallback);
             tag.putInt("Deaths", deaths); if (companion != null) tag.putUUID("Companion", companion);
             tag.putString("Announced", announced); tag.putInt("Done", done); tag.putLong("WorkTicks", workTicks);
+            if (deathPlace != null && deathDimension != null) {
+                tag.putLong("DeathPos", deathPlace.asLong()); tag.putString("DeathDim", deathDimension.location().toString());
+            }
             ListTag counterList = new ListTag();
             counters.forEach((key, value) -> {
                 CompoundTag counter = new CompoundTag();
@@ -103,6 +115,10 @@ public final class CompanionAgendaData extends SavedData {
             goal.companion = tag.hasUUID("Companion") ? tag.getUUID("Companion") : null;
             goal.announced = tag.getString("Announced"); goal.done = Math.max(0, tag.getInt("Done"));
             goal.workTicks = Math.max(0, tag.getLong("WorkTicks"));
+            ResourceLocation deathDimension = tag.contains("DeathPos", Tag.TAG_LONG) && tag.contains("DeathDim", Tag.TAG_STRING) ? ResourceLocation.tryParse(tag.getString("DeathDim")) : null;
+            if (deathDimension != null) {
+                goal.deathPlace = BlockPos.of(tag.getLong("DeathPos")); goal.deathDimension = ResourceKey.create(Registries.DIMENSION, deathDimension);
+            }
             ListTag counterList = tag.getList("Counters", Tag.TAG_COMPOUND);
             for (int i = 0; i < counterList.size(); i++) {
                 CompoundTag counter = counterList.getCompound(i);

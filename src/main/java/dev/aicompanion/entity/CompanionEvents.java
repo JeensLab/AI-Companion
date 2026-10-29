@@ -388,6 +388,7 @@ public final class CompanionEvents {
         MinecraftServer server = companion.level().getServer();
         if (ownerId == null || server == null) return;
         CompanionMemorial.get(server).died(ownerId, companion.getUUID(), memory, server.overworld().getGameTime() + RETURN_TICKS);
+        if (dropped) CompanionAgenda.died(server, ownerId, companion.level().dimension(), companion.blockPosition());
         ServerPlayer owner = server.getPlayerList().getPlayer(ownerId);
         if (owner == null) return;
         var data = owner.getPersistentData();
