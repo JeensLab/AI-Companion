@@ -97,7 +97,8 @@ final class CompanionExpedition {
         if (level.getGameTime() >= stepEnd) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
-        if (cave.takeCut() && plan != null) { plan.why = "дальше пещера"; blocked(); }
+        BlockPos plugged = cave.takePlugged();
+        if (plugged != null && plan != null && plan.needs(plugged)) { plan.why = "дальше пещера"; blocked(); }
         if (caveTurn) {
             if (cave.failure() != null) end(Ending.BLOCKED, cave.failure());
             return;

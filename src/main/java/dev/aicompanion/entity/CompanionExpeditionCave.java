@@ -46,8 +46,8 @@ final class CompanionExpeditionCave {
     private boolean hostile;
     /** A cave judged very dangerous has been dealt with: the expedition goes up his stairs. */
     private boolean retreat;
-    /** A plug went into a cell of the advance under way: the advance cannot go on. */
-    private boolean cut;
+    /** The cell of the advance under way that a plug went into, until the expedition has taken it. */
+    private BlockPos plugged;
 
     CompanionExpeditionCave(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionOre ore, BooleanSupplier enough) {
         this.w = w;
@@ -66,8 +66,8 @@ final class CompanionExpeditionCave {
         return now;
     }
 
-    /** True once after a plug went into a cell of the advance under way; the expedition then gives that advance up. */
-    boolean takeCut() { boolean now = cut; cut = false; return now; }
+    /** The cell of the advance under way a plug went into (once), or null; if the advance needs the cell, the expedition gives it up. */
+    BlockPos takePlugged() { BlockPos now = plugged; plugged = null; return now; }
 
     /** He goes up now: the cave episode stops, nothing is explored during the retreat. */
     void close() {
@@ -108,7 +108,8 @@ final class CompanionExpeditionCave {
         ore.limit(pos -> true);
         seenBroken = dig.broken;
         idle = settle = taken = work = tries = 0;
-        hostile = retreat = cut = false;
+        hostile = retreat = false;
+        plugged = null;
         scanned = null;
         scanFrom = 0;
     }
@@ -288,6 +289,7 @@ final class CompanionExpeditionCave {
     /** Plugs the cave air that touches his mine, nearest first; false once nothing is left to do, or while the advance has to open the way to it. */
     private boolean seal(ServerLevel level, List<BlockPos> planCells) {
         touch.addAll(planCells);
+        if (planCells.isEmpty()) touch.removeIf(cell -> !CompanionShaftPlan.open(level, cell));
         List<BlockPos> open = openTouching(level);
         if (open.isEmpty()) return finish("Пролом заделал.");
         if (++idle > SEAL_PATIENCE) return finish("Пролом заделать до конца не вышло.");
@@ -320,10 +322,9 @@ final class CompanionExpeditionCave {
             if (!CompanionSeal.replaceable(level, cell) || !CompanionSeal.plug(owner, cell).placed()) continue;
             w.mine.sealed(cell);
             sealed.add(cell);
-            touch.removeIf(unopened -> planCells.contains(unopened) && !CompanionShaftPlan.open(level, unopened));
             work++;
             idle = 0;
-            cut = true;
+            plugged = cell;
             return true;
         }
         return false;
