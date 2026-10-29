@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.Item;
@@ -10,13 +11,12 @@ import net.minecraft.world.item.Items;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** The seven sort groups (issue 32) and the pure planner that says which chest takes which group. No world, no state. */
+/** The seven sort groups (issue 32) and the pure planner that says which chest keeps how much of each kind. No world, no state. */
 public final class CompanionSortGroups {
     private CompanionSortGroups() { }
 
@@ -53,27 +53,28 @@ public final class CompanionSortGroups {
         return Group.OTHER;
     }
 
-    /** What a group of stacks takes of a chest, in cells: by kinds of item, as the chest keeps them (the unfinished stacks of one kind merge). */
-    public static Map<Group, Double> volume(Iterable<ItemStack> stacks) {
-        Map<Group, Double> volume = new EnumMap<>(Group.class);
-        List<ItemStack> kinds = new ArrayList<>(); List<Integer> counts = new ArrayList<>();
+    /** The stacks merged by kind (item and components): one stack per kind, its count the sum, which may pass a full stack. */
+    public static List<ItemStack> kinds(Iterable<ItemStack> stacks) {
+        List<ItemStack> kinds = new ArrayList<>();
         for (ItemStack stack : stacks) {
             if (stack.isEmpty()) continue;
             int at = 0;
             while (at < kinds.size() && !ItemStack.isSameItemSameComponents(kinds.get(at), stack)) at++;
-            if (at == kinds.size()) { kinds.add(stack); counts.add(stack.getCount()); } else counts.set(at, counts.get(at) + stack.getCount());
+            if (at == kinds.size()) kinds.add(stack.copy()); else kinds.get(at).grow(stack.getCount());
         }
-        for (int i = 0; i < kinds.size(); i++) volume.merge(of(kinds.get(i)), Math.ceil((double) counts.get(i) / kinds.get(i).getMaxStackSize()), Double::sum);
-        return volume;
+        return kinds;
     }
+
+    /** The cells a kind takes once its unfinished stacks merge. */
+    public static int cells(ItemStack kind) { return (kind.getCount() + kind.getMaxStackSize() - 1) / kind.getMaxStackSize(); }
 
     /**
      * Which chests (by index, in the order they fill) take each group of the set. The biggest group picks first, the chest where it
-     * already lies most (the nearer one on a tie), and goes on into more chests while its volume does not fit their sizes; with
-     * fewer chests than groups the big ones keep a chest each and all the rest share the last. A group that still does not fit
-     * spills into one more chest, the one with the most room left once every group has its own (a spill into a chest another
-     * group fills to the brim would only trade places with it). Chests no group needs stay out of the plan.
-     * {@code volume} is the cells each group takes, chests and what the bag carries together ({@link #volume}): the order does not change on the way.
+     * already lies most (the nearer one on a tie), and goes on into more chests while its volume does not fit their sizes, keeping
+     * enough chests for the groups after it; with fewer chests than groups the big ones keep a chest each and all the rest share the
+     * last. A further chest is the one where the group lies most against what other groups have there: the last cells of a big group
+     * do not take the chest another group fills. What does not fit the chests of its group is for {@link #layout}. Chests no group needs
+     * stay out of the plan. {@code volume} is the cells each group takes, chests and what the bag carries together.
      */
     public static Map<Group, List<Integer>> plan(List<Chest> chests, Map<Group, Double> volume) {
         volume = new EnumMap<>(volume);
@@ -82,13 +83,11 @@ public final class CompanionSortGroups {
         List<Group> order = new ArrayList<>(volume.keySet());
         order.sort(Comparator.comparing((Group group) -> -sizes.get(group)).thenComparing(Enum::ordinal));
         List<Chest> free = new ArrayList<>(chests);
-        Map<Integer, Double> used = new HashMap<>();
-        Map<Group, Double> spill = new LinkedHashMap<>();
         Map<Group, List<Integer>> result = new EnumMap<>(Group.class);
         for (int i = 0; i < order.size() && !free.isEmpty(); i++) {
             Group group = order.get(i);
             if (free.size() == 1) {
-                for (int j = i; j < order.size(); j++) { result.put(order.get(j), new ArrayList<>(List.of(free.getFirst().index()))); used.merge(free.getFirst().index(), volume.get(order.get(j)), Double::sum); }
+                for (int j = i; j < order.size(); j++) result.put(order.get(j), new ArrayList<>(List.of(free.getFirst().index())));
                 break;
             }
             double rest = 0;
@@ -99,18 +98,67 @@ public final class CompanionSortGroups {
             double need = volume.get(group);
             List<Integer> mine = new ArrayList<>();
             while (need > 0 && mine.size() < limit) {
-                Chest best = nearestWith(free, group);
-                free.remove(best); mine.add(best.index()); used.merge(best.index(), Math.min(need, best.size()), Double::sum); need -= best.size();
+                Chest best = mine.isEmpty() ? nearestWith(free, group) : free.stream().max(Comparator.comparingDouble((Chest chest) -> 2 * chest.cells().getOrDefault(group, 0.0)
+                        - chest.cells().values().stream().mapToDouble(Double::doubleValue).sum()).thenComparingDouble(chest -> -chest.distance()).thenComparingInt(chest -> -chest.index())).orElseThrow();
+                free.remove(best); mine.add(best.index()); need -= best.size();
             }
-            if (need > 0) spill.put(group, need);
             result.put(group, mine);
         }
-        // Did not fit the chests it could take: the rest goes to the chest with the most room left, group by group in the order they picked.
-        spill.forEach((group, rest) -> chests.stream().filter(chest -> !result.get(group).contains(chest.index()))
-                .min(Comparator.comparingDouble((Chest chest) -> used.getOrDefault(chest.index(), 0.0) - chest.size())
-                        .thenComparing(chest -> -chest.cells().getOrDefault(group, 0.0)).thenComparingDouble(Chest::distance).thenComparingInt(Chest::index))
-                .ifPresent(chest -> { result.get(group).add(chest.index()); used.merge(chest.index(), rest, Double::sum); }));
         return result;
+    }
+
+    /**
+     * How many pieces of each kind each chest keeps: {@code [chest index][kind]}, {@code kinds} as {@link #kinds} gives them for the chests
+     * and the bag's load together. The kinds of a group fill its chests ({@link #plan}) in cells, the biggest kinds first; what does not fit
+     * goes to the chests with the most cells left. So while the kinds take no more cells than the set has, every piece has a place.
+     */
+    public static int[][] layout(List<Chest> chests, List<ItemStack> kinds) {
+        Map<Group, Double> volume = new EnumMap<>(Group.class);
+        for (ItemStack kind : kinds) volume.merge(of(kind), (double) cells(kind), Double::sum);
+        Map<Group, List<Integer>> plan = plan(chests, volume);
+        int size = chests.stream().mapToInt(Chest::index).max().orElse(-1) + 1;
+        int[] free = new int[size];
+        int[][] taken = new int[size][kinds.size()];
+        for (Chest chest : chests) free[chest.index()] = chest.size();
+        List<Integer> order = new ArrayList<>();
+        for (int k = 0; k < kinds.size(); k++) order.add(k);
+        order.sort(Comparator.comparing((Integer k) -> -volume.get(of(kinds.get(k)))).thenComparing(k -> of(kinds.get(k)).ordinal())
+                .thenComparing(k -> -cells(kinds.get(k))).thenComparing(k -> BuiltInRegistries.ITEM.getId(kinds.get(k).getItem())));
+        Map<Integer, Integer> left = new LinkedHashMap<>();
+        for (int k : order) {
+            int need = cells(kinds.get(k));
+            for (int chest : plan.getOrDefault(of(kinds.get(k)), List.of())) {
+                int take = Math.min(need, free[chest]);
+                taken[chest][k] += take; free[chest] -= take; need -= take;
+            }
+            if (need > 0) left.put(k, need);
+        }
+        left.forEach((k, need) -> {
+            Group group = of(kinds.get(k));
+            while (need > 0) {
+                Chest best = chests.stream().filter(chest -> free[chest.index()] > 0).max(Comparator.comparingInt((Chest chest) -> free[chest.index()])
+                        .thenComparing(chest -> holds(taken[chest.index()], kinds, group)).thenComparingDouble(chest -> chest.cells().getOrDefault(group, 0.0))
+                        .thenComparingDouble(chest -> -chest.distance()).thenComparingInt(chest -> -chest.index())).orElse(null);
+                if (best == null) break;
+                int take = Math.min(need, free[best.index()]);
+                taken[best.index()][k] += take; free[best.index()] -= take; need -= take;
+            }
+        });
+        // Pieces from cells: a chest keeps no more than its cells hold, the farther chests get the unfinished stack.
+        int[][] keep = new int[size][kinds.size()];
+        for (int k = 0; k < kinds.size(); k++) {
+            int rest = kinds.get(k).getCount();
+            for (int chest = 0; chest < size; chest++) {
+                keep[chest][k] = Math.min(rest, taken[chest][k] * kinds.get(k).getMaxStackSize());
+                rest -= keep[chest][k];
+            }
+        }
+        return keep;
+    }
+
+    private static boolean holds(int[] taken, List<ItemStack> kinds, Group group) {
+        for (int k = 0; k < kinds.size(); k++) if (taken[k] > 0 && of(kinds.get(k)) == group) return true;
+        return false;
     }
 
     /** The chest where the group already lies most; the nearer one on a tie. */

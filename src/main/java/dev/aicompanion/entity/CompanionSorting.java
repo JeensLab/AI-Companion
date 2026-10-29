@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
@@ -16,7 +17,6 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,11 +25,12 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * «Разложи сундуки» (issue 32): in trips through his own bag he moves what lies in the wrong chest of a fixed set to the chest of its
- * group. Each trip is one chest opened: what he carries for it is put in, what lies there out of place is taken into free bag slots.
- * The plan is made again from the chests as they are at every opening (the player may move things meanwhile). The set and what he
- * carries are kept here, for one work; his own things in the bag are never touched: only the carried list is put back.
- * At a full chest he swaps: a carried stack goes into the cell of one that lies there out of place, which takes its place in the bag.
+ * «Разложи сундуки» (issue 32): in trips through his own bag he moves the things of a fixed set of chests until each chest holds what
+ * the layout gives it ({@link CompanionSortGroups#layout}: pieces of each kind per chest, in real cells). Each trip is one chest opened:
+ * what he carries that it lacks goes in, what it holds above its share comes out into the bag, in turns while anything moves; at a full
+ * chest and a full bag he trades a stack for a stack. The next chest is the one where a trip, tried on copies, moves the most.
+ * The layout is made once and again only when the set changes from outside (the player, a hopper, a broken chest): trips keep the totals.
+ * The set and what he carries are kept here, for one work; his own things in the bag are never touched: only what he carries is put back.
  */
 final class CompanionSorting {
     private static final double RADIUS = 6;
@@ -45,18 +46,24 @@ final class CompanionSorting {
 
     private final CompanionWork w;
     private final List<BlockPos> chests = new ArrayList<>();
+    /** What he carries for the set, one stack per kind (its count may pass a full stack); the bag holds it among his own things. */
     private final List<ItemStack> carried = new ArrayList<>();
     private final Set<BlockPos> opened = new HashSet<>();
     private boolean closing, started, tidyOnly, reordered, left;
     private int idle, trips, tripLimit;
     private long leftAt;
     private ItemStack shown = ItemStack.EMPTY;
+    /** The layout and what it was made for: the kinds of the set with the load, and which chests of the set were there. */
+    private List<ItemStack> kinds = List.of();
+    private int[][] keep;
+    private int liveMask;
 
     CompanionSorting(CompanionWork w) { this.w = w; }
 
     /** The set is fixed at the request: ordinary chests (not trapped, not barrels, not under a block) within six blocks of the player, nearest first, a double one once. */
     void begin(ServerLevel level) {
         chests.clear(); carried.clear(); opened.clear(); closing = false; started = false; tidyOnly = false; reordered = false; idle = 0; trips = 0; tripLimit = 0; shown = ItemStack.EMPTY; left = false;
+        kinds = List.of(); keep = null; liveMask = 0;
         var player = w.owner.getOwnerPlayer();
         Vec3 from = player == null ? w.owner.position() : player.position();
         List<BlockPos> found = new ArrayList<>();
@@ -96,8 +103,9 @@ final class CompanionSorting {
         w.openedChest = w.target.immutable(); opened.add(w.openedChest);
         w.animateChest(level, w.openedChest, 1);
         level.playSound(null, w.openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
-        List<Container> live = live(level);
-        int moved = visit(chest, chests.indexOf(w.target), plan(live), live);
+        layout(live(level));
+        int moved = moves(chest, w.owner, carried, chests.indexOf(w.target));
+        reordered |= tidy(chest);
         w.transferred += moved;
         // The closing tidy of the chests the trips never opened is no trip: with many empty chests it would run the limit out.
         if (!tidyOnly) { trips++; idle = moved == 0 ? idle + 1 : 0; }
@@ -107,46 +115,87 @@ final class CompanionSorting {
         closing = true; w.cooldown = 10;
     }
 
-    /** Puts in what he carries for this chest, takes out what lies here out of place; returns how many pieces moved. */
-    private int visit(Container chest, int index, Map<Group, List<Integer>> plan, List<Container> live) {
-        int moved = 0; shown = ItemStack.EMPTY;
-        List<ItemStack> swapped = new ArrayList<>();
-        for (var it = carried.iterator(); it.hasNext(); ) {
-            ItemStack load = it.next();
-            if (!placed(load, index, plan, live)) continue;
-            // The player may have taken it out of his bag meanwhile (his inventory screen): only what the bag still holds goes in.
-            load.setCount(Math.min(load.getCount(), inBag(load)));
-            int put = insert(chest, load);
-            if (put > 0) { removeFromBag(load, put); load.shrink(put); moved += put; shown = load.copyWithCount(1); }
-            // A full chest: the load takes the cell of a stack that lies here out of place, and that one takes its cell of the bag (as with the cursor).
-            int bagSlot = load.isEmpty() ? -1 : bagSlotOf(load);
-            for (int slot = 0; bagSlot >= 0 && !load.isEmpty() && slot < chest.getContainerSize(); slot++) {
-                ItemStack out = chest.getItem(slot);
-                if (out.isEmpty() || placed(out, index, plan, live)) continue;
-                w.owner.setItem(bagSlot, out.copy()); swapped.add(out.copy()); chest.setItem(slot, load.copy());
-                moved += load.getCount() + out.getCount(); shown = load.copyWithCount(1); load.setCount(0);
-            }
-            if (load.isEmpty()) it.remove();
+    /**
+     * One trip at a chest, on the real chest and bag or on copies: what he carries that the chest lacks goes in, what it holds above its
+     * share comes out into the bag, in turns while anything moves (each frees room for the other); when neither can, a trade. Only what
+     * the chest lacks goes in, so no chest gets more than its share: every trip that moves something brings the end nearer.
+     * Returns how many pieces moved.
+     */
+    private int moves(Container chest, Container bag, List<ItemStack> load, int index) {
+        int moved = 0;
+        while (true) {
+            int step = putIn(chest, bag, load, index) + takeOut(chest, bag, load, index);
+            if (step == 0) step = trade(chest, bag, load, index);
+            if (step == 0) return moved;
+            moved += step;
         }
-        carried.addAll(swapped);
-        Map<Integer, Integer> spare = new HashMap<>();
-        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
-            ItemStack stack = chest.getItem(slot);
-            if (stack.isEmpty() || placed(stack, index, plan, live) || !canGiveUp(stack, index, plan, live, spare)) continue;
-            int free = freeBagSlot();
-            if (free < 0) break;
-            w.owner.setItem(free, stack.copy()); carried.add(stack.copy()); chest.setItem(slot, ItemStack.EMPTY);
-            moved += stack.getCount(); shown = stack.copyWithCount(1);
+    }
+
+    private int putIn(Container chest, Container bag, List<ItemStack> load, int index) {
+        int moved = 0;
+        for (ItemStack carry : load) {
+            // The player may have taken it out of the bag meanwhile (his inventory screen): only what the bag still holds goes in.
+            carry.setCount(Math.min(carry.getCount(), count(bag, carry)));
+            int amount = Math.min(-excess(chest, index, carry), carry.getCount());
+            if (amount <= 0) continue;
+            int put = insert(chest, carry.copyWithCount(amount));
+            if (put > 0) { remove(bag, carry, put); shown = carry.copyWithCount(1); carry.shrink(put); moved += put; }
         }
-        reordered |= tidy(chest);
+        load.removeIf(ItemStack::isEmpty);
         return moved;
     }
 
-    /** Where to go next: with a load, the nearest chest that takes some of it; without, the nearest with something out of place. Ends the work when there is nothing left. */
+    /** What the chest holds above its share goes into the bag: onto his unfinished stacks of the kind first, then into empty cells, as a player's inventory takes it. */
+    private int takeOut(Container chest, Container bag, List<ItemStack> load, int index) {
+        int moved = 0;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+            ItemStack stack = chest.getItem(slot);
+            int over = stack.isEmpty() ? 0 : Math.min(excess(chest, index, stack), stack.getCount());
+            if (over <= 0) continue;
+            int took = insert(bag, stack.copyWithCount(over));
+            if (took == 0) continue;
+            carry(load, stack.copyWithCount(took)); shown = stack.copyWithCount(1); moved += took;
+            chest.setItem(slot, stack.getCount() == took ? ItemStack.EMPTY : stack.copyWithCount(stack.getCount() - took));
+        }
+        return moved;
+    }
+
+    /**
+     * A full chest and a bag that takes nothing: some of a carried kind the chest lacks (his smallest stack of it, which frees its cell)
+     * takes the cell of a stack that is all above the chest's share, and that stack goes into the bag. Tried on copies, done only when
+     * both sides have the room.
+     */
+    private int trade(Container chest, Container bag, List<ItemStack> load, int index) {
+        for (ItemStack carry : List.copyOf(load)) {
+            int lack = -excess(chest, index, carry), smallest = Integer.MAX_VALUE;
+            for (int slot = 0; slot < bag.getContainerSize(); slot++) if (ItemStack.isSameItemSameComponents(bag.getItem(slot), carry)) smallest = Math.min(smallest, bag.getItem(slot).getCount());
+            int amount = Math.min(Math.min(lack, smallest), carry.getCount());
+            if (amount <= 0) continue;
+            // A full chest is mostly full stacks of a few kinds: a stack like one tried before would fail the same way.
+            List<ItemStack> tried = new ArrayList<>();
+            for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+                ItemStack out = chest.getItem(slot);
+                if (out.isEmpty() || ItemStack.isSameItemSameComponents(out, carry) || tried.stream().anyMatch(was -> ItemStack.matches(was, out)) || excess(chest, index, out) < out.getCount()) continue;
+                tried.add(out);
+                Container chestTry = copy(chest), bagTry = copy(bag);
+                chestTry.setItem(slot, ItemStack.EMPTY);
+                remove(bagTry, carry, amount);
+                int put = insert(chestTry, carry.copyWithCount(amount));
+                if (put < amount) insert(bagTry, carry.copyWithCount(amount - put));
+                if (put == 0 || insert(bagTry, out.copy()) < out.getCount()) continue;
+                copyBack(chestTry, chest); copyBack(bagTry, bag);
+                shown = carry.copyWithCount(1); carry.shrink(put); load.removeIf(ItemStack::isEmpty); carry(load, out.copy());
+                return put + out.getCount();
+            }
+        }
+        return 0;
+    }
+
+    /** Where to go next: the chest where a trip, tried on copies, moves the most (the nearer one on a tie). Ends the work when no trip can move anything. */
     private BlockPos nextChest(ServerLevel level) {
         tidyOnly = false;
         List<Container> live = live(level);
-        Map<Group, List<Integer>> plan = plan(live);
+        layout(live);
         if (trips > tripLimit) {
             w.finish(false, "Не получилось разложить всё: вещи в сундуках всё время меняются, остановился." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке.") + goneNote(live));
             return null;
@@ -155,22 +204,25 @@ final class CompanionSorting {
             w.finish(false, "Не получилось разложить всё: часть сундуков забита." + (carried.isEmpty() ? "" : " Часть вещей у меня в сумке.") + goneNote(live));
             return null;
         }
-        // With a load, the chests that take some of it first; else (or when none has room) the nearest with something out of place, to free room.
-        BlockPos best = null; double bestDistance = Double.MAX_VALUE;
-        for (int pass = 0; pass < 2 && best == null; pass++) {
-            if (pass == 1 && !carried.isEmpty() && freeBagSlot() < 0) break;
-            for (int i = 0; i < chests.size(); i++) {
-                Container chest = live.get(i);
-                if (chest == null) continue;
-                boolean fit = false;
-                if (pass == 0) for (ItemStack load : carried) fit |= placed(load, i, plan, live) && (room(chest, load) || bagSlotOf(load) >= 0 && misplaced(chest, i, plan, live));
-                if (!(pass == 0 ? fit : misplaced(chest, i, plan, live))) continue;
-                double distance = w.owner.distanceToSqr(chests.get(i).getCenter());
-                if (distance < bestDistance) { best = chests.get(i); bestDistance = distance; }
-            }
+        BlockPos best = null; int bestMoved = 0; double bestDistance = Double.MAX_VALUE;
+        boolean over = false;
+        for (int i = 0; i < chests.size(); i++) {
+            Container chest = live.get(i);
+            if (chest == null) continue;
+            boolean above = aboveShare(chest, i);
+            over |= above;
+            if (carried.isEmpty() && !above) continue;
+            List<ItemStack> load = new ArrayList<>();
+            for (ItemStack carry : carried) load.add(carry.copy());
+            ItemStack was = shown;
+            int moved = moves(copy(chest), copy(w.owner), load, i);
+            shown = was;
+            double distance = w.owner.distanceToSqr(chests.get(i).getCenter());
+            if (moved > bestMoved || moved > 0 && moved == bestMoved && distance < bestDistance) { best = chests.get(i); bestMoved = moved; bestDistance = distance; }
         }
         if (best != null) return best;
         if (!carried.isEmpty()) { w.finish(false, "Не получилось разложить всё: не поместилось " + carried.stream().mapToInt(ItemStack::getCount).sum() + ", они у меня в сумке." + goneNote(live)); return null; }
+        if (over) { w.finish(false, "Не получилось разложить всё: часть сундуков забита." + goneNote(live)); return null; }
         // The last step: the order inside the chests the trips never opened (all of them, when there is one chest or all is in place).
         for (int i = 0; i < chests.size(); i++) {
             if (live.get(i) == null || opened.contains(chests.get(i))) continue;
@@ -232,7 +284,21 @@ final class CompanionSorting {
         return live;
     }
 
-    private List<CompanionSortGroups.Chest> infos(List<Container> live) {
+    /**
+     * The layout for the set as it is and what he carries. Trips only move things between the chests and the bag, so it is made again only
+     * when the totals or the chests of the set change: made at every opening from what the chests hold, it would follow the half-done
+     * work and send things back and forth.
+     */
+    private void layout(List<Container> live) {
+        List<ItemStack> all = new ArrayList<>(carried);
+        int mask = 0;
+        for (int i = 0; i < live.size(); i++) {
+            if (live.get(i) == null) continue;
+            mask |= 1 << i;
+            for (int slot = 0; slot < live.get(i).getContainerSize(); slot++) all.add(live.get(i).getItem(slot));
+        }
+        List<ItemStack> now = CompanionSortGroups.kinds(all);
+        if (keep != null && mask == liveMask && now.size() == kinds.size() && now.stream().allMatch(kind -> kinds.stream().anyMatch(was -> ItemStack.matches(was, kind)))) return;
         List<CompanionSortGroups.Chest> infos = new ArrayList<>();
         for (int i = 0; i < live.size(); i++) {
             if (live.get(i) == null) continue;
@@ -243,66 +309,40 @@ final class CompanionSorting {
             }
             infos.add(new CompanionSortGroups.Chest(i, i, live.get(i).getContainerSize(), cells));
         }
-        return infos;
+        kinds = now; liveMask = mask; keep = CompanionSortGroups.layout(infos, now);
     }
 
-    /** The plan from the chests as they are and what he carries, sized by the cells each group takes (by kinds of item). */
-    private Map<Group, List<Integer>> plan(List<Container> live) {
-        List<ItemStack> all = new ArrayList<>(carried);
-        for (Container chest : live) if (chest != null) for (int slot = 0; slot < chest.getContainerSize(); slot++) all.add(chest.getItem(slot));
-        return CompanionSortGroups.plan(infos(live), CompanionSortGroups.volume(all));
+    /** How much of the stack's kind the chest holds above its share; below it, how much it lacks (negative). */
+    private int excess(Container chest, int index, ItemStack like) {
+        int share = 0;
+        for (int k = 0; k < kinds.size(); k++) if (index < keep.length && ItemStack.isSameItemSameComponents(kinds.get(k), like)) share = keep[index][k];
+        return count(chest, like) - share;
+    }
+
+    private boolean aboveShare(Container chest, int index) {
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty() && excess(chest, index, chest.getItem(slot)) > 0) return true;
+        return false;
+    }
+
+    private static void carry(List<ItemStack> load, ItemStack stack) {
+        for (ItemStack carry : load) if (ItemStack.isSameItemSameComponents(carry, stack)) { carry.grow(stack.getCount()); return; }
+        load.add(stack);
+    }
+
+    private static Container copy(Container container) {
+        SimpleContainer copy = new SimpleContainer(container.getContainerSize());
+        for (int slot = 0; slot < container.getContainerSize(); slot++) copy.setItem(slot, container.getItem(slot).copy());
+        return copy;
+    }
+
+    private static void copyBack(Container from, Container to) {
+        for (int slot = 0; slot < to.getContainerSize(); slot++) if (!ItemStack.matches(from.getItem(slot), to.getItem(slot))) to.setItem(slot, from.getItem(slot).copy());
     }
 
     private int stacksInSet(ServerLevel level) {
         int stacks = 0;
         for (Container chest : live(level)) if (chest != null) for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) stacks++;
         return stacks;
-    }
-
-    private static boolean misplaced(Container chest, int index, Map<Group, List<Integer>> plan, List<Container> live) {
-        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
-            ItemStack stack = chest.getItem(slot);
-            if (!stack.isEmpty() && !placed(stack, index, plan, live)) return true;
-        }
-        return false;
-    }
-
-    /**
-     * A stack that lies in a spill chest only because an earlier chest of its group has room: it leaves for the room that chest really has (its empty cells, counted
-     * down as they are claimed in this visit). Taking more would only empty the spill chest into his bag and shuffle the plan, which counts what the chests hold.
-     */
-    private static boolean canGiveUp(ItemStack stack, int index, Map<Group, List<Integer>> plan, List<Container> live, Map<Integer, Integer> spare) {
-        List<Integer> order = plan.getOrDefault(CompanionSortGroups.of(stack), List.of());
-        for (int before = 0; before < order.indexOf(index); before++) {
-            Container early = live.get(order.get(before));
-            if (early == null || !room(early, stack)) continue;
-            int empty = spare.computeIfAbsent(order.get(before), i -> emptyCells(early));
-            if (empty > 0) { spare.put(order.get(before), empty - 1); return true; }
-            if (emptyCells(early) == 0) return true; // room only by merging into an unfinished stack
-        }
-        return order.indexOf(index) < 0;
-    }
-
-    private static int emptyCells(Container chest) {
-        int empty = 0;
-        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (chest.getItem(slot).isEmpty()) empty++;
-        return empty;
-    }
-
-    /** The stack belongs in this chest: it is one of its group's chests, and no chest before it in the order they fill has room for it (a spill chest gives way to the main one). */
-    private static boolean placed(ItemStack stack, int index, Map<Group, List<Integer>> plan, List<Container> live) {
-        List<Integer> order = plan.getOrDefault(CompanionSortGroups.of(stack), List.of());
-        int at = order.indexOf(index);
-        for (int before = 0; before < at; before++) if (live.get(order.get(before)) != null && room(live.get(order.get(before)), stack)) return false;
-        return at >= 0;
-    }
-
-    private static boolean room(Container chest, ItemStack stack) {
-        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
-            ItemStack existing = chest.getItem(slot);
-            if (existing.isEmpty() || ItemStack.isSameItemSameComponents(existing, stack) && existing.getCount() < Math.min(chest.getMaxStackSize(), existing.getMaxStackSize())) return true;
-        }
-        return false;
     }
 
     /** Fills the unfinished stacks first, then empty cells; returns how many pieces went in. */
@@ -352,41 +392,32 @@ final class CompanionSorting {
         return free;
     }
 
-    private int freeBagSlot() {
-        for (int slot = 0; slot < w.owner.getContainerSize(); slot++) if (w.owner.getItem(slot).isEmpty()) return slot;
-        return -1;
-    }
-
-    /** The bag cell that holds exactly this load (the one he put it in), or -1. */
-    private int bagSlotOf(ItemStack load) {
-        for (int slot = 0; slot < w.owner.getContainerSize(); slot++) {
-            ItemStack stack = w.owner.getItem(slot);
-            if (ItemStack.isSameItemSameComponents(stack, load) && stack.getCount() == load.getCount()) return slot;
-        }
-        return -1;
-    }
-
     /** True while he sorts and the bag holds no more of this kind than he carries: nothing of it is his own, so nothing of it is spent. */
     boolean onlyCarried(ItemStack like) {
         if (w.job != CompanionWork.Job.SORT || like.isEmpty()) return false;
         int count = 0;
         for (ItemStack load : carried) if (ItemStack.isSameItemSameComponents(load, like)) count += load.getCount();
-        return count > 0 && count >= inBag(like);
+        return count > 0 && count >= count(w.owner, like);
     }
 
-    private int inBag(ItemStack like) {
+    private static int count(Container container, ItemStack like) {
         int count = 0;
-        for (int slot = 0; slot < w.owner.getContainerSize(); slot++) if (ItemStack.isSameItemSameComponents(w.owner.getItem(slot), like)) count += w.owner.getItem(slot).getCount();
+        for (int slot = 0; slot < container.getContainerSize(); slot++) if (ItemStack.isSameItemSameComponents(container.getItem(slot), like)) count += container.getItem(slot).getCount();
         return count;
     }
 
-    private void removeFromBag(ItemStack like, int count) {
-        for (int slot = 0; slot < w.owner.getContainerSize() && count > 0; slot++) {
-            ItemStack stack = w.owner.getItem(slot);
-            if (stack.isEmpty() || !ItemStack.isSameItemSameComponents(stack, like)) continue;
-            int take = Math.min(count, stack.getCount());
-            stack.shrink(take); count -= take;
-            w.owner.setItem(slot, stack.isEmpty() ? ItemStack.EMPTY : stack);
+    /** Takes from his smallest stacks of the kind first: the cells they free are the soonest. */
+    private static void remove(Container bag, ItemStack like, int count) {
+        while (count > 0) {
+            int smallest = -1;
+            for (int slot = 0; slot < bag.getContainerSize(); slot++) {
+                ItemStack stack = bag.getItem(slot);
+                if (ItemStack.isSameItemSameComponents(stack, like) && (smallest < 0 || stack.getCount() < bag.getItem(smallest).getCount())) smallest = slot;
+            }
+            if (smallest < 0) return;
+            int take = Math.min(count, bag.getItem(smallest).getCount());
+            count -= take;
+            bag.setItem(smallest, bag.getItem(smallest).getCount() == take ? ItemStack.EMPTY : bag.getItem(smallest).copyWithCount(bag.getItem(smallest).getCount() - take));
         }
     }
 }

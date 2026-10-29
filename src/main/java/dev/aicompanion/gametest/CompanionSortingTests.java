@@ -111,7 +111,8 @@ public final class CompanionSortingTests {
             helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled");
             helper.assertTrue(chestsHolding(chests, Group.STONE) == 2, "Stone is in " + chestsHolding(chests, Group.STONE) + " chests");
             for (Container chest : chests) if (groups(chest).contains(Group.STONE)) helper.assertTrue(groups(chest).equals(EnumSet.of(Group.STONE)), "Stone mixed with " + groups(chest));
-            helper.assertTrue(groups(c).equals(EnumSet.of(Group.WOOD, Group.FOOD)), "Wood and food not together in the last chest: " + groups(c));
+            // Stone takes the chest of 13 stone and a bread over the one of 13 stone and 5 stacks of wood: wood and food share that one.
+            helper.assertTrue(groups(b).equals(EnumSet.of(Group.WOOD, Group.FOOD)), "Wood and food not together in the chest with wood: " + groups(b));
         });
     }
 
@@ -319,11 +320,54 @@ public final class CompanionSortingTests {
         helper.succeed();
     }
 
+    /** Stone (40 cells) takes a second chest: of the two with 13 stacks of stone, the one without wood, so wood keeps the chest where it lies. */
     @GameTest(template = "empty")
     public static void plannerSpillsAGroupThatDoesNotFitIntoTheNextChest(GameTestHelper helper) {
         var plan = plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 14.0, Group.WOOD, 13.0)), chestInfo(1, 2, Map.of(Group.STONE, 13.0, Group.WOOD, 5.0)),
                 chestInfo(2, 3, Map.of(Group.STONE, 13.0))), Map.of());
-        helper.assertTrue(plan.get(Group.STONE).equals(List.of(0, 1)) && plan.get(Group.WOOD).equals(List.of(2)), "Wrong spill: " + plan);
+        helper.assertTrue(plan.get(Group.STONE).equals(List.of(0, 2)) && plan.get(Group.WOOD).equals(List.of(1)), "Wrong spill: " + plan);
+        helper.succeed();
+    }
+
+    /** Ticket 08: 28 cells of stone do not take the chest of 26 stacks of logs for their last cell; it goes to the empty one. */
+    @GameTest(template = "empty")
+    public static void plannerLeavesAChestToTheGroupThatLiesThere(GameTestHelper helper) {
+        var plan = plan(List.of(chestInfo(0, 1, Map.of(Group.STONE, 27.0)), chestInfo(1, 2, Map.of(Group.WOOD, 26.0, Group.STONE, 1.0)), chestInfo(2, 3, Map.of())), Map.of());
+        helper.assertTrue(plan.get(Group.STONE).equals(List.of(0, 2)) && plan.get(Group.WOOD).equals(List.of(1)), "Wood lost its chest: " + plan);
+        helper.succeed();
+    }
+
+    /** Ticket 08: whatever lies in the set, while it takes no more cells than the chests have, the layout gives every piece a place and no chest more than its cells. */
+    @GameTest(template = "empty")
+    public static void layoutFindsAPlaceForEveryPieceWhileTheSetHasRoom(GameTestHelper helper) {
+        List<Item> pool = List.of(Items.COBBLESTONE, Items.DIRT, Items.OAK_LOG, Items.OAK_PLANKS, Items.IRON_INGOT, Items.COAL, Items.BREAD, Items.IRON_SWORD, Items.BONE, Items.PAPER, Items.EGG);
+        java.util.Random random = new java.util.Random(32);
+        for (int round = 0; round < 500; round++) {
+            List<CompanionSortGroups.Chest> chests = new java.util.ArrayList<>();
+            List<ItemStack> all = new java.util.ArrayList<>();
+            for (int i = 0, n = 1 + random.nextInt(9); i < n; i++) {
+                int size = random.nextInt(5) == 0 ? 54 : 27;
+                Map<Group, Double> cells = new EnumMap<>(Group.class);
+                for (int cell = 0, filled = random.nextInt(size + 1); cell < filled; cell++) {
+                    Item item = pool.get(random.nextInt(pool.size()));
+                    ItemStack stack = new ItemStack(item, 1 + random.nextInt(new ItemStack(item).getMaxStackSize()));
+                    all.add(stack); cells.merge(CompanionSortGroups.of(stack), (double) stack.getCount() / stack.getMaxStackSize(), Double::sum);
+                }
+                chests.add(new CompanionSortGroups.Chest(i, i, size, cells));
+            }
+            List<ItemStack> kinds = CompanionSortGroups.kinds(all);
+            int[][] keep = CompanionSortGroups.layout(chests, kinds);
+            for (var chest : chests) {
+                int used = 0;
+                for (int k = 0; k < kinds.size(); k++) used += (keep[chest.index()][k] + kinds.get(k).getMaxStackSize() - 1) / kinds.get(k).getMaxStackSize();
+                helper.assertTrue(used <= chest.size(), "Round " + round + ": chest " + chest.index() + " is given " + used + " cells of " + chest.size());
+            }
+            for (int k = 0; k < kinds.size(); k++) {
+                int placed = 0;
+                for (int[] chest : keep) placed += chest[k];
+                helper.assertTrue(placed == kinds.get(k).getCount(), "Round " + round + ": " + kinds.get(k) + " has places for " + placed);
+            }
+        }
         helper.succeed();
     }
 
