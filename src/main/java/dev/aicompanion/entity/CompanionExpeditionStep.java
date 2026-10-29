@@ -56,6 +56,9 @@ final class CompanionExpeditionStep {
                 CompanionShaftPlan.tunnelFloor(head, t), 2);
     }
 
+    /** The cells this advance opens. */
+    List<BlockPos> cells() { return cells; }
+
     Result tick(ServerLevel level) {
         if (!safe) return check(level);
         if (index < stepAt) return open(level, stepAt);

@@ -3,19 +3,13 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.FallingBlock;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * The mine expedition of one work order: finds or reuses the entrance, walks down his own staircase, digs on down to diamond
@@ -27,8 +21,8 @@ final class CompanionExpedition {
 
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT }
 
-    private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, SCAN_RADIUS = 4, ORE_PATIENCE = 600, CRAFT_EVERY = 200;
-    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, TORCHES_ENOUGH = 16;
+    private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
+    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6;
     private static final double ENTRANCE_NEAR = 2.5;
 
     private final CompanionWork w;
@@ -36,14 +30,15 @@ final class CompanionExpedition {
     private final CompanionExpeditionDig dig;
     private final CompanionExpeditionClimb climb;
     private final CompanionExpeditionWalk lead;
-    private final Set<BlockPos> skipped = new HashSet<>();
+    private final CompanionExpeditionOre ore;
+    private final CompanionExpeditionCave cave;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, scan, hadStone, missedDiamond, unheld;
+    private boolean active, hadStone, unheld;
     private long stepEnd, nextCraft;
-    private int startDiamonds, progress, stairSteps, turns, oreTicks, routeIndex;
-    private BlockPos stand, head, oreTarget;
+    private int startDiamonds, progress, stairSteps, turns, routeIndex;
+    private BlockPos stand, head;
     private Direction dir, tunnel;
     private String tunnelWhy = "";
 
@@ -53,10 +48,12 @@ final class CompanionExpedition {
         this.dig = new CompanionExpeditionDig(w);
         this.climb = new CompanionExpeditionClimb(w, dig);
         this.lead = new CompanionExpeditionWalk(dig);
+        this.ore = new CompanionExpeditionOre(w, dig);
+        this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount);
     }
 
-    /** What the stall watchdog sees move: blocks broken and steps finished. */
-    int progress() { return progress + dig.broken + dig.walked; }
+    /** What the stall watchdog sees move: blocks broken, steps finished, plugs placed in a cave. */
+    int progress() { return progress + dig.broken + dig.walked + cave.progress(); }
 
     void begin(ServerLevel level) {
         reset();
@@ -74,33 +71,44 @@ final class CompanionExpedition {
         climb.reset();
         lead.clear();
         CompanionChunkTicket.release(owner);
-        active = scan = hadStone = missedDiamond = unheld = false;
+        active = hadStone = unheld = false;
+        ore.reset();
+        cave.reset();
         tunnelWhy = "";
         stage = Stage.LOCATE;
         plan = null;
         route = List.of();
-        stand = head = oreTarget = null;
+        stand = head = null;
         dir = tunnel = null;
-        skipped.clear();
-        progress = stairSteps = turns = oreTicks = routeIndex = 0;
+        progress = stairSteps = turns = routeIndex = 0;
     }
 
     void tick(ServerLevel level) {
         if (!active) return;
         CompanionChunkTicket.follow(owner);
         if (level.getGameTime() >= stepEnd) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
-        if (gained() >= w.requestedCount) { end(Ending.FOUND, ""); return; }
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
-        if (plan == null && digging && (scan || oreTarget != null) && oreStep(level, false)) return;
+        if (cave.tick(level, plan == null ? List.of() : plan.cells(), digging)) {
+            if (cave.failure() != null) end(Ending.BLOCKED, cave.failure());
+            return;
+        }
+        if (gained() >= w.requestedCount && !cave.busy()) { end(Ending.FOUND, ""); return; }
+        if (plan == null && digging && ore.pending() && mineOre(level, CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null) craftTorches(level);
         switch (stage) {
             case LOCATE -> locate(level);
-            case CHECK_NEAR -> { if (!oreStep(level, true)) stage = Stage.WALK_DOWN; }
+            case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }
             case WALK_DOWN -> walkDown(level);
             case DESCEND -> descend();
             case BRANCH -> branch();
             case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) end(Ending.SUPPLIES, climb.text()); }
         }
+    }
+
+    private boolean mineOre(ServerLevel level, CompanionExpeditionOre.Mode mode) {
+        CompanionExpeditionOre.Result result = ore.step(level, mode);
+        if (result == CompanionExpeditionOre.Result.FULL) end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
+        return result != CompanionExpeditionOre.Result.NONE;
     }
 
     private int gained() { return w.items.countCarried(Items.DIAMOND) - startDiamonds; }
@@ -159,7 +167,7 @@ final class CompanionExpedition {
         }
         stand = route.get(routeIndex);
         dir = facing();
-        scan = true;
+        ore.scan = true;
         stage = reachedDepth(level) ? Stage.BRANCH : Stage.DESCEND;
         if (stage == Stage.BRANCH) enterBranch();
     }
@@ -190,6 +198,7 @@ final class CompanionExpedition {
             }
             List<CompanionMineSite.Tunnel> tunnels = w.mine.tunnels();
             if (tunnels.get(tunnels.size() - 1).length() >= CompanionShaftPlan.MAX_TUNNEL_CELLS) { tunnel = null; return; }
+            if (cave.crossesSeal(CompanionShaftPlan.tunnelCells(head, tunnel))) { tunnel = null; tunnelWhy = "дальше пещера"; return; }
             plan = CompanionExpeditionStep.tunnel(w, dig, head, tunnel);
         }
         advance();
@@ -235,7 +244,7 @@ final class CompanionExpedition {
         CompanionExpeditionStep done = plan;
         plan = null;
         progress++;
-        scan = true;
+        ore.scan = true;
         switch (done.kind) {
             case STAIR -> {
                 stand = done.to;
@@ -273,75 +282,6 @@ final class CompanionExpedition {
         }
     }
 
-    /** One tick of mining the ore in sight: near the feet when digging, up to twelve blocks off (walking there) before the descent. */
-    private boolean oreStep(ServerLevel level, boolean far) {
-        if (oreTarget == null) {
-            oreTarget = findOre(level, far);
-            oreTicks = 0;
-            if (oreTarget == null) { scan = false; return false; }
-        }
-        if (++oreTicks > ORE_PATIENCE) { skip(); return true; }
-        if (far) {
-            int reach = w.items.reachBlock(level, oreTarget, true);
-            if (reach < 0) skip();
-            if (reach != 1) return true;
-        }
-        switch (dig.dig(level, oreTarget)) {
-            case WORKING -> { }
-            case DONE -> { dig.flush(); oreTarget = null; }
-            case FULL -> {
-                if (level.getBlockState(oreTarget).is(BlockTags.DIAMOND_ORES)) end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
-                else skip();
-            }
-            default -> skip();
-        }
-        return true;
-    }
-
-    private void skip() {
-        skipped.add(oreTarget);
-        oreTarget = null;
-        dig.forget();
-    }
-
-    private BlockPos findOre(ServerLevel level, boolean far) {
-        BlockPos feet = owner.blockPosition();
-        int radius = far ? NEAR_RADIUS : SCAN_RADIUS;
-        boolean coal = !far && w.items.countCarried(Items.TORCH) < TORCHES_ENOUGH;
-        Vec3 eye = owner.getEyePosition();
-        BlockPos best = null;
-        double bestDistance = Double.MAX_VALUE;
-        for (BlockPos pos : BlockPos.betweenClosed(feet.offset(-radius, -radius, -radius), feet.offset(radius, radius, radius))) {
-            if (!level.hasChunkAt(pos) || skipped.contains(pos)) continue;
-            BlockState state = level.getBlockState(pos);
-            if (!state.is(BlockTags.DIAMOND_ORES) && !(coal && state.is(BlockTags.COAL_ORES))) continue;
-            double distance = eye.distanceToSqr(pos.getCenter());
-            if (distance >= bestDistance || !exposed(level, pos) || CompanionOre.liquidNear(level, pos)) continue;
-            if (!dig.hasTool(state)) { missedDiamond |= state.is(BlockTags.DIAMOND_ORES); continue; }
-            if (!far && !withinHands(level, eye, feet, pos, distance)) continue;
-            best = pos.immutable();
-            bestDistance = distance;
-        }
-        return best;
-    }
-
-    /** In reach and sight, its drop to be picked up, and not the floor under his own feet. */
-    private boolean withinHands(ServerLevel level, Vec3 eye, BlockPos feet, BlockPos pos, double distanceSqr) {
-        boolean underFeet = pos.getX() == feet.getX() && pos.getZ() == feet.getZ() && pos.getY() < feet.getY();
-        return !underFeet && distanceSqr <= CompanionSeal.REACH * CompanionSeal.REACH && CompanionMiningNavigation.visible(owner, eye, pos)
-                && CompanionMiningNavigation.dropCollectable(level, pos, feet);
-    }
-
-    /** An open face to mine it from, and no gravel or sand above to come down on him. */
-    private static boolean exposed(ServerLevel level, BlockPos pos) {
-        if (level.getBlockState(pos.above()).getBlock() instanceof FallingBlock) return false;
-        for (Direction side : Direction.values()) {
-            BlockPos next = pos.relative(side);
-            if (level.hasChunkAt(next) && CompanionShaftPlan.open(level, next)) return true;
-        }
-        return false;
-    }
-
     /** Torches are laid by the lighting as he works; here only the supply is topped up from coal and sticks. */
     private void craftTorches(ServerLevel level) {
         if (level.getGameTime() < nextCraft) return;
@@ -357,8 +297,8 @@ final class CompanionExpedition {
 
     private void end(Ending ending, String why) {
         dig.flush();
-        String text = report() + " " + why;
-        if (missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
+        String text = report() + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why;
+        if (ore.missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
         if (unheld) text += " Чанки вокруг шахты удержать не удалось.";
         text = text.strip();
         w.finish(switch (ending) {
