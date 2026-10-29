@@ -114,12 +114,20 @@ public final class CompanionMineSite {
             truncate(0);
         } else {
             int kept = 0;
-            while (kept < stands.size() && CompanionShaftPlan.columnOpen(level, stands.get(kept))) kept++;
+            while (kept < stands.size() && passable(level, stands.get(kept))) kept++;
             truncate(kept);
         }
         seals.removeIf(cell -> !level.hasChunkAt(cell) || level.getBlockState(cell).isAir());
         if (plug != null && (!level.hasChunkAt(plug) || level.getBlockState(plug).isAir())) plug = null;
         return stands.size();
+    }
+
+    /** The stand's column is open, or closed only by his own plug (a retreat leaves it; the next step takes it out). */
+    private boolean passable(ServerLevel level, BlockPos stand) {
+        for (BlockPos cell : CompanionShaftPlan.column(stand)) {
+            if (!level.hasChunkAt(cell) || !CompanionShaftPlan.open(level, cell) && !cell.equals(plug)) return false;
+        }
+        return true;
     }
 
     public void save(CompoundTag tag) {

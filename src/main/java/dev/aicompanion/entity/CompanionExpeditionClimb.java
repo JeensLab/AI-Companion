@@ -38,6 +38,15 @@ final class CompanionExpeditionClimb {
         w.owner.getNavigation().stop();
         CompanionMineSite mine = w.mine;
         if (!mine.exists()) { outcome = " Своей лестницы нет, остался на месте."; return; }
+        List<BlockPos> cells = wayUp(mine);
+        int nearest = nearest(cells, here);
+        if (nearest < 0) outcome = " Свою лестницу рядом не нашёл, остался где стою.";
+        else if (nearest == cells.size() - 1) outcome = " Я и так у входа, остался на месте.";
+        else walk.set(cells, nearest);
+    }
+
+    /** The last tunnel's cells from its end, then the stands from the foot up, then the entrance. */
+    static List<BlockPos> wayUp(CompanionMineSite mine) {
         List<BlockPos> cells = new ArrayList<>();
         List<CompanionMineSite.Tunnel> tunnels = mine.tunnels();
         if (!tunnels.isEmpty()) {
@@ -47,15 +56,18 @@ final class CompanionExpeditionClimb {
         List<BlockPos> stands = mine.stands();
         for (int i = stands.size() - 1; i >= 0; i--) cells.add(stands.get(i));
         cells.add(mine.entrance());
+        return cells;
+    }
+
+    /** The index of the cell he stands at (within a few blocks), or -1. */
+    static int nearest(List<BlockPos> cells, BlockPos here) {
         int nearest = -1;
         double best = SAME_SPOT;
         for (int i = 0; i < cells.size(); i++) {
             double distance = cells.get(i).distSqr(here);
             if (distance < best || nearest < 0 && distance <= best) { nearest = i; best = distance; }
         }
-        if (nearest < 0) outcome = " Свою лестницу рядом не нашёл, остался где стою.";
-        else if (nearest == cells.size() - 1) outcome = " Я и так у входа, остался на месте.";
-        else walk.set(cells, nearest);
+        return nearest;
     }
 
     Result tick() {
