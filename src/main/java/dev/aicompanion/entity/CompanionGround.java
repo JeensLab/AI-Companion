@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -74,16 +75,16 @@ public enum CompanionGround {
 
     boolean safeCell(ServerLevel level, BlockPos pos, CompanionEntity companion) {
         return this == SOIL ? !CompanionMiningNavigation.supportsLivingEntity(companion, pos) && CompanionQuarry.safeCell(level, pos)
-                : safeLooseCell(level, pos, companion);
+                : safeLooseCell(level, pos);
     }
 
     /**
      * The soil check rejects any falling block nearby; digging one asks other things instead: no water to flood the hole, nothing
      * built on top, and no living thing under the column that comes down once the block is gone.
      */
-    static boolean safeLooseCell(ServerLevel level, BlockPos pos, CompanionEntity companion) {
+    static boolean safeLooseCell(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || level.isOutsideBuildHeight(pos)) return false;
-        if (CompanionLighting.supportsLight(level, pos) || CompanionMiningNavigation.supportsLivingEntity(companion, pos)) return false;
+        if (CompanionLighting.supportsLight(level, pos) || carriesSomeone(level, pos)) return false;
         if (level.getBlockEntity(pos) != null || !level.getFluidState(pos).isEmpty()) return false;
         for (Direction direction : Direction.values()) {
             BlockPos nearby = pos.relative(direction);
@@ -97,6 +98,16 @@ public enum CompanionGround {
             if (!cover.isAir() && !cover.canBeReplaced() && !isLooseBlock(cover)) return false;
         }
         return nothingAliveUnder(level, pos);
+    }
+
+    /**
+     * Whoever stands on the block comes down with it. The common check takes any body in the cell over the block, and a body
+     * pressed against its side reaches into that cell too: Oleg hugging the foot of a column kept the last block undiggable.
+     * On the block means the feet at its top face or over it.
+     */
+    private static boolean carriesSomeone(ServerLevel level, BlockPos pos) {
+        return !level.getEntities((Entity)null, new AABB(pos.above()).inflate(.05, .1, .05),
+                entity -> entity instanceof LivingEntity living && living.isAlive() && living.getY() >= pos.getY() + 1 - .05).isEmpty();
     }
 
     private static boolean nothingAliveUnder(ServerLevel level, BlockPos pos) {

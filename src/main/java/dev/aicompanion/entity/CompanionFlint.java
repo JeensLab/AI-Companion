@@ -133,6 +133,6 @@ final class CompanionFlint {
         if (!level.getEntities((Entity)null, new AABB(pos), entity -> true).isEmpty()) return false;
         var sight = level.clip(new ClipContext(c.getEyePosition(), Vec3.atCenterOf(pos), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c));
         return sight.getType() == HitResult.Type.MISS && CompanionMiningNavigation.dropCollectable(level, pos, c.blockPosition())
-                && CompanionMiningNavigation.preservesAutonomousReturn(c, pos) && CompanionGround.safeLooseCell(level, pos, c);
+                && CompanionMiningNavigation.preservesAutonomousReturn(c, pos) && CompanionGround.safeLooseCell(level, pos);
     }
 }

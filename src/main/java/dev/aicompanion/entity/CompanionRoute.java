@@ -2,7 +2,9 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.AABB;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -64,6 +66,7 @@ final class CompanionRoute {
         Map<BlockPos, BlockPos> blockAt = new HashMap<>();
         for (BlockPos block : blocks) for (BlockPos stand : CompanionMiningNavigation.standCells(owner, block, need.reach(), need.clearLeaves(), need.avoidStandingOnTarget())) {
             if (need.forTheDrop() && !CompanionMiningNavigation.dropCollectable(owner.level(), block, stand)) continue;
+            if (occupied(owner, stand)) continue;
             BlockPos other = blockAt.get(stand);
             if (other == null || stand.distSqr(block) < stand.distSqr(other)) blockAt.put(stand, block.immutable());
         }
@@ -125,6 +128,12 @@ final class CompanionRoute {
     boolean busy() { return w.owner.getNavigation() instanceof CompanionNavigation nav && nav.overBudget(); }
 
     Reach to(BlockPos block, Need need) { return nearest(List.of(block), need); }
+
+    /** Somebody already stands there: walking into him only pushes him about, and the way never ends (the player beside a sand column). */
+    private static boolean occupied(CompanionEntity owner, BlockPos stand) {
+        var body = new AABB(stand.getX() + .2, stand.getY(), stand.getZ() + .2, stand.getX() + .8, stand.getY() + owner.getBbHeight(), stand.getZ() + .8);
+        return !owner.level().getEntities(owner, body, entity -> entity instanceof LivingEntity living && living.isAlive()).isEmpty();
+    }
 
     /**
      * «No way» is told only where the wide search can see: with the target within one and a half follow ranges in a straight line

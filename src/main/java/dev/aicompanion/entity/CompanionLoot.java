@@ -11,6 +11,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.tags.ItemTags;
 import java.util.HashMap;
@@ -194,8 +195,9 @@ final class CompanionLoot {
             dropLeaf();
         }
         if (target == null) return;
-        // The column of loose blocks above a dug cell is still coming down: whoever walks in for the drop is buried in it.
-        if (fallingOver(level, target)) { owner.work.route.stop(); lastProgress = level.getGameTime(); return; }
+        // The column of loose blocks above a dug cell is still coming down: whoever walks in for the drop is buried in it,
+        // and so is whoever cuts across that cell on his way to a drop pushed out beside it. He waits where he stands.
+        if (fallingOver(level, target) || fallingNearby(level)) { owner.work.route.stop(); lastProgress = level.getGameTime(); return; }
         owner.movementIntent(target.blockPosition());
         if (leaf != null) { clearLeaf(level); return; }
         owner.workStatus("Подбираю добытые вещи.");
@@ -227,7 +229,9 @@ final class CompanionLoot {
             // From two below (a drop on a ledge at head height) to one above (a drop in a dip).
             for (int dy = -2; dy <= 1; dy++) for (int ox = -1; ox <= 1; ox++) for (int oz = -1; oz <= 1; oz++) {
                 BlockPos spot = center.offset(ox, dy, oz);
-                if (!CompanionMiningNavigation.standable(owner, spot)) continue;
+                // The drop pushed out of a landed block lies clear, while the cell it came from still has the rest of the
+                // column in the air over it: no stand there.
+                if (!CompanionMiningNavigation.standable(owner, spot) || fallingInto(level, new AABB(spot), spot)) continue;
                 var standing = Vec3.atBottomCenterOf(spot);
                 var toward = target.position().subtract(standing).multiply(1, 0, 1).normalize().scale(.3);
                 // A reachable adjacent cell can still be outside pickup range. Route to a point
@@ -385,8 +389,17 @@ final class CompanionLoot {
     private static final int FALL_SCAN = 8;
 
     private static boolean fallingOver(ServerLevel level, ItemEntity item) {
-        if (!level.getEntitiesOfClass(FallingBlockEntity.class, item.getBoundingBox().inflate(.5, 0, .5).expandTowards(0, FALL_SCAN, 0)).isEmpty()) return true;
-        for (BlockPos above = item.blockPosition().above(); above.getY() <= item.blockPosition().getY() + FALL_SCAN; above = above.above()) {
+        return fallingInto(level, item.getBoundingBox().inflate(.5, 0, .5), item.blockPosition());
+    }
+
+    private boolean fallingNearby(ServerLevel level) {
+        return !level.getEntitiesOfClass(FallingBlockEntity.class, owner.getBoundingBox().inflate(1.5, 0, 1.5).expandTowards(0, FALL_SCAN, 0)).isEmpty();
+    }
+
+    /** A block in the air over the box, or one about to drop: the first block over the cell is loose with nothing under it. */
+    private static boolean fallingInto(ServerLevel level, AABB box, BlockPos cell) {
+        if (!level.getEntitiesOfClass(FallingBlockEntity.class, box.expandTowards(0, FALL_SCAN, 0)).isEmpty()) return true;
+        for (BlockPos above = cell.above(); above.getY() <= cell.getY() + FALL_SCAN; above = above.above()) {
             BlockState state = level.getBlockState(above);
             if (!state.isAir()) return state.getBlock() instanceof FallingBlock;
         }

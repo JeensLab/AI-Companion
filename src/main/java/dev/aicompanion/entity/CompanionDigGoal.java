@@ -100,6 +100,7 @@ final class CompanionDigGoal extends Goal {
         }
         if (target == null) {
             if (flintMode() && flintHolds()) return;
+            if (ground().isLoose()) stepOffLoose();
             if (++noDirtTicks >= 80) finish(flintMode() ? flint.report(c.requestedLogs, "гравия или места для него поблизости больше нет. Отведи меня к открытому участку гравия и попроси снова.")
                     : ground().isLoose()
                     ? "Нашёл только " + gathered + " из " + c.requestedLogs + " блоков " + ground().genitive()
@@ -172,6 +173,19 @@ final class CompanionDigGoal extends Goal {
                 pathFailTicks = 0;
             } else approachPath = null;
         } else { c.work.route.walk(approachPath); pathFailTicks = 0; }
+    }
+
+    /**
+     * The last block of a column can be the one under his feet: he stepped up onto it for a drop. The search skips the block he
+     * stands on, so he steps off it to the side, as a player would, and digs it from there.
+     */
+    private void stepOffLoose() {
+        BlockPos under = c.blockPosition().below();
+        if (!ground().matches(c.level().getBlockState(under)) || !c.getNavigation().isDone()) return;
+        for (Direction side : Direction.Plane.HORIZONTAL) {
+            BlockPos spot = under.relative(side);
+            if (CompanionMiningNavigation.standable(c, spot)) { c.getNavigation().moveTo(spot.getX() + .5D, spot.getY(), spot.getZ() + .5D, 1.0D); return; }
+        }
     }
 
     private BlockPos findNearestDirt() {
