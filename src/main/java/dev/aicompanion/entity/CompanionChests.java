@@ -18,6 +18,8 @@ import net.minecraft.world.level.pathfinder.Path;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -69,7 +71,7 @@ final class CompanionChests {
         w.animateChest(level, w.openedChest, 1);
         level.playSound(null, w.openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
         w.owner.animateAction(3, w.target, ItemStack.EMPTY);
-        w.transferred += transfer(chest);
+        w.transferred += transfer(chest, level, w.target);
         chest.setChanged();
         w.rememberedChest = w.target.immutable();
         w.owner.rememberObserved(w.target);
@@ -175,19 +177,77 @@ final class CompanionChests {
         w.phase = CompanionWork.Phase.CLOSE; w.cooldown = 10; w.owner.workStatus("Забираю вещи из сундука.");
     }
 
-    private BlockPos findChest(ServerLevel level) {
+    /** Chests he may use now, in the old order: the one he already uses first, then the nearest to the player. */
+    private LinkedHashMap<BlockPos, Container> usableChests(ServerLevel level) {
         List<BlockPos> found = new ArrayList<>();
         BlockPos center = w.owner.blockPosition();
         for (BlockPos pos : blockEntitiesNear(level)) {
             if (w.triedChests.contains(pos) || w.insideHouse && !w.house.inside(pos)) continue;
             // A deed of his own: only a chest he set down himself, near the player (the player: «не трогает мои сундуки»).
             if (w.owner.ownPlacesOnly() && (!w.owner.placedByMe(pos) || !w.owner.leashAllows(pos))) continue;
-            Container chest = chestAt(level, pos);
-            if (chest != null && (w.job == CompanionWork.Job.TAKE ? containsRequested(chest) : w.job == CompanionWork.Job.PLACE_CHEST || hasCapacity(chest))) found.add(pos.immutable());
+            if (chestAt(level, pos) != null) found.add(pos.immutable());
         }
         // The chest Oleg already uses is "ours": fill it before any other one nearby.
         found.sort(Comparator.comparing((BlockPos pos) -> !pos.equals(w.rememberedChest)).thenComparingDouble(pos -> pos.distSqr(center)));
-        return found.isEmpty() ? null : found.getFirst();
+        LinkedHashMap<BlockPos, Container> usable = new LinkedHashMap<>();
+        for (BlockPos pos : found) usable.put(pos, chestAt(level, pos));
+        return usable;
+    }
+
+    private BlockPos findChest(ServerLevel level) {
+        LinkedHashMap<BlockPos, Container> usable = usableChests(level);
+        if (w.job == CompanionWork.Job.STORE) return storeTarget(usable);
+        for (var entry : usable.entrySet())
+            if (w.job == CompanionWork.Job.TAKE ? containsRequested(entry.getValue()) : w.job == CompanionWork.Job.PLACE_CHEST || hasCapacity(entry.getValue())) return entry.getKey();
+        return null;
+    }
+
+    /**
+     * Where a stack goes: the nearest chest that already holds its group (issue 32), else the old order (his own chest, then the nearest
+     * with room). Null when no chest has room for it. {@code affinity[0]} tells which of the two it was.
+     */
+    private BlockPos homeOf(ItemStack stack, LinkedHashMap<BlockPos, Container> usable, boolean[] affinity) {
+        BlockPos center = w.owner.blockPosition(), best = null;
+        CompanionSortGroups.Group group = CompanionSortGroups.of(stack);
+        for (var entry : usable.entrySet()) {
+            if (!holdsGroup(entry.getValue(), group) || !hasRoomFor(entry.getValue(), stack)) continue;
+            if (best == null || entry.getKey().distSqr(center) < best.distSqr(center)) best = entry.getKey();
+        }
+        if (best != null) { affinity[0] = true; return best; }
+        affinity[0] = false;
+        for (var entry : usable.entrySet()) if (hasRoomFor(entry.getValue(), stack)) return entry.getKey();
+        return null;
+    }
+
+    /** The chest to go to next: the nearest "own group" chest of anything he carries; with none, the first in the old order. */
+    private BlockPos storeTarget(LinkedHashMap<BlockPos, Container> usable) {
+        BlockPos center = w.owner.blockPosition(), nearest = null, first = null;
+        int firstIndex = Integer.MAX_VALUE;
+        List<BlockPos> order = new ArrayList<>(usable.keySet());
+        for (int slot : movableSlots()) {
+            boolean[] affinity = new boolean[1];
+            BlockPos home = homeOf(w.owner.getItem(slot), usable, affinity);
+            if (home == null) continue;
+            if (affinity[0] && (nearest == null || home.distSqr(center) < nearest.distSqr(center))) nearest = home;
+            if (!affinity[0] && order.indexOf(home) < firstIndex) { firstIndex = order.indexOf(home); first = home; }
+        }
+        return nearest != null ? nearest : first;
+    }
+
+    /** Slots of his bag that a store order would put away now, the reserves counted down in slot order. */
+    private List<Integer> movableSlots() {
+        List<Integer> slots = new ArrayList<>();
+        int[] reserves = reserves(w.requestedItem);
+        for (int slot = 0; slot < w.owner.getContainerSize(); slot++) {
+            ItemStack stack = w.owner.getItem(slot);
+            if (eligible(stack) && stack.getCount() - kept(stack, reserves, CompanionWork.SURPLUS.equals(w.requestedItem)) > 0) slots.add(slot);
+        }
+        return slots;
+    }
+
+    private static boolean holdsGroup(Container chest, CompanionSortGroups.Group group) {
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty() && CompanionSortGroups.of(chest.getItem(slot)) == group) return true;
+        return false;
     }
 
     /** Block entities of loaded chunks within the container search radius (at most 32 blocks). */
@@ -211,13 +271,18 @@ final class CompanionChests {
         return state.getBlock() instanceof ChestBlock chest ? ChestBlock.getContainer(chest, state, level, pos, false) : null;
     }
 
-    private int transfer(Container destination) {
+    private int transfer(Container destination, ServerLevel level, BlockPos at) {
         int moved = 0;
         int[] reserves = reserves(w.requestedItem);
+        // A store order takes to this chest only what belongs here: the homes are fixed before anything moves.
+        LinkedHashMap<BlockPos, Container> usable = w.job == CompanionWork.Job.STORE ? usableChests(level) : null;
+        Set<Integer> mine = new HashSet<>();
+        if (usable != null) for (int slot : movableSlots()) if (at.equals(homeOf(w.owner.getItem(slot), usable, new boolean[1]))) mine.add(slot);
         for (int source = 0; source < w.owner.getContainerSize(); source++) {
             ItemStack stack = w.owner.getItem(source);
             if (!eligible(stack)) continue;
             int keep = kept(stack, reserves, CompanionWork.SURPLUS.equals(w.requestedItem));
+            if (usable != null && !mine.contains(source)) continue;
             int available = Math.min(stack.getCount() - keep, storeQuota() - moved);
             for (int pass = 0; pass < 2 && available > 0; pass++) {
                 for (int slot = 0; slot < destination.getContainerSize() && available > 0; slot++) {
@@ -242,12 +307,16 @@ final class CompanionChests {
     private boolean hasCapacity(Container chest) {
         for (int source = 0; source < w.owner.getContainerSize(); source++) {
             ItemStack stack = w.owner.getItem(source);
-            if (!eligible(stack)) continue;
-            for (int slot = 0; slot < chest.getContainerSize(); slot++) {
-                ItemStack existing = chest.getItem(slot);
-                if (chest.canPlaceItem(slot, stack) && (existing.isEmpty() || ItemStack.isSameItemSameComponents(existing, stack)
-                        && existing.getCount() < Math.min(stack.getMaxStackSize(), chest.getMaxStackSize()))) return true;
-            }
+            if (eligible(stack) && hasRoomFor(chest, stack)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasRoomFor(Container chest, ItemStack stack) {
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+            ItemStack existing = chest.getItem(slot);
+            if (chest.canPlaceItem(slot, stack) && (existing.isEmpty() || ItemStack.isSameItemSameComponents(existing, stack)
+                    && existing.getCount() < Math.min(stack.getMaxStackSize(), chest.getMaxStackSize()))) return true;
         }
         return false;
     }
