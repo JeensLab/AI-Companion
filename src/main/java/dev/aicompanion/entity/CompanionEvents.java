@@ -4,14 +4,13 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.aicompanion.AICompanionMod;
 import net.minecraft.commands.Commands;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
@@ -61,18 +60,18 @@ public final class CompanionEvents {
                 .then(Commands.literal("summon").executes(context -> {
                     ServerPlayer player = context.getSource().getPlayerOrException();
                     CompanionEntity companion = resolveCanonical(player, true);
-                    Vec3 at = arrival(player);
-                    if (companion != null && companion.level() != player.level()) {
+                    Vec3 at = companion == null ? null : arrival(player);
+                    if (at != null && companion.level() != player.level()) {
                         // Game 29.10: from the Nether he went to the same numbers in his own world and fell into a forest. He comes over
                         // as with a vanilla /tp; the work of the world he leaves stops there, as on «иди за мной».
                         companion.goals().playerOrder("follow"); companion.autonomy().playerOrder("follow");
                         CompanionAgenda.playerOrder(player, companion, "follow"); companion.setFollowing(true);
                         companion.teleportTo(player.serverLevel(), at.x, at.y, at.z, Set.of(), companion.getYRot(), companion.getXRot());
-                    } else if (companion != null) companion.teleportTo(at.x, at.y, at.z);
+                    } else if (at != null) companion.teleportTo(at.x, at.y, at.z);
                     context.getSource().sendSuccess(() -> Component.literal(companion == null
                             ? "Компаньон сейчас выгружен из мира; он не создан повторно."
-                            : "Компаньон рядом."), false);
-                    return companion == null ? 0 : 1;
+                            : at == null ? "Рядом с тобой ему негде встать: нужен твёрдый пол без воды и лавы." : "Компаньон рядом."), false);
+                    return at == null ? 0 : 1;
                 }))
                 .then(Commands.literal("follow").executes(context -> setFollowing(context.getSource().getPlayerOrException(), true)))
                 .then(Commands.literal("roam").executes(context -> {
@@ -104,16 +103,19 @@ public final class CompanionEvents {
     }
 
     /**
-     * Where a summon puts him: the cell beside the player if he can stand there, else the player's own. Beside a bridge over lava in
-     * the Nether or over the void in the End he would fall, and everything he carries with him (review 29.10).
+     * Where a summon puts him: beside the player where his body is free, out of any fluid and on something to stand on; the player's own
+     * cell last; null if there is no such place. Review 29.10: by a bridge over lava or the void he would fall, and everything he carries
+     * with him; in the game 29.10 a player standing in lava (creative) had him put into it, where he died.
      */
     private static Vec3 arrival(ServerPlayer player) {
         var level = player.serverLevel();
-        BlockPos beside = BlockPos.containing(player.getX() + 1.0D, player.getY(), player.getZ() + 1.0D);
-        boolean standable = level.getBlockState(beside.below()).isFaceSturdy(level, beside.below(), Direction.UP)
-                && level.getFluidState(beside).isEmpty() && level.getFluidState(beside.above()).isEmpty()
-                && level.getBlockState(beside).getCollisionShape(level, beside).isEmpty() && level.getBlockState(beside.above()).getCollisionShape(level, beside.above()).isEmpty();
-        return standable ? new Vec3(player.getX() + 1.0D, player.getY(), player.getZ() + 1.0D) : player.position();
+        for (int[] side : new int[][]{{1, 1}, {1, 0}, {0, 1}, {-1, 0}, {0, -1}, {-1, -1}, {1, -1}, {-1, 1}, {0, 0}}) {
+            Vec3 at = player.position().add(side[0], 0, side[1]);
+            AABB body = AICompanionMod.COMPANION.get().getDimensions().makeBoundingBox(at);
+            if (level.noCollision(body) && !level.containsAnyLiquid(body) && !level.noCollision(new AABB(at.x - .3, at.y - .2, at.z - .3, at.x + .3, at.y, at.z + .3)))
+                return at;
+        }
+        return null;
     }
 
     private static int setFollowing(ServerPlayer player, boolean following) {

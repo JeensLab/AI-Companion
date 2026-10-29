@@ -70,7 +70,7 @@ public final class CompanionSmallFixesTests {
      * Game 29.10: «/companion summon» typed in the Nether moved him to the same numbers in the Overworld, and he fell into a forest.
      * Here the other way round (a new Nether area takes too long to come up in a test): he waits in the Nether, the player calls him from
      * the Overworld. He comes over to the player's world, one of him, with his bag, and the work he was on is dropped. Review 29.10: his
-     * house and storage chest of the Overworld are not forgotten in the Nether, and with a pit beside the player he comes to the player's cell.
+     * house and storage chest of the Overworld are not forgotten in the Nether, and with a pit beside the player he comes to another cell.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void summonFromAnotherDimensionBringsHimOver(GameTestHelper h) {
@@ -88,7 +88,8 @@ public final class CompanionSmallFixesTests {
         var nether = server.getLevel(Level.NETHER);
         h.assertTrue(nether != null, "No Nether to test with");
         var owner = server.getPlayerList().getPlayer(first.getOwnerId());
-        h.getLevel().setBlockAndUpdate(BlockPos.containing(owner.getX() + 1, owner.getY() - 1, owner.getZ() + 1), Blocks.AIR.defaultBlockState());
+        BlockPos pit = BlockPos.containing(owner.getX() + 1, owner.getY(), owner.getZ() + 1);
+        h.getLevel().setBlockAndUpdate(pit.below(), Blocks.AIR.defaultBlockState());
         // A closed room, so that neither netherrack nor lava is round him; a portal's ticket, renewed every tick, keeps it loaded. The entities
         // of a new Nether chunk take from 0 to some hundreds of ticks to load in a test server: he is waited for, not timed.
         BlockPos room = BlockPos.containing(first.getX(), 64, first.getZ());
@@ -123,7 +124,8 @@ public final class CompanionSmallFixesTests {
             h.assertTrue(h.getLevel().getEntity(id) instanceof CompanionEntity, "Not back in the Overworld: " + (left == null ? "nowhere" : "in the Nether at " + left.blockPosition().toShortString()));
             CompanionEntity back = (CompanionEntity) h.getLevel().getEntity(id);
             h.assertTrue(back.isAlive() && back.distanceToSqr(owner) < 4 * 4, "Not by the player: " + back.blockPosition().toShortString());
-            h.assertTrue(arrived[0] != null && arrived[0].distanceToSqr(owner.position()) < .25, "Put by the pit, not on the player's cell: " + arrived[0]);
+            h.assertTrue(arrived[0] != null && !BlockPos.containing(arrived[0]).equals(pit) && Math.abs(arrived[0].y - owner.getY()) < .01
+                    && arrived[0].distanceToSqr(owner.position()) < 2.5, "Put over the pit beside the player: " + arrived[0]);
             h.assertTrue(carried(back, Items.DIAMOND) == 5 && nether.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(room).inflate(4)).isEmpty(),
                     "The bag was not kept: " + back.getStoredItemsSummary());
             h.assertTrue(!back.isGatheringTask() && !back.isWorking() && !back.getLastTaskResult().contains("выходом из мира"), "Still on the old work: " + back.getLastTaskResult());
@@ -131,6 +133,26 @@ public final class CompanionSmallFixesTests {
             h.assertTrue(kept.getCompound("SmallHouse").getLong("Base") == house.asLong() && kept.getLong("StorageChest") == chest.asLong(),
                     "House or storage chest forgotten: " + kept.get("SmallHouse") + " " + kept.get("StorageChest"));
         });
+    }
+
+    /**
+     * Game 29.10: the player stood in lava (creative) and a summon put him into it, where he died. With no cell round the player
+     * he can stand on (here all of them water), a summon says so and leaves him where he is.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void summonWithNowhereToStandLeavesHimWhereHeIs(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+        CompanionEntity companion = spawn(h, 1);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        for (BlockPos cell : BlockPos.betweenClosed(BlockPos.containing(owner.position()).offset(-1, 0, -1), BlockPos.containing(owner.position()).offset(1, 1, 1)))
+            h.getLevel().setBlockAndUpdate(cell, Blocks.WATER.defaultBlockState());
+        var before = companion.position();
+        int answer;
+        try { answer = h.getLevel().getServer().getCommands().getDispatcher().execute("companion summon", owner.createCommandSourceStack()); }
+        catch (com.mojang.brigadier.exceptions.CommandSyntaxException e) { answer = -1; }
+        h.assertTrue(answer == 0 && companion.isAlive() && companion.position().distanceToSqr(before) < .01,
+                "Summoned into the water: answer " + answer + ", at " + companion.position());
+        h.succeed();
     }
 
     private static CompanionEntity spawn(GameTestHelper h, int y) {
