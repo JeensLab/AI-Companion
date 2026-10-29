@@ -47,7 +47,7 @@ public final class CompanionCaveTests {
     private static final BlockPos CAVE_DIAMOND = new BlockPos(29, DIAMOND_FEET - 1, 6);
 
     private static final class Watch {
-        boolean breached;
+        boolean breached, settled; // settled: the verdict is in; succeed() has cleared the arena, so per-tick checks stop
         long breachTick = -1;
         int insideTicks;
         BlockPos farthest = BREACH_FEET;
@@ -66,6 +66,7 @@ public final class CompanionCaveTests {
         long id = start(h, c, 1);
         Watch w = new Watch();
         h.onEachTick(() -> {
+            if (w.settled) return;
             watch(h, c, w);
             h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
             BlockPos feet = rel(h, c.blockPosition());
@@ -90,6 +91,7 @@ public final class CompanionCaveTests {
         long id = start(h, c, 1);
         Watch w = new Watch();
         h.onEachTick(() -> {
+            if (w.settled) return;
             watch(h, c, w);
             for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % 20 == 0) zombie.setTarget(c);
             h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
@@ -116,6 +118,7 @@ public final class CompanionCaveTests {
         long id = start(h, c, 1);
         Watch w = new Watch();
         h.onEachTick(() -> {
+            if (w.settled) return;
             watch(h, c, w);
             h.assertTrue(creeper.isAlive() && creeper.getHealth() >= creeper.getMaxHealth(), "He hurt the creeper: health " + creeper.getHealth() + "/" + creeper.getMaxHealth()
                     + ", alive " + creeper.isAlive() + " | " + summary(h, c, w, cave) + " | " + report(c));
@@ -131,6 +134,7 @@ public final class CompanionCaveTests {
     /** Once the order has ended: the breach was reached at all (otherwise the test proves nothing), no air path joins the cave and his mine, plus the test's own checks. */
     private static void settle(GameTestHelper h, CompanionEntity c, long id, Watch w, Set<BlockPos> cave, Consumer<List<String>> own) {
         if (c.isGatheringTask() || c.isWorking() || c.workResult(id) == null) return;
+        w.settled = true;
         List<String> problems = new ArrayList<>();
         if (!w.breached) problems.add("SETUP: the tunnel never broke into the cave");
         BlockPos leak = leak(h, cave);
