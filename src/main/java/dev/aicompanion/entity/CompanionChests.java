@@ -205,7 +205,7 @@ final class CompanionChests {
         return found;
     }
 
-    private Container chestAt(ServerLevel level, BlockPos pos) {
+    Container chestAt(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
         BlockState state = level.getBlockState(pos);
         return state.getBlock() instanceof ChestBlock chest ? ChestBlock.getContainer(chest, state, level, pos, false) : null;

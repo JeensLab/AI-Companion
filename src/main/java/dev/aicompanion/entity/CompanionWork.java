@@ -27,8 +27,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -37,6 +37,7 @@ public final class CompanionWork {
     final CompanionOreMining oreMining = new CompanionOreMining(this);
     final CompanionRoute route = new CompanionRoute(this);
     final CompanionChests chests = new CompanionChests(this);
+    final CompanionSorting sorting = new CompanionSorting(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
     final CompanionHandOver handOver = new CompanionHandOver(this);
     final CompanionHouse house;
@@ -280,7 +281,7 @@ public final class CompanionWork {
     }
     String currentDescription() {
         return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
-                : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
+                : job == Job.SORT ? "раскладывает по сундукам" : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
                 : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + furnaces.smeltReady() + " из " + smeltCount : "готовит печь для плавки")
                 : "выполняет работу " + job + ", стадия " + phase;
     }
@@ -291,7 +292,7 @@ public final class CompanionWork {
             case PICKAXE, ORE_PICK, SHOVEL -> "подготовка инструмента";
             case WOOD, WOOD_DONE -> "заготовка дерева";
             case MINE, DIGGING, ORE -> "добыча";
-            case STORE, CLOSE, PACK -> "работа с вещами";
+            case STORE, CLOSE, PACK, SORT -> "работа с вещами";
             case BUILD -> "строительство";
             case RETURN, EXIT -> "возвращение";
             case FIGHT, CHASE -> "поиск и бой";
@@ -310,6 +311,7 @@ public final class CompanionWork {
             case CRAFT -> "крафт" + item;
             case STORE -> "складывание вещей в сундук";
             case TAKE -> "взятие вещей из сундука";
+            case SORT -> "раскладку по сундукам";
             case PLACE_CHEST -> "установку" + item;
             case HOUSE -> "стройку дома";
             case DIRT -> "добычу земли";
@@ -408,6 +410,7 @@ public final class CompanionWork {
             case "bench_craft" -> { job = Job.CRAFT; phase = Phase.CRAFT; }
             case "store_items" -> { job = Job.STORE; phase = Phase.STORE; }
             case "take_items" -> { job = Job.TAKE; phase = Phase.STORE; }
+            case "sort_chests" -> { job = Job.SORT; phase = Phase.SORT; }
             case "place_chest" -> { job = Job.PLACE_CHEST; phase = Phase.STORE; }
             case "place_block" -> {
                 var id = ResourceLocation.tryParse(item);
@@ -510,6 +513,7 @@ public final class CompanionWork {
         if (job == Job.CRAFT && ingotCost(requestedItem) > 0) {
             ironTool = requestedItem; ironToolCount = requestedCount; ironNeeded = ingotCost(requestedItem) * requestedCount; phase = Phase.IRON;
         }
+        if (job == Job.SORT) sorting.begin(level);
         if (job == Job.WOOD) {
             afterWood = Phase.WOOD_DONE; woodBeforeRequest = owner.collectedLogs(); owner.startGatheringLogsForWork(count);
         }
@@ -575,6 +579,7 @@ public final class CompanionWork {
             case PACK -> handOver.packBench(level);
             case HAND -> handOver.handOver(level);
             case STORE -> chests.store(level);
+            case SORT -> sorting.step(level);
             case CLOSE -> chests.afterClose();
             case BUILD -> buildHouse(level);
             case SHOVEL -> crafting.prepareShovel();

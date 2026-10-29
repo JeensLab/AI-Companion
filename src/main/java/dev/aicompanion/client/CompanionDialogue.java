@@ -51,6 +51,7 @@ public final class CompanionDialogue {
             case "gather_dirt" -> "Окей, накопаю земли.";
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
             case "store_items" -> "Сейчас сложу в сундук.";
+            case "sort_chests" -> "Сейчас разложу по сундукам.";
             case "take_items" -> "Сейчас заберу из сундука.";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
             case "craft_item" -> "Сейчас сделаю.";
@@ -96,6 +97,7 @@ public final class CompanionDialogue {
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";
             case "unequip_item" -> "убрать предмет из руки";
             case "store_items" -> "сложить вещи в сундук";
+            case "sort_chests" -> "разложить по сундукам";
             case "take_items" -> "забрать вещи из сундука";
             case "build_house" -> "построить дом";
             case "hunt_mobs" -> "разобраться с монстрами";
@@ -264,6 +266,7 @@ public final class CompanionDialogue {
             return (stone > 0 ? "Готово, накопал камня: " + stone + "." : "Камень добыл, он у меня.")
                     + (report.contains("наверх пока не выбрался") ? " Я пока внизу, на своей лестнице." : "");
         }
+        if (actions.stream().anyMatch(action -> "sort_chests".equals(action.type()))) return last.strip();
         if (actions.stream().anyMatch(action -> "store_items".equals(action.type()))) return last.contains("Лишних вещей") ? "Лишних вещей для сундука сейчас нет." : "Сложил вещи в сундук.";
         if (actions.stream().anyMatch(action -> "take_items".equals(action.type()))) return "Забрал вещи, они у меня в сумке.";
         if (actions.stream().anyMatch(action -> "place_block".equals(action.type()) && "minecraft:chest".equals(action.item()))) {
