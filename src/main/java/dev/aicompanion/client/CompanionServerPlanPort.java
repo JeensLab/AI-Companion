@@ -173,7 +173,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             else if ("gather_wood".equals(action.type())) verified = waitForGathering(dispatch.tick());
             else if ("wait".equals(action.type())) verified = waitSeconds(action.seconds(), result);
             else verified = CompletableFuture.completedFuture(result);
-            return verified.thenApply(done -> new Attempt(done, true));
+            // The bag note of a sorting this order ended came with the acceptance; the player hears the outcome (review round 3, finding 1).
+            boolean note = result.message().contains(CompanionDialogue.BAG_NOTE);
+            return verified.thenApply(done -> new Attempt(!note || done.message().contains(CompanionDialogue.BAG_NOTE) ? done
+                    : new CompanionActionResult(done.success(), done.message() + " " + CompanionDialogue.BAG_NOTE, done.status(), done.evidence()), true));
         });
     }
 
@@ -256,7 +259,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             }
             if (player.level().getGameTime() - startTick >= limitSeconds * 20L) {
                 companion.diagnosticSnapshot("step_timeout"); companion.stopGathering();
-                return CompanionActionResult.timeout("Остановил работу по тайм-ауту.");
+                return CompanionActionResult.timeout("Остановил работу по тайм-ауту." + companion.takeSortNote());
             }
             return (CompanionActionResult) null;
         }).thenCompose(result -> result == null ? pause(1).thenCompose(unused -> waitForWork(workId, startTick, limitSeconds))

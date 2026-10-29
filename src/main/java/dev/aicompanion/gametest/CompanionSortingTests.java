@@ -439,10 +439,11 @@ public final class CompanionSortingTests {
     @GameTest(template = "empty")
     public static void sortRequestsMakeTheModelPlan(GameTestHelper helper) {
         for (String order : List.of("Вот я поставил три сундука рядом. Отсортируй в каждом сундуке разные предметы.", "Разложи вещи по сундукам", "Наведи порядок в сундуках, пожалуйста",
-                "Наведи порядок в моих сундуках", "Наведи в сундуках порядок", "Разложите вещи по сундукам", "Отсортируйте вещи по сундукам", "Давай разложим сундуки"))
+                "Наведи порядок в моих сундуках", "Наведи в сундуках порядок", "Разложите вещи по сундукам", "Отсортируйте вещи по сундукам", "Давай разложим сундуки", "Наведите порядок в сундуках"))
             helper.assertTrue(OpenRouterClient.requiresAction(order), "Not an order: " + order);
         helper.assertTrue(!OpenRouterClient.requiresAction("А ты бы сам смог сундуки сортировать?"), "A question taken for an order");
-        for (String chat : List.of("Ты всё разложил по сундукам?", "Ты уже отсортировал сундуки?", "Наведи порядок в доме", "Спасибо, что рассортировал сундук"))
+        for (String chat : List.of("Ты всё разложил по сундукам?", "Ты уже отсортировал сундуки?", "Наведи порядок в доме", "Спасибо, что рассортировал сундук",
+                "Давай потом разложим сундуки, сейчас некогда", "Наведи порядок в доме, а сундуки не трогай", "Давай поговорим. Ты вчера помог мне разложить вещи по сундукам"))
             helper.assertTrue(!OpenRouterClient.requiresAction(chat), "A talk taken for an order: " + chat);
         helper.succeed();
     }

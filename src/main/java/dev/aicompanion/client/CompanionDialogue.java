@@ -72,6 +72,19 @@ public final class CompanionDialogue {
         };
     }
 
+    /** The note of a sorting that an order ended while he carried things (CompanionSorting): said whatever step of the plan it came with. */
+    public static final String BAG_NOTE = "Часть вещей у меня в сумке.";
+
+    /**
+     * What the chat says of a finished plan: a local order with nothing to report says its acknowledgement, and the bag note goes after
+     * it («стой» → «Ладно, жду здесь. Часть вещей…»), unless the player heard it just now from the stop itself (review round 3, M2).
+     */
+    public static String heard(List<PlannedAction> actions, String spoken, boolean local, boolean noteSaidLately) {
+        String bare = spoken.replace(" " + BAG_NOTE, "").replace(BAG_NOTE, "").strip();
+        if (local && bare.isBlank()) bare = acknowledge(actions);
+        return spoken.contains(BAG_NOTE) && !noteSaidLately ? (bare + " " + BAG_NOTE).strip() : bare;
+    }
+
     /** Engine report line listing plan steps that were not started after a stop. */
     public static final String SKIPPED_PREFIX = "Не выполнено: ";
     /** Engine report line: one «get it» order failed for good, yet the rest of the plan went on. */
@@ -150,6 +163,12 @@ public final class CompanionDialogue {
     }
 
     public static String summarize(List<PlannedAction> actions, String report) {
+        String spoken = summarizeReport(actions, report);
+        // Review round 3, finding 1: the note came with the step that ended the sorting («стоп», «за мной»), the plan ended with another one.
+        return report != null && report.contains(BAG_NOTE) && !spoken.contains("у меня в сумке") ? (spoken + " " + BAG_NOTE).strip() : spoken;
+    }
+
+    private static String summarizeReport(List<PlannedAction> actions, String report) {
         if (report == null || report.isBlank()) return "";
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
@@ -207,7 +226,8 @@ public final class CompanionDialogue {
     }
 
     /** How the refusals of the sorting itself begin (CompanionSorting); any other stop of a plan with sorting in it goes the usual way. */
-    private static final List<String> SORT_OWN = List.of("Рядом с тобой сундуков", "Не смог дойти до", "Не получилось разложить", "Сумка забита, сначала", "Пропустил");
+    private static final List<String> SORT_OWN = List.of("Рядом с тобой сундуков", "Не смог дойти до", "Не получилось разложить", "Сумка забита, сначала", "Пропустил",
+            "Не успел закончить работу");
 
     private static String summarizeSteps(List<PlannedAction> actions, String report) {
         if (report.isBlank()) return "";
@@ -286,7 +306,7 @@ public final class CompanionDialogue {
         }
         if (actions.stream().anyMatch(action -> "come".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_mobs".equals(action.type()))) return speakable(last);
-        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander").contains(action.type()))) return lower.contains("в сумке") ? "Часть вещей у меня в сумке." : "";
+        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander").contains(action.type()))) return "";
         return speakable(last);
     }
 

@@ -2,6 +2,8 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionDialogue;
+import dev.aicompanion.client.CompanionPlanRunner;
+import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEvents;
@@ -81,6 +83,32 @@ public final class CompanionSortingInterruptionTests {
             helper.assertTrue(said[0].contains("в сумке") && said[1].contains("в сумке"), "The player hears: " + said[0] + " / " + said[1]);
             helper.assertTrue(!said[2].contains("в сумке"), "The note is said twice: " + said[2]);
             helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /** Review round 3, finding 1: «иди ко мне» ends the sorting, and the plan port waits for the walk; the note of the bag outlives the wait. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void comeRightAfterTheStopStillSaysThingsAreInTheBag(GameTestHelper helper) { orderAfterTheStopSaysTheNote(helper, "come"); }
+
+    /** The same for «убей мобов»: its work is waited for too. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void huntMobsRightAfterTheStopStillSaysThingsAreInTheBag(GameTestHelper helper) { orderAfterTheStopSaysTheNote(helper, "hunt_mobs"); }
+
+    private static void orderAfterTheStopSaysTheNote(GameTestHelper helper, String order) {
+        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> bagBefore = totals(companion);
+        List<PlannedAction> plan = List.of(new PlannedAction(order, 0, 1));
+        List<java.util.concurrent.CompletableFuture<CompanionPlanRunner.Outcome>> run = new java.util.ArrayList<>();
+        helper.onEachTick(() -> {
+            if (!run.isEmpty() || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            companion.stopGathering();
+            run.add(CompanionPlanRunner.run(plan, new CompanionServerPlanPort(helper.getLevel().getServer(), companion.getOwnerId(), "gametest-sort-then-" + order, () -> false)));
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!run.isEmpty() && run.getFirst().isDone() && !run.getFirst().isCompletedExceptionally(), "The order after the stop is not done: " + companion.getLastTaskResult());
+            String report = run.getFirst().join().report(), heard = CompanionDialogue.summarize(plan, report);
+            helper.assertTrue(heard.contains("в сумке"), "The player hears «" + heard + "», the report: " + report);
         });
     }
 

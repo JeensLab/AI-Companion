@@ -29,7 +29,8 @@ public final class CompanionSortingHearingTests {
     @GameTest(template = "empty")
     public static void sortRefusalsReachThePlayerAsTheyAre(GameTestHelper helper) {
         for (String said : List.of("Рядом с тобой сундуков не вижу.", "Сумка забита, сначала сложить мои вещи?",
-                "Не смог дойти до сундука. Что нёс — у меня в сумке.", "Не получилось разложить всё: не поместилось 3. Часть вещей у меня в сумке.")) {
+                "Не смог дойти до сундука. Что нёс — у меня в сумке.", "Не получилось разложить всё: не поместилось 3. Часть вещей у меня в сумке.",
+                "Не успел закончить работу. Остановился, вещи у меня.")) {
             String heard = CompanionDialogue.summarize(SORT, "План остановлен: " + said);
             helper.assertTrue(heard.equals(said), "Heard «" + heard + "» instead of «" + said + "»");
         }
@@ -45,6 +46,36 @@ public final class CompanionSortingHearingTests {
         helper.assertTrue(bare.equals("Ладно, остановился."), "Bare stop heard: " + bare);
         String other = CompanionDialogue.summarize(List.of(new PlannedAction("gather_stone", 0, 4)), "План остановлен: Заказ отменён.");
         helper.assertTrue(other.equals("Ладно, остановился."), "Another work's stop changed: " + other);
+        helper.succeed();
+    }
+
+    /** Review round 3, finding 1: the note that came with an early step of a plan is said when the plan ends with another step, and once. */
+    @GameTest(template = "empty")
+    public static void bagNoteIsSaidWhateverStepItCameWith(GameTestHelper helper) {
+        String note = CompanionDialogue.BAG_NOTE;
+        String wood = CompanionDialogue.summarize(List.of(new PlannedAction("stop", 0, 1), new PlannedAction("gather_wood", 0, 5)), "Ладно, остановился. " + note + "\nСрубил 5 брёвен.");
+        String craft = CompanionDialogue.summarize(List.of(new PlannedAction("follow", 0, 1), new PlannedAction("craft_item", 0, 1, "minecraft:wooden_pickaxe")),
+                "Следую за тобой. " + note + "\nСкрафтил 1 «Деревянная кирка».");
+        String stopped = CompanionDialogue.summarize(SORT, "План остановлен: Работа прервана. Уже полученные вещи сохранены. " + note);
+        for (String heard : List.of(wood, craft, stopped))
+            helper.assertTrue(heard.contains(note) && heard.indexOf(note) == heard.lastIndexOf(note), "Heard: " + heard);
+        helper.succeed();
+    }
+
+    /**
+     * Review round 3, M2: «стой» says its own «Ладно, жду здесь.» before the note, and an order right after a stop whose note the
+     * player already heard (the tasks window, /companion stop) does not say it again.
+     */
+    @GameTest(template = "empty")
+    public static void bagNoteFollowsTheAcknowledgementAndIsNotRepeated(GameTestHelper helper) {
+        String note = CompanionDialogue.BAG_NOTE;
+        List<PlannedAction> wait = List.of(new PlannedAction("wait", 0, 1)), come = List.of(new PlannedAction("come", 0, 1));
+        String first = CompanionDialogue.heard(wait, CompanionDialogue.summarize(wait, "Остановился и жду. " + note), true, false);
+        helper.assertTrue(first.equals("Ладно, жду здесь. " + note), "Heard: " + first);
+        String again = CompanionDialogue.heard(wait, CompanionDialogue.summarize(wait, "Остановился и жду. " + note), true, true);
+        helper.assertTrue(again.equals("Ладно, жду здесь."), "Heard again: " + again);
+        String model = CompanionDialogue.heard(come, CompanionDialogue.summarize(come, "Я рядом. " + note), false, true);
+        helper.assertTrue(!model.isBlank() && !model.contains(note), "Heard again after a model plan: " + model);
         helper.succeed();
     }
 
