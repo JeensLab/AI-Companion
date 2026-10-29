@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -38,11 +39,15 @@ final class CompanionExpeditionCave {
     private BlockPos home, waypoint, pit;
     private String failure;
     private long until;
-    private int seenBroken, idle, settle, taken, work, tries;
+    private int seenBroken, idle, settle, taken, work, tries, scanFrom;
+    /** The cells of the advance whose open ones have been judged, and how far. */
+    private List<BlockPos> scanned;
     /** Mobs were in the cave when it opened: what lives there comes for him, so the breach is plugged before it is opened wider. */
     private boolean hostile;
     /** A cave judged very dangerous has been dealt with: the expedition goes up his stairs. */
     private boolean retreat;
+    /** A plug went into a cell of the advance under way: the advance cannot go on. */
+    private boolean cut;
 
     CompanionExpeditionCave(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionOre ore, BooleanSupplier enough) {
         this.w = w;
@@ -59,6 +64,20 @@ final class CompanionExpeditionCave {
         boolean now = retreat && phase == Phase.IDLE;
         if (now) retreat = false;
         return now;
+    }
+
+    /** True once after a plug went into a cell of the advance under way; the expedition then gives that advance up. */
+    boolean takeCut() { boolean now = cut; cut = false; return now; }
+
+    /** He goes up now: the cave episode stops, nothing is explored during the retreat. */
+    void close() {
+        if (!busy()) return;
+        ore.limit(pos -> true);
+        phase = Phase.IDLE;
+        cave = null;
+        waypoint = pit = null;
+        retreat = false;
+        seenBroken = dig.broken;
     }
 
     /** What the stall watchdog sees move: plugs placed and places reached. */
@@ -89,7 +108,9 @@ final class CompanionExpeditionCave {
         ore.limit(pos -> true);
         seenBroken = dig.broken;
         idle = settle = taken = work = tries = 0;
-        hostile = retreat = false;
+        hostile = retreat = cut = false;
+        scanned = null;
+        scanFrom = 0;
     }
 
     /**
@@ -99,9 +120,10 @@ final class CompanionExpeditionCave {
     boolean tick(ServerLevel level, List<BlockPos> planCells, boolean mining) {
         if (failure != null) return true;
         if (phase == Phase.IDLE) {
+            if (mining && judgeOpen(level, planCells)) return true;
             if (dig.broken == seenBroken) return false;
             seenBroken = dig.broken;
-            return mining && detect(level, planCells);
+            return mining && dig.lastBroken != null && detect(level, planCells, dig.lastBroken);
         }
         calm();
         return switch (phase) {
@@ -112,12 +134,23 @@ final class CompanionExpeditionCave {
         };
     }
 
-    /** A block just broken opens onto air that is not his mine: judge it. */
-    private boolean detect(ServerLevel level, List<BlockPos> planCells) {
-        BlockPos at = dig.lastBroken;
-        if (at == null) return false;
+    /** A cell of the advance that is open when the advance starts (an interrupted one) is judged like a broken one. */
+    private boolean judgeOpen(ServerLevel level, List<BlockPos> planCells) {
+        if (planCells != scanned) { scanned = planCells; scanFrom = 0; }
+        while (scanFrom < planCells.size()) {
+            BlockPos cell = planCells.get(scanFrom++);
+            if (level.isLoaded(cell) && CompanionShaftPlan.open(level, cell) && detect(level, planCells, cell)) return true;
+        }
+        return false;
+    }
+
+    /** The cell {@code at} is open and may open onto air that is not his mine: judge it. */
+    private boolean detect(ServerLevel level, List<BlockPos> planCells, BlockPos at) {
+        sealed.remove(at);
+        w.mine.unsealed(at);
         Set<BlockPos> mine = CompanionCaveSense.mineCells(w.mine);
         mine.addAll(planCells);
+        mine.addAll(dig.minedOre);
         mine.add(at);
         List<BlockPos> mouth = new ArrayList<>();
         for (Direction side : Direction.values()) {
@@ -265,12 +298,12 @@ final class CompanionExpeditionCave {
             switch (CompanionSeal.place(owner, cell)) {
                 case PLACED -> { w.mine.sealed(cell); sealed.add(cell); work++; idle = 0; return true; }
                 case NO_BLOCK -> { return finish("Пролом заделать нечем."); }
-                case OCCUPIED -> occupied |= !owner.getBoundingBox().intersects(new AABB(cell));
+                case OCCUPIED -> occupied |= !owner.getBoundingBox().intersects(new AABB(cell)) && hostileIn(level, cell);
                 default -> { }
             }
         }
         if (occupied) { plugBreach(level, planCells); return true; }
-        BlockPos stand = standFor(level, open.get(0));
+        BlockPos stand = CompanionExpeditionStand.standFor(owner, level, touch, cave.air(), open.get(0));
         if (stand == null) return hostile && plugBreach(level, planCells) || planCells.isEmpty();
         if (!dig.walkTo(stand) && dig.walkStuck()) idle = SEAL_PATIENCE;
         return true;
@@ -287,11 +320,18 @@ final class CompanionExpeditionCave {
             if (!CompanionSeal.replaceable(level, cell) || !CompanionSeal.plug(owner, cell).placed()) continue;
             w.mine.sealed(cell);
             sealed.add(cell);
+            touch.removeIf(unopened -> planCells.contains(unopened) && !CompanionShaftPlan.open(level, unopened));
             work++;
             idle = 0;
+            cut = true;
             return true;
         }
         return false;
+    }
+
+    /** Only what attacks is a reason to plug his own cell: a pig or a bat in the way walks off. */
+    private static boolean hostileIn(ServerLevel level, BlockPos cell) {
+        return !level.getEntitiesOfClass(LivingEntity.class, new AABB(cell), e -> e instanceof Enemy && e.isAlive()).isEmpty();
     }
 
     private boolean facesCave(ServerLevel level, BlockPos cell) {
@@ -304,7 +344,7 @@ final class CompanionExpeditionCave {
 
     /** The plug is never laid with him on the cave side: first back to a cell of his mine. */
     private boolean stepBack(ServerLevel level, BlockPos target) {
-        BlockPos stand = standFor(level, target);
+        BlockPos stand = CompanionExpeditionStand.standFor(owner, level, touch, cave.air(), target);
         if (stand != null && !dig.walkTo(stand)) idle = dig.walkStuck() ? SEAL_PATIENCE : idle;
         return true;
     }
@@ -330,28 +370,6 @@ final class CompanionExpeditionCave {
         }
         cells.sort((a, b) -> Double.compare(owner.distanceToSqr(Vec3.atCenterOf(a)), owner.distanceToSqr(Vec3.atCenterOf(b))));
         return cells;
-    }
-
-    /** An open cell of his mine from which the cell can be reached and seen; away from a creeper if there is one. Null when there is none yet. */
-    private BlockPos standFor(ServerLevel level, BlockPos target) {
-        Vec3 creeper = creeperAt(level);
-        BlockPos best = null;
-        double bestKey = Double.MAX_VALUE;
-        for (BlockPos p : BlockPos.betweenClosed(target.offset(-3, -3, -3), target.offset(3, 3, 3))) {
-            if (!touch.contains(p) || !CompanionShaftPlan.open(level, p) || !CompanionShaftPlan.open(level, p.above())) continue;
-            if (!level.getBlockState(p.below()).isFaceSturdy(level, p.below(), Direction.UP)) continue;
-            if (!CompanionShaftPlan.clearTo(level, new Vec3(p.getX() + .5, p.getY() + 1.62, p.getZ() + .5), target)) continue;
-            double key = creeper == null ? owner.distanceToSqr(Vec3.atBottomCenterOf(p)) : -creeper.distanceToSqr(Vec3.atBottomCenterOf(p));
-            if (key < bestKey) { best = p.immutable(); bestKey = key; }
-        }
-        return best;
-    }
-
-    private Vec3 creeperAt(ServerLevel level) {
-        for (Creeper creeper : level.getEntitiesOfClass(Creeper.class, owner.getBoundingBox().inflate(CompanionCaveSense.WATCH_RADIUS))) {
-            if (creeper.isAlive() && cave.air().contains(creeper.blockPosition())) return creeper.position();
-        }
-        return null;
     }
 
     /** He never strikes a creeper, and a chase does not lead him into the cave. */

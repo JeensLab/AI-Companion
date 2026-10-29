@@ -14,7 +14,9 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.Tags;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The hands of the mine expedition: breaks one cell at a time with the right pickaxe, walks between neighbouring cells and
@@ -40,6 +42,8 @@ final class CompanionExpeditionDig {
     int broken;
     /** The cell broken last, to see what it opened onto. */
     BlockPos lastBroken;
+    /** Ore cells he mined himself: the hole one leaves is his, not a cave. */
+    final Set<BlockPos> minedOre = new HashSet<>();
     /** Cells walked into so far: the same for walking. */
     int walked;
     /** The last NO_TOOL was for an ore (it needs a better pickaxe), not for rock (it needs a stone pickaxe). */
@@ -88,6 +92,7 @@ final class CompanionExpeditionDig {
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         broken++;
         lastBroken = pos.immutable();
+        if (ore) minedOre.add(lastBroken);
         List<ItemStack> kept = new ArrayList<>(), spare = new ArrayList<>();
         int room = SEAL_RESERVE - CompanionSeal.available(owner) - heldCount();
         for (ItemStack stack : drops) {
@@ -162,6 +167,7 @@ final class CompanionExpeditionDig {
     void reset() {
         flush();
         cell = walking = lastBroken = null;
+        minedOre.clear();
         cellTicks = unseen = walkTicks = 0;
         w.breaking.reset();
     }
