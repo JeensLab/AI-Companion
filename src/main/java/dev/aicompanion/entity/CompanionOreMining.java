@@ -125,7 +125,7 @@ final class CompanionOreMining {
         }
         BlockState state = level.getBlockState(w.target);
         if (!w.ore.is(state)) { w.resetTarget(); return; }
-        if (CompanionOre.liquidNear(level, w.target)) { w.oreLiquid++; rejectOre(); return; }
+        if (CompanionOre.lavaNear(level, w.target)) { w.oreLiquid++; rejectOre(); return; }
         if (!safeOreSwing(level, w.target)) return;
         if (w.items.prepareMiningTool(state)) return;
         if (!w.owner.getMainHandItem().isCorrectToolForDrops(state)) {
@@ -160,7 +160,7 @@ final class CompanionOreMining {
             if (w.oreRejected.contains(candidate) || !w.owner.leashAllows(candidate)
                     || w.owner.autonomy().running() && candidate.getY() < w.owner.autonomy().center().getY() - CompanionOre.MAX_DROP
                     || !level.hasChunkAt(candidate) || !w.ore.is(level.getBlockState(candidate))) { iterator.remove(); continue; }
-            if (CompanionOre.liquidNear(level, candidate)) { w.oreLiquid++; w.oreRejected.add(candidate); iterator.remove(); continue; }
+            if (CompanionOre.lavaNear(level, candidate)) { w.oreLiquid++; w.oreRejected.add(candidate); iterator.remove(); continue; }
             // Neither on foot nor by a tunnel from here.
             if (w.oreOffFoot.contains(candidate) && w.oreNoTunnel.contains(candidate)) { w.oreUnreachable++; w.oreRejected.add(candidate); iterator.remove(); }
         }
@@ -240,8 +240,8 @@ final class CompanionOreMining {
         BlockPos cell = w.oreTunnel.peekFirst();
         if (!w.owner.leashAllows(cell)) { rejectOre(); return; }
         BlockState state = level.getBlockState(cell);
-        if (state.isAir() || state.canBeReplaced() && state.getFluidState().isEmpty()) { w.oreTunnel.removeFirst(); w.resetApproach(); return; }
-        // The world may have changed since planning: never dig into liquid, under sand or into something built.
+        if (state.isAir() || state.canBeReplaced() && !state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) { w.oreTunnel.removeFirst(); w.resetApproach(); return; }
+        // The world may have changed since planning: never dig into lava, under sand or into something built.
         if (!CompanionOre.tunnelable(state) || !CompanionOre.safeTunnelCell(level, cell)) { w.oreUnreachable++; rejectOre(); return; }
         if (!safeOreSwing(level, cell)) return;
         if (w.items.prepareMiningTool(state)) return;
@@ -356,9 +356,9 @@ final class CompanionOreMining {
         int radius = w.oreSearch == null ? w.owner.getSearchRadius() : w.oreSearch.radius(), depth = w.oreSearch == null ? CompanionOre.MAX_DROP : w.oreSearch.depth();
         String why = w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» не нашёл в пределах " + radius + " блоков и до " + depth + " блоков вниз."
                 : " Больше доступной руды «" + w.ore.oreName + "» рядом нет.";
-        if (w.oreLiquid > 0) why += " У " + CompanionWorkItems.blocks(w.oreLiquid) + " рядом вода или лава — их не трогал.";
+        if (w.oreLiquid > 0) why += " У " + CompanionWorkItems.blocks(w.oreLiquid) + " рядом лава — их не трогал.";
         if (w.oreUnreachable > 0) why += " К " + w.oreUnreachable + " не нашёл безопасного хода: не глубже " + CompanionOre.MAX_DROP
-                + " блоков, без гравия, песка и жидкостей рядом.";
+                + " блоков, без гравия, песка и лавы рядом.";
         if (w.ironPrep) {
             String goal = w.goalOre != null ? "Для «" + w.goalOre.oreName + "» нужна железная кирка, а на неё нужно " : "Для «" + CompanionWork.itemName(w.ironTool) + "» нужно ";
             w.finish(CompanionActionResult.blocked(goal + w.ironNeeded + " железных слитков, и железа я не набрал." + why + below + bag)); return;

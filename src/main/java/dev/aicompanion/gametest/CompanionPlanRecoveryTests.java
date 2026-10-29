@@ -419,7 +419,7 @@ public final class CompanionPlanRecoveryTests {
             plan.add(new PlannedAction("obtain_item", 0, 2, parts.get(i)));
             report.append("\n").append(CompanionDialogue.PARTIAL_PREFIX).append("«").append(CompanionDialogue.itemName(parts.get(i))).append("»: ")
                     .append("Добыл 0 из ").append(ore[i]).append(" блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет. ")
-                    .append("У 3 блока рядом вода или лава — их не трогал. К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и жидкостей рядом.").append(bag);
+                    .append("У 3 блока рядом лава — их не трогал. К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.").append(bag);
         }
         report.append("\nНадел: Железный шлем.\nОтдал тебе 1 «Железный шлем».");
         String said = CompanionDialogue.summarize(plan, report.toString());

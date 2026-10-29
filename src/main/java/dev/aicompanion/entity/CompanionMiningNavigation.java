@@ -42,13 +42,13 @@ final class CompanionMiningNavigation {
 
     /**
      * Where the drop of this block comes to rest once it is mined: its own cell if solid ground is under it, else as far as it
-     * falls (six blocks at most). Null when it falls into water or down a shaft.
+     * falls (six blocks at most, through water too: it floats and is swum to). Null when it falls into lava or down a shaft.
      */
     static BlockPos dropRest(net.minecraft.world.level.Level level, BlockPos block) {
         BlockPos cell = block;
         for (int fall = 0; fall < 6; fall++) {
             BlockPos under = cell.below();
-            if (!level.hasChunkAt(under) || !level.getFluidState(under).isEmpty() || !level.getFluidState(cell).isEmpty() && fall > 0) return null;
+            if (!level.hasChunkAt(under) || CompanionLava.at(level, under) || CompanionLava.at(level, cell) && fall > 0) return null;
             if (!level.getBlockState(under).getCollisionShape(level, under).isEmpty()) return cell;
             cell = under;
         }
@@ -71,7 +71,7 @@ final class CompanionMiningNavigation {
         // in (walking in at his own level and then dropping a block).
         for (BlockPos cell : new BlockPos[]{rest, rest.above(), rest.above(2)})
             if (!cell.equals(block) && !level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) return false;
-        if (!level.getFluidState(rest).isEmpty()) return false;
+        if (CompanionLava.at(level, rest)) return false;
         // And out again: a step up to a side cell (not across a corner, the game walks no corner it cannot cut) with room for
         // the body there (marathon 23.10, «долина»: a stone mined across the corner a block below his feet lay in its own hole,
         // whose only side ways out had a block over the head; nobody got it).
@@ -198,10 +198,11 @@ final class CompanionMiningNavigation {
         return length;
     }
 
+    /** A cell he can stand in and work from: the floor sturdy, room for the body, his head in the air; his feet may be in water, not in lava. */
     static boolean standable(CompanionEntity owner, BlockPos pos) {
         var level = owner.level();
         if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.below()) || !level.getWorldBorder().isWithinBounds(pos)
-                || !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty()) return false;
+                || CompanionLava.at(level, pos) || !level.getFluidState(pos.above()).isEmpty()) return false;
         if (!level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) return false;
         return level.noCollision(owner, new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8));
     }
@@ -213,7 +214,8 @@ final class CompanionMiningNavigation {
         var end = path.getEndNode();
         if (end != null && owner.distanceToSqr(end.x + .5, end.y, end.z + .5) < 1.5) {
             owner.getNavigation().stop();
-            owner.getMoveControl().setWantedPosition(end.x + .5, end.y, end.z + .5, .7);
+            // The last steps are slowed to stop on the cell; in water the slow stroke only equals a current (a flooded tunnel's flow held him a block short of the cell).
+            owner.getMoveControl().setWantedPosition(end.x + .5, end.y, end.z + .5, owner.isInWater() ? 1D : .7);
         }
     }
 }

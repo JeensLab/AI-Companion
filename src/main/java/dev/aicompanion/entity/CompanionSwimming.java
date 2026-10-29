@@ -10,6 +10,17 @@ final class CompanionSwimming {
 
     CompanionSwimming(CompanionEntity c) { this.c = c; }
 
+    /**
+     * The game's float lifts a mob that has more than half a block of water on him, so in water to the knee he bobbed, out of reach
+     * and sight of the block he was mining (a stone or ore at the water took a thousand ticks of restarted cracks). Like a player he
+     * wades one block of water standing on the floor, and floats from the second on.
+     */
+    static final class WadingFloatGoal extends net.minecraft.world.entity.ai.goal.FloatGoal {
+        private final CompanionEntity c;
+        WadingFloatGoal(CompanionEntity c) { super(c); this.c = c; }
+        @Override public boolean canUse() { return c.isInLava() || c.isInWater() && c.getFluidHeight(FluidTags.WATER) > 1.0; }
+    }
+
     /** Nodes of deep water at his level he must still have ahead for the fast stroke; the last of the way is an ordinary one. */
     private static final int FAST_STROKE_AHEAD = 3;
     /** The fast stroke is held a few ticks more, as a player keeps Ctrl held: see stroke(). */

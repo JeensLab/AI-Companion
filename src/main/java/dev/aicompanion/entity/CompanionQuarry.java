@@ -81,7 +81,7 @@ final class CompanionQuarry {
         if (CompanionLighting.supportsLight(level, pos)) return false;
         for (Direction direction : Direction.values()) {
             BlockPos nearby = pos.relative(direction);
-            if (!level.hasChunkAt(nearby) || !level.getFluidState(nearby).isEmpty() || level.getBlockEntity(nearby) != null
+            if (!level.hasChunkAt(nearby) || CompanionLava.at(level, nearby) || level.getBlockEntity(nearby) != null
                     || level.getBlockState(nearby).is(Blocks.CRAFTING_TABLE) || level.getBlockState(nearby).getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
         }
         for (int up = 1; up <= 6; up++) {
@@ -91,6 +91,6 @@ final class CompanionQuarry {
             if (!cover.isAir() && !soil(cover) && !CompanionWork.isStone(cover)
                     && !cover.canBeReplaced() && !cover.is(net.minecraft.tags.BlockTags.LEAVES)) return false;
         }
-        return level.getBlockEntity(pos) == null && level.getFluidState(pos).isEmpty();
+        return level.getBlockEntity(pos) == null && !CompanionLava.at(level, pos);
     }
 }

@@ -450,12 +450,12 @@ final class CompanionStoneMining {
         if (!withinWorkDepth(pos)) return false;
         if (CompanionLighting.supportsLight(level, pos)) return false;
         if (w.quarrySupports.contains(pos)) return false;
-        if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || !level.getFluidState(pos).isEmpty()) return false;
+        if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || CompanionLava.at(level, pos)) return false;
         if (level.getBlockEntity(pos.above()) != null || level.getBlockState(pos.above()).is(Blocks.CRAFTING_TABLE)) return false;
         boolean exposed = false;
         for (Direction direction : Direction.values()) {
             BlockPos neighbor = pos.relative(direction);
-            if (!level.hasChunkAt(neighbor) || !level.getFluidState(neighbor).isEmpty()) return false;
+            if (!level.hasChunkAt(neighbor) || CompanionLava.at(level, neighbor)) return false;
             if (direction != Direction.DOWN && level.getBlockState(neighbor).getCollisionShape(level, neighbor).isEmpty()) exposed = true;
         }
         // Nobody standing on it, and no drop lying on it: mined from under a drop, the drop falls on into the hole below (marathon

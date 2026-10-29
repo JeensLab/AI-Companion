@@ -87,19 +87,19 @@ public final class CompanionOre {
                 || state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
     }
 
-    /** Water or lava next to the ore: digging it would let the liquid in. */
-    static boolean liquidNear(ServerLevel level, BlockPos pos) {
-        for (Direction side : Direction.values()) if (!level.getFluidState(pos.relative(side)).isEmpty()) return true;
-        return !level.getFluidState(pos).isEmpty();
+    /** Lava next to the ore: digging it would let the lava in (water is no harm: he swims). */
+    static boolean lavaNear(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (CompanionLava.at(level, pos.relative(side))) return true;
+        return CompanionLava.at(level, pos);
     }
 
-    /** A cell of the own tunnel: no liquid, sand or gravel around, no chest or furnace beside it. */
+    /** A cell of the own tunnel: no lava, sand or gravel around, no chest or furnace beside it. */
     static boolean safeTunnelCell(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || level.isOutsideBuildHeight(pos)) return false;
-        if (!level.getFluidState(pos).isEmpty() || level.getBlockEntity(pos) != null) return false;
+        if (CompanionLava.at(level, pos) || level.getBlockEntity(pos) != null) return false;
         for (Direction side : Direction.values()) {
             BlockPos near = pos.relative(side);
-            if (!level.hasChunkAt(near) || !level.getFluidState(near).isEmpty() || level.getBlockEntity(near) != null
+            if (!level.hasChunkAt(near) || CompanionLava.at(level, near) || level.getBlockEntity(near) != null
                     || level.getBlockState(near).is(Blocks.CRAFTING_TABLE) || CompanionBuildings.crafted(level.getBlockState(near))) return false;
             if (side != Direction.DOWN && level.getBlockState(near).getBlock() instanceof FallingBlock) return false;
         }
@@ -128,7 +128,8 @@ public final class CompanionOre {
             BlockPos[] body = down ? new BlockPos[]{next.above(2), next.above(), next} : new BlockPos[]{next.above(), next};
             for (BlockPos cell : body) {
                 BlockState state = level.getBlockState(cell);
-                if (state.isAir() || state.canBeReplaced() && state.getFluidState().isEmpty()) continue;
+                // A flooded cell is open like air: he swims through it.
+                if (state.isAir() || state.canBeReplaced() && !state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) continue;
                 if (cell.equals(ore) || !tunnelable(state) || !safeTunnelCell(level, cell)) return null;
                 cells.add(cell.immutable());
             }

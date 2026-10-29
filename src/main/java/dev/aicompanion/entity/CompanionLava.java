@@ -28,6 +28,9 @@ final class CompanionLava {
         return fluid.is(FluidTags.LAVA) && level.getFluidTicks().hasScheduledTick(pos, fluid.getType());
     }
 
+    /** Lava (source or flow) in this cell: the one liquid he keeps away from at work; water he swims in. */
+    static boolean at(Level level, BlockPos pos) { return level.getFluidState(pos).is(FluidTags.LAVA); }
+
     static boolean settled(Level level, BlockPos pos) {
         return level.getFluidState(pos).is(FluidTags.LAVA) && !spreading(level, pos);
     }
