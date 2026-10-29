@@ -52,6 +52,8 @@ public final class CompanionHuntTests {
             CompanionActionResult result = result(h, companion, id);
             h.assertTrue(result.success() && count(companion, Items.BEEF) >= 2, result.message());
             h.assertTrue(result.message().contains("2 коровы") && result.message().contains("прибавилось"), "Report: " + result.message());
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan("minecraft:cow", 2), result.message());
+            h.assertTrue(said.equals("Готово, добыл 2 коровы."), "Said: " + said);
             h.assertTrue(animals(h, EntityType.COW) == 3, "Not three cows left: " + animals(h, EntityType.COW));
             h.assertTrue(lying(h).isEmpty(), "Drops left lying: " + lying(h));
         });
@@ -71,6 +73,9 @@ public final class CompanionHuntTests {
             CompanionActionResult result = result(h, companion, id);
             h.assertTrue(animals(h, EntityType.PIG) == 0 && count(companion, Items.PORKCHOP) >= 1, "The pig was left: " + result.message());
             h.assertTrue(!result.success() && result.message().contains("1 свинью"), result.message());
+            // The count was never read («d+» for «\d+»): one pig of three was said as «Никого не добыл».
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan("any", 3), "План остановлен: " + result.message());
+            h.assertTrue(said.equals("Добыл только 1 свинью — больше рядом не нашёл."), "Said: " + said);
         });
     }
 
@@ -309,6 +314,10 @@ public final class CompanionHuntTests {
         CompanionActionResult accepted = CompanionEvents.executeAction(player, "hunt_animals", item, count);
         h.assertTrue(accepted.success(), "Hunt not accepted: " + accepted.message());
         return companion.activeWorkId();
+    }
+
+    private static List<PlannedAction> plan(String item, int count) {
+        return CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"hunt_animals\",\"item\":\"" + item + "\",\"count\":" + count + "}]"));
     }
 
     private static CompanionActionResult result(GameTestHelper h, CompanionEntity companion, long id) {

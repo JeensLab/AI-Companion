@@ -251,7 +251,7 @@ public final class CompanionDialogue {
         }
         if (actions.stream().anyMatch(action -> "obtain_item".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type()))) {
-            var got = Pattern.compile("(?iu)добыл (d+ [^ :.,]+)").matcher(report);
+            var got = Pattern.compile("(?iu)добыл (\\d+ [^ :.,]+)").matcher(report);
             boolean cooked = actions.stream().anyMatch(action -> "smelt_items".equals(action.type()));
             return (got.find() ? "Готово, добыл " + got.group(1) : "С охотой закончил") + (cooked ? " и пожарил мясо." : ".");
         }
@@ -293,7 +293,7 @@ public final class CompanionDialogue {
         if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type())) && last.matches("(?s).*(Добыл|Никого не добыл).*")) {
             String why = last.contains("детёныш") ? "остальные — детёныши"
                     : last.contains("чьи-то") ? "остальные чьи-то, с именем или на поводке" : last.contains("не нашёл пути") ? "до остальных не добраться" : "больше рядом не нашёл";
-            var got = Pattern.compile("Добыл (d+ [^ :.,]+)").matcher(last);
+            var got = Pattern.compile("Добыл (\\d+ [^ :.,]+)").matcher(last);
             return got.find() ? "Добыл только " + got.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
         }
         var counts = Pattern.compile("Добыл (\\d+) из (\\d+)").matcher(last);
