@@ -49,6 +49,7 @@ public final class CompanionDialogue {
         if (actions.isEmpty()) return "";
         return switch (actions.getFirst().type()) {
             case "gather_dirt" -> "Окей, накопаю земли.";
+            case "gather_loose" -> "Ладно, возьму лопату и накопаю " + looseWord(actions.getFirst()) + ".";
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
             case "store_items" -> "Сейчас сложу в сундук.";
             case "take_items" -> "Сейчас заберу из сундука.";
@@ -81,6 +82,7 @@ public final class CompanionDialogue {
         return switch (action.type()) {
             case "gather_wood" -> "нарубить брёвна (" + action.count() + " шт.)";
             case "gather_dirt" -> "накопать землю (" + action.count() + " шт.)";
+            case "gather_loose" -> "накопать " + looseWord(action) + " (" + action.count() + " шт.)";
             case "gather_stone" -> "добыть камень (" + action.count() + " шт.)";
             case "mine_ore" -> {
                 var kind = dev.aicompanion.entity.CompanionOre.Kind.of(action.item());
@@ -271,6 +273,12 @@ public final class CompanionDialogue {
             return count.find() ? "Набрал " + count.group(1) + " брёвен. Возвращаюсь." : "С деревом закончил, возвращаюсь.";
         }
         if (actions.stream().anyMatch(action -> "gather_dirt".equals(action.type()))) return "Землю накопал, возвращаюсь.";
+        if (actions.stream().anyMatch(action -> "gather_loose".equals(action.type()))) {
+            // The order is met only when that many of the item are in the bag, so the ordered counts are what he dug.
+            String dug = actions.stream().filter(action -> "gather_loose".equals(action.type()))
+                    .map(action -> looseGenitive(action) + ": " + action.count()).collect(java.util.stream.Collectors.joining(", "));
+            return "Готово, накопал " + dug + ". Возвращаюсь.";
+        }
         if (actions.stream().anyMatch(action -> "gather_stone".equals(action.type()))) {
             int stone = Pattern.compile("Добыл (\\d+) блоков камня").matcher(report).results().mapToInt(match -> Integer.parseInt(match.group(1))).sum();
             return (stone > 0 ? "Готово, накопал камня: " + stone + "." : "Камень добыл, он у меня.")
@@ -296,6 +304,13 @@ public final class CompanionDialogue {
             var got = Pattern.compile("Добыл (d+ [^ :.,]+)").matcher(last);
             return got.find() ? "Добыл только " + got.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
         }
+        var loose = actions.stream().filter(action -> "gather_loose".equals(action.type())).findFirst();
+        if (loose.isPresent() && last.contains(looseGenitive(loose.get()))) {
+            var found = Pattern.compile("(?:Добыл|Нашёл только) (\\d+) из (\\d+)").matcher(last);
+            if (found.find()) return found.group(1).equals("0")
+                    ? "Не добыл " + looseGenitive(loose.get()) + " — не нашёл открытого безопасного участка рядом."
+                    : "Накопал только " + found.group(1) + " из " + found.group(2) + " " + looseGenitive(loose.get()) + " — больше безопасного участка рядом не нашёл.";
+        }
         var counts = Pattern.compile("Добыл (\\d+) из (\\d+)").matcher(last);
         if (!counts.find()) return null;
         String got = counts.group(1), wanted = counts.group(2).replaceAll("\\D+$", "");
@@ -317,6 +332,17 @@ public final class CompanionDialogue {
         return null;
     }
 
+    /** «песок» for an ordered loose item; the plan codec allows nothing else for gather_loose. */
+    private static String looseWord(PlannedAction action) {
+        var ground = dev.aicompanion.entity.CompanionGround.of(action.item());
+        return ground == null ? "сыпучие блоки" : ground.accusative();
+    }
+
+    private static String looseGenitive(PlannedAction action) {
+        var ground = dev.aicompanion.entity.CompanionGround.of(action.item());
+        return ground == null ? "сыпучих блоков" : ground.genitive();
+    }
+
     private static String blocks(int count) {
         int last = count % 10, tens = count % 100;
         return count + (last == 1 && tens != 11 ? " блок" : last >= 2 && last <= 4 && (tens < 12 || tens > 14) ? " блока" : " блоков");
@@ -327,7 +353,7 @@ public final class CompanionDialogue {
     }
 
     public static boolean continueAfterPartialGather(PlannedAction action, List<PlannedAction> later, boolean success, String report) {
-        return success || (("gather_wood".equals(action.type()) || "gather_dirt".equals(action.type()))
+        return success || (("gather_wood".equals(action.type()) || "gather_dirt".equals(action.type()) || "gather_loose".equals(action.type()))
                 && !later.isEmpty() && "craft_item".equals(later.getFirst().type()))
                 // Fewer animals than asked: what was taken still goes into the furnace. Nothing taken: the hunt's own reason is
                 // the answer (game log 22.10: «У меня нет сырого мяса, жарить нечего» hid «nobody within reach»).

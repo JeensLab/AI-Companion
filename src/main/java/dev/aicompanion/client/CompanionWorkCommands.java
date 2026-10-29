@@ -22,6 +22,15 @@ public final class CompanionWorkCommands {
             int count = amount(said.count(), 8, 64, 32);
             return count >= 1 && count <= 64 ? new PlannedAction("gather_stone", 0, count) : null;
         }
+        // Loose blocks: the amount comes from said.count(); the anchors leave negations and compound phrases to the model.
+        var loose = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|накопай|набери|выкопай)(?: мне| нам| себе)?\\s+(?:(?:блоков|блока|блок|штук|штуки)\\s+)?"
+                + "(красный песок|красного песка|красному песку|песок|песка|песку|гравий|гравия|гравию)(?:\\s+(?:блоков|штук))?(?:\\s+(?:рядом|поблизости))?$").matcher(bare);
+        if (loose.matches()) {
+            String word = loose.group(1);
+            String item = word.startsWith("красн") ? "minecraft:red_sand" : word.startsWith("грави") ? "minecraft:gravel" : "minecraft:sand";
+            int count = amount(said.count(), 8, 64, 32);
+            return count >= 1 && count <= 64 ? new PlannedAction("gather_loose", 0, count, item) : null;
+        }
         var ore = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|накопай|выкопай|наколи)(?: мне| нам| себе)?\\s+(угля|уголь|железа|железо|железной|меди|медь|медной|золота|золото|золотой"
                 + "|алмазов|алмазы|алмаз|изумрудов|изумруды|изумруд|лазурита|лазурит|редстоуна|редстоун)(?:\\s+(?:руды|руда|руду))?(?:\\s+(?:рядом|поблизости))?$").matcher(bare);
         if (ore.matches()) {

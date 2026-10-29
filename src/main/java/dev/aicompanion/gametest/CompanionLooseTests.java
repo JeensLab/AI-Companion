@@ -1,6 +1,10 @@
 package dev.aicompanion.gametest;
 
+import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionPlanCodec;
+import dev.aicompanion.client.CompanionWorkCommands;
+import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
@@ -292,6 +296,33 @@ public final class CompanionLooseTests {
     private static CompanionEntity setupClear(GameTestHelper helper) {
         for (int x = 0; x < 32; x++) for (int y = 1; y <= 12; y++) for (int z = 0; z < 32; z++) helper.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         return setup(helper);
+    }
+
+    @GameTest(template = "empty")
+    public static void looseOrdersAreValidatedAndParsed(GameTestHelper helper) {
+        for (String item : new String[]{"minecraft:sand", "minecraft:red_sand", "minecraft:gravel"}) {
+            var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{'action':'gather_loose','item':'" + item + "','count':64}]"));
+            helper.assertTrue(plan.size() == 1 && item.equals(plan.getFirst().item()) && plan.getFirst().count() == 64, "Loose order for " + item + " was rejected or chunked");
+        }
+        helper.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{'action':'gather_loose','item':'minecraft:sand'}]")).getFirst().count() == 8, "Default loose count is not 8");
+        for (String bad : new String[]{"[{'action':'gather_loose','item':'minecraft:suspicious_sand','count':8}]", "[{'action':'gather_loose','item':'minecraft:white_concrete_powder','count':8}]",
+                "[{'action':'gather_loose','item':'minecraft:sand','count':0}]", "[{'action':'gather_loose','item':'minecraft:sand','count':65}]", "[{'action':'gather_loose','count':8}]"}) {
+            boolean rejected = false;
+            try { CompanionPlanCodec.parsePlan(JsonParser.parseString(bad)); } catch (IllegalStateException expected) { rejected = true; }
+            helper.assertTrue(rejected, "Invalid loose order accepted: " + bad);
+        }
+        expectLoose(helper, "Олег, накопай 12 песка", "minecraft:sand", 12);
+        expectLoose(helper, "добудь мне красного песка", "minecraft:red_sand", 8);
+        expectLoose(helper, "набери 20 блоков гравия поблизости", "minecraft:gravel", 20);
+        expectLoose(helper, "выкопай гравий", "minecraft:gravel", 8);
+        helper.assertTrue(CompanionWorkCommands.parse("не копай песок", "Олег") == null, "Negated loose command was parsed");
+        helper.assertTrue(CompanionWorkCommands.parse("накопай песок и вернись", "Олег") == null, "Compound loose command was parsed");
+        helper.succeed();
+    }
+
+    private static void expectLoose(GameTestHelper helper, String phrase, String item, int count) {
+        PlannedAction action = CompanionWorkCommands.parse(phrase, "Олег");
+        helper.assertTrue(action != null && "gather_loose".equals(action.type()) && item.equals(action.item()) && action.count() == count, "Phrase not parsed as " + item + " x" + count + ": " + phrase);
     }
 
     private static CompanionEntity setup(GameTestHelper helper) {

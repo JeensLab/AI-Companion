@@ -29,11 +29,11 @@ public final class CompanionPlanRunner {
     /** Steps run for one obtain_item, replans included: twice the longest chain the planner gives (CompanionObtain.MAX_STEPS). */
     public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
-    public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items",
+    public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items",
             "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals");
-    private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_stone");
+    private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
-    private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_stone", "mine_ore", "hunt_animals");
+    private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
 
     public interface Port {
         String trace();
