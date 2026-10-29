@@ -80,6 +80,7 @@ public final class CompanionAgendaTests {
     @AfterBatch(batch = "agenda_orphan") public static void afterOrphan(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_held_batch") public static void afterHeldBatch(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_blocked_batch") public static void afterBlockedBatch(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_flint") public static void afterFlint(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** The probe of the plan: raw iron and coal in the bag, a bench and furnaces near; nothing is handed out. */
     @GameTest(template = "tall_tree", batch = "agenda_gear", timeoutTicks = 6000)
@@ -295,12 +296,13 @@ public final class CompanionAgendaTests {
     public static void blockedGoalStaysCancellableAndYieldsToPickaxes(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
-        f.start("prepare_nether", 0);
+        f.c.setItem(5, new ItemStack(Items.FLINT_AND_STEEL));
+        f.start("defeat_ender_dragon", 0);
         boolean[] done = {false};
         h.onEachTick(() -> {
             if (done[0] || f.goal().state() != CompanionAgenda.State.BLOCKED) return;
             done[0] = true;
-            h.assertTrue(f.goal().reason().contains("огниво"), "The stop does not name the flint: " + f.goal().reason());
+            h.assertTrue(f.goal().reason().contains("10 обсидиана"), "The stop does not name the obsidian: " + f.goal().reason());
             var pickaxes = CompanionEvents.executeAction(f.p, "goal_pickaxes", "", 1);
             h.assertTrue(pickaxes.status() == CompanionActionResult.Status.ACCEPTED, "A blocked goal held the pickaxe order: " + pickaxes.message());
             CompanionEvents.executeAction(f.p, "goal_resume", "", 1);
@@ -619,7 +621,8 @@ public final class CompanionAgendaTests {
     public static void blockedGoalDoesNotFreezeDeeds(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
-        f.start("prepare_nether", 0);
+        f.c.setItem(7, new ItemStack(Items.FLINT_AND_STEEL));
+        f.start("defeat_ender_dragon", 0);
         boolean[] seen = {false, false};
         h.onEachTick(() -> {
             if (seen[0]) { seen[1] |= f.c.autonomy().running(); return; }
@@ -632,6 +635,24 @@ public final class CompanionAgendaTests {
             h.assertTrue(seen[1], "The batch was not collected by a deed of his own");
             h.assertTrue(count(f.c, Items.IRON_INGOT) == 4 && f.c.batches().summaries().isEmpty(), "The blocked goal froze his deeds: " + f.c.getStoredItemsSummary() + " " + f.goal().state());
             h.assertTrue(f.goal().state() == CompanionAgenda.State.BLOCKED, "The goal is not blocked any more: " + f.goal().state() + " " + f.goal().reason());
+        });
+    }
+
+    /** The last stage of prepare_nether is a real flint and steel: the ingot from the bag, the flint dug out of a gravel patch. */
+    @GameTest(template = "tall_tree", batch = "agenda_flint", timeoutTicks = 4000)
+    public static void netherPreparationEndsWithARealFlintAndSteel(GameTestHelper h) {
+        var f = fixture(h); diamondsDone(f);
+        f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
+        f.c.setItem(5, new ItemStack(Items.IRON_INGOT));
+        ItemStack shovel = new ItemStack(Items.STONE_SHOVEL);
+        shovel.enchant(h.getLevel().registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.FORTUNE), 3);
+        f.c.setItem(6, shovel);
+        for (int x = 18; x <= 22; x++) for (int z = 19; z <= 23; z++) h.setBlock(new BlockPos(x, 1, z), Blocks.GRAVEL);
+        f.start("prepare_nether", 0);
+        h.succeedWhen(() -> {
+            f.completed();
+            h.assertTrue(count(f.c, Items.FLINT_AND_STEEL) == 1 && count(f.c, Items.IRON_INGOT) == 0, "The stage ended without a real flint and steel: " + f.c.getStoredItemsSummary());
+            h.assertTrue(f.goal().counter("stock:flint_and_steel")[1] == 0, "A failure was counted for the flint and steel stage");
         });
     }
 

@@ -16,6 +16,8 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -66,6 +68,36 @@ public final class CompanionObtainTests {
         h.assertTrue(!many.refused() && many.steps().stream().allMatch(step -> step.type().equals("gather_loose") && step.item().equals("minecraft:flint") && step.count() <= 8)
                 && many.steps().stream().mapToInt(CompanionObtain.Step::count).sum() == 20, "Twenty flint come in steps of at most eight: " + many);
         h.succeed();
+    }
+
+    /**
+     * A real flint and steel: the ingot is in the bag, the flint is dug out of a gravel patch, the craft follows. A gravel block dug is
+     * one gravel or one flint item, and the craft eats one flint, so blocks plus items plus the flint inside the steel stay constant.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void flintAndSteelFromAnIngotAndGravel(GameTestHelper h) {
+        ground(h);
+        for (int x = 18; x <= 22; x++) for (int z = 19; z <= 23; z++) h.setBlock(new BlockPos(x, GROUND, z), Blocks.GRAVEL);
+        CompanionEntity companion = spawn(h);
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT));
+        ItemStack shovel = new ItemStack(Items.STONE_SHOVEL);
+        shovel.enchant(h.getLevel().registryAccess().holderOrThrow(Enchantments.FORTUNE), 3);
+        companion.setItem(1, shovel);
+        int units = gravelUnits(h, companion);
+        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:flint_and_steel\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.FLINT_AND_STEEL) == 1 && count(companion, Items.IRON_INGOT) == 0 && !future.join().report().contains("План остановлен"), future.join().report());
+            h.assertTrue(gravelUnits(h, companion) == units, "Gravel units " + units + " became " + gravelUnits(h, companion) + ": " + companion.getStoredItemsSummary());
+        });
+    }
+
+    private static int gravelUnits(GameTestHelper h, CompanionEntity companion) {
+        int total = count(companion, Items.GRAVEL) + count(companion, Items.FLINT) + count(companion, Items.FLINT_AND_STEEL);
+        for (int x = 0; x < 32; x++) for (int y = 1; y <= GROUND + 6; y++) for (int z = 0; z < 32; z++) if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.GRAVEL)) total++;
+        for (ItemEntity item : h.getLevel().getEntitiesOfClass(ItemEntity.class, h.getBounds().inflate(3), found -> found.getItem().is(Items.GRAVEL) || found.getItem().is(Items.FLINT)))
+            total += item.getItem().getCount();
+        return total + h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.FallingBlockEntity.class, h.getBounds().inflate(3)).size();
     }
 
     /** Torches from an empty bag: wood, a pickaxe for the coal, the coal, sticks, the torches — all real. */
