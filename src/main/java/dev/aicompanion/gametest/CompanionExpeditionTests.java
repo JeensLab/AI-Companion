@@ -127,6 +127,24 @@ public final class CompanionExpeditionTests {
         });
     }
 
+    /** Andesite, granite and diorite all the way through the stone, four free slots: only sealing rock is kept, so the diamond still fits. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void keepsOnlySealingRockSoANearlyFullBagStillTakesTheDiamond(GameTestHelper h) {
+        Rig r = rig(h, RING_FROM, standard(16));
+        CompanionEntity c = r.c();
+        Block[] rock = {Blocks.ANDESITE, Blocks.GRANITE, Blocks.DIORITE};
+        for (int x = 1; x < SIZE - 1; x++) for (int z = 1; z < SIZE - 1; z++) for (int y = DEEPSLATE_TOP + 1; y < GROUND - 2; y++)
+            h.getLevel().setBlock(h.absolutePos(new BlockPos(x, y, z)), rock[y % 3].defaultBlockState(), 2 | 16);
+        Item[] junk = {Items.POPPY, Items.DANDELION, Items.BLUE_ORCHID, Items.ALLIUM, Items.AZURE_BLUET, Items.RED_TULIP, Items.ORANGE_TULIP, Items.WHITE_TULIP, Items.PINK_TULIP, Items.OXEYE_DAISY,
+                Items.CORNFLOWER, Items.LILY_OF_THE_VALLEY, Items.APPLE, Items.CARROT, Items.POTATO, Items.BEETROOT, Items.SUGAR, Items.PAPER, Items.FEATHER};
+        for (int i = 0; i < junk.length; i++) c.setItem(4 + i, new ItemStack(junk[i]));
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(count(c, Items.DIAMOND) >= 1 && !result.message().contains("Сумка полна"), "Bag filled with rock instead of the diamond: " + result + " | " + report(c));
+        });
+    }
+
     /** The chunk is held while the step runs and let go of when it ends by its own result. */
     @GameTest(template = "marathon_cave", timeoutTicks = 9000)
     public static void holdsTheChunkWhileRunningAndReleasesItAtTheResult(GameTestHelper h) {
