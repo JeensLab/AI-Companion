@@ -180,7 +180,8 @@ final class CompanionRecovery {
         if (!owner.workWoodSpare()) return false;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             ItemStack logs = owner.getItem(slot);
-            if (!logs.is(ItemTags.LOGS)) continue;
+            // The player's logs of a stopped sorting are not his to make planks of (in the game 29.10 he climbed on them).
+            if (!logs.is(ItemTags.LOGS) || owner.carriedForPlayer(logs)) continue;
             String type = BuiltInRegistries.ITEM.getKey(logs.getItem()).getPath().replaceFirst("^stripped_", "").replaceFirst("_(log|wood|stem|hyphae)$", "");
             if (owner.craftFromBag("minecraft:" + type + "_planks", 1).success()) return prepareBlock();
         }

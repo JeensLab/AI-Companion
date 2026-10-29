@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.Container;
@@ -10,12 +11,15 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.Map;
 
 import static dev.aicompanion.gametest.CompanionSortingTests.bagOf;
+import static dev.aicompanion.gametest.CompanionSortingTests.count;
 import static dev.aicompanion.gametest.CompanionSortingTests.mixedThree;
 import static dev.aicompanion.gametest.CompanionSortingTests.setup;
 import static dev.aicompanion.gametest.CompanionSortingTests.totals;
@@ -64,6 +68,27 @@ public final class CompanionSortingCarriedTests {
         helper.succeedWhen(() -> {
             helper.assertTrue(stoppedAt[0] >= 0 && helper.getTick() > stoppedAt[0] + 140, "Waiting: he never carried food, or he is still hurt");
             helper.assertTrue(totals(companion, chests).equals(before), "The player's food eaten after the stop: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /** In the game (29.10): stopped with the player's logs in his bag, he made planks of one to climb to the player on a ledge. They are not his to build with. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void carriedLogsAreNotMadeIntoSupportsAfterTheStop(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
+        int[] logs = {-1}; long[] at = {-1};
+        helper.onEachTick(() -> {
+            if (at[0] >= 0 || !companion.hasActiveWorkOrder() || count(companion, Items.OAK_LOG) == 0) return;
+            companion.stopGathering(); logs[0] = count(companion, Items.OAK_LOG); at[0] = helper.getTick();
+            for (int y = 1; y <= 3; y++) helper.setBlock(new BlockPos(4, y, 4), Blocks.STONE);
+            var top = helper.absoluteVec(new Vec3(4.5, 4, 4.5));
+            helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId()).teleportTo(top.x, top.y, top.z);
+            companion.startWork("come", "", 1);
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(at[0] >= 0 && helper.getTick() > at[0] + 400, "Waiting: he never carried logs, or the climb is not over");
+            helper.assertTrue(count(companion, Items.OAK_LOG) == logs[0] && count(companion, Items.OAK_PLANKS) == 0,
+                    "The player's logs went into supports: logs " + count(companion, Items.OAK_LOG) + " of " + logs[0] + ", planks " + count(companion, Items.OAK_PLANKS));
         });
     }
 }
