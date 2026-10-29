@@ -69,18 +69,26 @@ public final class CompanionSmallFixesTests {
     /**
      * Game 29.10: «/companion summon» typed in the Nether moved him to the same numbers in the Overworld, and he fell into a forest.
      * Here the other way round (a new Nether area takes too long to come up in a test): he waits in the Nether, the player calls him from
-     * the Overworld. He comes over to the player's world, one of him, with his bag, and the chopping he was on is dropped.
+     * the Overworld. He comes over to the player's world, one of him, with his bag, and the work he was on is dropped. Review 29.10: his
+     * house and storage chest of the Overworld are not forgotten in the Nether, and with a pit beside the player he comes to the player's cell.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void summonFromAnotherDimensionBringsHimOver(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity first = spawn(h, 1);
         first.setItem(0, new ItemStack(Items.DIAMOND, 5));
+        BlockPos house = h.absolutePos(new BlockPos(24, 1, 24)), chest = h.absolutePos(new BlockPos(20, 1, 20));
+        CompoundTag saved = first.saveWithoutId(new CompoundTag()), smallHouse = new CompoundTag();
+        smallHouse.putLong("Base", house.asLong()); smallHouse.putString("Wood", "oak"); smallHouse.putString("Dimension", "minecraft:overworld");
+        smallHouse.putLongArray("Placed", new long[0]);
+        saved.put("SmallHouse", smallHouse); saved.putLong("StorageChest", chest.asLong()); saved.putString("StorageDimension", "minecraft:overworld");
+        first.load(saved);
         UUID id = first.getUUID();
         var server = h.getLevel().getServer();
         var nether = server.getLevel(Level.NETHER);
         h.assertTrue(nether != null, "No Nether to test with");
         var owner = server.getPlayerList().getPlayer(first.getOwnerId());
+        h.getLevel().setBlockAndUpdate(BlockPos.containing(owner.getX() + 1, owner.getY() - 1, owner.getZ() + 1), Blocks.AIR.defaultBlockState());
         // A closed room, so that neither netherrack nor lava is round him; a portal's ticket, renewed every tick, keeps it loaded. The entities
         // of a new Nether chunk take from 0 to some hundreds of ticks to load in a test server: he is waited for, not timed.
         BlockPos room = BlockPos.containing(first.getX(), 64, first.getZ());
@@ -93,15 +101,19 @@ public final class CompanionSmallFixesTests {
         first.teleportTo(nether, room.getX() + .5, room.getY(), room.getZ() + .5, Set.of(), 0, 0);
         long[] summonedAt = {-1};
         int[] answer = {0};
+        net.minecraft.world.phys.Vec3[] arrived = {null};
         h.succeedWhen(() -> {
             if (summonedAt[0] < 0) {
                 h.assertTrue(nether.getEntity(id) instanceof CompanionEntity, "He is not in the Nether yet");
-                ((CompanionEntity) nether.getEntity(id)).startGatheringLogs(4);
+                CompanionEntity waiting = (CompanionEntity) nether.getEntity(id);
+                var work = waiting.startWork("gather_dirt", "", 4);
+                h.assertTrue(waiting.isWorking(), "No work to drop: " + work.message());
                 summonedAt[0] = h.getTick();
                 try { answer[0] = server.getCommands().getDispatcher().execute("companion summon", owner.createCommandSourceStack()); }
                 catch (com.mojang.brigadier.exceptions.CommandSyntaxException e) { answer[0] = -1; }
             }
             h.assertTrue(answer[0] == 1, "Summon refused: " + answer[0]);
+            if (arrived[0] == null && h.getLevel().getEntity(id) instanceof CompanionEntity come) arrived[0] = come.position();
             h.assertTrue(h.getTick() - summonedAt[0] >= 40, "Watching him for a while");
             int owned = 0;
             for (var level : server.getAllLevels()) for (var entity : level.getAllEntities())
@@ -111,9 +123,13 @@ public final class CompanionSmallFixesTests {
             h.assertTrue(h.getLevel().getEntity(id) instanceof CompanionEntity, "Not back in the Overworld: " + (left == null ? "nowhere" : "in the Nether at " + left.blockPosition().toShortString()));
             CompanionEntity back = (CompanionEntity) h.getLevel().getEntity(id);
             h.assertTrue(back.isAlive() && back.distanceToSqr(owner) < 4 * 4, "Not by the player: " + back.blockPosition().toShortString());
+            h.assertTrue(arrived[0] != null && arrived[0].distanceToSqr(owner.position()) < .25, "Put by the pit, not on the player's cell: " + arrived[0]);
             h.assertTrue(carried(back, Items.DIAMOND) == 5 && nether.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(room).inflate(4)).isEmpty(),
                     "The bag was not kept: " + back.getStoredItemsSummary());
             h.assertTrue(!back.isGatheringTask() && !back.isWorking() && !back.getLastTaskResult().contains("выходом из мира"), "Still on the old work: " + back.getLastTaskResult());
+            CompoundTag kept = back.saveWithoutId(new CompoundTag());
+            h.assertTrue(kept.getCompound("SmallHouse").getLong("Base") == house.asLong() && kept.getLong("StorageChest") == chest.asLong(),
+                    "House or storage chest forgotten: " + kept.get("SmallHouse") + " " + kept.get("StorageChest"));
         });
     }
 

@@ -88,6 +88,8 @@ public final class CompanionWork {
     final Set<BlockPos> rejected = new HashSet<>();
     final Set<BlockPos> triedChests = new HashSet<>();
     BlockPos rememberedChest;
+    /** His storage chest in another dimension, kept as saved until he is back there: a summon across dimensions goes through the save. */
+    private CompoundTag storageElsewhere;
     BlockPos packTarget;
     CompanionActionResult packResult;
     int packedBenchBefore;
@@ -789,15 +791,16 @@ public final class CompanionWork {
         if (rememberedChest != null) {
             tag.putLong("StorageChest", rememberedChest.asLong());
             tag.putString("StorageDimension", owner.level().dimension().location().toString());
-        }
+        } else if (storageElsewhere != null) tag.merge(storageElsewhere);
     }
     public void load(CompoundTag tag) {
-        cancel(); rememberedChest = null;
+        cancel(); rememberedChest = null; storageElsewhere = null;
         taskId = Math.max(taskId, tag.getLong("WorkSequence"));
         completedId = tag.contains("CompletedWorkResult") ? tag.getLong("CompletedWorkId") : -1;
         completedResult = tag.contains("CompletedWorkResult") ? CompanionActionResult.load(tag.getCompound("CompletedWorkResult")) : null;
         house.load(tag);
         if (tag.contains("StorageChest") && owner.level().dimension().location().toString().equals(tag.getString("StorageDimension"))) rememberedChest = BlockPos.of(tag.getLong("StorageChest"));
+        else if (tag.contains("StorageChest")) { storageElsewhere = new CompoundTag(); storageElsewhere.putLong("StorageChest", tag.getLong("StorageChest")); storageElsewhere.putString("StorageDimension", tag.getString("StorageDimension")); }
         owner.storageStatus(storageForAi());
     }
 }
