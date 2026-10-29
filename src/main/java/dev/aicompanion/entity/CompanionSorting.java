@@ -30,7 +30,8 @@ import java.util.TreeSet;
  * what he carries that it lacks goes in, what it holds above its share comes out into the bag, in turns while anything moves; at a full
  * chest and a full bag he trades a stack for a stack. The next chest is the one where a trip, tried on copies, moves the most.
  * The layout is made once and again only when the set changes from outside (the player, a hopper, a broken chest): trips keep the totals.
- * The set and what he carries are kept here, for one work; his own things in the bag are never touched: only what he carries is put back.
+ * The set is kept here for one work, what he carries until a sorting puts it away (a stopped one leaves it to the next); his own things
+ * in the bag are never touched: only what he carries is put back.
  */
 final class CompanionSorting {
     private static final double RADIUS = 6;
@@ -62,7 +63,10 @@ final class CompanionSorting {
 
     /** The set is fixed at the request: ordinary chests (not trapped, not barrels, not under a block) within six blocks of the player, nearest first, a double one once. */
     void begin(ServerLevel level) {
-        chests.clear(); carried.clear(); opened.clear(); closing = false; started = false; tidyOnly = false; reordered = false; idle = 0; trips = 0; tripLimit = 0; shown = ItemStack.EMPTY; left = false;
+        // What a stopped sorting left in his bag is still the player's: this one puts it away too, as much of it as the bag still holds (review round 4, finding 3).
+        for (ItemStack carry : carried) carry.setCount(Math.min(carry.getCount(), count(w.owner, carry)));
+        carried.removeIf(ItemStack::isEmpty);
+        chests.clear(); opened.clear(); closing = false; started = false; tidyOnly = false; reordered = false; idle = 0; trips = 0; tripLimit = 0; shown = ItemStack.EMPTY; left = false;
         kinds = List.of(); keep = null; liveMask = 0;
         var player = w.owner.getOwnerPlayer();
         Vec3 from = player == null ? w.owner.position() : player.position();
@@ -83,7 +87,7 @@ final class CompanionSorting {
         if (chests.isEmpty()) { w.finish(false, "Рядом с тобой сундуков не вижу."); return; }
         if (!started) {
             started = true;
-            if (freeBagCells() < MIN_FREE) { w.finish(false, "Сумка забита, сначала сложить мои вещи?"); return; }
+            if (carried.isEmpty() && freeBagCells() < MIN_FREE) { w.finish(false, "Сумка забита, сначала сложить мои вещи?"); return; }
             tripLimit = TRIPS_PER_STACK * stacksInSet(level) + TRIPS_SPARE;
         }
         if (w.target == null) {
@@ -95,7 +99,7 @@ final class CompanionSorting {
         // A broken chest stays in the set (its place keeps the numbers of the report) and is skipped: the plan is made from the live ones.
         if (chest == null) { w.resetTarget(); return; }
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2D * 3.2D || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
-            if (!w.approach(level, w.target, 2.8D)) w.finish(false, "Не смог дойти до одного из сундуков. Что нёс — у меня в сумке.");
+            if (!w.approach(level, w.target, 2.8D)) w.finish(false, "Не смог дойти до одного из сундуков." + (carried.isEmpty() ? "" : " Что нёс — у меня в сумке."));
             return;
         }
         w.owner.getNavigation().stop();
@@ -104,6 +108,8 @@ final class CompanionSorting {
         w.animateChest(level, w.openedChest, 1);
         level.playSound(null, w.openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
         layout(live(level));
+        // Unfinished stacks merged first: their cells are the room a new kind of the chest's group needs (review round 4, finding 2).
+        reordered |= tidy(chest);
         int moved = moves(chest, w.owner, carried, chests.indexOf(w.target));
         reordered |= tidy(chest);
         w.transferred += moved;
@@ -215,7 +221,9 @@ final class CompanionSorting {
             List<ItemStack> load = new ArrayList<>();
             for (ItemStack carry : carried) load.add(carry.copy());
             ItemStack was = shown;
-            int moved = moves(copy(chest), copy(w.owner), load, i);
+            Container chestTry = copy(chest);
+            tidy(chestTry);
+            int moved = moves(chestTry, copy(w.owner), load, i);
             shown = was;
             double distance = w.owner.distanceToSqr(chests.get(i).getCenter());
             if (moved > bestMoved || moved > 0 && moved == bestMoved && distance < bestDistance) { best = chests.get(i); bestMoved = moved; bestDistance = distance; }

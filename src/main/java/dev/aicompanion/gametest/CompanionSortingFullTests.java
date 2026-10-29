@@ -54,6 +54,27 @@ public final class CompanionSortingFullTests {
         });
     }
 
+    /**
+     * Review round 4, finding 2: the stone chest has all 27 cells taken, seven of them by stacks of 20 cobblestone (four cells free once
+     * merged). The dirt of the near chest belongs there: he merges the stacks first and puts it in, no «не поместилось».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void unfinishedStacksAreMergedToMakeRoom(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        Container near = chest(helper, 12), iron = chest(helper, 9), stone = chest(helper, 15);
+        near.setItem(0, new ItemStack(Items.DIRT, 64)); near.setItem(1, new ItemStack(Items.DIRT, 64));
+        for (int slot = 2; slot < 22; slot++) near.setItem(slot, new ItemStack(Items.OAK_LOG, 64));
+        for (int slot = 0; slot < 20; slot++) iron.setItem(slot, new ItemStack(Items.IRON_INGOT, 64));
+        for (int slot = 0; slot < 27; slot++) stone.setItem(slot, new ItemStack(Items.COBBLESTONE, slot < 20 ? 64 : 20));
+        Container[] chests = {near, iron, stone}; Map<Item, Integer> before = totals(companion, chests);
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(count(stone, Items.DIRT) == 128 && count(companion, Items.DIRT) == 0, "The dirt is not with the stone: " + describe(stone) + " / bag " + count(companion, Items.DIRT));
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
     /** One group of 35 cells of different single things does not fit one chest: it fills two, the log goes to the stone, nothing is left in the bag. */
     @GameTest(template = "tall_tree", timeoutTicks = 4000)
     public static void manyDifferentThingsSpillIntoTheNextChest(GameTestHelper helper) {

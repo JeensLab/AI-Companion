@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionDialogue;
+import dev.aicompanion.client.CompanionParkLink;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.PlannedAction;
@@ -82,6 +83,46 @@ public final class CompanionSortingInterruptionTests {
             helper.assertTrue(said[0] != null, "He never carried anything to stop on");
             helper.assertTrue(said[0].contains("в сумке") && said[1].contains("в сумке"), "The player hears: " + said[0] + " / " + said[1]);
             helper.assertTrue(!said[2].contains("в сумке"), "The note is said twice: " + said[2]);
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /** Review round 4, finding 1: «Отменить» in the tasks window while he carries things: the player hears the note with the stop. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void cancelFromTheTasksWindowSaysThingsAreInTheBag(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> bagBefore = totals(companion);
+        List<PlannedAction> plan = List.of(new PlannedAction("sort_chests", 0, 1));
+        CompanionParkLink link = new CompanionParkLink(); link.bind(helper.getLevel().getServer(), companion.getOwnerId());
+        var report = link.submit(plan, "gametest-sort-window-cancel", () -> false);
+        boolean[] cancelled = {false};
+        helper.onEachTick(() -> {
+            if (cancelled[0] || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            cancelled[0] = link.cancel(link.tasks().getFirst().id());
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(cancelled[0] && report.isDone(), "The plan was not cancelled while he carried things");
+            String heard = CompanionDialogue.heard(plan, CompanionDialogue.summarize(plan, report.join()), true, false);
+            link.close();
+            helper.assertTrue(heard.contains(CompanionDialogue.BAG_NOTE), "The player hears «" + heard + "», the report: " + report.join());
+        });
+    }
+
+    /** Review round 4, finding 3: «стоп», then «разложи» again: what he carried for the player goes back into the chests, his bag is as before. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void sortingAgainAfterTheStopPutsBackWhatHeCarried(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
+        boolean[] again = {false};
+        helper.onEachTick(() -> {
+            if (again[0] || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            companion.stopGathering();
+            companion.startWork("sort_chests", "", 1); again[0] = true;
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(again[0] && !companion.hasActiveWorkOrder(), "Still sorting: " + companion.getLastTaskResult());
+            helper.assertTrue(totals(companion).equals(bagBefore), "Things of the chests stay in his bag: " + totals(companion) + " after «" + companion.getLastTaskResult() + "»");
             helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
         });
     }
