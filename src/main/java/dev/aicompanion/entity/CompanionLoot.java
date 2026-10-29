@@ -197,7 +197,7 @@ final class CompanionLoot {
         if (target == null) return;
         // The column of loose blocks above a dug cell is still coming down: whoever walks in for the drop is buried in it,
         // and so is whoever cuts across that cell on his way to a drop pushed out beside it. He waits where he stands.
-        if (fallingOver(level, target) || fallingNearby(level)) { owner.work.route.stop(); lastProgress = level.getGameTime(); return; }
+        if (holdForFall(level)) { owner.work.route.stop(); lastProgress = level.getGameTime(); return; }
         owner.movementIntent(target.blockPosition());
         if (leaf != null) { clearLeaf(level); return; }
         owner.workStatus("Подбираю добытые вещи.");
@@ -388,6 +388,18 @@ final class CompanionLoot {
     }
     private static final int FALL_SCAN = 8;
 
+    /** A column that is really coming down is over in a second or two; past this the wait is a false alarm and the stuck detector takes over. */
+    private static final int FALL_HOLD_LIMIT = 60;
+    private UUID heldTarget;
+    private int heldTicks;
+
+    /** The wait for a falling column, bounded per drop: it never holds one forever. */
+    private boolean holdForFall(ServerLevel level) {
+        if (!fallingOver(level, target) && !fallingNearby(level)) return false;
+        if (!target.getUUID().equals(heldTarget)) { heldTarget = target.getUUID(); heldTicks = 0; }
+        return ++heldTicks <= FALL_HOLD_LIMIT;
+    }
+
     private static boolean fallingOver(ServerLevel level, ItemEntity item) {
         return fallingInto(level, item.getBoundingBox().inflate(.5, 0, .5), item.blockPosition());
     }
@@ -396,12 +408,15 @@ final class CompanionLoot {
         return !level.getEntitiesOfClass(FallingBlockEntity.class, owner.getBoundingBox().inflate(1.5, 0, 1.5).expandTowards(0, FALL_SCAN, 0)).isEmpty();
     }
 
-    /** A block in the air over the box, or one about to drop: the first block over the cell is loose with nothing under it. */
+    /**
+     * A block in the air over the box, or one about to drop: the first block over the cell is loose and has its fall already
+     * scheduled. Sand and gravel that merely hang over the cell (worldgen overhangs, a ceiling) have no scheduled fall and are not waited for.
+     */
     private static boolean fallingInto(ServerLevel level, AABB box, BlockPos cell) {
         if (!level.getEntitiesOfClass(FallingBlockEntity.class, box.expandTowards(0, FALL_SCAN, 0)).isEmpty()) return true;
         for (BlockPos above = cell.above(); above.getY() <= cell.getY() + FALL_SCAN; above = above.above()) {
             BlockState state = level.getBlockState(above);
-            if (!state.isAir()) return state.getBlock() instanceof FallingBlock;
+            if (!state.isAir()) return state.getBlock() instanceof FallingBlock && level.getBlockTicks().hasScheduledTick(above, state.getBlock());
         }
         return false;
     }

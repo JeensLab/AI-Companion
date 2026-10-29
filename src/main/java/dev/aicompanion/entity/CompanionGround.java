@@ -24,7 +24,6 @@ public enum CompanionGround {
 
     /** How far down a column is followed to the first solid block: past it the world has nothing to fall into. */
     private static final int COLUMN_DEPTH = 48;
-    private static final int COVER_HEIGHT = 6;
 
     private final String itemId;
     private final Block block;
@@ -91,13 +90,23 @@ public enum CompanionGround {
             if (!level.hasChunkAt(nearby) || !level.getFluidState(nearby).isEmpty() || level.getBlockEntity(nearby) != null
                     || level.getBlockState(nearby).is(Blocks.CRAFTING_TABLE)) return false;
         }
-        for (int up = 1; up <= COVER_HEIGHT; up++) {
+        return nothingBuiltOnTop(level, pos) && nothingAliveUnder(level, pos);
+    }
+
+    /**
+     * Walks up through the loose blocks of the column; what sits on its top (a cactus, sugar cane, a torch, a build) comes down or
+     * breaks with it, so the first other block there must be air or something replaceable. A canopy or a cave roof with a gap
+     * under it is no cover; one resting right on the column is.
+     */
+    private static boolean nothingBuiltOnTop(ServerLevel level, BlockPos pos) {
+        for (int up = 1; up <= COLUMN_DEPTH; up++) {
             BlockPos above = pos.above(up);
-            if (!level.hasChunkAt(above) || !level.getFluidState(above).isEmpty()) return false;
+            if (level.isOutsideBuildHeight(above) || !level.hasChunkAt(above) || !level.getFluidState(above).isEmpty()) return false;
             BlockState cover = level.getBlockState(above);
-            if (!cover.isAir() && !cover.canBeReplaced() && !isLooseBlock(cover)) return false;
+            if (isLooseBlock(cover)) continue;
+            return cover.isAir() || cover.canBeReplaced();
         }
-        return nothingAliveUnder(level, pos);
+        return false;
     }
 
     /**

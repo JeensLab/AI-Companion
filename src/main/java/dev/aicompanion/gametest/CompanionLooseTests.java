@@ -303,22 +303,100 @@ public final class CompanionLooseTests {
         });
     }
 
-    /** One gravel block is one flint at most: the order for eight ends honestly once it has become flint, far inside the break budget. */
+    /**
+     * One gravel block, no Fortune, one flint ordered: the block is dug and put down again until it becomes flint (a tenth of the
+     * breaks) or the whole break budget is spent. Both ends are exact and the one block is never more than one unit.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 4000)
     public static void flintBudgetEndsHonestlyWithOneGravelBlock(GameTestHelper helper) {
         CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
-        companion.setItem(1, enchanted(helper, Items.STONE_SHOVEL, Enchantments.FORTUNE, 3));
         helper.setBlock(new BlockPos(19, 1, 20), Blocks.GRAVEL);
-        var drops = trackDrops(helper);
-        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 8);
+        var gravelDrops = trackDrops(helper, Items.GRAVEL); var flintDrops = trackDrops(helper, Items.FLINT);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 1);
         helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
         helper.succeedWhen(() -> {
             helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
-            int flint = count(companion, Items.FLINT);
-            helper.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().startsWith("Выпало " + flint + " из 8 кремня"), "Not an honest result: " + diagnostic(companion));
-            helper.assertTrue(flint <= 1 && units(helper, companion) == 1, "One gravel block became " + units(helper, companion) + " units, flint " + flint);
+            int flint = count(companion, Items.FLINT), breaks = gravelDrops.size() + flintDrops.size();
+            helper.assertTrue(units(helper, companion) == 1, "One gravel block became " + units(helper, companion) + " units, flint " + flint);
             helper.assertTrue(onGround(helper, Items.GRAVEL) + onGround(helper, Items.FLINT) == 0 && fallingBlocks(helper) == 0, "Gravel or flint was left outside the bag");
-            helper.assertTrue(drops.size() <= 30 * 8, "More breaks than the budget: " + drops.size());
+            if (flint == 0) {
+                helper.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().startsWith("Выпало 0 из 1 кремня"), "Not an honest refusal: " + diagnostic(companion));
+                helper.assertTrue(breaks == 30 && flintDrops.isEmpty(), "The budget of 30 breaks ended after " + breaks + " breaks, flint drops " + flintDrops.size());
+            } else {
+                helper.assertTrue(companion.didLastTaskSucceed() && flint == 1 && flintDrops.size() == 1, "Not a success with one flint: " + diagnostic(companion));
+                helper.assertTrue(breaks <= 30, "More breaks than the budget: " + breaks);
+            }
+        });
+    }
+
+    /** Stopping in the middle of the dig-and-put-down loop loses nothing: the placed gravel is a block of the world, the rest is in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void cancelMidFlintLoopKeepsTheBalance(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        gravelPatch(helper);
+        int units = units(helper, companion);
+        var drops = trackDrops(helper);
+        var player = owner(helper, companion);
+        int[] stopped = {-1}; long[] stoppedAt = {0};
+        helper.onEachTick(() -> {
+            if (stopped[0] < 0 && companion.isGatheringTask() && drops.size() >= 3) {
+                helper.assertTrue(CompanionEvents.executeAction(player, "stop", "", 1).success(), "Stop not accepted");
+                stopped[0] = drops.size(); stoppedAt[0] = helper.getTick();
+            }
+        });
+        var started = CompanionEvents.executeAction(player, "gather_loose", "minecraft:flint", 8);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stopped[0] >= 0 && helper.getTick() - stoppedAt[0] >= 60, "Not cancelled yet");
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking() && !companion.didLastTaskSucceed(), "Still digging: " + diagnostic(companion));
+            helper.assertTrue(drops.size() <= stopped[0] + 1, "Blocks were broken after the cancel: " + stopped[0] + " -> " + drops.size());
+            helper.assertTrue(units(helper, companion) == units, "Gravel units " + units + " became " + units(helper, companion) + ": " + diagnostic(companion));
+            helper.assertTrue(fallingBlocks(helper) == 0, "A gravel block is still falling");
+            helper.assertTrue(aliveCompanions(helper) == 1, "Companions in the world: " + aliveCompanions(helper));
+        });
+    }
+
+    /** Only what sits ON the column is cover: a canopy or a cave roof with air under it does not stop the dig. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void sandUnderATreeCanopyWithAnAirGapIsDug(GameTestHelper helper) {
+        roofedPatchIsDug(helper, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true), 5, Blocks.SAND, Items.SAND);
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void gravelUnderACaveCeilingIsDug(GameTestHelper helper) {
+        roofedPatchIsDug(helper, Blocks.STONE.defaultBlockState(), 4, Blocks.GRAVEL, Items.GRAVEL);
+    }
+
+    private static void roofedPatchIsDug(GameTestHelper helper, net.minecraft.world.level.block.state.BlockState roof, int roofY, Block loose, Item item) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        for (int x = 10; x <= 28; x++) for (int z = 10; z <= 28; z++) helper.setBlock(new BlockPos(x, roofY, z), roof);
+        BlockPos[] patch = new BlockPos[9]; int index = 0;
+        for (int x = 19; x <= 21; x++) for (int z = 19; z <= 21; z++) { patch[index] = new BlockPos(x, 1, z); helper.setBlock(patch[index++], loose); }
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString(), 4);
+        helper.assertTrue(started.success(), "Order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(companion.didLastTaskSucceed() && count(companion, item) >= 4, "Nothing was dug under the roof: " + diagnostic(companion));
+            helper.assertTrue(blocksLeft(helper, loose, patch) <= patch.length - 4, "The blocks under the roof are still standing: " + blocksLeft(helper, loose, patch));
+            helper.assertTrue(helper.getBlockState(new BlockPos(20, roofY, 20)).is(roof.getBlock()), "The roof was touched");
+        });
+    }
+
+    /** A cactus on the sand grows out of the column and breaks with it: that sand is not taken, the free sand is. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void sandUnderACactusIsKept(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        BlockPos[] covered = {new BlockPos(18, 1, 19), new BlockPos(20, 1, 19)}, free = {new BlockPos(18, 1, 22), new BlockPos(20, 1, 22)};
+        for (BlockPos at : covered) { helper.setBlock(at, Blocks.SAND); helper.setBlock(at.above(), Blocks.CACTUS); }
+        for (BlockPos at : free) helper.setBlock(at, Blocks.SAND);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:sand", 4);
+        helper.assertTrue(started.success(), "Sand order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(!companion.didLastTaskSucceed() && count(companion, Items.SAND) == 2, "Not the two free blocks only: " + diagnostic(companion));
+            helper.assertTrue(blocksLeft(helper, Blocks.SAND, free) == 0, "The free sand was left");
+            helper.assertTrue(blocksLeft(helper, Blocks.SAND, covered) == 2 && helper.getBlockState(covered[0].above()).is(Blocks.CACTUS)
+                    && helper.getBlockState(covered[1].above()).is(Blocks.CACTUS), "Sand under a cactus was dug");
         });
     }
 
@@ -386,10 +464,11 @@ public final class CompanionLooseTests {
                 + onGround(helper, Items.GRAVEL) + onGround(helper, Items.FLINT) + fallingBlocks(helper);
     }
     /** Every gravel or flint item that ever lay on the ground: one per block he broke, at least. */
-    private static java.util.Set<java.util.UUID> trackDrops(GameTestHelper helper) {
+    private static java.util.Set<java.util.UUID> trackDrops(GameTestHelper helper) { return trackDrops(helper, Items.GRAVEL, Items.FLINT); }
+    private static java.util.Set<java.util.UUID> trackDrops(GameTestHelper helper, Item... items) {
         java.util.Set<java.util.UUID> seen = new java.util.HashSet<>();
         helper.onEachTick(() -> {
-            for (ItemEntity entity : helper.getLevel().getEntitiesOfClass(ItemEntity.class, helper.getBounds().inflate(3), found -> found.getItem().is(Items.GRAVEL) || found.getItem().is(Items.FLINT)))
+            for (ItemEntity entity : helper.getLevel().getEntitiesOfClass(ItemEntity.class, helper.getBounds().inflate(3), found -> java.util.Arrays.stream(items).anyMatch(found.getItem()::is)))
                 seen.add(entity.getUUID());
         });
         return seen;
