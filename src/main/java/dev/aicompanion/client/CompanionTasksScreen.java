@@ -1,5 +1,7 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionAgenda;
+import dev.aicompanion.entity.CompanionAgendaView;
 import dev.aicompanion.entity.CompanionGoals;
 import dev.aicompanion.entity.CompanionTaskBoard;
 import net.minecraft.client.gui.GuiGraphics;
@@ -15,7 +17,10 @@ import java.util.List;
 /** A live task journal, deliberately separate from the inventory that pauses work. */
 public final class CompanionTasksScreen extends Screen {
     private record Row(String key, String title, String status, int color, List<String> details,
-                       long queueId, int priority, Runnable cancel, Runnable resume) { }
+                       long queueId, int priority, Runnable cancel, Runnable resume, Runnable defer) {
+        boolean isLongGoal() { return key.startsWith("agenda:"); }
+    }
+    private static final int FOLDED_DONE = 3;
     private CompanionTaskBoard.Snapshot snapshot;
     private List<Row> rows = List.of();
     private String selected = "";
@@ -98,21 +103,57 @@ public final class CompanionTasksScreen extends Screen {
             int color = queued || waiting ? 0xE6C77C : running ? 0x75D9CB : task.status() == CompanionTaskQueue.Status.COMPLETED ? 0x91C998 : 0xB6A8A8;
             result.add(new Row("queue:" + task.id(), CompanionDialogue.describe(task.steps().getFirst()), state, color,
                     details, task.id(), queued || waiting ? task.priority() : -1,
-                    running || queued || waiting ? () -> { CompanionActionExecutor.cancelTask(task.id()); rebuild(); } : null, null));
+                    running || queued || waiting ? () -> { CompanionActionExecutor.cancelTask(task.id()); rebuild(); } : null, null, null));
         }
         if (snapshot != null && snapshot.goalState() != null) {
             boolean outstanding = snapshot.goalState() != CompanionGoals.State.COMPLETED && snapshot.goalState() != CompanionGoals.State.CANCELLED;
             boolean paused = snapshot.goalState() == CompanionGoals.State.BLOCKED || snapshot.goalState() == CompanionGoals.State.PAUSED_PLAYER;
             Row goal = new Row("goal:" + snapshot.goal(), "Каменные кирки для нас обоих", goalState(snapshot.goalState()),
                     0x86BDE8, List.of("Сохранённая цель", snapshot.goalStatus(), "", "Далее: " + snapshot.goalNext()),
-                    0, -1, outstanding ? () -> control("cancel_goal") : null, paused ? () -> control("resume_goal") : null);
+                    0, -1, outstanding ? () -> control("cancel_pickaxes") : null, paused ? () -> control("resume_pickaxes") : null, null);
             result.add(outstanding ? 0 : result.size(), goal);
         }
+        if (snapshot != null && snapshot.agenda() != null) result.addFirst(agendaRow(snapshot.agenda()));
         if (snapshot != null && snapshot.autonomous()) result.add(new Row("autonomy", "Самостоятельные дела", snapshot.autonomyHeld() ? "На паузе" : "Порядок и запас",
                 0xB7A2DE, List.of(snapshot.autonomyTask(), "", "Проверяет запасы, готовит инструменты, собирает материалы и складывает лишнее.",
                 "Твои поручения выполняются первыми. Следующее самостоятельное дело выбирается по обстановке."),
-                0, -1, () -> control("cancel_autonomy"), null));
+                0, -1, () -> control("cancel_autonomy"), null, null));
         return result;
+    }
+    /** A long goal: what he does now, the obstacle if any, and the milestones in order, each with its mark. */
+    private Row agendaRow(CompanionAgendaView.View goal) {
+        List<String> details = new ArrayList<>();
+        details.add("Сейчас: " + goal.now());
+        if (!goal.obstacle().isEmpty()) details.add("Помеха: " + goal.obstacle());
+        details.add("");
+        // A long run of finished milestones is one line, so the current one and what follows stay on the first screen.
+        long done = goal.lines().stream().filter(line -> line.mark() == CompanionAgendaView.Mark.DONE).count();
+        boolean folded = false;
+        for (var line : goal.lines()) {
+            if (done > FOLDED_DONE && line.mark() == CompanionAgendaView.Mark.DONE) {
+                if (!folded) details.add(markGlyph(line.mark()) + " сделано этапов: " + done);
+                folded = true;
+            } else details.add(markGlyph(line.mark()) + " " + line.label());
+        }
+        details.add("");
+        details.add("✔ сделано  ▶ сейчас  · дальше  ✖ не умею  ! помеха");
+        if (!goal.deferredTitle().isEmpty()) { details.add(""); details.add("Отложена цель «" + goal.deferredTitle() + "»."); }
+        int color = goal.state() == CompanionAgenda.State.BLOCKED ? 0xE0907A
+                : goal.deferredOnly() || goal.state() != CompanionAgenda.State.ACTIVE ? 0xE6C77C : 0x86BDE8;
+        return new Row("agenda:" + goal.goal(), "Цель: " + goal.title(), agendaState(goal), color, details, 0, -1,
+                () -> control("cancel_goal"), goal.canResume() ? () -> control("resume_goal") : null,
+                goal.canDefer() ? () -> control("defer_goal") : null);
+    }
+    private static String markGlyph(CompanionAgendaView.Mark mark) {
+        return switch (mark) { case DONE -> "✔"; case CURRENT -> "▶"; case LATER -> "·"; case CANNOT -> "✖"; case OBSTACLE -> "!"; };
+    }
+    private static String agendaState(CompanionAgendaView.View goal) {
+        if (goal.deferredOnly()) return "Отложена";
+        return switch (goal.state()) {
+            case ACTIVE -> "Выполняется"; case INTERRUPTED -> "Отвлёкся на просьбу"; case HELD -> "На паузе";
+            case PAUSED_DANGER -> "Пауза: опасность"; case BLOCKED -> "Нужна помощь";
+            case COMPLETED -> "Выполнена"; case CANCELLED -> "Отменена";
+        };
     }
     private static String goalState(CompanionGoals.State state) {
         return switch (state) {
@@ -156,17 +197,19 @@ public final class CompanionTasksScreen extends Screen {
         int detailX = split + 10, detailWidth = left + panelWidth - detailX - 8;
         int buttonWidth = (detailWidth - 6) / 2;
         Row row = selection();
-        priority = addRenderableWidget(Button.builder(Component.literal(row != null && row.priority() >= 0 ? "Приоритет: " + priorityName(row.priority())
+        priority = addRenderableWidget(Button.builder(Component.literal(row != null && row.isLongGoal() ? "Отложить" : row != null && row.priority() >= 0 ? "Приоритет: " + priorityName(row.priority())
                 : hasReport(row) ? fullReport ? "Краткий итог" : "Полный отчёт" : "Приоритет очереди"), b -> {
             Row current = selection();
-            if (current != null && current.priority() >= 0) CompanionActionExecutor.setPriority(current.queueId(), (current.priority() + 1) % 3);
+            if (current != null && current.isLongGoal()) { if (current.defer() != null) current.defer().run(); }
+            else if (current != null && current.priority() >= 0) CompanionActionExecutor.setPriority(current.queueId(), (current.priority() + 1) % 3);
             else if (hasReport(current)) { fullReport = !fullReport; detailOffset = 0; }
             rebuild();
         }).bounds(detailX, bottom - 47, detailWidth, 20).build());
-        priority.active = row != null && (row.priority() >= 0 || hasReport(row));
-        priority.setTooltip(Tooltip.create(Component.literal(hasReport(row) ? "Показать или скрыть подробный журнал выполнения."
+        priority.active = row != null && (row.isLongGoal() ? row.defer() != null : row.priority() >= 0 || hasReport(row));
+        priority.setTooltip(Tooltip.create(Component.literal(row != null && row.isLongGoal() ? "Откладывает цель: она ждёт, пока скажешь «продолжай». Отложить можно одну цель."
+                : hasReport(row) ? "Показать или скрыть подробный журнал выполнения."
                 : "Нажми для смены: обычный → высокий → низкий. Меняет порядок ожидающих поручений.")));
-        cancel = addRenderableWidget(Button.builder(Component.literal("Отменить"), b -> {
+        cancel = addRenderableWidget(Button.builder(Component.literal(row != null && row.isLongGoal() ? "Отменить цель" : "Отменить"), b -> {
             Row current = selection(); if (current != null && current.cancel() != null) current.cancel().run();
         }).bounds(detailX, bottom - 23, buttonWidth, 20).build());
         resume = addRenderableWidget(Button.builder(Component.literal("Продолжить"), b -> {
@@ -208,6 +251,7 @@ public final class CompanionTasksScreen extends Screen {
                 else lines.addAll(font.split(Component.literal(line), detailWidth));
             }
             int visible = Math.max(1, (bottom - 53 - listTop) / font.lineHeight);
+            if (lines.size() > visible && visible > 1) visible--; // the last line of room is the scroll hint's
             detailOffset = Math.clamp(detailOffset, 0, Math.max(0, lines.size() - visible));
             g.enableScissor(split + 6, listTop, left + panelWidth - 4, bottom - 51);
             for (int i = detailOffset; i < Math.min(lines.size(), detailOffset + visible); i++)

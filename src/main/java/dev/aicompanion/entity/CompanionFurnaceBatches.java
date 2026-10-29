@@ -187,6 +187,7 @@ public final class CompanionFurnaceBatches {
     private void collectOrphans(ServerLevel here) {
         if (owner.hasActiveWorkOrder() || owner.goals().outstanding() || queueBusy.getAsBoolean()
                 || owner.autonomy().running() || owner.autonomy().playerStopped()) return;
+        boolean goalWorks = CompanionAgenda.suppressesDeeds(owner);
         for (Batch batch : List.copyOf(batches.values())) {
             if (!batch.orphan) continue;
             boolean gone = here.getServer().getLevel(batch.dimension) == null;
@@ -199,7 +200,7 @@ public final class CompanionFurnaceBatches {
                 owner.autonomy().report(why + (note.isBlank() ? "" : " " + note.strip()));
                 return;
             }
-            if (batch.dimension == here.dimension() && batch.status == Status.READY && owner.autonomy().collectOrphan(batch.id)) return;
+            if (!goalWorks && batch.dimension == here.dimension() && batch.status == Status.READY && owner.autonomy().collectOrphan(batch.id)) return;
         }
     }
 
@@ -237,6 +238,27 @@ public final class CompanionFurnaceBatches {
         batch.status = now;
         if (now == Status.READY) CompanionDiagnostics.event(owner.diagnosticTrace(), "furnace_batch_ready", "entity", owner.getUUID(), "batch", batch.id);
         if (now == Status.LOST) CompanionDiagnostics.event(owner.diagnosticTrace(), "furnace_batch_lost", "entity", owner.getUUID(), "batch", batch.id);
+    }
+
+    /** A cooked orphan here: a long goal collects it at the boundary of its steps, before anything else. -1 when there is none. */
+    long readyOrphan(ServerLevel level) {
+        for (Batch batch : List.copyOf(batches.values())) {
+            if (!batch.orphan || batch.dimension != level.dimension() || batch.failures >= MAX_COLLECT_FAILURES) continue;
+            refresh(batch, level);
+            if (batch.status == Status.READY) return batch.id;
+        }
+        return -1;
+    }
+
+    /** What his own batches still cooking here will give: a long goal does not make that item itself meanwhile. */
+    List<Item> cookingOutputs(ServerLevel level) {
+        return batches.values().stream().filter(batch -> batch.orphan && batch.status == Status.WAITING && canProgress(batch, level))
+                .map(batch -> batch.recipe.result().getItem()).toList();
+    }
+
+    /** A cooked batch of a request in the queue: the request takes him back for it, so a long goal starts no step meanwhile. */
+    boolean readyForQueue() {
+        return queueBusy.getAsBoolean() && batches.values().stream().anyMatch(batch -> !batch.orphan && batch.status == Status.READY && batch.dimension == owner.level().dimension());
     }
 
     /** The park report of the work {@code id} while its batch lives; null otherwise. */

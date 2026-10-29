@@ -48,6 +48,8 @@ final class CompanionEating {
         c.eating = ItemStack.EMPTY;
     }
 
+    static boolean hasFood(CompanionEntity c) { return !new CompanionEating(c).bestFood(1F).isEmpty(); }
+
     /** Safe food only (no rotten flesh, spider eyes, poison, chorus fruit); the one that best fits the missing health. */
     private ItemStack bestFood(float missing) {
         ItemStack best = ItemStack.EMPTY;

@@ -89,16 +89,13 @@ public final class CompanionGoals {
                 : !playerConfirmed ? "Принести и передать тебе каменную кирку" : "Проверить готовые кирки";
     }
 
-    /** Any explicit player order suspends the outcome; only stop/cancel is terminal. */
+    /** Any explicit player order suspends the outcome, a stop too; only «отмени цель» (cancel) is terminal. */
     public void playerOrder(String action) {
         if (!outstanding() || action.startsWith("goal_")) return;
         resumeCome = false;
-        if (action.equals("stop")) {
-            state = State.CANCELLED; reason = "Отменено игроком.";
-        } else {
-            state = State.PAUSED_PLAYER; reason = "Выполняю другую команду игрока. Скажи «продолжай работу».";
-            playerBehavior = action;
-        }
+        state = State.PAUSED_PLAYER;
+        reason = action.equals("stop") ? "Остановлен по твоей команде. Скажи «продолжай работу»." : "Выполняю другую команду игрока. Скажи «продолжай работу».";
+        playerBehavior = action;
         workId = 0; skill = "";
         owner.stopGathering();
     }

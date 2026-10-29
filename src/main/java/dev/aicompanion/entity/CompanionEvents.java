@@ -94,7 +94,10 @@ public final class CompanionEvents {
 
     private static int setFollowing(ServerPlayer player, boolean following) {
         CompanionEntity companion = resolveCanonical(player, true);
-        if (companion != null) { companion.goals().playerOrder(following ? "follow" : "wait"); companion.autonomy().playerOrder(following ? "follow" : "wait"); companion.setFollowing(following); }
+        if (companion != null) {
+            companion.goals().playerOrder(following ? "follow" : "wait"); companion.autonomy().playerOrder(following ? "follow" : "wait");
+            CompanionAgenda.playerOrder(player, companion, following ? "follow" : "wait"); companion.setFollowing(following);
+        }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
                 : following ? "Компаньон следует за тобой." : "Компаньон ждёт здесь."));
         return companion == null ? 0 : 1;
@@ -102,7 +105,10 @@ public final class CompanionEvents {
 
     private static int setProtecting(ServerPlayer player, boolean protecting) {
         CompanionEntity companion = resolveCanonical(player, true);
-        if (companion != null) { companion.goals().playerOrder(protecting ? "protect" : "stop_protect"); companion.autonomy().playerOrder(protecting ? "protect" : "stop_protect"); companion.setProtecting(protecting); }
+        if (companion != null) {
+            companion.goals().playerOrder(protecting ? "protect" : "stop_protect"); companion.autonomy().playerOrder(protecting ? "protect" : "stop_protect");
+            CompanionAgenda.playerOrder(player, companion, protecting ? "protect" : "stop_protect"); companion.setProtecting(protecting);
+        }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
                 : protecting ? "Компаньон будет защищать тебя от монстров."
                 : "Компаньон прекращает защиту и снова следует за тобой."));
@@ -205,7 +211,10 @@ public final class CompanionEvents {
 
     private static int stopGathering(ServerPlayer player) {
         CompanionEntity companion = resolveCanonical(player, false);
-        if (companion != null) { companion.goals().playerOrder("stop"); companion.autonomy().playerOrder("stop"); companion.stopGathering(); }
+        if (companion != null) {
+            companion.goals().playerOrder("stop"); companion.autonomy().playerOrder("stop");
+            CompanionAgenda.playerOrder(player, companion, "stop"); companion.stopGathering();
+        }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон сейчас не загружен в мир."
                 : "Компаньон остановил текущую задачу."));
         return companion == null ? 0 : 1;
@@ -236,18 +245,39 @@ public final class CompanionEvents {
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
-                companion.goals().playerOrder(action);
-                if (!action.equals("goal_status")) companion.autonomy().playerOrder(action);
+                // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order.
+                if (!action.equals("pursue_goal")) companion.goals().playerOrder(action);
+                // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
+                if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
+            // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
+            CompanionAgenda.playerOrder(player, companion, action);
         }
         String previousTrace = companion.diagnosticTrace();
         boolean wasWorking = companion.isGatheringTask();
         companion.diagnosticBind(trace);
         companion.diagnosticSnapshot("action_before");
         CompanionActionResult dispatchResult = switch (action) {
-            case "goal_pickaxes" -> companion.goals().accept(player);
-            case "goal_resume" -> companion.goals().resume();
-            case "goal_status" -> CompanionActionResult.ok(companion.goals().status());
+            case "pursue_goal" -> CompanionAgenda.accept(player, companion, item, count);
+            case "goal_pickaxes" -> CompanionAgenda.working(player)
+                    ? CompanionActionResult.blocked("Сначала закончу долгую цель. Скажи «отмени цель», если кирки важнее.")
+                    : companion.goals().accept(player);
+            case "goal_resume" -> {
+                CompanionActionResult resumed = CompanionAgenda.resume(player, companion);
+                yield resumed != null ? resumed : companion.goals().resume();
+            }
+            case "goal_cancel" -> {
+                CompanionActionResult cancelled = CompanionAgenda.cancel(player, companion);
+                if (cancelled != null) yield cancelled;
+                if (!companion.goals().outstanding()) yield CompanionActionResult.failed("Нет цели, которую можно отменить.");
+                companion.goals().cancel();
+                yield CompanionActionResult.ok("Отменил заказ на кирки.");
+            }
+            case "goal_defer" -> CompanionAgenda.defer(player, companion);
+            case "goal_status" -> {
+                CompanionActionResult status = CompanionAgenda.status(player, companion);
+                yield status != null ? status : CompanionActionResult.ok(companion.goals().status());
+            }
             case "craft_item" -> {
                 CompanionActionResult repeat = count == 1 && !goalDispatch ? companion.alreadyMade(item) : null;
                 if (repeat != null) yield repeat;
@@ -312,9 +342,15 @@ public final class CompanionEvents {
     private static boolean goalDispatch;
 
     static CompanionActionResult executeGoal(ServerPlayer player, String action, String item, int count) {
+        return executeGoal(player, action, item, count, "auto", dev.aicompanion.CompanionDiagnostics.newTrace(), "near_player");
+    }
+
+    /** A step of a goal of his (not an order of the player), with the slot, trace and place of the plan step it runs. */
+    public static CompanionActionResult executeGoal(ServerPlayer player, String action, String item, int count, String slot, String trace, String location) {
+        boolean outer = goalDispatch;
         goalDispatch = true;
-        try { return executeAction(player, action, item, count); }
-        finally { goalDispatch = false; }
+        try { return executeAction(player, action, item, count, slot, trace, location); }
+        finally { goalDispatch = outer; }
     }
 
     /** A deed of his own (CompanionAutonomy), given the same way as the player's order, with its own trace and workId. */
@@ -352,6 +388,7 @@ public final class CompanionEvents {
         MinecraftServer server = companion.level().getServer();
         if (ownerId == null || server == null) return;
         CompanionMemorial.get(server).died(ownerId, companion.getUUID(), memory, server.overworld().getGameTime() + RETURN_TICKS);
+        if (dropped) CompanionAgenda.died(server, ownerId, companion.level().dimension(), companion.blockPosition());
         ServerPlayer owner = server.getPlayerList().getPlayer(ownerId);
         if (owner == null) return;
         var data = owner.getPersistentData();

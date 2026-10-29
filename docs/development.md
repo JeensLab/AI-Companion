@@ -9,9 +9,12 @@
 Произвольное строительство и полностью самостоятельная игра пока вне реализованных возможностей.
 
 OpenRouter отвечает за свободный диалог и предложения планов; Inworld — за голос.
-Прямые команды и многие проверки доступны без этих сервисов. Долговременная
-цель в `CompanionGoals` пока поддерживает конкретный сценарий каменных кирок
-для компаньона и игрока; это не универсальный планировщик любых целей.
+Прямые команды и многие проверки доступны без этих сервисов. Сохраняемая
+цель в `CompanionGoals` поддерживает конкретный сценарий каменных кирок
+для компаньона и игрока. Долгие цели ведёт `CompanionAgenda`, но только из
+закрытого каталога `CompanionPlaybooks` (`gear_up`, `prepare_nether`,
+`defeat_ender_dragon`); это не универсальный планировщик: модель выбирает id
+из каталога и не сочиняет этапы, а умения, которых у Олега ещё нет, он называет честно.
 
 Закреплённый стек указан в `gradle.properties` и `build.gradle`:
 Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (`mod_version`)
@@ -62,6 +65,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
+| Долгая цель (броня, Незер, дракон): каталог, этапы, состояние, экран | `entity/CompanionAgenda.java` (движок, раз в секунду), `CompanionPlaybooks.java` (каталог), `CompanionMilestones.java` и `CompanionFacts.java` (этапы по фактам), `CompanionAgendaData.java` (сохранение `aicompanion_agenda`), `CompanionAgendaView.java` (экран и строка «Долгая цель» для модели); действие `pursue_goal` — `client/CompanionPlanCodec.java`; фразы «отмени цель», «отложи цель» — `client/CompanionLocalCommands.java`; экран — `client/CompanionTasksScreen.java`, `entity/CompanionTaskBoard.java`; тесты `gametest/CompanionAgendaTests.java`, `CompanionAgendaModelTests.java`, `CompanionAgendaBoardTests.java` |
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
 | Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java` |
@@ -70,7 +74,10 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Регрессии и структуры | `gametest/`, `entity/CompanionStairApproachTests.java`, `src/main/resources/data/aicompanion/structure/` |
 
 Путь поручения от чата до сообщения игроку описан в AGENTS.md.
-Долговременная цель использует ограниченные навыки.
+Долгая цель не ждёт итога в очереди: `pursue_goal` принимается (`ACCEPTED`),
+задача очереди закрывается, а дальше цель живёт на сервере в `CompanionAgenda`.
+Она использует только навыки, которые уже есть; этапы без навыка остаются в
+списке (на экране ✖, в строке для модели «не умею»).
 
 `client/` содержит и настоящие клиентские классы, и общую логику планов.
 Например, сервер регистрирует `CompanionServerPlanPort.tick`, а GameTest используют
@@ -96,13 +103,15 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
+| Долгая цель: движок, этапы, фразы, строка для модели, доска задач | `.\scripts\verify-agenda.ps1 -Repetitions 1` (`CompanionAgendaTests`, `CompanionAgendaModelTests`, `CompanionAgendaBoardTests`; по умолчанию 3 повтора; временно переписывает эти три файла, запускать последовательно, нужны загруженные зависимости: Gradle идёт с `--offline`) |
+| Долгая цель при настоящем перезапуске сервера | `.\scripts\verify-agenda-restart.ps1`: этапы prepare, resume, verify; каталог `build/diagnostics/` скрипт создаёт сам |
 | Партия плавки при настоящем перезапуске сервера | `.\scripts\verify-furnace-restart.ps1` после создания `build/diagnostics/` |
 | Самостоятельные реплики, свои темы Олега и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
 | Тихая работа, речь и восстановление поручений | `.\scripts\verify-quiet-work.ps1` |
 | Критические проверки длительной работы | `.\scripts\verify-endurance.ps1 -CriticalOnly -Repetitions 1` |
 | Длительные сценарии леса, пещеры или перезагрузки | `.\scripts\verify-endurance.ps1 -Arena Forest -Repetitions 1`; варианты арены: `Cave`, `Reload` |
 | Полный набор с итоговым JSON | `.\scripts\verify-scenarios.ps1 -Repetitions 1` |
-| Экран задач | `.\scripts\verify-task-ui.ps1` и просмотр созданных снимков |
+| Экран задач (в том числе строка долгой цели и её кнопки) | `.\scripts\verify-task-ui.ps1` и просмотр созданных снимков |
 | Память, отношения и события | `.\scripts\verify-memory.ps1 -Expected <число тестов>`: сначала проверка `entity/*.java` (не больше 800 строк) и `build`, затем фокусный прогон `CompanionMemoryTests`, `CompanionBondTests`, `CompanionHappeningsTests`, `CompanionSoulTests`, ровно столько тестов, сколько в `-Expected`; `-Full <N>` добавляет полный `runGameTestServer` (ровно N, один повтор, если упал только известный нестабильный тест); `-Banter` добавляет `verify-banter-tools.ps1 -Repetitions 3`; `-Tag` (по умолчанию `memory`) задаёт префикс отчётов в `build/diagnostics/` |
 | Прочие экраны, рендер, клавиши | `.\gradlew.bat runClient`, ручная проверка изменённого сценария |
 | Живой диалог, STT/TTS | Ручная проверка с собственными ключами только по отдельному разрешению на платные запросы; локальные GameTest не доказывают работу провайдера |
