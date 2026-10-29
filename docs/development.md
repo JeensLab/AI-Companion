@@ -59,7 +59,9 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь, приоритеты, отмена, восстановление плана | `client/CompanionTaskQueue.java`, `CompanionActionExecutor.java`, `CompanionPlanRunner.java`, `CompanionServerPlanPort.java` |
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |
 | Компоненты после разделения больших классов | `entity/CompanionGathering.java`, `CompanionGatherGoals.java`, `CompanionStoneMining.java`, `CompanionOreMining.java`, `CompanionWorkCrafting.java`, `CompanionHunting.java` |
-| Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
+| Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java`; раскладка по сундукам по видам — `CompanionSorting.java`, виды предметов в одном месте — `CompanionItemClass.java`, тесты `gametest/CompanionSortingTests.java` |
+| Грядки, посадка и урожай | `entity/CompanionFarming.java` (поле у воды, мотыга, семена, посадка, сбор), `CompanionCrops.java` (культуры); тесты `gametest/CompanionFarmTests.java` |
+| Загон и разведение животных | `entity/CompanionPen.java` (забор с калиткой вокруг животных), `CompanionBreeding.java` (кормление пар); тесты `gametest/CompanionPenTests.java` |
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |

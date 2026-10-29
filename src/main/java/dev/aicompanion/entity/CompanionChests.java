@@ -29,6 +29,7 @@ final class CompanionChests {
     void store(ServerLevel level) {
         if (w.job == CompanionWork.Job.TAKE) { retrieve(level); return; }
         if (w.job == CompanionWork.Job.PLACE_CHEST) { placeRequestedChests(); return; }
+        if (w.job == CompanionWork.Job.SORT) { w.sorting.step(level); return; }
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
         if (w.job == CompanionWork.Job.STORE && (eligibleCount() == 0 || storeQuota() <= 0)) { w.finish(true, w.transferred > 0 ? "Сложил " + w.transferred + " предметов в сундук." : "Лишних вещей для сундука сейчас нет."); return; }
         if (w.target == null) {
@@ -139,6 +140,7 @@ final class CompanionChests {
             if (w.transferred >= w.requestedCount) w.finish(true, "Забрал " + w.transferred + " предметов из сундука. В сумке: " + w.owner.getStoredItemsSummary() + ".");
             else w.phase = CompanionWork.Phase.STORE;
         }
+        else if (w.job == CompanionWork.Job.SORT) w.phase = CompanionWork.Phase.STORE;
         else if (eligibleCount() == 0) w.finish(true, "Сложил " + w.transferred + " предметов в сундук.");
         else w.phase = CompanionWork.Phase.STORE;
     }
@@ -205,7 +207,7 @@ final class CompanionChests {
         return found;
     }
 
-    private Container chestAt(ServerLevel level, BlockPos pos) {
+    Container chestAt(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
         BlockState state = level.getBlockState(pos);
         return state.getBlock() instanceof ChestBlock chest ? ChestBlock.getContainer(chest, state, level, pos, false) : null;
@@ -278,7 +280,7 @@ final class CompanionChests {
         return keep;
     }
     /** Not a tool, armour, food, bench or chest: a resource a store order of «resources» puts away. */
-    private static boolean resource(ItemStack stack) {
+    static boolean resource(ItemStack stack) {
         return stack.getMaxDamage() == 0 && !(stack.getItem() instanceof ArmorItem) && !stack.has(DataComponents.FOOD)
                 && !stack.is(Items.CRAFTING_TABLE) && !stack.is(Items.CHEST);
     }
@@ -317,5 +319,5 @@ final class CompanionChests {
         return resource(stack);
     }
 
-    private boolean hasChestItem() { return w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
+    boolean hasChestItem() { return w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
 }

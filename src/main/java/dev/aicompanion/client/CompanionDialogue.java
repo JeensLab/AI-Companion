@@ -52,6 +52,7 @@ public final class CompanionDialogue {
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
             case "store_items" -> "Сейчас сложу в сундук.";
             case "take_items" -> "Сейчас заберу из сундука.";
+            case "sort_items" -> "chests".equals(actions.getFirst().item()) ? "Сейчас наведу порядок в сундуках." : "Сейчас разложу вещи по сундукам.";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";
@@ -66,6 +67,10 @@ public final class CompanionDialogue {
             case "smelt_items" -> "Ага, растоплю печь.";
             case "mine_ore" -> "Ага, возьму кирку и поищу руду.";
             case "hunt_animals" -> "Ага, пойду поохочусь.";
+            case "farm_crops" -> "Ага, сделаю грядки у воды.";
+            case "harvest_crops" -> "Ага, пойду соберу урожай.";
+            case "build_pen" -> "Окей, сделаю загон.";
+            case "breed_animals" -> "Ага, займусь разведением.";
             case "obtain_item" -> "Ага, добуду.";
             default -> "Окей.";
         };
@@ -89,6 +94,19 @@ public final class CompanionDialogue {
                 var game = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
                 yield game == null ? "поохотиться (" + action.count() + " животн.)" : "добыть " + game.count(action.count());
             }
+            case "farm_crops" -> {
+                var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(action.item());
+                yield "посадить " + (crop == null ? "культуру" : crop.plant) + " (грядок: " + action.count() + ")";
+            }
+            case "harvest_crops" -> "собрать урожай";
+            case "build_pen" -> {
+                var animal = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
+                yield "построить загон" + (animal == null ? "" : " для " + animal.many) + " (держать до " + action.count() + ")";
+            }
+            case "breed_animals" -> {
+                var animal = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
+                yield "развести " + (animal == null ? "животных" : animal.many) + " (пар: " + action.count() + ")";
+            }
             case "obtain_item" -> "добыть «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
@@ -97,6 +115,7 @@ public final class CompanionDialogue {
             case "unequip_item" -> "убрать предмет из руки";
             case "store_items" -> "сложить вещи в сундук";
             case "take_items" -> "забрать вещи из сундука";
+            case "sort_items" -> "chests".equals(action.item()) ? "навести порядок в сундуках" : "разложить вещи по сундукам";
             case "build_house" -> "построить дом";
             case "hunt_mobs" -> "разобраться с монстрами";
             case "give_wood" -> "отдать тебе дерево";
@@ -214,6 +233,9 @@ public final class CompanionDialogue {
         String last = stoppedAt >= 0 ? report.substring(stoppedAt) : report.substring(report.lastIndexOf('\n') + 1);
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
+            if (actions.stream().anyMatch(action -> "sort_items".equals(action.type()))) return speakable(failure);
+            // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
+            if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);
             if (partial != null) return partial;
             if (failure.contains("Для подъёма не хватает земли")) return "До верхушки без опоры не достану. Дай мне немного земли.";
@@ -221,6 +243,8 @@ public final class CompanionDialogue {
             if (failure.contains("недостаточно") || failure.contains("не хватает") || failure.contains("Не хватает")) return "На всё пока не хватает материалов.";
             if (failure.contains("дерев") || failure.contains("брёвен")) return "Доступного дерева больше не нашёл. Давай поищем в другом месте.";
             if (failure.contains("безопасное место")) return "Здесь не получается поставить. Нужно место посвободнее.";
+            // The farm's own words carry what is missing and why: no water, no seeds, no ripe crops.
+            if (actions.stream().anyMatch(action -> "farm_crops".equals(action.type()) || "harvest_crops".equals(action.type()))) return speakable(failure);
             return dev.aicompanion.CompanionFailureMessages.explain(actions.isEmpty() ? "" : actions.getFirst().type(), failure);
         }
         var crafted = actions.stream().filter(action -> "craft_item".equals(action.type())).toList();
@@ -264,6 +288,7 @@ public final class CompanionDialogue {
             return (stone > 0 ? "Готово, накопал камня: " + stone + "." : "Камень добыл, он у меня.")
                     + (report.contains("наверх пока не выбрался") ? " Я пока внизу, на своей лестнице." : "");
         }
+        if (actions.stream().anyMatch(action -> "sort_items".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "store_items".equals(action.type()))) return last.contains("Лишних вещей") ? "Лишних вещей для сундука сейчас нет." : "Сложил вещи в сундук.";
         if (actions.stream().anyMatch(action -> "take_items".equals(action.type()))) return "Забрал вещи, они у меня в сумке.";
         if (actions.stream().anyMatch(action -> "place_block".equals(action.type()) && "minecraft:chest".equals(action.item()))) {

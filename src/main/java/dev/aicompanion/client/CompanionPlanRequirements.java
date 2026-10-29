@@ -13,9 +13,11 @@ public final class CompanionPlanRequirements {
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
         decoded = recipientsAndScope(text, decoded);
         decoded = smeltEverything(text, decoded);
+        decoded = harvestEverything(text, decoded);
         decoded = smeltAfterOre(text, decoded);
         decoded = cookAfterHunt(text, decoded);
         decoded = spokenQuantity(text, decoded);
+        decoded = sortScope(text, decoded);
         if (text.matches("(?sU).*\\b(не|почему|зачем|где|как|нельзя|или|либо)\\b.*")
                 || !text.matches("(?sU).*\\b(поставь|размести|установи)\\b.*")
                 && !(text.matches("(?sU).*\\b(можешь|пожалуйста|прошу|нужно|надо|давай)\\b.*")
@@ -46,6 +48,18 @@ public final class CompanionPlanRequirements {
         return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result), List.copyOf(result));
     }
     private static final String TOOL = ".*_(pickaxe|axe|shovel|sword|hoe|helmet|chestplate|leggings|boots)";
+
+    /**
+     * Tidying the chests moves everything the player stored, so only his words ask for it («наведи порядок в сундуках»), never the
+     * model's guess; «разложи вещи по сундукам» lays out the bag. A refusal («не раскладывай») leaves the model's plan alone.
+     */
+    static CompanionReply sortScope(String text, CompanionReply decoded) {
+        if (decoded.actions().stream().noneMatch(step -> step.type().equals("sort_items")) || text.matches("(?sU).*\\b(не|нельзя)\\b.*")) return decoded;
+        String mode = text.matches("(?sU).*" + CompanionWorkCommands.TIDY_CHESTS + ".*") ? "chests" : "bag";
+        List<PlannedAction> result = decoded.actions().stream().map(step -> step.type().equals("sort_items") && !step.item().equals(mode)
+                ? new PlannedAction(step.type(), step.seconds(), step.count(), mode, step.slot(), step.location()) : step).toList();
+        return result.equals(decoded.actions()) ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result), result);
+    }
 
     /**
      * Game log 22.10: «сделай себе и мне каменное оружие и инструменты» became one set for Oleg plus an unasked
@@ -97,6 +111,15 @@ public final class CompanionPlanRequirements {
         return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result);
     }
 
+    /** «Собери урожай» names no number: everything ripe round him, not the single crop a model's default count=1 would take. */
+    static CompanionReply harvestEverything(String text, CompanionReply decoded) {
+        if (decoded.actions().stream().noneMatch(step -> step.type().equals("harvest_crops")) || text.matches(NUMBER)) return decoded;
+        int all = dev.aicompanion.entity.CompanionCrops.MAX_HARVEST;
+        List<PlannedAction> result = decoded.actions().stream().map(step -> step.type().equals("harvest_crops") && step.count() != all
+                ? new PlannedAction(step.type(), step.seconds(), all, step.item(), step.slot(), step.location()) : step).toList();
+        return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result);
+    }
+
     /**
      * Game log 22.10: «Добудь нам больше железа и пойди его переплавь в печке» became one mine_ore step, the smelting was lost.
      * Asked to smelt and given ore to dig but no furnace step: smelt all of that raw ore after digging it.
@@ -133,7 +156,7 @@ public final class CompanionPlanRequirements {
     }
 
     /** Steps that carry no count of their own, so a number in the request can only mean the gathering. */
-    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("follow", "come", "wait", "store_items", "stop", "protect", "stop_protect");
+    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("follow", "come", "wait", "store_items", "sort_items", "stop", "protect", "stop_protect");
     static final int DEFAULT_ORE = 4;
     static final int DEFAULT_GAME = 3;
     /** Unnumbered food/hunting requests make a larger, bounded food run. */
