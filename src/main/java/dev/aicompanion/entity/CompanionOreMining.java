@@ -41,11 +41,11 @@ final class CompanionOreMining {
             return;
         }
         if (++w.orePickaxeAttempts > 3) { w.finish(false, "Не получилось подготовить кирку для «" + w.ore.oreName + "». Вещи у меня."); return; }
-        if (w.ore.pickaxeIn(w.owner.level()) == Items.IRON_PICKAXE && w.items.countCarried(Items.IRON_INGOT) < CompanionWork.ingotCost("minecraft:iron_pickaxe")) {
+        if (w.ore.pickaxeIn(w.owner.level()) == Items.IRON_PICKAXE && w.items.countCarried(Items.IRON_INGOT) < CompanionCraftCosts.ingotCost("minecraft:iron_pickaxe")) {
             // Like a player: iron first, smelted, then the pickaxe, then back to this ore.
             if (w.ironPrep || w.ironMines > 0) { w.finish(false, "Не получилось подготовить железную кирку для «" + w.ore.oreName + "». Вещи у меня."); return; }
             w.owner.workStatus("Для «" + w.ore.oreName + "» нужна железная кирка. Сначала добуду и переплавлю железо.");
-            w.ironTool = "minecraft:iron_pickaxe"; w.ironToolCount = 1; w.ironNeeded = CompanionWork.ingotCost(w.ironTool); w.phase = CompanionWork.Phase.IRON;
+            w.ironTool = "minecraft:iron_pickaxe"; w.ironToolCount = 1; w.ironNeeded = CompanionCraftCosts.ingotCost(w.ironTool); w.phase = CompanionWork.Phase.IRON;
             return;
         }
         w.owner.workStatus("Для «" + w.ore.oreName + "» нужна " + CompanionWork.itemName(w.ore.pickaxeIn(w.owner.level())).toLowerCase(java.util.Locale.ROOT) + ", сначала сделаю её.");

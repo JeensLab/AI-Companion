@@ -270,7 +270,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         // Iron tools and gold or diamonds without an iron pickaxe: ore, furnace and bench in one order, each stage with its
         // own time on the server (review 22.10, М5); the client waits for all of them.
         var kind = "mine_ore".equals(action.type()) ? dev.aicompanion.entity.CompanionOre.Kind.of(action.item()) : null;
-        boolean ironChain = "craft_item".equals(action.type()) && dev.aicompanion.entity.CompanionWork.ingotCost(action.item()) > 0
+        boolean ironChain = "craft_item".equals(action.type()) && dev.aicompanion.entity.CompanionCraftCosts.ingotCost(action.item()) > 0
                 || kind != null && kind.pickaxe == net.minecraft.world.item.Items.IRON_PICKAXE;
         return ironChain ? WORK_LIMIT_SECONDS + 900 : WORK_LIMIT_SECONDS;
     }

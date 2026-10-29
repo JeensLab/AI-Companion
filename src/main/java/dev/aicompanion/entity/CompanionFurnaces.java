@@ -90,7 +90,7 @@ final class CompanionFurnaces {
     private void craftFurnace() {
         // Smelting cobblestone itself: the new furnace must not eat the stone that was to go inside it.
         int reserved = new ItemStack(w.smelt.input()).is(ItemTags.STONE_CRAFTING_MATERIALS) ? w.smeltCount : 0;
-        int missing = CompanionWork.stoneCost("minecraft:furnace") + reserved - w.items.countStoneMaterials();
+        int missing = CompanionCraftCosts.stoneCost("minecraft:furnace") + reserved - w.items.countStoneMaterials();
         if (missing > 0) {
             if (++w.craftAttempts > 3) { w.finish(false, "Для печи не хватает камня, а добыть его не вышло. Сырьё у меня."); return; }
             w.owner.workStatus("Свободной печи рядом нет. Добуду камня и сделаю свою.");

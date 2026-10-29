@@ -42,7 +42,7 @@ final class CompanionWorkCrafting {
             return;
         }
         if (w.craftOnly || result.message().contains("места") || result.message().contains("безопасное место")) { w.finish(false, result.message()); return; }
-        int required = CompanionWork.stoneCost(w.requestedItem) * w.requestedCount;
+        int required = CompanionCraftCosts.stoneCost(w.requestedItem) * w.requestedCount;
         if (required > 0 && w.items.countStoneMaterials() < required) {
             w.wantedStone = Math.min(64, required - w.items.countStoneMaterials());
             if (required - w.items.countStoneMaterials() > 64) { w.finish(false, "Слишком большой заказ, давай сделаем меньше предметов за раз."); return; }
