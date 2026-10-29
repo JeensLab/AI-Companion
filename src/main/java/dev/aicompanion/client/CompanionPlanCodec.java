@@ -15,7 +15,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop",
-            "gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "obtain_item", "pursue_goal");
+            "gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal");
     private static final Pattern DSML = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>.*?"
             + "<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>.*?</\\|DSML\\|invoke>");
 
@@ -81,7 +81,9 @@ public final class CompanionPlanCodec {
                 // No number from the model: what the prompt promises it (ore 4, stone 8), not a single block (game log 22.10).
                 int count = step.has("count") ? step.get("count").getAsBigDecimal().intValueExact()
                         : "mine_ore".equals(type) ? CompanionPlanRequirements.DEFAULT_ORE : "gather_stone".equals(type) ? 8
-                        : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME : 1;
+                        : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME
+                        : "farm_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES
+                        : "harvest_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.MAX_HARVEST : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
                 if (count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
@@ -112,6 +114,19 @@ public final class CompanionPlanCodec {
                     if (game == null && !dev.aicompanion.entity.CompanionGame.anyKind(item)) throw invalid();
                     item = game == null ? item.equals("food") ? "food" : "any"
                             : (dev.aicompanion.entity.CompanionGame.foodRun(item) ? "food:" : "minecraft:") + game.key;
+                }
+                if ("farm_crops".equals(type) || "harvest_crops".equals(type)) {
+                    // One of the four crops (wheat is named by its seeds), or for a harvest any of them; anything else spoils the plan.
+                    var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(item);
+                    if (crop == null && !dev.aicompanion.entity.CompanionCrops.anyKind(item)) throw invalid();
+                    item = crop != null ? crop.seedId() : "farm_crops".equals(type) ? "minecraft:wheat_seeds" : "any";
+                }
+                // A larger field is the same field in consecutive steps of at most 16 tiles.
+                if ("farm_crops".equals(type)) {
+                    for (int left = count; left > 0; left -= dev.aicompanion.entity.CompanionCrops.MAX_TILES)
+                        result.add(new PlannedAction(type, 0, Math.min(dev.aicompanion.entity.CompanionCrops.MAX_TILES, left), item, slot, location));
+                    if (result.size() > MAX_STEPS) throw invalid();
+                    continue;
                 }
                 // One wood or ore step is time-bounded; a larger honest request becomes consecutive steps of at most 16.
                 if ("gather_wood".equals(type) || "mine_ore".equals(type) || "hunt_animals".equals(type)) {

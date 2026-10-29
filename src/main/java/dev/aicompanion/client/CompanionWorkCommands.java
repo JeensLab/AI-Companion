@@ -90,6 +90,22 @@ public final class CompanionWorkCommands {
             };
             return new PlannedAction("store_items", 0, 1, filter);
         }
+        // The field and the harvest need no model either: «собери урожай», «сделай огород», «посади морковь».
+        if (bare.matches("^(?:собери|сними|убери)(?: мне| нам)?(?: весь| созревший)? урожай(?: рядом| вокруг| с огорода| с грядок| с фермы)?$"))
+            return new PlannedAction("harvest_crops", 0, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, "any");
+        if (bare.matches("^(?:сделай|разбей|вскопай|создай)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:огород|огородик|грядки|грядку|ферму(?: пшеницы)?)(?: у воды| рядом)?$"))
+            return new PlannedAction("farm_crops", 0, dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, "minecraft:wheat_seeds");
+        var sow = Pattern.compile("^(?:посади|засади|посей|высади)(?: мне| нам)?\\s+(пшениц\\p{L}*|морков\\p{L}*|картош\\p{L}*|картофел\\p{L}*|свекл\\p{L}*)(?: у воды| рядом)?$").matcher(bare);
+        if (sow.matches()) {
+            var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(switch (sow.group(1).substring(0, 4)) {
+                case "морк" -> "carrot";
+                case "карт" -> "potato";
+                case "свек" -> "beetroot";
+                default -> "wheat";
+            });
+            int count = amount(said.count(), dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, dev.aicompanion.entity.CompanionCrops.MAX_TILES, dev.aicompanion.entity.CompanionCrops.MAX_TILES);
+            return count >= 1 && count <= dev.aicompanion.entity.CompanionCrops.MAX_TILES ? new PlannedAction("farm_crops", 0, count, crop.seedId()) : null;
+        }
         return null;
     }
 
