@@ -60,6 +60,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |
 | Компоненты после разделения больших классов | `entity/CompanionGathering.java`, `CompanionGatherGoals.java`, `CompanionStoneMining.java`, `CompanionOreMining.java`, `CompanionWorkCrafting.java`, `CompanionHunting.java` |
 | Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
+| Раскладка по сундукам (`sort_chests`) | `entity/CompanionSorting.java` (набор, ходки, несомое для игрока), `CompanionSortGroups.java` (группы и «куда что»); тесты `gametest/CompanionSorting*Tests.java`, `CompanionStoreGroupsTests.java` |
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
