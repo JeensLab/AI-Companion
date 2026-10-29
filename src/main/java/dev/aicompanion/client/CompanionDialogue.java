@@ -360,7 +360,7 @@ public final class CompanionDialogue {
 
     /** Fewer flints than ordered: a craft made of flint cannot go on, and its own failure would hide the honest flint report. */
     private static boolean needsMissingFlint(PlannedAction gather, PlannedAction next) {
-        return CompanionPlanCodec.FLINT.equals(gather.item()) && ("minecraft:flint_and_steel".equals(next.item()) || "minecraft:arrow".equals(next.item()));
+        return CompanionPlanCodec.FLINT.equals(gather.item()) && java.util.Set.of("minecraft:flint_and_steel", "minecraft:arrow", "minecraft:fletching_table").contains(next.item());
     }
 
     public static boolean continueAfterPartialGather(PlannedAction action, List<PlannedAction> later, boolean success) {
