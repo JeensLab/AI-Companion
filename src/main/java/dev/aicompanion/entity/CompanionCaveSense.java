@@ -8,7 +8,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.LightLayer;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -30,7 +29,7 @@ final class CompanionCaveSense {
     static final int MAX_CELLS = 1500, RADIUS = 20, LAVA_RADIUS = 8, WATCH_RADIUS = 16, MAX_DROP = 32;
     /** Very dangerous: health at or below this, this many hostile mobs in the cave, a creeper closer than this, no sealing block. */
     static final float HEALTH_VERY = 8, HEALTH_WARY = 13;
-    static final int CROWD = 3, TORCHES_MIN = 8, DROP_DANGEROUS = 3;
+    static final int CROWD = 3, TORCHES_MIN = 8, DROP_DANGEROUS = 3, LIGHT_SPACING = 25;
     static final double CREEPER_CLOSE = 7;
 
     private CompanionCaveSense() { }
@@ -104,10 +103,27 @@ final class CompanionCaveSense {
             hostiles++;
             if (mob instanceof Creeper) creeper = Math.min(creeper, mob.distanceTo(owner));
         }
-        int dark = 0;
-        for (BlockPos cell : cave.air()) if (level.getBrightness(LightLayer.BLOCK, cell) == 0) dark++;
+        boolean dark = lights(level, cave) * LIGHT_SPACING < cave.air().size();
         int torches = torchesAside ? Integer.MAX_VALUE : w.items.countCarried(Items.TORCH);
-        return new Facts(hostiles, creeper, dark * 2 > cave.air().size(), owner.getHealth(), owner.isOnFire() || owner.isInLava(), torches, CompanionSeal.available(owner));
+        return new Facts(hostiles, creeper, dark, owner.getHealth(), owner.isOnFire() || owner.isInLava(), torches, CompanionSeal.available(owner));
+    }
+
+    /**
+     * Light sources of the cave itself. The light level cannot say: the torches of his own tunnel shine through the breach.
+     * A torch in his mine is not in the cave air; a glowing block or lava in the wall beside the air is the cave's.
+     */
+    private static int lights(ServerLevel level, Cave cave) {
+        Set<BlockPos> lights = new HashSet<>();
+        for (BlockPos cell : cave.air()) {
+            if (level.getBlockState(cell).getLightEmission() > 0) lights.add(cell);
+            for (Direction side : Direction.values()) {
+                BlockPos next = cell.relative(side);
+                if (cave.air().contains(next)) continue;
+                var state = level.getBlockState(next);
+                if (state.getLightEmission() > 0 && (state.canOcclude() || !state.getFluidState().isEmpty())) lights.add(next);
+            }
+        }
+        return lights.size();
     }
 
     static Danger judge(Cave cave, Facts f) {

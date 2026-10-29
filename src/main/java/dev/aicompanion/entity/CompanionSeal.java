@@ -1,14 +1,19 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 
 import java.util.List;
@@ -17,6 +22,8 @@ import java.util.List;
 public final class CompanionSeal {
     /** Eye to the centre of the cell, as for any block the companion works on from where he stands. */
     public static final double REACH = 4.5;
+    /** A point just inside a face of the cell: a line that reaches it has entered the cell through an open side. */
+    private static final double FACE = .45;
     /** Cheapest first: what mining makes anyway, then soil, then the plain stone. */
     private static final List<Item> PREFERENCE = List.of(Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.DIRT, Items.STONE);
 
@@ -49,11 +56,33 @@ public final class CompanionSeal {
         return owner.level() instanceof ServerLevel level && CompanionShaftPlan.clearTo(level, owner.getEyePosition(), cell);
     }
 
+    /**
+     * The centre of the cell is hidden, but a face of it against a solid neighbour is in reach and in sight: a player sets a block onto
+     * the floor seen through a hole whose middle is hidden.
+     */
+    private static boolean faceReachable(CompanionEntity owner, BlockPos cell) {
+        if (!(owner.level() instanceof ServerLevel level)) return false;
+        Vec3 eye = owner.getEyePosition();
+        for (Direction side : Direction.values()) {
+            if (CompanionShaftPlan.open(level, cell.relative(side))) continue;
+            Vec3 face = cell.getCenter().add(side.getStepX() * FACE, side.getStepY() * FACE, side.getStepZ() * FACE);
+            if (eye.distanceTo(face) > REACH) continue;
+            HitResult hit = level.clip(new ClipContext(eye, face, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, CollisionContext.empty()));
+            if (hit.getType() == HitResult.Type.MISS || hit.getType() == HitResult.Type.BLOCK && ((BlockHitResult) hit).getBlockPos().equals(cell)) return true;
+        }
+        return false;
+    }
+
     /** Places one sealing block into the cell. Nothing is consumed unless the block was set. */
-    public static Result place(CompanionEntity owner, BlockPos cell) {
+    public static Result place(CompanionEntity owner, BlockPos cell) { return place(owner, cell, false); }
+
+    /** The same, also onto a face of the cell in sight when its centre is hidden: the hole he has just made is plugged at once. */
+    public static Result plug(CompanionEntity owner, BlockPos cell) { return place(owner, cell, true); }
+
+    private static Result place(CompanionEntity owner, BlockPos cell, boolean byFace) {
         if (!(owner.level() instanceof ServerLevel level) || !level.hasChunkAt(cell)) return Result.OCCUPIED;
         if (!replaceable(level, cell) || owner.getBoundingBox().intersects(new AABB(cell))) return Result.OCCUPIED;
-        if (!reachable(owner, cell)) return Result.OUT_OF_REACH;
+        if (!reachable(owner, cell) && !(byFace && faceReachable(owner, cell))) return Result.OUT_OF_REACH;
         int slot = slot(owner);
         if (slot < 0) return Result.NO_BLOCK;
         ItemStack stack = owner.getItem(slot);

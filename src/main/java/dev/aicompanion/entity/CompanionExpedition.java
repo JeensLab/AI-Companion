@@ -111,6 +111,9 @@ final class CompanionExpedition {
         return result != CompanionExpeditionOre.Result.NONE;
     }
 
+    /** True when a fight would draw him into a cave the mine has opened: see {@link CompanionExpeditionCave#shuns}. */
+    boolean shuns(net.minecraft.world.entity.LivingEntity target) { return active && cave.shuns(target); }
+
     private int gained() { return w.items.countCarried(Items.DIAMOND) - startDiamonds; }
 
     private void locate(ServerLevel level) {

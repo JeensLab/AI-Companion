@@ -27,6 +27,8 @@ final class CompanionCombat {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
         private int nextSwing;
+        @Override public boolean canUse() { return super.canUse() && !c.work.expedition.shuns(c.getTarget()); }
+        @Override public boolean canContinueToUse() { return super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget()); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
