@@ -74,12 +74,13 @@ public final class CompanionSortingInterruptionTests {
     public static void stopNextToAChestPutsThingsBackAndSaysNothing(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
         Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
-        String[] said = {null, null, null}; long[] at = {0};
+        String[] said = {null, null, null, null}; long[] at = {0};
         helper.onEachTick(() -> {
             if (said[0] != null || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
             var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
             long id = companion.activeWorkId();
             companion.stopGathering();
+            said[3] = companion.getLastTaskResult();
             said[0] = companion.workResult(id).message();
             said[1] = CompanionEvents.executeAction(player, "stop", "", 1).message();
             said[2] = CompanionDialogue.summarize(List.of(new PlannedAction("stop", 0, 1)), said[1]);
@@ -93,6 +94,8 @@ public final class CompanionSortingInterruptionTests {
             helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
             helper.assertTrue(!said[0].contains("в сумке") && !said[1].contains("в сумке") && !said[2].contains("в сумке"), "A note with nothing left: " + said[0] + " / " + said[1] + " / " + said[2]);
             helper.assertTrue(said[2].equals("Ладно, остановился."), "The stop answer is not plain: " + said[2]);
+            // The report the model reads lists the bag after the put-back, not the things already back in the chests.
+            helper.assertTrue(said[3].endsWith("В сумке: " + companion.getStoredItemsSummary() + "."), "The last report lists a bag from before the put-back: " + said[3]);
         });
     }
 
