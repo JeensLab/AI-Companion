@@ -48,6 +48,15 @@ public final class CompanionSortingHearingTests {
         helper.succeed();
     }
 
+    /** A plan that only has sorting in it is not all sorting: the raw server line of another step (a coordinate, a block id) is not said as it is. */
+    @GameTest(template = "empty")
+    public static void rawServerLineOfAnotherStepIsNotSaidBecauseSortingIsInThePlan(GameTestHelper helper) {
+        List<PlannedAction> plan = List.of(new PlannedAction("place_block", 0, 2, "minecraft:chest"), new PlannedAction("sort_chests", 0, 1));
+        String heard = CompanionDialogue.summarize(plan, "План остановлен: На месте установки сейчас 1 из 2 блоков minecraft:chest на 12, 64, -5.");
+        helper.assertTrue(!heard.contains("minecraft:") && !heard.matches("(?s).*-?\\d+, -?\\d+, -?\\d+.*"), "Heard the raw line: " + heard);
+        helper.succeed();
+    }
+
     /** Sorting needs no furnace: a batch cooking in one does not hold it. */
     @GameTest(template = "empty")
     public static void sortingDoesNotWaitForTheFurnace(GameTestHelper helper) {

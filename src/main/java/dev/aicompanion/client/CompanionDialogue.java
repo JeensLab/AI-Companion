@@ -206,6 +206,9 @@ public final class CompanionDialogue {
         return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
+    /** How the refusals of the sorting itself begin (CompanionSorting); any other stop of a plan with sorting in it goes the usual way. */
+    private static final List<String> SORT_OWN = List.of("Рядом с тобой сундуков", "Не смог дойти до", "Не получилось разложить", "Сумка забита, сначала", "Пропустил");
+
     private static String summarizeSteps(List<PlannedAction> actions, String report) {
         if (report.isBlank()) return "";
         if (actions.stream().anyMatch(action -> action.type().startsWith("goal_"))) return report.replace("План остановлен: ", "");
@@ -217,8 +220,11 @@ public final class CompanionDialogue {
         if (lower.contains("отменён") || lower.contains("остановки")) return "Ладно, остановился.";
         int stoppedAt = report.lastIndexOf("План остановлен:");
         String last = stoppedAt >= 0 ? report.substring(stoppedAt) : report.substring(report.lastIndexOf('\n') + 1);
-        // Sorting words its own refusals («Рядом с тобой сундуков не вижу.», «…они у меня в сумке»): they are said as they are.
-        if (sorting && last.contains("План остановлен:")) return last.substring(last.indexOf("План остановлен:") + "План остановлен:".length()).strip();
+        // Sorting words its own refusals («Рядом с тобой сундуков не вижу.», «…они у меня в сумке»): they are said as they are; the raw line of another step of the plan is not.
+        if (sorting && last.contains("План остановлен:")) {
+            String own = last.substring(last.indexOf("План остановлен:") + "План остановлен:".length()).strip();
+            if (SORT_OWN.stream().anyMatch(own::startsWith)) return own;
+        }
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
             String partial = partialGather(actions, failure);
@@ -280,7 +286,7 @@ public final class CompanionDialogue {
         }
         if (actions.stream().anyMatch(action -> "come".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_mobs".equals(action.type()))) return speakable(last);
-        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander").contains(action.type()))) return "";
+        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander").contains(action.type()))) return lower.contains("в сумке") ? "Часть вещей у меня в сумке." : "";
         return speakable(last);
     }
 

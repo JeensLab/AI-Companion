@@ -10,6 +10,8 @@ import net.minecraft.world.item.Items;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,7 +71,8 @@ public final class CompanionSortGroups {
      * Which chests (by index, in the order they fill) take each group of the set. The biggest group picks first, the chest where it
      * already lies most (the nearer one on a tie), and goes on into more chests while its volume does not fit their sizes; with
      * fewer chests than groups the big ones keep a chest each and all the rest share the last. A group that still does not fit
-     * shares the next chest too. Chests no group needs stay out of the plan.
+     * spills into one more chest, the one with the most room left once every group has its own (a spill into a chest another
+     * group fills to the brim would only trade places with it). Chests no group needs stay out of the plan.
      * {@code volume} is the cells each group takes, chests and what the bag carries together ({@link #volume}): the order does not change on the way.
      */
     public static Map<Group, List<Integer>> plan(List<Chest> chests, Map<Group, Double> volume) {
@@ -79,10 +82,15 @@ public final class CompanionSortGroups {
         List<Group> order = new ArrayList<>(volume.keySet());
         order.sort(Comparator.comparing((Group group) -> -sizes.get(group)).thenComparing(Enum::ordinal));
         List<Chest> free = new ArrayList<>(chests);
+        Map<Integer, Double> used = new HashMap<>();
+        Map<Group, Double> spill = new LinkedHashMap<>();
         Map<Group, List<Integer>> result = new EnumMap<>(Group.class);
         for (int i = 0; i < order.size() && !free.isEmpty(); i++) {
             Group group = order.get(i);
-            if (free.size() == 1) { for (int j = i; j < order.size(); j++) result.put(order.get(j), List.of(free.getFirst().index())); break; }
+            if (free.size() == 1) {
+                for (int j = i; j < order.size(); j++) { result.put(order.get(j), new ArrayList<>(List.of(free.getFirst().index()))); used.merge(free.getFirst().index(), volume.get(order.get(j)), Double::sum); }
+                break;
+            }
             double rest = 0;
             for (int j = i + 1; j < order.size(); j++) rest += volume.get(order.get(j));
             double average = free.stream().mapToInt(Chest::size).average().orElse(1);
@@ -92,12 +100,16 @@ public final class CompanionSortGroups {
             List<Integer> mine = new ArrayList<>();
             while (need > 0 && mine.size() < limit) {
                 Chest best = nearestWith(free, group);
-                free.remove(best); mine.add(best.index()); need -= best.size();
+                free.remove(best); mine.add(best.index()); used.merge(best.index(), Math.min(need, best.size()), Double::sum); need -= best.size();
             }
-            // Did not fit the chests it could take: it shares the next one with the groups after it.
-            if (need > 0 && !free.isEmpty()) mine.add(nearestWith(free, group).index());
+            if (need > 0) spill.put(group, need);
             result.put(group, mine);
         }
+        // Did not fit the chests it could take: the rest goes to the chest with the most room left, group by group in the order they picked.
+        spill.forEach((group, rest) -> chests.stream().filter(chest -> !result.get(group).contains(chest.index()))
+                .min(Comparator.comparingDouble((Chest chest) -> used.getOrDefault(chest.index(), 0.0) - chest.size())
+                        .thenComparing(chest -> -chest.cells().getOrDefault(group, 0.0)).thenComparingDouble(Chest::distance).thenComparingInt(Chest::index))
+                .ifPresent(chest -> { result.get(group).add(chest.index()); used.merge(chest.index(), rest, Double::sum); }));
         return result;
     }
 

@@ -1,7 +1,10 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionDialogue;
+import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionActionResult;
+import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionSortGroups.Group;
 import net.minecraft.core.BlockPos;
@@ -18,6 +21,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static dev.aicompanion.gametest.CompanionSortingTests.bagOf;
@@ -50,6 +54,32 @@ public final class CompanionSortingInterruptionTests {
             String said = ((CompanionActionResult)stopped[0]).message();
             helper.assertTrue(said.contains("в сумке"), "The stop does not say things are in his bag: " + said);
             helper.assertTrue(!companion.hasActiveWorkOrder() && totals(chests).equals(stopped[1]), "He kept working the chests after the stop");
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
+        });
+    }
+
+    /**
+     * The real path of «стоп»: the plan port cancels the work first (stopGathering), then the command arrives. The command's own answer is what the
+     * player hears, and it must carry the note: the work is already gone by then.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void stopCommandAfterTheCancelStillSaysThingsAreInTheBag(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper); Container[] chests = mixedThree(helper); bagOf(companion);
+        Map<Item, Integer> before = totals(companion, chests), bagBefore = totals(companion);
+        String[] said = {null, null, null};
+        helper.onEachTick(() -> {
+            if (said[0] != null || !companion.hasActiveWorkOrder() || totals(companion).equals(bagBefore)) return;
+            var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+            companion.stopGathering();
+            said[0] = CompanionEvents.executeAction(player, "stop", "", 1).message();
+            said[1] = CompanionDialogue.summarize(List.of(new PlannedAction("stop", 0, 1)), said[0]);
+            said[2] = CompanionEvents.executeAction(player, "stop", "", 1).message();
+        });
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(said[0] != null, "He never carried anything to stop on");
+            helper.assertTrue(said[0].contains("в сумке") && said[1].contains("в сумке"), "The player hears: " + said[0] + " / " + said[1]);
+            helper.assertTrue(!said[2].contains("в сумке"), "The note is said twice: " + said[2]);
             helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
         });
     }

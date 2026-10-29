@@ -394,7 +394,8 @@ public final class CompanionSortingTests {
     /** The request of the stream (28.10) is an order the model must plan; the question before it is not. */
     @GameTest(template = "empty")
     public static void sortRequestsMakeTheModelPlan(GameTestHelper helper) {
-        for (String order : List.of("Вот я поставил три сундука рядом. Отсортируй в каждом сундуке разные предметы.", "Разложи вещи по сундукам", "Наведи порядок в сундуках, пожалуйста"))
+        for (String order : List.of("Вот я поставил три сундука рядом. Отсортируй в каждом сундуке разные предметы.", "Разложи вещи по сундукам", "Наведи порядок в сундуках, пожалуйста",
+                "Наведи порядок в моих сундуках", "Наведи в сундуках порядок", "Разложите вещи по сундукам", "Отсортируйте вещи по сундукам", "Давай разложим сундуки"))
             helper.assertTrue(OpenRouterClient.requiresAction(order), "Not an order: " + order);
         helper.assertTrue(!OpenRouterClient.requiresAction("А ты бы сам смог сундуки сортировать?"), "A question taken for an order");
         for (String chat : List.of("Ты всё разложил по сундукам?", "Ты уже отсортировал сундуки?", "Наведи порядок в доме", "Спасибо, что рассортировал сундук"))
