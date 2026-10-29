@@ -70,6 +70,8 @@ public final class CompanionDialogue {
             case "smelt_items" -> "Ага, растоплю печь.";
             case "mine_ore" -> "Ага, возьму кирку и поищу руду.";
             case "hunt_animals" -> "Ага, пойду поохочусь.";
+            case "build_pen" -> "Окей, сделаю загон.";
+            case "breed_animals" -> "Ага, займусь разведением.";
             case "obtain_item" -> "Ага, добуду.";
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
@@ -106,6 +108,14 @@ public final class CompanionDialogue {
             case "hunt_animals" -> {
                 var game = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
                 yield game == null ? "поохотиться (" + action.count() + " животн.)" : "добыть " + game.count(action.count());
+            }
+            case "build_pen" -> {
+                var animal = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
+                yield "построить загон" + (animal == null ? "" : " для " + animal.many) + " (держать до " + action.count() + ")";
+            }
+            case "breed_animals" -> {
+                var animal = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
+                yield "развести " + (animal == null ? "животных" : animal.many) + " (пар: " + action.count() + ")";
             }
             case "obtain_item" -> "добыть «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
@@ -262,6 +272,8 @@ public final class CompanionDialogue {
         }
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
+            // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
+            if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);
             if (partial != null) return partial;
             if (failure.contains("Для подъёма не хватает земли")) return "До верхушки без опоры не достану. Дай мне немного земли.";

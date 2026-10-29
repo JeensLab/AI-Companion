@@ -37,6 +37,15 @@ public final class CompanionWorkCommands {
             // More than one order holds goes to the model, which splits it into several steps.
             return count >= 1 && count <= max ? new PlannedAction("mine_ore", 0, count, "minecraft:" + kind + "_ore") : null;
         }
+        // «Сделай загон для коров», «загони овец», «разведи свиней»: the kind in any case, none for any kind.
+        String animals = "(?:\\s+(коров|корову|коровы|овец|овцу|овцы|свиней|свинью|свиньи|куриц|курицу|курицы|кур))?";
+        var pen = Pattern.compile("^(?:(?:сделай|построй)(?: мне| нам| себе)? загон(?: для)?|загони)" + animals + "$").matcher(bare);
+        var breed = Pattern.compile("^разведи" + animals + "$").matcher(bare);
+        if (pen.matches() || breed.matches() && said.count() == 0) {
+            String word = pen.matches() ? pen.group(1) : breed.group(1);
+            String kind = word == null ? "any" : "minecraft:" + (word.startsWith("коров") ? "cow" : word.startsWith("ов") ? "sheep" : word.startsWith("свин") ? "pig" : "chicken");
+            return pen.matches() ? new PlannedAction("build_pen", 0, amount(said.count(), 4, 8, 8), kind) : new PlannedAction("breed_animals", 0, 1, kind);
+        }
         var smelt = Pattern.compile("^(?:переплавь|расплавь|переплави|пережги)(?: мне| нам| себе)?(?:\\s+(?:всю|весь))?\\s+(железо|железа|золото|золота|медь|меди|песок|песка|булыжник|булыжника)(?:\\s+(?:в печи|в печке))?$").matcher(bare);
         if (smelt.matches()) {
             String raw = switch (smelt.group(1)) {
