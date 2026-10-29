@@ -67,6 +67,7 @@ public final class CompanionDialogue {
             case "mine_ore" -> "Ага, возьму кирку и поищу руду.";
             case "hunt_animals" -> "Ага, пойду поохочусь.";
             case "obtain_item" -> "Ага, добуду.";
+            case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
     }
@@ -109,6 +110,10 @@ public final class CompanionDialogue {
             case "protect" -> "прикрывать тебя";
             case "stop_protect" -> "закончить охрану";
             case "wander" -> "осмотреться";
+            case "pursue_goal" -> {
+                var book = dev.aicompanion.entity.CompanionPlaybooks.of(action.item(), action.count());
+                yield "взяться за долгую цель" + (book == null ? "" : ": " + book.title());
+            }
             case "goal_pickaxes" -> "сделать каменные кирки для вас обоих";
             case "goal_resume" -> "продолжить сохранённую цель";
             case "goal_cancel" -> "отменить цель";
@@ -157,7 +162,7 @@ public final class CompanionDialogue {
             skipped = report.substring(marker + SKIPPED_PREFIX.length()).trim();
             report = report.substring(0, marker).trim();
         }
-        String failed = actions.stream().anyMatch(action -> action.type().startsWith("goal_")) ? "" : failedParts(report);
+        String failed = actions.stream().anyMatch(CompanionDialogue::isGoalAction) ? "" : failedParts(report);
         if (!failed.isEmpty()) {
             // Parts given up while the rest went on: the player hears what was not made and why, once, not the steps that went with it.
             if (!report.contains("План остановлен:")) return "Остальное сделал. " + failed;
@@ -206,9 +211,14 @@ public final class CompanionDialogue {
         return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
+    /** The reply of a goal order is said whole: its summary names what he cannot yet, and a cut sentence would not. */
+    private static boolean isGoalAction(PlannedAction action) {
+        return action.type().startsWith("goal_") || "pursue_goal".equals(action.type());
+    }
+
     private static String summarizeSteps(List<PlannedAction> actions, String report) {
         if (report.isBlank()) return "";
-        if (actions.stream().anyMatch(action -> action.type().startsWith("goal_"))) return report.replace("План остановлен: ", "");
+        if (actions.stream().anyMatch(CompanionDialogue::isGoalAction)) return report.replace("План остановлен: ", "");
         String lower = report.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains("такое поручение уже выполняется")) return "Я уже занимаюсь этим поручением.";
         if (lower.contains("отменён") || lower.contains("остановки")) return "Ладно, остановился.";

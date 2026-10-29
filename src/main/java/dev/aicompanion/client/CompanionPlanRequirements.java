@@ -10,6 +10,8 @@ public final class CompanionPlanRequirements {
     private CompanionPlanRequirements() { }
 
     public static CompanionReply apply(String request, CompanionReply decoded) {
+        // A long goal is the whole plan: the wording of the request adds no step beside it.
+        if (decoded.actions().stream().anyMatch(step -> step.type().equals("pursue_goal"))) return decoded;
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
         decoded = recipientsAndScope(text, decoded);
         decoded = smeltEverything(text, decoded);

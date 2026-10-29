@@ -1,8 +1,8 @@
 param([ValidateRange(1,20)][int]$Repetitions=3)
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot
-$taskSource=Join-Path $taskRoot 'src/main/java/dev/aicompanion/gametest/CompanionAgendaTests.java'
-$taskOriginal=[IO.File]::ReadAllText($taskSource)
+$taskSources=@('CompanionAgendaTests.java','CompanionAgendaModelTests.java') | ForEach-Object {Join-Path $taskRoot "src/main/java/dev/aicompanion/gametest/$_"}
+$taskOriginals=@{};foreach($taskSource in $taskSources){$taskOriginals[$taskSource]=[IO.File]::ReadAllText($taskSource)}
 $taskFixtures=Join-Path $taskRoot 'src/main/resources/data/aicompanion_agenda'
 $taskReports=Join-Path $taskRoot 'build/diagnostics'
 $taskInit=Join-Path $taskReports 'agenda-only.init.gradle'
@@ -14,7 +14,7 @@ Copy-Item -LiteralPath (Join-Path $taskRoot 'src/main/resources/data/aicompanion
 $taskRuns=@()
 Push-Location $taskRoot
 try {
-    [IO.File]::WriteAllText($taskSource,$taskOriginal.Replace('@GameTestHolder(AICompanionMod.MOD_ID)','@GameTestHolder("aicompanion_agenda")'),[Text.UTF8Encoding]::new($false))
+    foreach($taskSource in $taskSources){[IO.File]::WriteAllText($taskSource,$taskOriginals[$taskSource].Replace('@GameTestHolder(AICompanionMod.MOD_ID)','@GameTestHolder("aicompanion_agenda")'),[Text.UTF8Encoding]::new($false))}
     for($taskIteration=1;$taskIteration -le $Repetitions;$taskIteration++) {
         $taskLog=Join-Path $taskReports "agenda-targeted-$taskIteration.txt"
         $taskStarted=Get-Date
@@ -29,7 +29,7 @@ try {
         Write-Output "Agenda run $taskIteration passed: $($taskMatch.Groups[1].Value)"
     }
 } finally {
-    [IO.File]::WriteAllText($taskSource,$taskOriginal,[Text.UTF8Encoding]::new($false))
+    foreach($taskSource in $taskSources){[IO.File]::WriteAllText($taskSource,$taskOriginals[$taskSource],[Text.UTF8Encoding]::new($false))}
     $taskResolved=(Resolve-Path -LiteralPath $taskFixtures).Path
     if($taskResolved -ne (Join-Path $taskRoot 'src\main\resources\data\aicompanion_agenda')){throw 'Unexpected fixture cleanup target'}
     Remove-Item -LiteralPath $taskResolved -Recurse -Force
