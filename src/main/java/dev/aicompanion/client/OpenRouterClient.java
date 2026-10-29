@@ -318,7 +318,7 @@ public final class OpenRouterClient {
             }
             CompanionReply reply = CompanionPlanRequirements.apply(userText, CompanionPlanCodec.decode(choice.getAsJsonObject("message")));
             CompanionDiagnostics.event(trace, "model_decoded", "text", reply.text(), "actions", reply.actions(), "forcePlan", forcePlan);
-            if (forcePlan && reply.actions().isEmpty()) {
+            if (wordsRefused(userText, forcePlan, reply)) {
                 throw new IllegalStateException("Модель ответила текстом, но не передала команды для твоей просьбы. План не запущен; повтори запрос.");
             }
             if (!recordReply(requestGeneration, reply.text())) {
@@ -331,6 +331,16 @@ public final class OpenRouterClient {
                 synchronized (HISTORY) { HISTORY.removeIf(entry -> entry == userMessage); }
             }
         });
+    }
+
+    /**
+     * A plan was required and none came: after an order the words are refused, the player hears that nothing was started. A question gets them
+     * (in game 29.10 «Как думаешь, что лучше построить первым делом — дом или шахту?» required a plan by its words and lost a good answer);
+     * «Можешь построить дом?» is an order, a mere promise to it is refused as before.
+     */
+    public static boolean wordsRefused(String userText, boolean forcePlan, CompanionReply reply) {
+        return forcePlan && reply.actions().isEmpty()
+                && (!userText.contains("?") || userText.toLowerCase(java.util.Locale.ROOT).matches("(?s).*(можешь|сможешь|давай|пожалуйста).*"));
     }
 
     private static String scalar(JsonObject object, String key) {
