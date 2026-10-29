@@ -211,9 +211,14 @@ public final class CompanionDialogue {
         if (actions.stream().anyMatch(action -> action.type().startsWith("goal_"))) return report.replace("План остановлен: ", "");
         String lower = report.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains("такое поручение уже выполняется")) return "Я уже занимаюсь этим поручением.";
+        boolean sorting = actions.stream().anyMatch(action -> "sort_chests".equals(action.type()));
+        // A stop in the middle of sorting: the server's note that things are in his bag is part of the answer (game rule: nothing lost silently).
+        if (sorting && lower.contains("работа прервана")) return "Ладно, остановился." + (lower.contains("в сумке") ? " Часть вещей у меня в сумке." : "");
         if (lower.contains("отменён") || lower.contains("остановки")) return "Ладно, остановился.";
         int stoppedAt = report.lastIndexOf("План остановлен:");
         String last = stoppedAt >= 0 ? report.substring(stoppedAt) : report.substring(report.lastIndexOf('\n') + 1);
+        // Sorting words its own refusals («Рядом с тобой сундуков не вижу.», «…они у меня в сумке»): they are said as they are.
+        if (sorting && last.contains("План остановлен:")) return last.substring(last.indexOf("План остановлен:") + "План остановлен:".length()).strip();
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
             String partial = partialGather(actions, failure);

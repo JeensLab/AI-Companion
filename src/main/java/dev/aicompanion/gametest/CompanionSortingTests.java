@@ -397,6 +397,8 @@ public final class CompanionSortingTests {
         for (String order : List.of("Вот я поставил три сундука рядом. Отсортируй в каждом сундуке разные предметы.", "Разложи вещи по сундукам", "Наведи порядок в сундуках, пожалуйста"))
             helper.assertTrue(OpenRouterClient.requiresAction(order), "Not an order: " + order);
         helper.assertTrue(!OpenRouterClient.requiresAction("А ты бы сам смог сундуки сортировать?"), "A question taken for an order");
+        for (String chat : List.of("Ты всё разложил по сундукам?", "Ты уже отсортировал сундуки?", "Наведи порядок в доме", "Спасибо, что рассортировал сундук"))
+            helper.assertTrue(!OpenRouterClient.requiresAction(chat), "A talk taken for an order: " + chat);
         helper.succeed();
     }
 

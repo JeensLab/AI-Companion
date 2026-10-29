@@ -207,7 +207,7 @@ final class CompanionChests {
      * with room). Null when no chest has room for it. {@code affinity[0]} tells which of the two it was.
      */
     private BlockPos homeOf(ItemStack stack, LinkedHashMap<BlockPos, Container> usable, boolean[] affinity) {
-        BlockPos center = w.owner.blockPosition(), best = null;
+        BlockPos center = storeCenter(), best = null;
         CompanionSortGroups.Group group = CompanionSortGroups.of(stack);
         for (var entry : usable.entrySet()) {
             if (!holdsGroup(entry.getValue(), group) || !hasRoomFor(entry.getValue(), stack)) continue;
@@ -219,9 +219,12 @@ final class CompanionChests {
         return null;
     }
 
+    /** One point for the whole order, where the work began: the homes must not change as he walks between the chests. */
+    private BlockPos storeCenter() { return w.workOrigin != null ? w.workOrigin : w.owner.blockPosition(); }
+
     /** The chest to go to next: the nearest "own group" chest of anything he carries; with none, the first in the old order. */
     private BlockPos storeTarget(LinkedHashMap<BlockPos, Container> usable) {
-        BlockPos center = w.owner.blockPosition(), nearest = null, first = null;
+        BlockPos center = storeCenter(), nearest = null, first = null;
         int firstIndex = Integer.MAX_VALUE;
         List<BlockPos> order = new ArrayList<>(usable.keySet());
         for (int slot : movableSlots()) {
