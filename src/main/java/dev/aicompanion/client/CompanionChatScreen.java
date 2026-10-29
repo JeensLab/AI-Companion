@@ -28,7 +28,7 @@ public final class CompanionChatScreen extends Screen {
         if (conversation.isEmpty()) conversation.add(Component.literal(companionName() + ": Привет!").withStyle(ChatFormatting.AQUA));
     }
 
-    private static String companionName() { return CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get()); }
+    static String companionName() { return CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get()); }
 
     @Override
     protected void init() {
@@ -73,6 +73,7 @@ public final class CompanionChatScreen extends Screen {
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
         long sessionGeneration = OpenRouterClient.generation();
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
+            CompanionThinking.started(); // the next request in the queue, if any, goes to the model now
             if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
                 dropThinkingLine();
@@ -129,6 +130,8 @@ public final class CompanionChatScreen extends Screen {
         transcript.whenComplete((text, error) -> Minecraft.getInstance().execute(() -> {
             CompanionAmbientClient.transcriptionFinished();
             Minecraft current = Minecraft.getInstance();
+            // «Распознаю речь...» is over; «думает…» used to replace it here. Not over a new «Запись...».
+            if (!AICompanionClient.recordingSpeech()) current.gui.setOverlayMessage(Component.empty(), false);
             // Recordings overlap: a phrase heard before «Забудь всё» can be recognized after it and must not reach the cleared journal or the model.
             if (OpenRouterClient.sessionEnded(null, heardGeneration)) {
                 CompanionDiagnostics.event(trace, "voice_discarded", "reason", "session_changed", "outcome", error != null ? "error" : "text");
@@ -180,6 +183,7 @@ public final class CompanionChatScreen extends Screen {
         announceThinking(OpenRouterClient.isBusy());
         long sessionGeneration = OpenRouterClient.generation();
         OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
+            CompanionThinking.started(); // the next request in the queue, if any, goes to the model now
             if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
                 return;
@@ -207,12 +211,13 @@ public final class CompanionChatScreen extends Screen {
     }
 
     /**
-     * The model can take a minute or more to answer. Show at once that the request arrived, and when an earlier one
-     * is still being answered say that this one comes next, so the player does not repeat it (game log 22.10).
+     * The model can take a minute or more to answer. {@link CompanionThinking} shows it until the answer comes, and when an
+     * earlier one is still being answered say that this one comes next, so the player does not repeat it (game log 22.10).
      */
     private static void announceThinking(boolean earlierStillAnswering) {
         Minecraft minecraft = Minecraft.getInstance();
-        minecraft.gui.setOverlayMessage(Component.literal(companionName() + " думает…"), false);
+        // Only an answer that will be thrown away may hold the queue (review: the line was missing until it came back).
+        if (!earlierStillAnswering || !CompanionThinking.waiting()) CompanionThinking.started();
         if (!earlierStillAnswering) return;
         Component line = Component.literal(companionName() + " ещё отвечает на прошлую просьбу. Эту услышал — сделает следом.").withStyle(ChatFormatting.GRAY);
         appendHistory(line);
