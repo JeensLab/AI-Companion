@@ -263,8 +263,11 @@ public final class CompanionFurnaceTests {
         h.succeed();
     }
 
-    /** Four iron take 800 ticks: he hands them to the furnace, is free meanwhile, and the later collection reports like a smelt he stood through. */
-    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    /**
+     * Four iron take 800 ticks: he hands them to the furnace, is free meanwhile, and the later collection reports like a smelt he stood through.
+     * In the full run the furnace's chunk sometimes loads its block entities only after 1300 ticks (the furnace stands cold till then): time for that too.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
     public static void parkedBatchIsCollectedWithTheSameReport(GameTestHelper h) {
         CompanionEntity companion = setup(h);
         BlockPos furnace = new BlockPos(20, 1, 16); h.setBlock(furnace, Blocks.FURNACE);
