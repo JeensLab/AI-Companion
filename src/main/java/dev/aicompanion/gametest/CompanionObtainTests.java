@@ -49,7 +49,22 @@ public final class CompanionObtainTests {
         var pearl = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:ender_pearl", 1);
         h.assertTrue(pearl.refused() && pearl.steps().isEmpty(), "Ender pearl: " + pearl);
         var glass = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:glass", 1);
-        h.assertTrue(glass.refused(), "Glass needs sand, which he cannot dig yet: " + glass);
+        int sand = indexOf(glass, "gather_loose", "minecraft:sand"), melt = indexOf(glass, "smelt_items", "minecraft:glass");
+        h.assertTrue(!glass.refused() && sand >= 0 && melt > sand, "Glass is dug sand, then smelted: " + glass);
+        h.succeed();
+    }
+
+    /** Plan only: a flint and steel from an empty bag is iron ore, the furnace, flint dug out of gravel, then the craft. */
+    @GameTest(template = "empty")
+    public static void flintAndSteelIsPlannedFromOreAndGravel(GameTestHelper h) {
+        var plan = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:flint_and_steel", 1);
+        int ore = indexOf(plan, "mine_ore", "minecraft:iron_ore"), ingot = indexOf(plan, "smelt_items", "minecraft:iron_ingot");
+        int flint = indexOf(plan, "gather_loose", "minecraft:flint"), craft = indexOf(plan, "craft_item", "minecraft:flint_and_steel");
+        h.assertTrue(!plan.refused() && ore >= 0 && ingot > ore && flint >= 0 && craft > flint && craft > ingot && craft == plan.steps().size() - 1, "Flint and steel: " + plan);
+        h.assertTrue(plan.steps().get(flint).count() == 1, "One flint for one flint and steel: " + plan);
+        var many = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:flint", 20);
+        h.assertTrue(!many.refused() && many.steps().stream().allMatch(step -> step.type().equals("gather_loose") && step.item().equals("minecraft:flint") && step.count() <= 8)
+                && many.steps().stream().mapToInt(CompanionObtain.Step::count).sum() == 20, "Twenty flint come in steps of at most eight: " + many);
         h.succeed();
     }
 
@@ -214,6 +229,10 @@ public final class CompanionObtainTests {
         });
     }
 
+    private static int indexOf(CompanionObtain.Plan plan, String type, String item) {
+        for (int i = 0; i < plan.steps().size(); i++) if (plan.steps().get(i).type().equals(type) && plan.steps().get(i).item().equals(item)) return i;
+        return -1;
+    }
     private static List<String> types(CompanionObtain.Plan plan) { return plan.steps().stream().map(CompanionObtain.Step::type).toList(); }
 
     private static java.util.concurrent.CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity companion, String json) {

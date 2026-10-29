@@ -334,11 +334,13 @@ public final class CompanionDialogue {
 
     /** «песок» for an ordered loose item; the plan codec allows nothing else for gather_loose. */
     private static String looseWord(PlannedAction action) {
+        if (CompanionPlanCodec.FLINT.equals(action.item())) return "кремень";
         var ground = dev.aicompanion.entity.CompanionGround.of(action.item());
         return ground == null ? "сыпучие блоки" : ground.accusative();
     }
 
     private static String looseGenitive(PlannedAction action) {
+        if (CompanionPlanCodec.FLINT.equals(action.item())) return "кремня";
         var ground = dev.aicompanion.entity.CompanionGround.of(action.item());
         return ground == null ? "сыпучих блоков" : ground.genitive();
     }
