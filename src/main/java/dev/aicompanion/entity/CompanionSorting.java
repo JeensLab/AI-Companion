@@ -320,6 +320,14 @@ final class CompanionSorting {
         return -1;
     }
 
+    /** True while he sorts and the bag holds no more of this kind than he carries: nothing of it is his own, so nothing of it is spent. */
+    boolean onlyCarried(ItemStack like) {
+        if (w.job != CompanionWork.Job.SORT || like.isEmpty()) return false;
+        int count = 0;
+        for (ItemStack load : carried) if (ItemStack.isSameItemSameComponents(load, like)) count += load.getCount();
+        return count > 0 && count >= inBag(like);
+    }
+
     private int inBag(ItemStack like) {
         int count = 0;
         for (int slot = 0; slot < w.owner.getContainerSize(); slot++) if (ItemStack.isSameItemSameComponents(w.owner.getItem(slot), like)) count += w.owner.getItem(slot).getCount();

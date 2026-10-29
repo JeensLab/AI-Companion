@@ -54,7 +54,7 @@ final class CompanionEating {
         int bestScore = Integer.MIN_VALUE;
         for (ItemStack stack : c.companionInventory) {
             var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
-            if (stack.isEmpty() || food == null || stack.is(net.minecraft.world.item.Items.CHORUS_FRUIT) || stack.is(net.minecraft.world.item.Items.SUSPICIOUS_STEW)) continue;
+            if (stack.isEmpty() || food == null || c.carriedForPlayer(stack) || stack.is(net.minecraft.world.item.Items.CHORUS_FRUIT) || stack.is(net.minecraft.world.item.Items.SUSPICIOUS_STEW)) continue;
             if (food.effects().stream().anyMatch(effect -> !effect.effect().getEffect().value().isBeneficial())) continue;
             int score = Math.round(Math.min(missing, food.nutrition()) * 10 + food.saturation());
             if (score > bestScore) { bestScore = score; best = stack; }

@@ -63,7 +63,7 @@ public final class CompanionLighting {
         return false;
     }
     private int torchSlot() {
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH)) return slot;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH) && !owner.carriedForPlayer(owner.getItem(slot))) return slot;
         return -1;
     }
     private boolean hasStickMaterials() {
