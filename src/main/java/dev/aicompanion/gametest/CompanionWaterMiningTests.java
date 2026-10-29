@@ -168,6 +168,67 @@ public final class CompanionWaterMiningTests {
                 "Did not come with a full breath: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString()));
     }
 
+    /**
+     * Game 30.10: a vein of two irons in a wall, a water source behind it and one over the second ore. Each cell he opens lets water in,
+     * and he plugs it at once with a block from the bag like a player (lava first, then water): both ores are mined, the vein stays dry,
+     * every plug is a real block that was a water cell, the dirt is not spent on climbing out of a flood.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 1800)
+    public static void aVeinWithWaterBehindItIsPluggedAndMinedWithTheBagKept(GameTestHelper h) {
+        BlockPos[] water = veinWithWater(h);
+        CompanionEntity c = veinMiner(h);
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 16)); c.setItem(1, new ItemStack(Items.DIRT, 1));
+        boolean[] wet = {false};
+        h.onEachTick(() -> { if (h.getTick() > 400) for (int x = 17; x <= 18; x++) wet[0] |= !h.getLevel().getFluidState(h.absolutePos(new BlockPos(x, 2, 15))).isEmpty(); });
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 2).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 10 && !c.isGatheringTask() && !c.isWorking(), "Work still active: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 2, report(c));
+            int plugged = 0;
+            for (BlockPos cell : water) plugged += h.getBlockState(cell).is(Blocks.COBBLESTONE) ? 1 : 0;
+            h.assertTrue(plugged == water.length && count(c, Items.COBBLESTONE) >= 16 - plugged, plugged + " of " + water.length + " water cells plugged, cobblestone " + count(c, Items.COBBLESTONE) + ": " + report(c));
+            h.assertTrue(!wet[0], "Water ran into the opened vein: " + report(c));
+            h.assertTrue(count(c, Items.DIRT) == 1, "Dirt spent: " + report(c));
+            h.assertTrue(c.getHealth() >= c.getMaxHealth(), "Hurt: " + c.getHealth());
+        });
+    }
+
+    /**
+     * The same vein and nothing to plug with: he mines what the water lets him, and the work ends, with the ore or with the reason
+     * «залило водой», not hanging in a pickup that never ends; nothing of the bag is put into the water.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 2400)
+    public static void aVeinWithWaterBehindItAndNoPlugsEndsHonestlyAndSpendsNothing(GameTestHelper h) {
+        veinWithWater(h);
+        CompanionEntity c = veinMiner(h);
+        c.setItem(0, new ItemStack(Items.SAND, 5));
+        // The stone he digs gives cobblestone: taken out of the bag as it comes, so that he really has nothing to plug with.
+        h.onEachTick(() -> { for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.COBBLESTONE)) c.setItem(slot, ItemStack.EMPTY); });
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 2).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 10 && !c.isGatheringTask() && !c.isWorking(), "Work still active after " + h.getTick() + ": " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() || c.getLastTaskResult().contains("Ход залило водой, заткнуть нечем"), "Neither the ore nor the reason: " + report(c));
+            h.assertTrue(count(c, Items.SAND) == 5 && count(c, Items.DIRT) == 0, "The bag was spent: " + report(c));
+        });
+    }
+
+    /** Stone wall x 17..21 with two irons at z 15, a source behind them (x 19) and a source over the second one. */
+    private static BlockPos[] veinWithWater(GameTestHelper h) {
+        box(h, 0, 1, 0, 30, 1, 30, Blocks.STONE);
+        box(h, 17, 2, 10, 21, 6, 20, Blocks.STONE);
+        h.setBlock(new BlockPos(17, 2, 15), Blocks.IRON_ORE); h.setBlock(new BlockPos(18, 2, 15), Blocks.IRON_ORE);
+        BlockPos[] water = {new BlockPos(19, 2, 15), new BlockPos(18, 3, 15)};
+        for (BlockPos cell : water) h.setBlock(cell, Blocks.WATER);
+        return water;
+    }
+
+    private static CompanionEntity veinMiner(GameTestHelper h) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 13.5f, 2, 10.5f);
+        bind(h, c, 10, 2, 10);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        return c;
+    }
+
     private static CompanionEntity flat(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);

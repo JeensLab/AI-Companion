@@ -557,7 +557,7 @@ public final class CompanionWork {
         if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
         if (stalled()) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
-        if (job != Job.COME && job != Job.HUNT && owner.hasPendingLoot()) return;
+        if (job != Job.COME && job != Job.HUNT && owner.hasPendingLoot() && !(phase == Phase.ORE && oreMining.giveUpFlooded(level))) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }

@@ -468,6 +468,20 @@ public final class CompanionPlanRecoveryTests {
         h.succeed();
     }
 
+    /** A flooded vein with nothing to plug it (CompanionOreMining.finishOre) is said as water, not as lava or as «no safe way», in the failure message and the partial report. */
+    @GameTest(template = "empty")
+    public static void aFloodedVeinIsSaidAsWaterInFailureMessagesAndPartialReports(GameTestHelper h) {
+        String flooded = "Добыл 1 из 2 блока «железная руда»: в сумке прибавилось 1 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " Ход залило водой, заткнуть нечем — нужен булыжник или земля. В сумке: 5 Песок.";
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind(flooded) == dev.aicompanion.CompanionFailureMessages.Kind.WATER, "Not WATER: " + dev.aicompanion.CompanionFailureMessages.kind(flooded));
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded).equals("Ход залило водой, заткнуть нечем. Нужен булыжник или земля."),
+                dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded));
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: " + flooded);
+        h.assertTrue(said.contains("залило водой") && !said.contains("лав"), "Partial report does not say water: " + said);
+        h.succeed();
+    }
+
     /** PR #29: a crafted order that he also put on and handed over ended «Можешь посмотреть в сумке» — the things were no longer there. */
     @GameTest(template = "empty")
     public static void aCraftedAndHandedOverOrderSaysItWasGiven(GameTestHelper h) {

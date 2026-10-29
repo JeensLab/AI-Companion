@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -12,6 +13,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.pathfinder.PathType;
 
@@ -58,21 +60,33 @@ final class CompanionLava {
      * A flow with lava or nothing under it falls and does not spread (the game's FlowingFluid.spread, isWaterHole): a fall past the
      * cell is no inflow, and a plug in it would give the fall above a floor to spill from.
      */
-    static List<BlockPos> inflow(Level level, BlockPos opened) {
+    static List<BlockPos> inflow(Level level, BlockPos opened) { return inflow(level, opened, FluidTags.LAVA); }
+
+    /**
+     * The water cells that run into this cell when it is opened, by the same rule as lava, without the cells of his own way (water that
+     * lies in his tunnel or where he stands is open for him to walk, not an inflow to plug).
+     */
+    static List<BlockPos> waterInflow(Level level, BlockPos opened, Collection<BlockPos> own) {
+        List<BlockPos> cells = inflow(level, opened, FluidTags.WATER);
+        cells.removeAll(own);
+        return cells;
+    }
+
+    private static List<BlockPos> inflow(Level level, BlockPos opened, TagKey<Fluid> liquid) {
         List<BlockPos> cells = new ArrayList<>(5);
         for (Direction d : Direction.values()) {
             if (d == Direction.DOWN) continue;
             BlockPos next = opened.relative(d);
-            if (level.isLoaded(next) && level.getFluidState(next).is(FluidTags.LAVA) && (d == Direction.UP || spreadsSideways(level, next))) cells.add(next);
+            if (level.isLoaded(next) && level.getFluidState(next).is(liquid) && (d == Direction.UP || spreadsSideways(level, next, liquid))) cells.add(next);
         }
         return cells;
     }
 
     /** A source, or a flow standing on something solid. */
-    private static boolean spreadsSideways(Level level, BlockPos lava) {
-        if (level.getFluidState(lava).isSource()) return true;
-        BlockPos under = lava.below();
-        return level.isLoaded(under) && !at(level, under) && !level.getBlockState(under).canBeReplaced();
+    private static boolean spreadsSideways(Level level, BlockPos fluid, TagKey<Fluid> liquid) {
+        if (level.getFluidState(fluid).isSource()) return true;
+        BlockPos under = fluid.below();
+        return level.isLoaded(under) && !level.getFluidState(under).is(liquid) && !level.getBlockState(under).canBeReplaced();
     }
 
     /**
@@ -96,6 +110,12 @@ final class CompanionLava {
         return cells;
     }
 
+    /** Water in a cell touching this one: an ore that lies in a flooded vein. */
+    static boolean wetBeside(Level level, BlockPos pos) {
+        for (Direction d : Direction.values()) if (level.isLoaded(pos.relative(d)) && level.getFluidState(pos.relative(d)).is(FluidTags.WATER)) return true;
+        return false;
+    }
+
     /** Plug blocks in his bag. */
     static int plugsCarried(CompanionEntity owner) {
         int count = 0;
@@ -117,7 +137,7 @@ final class CompanionLava {
     }
 
     /**
-     * Plugs each of these lava cells with a block from his bag, the cheapest first, like a player who puts a cobblestone into the
+     * Plugs each of these lava or water cells with a block from his bag, the cheapest first, like a player who puts a cobblestone into the
      * flow: a real item used up, the swing, the sound and the game's placement event. Called in the tick the cell is broken, before
      * lava moves (30 ticks later in the Overworld, 10 in the Nether).
      */
@@ -126,7 +146,7 @@ final class CompanionLava {
             int best = -1;
             for (int slot = 0; slot < owner.getContainerSize(); slot++)
                 if (plugRank(owner, slot) >= 0 && (best < 0 || plugRank(owner, slot) < plugRank(owner, best))) best = slot;
-            if (best < 0 || !at(level, cell)) continue;
+            if (best < 0 || level.getFluidState(cell).isEmpty()) continue;
             BlockState state = ((BlockItem) owner.getItem(best).getItem()).getBlock().defaultBlockState();
             if (!level.setBlockAndUpdate(cell, state)) continue;
             ItemStack used = owner.removeItem(best, 1);
