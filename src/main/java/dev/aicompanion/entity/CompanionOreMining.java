@@ -166,8 +166,8 @@ final class CompanionOreMining {
                     || w.owner.autonomy().running() && candidate.getY() < w.owner.autonomy().center().getY() - CompanionOre.MAX_DROP
                     || !level.hasChunkAt(candidate) || !w.ore.is(level.getBlockState(candidate))) { iterator.remove(); continue; }
             if (!opensSafely(level, candidate)) { w.oreRejected.add(candidate); iterator.remove(); continue; }
-            // Neither on foot nor by a tunnel from here.
-            if (w.oreOffFoot.contains(candidate) && w.oreNoTunnel.contains(candidate)) { w.oreUnreachable++; w.oreRejected.add(candidate); iterator.remove(); }
+            // Neither on foot nor by a tunnel from here (an ore already reported for lack of plugs is not counted again).
+            if (w.oreOffFoot.contains(candidate) && w.oreNoTunnel.contains(candidate)) { if (!lackedPlugs.contains(candidate)) w.oreUnreachable++; w.oreRejected.add(candidate); iterator.remove(); }
         }
         List<BlockPos> sorted = w.oreCandidates.stream().sorted(Comparator.comparingDouble(pos -> w.owner.distanceToSqr(pos.getCenter()))).toList();
         for (BlockPos candidate : sorted) {
@@ -220,7 +220,7 @@ final class CompanionOreMining {
             }
             w.oreNoTunnel.add(candidate);
             if (lacked) lackedPlugs.add(candidate.immutable());
-            if (w.oreOffFoot.contains(candidate)) { if (!lacked) w.oreUnreachable++; w.oreRejected.add(candidate); w.oreCandidates.remove(candidate); }
+            if (w.oreOffFoot.contains(candidate)) { if (!lackedPlugs.contains(candidate)) w.oreUnreachable++; w.oreRejected.add(candidate); w.oreCandidates.remove(candidate); }
         }
         return walk == null ? null : chosenOre(walk.block(), walk.path());
     }

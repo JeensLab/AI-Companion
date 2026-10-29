@@ -141,6 +141,41 @@ public final class CompanionLavaPlugTests {
         });
     }
 
+    /**
+     * A lava fall runs down a notch in the wall face, next to iron at mid-fall height. A falling cell has lava under it and does not
+     * spread sideways, so it is no inflow: a plug there would give the fall above a floor, and it would spill into the cave.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    public static void aLavaFallBesideTheOreIsNoInflowAndIsNotPlugged(GameTestHelper h) {
+        box(h, 0, 0, 0, 31, 12, 31, Blocks.AIR);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 1, 31, Blocks.STONE);
+        box(h, 20, 2, 8, 26, 9, 24, Blocks.STONE);
+        // The notch: open from the floor pit (y 1) to the top, on the wall face x 20, z 17; open to the cave at x 19.
+        box(h, 20, 1, 17, 20, 9, 17, Blocks.AIR);
+        h.setBlock(new BlockPos(21, 9, 17), Blocks.LAVA); // a spring in the wall: lava runs out of the face and falls down it
+        BlockPos ore = new BlockPos(20, 4, 16), fall = new BlockPos(20, 4, 17);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 14, 2, 16);
+        bindAt(h, c, 12, 2, 12);
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        boolean[] spilled = {false}, burnt = {false}, plugged = {false}; long[] done = {-1};
+        h.onEachTick(() -> {
+            for (int x = 10; x <= 19; x++) for (int y = 2; y <= 9; y++) for (int z = 12; z <= 22; z++)
+                spilled[0] |= h.getLevel().getFluidState(h.absolutePos(new BlockPos(x, y, z))).is(FluidTags.LAVA);
+            burnt[0] |= c.isOnFire() || c.isInLava();
+            plugged[0] |= h.getTick() > 400 && !h.getBlockState(fall).is(Blocks.AIR) && !h.getBlockState(fall).is(Blocks.LAVA);
+            if (done[0] < 0 && h.getTick() > 410 && idle(c)) done[0] = h.getTick();
+        });
+        h.runAfterDelay(400, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(done[0] > 0 && h.getTick() > done[0] + SETTLE && idle(c), "Still working: " + report(c));
+            h.assertTrue(!h.getBlockState(ore).is(Blocks.IRON_ORE), "Ore not mined: " + report(c));
+            h.assertTrue(!plugged[0] && count(c, Items.COBBLESTONE) == 3, "A plug was put into the fall: " + h.getBlockState(fall) + " " + report(c));
+            h.assertTrue(!spilled[0] && !burnt[0], "Lava spilled into the cave=" + spilled[0] + " burnt=" + burnt[0] + " " + report(c));
+        });
+    }
+
     // ---- Arena and measures ----
 
     /**
@@ -163,6 +198,20 @@ public final class CompanionLavaPlugTests {
         c.setLifestyle(false, false);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         return c;
+    }
+
+    /** Binds an owner to a companion already standing in a world the test built itself. */
+    private static void bindAt(GameTestHelper h, CompanionEntity c, int x, int y, int z) {
+        ServerPlayer owner = h.makeMockServerPlayerInLevel();
+        BlockPos at = h.absolutePos(new BlockPos(x, y, z));
+        owner.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        owner.setInvulnerable(true);
+        c.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        c.setSearchRadius(16);
+        c.setLifestyle(false, false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
     }
 
     private static void order(GameTestHelper h, CompanionEntity c) { order(h, c, "minecraft:iron_ore"); }

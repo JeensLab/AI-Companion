@@ -4,7 +4,7 @@ import java.util.Locale;
 
 /** Spoken problems describe what matters to the player; engine receipts stay in the task journal. */
 public final class CompanionFailureMessages {
-    public enum Kind { BAG, WOOD, MATERIALS, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, OTHER }
+    public enum Kind { BAG, WOOD, MATERIALS, LAVA, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, OTHER }
     private CompanionFailureMessages() { }
     public static String primary(String report) {
         int stopped = report.lastIndexOf("План остановлен:");
@@ -17,6 +17,8 @@ public final class CompanionFailureMessages {
         if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи") || text.contains("к тебе пройти, вещи")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
+        // Ahead of the route: the engine puts the lava reason beside «не нашёл безопасного хода», and lava is the one to name.
+        if (text.contains("заткнуть нечем") || text.contains("над лавой")) return Kind.LAVA;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
                 || text.contains("не добраться") || text.contains("подъем") || text.contains("выбрался") || text.contains("к тебе пройти")) return Kind.ROUTE;
         if (text.contains("не хватает") || text.contains("недостаточно")) return Kind.MATERIALS;
@@ -32,6 +34,9 @@ public final class CompanionFailureMessages {
             case BAG -> "У меня сумка забита. Нужно освободить немного места.";
             case WOOD -> "Доступного дерева здесь больше не нашёл.";
             case MATERIALS -> "Пока не хватает материалов, чтобы закончить.";
+            case LAVA -> primary(report).contains("заткнуть нечем")
+                    ? "Рядом лава, а заткнуть её нечем. Нужен булыжник или земля." + (primary(report).contains("над лавой") ? " И руда лежит над лавой, добыча сгорит." : "")
+                    : "Руда лежит над лавой, добыча сгорит. Не трогал.";
             // No way at all to the player, as the wide search proved it: said as such, not as a lost way.
             case ROUTE -> primary(report).contains("выбрался") ? "Я пока внизу, ищу безопасный выход."
                     : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти."

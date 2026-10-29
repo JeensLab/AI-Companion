@@ -101,6 +101,20 @@ public final class CompanionLavaTests {
         });
     }
 
+    /** Part of his things lie on the shore, part in the lava: he goes for the first and says in the same line that the rest stays. */
+    @GameTest(template = "tall_tree", batch = "lava_half", timeoutTicks = 2400)
+    public static void heSaysWhenPartOfHisThingsAreLeftInTheLava(GameTestHelper h) {
+        var f = deathArena(h);
+        drop(h, f, Items.DIAMOND, 3, 10.5, 2.5, 16.5);
+        // Netherite does not burn: it floats on the lava the whole test.
+        ItemEntity inLava = drop(h, f, Items.NETHERITE_INGOT, 1, 6.5, 1.6, 16.5);
+        died(h, f, new BlockPos(10, 2, 16));
+        h.succeedWhen(() -> {
+            h.assertTrue(f.c.autonomy().said().stream().anyMatch(line -> line.contains("Иду за своими вещами") && line.contains("лав")), "Not told that part stays: " + f.c.autonomy().said());
+            h.assertTrue(inLava.isAlive(), "The things in the lava are gone");
+        });
+    }
+
     // ---- Arenas ----
 
     /**

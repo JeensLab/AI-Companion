@@ -53,15 +53,26 @@ final class CompanionLava {
         return level.getFluidState(pos).is(FluidTags.LAVA) && !spreading(level, pos);
     }
 
-    /** The lava cells that run into this cell when it is opened: the one above and the four beside it, source or flow. */
+    /**
+     * The lava cells that run into this cell when it is opened: the one above, and of the four beside it those that spread sideways.
+     * A flow with lava or nothing under it falls and does not spread (the game's FlowingFluid.spread, isWaterHole): a fall past the
+     * cell is no inflow, and a plug in it would give the fall above a floor to spill from.
+     */
     static List<BlockPos> inflow(Level level, BlockPos opened) {
         List<BlockPos> cells = new ArrayList<>(5);
         for (Direction d : Direction.values()) {
             if (d == Direction.DOWN) continue;
             BlockPos next = opened.relative(d);
-            if (level.isLoaded(next) && level.getFluidState(next).is(FluidTags.LAVA)) cells.add(next);
+            if (level.isLoaded(next) && level.getFluidState(next).is(FluidTags.LAVA) && (d == Direction.UP || spreadsSideways(level, next))) cells.add(next);
         }
         return cells;
+    }
+
+    /** A source, or a flow standing on something solid. */
+    private static boolean spreadsSideways(Level level, BlockPos lava) {
+        if (level.getFluidState(lava).isSource()) return true;
+        BlockPos under = lava.below();
+        return level.isLoaded(under) && !at(level, under) && !level.getBlockState(under).canBeReplaced();
     }
 
     /** The lava cells that run in when all these cells are opened (a cell next to two of them is counted once). */
@@ -115,6 +126,7 @@ final class CompanionLava {
     static boolean onlySettledLavaNear(Level level, int x, int y, int z, Function<BlockPos, PathType> typeOf) {
         boolean lava = false;
         for (BlockPos pos : BlockPos.betweenClosed(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1)) {
+            if (!level.isLoaded(pos)) continue; // never loads a chunk at the edge of the loaded world
             if (settled(level, pos)) { lava = true; continue; }
             PathType type = typeOf.apply(pos);
             if (type == PathType.DAMAGE_FIRE || type == PathType.LAVA) return false;

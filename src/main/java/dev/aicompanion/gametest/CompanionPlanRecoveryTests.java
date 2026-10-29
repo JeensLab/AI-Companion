@@ -419,12 +419,36 @@ public final class CompanionPlanRecoveryTests {
             plan.add(new PlannedAction("obtain_item", 0, 2, parts.get(i)));
             report.append("\n").append(CompanionDialogue.PARTIAL_PREFIX).append("«").append(CompanionDialogue.itemName(parts.get(i))).append("»: ")
                     .append("Добыл 0 из ").append(ore[i]).append(" блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет. ")
-                    .append("У 3 блока рядом лава — их не трогал. К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.").append(bag);
+                    .append("К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.").append(bag);
         }
         report.append("\nНадел: Железный шлем.\nОтдал тебе 1 «Железный шлем».");
         String said = CompanionDialogue.summarize(plan, report.toString());
         h.assertTrue(said.equals("Остальное сделал. Не вышло: «" + CompanionDialogue.itemName(parts.get(0)) + "», «" + CompanionDialogue.itemName(parts.get(1))
                 + "», «" + CompanionDialogue.itemName(parts.get(2)) + "» — до оставшейся руды безопасно не добраться."), said);
+        h.succeed();
+    }
+
+    /**
+     * The two lava reasons of ore digging, in the words the engine writes (CompanionOreMining.finishOre), reach the player as lava in
+     * every place that speaks of a failed part: a plan of several parts, the plain failure message (autonomy, goals), and the rest.
+     */
+    @GameTest(template = "empty")
+    public static void theLavaReasonsOfOreAreSaidAsLavaInPlansAndFailureMessages(GameTestHelper h) {
+        String noPlug = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 3 блока рядом лава, заткнуть нечем — нужен булыжник или земля. К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.";
+        String overLava = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " 2 блока руды над лавой — не трогал, добыча сгорит.";
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String helmet = CompanionDialogue.itemName("minecraft:iron_helmet"), boots = CompanionDialogue.itemName("minecraft:iron_boots");
+        for (String why : List.of(noPlug, overLava)) {
+            String report = CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: " + why + "\n" + CompanionDialogue.PARTIAL_PREFIX + "«" + boots + "»: " + why;
+            String said = CompanionDialogue.summarize(plan, report);
+            h.assertTrue(said.contains("лав") && !said.contains("больше доступной руды") && !said.contains("безопасно не добраться"), "Plan parts do not say lava: " + said);
+            String spoken = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", why);
+            h.assertTrue(spoken.contains("лав") && !spoken.contains("Больше доступной руды"), "Failure message does not say lava: " + spoken);
+        }
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: " + noPlug);
+        h.assertTrue(said.contains("булыжник") || said.contains("земл"), "Does not say what to bring: " + said);
         h.succeed();
     }
 

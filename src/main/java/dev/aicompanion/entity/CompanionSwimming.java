@@ -13,11 +13,12 @@ final class CompanionSwimming {
     /**
      * The game's float lifts a mob that has more than half a block of water on him, so in water to the knee he bobbed, out of reach
      * and sight of the block he was mining (a stone or ore at the water took a thousand ticks of restarted cracks). Like a player he
-     * wades one block of water standing on the floor, and floats from the second on.
+     * wades one block of water standing on the floor, and floats from the second on. It holds no flag: with JUMP it took the goals
+     * of the work from him in deep water, and an order there (a flooded tunnel, ore beyond it) stood and never ticked.
      */
     static final class WadingFloatGoal extends net.minecraft.world.entity.ai.goal.FloatGoal {
         private final CompanionEntity c;
-        WadingFloatGoal(CompanionEntity c) { super(c); this.c = c; }
+        WadingFloatGoal(CompanionEntity c) { super(c); this.c = c; setFlags(java.util.EnumSet.noneOf(Flag.class)); }
         @Override public boolean canUse() { return c.isInLava() || c.isInWater() && c.getFluidHeight(FluidTags.WATER) > 1.0; }
     }
 

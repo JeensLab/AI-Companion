@@ -595,7 +595,7 @@ public final class CompanionAgenda {
             return false;
         }
         c.loot.claim(mine);
-        c.autonomy().report("Иду за своими вещами, что выпали на " + place.toShortString() + ".");
+        c.autonomy().report("Иду за своими вещами, что выпали на " + place.toShortString() + "." + (mine.size() < found ? " Часть осталась в лаве или рядом течёт лава, туда не полезу." : ""));
         return true;
     }
 

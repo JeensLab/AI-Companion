@@ -127,6 +127,47 @@ public final class CompanionWaterMiningTests {
         });
     }
 
+    /**
+     * He stands on a grass island in a pond one block deep, with no open stone anywhere: the stone is under the soil, so he digs his
+     * own stairs down, and every way down goes under or through the pond. A player digs them on the dry bank: water would flood them.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void stoneStairsAreDugOnTheDryBankNotUnderAPond(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 12; y++)
+            h.setBlock(new BlockPos(x, y, z), y == 0 || x == 0 || x == 31 || z == 0 || z == 31 ? (y <= 6 ? Blocks.BEDROCK : Blocks.AIR)
+                    : y <= 3 ? Blocks.STONE : y == 4 ? Blocks.DIRT : y == 5 ? (x >= 10 && x <= 22 && z >= 10 && z <= 22 && !(x == 16 && z == 16) ? Blocks.WATER : Blocks.GRASS_BLOCK) : Blocks.AIR);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 6, 16);
+        bind(h, c, 16, 6, 4);
+        c.setLifestyle(false, false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("gather_stone", "", 4).success(), "Stone order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 10 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.COBBLESTONE) >= 4, "No stone: " + c.getLastTaskResult() + " | " + c.getStoredItemsSummary());
+            h.assertTrue(c.getHealth() >= c.getMaxHealth(), "Hurt: " + c.getHealth());
+        });
+    }
+
+    /**
+     * The branch's own aRouteStartsInsideAFloodedTunnelUnderACeiling with his air kept full, so that no trip for a breath carries him:
+     * the float of the water must not take the jump from the work goal, or the order stands and nothing ticks.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    public static void aRouteThroughAFloodedTunnelIsWalkedWithAFullBreathToo(GameTestHelper h) {
+        box(h, 0, 0, 14, 63, 0, 18, Blocks.BEDROCK);
+        box(h, 0, 1, 14, 63, 7, 18, Blocks.STONE);
+        box(h, 1, 2, 16, 6, 5, 16, Blocks.AIR);
+        box(h, 7, 2, 16, 20, 3, 16, Blocks.WATER);
+        box(h, 21, 2, 16, 40, 3, 16, Blocks.AIR);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 14, 2, 16);
+        bind(h, c, 2, 2, 16);
+        c.setLifestyle(false, false);
+        h.onEachTick(() -> { if (c.getAirSupply() < c.getMaxAirSupply()) c.setAirSupply(c.getMaxAirSupply()); });
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted"));
+        h.succeedWhen(() -> h.assertTrue(h.getTick() > 10 && !c.isWorking() && c.didLastTaskSucceed() && c.getX() < h.absoluteVec(new Vec3(6, 0, 0)).x,
+                "Did not come with a full breath: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString()));
+    }
+
     private static CompanionEntity flat(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);

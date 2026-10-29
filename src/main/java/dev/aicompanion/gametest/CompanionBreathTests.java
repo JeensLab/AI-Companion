@@ -139,6 +139,36 @@ public final class CompanionBreathTests {
         });
     }
 
+    /**
+     * Iron beyond a flooded passage (chamber A, sixteen blocks of water two high under a ceiling, chamber B with the ore); his air
+     * drops to 110 when he first goes under. Past the breath trip the order goes on and ends: the ore is mined, or refused with a reason (not a standing «ищу»).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void oreBeyondAFloodedPassageEndsInTheOreOrAReason(GameTestHelper h) {
+        box(h, 0, 0, 14, 40, 0, 18, Blocks.BEDROCK);
+        box(h, 0, 1, 14, 40, 7, 18, Blocks.STONE);
+        box(h, 1, 2, 16, 6, 5, 16, Blocks.AIR);
+        box(h, 7, 2, 16, 22, 3, 16, Blocks.WATER);
+        box(h, 23, 2, 16, 28, 5, 16, Blocks.AIR);
+        h.setBlock(new BlockPos(29, 2, 16), Blocks.IRON_ORE);
+        CompanionEntity c = oleg(h, 4, 2);
+        c.setSearchRadius(32);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE_PICKAXE));
+        var watch = new Watch(h, c);
+        boolean[] low = {false};
+        h.onEachTick(() -> {
+            if (c.isEyeInFluid(FluidTags.WATER) && c.getAirSupply() > 110 && !low[0] && h.getTick() > 10) { c.setAirSupply(110); low[0] = true; }
+        });
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 10 && !c.isWorking() && !c.isGatheringTask(), "Still working: " + c.getLastTaskResult() + " at " + h.relativePos(c.blockPosition()).toShortString());
+            boolean mined = !h.getBlockState(new BlockPos(29, 2, 16)).is(Blocks.IRON_ORE);
+            h.assertTrue(mined && c.didLastTaskSucceed() || !mined && !c.didLastTaskSucceed() && c.getLastTaskResult().contains("безопасного хода"), "Neither the ore nor an honest refusal: " + c.getLastTaskResult());
+            h.assertTrue(!low[0] || watch.refilled, "Never filled his lungs again, lowest air " + watch.air);
+            h.assertTrue(watch.health >= c.getMaxHealth(), "Drowned: health down to " + watch.health + ", air down to " + watch.air);
+        });
+    }
+
     private static void box(GameTestHelper h, int x1, int y1, int z1, int x2, int y2, int z2, Block block) {
         for (int x = x1; x <= x2; x++) for (int y = y1; y <= y2; y++) for (int z = z1; z <= z2; z++) h.setBlock(new BlockPos(x, y, z), block);
     }
