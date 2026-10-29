@@ -139,13 +139,13 @@ public final class CompanionRetreatTests {
         });
     }
 
-    /** The player is on the surface, far above: a zombie that comes at him in the tunnel is fought back, not ignored until it kills him. */
+    /** The player is on the surface, far above: a zombie that comes at him in the tunnel is fought back and killed, and the order goes on. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void fightsBackAZombieInHisTunnelFarFromThePlayer(GameTestHelper h) {
         mountain(h, true);
         CompanionEntity c = rig(h);
         long id = start(h, c, 2);
-        boolean[] done = {false}, hurt = {false};
+        boolean[] done = {false};
         Zombie[] zombie = {null};
         long[] spawnedAt = {-1};
         h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + state(h, c) + " | " + report(c)));
@@ -160,13 +160,12 @@ public final class CompanionRetreatTests {
                 return;
             }
             if (zombie[0].isAlive() && zombie[0].getTarget() == null && h.getTick() % RETARGET_EVERY == 0) zombie[0].setTarget(c);
-            hurt[0] |= !zombie[0].isAlive() || zombie[0].getHealth() < zombie[0].getMaxHealth();
-            h.assertTrue(hurt[0] || h.getTick() - spawnedAt[0] <= FIGHT_BACK_DEADLINE, "He did not hit the zombie in " + FIGHT_BACK_DEADLINE + " ticks | " + state(h, c) + ", zombie at "
+            h.assertTrue(!zombie[0].isAlive() || h.getTick() - spawnedAt[0] <= FIGHT_BACK_DEADLINE, "The zombie was not dead in " + FIGHT_BACK_DEADLINE + " ticks (hp " + zombie[0].getHealth() + ") | " + state(h, c) + ", zombie at "
                     + rel(h, zombie[0].blockPosition()).toShortString() + " | " + report(c));
         });
         h.onEachTick(() -> verdict(h, c, id, done, problems -> {
             if (zombie[0] == null) problems.add("SETUP: the order ended before he reached the tunnel");
-            if (!hurt[0]) problems.add("the zombie was never hurt");
+            if (zombie[0] != null && zombie[0].isAlive()) problems.add("the zombie is still alive");
             if (count(c, Items.DIAMOND) < 2) problems.add("the expedition did not go on: " + count(c, Items.DIAMOND) + " of 2 diamonds");
         }));
     }
