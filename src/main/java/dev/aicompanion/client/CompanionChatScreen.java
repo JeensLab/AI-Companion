@@ -67,12 +67,13 @@ public final class CompanionChatScreen extends Screen {
         }
         if (hushInFight(text, trace)) return;
         addLine(Component.literal("...").withStyle(ChatFormatting.GRAY));
+        String context = GameContext.snapshot(text);
         announceThinking(OpenRouterClient.isBusy());
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();
 
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
         long sessionGeneration = OpenRouterClient.generation();
-        OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
+        OpenRouterClient.send(text, context, trace).whenComplete((reply, error) -> Minecraft.getInstance().execute(() -> {
             CompanionThinking.answered();
             if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");
@@ -180,9 +181,10 @@ public final class CompanionChatScreen extends Screen {
         CompanionDiagnostics.event(trace, "message_route", "route", "openrouter");
         // «Распознаю речь...» is over; «думает…» used to replace it here. Not that of another phrase or a new «Запись...».
         if (!CompanionAmbientClient.transcribing() && !AICompanionClient.recordingSpeech()) minecraft.gui.setOverlayMessage(Component.empty(), false);
+        String context = GameContext.snapshot(text);
         announceThinking(OpenRouterClient.isBusy());
         long sessionGeneration = OpenRouterClient.generation();
-        OpenRouterClient.send(text, GameContext.snapshot(text), trace).whenComplete((reply, error) -> minecraft.execute(() -> {
+        OpenRouterClient.send(text, context, trace).whenComplete((reply, error) -> minecraft.execute(() -> {
             CompanionThinking.answered();
             if (OpenRouterClient.sessionEnded(error, sessionGeneration)) {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "session_changed");

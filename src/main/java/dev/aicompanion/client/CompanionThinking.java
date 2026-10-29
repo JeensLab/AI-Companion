@@ -46,7 +46,8 @@ final class CompanionThinking {
         return null;
     }
 
-    static boolean waiting() { return waitedFor() != null; }
+    /** The queue itself has the last word: a request that failed before reaching it must not leave the line for ever. */
+    static boolean waiting() { return OpenRouterClient.isBusy() && waitedFor() != null; }
 
     /** « 12 с» once the wait is noticeable; nothing in the first seconds. */
     static String seconds() {
