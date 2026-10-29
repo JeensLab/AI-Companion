@@ -38,7 +38,7 @@ import java.util.function.Consumer;
 public final class CompanionRetreatTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, TUNNEL_HEAD = DIAMOND_FEET + 1;
     private static final int TIMEOUT = 16000, RESUME_TIMEOUT = 9000, SCAN_EVERY = 5, PLUG_STANDS = 2, NEAR_ENTRANCE_SQ = 9;
-    private static final int PLUG_DEADLINE = 3000, FIGHT_BACK_DEADLINE = 400, RETARGET_EVERY = 20;
+    private static final int PLUG_DEADLINE = 3000, FIGHT_BACK_DEADLINE = 400, RETARGET_EVERY = 20, SURFACE_DISTANCE = 22, SURFACE_CHECKS = 3;
     private static final int CHAMBER_X0 = 26, CHAMBER_X1 = 30, CHAMBER_Z0 = 3, CHAMBER_Z1 = 7, STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25;
     private static final float RECOVERED = 18, LOW = 6;
     private static final String RETREATED = "отступил";
@@ -170,6 +170,29 @@ public final class CompanionRetreatTests {
         }));
     }
 
+    /** The player is far off and a zombie stands near him on the surface (he walks to his mine): the fight is not taken up, the target is dropped. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotChaseAZombieOnTheSurfaceFarFromThePlayer(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h, SURFACE_DISTANCE);
+        Zombie zombie = h.spawn(EntityType.ZOMBIE, CENTER + 3, GROUND + 1, CENTER);
+        zombie.setPersistenceRequired();
+        zombie.setNoAi(true);
+        start(h, c, 1);
+        int[] checked = {0};
+        boolean[] armed = {false};
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time: " + checked[0] + " checks on the surface | " + state(h, c) + " | " + report(c)));
+        h.onEachTick(() -> {
+            boolean onSurface = rel(h, c.blockPosition()).getY() > GROUND;
+            if (armed[0] && onSurface) {
+                h.assertTrue(c.getTarget() == null, "On the surface, far from the player, he took up the fight with the zombie | " + state(h, c));
+                if (++checked[0] >= SURFACE_CHECKS) h.succeed();
+            }
+            armed[0] = onSurface && h.getTick() % RETARGET_EVERY == 0;
+            if (armed[0]) c.setTarget(zombie);
+        });
+    }
+
     /** Once the order has ended: the shared checks of a finished run, then the test's own. */
     private static void verdict(GameTestHelper h, CompanionEntity c, long id, boolean[] done, Consumer<List<String>> own) {
         if (done[0] || c.isGatheringTask() || c.isWorking() || c.workResult(id) == null) return;
@@ -242,10 +265,13 @@ public final class CompanionRetreatTests {
         }
     }
 
-    private static CompanionEntity rig(GameTestHelper h) {
+    private static CompanionEntity rig(GameTestHelper h) { return rig(h, 3); }
+
+    /** The player stands this many blocks off along both axes. */
+    private static CompanionEntity rig(GameTestHelper h, int ownerDistance) {
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
         var owner = h.makeMockServerPlayerInLevel();
-        owner.teleportTo(companion.getX() - 3, companion.getY(), companion.getZ() - 3);
+        owner.teleportTo(companion.getX() - ownerDistance, companion.getY(), companion.getZ() - ownerDistance);
         companion.setOwnerId(owner.getUUID());
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
         CompanionEvents.getOwnedCompanion(owner);
