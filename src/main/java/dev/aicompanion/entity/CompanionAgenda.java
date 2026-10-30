@@ -437,10 +437,13 @@ public final class CompanionAgenda {
     private static Milestone pick(Goal goal, CompanionFacts facts, CompanionEntity c) {
         List<Milestone> all = goal.book().milestones();
         List<Item> cooking = c.level() instanceof ServerLevel level ? c.batches().cookingOutputs(level) : List.of();
+        boolean waitsAhead = false;
         for (Milestone milestone : all) {
             if (milestone.satisfied(facts, goal.fallback, all)) continue;
             if (!milestone.supported()) return null;
-            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) continue;
+            // The mine needs what comes before it in hand (the iron pickaxe still in the furnace): it is not dug meanwhile.
+            if (waitsAhead && milestone.kind() == Kind.EXPEDITION) return null;
+            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) { waitsAhead = true; continue; }
             return milestone;
         }
         return null;
