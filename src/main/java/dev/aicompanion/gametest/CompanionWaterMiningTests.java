@@ -55,6 +55,25 @@ public final class CompanionWaterMiningTests {
     }
 
     /**
+     * Game 30.10: iron at his feet in a wall, a spring behind the block over it and nothing to plug with. That block is only the
+     * player's 1x2 for comfort: it is not opened (the spring stays), and the ore goes as on main, from the one-high pocket.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void aSpringBehindTheBlockOverAnOreAtTheFeetDoesNotCostTheOre(GameTestHelper h) {
+        CompanionEntity c = flat(h);
+        wall(h);
+        BlockPos ore = new BlockPos(20, 1, 16), spring = new BlockPos(21, 2, 16);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(spring, Blocks.WATER);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            idle(h, c);
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c));
+            h.assertTrue(h.getBlockState(spring).is(Blocks.WATER) && h.getBlockState(ore.above()).is(Blocks.STONE), "The spring was opened: " + report(c));
+        });
+    }
+
+    /**
      * Iron buried in the ground, a player's stairs down to it; the last cell of the stairs, beside the ore, is a pocket of water
      * (his tunnel goes through it, a cell flooded at the floor is open) and more water lies along it (springs in the wall: he has
      * plugs for them). He digs the stairs, stands in the water to the knee, mines the ore, and climbs back up the stairs he made.
@@ -207,11 +226,11 @@ public final class CompanionWaterMiningTests {
     }
 
     /**
-     * The same vein and nothing to plug with: a spring is handled like lava. The ore with the springs in its wall is not opened, the
-     * reason is the spring, nothing of the bag is put into the water, the water is not let out, and the work ends at once (14 ticks
-     * measured, the ceiling is the double and more).
+     * The same vein and nothing to plug with: a spring is handled like lava. The first iron has no spring of its own and goes from
+     * the pocket (the block over it, beside a spring, is left); the second, with the springs in its wall, is not opened, the reason is
+     * the spring, nothing of the bag is put into the water, the water is not let out.
      */
-    @GameTest(template = "large_search", timeoutTicks = 40)
+    @GameTest(template = "large_search", timeoutTicks = 600)
     public static void aVeinWithWaterBehindItAndNoPlugsEndsHonestlyAndSpendsNothing(GameTestHelper h) {
         BlockPos[] water = veinWithWater(h);
         CompanionEntity c = veinMiner(h);
@@ -222,7 +241,8 @@ public final class CompanionWaterMiningTests {
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 10 && !c.isGatheringTask() && !c.isWorking(), "Work still active after " + h.getTick() + ": " + c.getLastTaskResult());
             h.assertTrue(!c.didLastTaskSucceed() && c.getLastTaskResult().contains("рядом родник, заткнуть нечем") && !c.getLastTaskResult().contains("Залило"), "Not the spring as the reason: " + report(c));
-            h.assertTrue(h.getBlockState(new BlockPos(17, 2, 15)).is(Blocks.IRON_ORE) && h.getBlockState(new BlockPos(18, 2, 15)).is(Blocks.IRON_ORE), "The vein was opened: " + report(c));
+            h.assertTrue(!h.getBlockState(new BlockPos(17, 2, 15)).is(Blocks.IRON_ORE) && count(c, Items.RAW_IRON) == 1, "The dry first iron was not taken: " + report(c));
+            h.assertTrue(h.getBlockState(new BlockPos(18, 2, 15)).is(Blocks.IRON_ORE), "The iron of the springs was opened: " + report(c));
             for (BlockPos cell : water) h.assertTrue(h.getBlockState(cell).is(Blocks.WATER), "The spring was let out: " + report(c));
             h.assertTrue(count(c, Items.SAND) == 5 && count(c, Items.DIRT) == 0, "The bag was spent: " + report(c));
         });

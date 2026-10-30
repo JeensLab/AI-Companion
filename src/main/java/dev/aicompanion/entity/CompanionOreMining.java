@@ -144,11 +144,13 @@ final class CompanionOreMining {
             if (!w.owner.getMainHandItem().isCorrectToolForDrops(state)) { w.resetTarget(); w.phase = CompanionWork.Phase.ORE_PICK; return; }
         }
         // Ore at the feet in a wall leaves a one-high pocket: its drop and the rest of the vein would be out of sight and reach.
-        // Like a player's 1x2, the block above goes first.
+        // Like a player's 1x2, the block above goes first, unless it lets in lava or a spring he has nothing to plug: then the ore
+        // goes from the pocket, as before (game 30.10: a spring behind that block cost him the ore).
         BlockPos head = w.target.above();
         BlockState above = level.getBlockState(head);
         if (w.target.getY() <= w.owner.getBlockY() && head.getY() >= w.owner.getBlockY() && level.getBlockState(w.target.below()).isFaceSturdy(level, w.target.below(), Direction.UP)
-                && !above.isAir() && !w.ore.is(above) && CompanionOre.tunnelable(above) && CompanionOre.safeTunnelCell(level, head)) {
+                && !above.isAir() && !w.ore.is(above) && CompanionOre.tunnelable(above) && CompanionOre.safeTunnelCell(level, head)
+                && lacksPlugs(level, List.of(head), null, w.oreTunnel) == CompanionLava.Opening.SAFE) {
             w.oreTunnel.addFirst(head.immutable()); return;
         }
         int reach = w.items.reachBlock(level, w.target, true);
