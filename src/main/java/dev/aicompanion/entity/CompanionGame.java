@@ -46,7 +46,15 @@ public final class CompanionGame {
             int last = count % 10, tens = count % 100;
             return count + " " + (last == 1 && tens != 11 ? one : last >= 2 && last <= 4 && (tens < 12 || tens > 14) ? few : many);
         }
+        /** The same as the subject of a sentence: «внутри 1 корова», «3 коровы», «5 коров». */
+        public String are(int count) {
+            String subject = one.endsWith("ью") ? one.substring(0, one.length() - 2) + "ья" : one.endsWith("у") ? one.substring(0, one.length() - 1) + "а" : one;
+            return count % 10 == 1 && count % 100 != 11 ? count + " " + subject : count(count);
+        }
     }
+
+    /** Animals one pen holds, and pairs one breeding order feeds, at most. */
+    public static final int MAX_PEN = 8;
 
     /** smelt_items item for «пожарь мясо» after hunting any game: the raw meat carried most of. */
     public static final String ANY_MEAT = "minecraft:meat";
