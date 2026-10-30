@@ -174,6 +174,10 @@ final class CompanionEquipment {
     }
 
     public void selectWeaponForCombat() {
+        if (c.archery.wants(c.getTarget())) {
+            if (!(c.getMainHandItem().getItem() instanceof net.minecraft.world.item.BowItem)) equipItemInternal("minecraft:bow", "mainhand");
+            return;
+        }
         if (!c.preferredWeapon.isEmpty()) {
             if (matchesEquipment(c.getMainHandItem(), c.preferredWeapon)) return;
             if (equipItemInternal(c.preferredWeapon, "mainhand").success()) return;

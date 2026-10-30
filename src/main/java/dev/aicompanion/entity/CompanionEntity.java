@@ -114,6 +114,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionPlacement placement = new CompanionPlacement(this);
     private final CompanionSwimming swimming = new CompanionSwimming(this);
     final CompanionCombat combat = new CompanionCombat(this);
+    final CompanionArchery archery = new CompanionArchery(this);
+    final CompanionPortals portals = new CompanionPortals(this);
     private final CompanionEating meals = new CompanionEating(this);
     private final CompanionBag bag = new CompanionBag(this);
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
@@ -280,8 +282,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
+        this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
+        this.goalSelector.addGoal(3, new CompanionPortals.FollowThroughPortalGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
         this.goalSelector.addGoal(3, new CompanionDigGoal(this));
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
@@ -305,6 +309,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Monster.class, 10,
                 true, false, target -> protecting ? combat.isThreateningOwner(target) : combat.comesForOwner(target)));
+        // Who flies is out of the blade's reach: only with a bow (ghasts, phantoms).
+        this.targetSelector.addGoal(2, new CompanionArchery.FlierTargetGoal(this));
     }
 
     @Override
@@ -670,6 +676,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         social.updateExpression();
         social.tick();
         lighting.tick();
+        if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
         goals.tick();
         autonomy.tick();
         diagnostics.tick();
@@ -683,10 +690,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         var guardedOwner = protecting || !work.isHunting() && getTarget() instanceof Monster ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && distanceToSqr(guardedOwner) > 16 * 16
                 && getTarget().distanceToSqr(guardedOwner) > 14 * 14) setTarget(null);
+        if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
         if (inventoryViewers == 0 && getOffhandItem().canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK)) {
             var enemy = getTarget();
-            boolean defend = enemy != null && enemy.isAlive() && hasLineOfSight(enemy)
+            boolean defend = enemy != null && enemy.isAlive() && !archery.aiming() && hasLineOfSight(enemy)
                     && (distanceToSqr(enemy) < 9 || enemy instanceof net.minecraft.world.entity.monster.AbstractSkeleton && distanceToSqr(enemy) < 144);
             if (defend && !isUsingItem()) startUsingItem(InteractionHand.OFF_HAND);
             else if (!defend && isUsingItem() && getUsedItemHand() == InteractionHand.OFF_HAND) stopUsingItem();
@@ -770,6 +778,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void refreshInventorySummary() { bag.refreshInventorySummary(); }
     boolean fairTarget(LivingEntity entity, boolean provoked) { return combat.fairTarget(entity, provoked); }
     boolean provokes(LivingEntity entity) { return combat.provokes(entity); }
+
+    /** The game tells every mob to leave a ghast alone; who may be fought is decided in fairTarget, and a ghast is for the bow. */
+    @Override public boolean canAttackType(net.minecraft.world.entity.EntityType<?> type) { return true; }
 
     /** A last guard: whatever goal picked them, the player and his pets are never a target. */
     @Override public void setTarget(LivingEntity target) {

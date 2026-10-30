@@ -25,6 +25,7 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
                 leftArmPose = entity.getOffhandItem().isEmpty() ? ArmPose.EMPTY : ArmPose.ITEM;
                 if (entity.isUsingItem() && entity.getUsedItemHand() == net.minecraft.world.InteractionHand.OFF_HAND
                         && entity.getOffhandItem().canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK)) leftArmPose = ArmPose.BLOCK;
+                if (entity.isUsingItem() && entity.getUsedItemHand() == net.minecraft.world.InteractionHand.MAIN_HAND && entity.getMainHandItem().getItem() instanceof net.minecraft.world.item.BowItem) rightArmPose = ArmPose.BOW_AND_ARROW;
                 super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
                 skin.animate(entity.expression(), CompanionVoiceAudio.mouthOpen(entity), ageInTicks + entity.getId() * 17);
                 if (entity.isMiningAnimation()) {

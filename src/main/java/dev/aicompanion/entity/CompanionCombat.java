@@ -27,6 +27,9 @@ final class CompanionCombat {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
         private int nextSwing;
+        /** At range the bow has him, when he has one (CompanionArchery). */
+        @Override public boolean canUse() { return !c.archery.wants(c.getTarget()) && super.canUse(); }
+        @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
@@ -103,8 +106,17 @@ final class CompanionCombat {
         return monster.distanceToSqr(owner) <= 6 * 6 || monster.distanceToSqr(c) <= 4 * 4
                 || (monster.getTarget() == owner || monster.getTarget() == c) && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
     }
+    /** A flier near the player, while Oleg is near him too: no Monster, so comesForOwner does not see it. */
+    boolean fliesAtOwner(net.minecraft.world.entity.LivingEntity target) {
+        if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.work.isHunting()
+                || !(target instanceof net.minecraft.world.entity.monster.Enemy) || !fairTarget(target, true)) return false;
+        ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
+        return owner != null && owner.level() == c.level() && !owner.isSpectator() && c.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE
+                && target.distanceToSqr(owner) <= FLIER_RANGE * FLIER_RANGE;
+    }
+
     /** How far from the player Oleg still steps in for him, and how far a fight may take him. */
-    private static final int GUARD_RANGE = 16;
+    private static final int GUARD_RANGE = 16, FLIER_RANGE = 32;
 
     boolean isThreateningOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || !(target instanceof Monster monster)) return false;
