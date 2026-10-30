@@ -15,6 +15,7 @@ public final class CompanionPlanRequirements {
         String text = request.toLowerCase(Locale.ROOT).replace('ё', 'е');
         decoded = recipientsAndScope(text, decoded);
         decoded = smeltEverything(text, decoded);
+        decoded = harvestEverything(text, decoded);
         decoded = smeltAfterOre(text, decoded);
         decoded = cookAfterHunt(text, decoded);
         decoded = spokenQuantity(text, decoded);
@@ -96,6 +97,15 @@ public final class CompanionPlanRequirements {
         if (decoded.actions().stream().noneMatch(step -> step.type().equals("smelt_items")) || text.matches(NUMBER)) return decoded;
         List<PlannedAction> result = decoded.actions().stream().map(step -> step.type().equals("smelt_items") && step.count() != PlannedAction.ALL_CARRIED
                 ? new PlannedAction(step.type(), step.seconds(), PlannedAction.ALL_CARRIED, step.item(), step.slot(), step.location()) : step).toList();
+        return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result);
+    }
+
+    /** «Собери урожай» names no number: everything ripe round him, not the single crop a model's default count=1 would take. */
+    static CompanionReply harvestEverything(String text, CompanionReply decoded) {
+        if (decoded.actions().stream().noneMatch(step -> step.type().equals("harvest_crops")) || text.matches(NUMBER)) return decoded;
+        int all = dev.aicompanion.entity.CompanionCrops.MAX_HARVEST;
+        List<PlannedAction> result = decoded.actions().stream().map(step -> step.type().equals("harvest_crops") && step.count() != all
+                ? new PlannedAction(step.type(), step.seconds(), all, step.item(), step.slot(), step.location()) : step).toList();
         return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result);
     }
 

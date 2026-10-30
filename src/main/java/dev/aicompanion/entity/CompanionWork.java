@@ -27,11 +27,12 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
+    final CompanionFarming farming = new CompanionFarming(this);
     final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
@@ -40,6 +41,7 @@ public final class CompanionWork {
     final CompanionSorting sorting = new CompanionSorting(this);
     final CompanionFurnaces furnaces = new CompanionFurnaces(this);
     final CompanionHandOver handOver = new CompanionHandOver(this);
+    final CompanionPen pen = new CompanionPen(this); final CompanionBreeding breeding = new CompanionBreeding(this);
     final CompanionHouse house;
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -278,12 +280,12 @@ public final class CompanionWork {
         // The own ore tunnel is the same: its walls are not a trap, and the way back is the tunnel itself.
         if (isActive() && phase == Phase.ORE && oreExit != null) return false;
         // Roofs and crowns are interaction targets, not movement destinations.
-        return !isActive() || job != Job.HOUSE && phase != Phase.WOOD
+        return !isActive() || job != Job.HOUSE && job != Job.PEN && phase != Phase.WOOD
                 || workOrigin != null && owner.getY() < workOrigin.getY() - 1.25;
     }
     String currentDescription() {
         return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
-                : job == Job.SORT ? "раскладывает по сундукам" : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
+                : job == Job.SORT ? "раскладывает по сундукам" : job == Job.FARM ? farming.describe() : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
                 : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + furnaces.smeltReady() + " из " + smeltCount : "готовит печь для плавки")
                 : "выполняет работу " + job + ", стадия " + phase;
     }
@@ -295,13 +297,15 @@ public final class CompanionWork {
             case WOOD, WOOD_DONE -> "заготовка дерева";
             case MINE, DIGGING, ORE -> "добыча";
             case STORE, CLOSE, PACK, SORT -> "работа с вещами";
-            case BUILD -> "строительство";
+            case BUILD, PEN -> "строительство";
             case RETURN, EXIT -> "возвращение";
             case FIGHT, CHASE -> "поиск и бой";
             case HAND -> "передача вещей";
             case FURNACE -> "подготовка печи";
             case COOK -> "плавка / готовка";
             case IRON -> "подготовка железа";
+            case BREED -> "разведение животных";
+            case FARM -> "в поле";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -316,6 +320,8 @@ public final class CompanionWork {
             case SORT -> "раскладку по сундукам";
             case PLACE_CHEST -> "установку" + item;
             case HOUSE -> "стройку дома";
+            case PEN -> "постройку загона";
+            case BREED -> "разведение животных";
             case DIRT -> "добычу земли";
             case COME -> "путь к тебе";
             case HUNT -> "бой с монстрами";
@@ -324,6 +330,7 @@ public final class CompanionWork {
             case GIVE -> "передачу вещей";
             case SMELT -> "плавку" + (smelt == null ? "" : " «" + itemName(smelt.input()) + "»");
             case ORE -> "добычу руды «" + ore.oreName + "» (" + oreMined + " из " + oreWanted + ")";
+            case FARM -> farming.jobName();
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -455,10 +462,17 @@ public final class CompanionWork {
                 if (refused != null) return CompanionActionResult.failed(refused);
                 job = Job.SMELT; phase = Phase.COOK;
             }
+            case "farm_crops", "harvest_crops" -> {
+                String problem = farming.begin(action, item, count);
+                if (problem != null) return CompanionActionResult.failed(problem);
+                job = Job.FARM; phase = Phase.FARM;
+            }
             case "build_house" -> {
                 if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
                 job = Job.HOUSE; phase = Phase.BUILD; house.begin();
             }
+            case "build_pen" -> { CompanionActionResult refusal = pen.begin(item, count); if (refusal != null) return refusal; job = Job.PEN; phase = Phase.PEN; }
+            case "breed_animals" -> { CompanionActionResult refusal = breeding.begin(item, count); if (refusal != null) return refusal; job = Job.BREED; phase = Phase.BREED; }
             case "mine_ore" -> {
                 ore = CompanionOre.Kind.of(item);
                 if (ore == null) return CompanionActionResult.failed("Не понял, какую руду добыть: уголь, железо, медь, лазурит, золото, редстоун, алмазы или изумруды.");
@@ -542,7 +556,7 @@ public final class CompanionWork {
         lots.clear(); heading = null;
         clearCracks();
         closeChest();
-        house.cancel(); route.abandon();
+        house.cancel(); route.abandon(); pen.cancel(); breeding.cancel();
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null;
         cooldown = 0;
@@ -595,6 +609,9 @@ public final class CompanionWork {
             case ORE_PICK -> oreMining.prepareOrePickaxe();
             case ORE -> oreMining.mineOre(level);
             case IRON -> oreMining.ironStep(level);
+            case PEN -> pen.tick(level);
+            case BREED -> breeding.tick(level);
+            case FARM -> farming.tick(level);
             default -> { }
         }
     }
@@ -792,7 +809,7 @@ public final class CompanionWork {
         tag.putBoolean("WorkActive", isActive());
         tag.putLong("WorkSequence", taskId);
         if (completedResult != null) { tag.putLong("CompletedWorkId", completedId); tag.put("CompletedWorkResult", completedResult.save()); }
-        house.save(tag);
+        house.save(tag); pen.save(tag);
         if (rememberedChest != null) {
             tag.putLong("StorageChest", rememberedChest.asLong());
             tag.putString("StorageDimension", owner.level().dimension().location().toString());
@@ -803,7 +820,7 @@ public final class CompanionWork {
         taskId = Math.max(taskId, tag.getLong("WorkSequence"));
         completedId = tag.contains("CompletedWorkResult") ? tag.getLong("CompletedWorkId") : -1;
         completedResult = tag.contains("CompletedWorkResult") ? CompanionActionResult.load(tag.getCompound("CompletedWorkResult")) : null;
-        house.load(tag);
+        house.load(tag); pen.load(tag);
         if (tag.contains("StorageChest") && owner.level().dimension().location().toString().equals(tag.getString("StorageDimension"))) rememberedChest = BlockPos.of(tag.getLong("StorageChest"));
         else if (tag.contains("StorageChest")) { storageElsewhere = new CompoundTag(); storageElsewhere.putLong("StorageChest", tag.getLong("StorageChest")); storageElsewhere.putString("StorageDimension", tag.getString("StorageDimension")); }
         owner.storageStatus(storageForAi());
