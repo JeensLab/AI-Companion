@@ -72,6 +72,9 @@ final class CompanionMiningNavigation {
         for (BlockPos cell : new BlockPos[]{rest, rest.above(), rest.above(2)})
             if (!cell.equals(block) && !level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) return false;
         if (CompanionLava.at(level, rest)) return false;
+        // Not into a pit under water: his head would be in it, and he stands nowhere with the head under water (game 30.10: an
+        // iron in the floor of a pond was broken and its drop left in its hole).
+        if (!level.getFluidState(rest.above()).isEmpty()) return false;
         // And out again: a step up to a side cell (not across a corner, the game walks no corner it cannot cut) with room for
         // the body there (marathon 23.10, «долина»: a stone mined across the corner a block below his feet lay in its own hole,
         // whose only side ways out had a block over the head; nobody got it).

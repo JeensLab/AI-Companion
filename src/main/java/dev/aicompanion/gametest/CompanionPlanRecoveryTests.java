@@ -508,6 +508,21 @@ public final class CompanionPlanRecoveryTests {
         h.succeed();
     }
 
+    /** Review 3: an ore broken whose drop never reached the bag is said as such everywhere, not as done and not as ore out of reach. */
+    @GameTest(template = "empty")
+    public static void aBrokenOreWhoseDropIsLostIsSaidAsSuch(GameTestHelper h) {
+        String lost = "Добыл 1 блок «железная руда»: в сумке прибавилось 0 «Рудное железо». Выпавшее не достал: оно осталось там, где мне его не взять."
+                + " В сумке: 16 Булыжник.";
+        String explained = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", lost);
+        h.assertTrue(explained.equals("Руду сломал, но выпавшее не достал."), "Explained: " + explained);
+        String one = CompanionDialogue.summarize(List.of(new PlannedAction("mine_ore", 0, 1, "minecraft:iron_ore")), "План остановлен: " + lost);
+        h.assertTrue(one.equals("Руду сломал, но выпавшее не достал."), "Single order: " + one);
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: " + lost);
+        h.assertTrue(said.contains("выпавшее не достал") && !said.contains("не добраться"), "Part of a plan: " + said);
+        h.succeed();
+    }
+
     /** PR #29: a crafted order that he also put on and handed over ended «Можешь посмотреть в сумке» — the things were no longer there. */
     @GameTest(template = "empty")
     public static void aCraftedAndHandedOverOrderSaysItWasGiven(GameTestHelper h) {

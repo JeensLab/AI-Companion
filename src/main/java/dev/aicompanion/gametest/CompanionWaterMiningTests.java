@@ -352,9 +352,8 @@ public final class CompanionWaterMiningTests {
                     (c.didLastTaskSucceed() ? "" : "План остановлен: ") + c.getLastTaskResult());
             h.assertTrue(count(c, Items.RAW_IRON) == 1 ? c.didLastTaskSucceed() : !c.didLastTaskSucceed() && !said.startsWith("Готово"),
                     "Said done without the drop: " + c.getLastTaskResult() + " | " + said);
-            // In a plan or autonomy the lost drop is said as such, not as ore out of reach.
-            String explained = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", c.getLastTaskResult());
-            h.assertTrue(c.didLastTaskSucceed() || explained.contains("выпавшее не достал"), "The lost drop is said as: " + explained);
+            // Its drop would lie in the hole under water, where he cannot stand: the ore is left as it was (game 30.10).
+            h.assertTrue(count(c, Items.RAW_IRON) == 1 || h.getBlockState(ore).is(Blocks.IRON_ORE), "Broken and its drop left: " + c.getLastTaskResult());
         });
     }
 
