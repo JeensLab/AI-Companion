@@ -89,7 +89,8 @@ public final class CompanionPlanCodec {
                         : "mine_ore".equals(type) ? CompanionPlanRequirements.DEFAULT_ORE
                         : "gather_loose".equals(type) && FLINT.equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? FLINT_DEFAULT
                         : ("gather_stone".equals(type) || "gather_loose".equals(type)) ? 8
-                        : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME : 1;
+                        : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME
+                        : "pursue_goal".equals(type) && "find_diamonds".equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_DEFAULT : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
                 if (count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).

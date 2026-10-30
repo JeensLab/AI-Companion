@@ -20,8 +20,8 @@ import java.util.Set;
 
 /**
  * The hands of the mine expedition: breaks one cell at a time with the right pickaxe, walks between neighbouring cells and
- * puts the drops where he can use them. Stone pickaxes dig rock, the best ore pickaxe digs ore. Drops of a cell are held back
- * until its column is done and then fall as one harvest, so a pickup does not pull him off the stand mid-column.
+ * puts the drops where he can use them. Stone pickaxes dig rock, the best ore pickaxe digs ore. Sealing blocks are held back
+ * until the column is done and then fall as one harvest, so a pickup does not pull him off the stand mid-column.
  */
 final class CompanionExpeditionDig {
     enum Status { WORKING, DONE, NO_TOOL, NO_HAND, FULL, STUCK }
@@ -93,11 +93,15 @@ final class CompanionExpeditionDig {
         broken++;
         lastBroken = pos.immutable();
         if (ore) minedOre.add(lastBroken);
+        // Ore falls at once: a save or quit mid-column must not lose a diamond. Only sealing blocks wait, for the pickup reason above.
+        if (ore) {
+            owner.dropHarvest(lastBroken, drops);
+            return done();
+        }
         List<ItemStack> kept = new ArrayList<>(), spare = new ArrayList<>();
         int room = SEAL_RESERVE - CompanionSeal.available(owner) - heldCount();
         for (ItemStack stack : drops) {
-            boolean keep = ore || CompanionSeal.seals(stack) && room > 0 && w.items.canStore(List.of(stack));
-            if (keep) { kept.add(stack); if (!ore) room -= stack.getCount(); } else spare.add(stack);
+            if (CompanionSeal.seals(stack) && room > 0 && w.items.canStore(List.of(stack))) { kept.add(stack); room -= stack.getCount(); } else spare.add(stack);
         }
         if (!kept.isEmpty()) held.add(new Held(pos.immutable(), kept));
         toss(level, pos, spare);

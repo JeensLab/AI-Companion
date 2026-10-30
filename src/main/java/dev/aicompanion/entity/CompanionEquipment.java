@@ -179,9 +179,10 @@ final class CompanionEquipment {
             if (equipItemInternal(c.preferredWeapon, "mainhand").success()) return;
         }
         ItemStack choice = bestWeapon(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
-        // No sword or axe: the hardest-hitting pickaxe, as a player would; a stone pickaxe against a zombie in his tunnel is an
-        // even trade he can lose by one blow while an iron one lies in the bag.
-        if (choice.isEmpty()) choice = bestWeapon(stack -> stack.is(ItemTags.PICKAXES));
+        // No sword or axe in the bag or the hand: the hardest-hitting pickaxe, as a player would; a stone pickaxe against a zombie in his
+        // tunnel is an even trade he can lose by one blow while an iron one lies in the bag. The hand is not in the bag: a held sword stays.
+        ItemStack hand = c.getMainHandItem();
+        if (choice.isEmpty() && !hand.is(ItemTags.SWORDS) && !hand.is(ItemTags.AXES)) choice = bestWeapon(stack -> stack.is(ItemTags.PICKAXES));
         if (!choice.isEmpty() && equipmentScore(choice, EquipmentSlot.MAINHAND) > equipmentScore(c.getMainHandItem(), EquipmentSlot.MAINHAND))
             equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
     }
