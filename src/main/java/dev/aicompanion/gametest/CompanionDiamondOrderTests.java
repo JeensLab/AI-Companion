@@ -26,6 +26,13 @@ public final class CompanionDiamondOrderTests {
     }
 
     @GameTest(template = "empty")
+    public static void aGoalWithoutCountAsksForThreeDiamonds(GameTestHelper helper) {
+        var parsed = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{'action':'pursue_goal','item':'find_diamonds'}]"));
+        helper.assertTrue(parsed.size() == 1 && parsed.getFirst().count() == 3, "find_diamonds without a count came out as " + parsed);
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
     public static void codecRejectsFindDiamondsOutOfRange(GameTestHelper helper) {
         for (int count : new int[]{0, 17}) helper.assertTrue(rejected(plan("pursue_goal", "find_diamonds", count)), "find_diamonds x" + count + " was accepted");
         helper.succeed();

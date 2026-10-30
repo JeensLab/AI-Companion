@@ -201,6 +201,53 @@ public final class CompanionEquipmentTests {
         });
     }
 
+    /** A sword in hand is not in the bag, so the bag's pickaxes must not look like the only weapons (a diamond pickaxe outscored a stone sword). */
+    @GameTest(template = "empty", timeoutTicks = 60)
+    public static void keepsHisSwordWhenOnlyPickaxesAreInTheBag(GameTestHelper helper) {
+        keepsWeaponInFight(helper, Items.STONE_SWORD, Items.DIAMOND_PICKAXE);
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 60)
+    public static void keepsAWoodenSwordWhenOnlyPickaxesAreInTheBag(GameTestHelper helper) {
+        keepsWeaponInFight(helper, Items.WOODEN_SWORD, Items.DIAMOND_PICKAXE);
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 60)
+    public static void takesTheBestPickaxeInAFightWhenHeHasNoSwordOrAxe(GameTestHelper helper) {
+        CompanionEntity companion = fighter(helper);
+        companion.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        startFight(helper, companion);
+        helper.runAfterDelay(25, () -> {
+            helper.assertTrue(companion.getMainHandItem().is(Items.IRON_PICKAXE), "Without a sword or axe he should take the iron pickaxe, but holds " + companion.getMainHandItem());
+            helper.succeed();
+        });
+    }
+
+    private static void keepsWeaponInFight(GameTestHelper helper, Item weapon, Item bagPickaxe) {
+        CompanionEntity companion = fighter(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(weapon));
+        companion.setItem(0, new ItemStack(bagPickaxe));
+        startFight(helper, companion);
+        helper.onEachTick(() -> helper.assertTrue(companion.getMainHandItem().is(weapon),
+                "He swapped his " + weapon + " for " + companion.getMainHandItem() + " in a fight with " + bagPickaxe + " in the bag"));
+        helper.runAfterDelay(25, helper::succeed);
+    }
+
+    private static CompanionEntity fighter(GameTestHelper helper) {
+        CompanionEntity companion = companion(helper);
+        companion.setNoAi(false);
+        return companion;
+    }
+
+    /** A helmet: the test world is in daylight, and a burning zombie is no evidence of a fight. */
+    private static void startFight(GameTestHelper helper, CompanionEntity companion) {
+        var zombie = helper.spawn(EntityType.ZOMBIE, 4, 1, 2);
+        zombie.setNoAi(true);
+        zombie.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+        companion.setTarget(zombie);
+    }
+
     private static CompanionEntity companion(GameTestHelper helper) {
         for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE);
         CompanionEntity result = helper.spawn(AICompanionMod.COMPANION.get(), 2, 1, 2);
