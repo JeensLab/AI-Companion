@@ -27,11 +27,12 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
+    final CompanionFarming farming = new CompanionFarming(this);
     final CompanionWorkCrafting crafting = new CompanionWorkCrafting(this);
     final CompanionStoneMining stoneMining = new CompanionStoneMining(this);
     final CompanionOreMining oreMining = new CompanionOreMining(this);
@@ -284,7 +285,7 @@ public final class CompanionWork {
     }
     String currentDescription() {
         return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
-                : job == Job.SORT ? "раскладывает по сундукам" : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
+                : job == Job.SORT ? "раскладывает по сундукам" : job == Job.FARM ? farming.describe() : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
                 : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + furnaces.smeltReady() + " из " + smeltCount : "готовит печь для плавки")
                 : "выполняет работу " + job + ", стадия " + phase;
     }
@@ -304,6 +305,7 @@ public final class CompanionWork {
             case COOK -> "плавка / готовка";
             case IRON -> "подготовка железа";
             case BREED -> "разведение животных";
+            case FARM -> "в поле";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -328,6 +330,7 @@ public final class CompanionWork {
             case GIVE -> "передачу вещей";
             case SMELT -> "плавку" + (smelt == null ? "" : " «" + itemName(smelt.input()) + "»");
             case ORE -> "добычу руды «" + ore.oreName + "» (" + oreMined + " из " + oreWanted + ")";
+            case FARM -> farming.jobName();
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -458,6 +461,11 @@ public final class CompanionWork {
                 String refused = owner.batches().collectRefusal(item);
                 if (refused != null) return CompanionActionResult.failed(refused);
                 job = Job.SMELT; phase = Phase.COOK;
+            }
+            case "farm_crops", "harvest_crops" -> {
+                String problem = farming.begin(action, item, count);
+                if (problem != null) return CompanionActionResult.failed(problem);
+                job = Job.FARM; phase = Phase.FARM;
             }
             case "build_house" -> {
                 if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
@@ -603,6 +611,7 @@ public final class CompanionWork {
             case IRON -> oreMining.ironStep(level);
             case PEN -> pen.tick(level);
             case BREED -> breeding.tick(level);
+            case FARM -> farming.tick(level);
             default -> { }
         }
     }

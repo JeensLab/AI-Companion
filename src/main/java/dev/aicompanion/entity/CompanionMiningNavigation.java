@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
@@ -202,7 +203,9 @@ final class CompanionMiningNavigation {
         var level = owner.level();
         if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.below()) || !level.getWorldBorder().isWithinBounds(pos)
                 || !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty()) return false;
-        if (!level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) return false;
+        // Farmland is 15/16 high, so none of its faces is sturdy; it is still floor to stand on and to pick a drop up from.
+        var floor = level.getBlockState(pos.below());
+        if (!floor.isFaceSturdy(level, pos.below(), Direction.UP) && !floor.is(Blocks.FARMLAND)) return false;
         return level.noCollision(owner, new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8));
     }
 

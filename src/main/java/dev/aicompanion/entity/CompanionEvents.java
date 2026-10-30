@@ -348,6 +348,7 @@ public final class CompanionEvents {
             case "collect_smelt" -> companion.startWork("collect_smelt", item, 1);
             case "mine_ore" -> companion.startWork("mine_ore", item, count);
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
+            case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.
             case "autonomy" -> companion.autonomy().setEnabled("on".equals(item));
@@ -393,6 +394,11 @@ public final class CompanionEvents {
     /** What dies by Oleg's hand drops for him to pick up (the hunt's meat, leather, wool, feathers). */
     public static void onLivingDrops(net.neoforged.neoforge.event.entity.living.LivingDropsEvent event) {
         if (!event.getEntity().level().isClientSide && event.getSource().getEntity() instanceof CompanionEntity companion) companion.claimDrops(event.getDrops());
+    }
+
+    /** A farmer does not trample his own field: a step down or a jump onto farmland never turns it to dirt under him. */
+    public static void onFarmlandTrample(net.neoforged.neoforge.event.level.BlockEvent.FarmlandTrampleEvent event) {
+        if (event.getEntity() instanceof CompanionEntity) event.setCanceled(true);
     }
 
     public static CompanionEntity getOwnedCompanion(ServerPlayer player) {
