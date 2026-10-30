@@ -54,6 +54,8 @@ public final class CompanionAgendaData extends SavedData {
         /** Time the goal has waited without a step, and whether the player was already told: a goal that waits in silence looks dead. */
         long idleTicks;
         boolean idleSaid;
+        /** The top-up of supplies for the mine failed (no game to hunt): the next mine step goes down with what he has, once. */
+        boolean mineAsIs;
 
         Goal(UUID id, String playbook, int tier) { this.id = id; this.playbook = playbook; this.tier = tier; }
 
