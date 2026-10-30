@@ -92,7 +92,8 @@ public final class CompanionPlanCodec {
                         : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME
                         : "farm_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES
                         : "harvest_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.MAX_HARVEST
-                        : "build_pen".equals(type) ? 4 : 1;
+                        : "build_pen".equals(type) ? 4
+                        : "pursue_goal".equals(type) && "find_diamonds".equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_DEFAULT : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
                 if (count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
