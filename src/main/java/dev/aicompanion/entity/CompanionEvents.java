@@ -10,6 +10,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -17,6 +19,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public final class CompanionEvents {
@@ -57,11 +60,18 @@ public final class CompanionEvents {
                 .then(Commands.literal("summon").executes(context -> {
                     ServerPlayer player = context.getSource().getPlayerOrException();
                     CompanionEntity companion = resolveCanonical(player, true);
-                    if (companion != null) companion.teleportTo(player.getX() + 1.0D, player.getY(), player.getZ() + 1.0D);
+                    Vec3 at = companion == null ? null : arrival(player);
+                    if (at != null && companion.level() != player.level()) {
+                        // Game 29.10: from the Nether he went to the same numbers in his own world and fell into a forest. He comes over
+                        // as with a vanilla /tp; the work of the world he leaves stops there, as on «иди за мной».
+                        companion.goals().playerOrder("follow"); companion.autonomy().playerOrder("follow");
+                        CompanionAgenda.playerOrder(player, companion, "follow"); companion.setFollowing(true);
+                        companion.teleportTo(player.serverLevel(), at.x, at.y, at.z, Set.of(), companion.getYRot(), companion.getXRot());
+                    } else if (at != null) companion.teleportTo(at.x, at.y, at.z);
                     context.getSource().sendSuccess(() -> Component.literal(companion == null
                             ? "Компаньон сейчас выгружен из мира; он не создан повторно."
-                            : "Компаньон рядом."), false);
-                    return companion == null ? 0 : 1;
+                            : at == null ? "Рядом с тобой ему негде встать: нужен твёрдый пол без воды и лавы." : "Компаньон рядом."), false);
+                    return at == null ? 0 : 1;
                 }))
                 .then(Commands.literal("follow").executes(context -> setFollowing(context.getSource().getPlayerOrException(), true)))
                 .then(Commands.literal("roam").executes(context -> {
@@ -90,6 +100,22 @@ public final class CompanionEvents {
                         .executes(context -> unequip(context.getSource().getPlayerOrException(), StringArgumentType.getString(context, "slot")))))
                 .then(Commands.literal("givewood").executes(context -> giveWood(context.getSource().getPlayerOrException())))
                 .then(Commands.literal("stop").executes(context -> stopGathering(context.getSource().getPlayerOrException()))));
+    }
+
+    /**
+     * Where a summon puts him: beside the player where his body is free, out of any fluid and on something to stand on; the player's own
+     * cell last; null if there is no such place. Review 29.10: by a bridge over lava or the void he would fall, and everything he carries
+     * with him; in the game 29.10 a player standing in lava (creative) had him put into it, where he died.
+     */
+    private static Vec3 arrival(ServerPlayer player) {
+        var level = player.serverLevel();
+        for (int[] side : new int[][]{{1, 1}, {1, 0}, {0, 1}, {-1, 0}, {0, -1}, {-1, -1}, {1, -1}, {-1, 1}, {0, 0}}) {
+            Vec3 at = player.position().add(side[0], 0, side[1]);
+            AABB body = AICompanionMod.COMPANION.get().getDimensions().makeBoundingBox(at);
+            if (level.noCollision(body) && !level.containsAnyLiquid(body) && !level.noCollision(new AABB(at.x - .3, at.y - .2, at.z - .3, at.x + .3, at.y, at.z + .3)))
+                return at;
+        }
+        return null;
     }
 
     private static int setFollowing(ServerPlayer player, boolean following) {
@@ -286,7 +312,7 @@ public final class CompanionEvents {
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "build_house" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -322,11 +348,15 @@ public final class CompanionEvents {
             case "collect_smelt" -> companion.startWork("collect_smelt", item, 1);
             case "mine_ore" -> companion.startWork("mine_ore", item, count);
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
+            case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.
             case "autonomy" -> companion.autonomy().setEnabled("on".equals(item));
             default -> CompanionActionResult.failed("Неподдерживаемое действие: " + action);
         };
+        // What he carries of a sorting this order has just ended is said once, in the answer of the order: the work's own cancel answer is read by nobody.
+        String carriedNote = autonomousDispatch || goalDispatch ? "" : companion.takeSortNote();
+        if (!carriedNote.isEmpty()) dispatchResult = new CompanionActionResult(dispatchResult.success(), dispatchResult.message() + carriedNote, dispatchResult.status(), dispatchResult.evidence());
         dev.aicompanion.CompanionDiagnostics.event(trace, "server_acknowledgement", "action", action,
                 "success", dispatchResult.success(), "status", dispatchResult.status(), "message", dispatchResult.message(), "workStillActive", companion.isGatheringTask(),
                 "workId", companion.activeWorkId());
@@ -364,6 +394,11 @@ public final class CompanionEvents {
     /** What dies by Oleg's hand drops for him to pick up (the hunt's meat, leather, wool, feathers). */
     public static void onLivingDrops(net.neoforged.neoforge.event.entity.living.LivingDropsEvent event) {
         if (!event.getEntity().level().isClientSide && event.getSource().getEntity() instanceof CompanionEntity companion) companion.claimDrops(event.getDrops());
+    }
+
+    /** A farmer does not trample his own field: a step down or a jump onto farmland never turns it to dirt under him. */
+    public static void onFarmlandTrample(net.neoforged.neoforge.event.level.BlockEvent.FarmlandTrampleEvent event) {
+        if (event.getEntity() instanceof CompanionEntity) event.setCanceled(true);
     }
 
     public static CompanionEntity getOwnedCompanion(ServerPlayer player) {

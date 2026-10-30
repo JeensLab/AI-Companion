@@ -12,6 +12,9 @@ public final class CompanionWorkCommands {
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
         value = value.replaceAll("[.!]+$", "").trim();
         if (value.matches("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1);
+        // Sorting the chests by group: «разложи сундуки», not «сложи вещи в сундук» (that one is store_items).
+        if (value.matches("^(?:разложи|отсортируй|рассортируй)(?: мне| нам)?(?: (?:все )?(?:вещи|предметы))?(?: (?:по|в) сундук(?:ам|ах)| сундуки)$|^наведи порядок в сундук(?:ах|е)$"))
+            return new PlannedAction("sort_chests", 0, 1);
         if (value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$")) return new PlannedAction("build_house", 0, 1);
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
@@ -48,6 +51,15 @@ public final class CompanionWorkCommands {
             int count = amount(said.count(), CompanionPlanRequirements.DEFAULT_ORE, max, 8);
             // More than one order holds goes to the model, which splits it into several steps.
             return count >= 1 && count <= max ? new PlannedAction("mine_ore", 0, count, "minecraft:" + kind + "_ore") : null;
+        }
+        // «Сделай загон для коров», «загони овец», «разведи свиней»: the kind in any case, none for any kind.
+        String animals = "(?:\\s+(коров|корову|коровы|овец|овцу|овцы|свиней|свинью|свиньи|куриц|курицу|курицы|кур))?";
+        var pen = Pattern.compile("^(?:(?:сделай|построй)(?: мне| нам| себе)? загон(?: для)?|загони)" + animals + "$").matcher(bare);
+        var breed = Pattern.compile("^разведи" + animals + "$").matcher(bare);
+        if (pen.matches() || breed.matches() && said.count() == 0) {
+            String word = pen.matches() ? pen.group(1) : breed.group(1);
+            String kind = word == null ? "any" : "minecraft:" + (word.startsWith("коров") ? "cow" : word.startsWith("ов") ? "sheep" : word.startsWith("свин") ? "pig" : "chicken");
+            return pen.matches() ? new PlannedAction("build_pen", 0, amount(said.count(), 4, 8, 8), kind) : new PlannedAction("breed_animals", 0, 1, kind);
         }
         var smelt = Pattern.compile("^(?:переплавь|расплавь|переплави|пережги)(?: мне| нам| себе)?(?:\\s+(?:всю|весь))?\\s+(железо|железа|золото|золота|медь|меди|песок|песка|булыжник|булыжника)(?:\\s+(?:в печи|в печке))?$").matcher(bare);
         if (smelt.matches()) {
@@ -101,6 +113,22 @@ public final class CompanionWorkCommands {
                 default -> "resources";
             };
             return new PlannedAction("store_items", 0, 1, filter);
+        }
+        // The field and the harvest need no model either: «собери урожай», «сделай огород», «посади морковь».
+        if (bare.matches("^(?:собери|сними|убери)(?: мне| нам)?(?: весь| созревший)? урожай(?: рядом| вокруг| с огорода| с грядок| с фермы)?$"))
+            return new PlannedAction("harvest_crops", 0, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, "any");
+        if (bare.matches("^(?:сделай|разбей|вскопай|создай)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:огород|огородик|грядки|грядку|ферму(?: пшеницы)?)(?: у воды| рядом)?$"))
+            return new PlannedAction("farm_crops", 0, dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, "minecraft:wheat_seeds");
+        var sow = Pattern.compile("^(?:посади|засади|посей|высади)(?: мне| нам)?\\s+(пшениц\\p{L}*|морков\\p{L}*|картош\\p{L}*|картофел\\p{L}*|свекл\\p{L}*)(?: у воды| рядом)?$").matcher(bare);
+        if (sow.matches()) {
+            var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(switch (sow.group(1).substring(0, 4)) {
+                case "морк" -> "carrot";
+                case "карт" -> "potato";
+                case "свек" -> "beetroot";
+                default -> "wheat";
+            });
+            int count = amount(said.count(), dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, dev.aicompanion.entity.CompanionCrops.MAX_TILES, dev.aicompanion.entity.CompanionCrops.MAX_TILES);
+            return count >= 1 && count <= dev.aicompanion.entity.CompanionCrops.MAX_TILES ? new PlannedAction("farm_crops", 0, count, crop.seedId()) : null;
         }
         return null;
     }

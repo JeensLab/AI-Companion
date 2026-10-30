@@ -323,9 +323,16 @@ public final class CompanionChatScreen extends Screen {
         CompanionDiagnostics.event(trace, "execution_report", "report", raw);
         dev.aicompanion.AICompanionMod.LOGGER.debug("Companion action result: {}", raw);
         String spoken = error == null ? CompanionDialogue.summarize(actions, raw) : "Не вышло, бля. Поручение не завершено.";
-        if (local && spoken.isBlank()) spoken = CompanionDialogue.acknowledge(actions);
+        // A stop heard from the tasks window or /companion stop leaves the note for the next order on the server too: it is said once.
+        long now = System.currentTimeMillis();
+        boolean note = spoken.contains(CompanionDialogue.BAG_NOTE);
+        spoken = CompanionDialogue.heard(actions, spoken, local, now - bagNoteAt < 30_000);
+        if (note) bagNoteAt = now;
         if (!spoken.isBlank()) addVoiceReply(spoken, trace, "engine_summary");
     }
+
+    /** When the chat last said the bag note of a stopped sorting. */
+    private static long bagNoteAt;
 
     private void addLine(Component line) {
         appendHistory(line);
