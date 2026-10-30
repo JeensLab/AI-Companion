@@ -11,6 +11,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.material.Fluid;
@@ -63,13 +64,30 @@ final class CompanionLava {
     static List<BlockPos> inflow(Level level, BlockPos opened) { return inflow(level, opened, FluidTags.LAVA); }
 
     /**
-     * The water cells that run into this cell when it is opened, by the same rule as lava, without the cells of his own way (water that
-     * lies in his tunnel or where he stands is open for him to walk, not an inflow to plug).
+     * The springs that run into this cell when it is opened: water in a wall, as the same rule as lava finds it, that nothing but this
+     * cell opens to. A pond, a flooded passage, water that lies in his tunnel or where he stands is no spring: it runs in again whatever
+     * is put into it, and a plug there only walls him off.
      */
     static List<BlockPos> waterInflow(Level level, BlockPos opened, Collection<BlockPos> own) {
-        List<BlockPos> cells = inflow(level, opened, FluidTags.WATER);
-        cells.removeAll(own);
-        return cells;
+        List<BlockPos> springs = new ArrayList<>(2);
+        for (BlockPos cell : inflow(level, opened, FluidTags.WATER)) if (!own.contains(cell) && closedSpring(level, cell, opened, own)) springs.add(cell);
+        return springs;
+    }
+
+    /**
+     * The block itself is water (not a chest or a slab with water in it) and every side of it but the opened cell is something solid
+     * (not air, not liquid, not replaceable, not a cell of his own way, not a block holding water).
+     */
+    private static boolean closedSpring(Level level, BlockPos cell, BlockPos opened, Collection<BlockPos> own) {
+        if (!level.getBlockState(cell).is(Blocks.WATER)) return false;
+        for (Direction d : Direction.values()) {
+            BlockPos next = cell.relative(d);
+            if (next.equals(opened)) continue;
+            if (!level.isLoaded(next) || own.contains(next)) return false;
+            BlockState state = level.getBlockState(next);
+            if (state.isAir() || state.canBeReplaced() || !state.getFluidState().isEmpty()) return false;
+        }
+        return true;
     }
 
     private static List<BlockPos> inflow(Level level, BlockPos opened, TagKey<Fluid> liquid) {
@@ -139,14 +157,15 @@ final class CompanionLava {
     /**
      * Plugs each of these lava or water cells with a block from his bag, the cheapest first, like a player who puts a cobblestone into the
      * flow: a real item used up, the swing, the sound and the game's placement event. Called in the tick the cell is broken, before
-     * lava moves (30 ticks later in the Overworld, 10 in the Nether).
+     * lava moves (30 ticks later in the Overworld, 10 in the Nether). Only a block that is the liquid itself is replaced, never one that
+     * holds it (a waterlogged chest).
      */
     static void plug(CompanionEntity owner, ServerLevel level, Collection<BlockPos> lava) {
         for (BlockPos cell : lava) {
             int best = -1;
             for (int slot = 0; slot < owner.getContainerSize(); slot++)
                 if (plugRank(owner, slot) >= 0 && (best < 0 || plugRank(owner, slot) < plugRank(owner, best))) best = slot;
-            if (best < 0 || level.getFluidState(cell).isEmpty()) continue;
+            if (best < 0 || !level.getBlockState(cell).is(Blocks.WATER) && !level.getBlockState(cell).is(Blocks.LAVA)) continue;
             BlockState state = ((BlockItem) owner.getItem(best).getItem()).getBlock().defaultBlockState();
             if (!level.setBlockAndUpdate(cell, state)) continue;
             ItemStack used = owner.removeItem(best, 1);

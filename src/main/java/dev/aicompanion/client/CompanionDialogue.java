@@ -341,6 +341,8 @@ public final class CompanionDialogue {
                     : last.contains("чьи-то") ? "остальные чьи-то, с именем или на поводке" : last.contains("не нашёл пути") ? "до остальных не добраться" : "больше рядом не нашёл";
             return hunted ? "Добыл только " + hunt.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
         }
+        // Broken but not picked up (CompanionOreMining.finishOre): never «накопал».
+        if (last.contains("Выпавшее не достал")) return "Руду сломал, но выпавшее не достал.";
         var counts = Pattern.compile("Добыл (\\d+) из (\\d+)").matcher(last);
         if (!counts.find()) return null;
         String got = counts.group(1), wanted = counts.group(2).replaceAll("\\D+$", "");
@@ -351,7 +353,8 @@ public final class CompanionDialogue {
                     : java.util.Arrays.stream(dev.aicompanion.entity.CompanionOre.Kind.values())
                     .filter(value -> last.contains(value.oreName)).findFirst().orElse(null);
             String what = kind == null ? "руды" : kind.genitive;
-            String why = last.contains("залило водой") && !last.contains("лав") ? "остальную залило водой — нечем заткнуть"
+            boolean flooded = last.toLowerCase(java.util.Locale.ROOT).contains("залило водой") && !dev.aicompanion.CompanionFailureMessages.mentionsLava(last);
+            String why = flooded ? "остальную залило водой, а заткнуть нечем"
                     : last.contains("заткнуть нечем") ? "у остальной лава рядом, а заткнуть её нечем — нужен булыжник или земля"
                     : last.contains("лавопад") ? "у остальной рядом лавопад, пробкой его не остановить"
                     : last.contains("над лавой") ? "остальная руда над лавой, добыча бы сгорела"
@@ -359,7 +362,7 @@ public final class CompanionDialogue {
                     : last.contains("безопасного хода") ? "до остальной не докопаться безопасно"
                     : "больше " + what + " рядом не нашёл";
             if (!got.equals("0")) return "Накопал только " + got + " из " + wanted + " — " + why + ".";
-            return why.startsWith("больше") ? "Не нашёл " + what + " поблизости." : "Руду нашёл, но " + why + ".";
+            return why.startsWith("больше") ? "Не нашёл " + what + " поблизости." : "Руду нашёл, но " + (flooded ? "её залило водой, а заткнуть нечем" : why) + ".";
         }
         if (actions.stream().anyMatch(action -> "gather_stone".equals(action.type())) && last.contains("камн"))
             return got.equals("0") ? "Камня не добыл — не нашёл, как безопасно к нему подобраться." : "Накопал только " + got + " из " + wanted + " камня — больше безопасного камня рядом не нашёл.";

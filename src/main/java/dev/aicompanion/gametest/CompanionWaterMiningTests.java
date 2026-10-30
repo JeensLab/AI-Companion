@@ -1,9 +1,12 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionDialogue;
+import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
@@ -13,9 +16,14 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
 
 /** Water does not scare him at work, as it does not scare a player: ore and stone at the water, a tunnel through it, drops that float. */
 @GameTestHolder(AICompanionMod.MOD_ID)
@@ -207,10 +215,177 @@ public final class CompanionWaterMiningTests {
         h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 2).success(), "Ore order not accepted"));
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 10 && !c.isGatheringTask() && !c.isWorking(), "Work still active after " + h.getTick() + ": " + c.getLastTaskResult());
-            h.assertTrue(c.didLastTaskSucceed() || c.getLastTaskResult().contains("Ход залило водой, заткнуть нечем"), "Neither the ore nor the reason: " + report(c));
+            h.assertTrue(c.didLastTaskSucceed() || c.getLastTaskResult().contains("Залило водой, заткнуть нечем"), "Neither the ore nor the reason: " + report(c));
             h.assertTrue(count(c, Items.SAND) == 5 && count(c, Items.DIRT) == 0, "The bag was spent: " + report(c));
         });
     }
+
+    /**
+     * Review 3: no plugs at all, the first iron is a wall spring's, five dry irons stand free on the floor far away. The flood clock is for a
+     * drop he cannot get at: the first drop is picked up, so all six are mined (the clock once ended the order after 300 ticks, a dry ore left).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aSpringAtTheFirstOreDoesNotCutTheOrderShortWhileItsDropIsReachable(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 20, 1, 10, 23, 3, 22, Blocks.STONE);
+        BlockPos spring = new BlockPos(20, 1, 16);
+        h.setBlock(spring, Blocks.IRON_ORE); h.setBlock(spring.above(), Blocks.AIR); h.setBlock(new BlockPos(21, 1, 16), Blocks.WATER);
+        for (BlockPos dry : new BlockPos[]{new BlockPos(6, 1, 10), new BlockPos(6, 1, 22), new BlockPos(9, 1, 6), new BlockPos(9, 1, 26), new BlockPos(4, 1, 16)})
+            h.setBlock(dry, Blocks.IRON_ORE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
+        bind(h, c, 13, 1, 13);
+        c.setLifestyle(false, false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 6).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 6, "Not six of six: " + c.getLastTaskResult());
+        });
+    }
+
+    /**
+     * Review 3: a pocket of water lies on the line of his tunnel (open for him to swim, a cell of his way, not a spring): never plugged.
+     * A plug across the line shuts the way he is digging along; the work ends either way, and whether the iron behind the flowing water
+     * is reached is the tunnel's own business (it was not on 04cbab6 either).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aFloodedCellOnTheLineOfHisTunnelIsNeverPlugged(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 1, 31, Blocks.STONE);
+        box(h, 11, 2, 0, 31, 7, 31, Blocks.STONE);
+        BlockPos ore = new BlockPos(16, 2, 16), pocket = new BlockPos(13, 2, 16);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(pocket, Blocks.WATER);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 7, 2, 16);
+        bind(h, c, 4, 2, 16);
+        c.setLifestyle(false, false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        boolean[] plugged = {false};
+        h.onEachTick(() -> plugged[0] |= h.getBlockState(pocket).is(Blocks.COBBLESTONE));
+        h.runAfterDelay(20, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 22 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(!plugged[0], "The water on his way was plugged");
+            h.assertTrue(count(c, Items.RAW_IRON) == 1 ? c.didLastTaskSucceed() && !h.getBlockState(ore).is(Blocks.IRON_ORE) : h.getBlockState(ore).is(Blocks.IRON_ORE) && !c.didLastTaskSucceed(),
+                    "Said otherwise than the ore and the bag say: " + c.getLastTaskResult());
+        });
+    }
+
+    /** Review 3: iron in the side wall of a flooded corridor one wide: the corridor cell in front of it is the way, not a spring: it stays water. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void anOreInTheWallOfAFloodedCorridorLeavesTheCorridorWater(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 12, 31, 4, 20, Blocks.STONE);
+        box(h, 2, 1, 16, 29, 2, 16, Blocks.AIR);
+        box(h, 2, 1, 16, 29, 1, 16, Blocks.WATER);
+        BlockPos ore = new BlockPos(14, 1, 17);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 4, 1, 16);
+        bind(h, c, 27, 1, 16);
+        c.setLifestyle(false, false);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        int[] plugs = {0};
+        h.onEachTick(() -> { plugs[0] = 0; for (int x = 2; x <= 29; x++) for (int y = 1; y <= 2; y++) if (h.getBlockState(new BlockPos(x, y, 16)).is(Blocks.COBBLESTONE)) plugs[0]++; });
+        h.runAfterDelay(20, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 22 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c) + " " + c.getLastTaskResult());
+            h.assertTrue(plugs[0] == 0 && h.getBlockState(new BlockPos(14, 1, 16)).is(Blocks.WATER), "The corridor was plugged: " + plugs[0]);
+        });
+    }
+
+    /** Review 3: an iron washed by a pond he stands in: a pond runs in again, so nothing is plugged, the bag keeps its cobblestone. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    public static void anOreInAPondIsTakenWithoutPluggingThePond(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 1, 31, Blocks.STONE);
+        box(h, 9, 2, 9, 23, 2, 23, Blocks.STONE);
+        box(h, 10, 2, 10, 22, 2, 22, Blocks.WATER);
+        h.setBlock(new BlockPos(16, 2, 16), Blocks.IRON_ORE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 13, 2, 13);
+        bind(h, c, 5, 2, 5);
+        c.setLifestyle(false, false);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        h.runAfterDelay(20, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 22 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            int inPond = 0;
+            for (int x = 10; x <= 22; x++) for (int z = 10; z <= 22; z++) if (h.getBlockState(new BlockPos(x, 2, z)).is(Blocks.COBBLESTONE)) inPond++;
+            h.assertTrue(inPond == 0 && count(c, Items.COBBLESTONE) == 5, inPond + " cobblestones in the pond, bag " + count(c, Items.COBBLESTONE));
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c) + " " + c.getLastTaskResult());
+        });
+    }
+
+    /**
+     * Review 3: an iron in the floor of a pond one block deep, the pond over it: nothing is plugged over it (a plug would seal the drop
+     * in the pit), and he never says «Готово, накопал» for a block whose drop he does not have: either the raw iron is in the bag, or the
+     * order says it was not got.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void anOreUnderAPondIsDoneOnlyWithItsDrop(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 1, 31, Blocks.STONE);
+        box(h, 9, 2, 9, 23, 2, 23, Blocks.STONE);
+        box(h, 10, 2, 10, 22, 2, 22, Blocks.WATER);
+        BlockPos ore = new BlockPos(16, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 13, 2, 13);
+        bind(h, c, 5, 2, 5);
+        c.setLifestyle(false, false);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        h.runAfterDelay(20, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 22 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(!h.getBlockState(ore.above()).is(Blocks.COBBLESTONE), "The pond over the ore was plugged");
+            String said = CompanionDialogue.summarize(List.of(new PlannedAction("mine_ore", 0, 1, "minecraft:iron_ore")),
+                    (c.didLastTaskSucceed() ? "" : "План остановлен: ") + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.RAW_IRON) == 1 ? c.didLastTaskSucceed() : !c.didLastTaskSucceed() && !said.startsWith("Готово"),
+                    "Said done without the drop: " + c.getLastTaskResult() + " | " + said);
+            // In a plan or autonomy the lost drop is said as such, not as ore out of reach.
+            String explained = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() || explained.contains("выпавшее не достал"), "The lost drop is said as: " + explained);
+        });
+    }
+
+    /** Review 3: a chest and a slab of the player, waterlogged, beside the ore: only a block that is water itself is a spring; they stay, the diamonds in the chest too. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void waterloggedBlocksBesideTheOreAreNeverReplacedByAPlug(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 20, 1, 10, 23, 3, 22, Blocks.STONE);
+        BlockPos ore = new BlockPos(20, 1, 16), chest = new BlockPos(20, 1, 17), slab = new BlockPos(20, 1, 15);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(ore.above(), Blocks.AIR);
+        h.setBlock(chest, Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.WEST).setValue(ChestBlock.WATERLOGGED, true));
+        ((ChestBlockEntity) h.getBlockEntity(chest)).setItem(0, new ItemStack(Items.DIAMOND, 5));
+        h.setBlock(slab, Blocks.OAK_SLAB.defaultBlockState().setValue(SlabBlock.WATERLOGGED, true));
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
+        bind(h, c, 13, 1, 13);
+        c.setLifestyle(false, false);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
+        h.runAfterDelay(20, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 22 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c) + " " + c.getLastTaskResult());
+            h.assertTrue(h.getBlockState(chest).is(Blocks.CHEST) && h.getBlockState(slab).is(Blocks.OAK_SLAB), "Replaced: " + h.getBlockState(chest) + " " + h.getBlockState(slab));
+            h.assertTrue(h.getBlockEntity(chest) instanceof ChestBlockEntity box && box.getItem(0).is(Items.DIAMOND) && box.getItem(0).getCount() == 5, "The chest lost its diamonds");
+            h.assertTrue(count(c, Items.COBBLESTONE) == 3, "A plug was spent: " + count(c, Items.COBBLESTONE));
+        });
+    }
+
+    private static void clear(GameTestHelper h) { box(h, 0, 1, 0, 31, 23, 31, Blocks.AIR); }
 
     /** Stone wall x 17..21 with two irons at z 15, a source behind them (x 19) and a source over the second one. */
     private static BlockPos[] veinWithWater(GameTestHelper h) {
