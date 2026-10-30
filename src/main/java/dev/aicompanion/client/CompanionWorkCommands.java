@@ -37,6 +37,12 @@ public final class CompanionWorkCommands {
             int count = amount(said.count(), 2, CompanionPlanCodec.FLINT_STEP, 4);
             return count >= 1 && count <= CompanionPlanCodec.FLINT_STEP ? new PlannedAction("gather_loose", 0, count, CompanionPlanCodec.FLINT) : null;
         }
+        // Diamonds lie deep: unless the player says «рядом», the order is the long find_diamonds goal, not a search of the nearby ore.
+        if (bare.matches("^(?:(?:(?:до|да)будь(?:ка)?|накопай|наковыряй|выкопай|наколи|найди|поищи|ищи)(?: мне| нам| себе)?\\s+алмаз(?:а|ов|ы)?(?:\\s+(?:руды|руда|руду))?"
+                + "|сходи(?: в шахту)? за алмазами|(?:копай|выкопай|накопай|прокопай) шахту до алмазов)$")) {
+            int count = amount(said.count(), dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_DEFAULT, dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_MAX, 8);
+            return count >= 1 && count <= dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_MAX ? new PlannedAction("pursue_goal", 0, count, "find_diamonds") : null;
+        }
         var ore = Pattern.compile("^(?:(?:до|да)будь(?:ка)?|накопай|выкопай|наколи)(?: мне| нам| себе)?\\s+(угля|уголь|железа|железо|железной|меди|медь|медной|золота|золото|золотой"
                 + "|алмазов|алмазы|алмаз|изумрудов|изумруды|изумруд|лазурита|лазурит|редстоуна|редстоун)(?:\\s+(?:руды|руда|руду))?(?:\\s+(?:рядом|поблизости))?$").matcher(bare);
         if (ore.matches()) {

@@ -114,6 +114,7 @@ public final class CompanionDialogue {
             case "wander" -> "осмотреться";
             case "pursue_goal" -> {
                 var book = dev.aicompanion.entity.CompanionPlaybooks.of(action.item(), action.count());
+                if (book != null && "find_diamonds".equals(book.id())) yield "сходить в шахту за алмазами (" + book.tier() + ")";
                 yield "взяться за долгую цель" + (book == null ? "" : ": " + book.title());
             }
             case "goal_pickaxes" -> "сделать каменные кирки для вас обоих";
