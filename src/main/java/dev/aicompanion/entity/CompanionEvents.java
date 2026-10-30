@@ -307,12 +307,12 @@ public final class CompanionEvents {
             case "craft_item" -> {
                 CompanionActionResult repeat = count == 1 && !goalDispatch ? companion.alreadyMade(item) : null;
                 if (repeat != null) yield repeat;
-                if (CompanionWork.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
+                if (CompanionCraftCosts.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
                 if (companion.benchWalkNeeded(item, count)) yield companion.startWork("bench_craft", item, count);
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);

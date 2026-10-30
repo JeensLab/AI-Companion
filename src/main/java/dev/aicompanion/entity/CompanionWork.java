@@ -66,6 +66,8 @@ public final class CompanionWork {
     Phase phase;
     Phase afterWood;
     String requestedItem = "";
+    /** What a digging job gathers: soil for gather_dirt, the ordered loose block for gather_loose. */
+    CompanionGround ground = CompanionGround.SOIL;
     int requestedCount;
     int wantedStone;
     int gathered;
@@ -322,7 +324,7 @@ public final class CompanionWork {
             case HOUSE -> "стройку дома";
             case PEN -> "постройку загона";
             case BREED -> "разведение животных";
-            case DIRT -> "добычу земли";
+            case DIRT -> "добычу " + ground.genitive();
             case COME -> "путь к тебе";
             case HUNT -> "бой с монстрами";
             case GAME -> "охоту (" + gameKills + " из " + gameWanted + ")";
@@ -355,45 +357,16 @@ public final class CompanionWork {
         if (job == Job.STONE) return Integer.MAX_VALUE;
         int need = 0;
         if (job == Job.SMELT || !ironTool.isEmpty() || "minecraft:furnace".equals(requestedItem)) {
-            need += stoneCost("minecraft:furnace");
+            need += CompanionCraftCosts.stoneCost("minecraft:furnace");
             if (smelt != null && new ItemStack(smelt.input()).is(ItemTags.STONE_CRAFTING_MATERIALS)) need += smeltCount;
         }
-        if (job == Job.CRAFT || job == Job.ORE || job == Job.PLACE_CHEST) need += stoneCost(requestedItem) * Math.max(1, requestedCount);
+        if (job == Job.CRAFT || job == Job.ORE || job == Job.PLACE_CHEST) need += CompanionCraftCosts.stoneCost(requestedItem) * Math.max(1, requestedCount);
         return need;
     }
 
     /** Wood in the bag is for the work (house, tools, chest, fuel) unless the work is only walking, fighting or handing over. */
     boolean woodSpareForSupports() {
         return job == null || job == Job.COME || job == Job.HUNT || job == Job.GIVE || job == Job.DIRT;
-    }
-
-    public static int stoneCost(String item) {
-        return switch (item) {
-            case "minecraft:stone_pickaxe", "minecraft:stone_axe" -> 3;
-            case "minecraft:stone_sword", "minecraft:stone_hoe" -> 2;
-            case "minecraft:stone_shovel" -> 1;
-            case "minecraft:furnace" -> 8;
-            default -> 0;
-        };
-    }
-
-    /** Iron ingots one iron tool takes; 0 for anything else. */
-    public static int ingotCost(String item) {
-        return switch (item) {
-            case "minecraft:iron_pickaxe", "minecraft:iron_axe" -> 3;
-            case "minecraft:iron_sword", "minecraft:iron_hoe" -> 2;
-            case "minecraft:iron_shovel" -> 1;
-            default -> 0;
-        };
-    }
-
-    public static boolean supportsCraft(String item, int count) {
-        if (count < 1 || count > 16) return false;
-        // Iron tools: the ingots are mined and smelted on the way, at most one ore order's worth.
-        if (ingotCost(item) > 0) return ingotCost(item) * count <= MAX_ORE;
-        return stoneCost(item) > 0 || Set.of("minecraft:chest", "minecraft:crafting_table", "minecraft:stick",
-                "minecraft:wooden_pickaxe", "minecraft:wooden_axe", "minecraft:wooden_sword",
-                "minecraft:wooden_shovel", "minecraft:wooden_hoe").contains(item);
     }
 
     public CompanionActionResult start(String action, String item, int count) {
@@ -409,10 +382,16 @@ public final class CompanionWork {
         if (insideHouse && !house.interiorAvailable(level)) return CompanionActionResult.blocked("Не могу подтвердить, где сейчас наш дом. Снаружи вместо этого ставить не буду.");
         switch (action) {
             case "gather_stone" -> { job = Job.STONE; phase = Phase.PICKAXE; wantedStone = count; }
-            case "gather_dirt" -> { job = Job.DIRT; phase = Phase.SHOVEL; }
+            case "gather_dirt" -> { job = Job.DIRT; phase = Phase.SHOVEL; ground = CompanionGround.SOIL; }
+            case "gather_loose" -> {
+                CompanionGround loose = CompanionGround.of(item);
+                if (loose == null || !loose.isLoose()) return CompanionActionResult.failed("Умею копать только песок, красный песок, гравий и кремень.");
+                if (loose == CompanionGround.FLINT && count > CompanionFlint.MAX_ORDER) return CompanionActionResult.failed("Кремня за раз можно добыть от 1 до " + CompanionFlint.MAX_ORDER + ".");
+                job = Job.DIRT; phase = Phase.SHOVEL; ground = loose;
+            }
             case "gather_wood" -> { job = Job.WOOD; phase = Phase.WOOD; }
             case "prepare_craft" -> {
-                if (!supportsCraft(item, count)) return CompanionActionResult.failed("Эту цепочку пока не умею подготавливать самостоятельно.");
+                if (!CompanionCraftCosts.supportsCraft(item, count)) return CompanionActionResult.failed("Эту цепочку пока не умею подготавливать самостоятельно.");
                 job = Job.CRAFT; phase = Phase.CRAFT;
             }
             // Any recipe whose bench is a few steps away: walk there and craft once; materials are not gathered.
@@ -526,8 +505,8 @@ public final class CompanionWork {
         gameAnchor = owner.autonomy().running() ? owner.autonomy().center() : owner.blockPosition();
         if (job == Job.GAME) for (ItemStack stack : items.carriedItems()) if (!stack.isEmpty()) gameBagBefore.merge(stack.getItem(), stack.getCount(), Integer::sum);
         ironMines = ironSmelts = 0; ironPrep = false; goalOre = null; goalOreExit = null; afterStone = null; ironTool = ""; ironNeeded = 0;
-        if (job == Job.CRAFT && ingotCost(requestedItem) > 0) {
-            ironTool = requestedItem; ironToolCount = requestedCount; ironNeeded = ingotCost(requestedItem) * requestedCount; phase = Phase.IRON;
+        if (job == Job.CRAFT && CompanionCraftCosts.ingotCost(requestedItem) > 0) {
+            ironTool = requestedItem; ironToolCount = requestedCount; ironNeeded = CompanionCraftCosts.ingotCost(requestedItem) * requestedCount; phase = Phase.IRON;
         }
         if (job == Job.SORT) sorting.begin(level);
         if (job == Job.WOOD) {
@@ -583,6 +562,7 @@ public final class CompanionWork {
             if (owner.collectedLogs() <= woodBeforeRequest) {
                 // A full bag is said as it is, not as «no wood».
                 if (CompanionEntity.FULL_BAG_FOR_LOGS.equals(owner.getLastTaskResult())) { finish(false, CompanionEntity.FULL_BAG_FOR_LOGS); return; }
+                if (job == Job.DIRT) { crafting.startDigging(); return; }
                 finish(false, "Не нашёл доступного дерева для подготовки. Вещи сохранил." + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : "")); return;
             }
             phase = afterWood; resetTarget();

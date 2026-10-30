@@ -6,7 +6,7 @@ import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
-import dev.aicompanion.entity.CompanionWork;
+import dev.aicompanion.entity.CompanionCraftCosts;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -151,9 +151,9 @@ public final class CompanionIronTests {
     /** Which iron tools the chain accepts, their ingot cost, and the quick command. */
     @GameTest(template = "tall_tree")
     public static void ironToolProtocol(GameTestHelper h) {
-        h.assertTrue(CompanionWork.supportsCraft("minecraft:iron_pickaxe", 1) && CompanionWork.supportsCraft("minecraft:iron_sword", 8)
-                && !CompanionWork.supportsCraft("minecraft:iron_pickaxe", 6) && !CompanionWork.supportsCraft("minecraft:iron_chestplate", 1), "Supported iron tools");
-        h.assertTrue(CompanionWork.ingotCost("minecraft:iron_pickaxe") == 3 && CompanionWork.ingotCost("minecraft:iron_shovel") == 1, "Ingot cost");
+        h.assertTrue(CompanionCraftCosts.supportsCraft("minecraft:iron_pickaxe", 1) && CompanionCraftCosts.supportsCraft("minecraft:iron_sword", 8)
+                && !CompanionCraftCosts.supportsCraft("minecraft:iron_pickaxe", 6) && !CompanionCraftCosts.supportsCraft("minecraft:iron_chestplate", 1), "Supported iron tools");
+        h.assertTrue(CompanionCraftCosts.ingotCost("minecraft:iron_pickaxe") == 3 && CompanionCraftCosts.ingotCost("minecraft:iron_shovel") == 1, "Ingot cost");
         PlannedAction sword = CompanionWorkCommands.parse("Олег, сделай железный меч", "Олег");
         h.assertTrue(sword != null && sword.type().equals("craft_item") && sword.item().equals("minecraft:iron_sword"), "Quick command: " + sword);
         PlannedAction pickaxe = CompanionWorkCommands.parse("скрафти железную кирку", "Олег");
