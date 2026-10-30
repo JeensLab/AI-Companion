@@ -6,7 +6,10 @@ import dev.aicompanion.entity.CompanionAgenda;
 import dev.aicompanion.entity.CompanionAgendaData;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionFacts;
+import dev.aicompanion.entity.CompanionMilestones;
 import dev.aicompanion.entity.CompanionMineSite;
+import dev.aicompanion.entity.CompanionPlaybooks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.GameTest;
@@ -14,6 +17,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.monster.Zombie;
@@ -47,6 +51,7 @@ public final class CompanionDiamondGoalTests {
     @AfterBatch(batch = "diamond_goal_progress") public static void afterProgress(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_save") public static void afterSave(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_fight") public static void afterFight(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "diamond_goal_sword") public static void afterSword(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     record Rig(CompanionEntity c, ServerPlayer p) { }
 
@@ -72,11 +77,11 @@ public final class CompanionDiamondGoalTests {
         });
     }
 
-    /** Two torches, coal and sticks: the 32 torches are made on the surface, and only then does the first step go down. */
+    /** Two torches, coal and sticks, no sword: the 32 torches and a stone sword are made on the surface, and only then does the first step go down. */
     @GameTest(template = "marathon_cave", batch = "diamond_goal_top_up", timeoutTicks = TIMEOUT)
     public static void topsUpTorchesOnTheSurfaceBeforeTheNextStep(GameTestHelper h) {
         ItemStack[] bag = {new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE),
-                new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 2), new ItemStack(Items.COAL, 8), new ItemStack(Items.STICK, 8),
+                new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 2), new ItemStack(Items.COAL, 8), new ItemStack(Items.STICK, 9),
                 new ItemStack(Items.COBBLESTONE, 8)};
         Rig r = rig(h, true, bag);
         h.setBlock(new BlockPos(CENTER + 3, GROUND + 1, CENTER), Blocks.CRAFTING_TABLE);
@@ -89,6 +94,7 @@ public final class CompanionDiamondGoalTests {
             if (rel(h, c.blockPosition()).getY() >= GROUND) return;
             int torches = count(c, Items.TORCH);
             h.assertTrue(torches >= 16, "Went down with " + torches + " torches, nothing topped up on the surface | " + report(h, r));
+            h.assertTrue(swords(c) > 0, "Went down without a sword, he would fight with his pickaxes | " + report(h, r));
             h.assertTrue(c.mineSite().exists(), "Below the surface without a mine | " + report(h, r));
             h.succeed();
         });
@@ -154,6 +160,8 @@ public final class CompanionDiamondGoalTests {
         start(h, r, 2);
         Zombie[] zombie = {null};
         long[] spawnedAt = {-1}, step = {0};
+        int[] hits = {0};
+        float[] zombieHp = {0};
         h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time | zombie " + (zombie[0] == null ? "never spawned" : "hp " + zombie[0].getHealth()) + " | " + report(h, r)));
         h.onEachTick(() -> {
             CompanionEntity c = r.c();
@@ -163,9 +171,11 @@ public final class CompanionDiamondGoalTests {
                 BlockPos behind = rel(h, c.mineSite().foot());
                 zombie[0] = h.spawn(EntityType.ZOMBIE, behind.getX(), DIAMOND_FEET, behind.getZ());
                 zombie[0].setPersistenceRequired();
-                spawnedAt[0] = h.getTick(); step[0] = c.activeWorkId();
+                spawnedAt[0] = h.getTick(); step[0] = c.activeWorkId(); zombieHp[0] = zombie[0].getHealth();
                 return;
             }
+            if (zombie[0].getHealth() < zombieHp[0]) hits[0]++;
+            zombieHp[0] = zombie[0].getHealth();
             if (!zombie[0].isAlive()) return;
             if (zombie[0].getTarget() == null && h.getTick() % RETARGET_EVERY == 0) zombie[0].setTarget(c);
             h.assertTrue(c.workResult(step[0]) == null && c.activeWorkId() == step[0], "The step " + step[0] + " ended during the fight, now work " + c.activeWorkId() + " | " + report(h, r));
@@ -174,8 +184,48 @@ public final class CompanionDiamondGoalTests {
         });
         h.succeedWhen(() -> {
             h.assertTrue(zombie[0] != null && !zombie[0].isAlive(), "No fight yet");
+            CompanionEntity c = CompanionEvents.getOwnedCompanion(r.p());
+            h.assertTrue(hits[0] > 0 && swordWear(c) == hits[0], "The sword struck " + swordWear(c) + " of " + hits[0] + " blows, the rest went with a pickaxe | " + report(h, r));
             h.assertTrue(state(h, r) == CompanionAgenda.State.COMPLETED && count(CompanionEvents.getOwnedCompanion(r.p()), Items.DIAMOND) >= 2, "The goal did not go on after the fight | " + report(h, r));
         });
+    }
+
+    /** Without a sword he makes one before the step: iron when two ingots are at hand, else stone; a wooden one does not count. */
+    @GameTest(template = "tall_tree", batch = "diamond_goal_sword", timeoutTicks = SAVE_TIMEOUT)
+    public static void theMineStepMakesASwordWhenHeHasNone(GameTestHelper h) {
+        Rig r = bare(h);
+        CompanionEntity c = r.c();
+        h.assertTrue("minecraft:stone_sword".equals(swordStep(c)), "Empty bag: " + swordStep(c));
+        c.setItem(0, new ItemStack(Items.WOODEN_SWORD));
+        h.assertTrue("minecraft:stone_sword".equals(swordStep(c)), "Wooden sword: " + swordStep(c));
+        c.setItem(1, new ItemStack(Items.IRON_INGOT, 2));
+        h.assertTrue("minecraft:iron_sword".equals(swordStep(c)), "Two iron ingots: " + swordStep(c));
+        c.setItem(2, new ItemStack(Items.STONE_SWORD));
+        h.assertTrue(swordStep(c) == null, "A stone sword in the bag: " + swordStep(c));
+        c.setItem(2, ItemStack.EMPTY);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+        h.assertTrue(swordStep(c) == null, "A diamond sword in hand: " + swordStep(c));
+        h.succeed();
+    }
+
+    private static String swordStep(CompanionEntity c) {
+        var book = CompanionPlaybooks.of(GOAL, 3);
+        List<CompanionMilestones.Step> steps = book.milestones().getLast().method(CompanionFacts.of(c), false, book.milestones());
+        if (!steps.getLast().type().equals("dig_for_diamonds")) throw new IllegalStateException("The mine step is not last: " + steps);
+        return steps.stream().filter(step -> step.item().endsWith("_sword")).map(CompanionMilestones.Step::item).findFirst().orElse(null);
+    }
+
+    private static int swords(CompanionEntity c) {
+        int n = c.getMainHandItem().is(ItemTags.SWORDS) ? 1 : 0;
+        for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(ItemTags.SWORDS)) n++;
+        return n;
+    }
+
+    /** Blows the stone sword has struck: its wear, wherever it is now. */
+    private static int swordWear(CompanionEntity c) {
+        if (c.getMainHandItem().is(Items.STONE_SWORD)) return c.getMainHandItem().getDamageValue();
+        for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(Items.STONE_SWORD)) return c.getItem(i).getDamageValue();
+        return -1;
     }
 
     static void start(GameTestHelper h, Rig r, int count) {
@@ -190,9 +240,9 @@ public final class CompanionDiamondGoalTests {
         return goal == null ? null : goal.state();
     }
 
-    /** Iron pickaxe, the given torches and stone pickaxes, bread, cobblestone for plugs. */
+    /** Iron pickaxe, a stone sword, the given torches and stone pickaxes, bread, cobblestone for plugs. */
     static ItemStack[] supplies(int torches, int stonePickaxes) {
-        List<ItemStack> bag = new ArrayList<>(List.of(new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, torches), new ItemStack(Items.COBBLESTONE, 8)));
+        List<ItemStack> bag = new ArrayList<>(List.of(new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, torches), new ItemStack(Items.COBBLESTONE, 8)));
         for (int i = 0; i < stonePickaxes; i++) bag.add(new ItemStack(Items.STONE_PICKAXE));
         return bag.toArray(new ItemStack[0]);
     }
