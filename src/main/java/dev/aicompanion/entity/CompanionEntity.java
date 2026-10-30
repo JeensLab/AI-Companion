@@ -570,6 +570,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void movementIntent(BlockPos pos) { movementIntent = pos == null ? null : pos.immutable(); }
     void routeRecovered() { work.routeRecovered(); }
     int workStoneReserve() { return work.stoneReserve(); }
+    /** In the middle of «разложи» what he carries for the player is not his to eat, wield, place or burn. */
+    boolean carriedForPlayer(ItemStack stack) { return work.sorting.onlyCarried(stack); }
+    public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
         var player = getOwnerPlayer();

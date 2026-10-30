@@ -57,6 +57,8 @@ public final class CompanionFlintProtocolTests {
         helper.assertTrue(some.contains("1 из 3") && some.contains("Кремня") && some.contains("время вышло"), "Partial flint reply was not recognised: " + some);
         String none = CompanionDialogue.summarize(List.of(gather), "План остановлен: Выпало 0 из 3 кремня: разбил 90 блоков гравия, но кремень больше не выпал. Попроси ещё раз.");
         helper.assertTrue(none.startsWith("Кремень так и не выпал") && none.contains("разбил 90"), "Empty flint reply was not recognised: " + none);
+        String full = CompanionDialogue.summarize(List.of(gather), "План остановлен: Сумка полна: некуда класть кремень. Освободи место и попроси снова.");
+        helper.assertTrue(full.startsWith("Сумка полна") && !full.contains("не выпал"), "A full bag was said as no flint: " + full);
         helper.assertTrue(!CompanionDialogue.continueAfterPartialGather(gather, List.of(steel), false, "Выпало 1 из 3 кремня: время вышло."), "Partial flint fed a flint craft");
         helper.assertTrue(CompanionDialogue.continueAfterPartialGather(gather, List.of(table), false, "Выпало 1 из 3 кремня: время вышло."), "Partial flint stopped a craft that needs no flint");
         helper.succeed();

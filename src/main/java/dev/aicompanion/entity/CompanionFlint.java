@@ -13,7 +13,6 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
@@ -125,14 +124,14 @@ final class CompanionFlint {
         return best;
     }
 
-    /** Solid ground that does not fall under it, nothing standing in it or under it, no water beside it, in reach and in sight. */
+    /** Solid ground, sand and gravel included unless they hang (safeLooseCell), nothing standing in it or under it, no water beside it, in reach and in sight. */
     private boolean fits(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !c.leashAllows(pos)) return false;
         BlockState state = level.getBlockState(pos);
         if (!state.isAir() && !state.canBeReplaced()) return false;
         BlockPos below = pos.below();
         BlockState support = level.getBlockState(below);
-        if (!support.isFaceSturdy(level, below, Direction.UP) || support.getBlock() instanceof FallingBlock) return false;
+        if (!support.isFaceSturdy(level, below, Direction.UP)) return false;
         if (c.distanceToSqr(Vec3.atCenterOf(pos)) > CompanionEntity.LOG_INTERACTION_RANGE_SQR) return false;
         if (!level.getEntities((Entity)null, new AABB(pos), entity -> true).isEmpty()) return false;
         var sight = level.clip(new ClipContext(c.getEyePosition(), Vec3.atCenterOf(pos), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c));

@@ -10,6 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
@@ -22,7 +23,7 @@ public enum CompanionGround {
     /** Flint falls out of gravel blocks at random: counted by the flint in the bag; gravel is dug, put down again and re-dug. */
     FLINT("minecraft:flint", Blocks.GRAVEL, Items.FLINT, "кремень", "кремня");
 
-    /** How far down a column is followed to the first solid block: past it the world has nothing to fall into. */
+    /** How far up a loose column is followed. */
     private static final int COLUMN_DEPTH = 48;
 
     private final String itemId;
@@ -41,6 +42,13 @@ public enum CompanionGround {
     /** «блоков песка», «добыча песка». */
     public String genitive() { return genitive; }
     public boolean isLoose() { return this != SOIL; }
+    Item item() { return item; }
+
+    /** The dig ends here and now: «no room» is the reason, whatever the count. */
+    String bagFullReport(int done, int ordered) {
+        return "Сумка полна: " + (done <= 0 ? "некуда класть " + accusative : genitive + " набрал только " + done + " из " + ordered)
+                + ". Освободи место и попроси снова.";
+    }
 
     /** The ground of an ordered item id, or null for an item that is none. */
     public static CompanionGround of(String itemId) {
@@ -79,7 +87,7 @@ public enum CompanionGround {
 
     /**
      * The soil check rejects any falling block nearby; digging one asks other things instead: no water to flood the hole, nothing
-     * built on top, and no living thing under the column that comes down once the block is gone.
+     * built on top, and nothing hanging over a hollow that the dig would bring down.
      */
     static boolean safeLooseCell(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || level.isOutsideBuildHeight(pos)) return false;
@@ -90,7 +98,7 @@ public enum CompanionGround {
             if (!level.hasChunkAt(nearby) || !level.getFluidState(nearby).isEmpty() || level.getBlockEntity(nearby) != null
                     || level.getBlockState(nearby).is(Blocks.CRAFTING_TABLE)) return false;
         }
-        return nothingBuiltOnTop(level, pos) && nothingAliveUnder(level, pos);
+        return nothingBuiltOnTop(level, pos) && nothingHangsBeside(level, pos);
     }
 
     /**
@@ -119,15 +127,24 @@ public enum CompanionGround {
                 entity -> entity instanceof LivingEntity living && living.isAlive() && living.getY() >= pos.getY() + 1 - .05).isEmpty();
     }
 
-    private static boolean nothingAliveUnder(ServerLevel level, BlockPos pos) {
-        int bottom = pos.getY();
-        while (bottom > pos.getY() - COLUMN_DEPTH && !level.isOutsideBuildHeight(bottom - 1)) {
-            BlockPos below = new BlockPos(pos.getX(), bottom - 1, pos.getZ());
-            if (!level.hasChunkAt(below)) return false;
-            if (!level.getBlockState(below).getCollisionShape(level, below).isEmpty()) break;
-            bottom--;
+    /**
+     * A broken block wakes its neighbours, and a loose block generated hanging falls once woken, waking the next: a sand roof comes
+     * down in a chain on whoever is under it or walks in, even when the dug block itself rests on sand. Every cell of the column
+     * that drops wakes its own neighbours, so none of them may hang; the hollow under them counts as occupied, seen or not.
+     */
+    private static boolean nothingHangsBeside(ServerLevel level, BlockPos pos) {
+        for (int up = 0; up <= COLUMN_DEPTH; up++) {
+            BlockPos cell = pos.above(up);
+            if (up > 0 && !isLooseBlock(level.getBlockState(cell))) return true;
+            if (hangs(level, cell)) return false;
+            for (Direction direction : Direction.values()) if (direction != Direction.UP && hangs(level, cell.relative(direction))) return false;
         }
-        AABB column = new AABB(pos.getX(), bottom, pos.getZ(), pos.getX() + 1, pos.getY() + 1, pos.getZ() + 1);
-        return level.getEntitiesOfClass(LivingEntity.class, column, LivingEntity::isAlive).isEmpty();
+        return true;
+    }
+
+    private static boolean hangs(ServerLevel level, BlockPos cell) {
+        BlockPos below = cell.below();
+        if (!level.hasChunkAt(cell) || !level.hasChunkAt(below)) return true;
+        return level.getBlockState(cell).getBlock() instanceof FallingBlock && FallingBlock.isFree(level.getBlockState(below));
     }
 }

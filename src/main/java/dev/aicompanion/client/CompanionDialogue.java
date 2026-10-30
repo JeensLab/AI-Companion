@@ -15,6 +15,9 @@ public final class CompanionDialogue {
     }
 
     private static final Pattern ID = Pattern.compile("\\b(?:minecraft|aicompanion):([a-z0-9_/.]+)");
+    /** «добыл 2 коровы», «Добыл 1 свинью из 3», «3 животных»: the hunt's own count, not the blocks of stone or ore in the same report. */
+    private static final Pattern HUNTED = Pattern.compile("(?iu)добыл (\\d+ (?:" + java.util.Arrays.stream(dev.aicompanion.entity.CompanionGame.Kind.values())
+            .flatMap(kind -> java.util.stream.Stream.of(kind.one, kind.few, kind.many)).collect(java.util.stream.Collectors.joining("|")) + "|животное|животных))(?![а-яё])");
 
     /** «minecraft:crafting_table» becomes «Верстак»: a friend says the name, not the ID (game log 22.10). */
     static String names(String text) {
@@ -52,6 +55,7 @@ public final class CompanionDialogue {
             case "gather_loose" -> "Ладно, возьму лопату и накопаю " + looseWord(actions.getFirst()) + ".";
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
             case "store_items" -> "Сейчас сложу в сундук.";
+            case "sort_chests" -> "Сейчас разложу по сундукам.";
             case "take_items" -> "Сейчас заберу из сундука.";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
             case "craft_item" -> "Сейчас сделаю.";
@@ -67,10 +71,27 @@ public final class CompanionDialogue {
             case "smelt_items" -> "Ага, растоплю печь.";
             case "mine_ore" -> "Ага, возьму кирку и поищу руду.";
             case "hunt_animals" -> "Ага, пойду поохочусь.";
+            case "build_pen" -> "Окей, сделаю загон.";
+            case "breed_animals" -> "Ага, займусь разведением.";
+            case "farm_crops" -> "Ага, сделаю грядки у воды.";
+            case "harvest_crops" -> "Ага, пойду соберу урожай.";
             case "obtain_item" -> "Ага, добуду.";
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
+    }
+
+    /** The note of a sorting that an order ended while he carried things (CompanionSorting): said whatever step of the plan it came with. */
+    public static final String BAG_NOTE = "Часть вещей у меня в сумке.";
+
+    /**
+     * What the chat says of a finished plan: a local order with nothing to report says its acknowledgement, and the bag note goes after
+     * it («стой» → «Ладно, жду здесь. Часть вещей…»), unless the player heard it just now from the stop itself (review round 3, M2).
+     */
+    public static String heard(List<PlannedAction> actions, String spoken, boolean local, boolean noteSaidLately) {
+        String bare = spoken.replace(" " + BAG_NOTE, "").replace(BAG_NOTE, "").strip();
+        if (local && bare.isBlank()) bare = acknowledge(actions);
+        return spoken.contains(BAG_NOTE) && !noteSaidLately ? (bare + " " + BAG_NOTE).strip() : bare;
     }
 
     /** Engine report line listing plan steps that were not started after a stop. */
@@ -92,6 +113,19 @@ public final class CompanionDialogue {
                 var game = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
                 yield game == null ? "поохотиться (" + action.count() + " животн.)" : "добыть " + game.count(action.count());
             }
+            case "build_pen" -> {
+                var animal = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
+                yield "построить загон" + (animal == null ? "" : " для " + animal.many) + " (держать до " + action.count() + ")";
+            }
+            case "breed_animals" -> {
+                var animal = dev.aicompanion.entity.CompanionGame.Kind.of(action.item());
+                yield "развести " + (animal == null ? "животных" : animal.many) + " (пар: " + action.count() + ")";
+            }
+            case "farm_crops" -> {
+                var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(action.item());
+                yield "посадить " + (crop == null ? "культуру" : crop.plant) + " (грядок: " + action.count() + ")";
+            }
+            case "harvest_crops" -> "собрать урожай";
             case "obtain_item" -> "добыть «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
@@ -99,6 +133,7 @@ public final class CompanionDialogue {
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";
             case "unequip_item" -> "убрать предмет из руки";
             case "store_items" -> "сложить вещи в сундук";
+            case "sort_chests" -> "разложить по сундукам";
             case "take_items" -> "забрать вещи из сундука";
             case "build_house" -> "построить дом";
             case "hunt_mobs" -> "разобраться с монстрами";
@@ -158,6 +193,12 @@ public final class CompanionDialogue {
     }
 
     public static String summarize(List<PlannedAction> actions, String report) {
+        String spoken = summarizeReport(actions, report);
+        // Review round 3, finding 1: the note came with the step that ended the sorting («стоп», «за мной»), the plan ended with another one.
+        return report != null && report.contains(BAG_NOTE) && !spoken.contains("у меня в сумке") ? (spoken + " " + BAG_NOTE).strip() : spoken;
+    }
+
+    private static String summarizeReport(List<PlannedAction> actions, String report) {
         if (report == null || report.isBlank()) return "";
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
@@ -214,6 +255,10 @@ public final class CompanionDialogue {
         return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
+    /** How the refusals of the sorting itself begin (CompanionSorting); any other stop of a plan with sorting in it goes the usual way. */
+    private static final List<String> SORT_OWN = List.of("Рядом с тобой сундуков", "Не смог дойти до", "Не получилось разложить", "Сумка забита, сначала", "Пропустил",
+            "Не успел закончить работу");
+
     /** The reply of a goal order is said whole: its summary names what he cannot yet, and a cut sentence would not. */
     private static boolean isGoalAction(PlannedAction action) {
         return action.type().startsWith("goal_") || "pursue_goal".equals(action.type());
@@ -224,11 +269,21 @@ public final class CompanionDialogue {
         if (actions.stream().anyMatch(CompanionDialogue::isGoalAction)) return report.replace("План остановлен: ", "");
         String lower = report.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains("такое поручение уже выполняется")) return "Я уже занимаюсь этим поручением.";
+        boolean sorting = actions.stream().anyMatch(action -> "sort_chests".equals(action.type()));
+        // A stop in the middle of sorting: the server's note that things are in his bag is part of the answer (game rule: nothing lost silently).
+        if (sorting && lower.contains("работа прервана")) return "Ладно, остановился." + (lower.contains("в сумке") ? " Часть вещей у меня в сумке." : "");
         if (lower.contains("отменён") || lower.contains("остановки")) return "Ладно, остановился.";
         int stoppedAt = report.lastIndexOf("План остановлен:");
         String last = stoppedAt >= 0 ? report.substring(stoppedAt) : report.substring(report.lastIndexOf('\n') + 1);
+        // Sorting words its own refusals («Рядом с тобой сундуков не вижу.», «…Что не разложил — у меня в сумке.»): they are said as they are; the raw line of another step of the plan is not.
+        if (sorting && last.contains("План остановлен:")) {
+            String own = last.substring(last.indexOf("План остановлен:") + "План остановлен:".length()).strip();
+            if (SORT_OWN.stream().anyMatch(own::startsWith)) return own;
+        }
         if (last.contains("План остановлен:")) {
             String failure = dev.aicompanion.CompanionFailureMessages.primary(last);
+            // A pen or a breeding order says its own facts (what stands, who is inside, what is missing), not a general excuse.
+            if (actions.stream().anyMatch(action -> "build_pen".equals(action.type()) || "breed_animals".equals(action.type()))) return speakable(failure);
             String partial = partialGather(actions, failure);
             if (partial != null) return partial;
             if (failure.contains("Для подъёма не хватает земли")) return "До верхушки без опоры не достану. Дай мне немного земли.";
@@ -236,6 +291,15 @@ public final class CompanionDialogue {
             if (failure.contains("недостаточно") || failure.contains("не хватает") || failure.contains("Не хватает")) return "На всё пока не хватает материалов.";
             if (failure.contains("дерев") || failure.contains("брёвен")) return "Доступного дерева больше не нашёл. Давай поищем в другом месте.";
             if (failure.contains("безопасное место")) return "Здесь не получается поставить. Нужно место посвободнее.";
+            // The farm's own words carry what is missing and why: no water, no seeds, no ripe crops.
+            if (actions.stream().anyMatch(action -> "farm_crops".equals(action.type()) || "harvest_crops".equals(action.type()))) return speakable(failure);
+            // The engine's own words for a reason that has no kind, if short, as in failedParts (game 29.10: «Не нашёл ровную свободную
+            // площадку 7×7 рядом…» for a house was heard as «С этим пока не справился»): its first line, spoken without IDs or
+            // coordinates; a receipt with Latin letters besides known item IDs («предмета «sword»», an unknown ID) is not said.
+            String first = failure.lines().findFirst().orElse(""), own = speakable(first);
+            String raw = ID.matcher(first).replaceAll(id -> itemName(id.group()).equals(id.group()) ? java.util.regex.Matcher.quoteReplacement(id.group()) : "");
+            if (dev.aicompanion.CompanionFailureMessages.kind(first) == dev.aicompanion.CompanionFailureMessages.Kind.OTHER && !own.isEmpty()
+                    && own.length() <= 100 && !raw.matches("(?s).*[A-Za-z].*")) return Character.toUpperCase(own.charAt(0)) + own.substring(1);
             return dev.aicompanion.CompanionFailureMessages.explain(actions.isEmpty() ? "" : actions.getFirst().type(), failure);
         }
         var crafted = actions.stream().filter(action -> "craft_item".equals(action.type())).toList();
@@ -254,7 +318,7 @@ public final class CompanionDialogue {
         }
         if (actions.stream().anyMatch(action -> "obtain_item".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type()))) {
-            var got = Pattern.compile("(?iu)добыл (d+ [^ :.,]+)").matcher(report);
+            var got = HUNTED.matcher(report);
             boolean cooked = actions.stream().anyMatch(action -> "smelt_items".equals(action.type()));
             return (got.find() ? "Готово, добыл " + got.group(1) : "С охотой закончил") + (cooked ? " и пожарил мясо." : ".");
         }
@@ -285,6 +349,7 @@ public final class CompanionDialogue {
             return (stone > 0 ? "Готово, накопал камня: " + stone + "." : "Камень добыл, он у меня.")
                     + (report.contains("наверх пока не выбрался") ? " Я пока внизу, на своей лестнице." : "");
         }
+        if (actions.stream().anyMatch(action -> "sort_chests".equals(action.type()))) return last.strip();
         if (actions.stream().anyMatch(action -> "store_items".equals(action.type()))) return last.contains("Лишних вещей") ? "Лишних вещей для сундука сейчас нет." : "Сложил вещи в сундук.";
         if (actions.stream().anyMatch(action -> "take_items".equals(action.type()))) return "Забрал вещи, они у меня в сумке.";
         if (actions.stream().anyMatch(action -> "place_block".equals(action.type()) && "minecraft:chest".equals(action.item()))) {
@@ -299,11 +364,12 @@ public final class CompanionDialogue {
 
     /** «Добыл 1 из 5» for ore or stone, said like a person: how many, of how many, and the plain reason. */
     private static String partialGather(List<PlannedAction> actions, String last) {
-        if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type())) && last.matches("(?s).*(Добыл|Никого не добыл).*")) {
+        var hunt = HUNTED.matcher(last);
+        boolean hunted = hunt.find();
+        if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type())) && (hunted || last.contains(dev.aicompanion.entity.CompanionWork.NOTHING_HUNTED))) {
             String why = last.contains("детёныш") ? "остальные — детёныши"
                     : last.contains("чьи-то") ? "остальные чьи-то, с именем или на поводке" : last.contains("не нашёл пути") ? "до остальных не добраться" : "больше рядом не нашёл";
-            var got = Pattern.compile("Добыл (d+ [^ :.,]+)").matcher(last);
-            return got.find() ? "Добыл только " + got.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
+            return hunted ? "Добыл только " + hunt.group(1) + " — " + why + "." : "Никого не добыл — " + why + ".";
         }
         var loose = actions.stream().filter(action -> "gather_loose".equals(action.type())).findFirst();
         if (loose.isPresent() && CompanionPlanCodec.FLINT.equals(loose.get().item())) {

@@ -14,14 +14,18 @@ final class CompanionWorkCrafting {
     CompanionWorkCrafting(CompanionWork w) { this.w = w; }
 
     void prepareShovel() {
-        if (CompanionTools.equip(w.owner, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState())) {
-            w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(w.requestedCount, w.ground); return;
-        }
+        if (CompanionTools.equip(w.owner, ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState())) { startDigging(); return; }
         if (approachCraftingTable()) return;
         if (!w.items.moveHandMaterialsToBag()) return;
-        if (CompanionTools.craft(w.owner, "shovel", Blocks.DIRT.defaultBlockState(), ItemTags.SHOVELS)) {
-            w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(w.requestedCount, w.ground);
-        } else requestWood(CompanionWork.Phase.SHOVEL, 2);
+        if (CompanionTools.craft(w.owner, "shovel", Blocks.DIRT.defaultBlockState(), ItemTags.SHOVELS)) startDigging();
+        // Only here: the craft may free the slot, while a walk for wood with no room for the dig is a wasted one.
+        else if (w.owner.gathering.bagFull(w.ground)) w.finish(false, w.ground.bagFullReport(0, w.requestedCount));
+        else requestWood(CompanionWork.Phase.SHOVEL, 2);
+    }
+
+    /** Also for bare hands: a shovel only speeds the dig up, so ground needs none when no wood was found for one. */
+    void startDigging() {
+        w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(w.requestedCount, w.ground);
     }
 
     void craftRequested() {

@@ -82,6 +82,12 @@ final class CompanionDigGoal extends Goal {
             finish("Добыча " + ground().genitive() + " завершена: " + (flintMode() ? "выпало " + flint.found() + " кремня" : "добыл " + gathered + " блоков") + ". В сумке: " + c.getStoredItemsSummary() + "."); return;
         }
         if (c.logsRemaining > 0 && c.loot.incoming(ground()) >= c.logsRemaining) { c.dirtBreaking.reset(); c.work.route.stop(); return; }
+        // Checked before a strike: a drop with no room would be thrown away, and a block left undug is one more wasted walk.
+        if (c.gathering.bagFull(ground())) {
+            c.dirtBreaking.reset(); c.work.route.stop();
+            if (!c.loot.hasPending()) finish(ground().bagFullReport(flintMode() ? flint.found() : gathered, c.requestedLogs));
+            return;
+        }
         // Soil for a support under a crown: by hand, a shovel would eat the wood just cut (marathon 23.10: «добудь дерева» ended
         // with fewer logs than asked, one gone into a shovel for six blocks of dirt).
         if (!c.supportSoilTask && shovelSense.tick()) { c.dirtBreaking.reset(); approachPath = null; return; }

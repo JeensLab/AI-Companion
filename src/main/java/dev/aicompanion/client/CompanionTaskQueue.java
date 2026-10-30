@@ -245,7 +245,9 @@ public final class CompanionTaskQueue {
             if (task.finished) return;
             task.finished = true;
             task.status = task.cancelled ? Status.CANCELLED : error != null || !result.success() ? Status.BLOCKED : Status.COMPLETED;
-            task.report = task.cancelled ? "План отменён игроком." : error != null ? "Не выполнено: " + error.getMessage() : result.report();
+            // A sorting cancelled from the tasks window leaves the player's things in his bag: its note stays (review round 4, finding 1).
+            String note = task.cancelled && result != null && result.report().contains(CompanionDialogue.BAG_NOTE) ? " " + CompanionDialogue.BAG_NOTE : "";
+            task.report = task.cancelled ? "План отменён игроком." + note : error != null ? "Не выполнено: " + error.getMessage() : result.report();
             if (!task.hidden) remember(task);
             if (active == task) active = null;
             awaiting.remove(task);

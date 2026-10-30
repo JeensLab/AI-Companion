@@ -39,6 +39,7 @@ public final class AICompanionMod {
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onLivingDrops);
+        NeoForge.EVENT_BUS.addListener(CompanionEvents::onFarmlandTrample);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionGoals::pickedUp);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::registerCommands);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionChunks::tick);

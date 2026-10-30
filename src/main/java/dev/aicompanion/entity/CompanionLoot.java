@@ -380,7 +380,7 @@ final class CompanionLoot {
     int collected(CompanionGround ground) { return ground == CompanionGround.SOIL ? collectedSoil : collectedLoose[ground.ordinal()]; }
     int collectedLoose() { int total = 0; for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose()) total += collectedLoose[ground.ordinal()]; return total; }
     int incoming(CompanionGround ground) { return incoming(ground::counts); }
-    private int incoming(java.util.function.Predicate<ItemStack> matches) {
+    int incoming(java.util.function.Predicate<ItemStack> matches) {
         if (!(owner.level() instanceof ServerLevel level)) return 0;
         int amount = 0;
         for (UUID id : pending) if (!unreachable.contains(id) && level.getEntity(id) instanceof ItemEntity item && item.isAlive() && matches.test(item.getItem())) amount += item.getItem().getCount();

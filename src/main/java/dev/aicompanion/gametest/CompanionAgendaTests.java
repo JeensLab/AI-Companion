@@ -67,6 +67,8 @@ public final class CompanionAgendaTests {
     @AfterBatch(batch = "agenda_plan_gap") public static void afterPlanGap(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_trailing") public static void afterTrailing(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_modes") public static void afterModes(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_sort") public static void afterSort(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_harvest") public static void afterHarvest(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_follow") public static void afterFollow(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_stop_hold") public static void afterStopHold(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_cancel") public static void afterCancel(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -386,6 +388,40 @@ public final class CompanionAgendaTests {
             h.assertTrue(plan.get() != null && plan.get().isDone(), "The player's plan did not finish");
             h.assertTrue(f.goal().state() != CompanionAgenda.State.HELD, "A follow after real work held the goal");
             h.assertTrue(count(f.c, Items.CHEST) == 1, "The craft is missing: " + f.c.getStoredItemsSummary());
+            gearDone(f);
+        });
+    }
+
+    /** «Разложи сундуки» is real work (review of #39): the goal steps aside, the player's chests are sorted with nothing lost, and the goal comes back. */
+    @GameTest(template = "tall_tree", batch = "agenda_sort", timeoutTicks = 3000)
+    public static void sortingInterruptsAndGoalResumes(GameTestHelper h) {
+        var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
+        var chests = new net.minecraft.world.Container[2];
+        for (int i = 0; i < 2; i++) { h.setBlock(new BlockPos(10 + 3 * i, 1, 13), Blocks.CHEST); chests[i] = (net.minecraft.world.Container) h.getLevel().getBlockEntity(h.absolutePos(new BlockPos(10 + 3 * i, 1, 13))); }
+        chests[0].setItem(0, new ItemStack(Items.COBBLESTONE, 20)); chests[0].setItem(1, new ItemStack(Items.OAK_LOG, 6)); chests[0].setItem(2, new ItemStack(Items.BREAD, 3));
+        chests[1].setItem(0, new ItemStack(Items.OAK_LOG, 10)); chests[1].setItem(1, new ItemStack(Items.COBBLESTONE, 5)); chests[1].setItem(2, new ItemStack(Items.APPLE, 2));
+        var plan = playerPlan(f, CompanionAgenda.State.INTERRUPTED, new PlannedAction("sort_chests", 0, 1));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.get() != null && plan.get().isDone() && plan.get().join().report().contains("Разложил"), "The sorting did not finish: " + (plan.get() == null || !plan.get().isDone() ? "" : plan.get().join().report()));
+            int cobble = 0, logs = 0, food = 0;
+            for (var chest : chests) { cobble += chest.countItem(Items.COBBLESTONE); logs += chest.countItem(Items.OAK_LOG); food += chest.countItem(Items.BREAD) + chest.countItem(Items.APPLE); }
+            h.assertTrue(cobble == 25 && logs == 16 && food == 5, "The player's things are not all in the chests: " + cobble + " / " + logs + " / " + food);
+            gearDone(f);
+        });
+    }
+
+    /** Review of PR #39: «собери урожай» is real work, so the goal stands aside for it and goes on by itself afterwards. */
+    @GameTest(template = "tall_tree", batch = "agenda_harvest", timeoutTicks = 3000)
+    public static void harvestInterruptsAndGoalResumes(GameTestHelper h) {
+        var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
+        for (int x = 7; x <= 8; x++) for (int z = 7; z <= 8; z++) {
+            h.setBlock(new BlockPos(x, 0, z), Blocks.FARMLAND.defaultBlockState().setValue(net.minecraft.world.level.block.FarmBlock.MOISTURE, 7));
+            h.setBlock(new BlockPos(x, 1, z), Blocks.WHEAT.defaultBlockState().setValue(net.minecraft.world.level.block.CropBlock.AGE, 7));
+        }
+        var plan = playerPlan(f, CompanionAgenda.State.INTERRUPTED, new PlannedAction("harvest_crops", 0, 64, "any"));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.get() != null && plan.get().isDone() && plan.get().join().report().contains("Собрал"), "The harvest did not finish: " + (plan.get() == null || !plan.get().isDone() ? "" : plan.get().join().report()));
+            h.assertTrue(count(f.c, Items.WHEAT) >= 4, "No wheat in the bag: " + f.c.getStoredItemsSummary());
             gearDone(f);
         });
     }
