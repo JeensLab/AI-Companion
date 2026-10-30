@@ -140,6 +140,17 @@ public final class CompanionBowTests {
         h.runAtTickTime(120, () -> h.succeedIf(() -> h.assertTrue(companion.getTarget() == null, "Target " + companion.getTarget())));
     }
 
+    /** Plan only: arrows come from what he can get (flint dug out of gravel, feathers off chickens, sticks); a bow wants string, which he cannot, and he says so. */
+    @GameTest(template = "empty", batch = "bow")
+    public static void arrowsArePlannedABowIsRefused(GameTestHelper h) {
+        var arrows = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), java.util.List.of(), false, "minecraft:arrow", 8);
+        h.assertTrue(!arrows.refused() && arrows.steps().stream().anyMatch(step -> step.type().equals("gather_loose") && step.item().equals("minecraft:flint"))
+                && arrows.steps().stream().anyMatch(step -> step.type().equals("hunt_animals") && step.item().equals("minecraft:chicken"))
+                && arrows.steps().getLast().type().equals("craft_item") && arrows.steps().getLast().item().equals("minecraft:arrow"), "Arrows: " + arrows);
+        h.assertTrue(dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), java.util.List.of(), false, "minecraft:bow", 1).refused(), "A bow out of string he cannot get");
+        h.succeed();
+    }
+
     private static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 16; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
