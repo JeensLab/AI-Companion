@@ -35,6 +35,7 @@ public final class AICompanionMod {
         ENTITY_TYPES.register(modEventBus);
         MENUS.register(modEventBus);
         modEventBus.addListener(CompanionEntity::createAttributes);
+        modEventBus.addListener(dev.aicompanion.entity.CompanionChunkTicket::register);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onEntityJoin);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onLivingDrops);
@@ -55,6 +56,7 @@ public final class AICompanionMod {
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionHappeningEvents::onServerStopped);
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.server.ServerStoppingEvent event) -> {
             dev.aicompanion.entity.CompanionChunks.stop();
+            dev.aicompanion.entity.CompanionChunkTicket.stop();
             dev.aicompanion.client.CompanionServerPlanPort.stop(event.getServer());
             dev.aicompanion.entity.CompanionAgenda.stop();
             CompanionDiagnostics.event("", "server_stopping");

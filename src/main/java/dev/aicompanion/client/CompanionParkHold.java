@@ -58,6 +58,7 @@ public final class CompanionParkHold {
             }
             case "gather_wood" -> touches("logs", batch);
             case "gather_stone" -> touches("stone", batch);
+            case "gather_loose" -> touches(item, batch);
             case "gather_dirt", "follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "collect_smelt",
                  "take_items", "sort_chests", "build_house", "give_wood", "equip_item", "unequip_item", "hunt_mobs" -> false;
             default -> true;

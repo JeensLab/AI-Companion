@@ -108,6 +108,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
     final CompanionWork work = new CompanionWork(this);
+    public CompanionMineSite mineSite() { return work.mine; }
     private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
     final CompanionEquipment equipment = new CompanionEquipment(this);
@@ -178,7 +179,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String getActivityForAi() {
         if (level().isClientSide) return entityData.get(DATA_ACTIVITY);
         return (recovery.active() ? "пытается выбраться" : temporaryPillar.isRecovering() ? "спускается с опоры"
-                : work.isActive() ? work.currentDescription() : gatheringLogs ? "собирает дерево" : gatheringDirt ? "собирает землю"
+                : work.isActive() ? work.currentDescription() : gatheringLogs ? "собирает дерево" : gatheringDirt ? "собирает " + gathering.ground.accusative()
                 : protecting ? "режим охраны" : following ? "режим следования" : roaming ? "гуляет" : "ожидает")
                 + "; позиция=" + blockPosition().toShortString() + "; за последнюю секунду=" + (activityMoved ? "перемещался" : "стоял")
                 + "; маршрут=" + (getNavigation().isDone() ? "сейчас не выполняется" : "выполняется")
@@ -195,7 +196,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (recovery.active() || temporaryPillar.isRecovering()) return "Выбирается в безопасное место";
         if (work.isActive()) return work.taskDescription();
         return gatheringLogs ? "Собирает дерево · осталось " + logsRemaining
-                : gatheringDirt ? "Собирает землю · осталось " + logsRemaining
+                : gatheringDirt ? "Собирает " + gathering.ground.accusative() + " · осталось " + logsRemaining
                 : protecting ? "Охраняет тебя" : roaming ? "Осматривается" : following ? "Следует за тобой" : "Ожидает";
     }
     public void rememberPlaced(BlockPos pos) { places.remember(pos, true); refreshPlaces(); }
@@ -283,7 +284,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
-        this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherDirtGoal(this));
+        this.goalSelector.addGoal(3, new CompanionDigGoal(this));
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
@@ -562,6 +563,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             case "gather_wood" -> loot.collectedLogs();
             case "gather_stone" -> loot.collectedStone();
             case "gather_dirt" -> loot.collectedSoil();
+            case "gather_loose" -> loot.collectedLoose();
             default -> -1;
         };
     }
@@ -678,8 +680,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
-        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.isHunting() && getTarget() instanceof Monster ? getOwnerPlayer() : null;
+        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt and outside his mine.
+        var guardedOwner = (protecting || !work.isHunting() && getTarget() instanceof Monster) && !work.expedition.underground() ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && distanceToSqr(guardedOwner) > 16 * 16
                 && getTarget().distanceToSqr(guardedOwner) > 14 * 14) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
@@ -709,6 +711,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         super.die(source);
     }
+    @Override public void onRemovedFromLevel() { if (!level().isClientSide) CompanionChunkTicket.release(this); super.onRemovedFromLevel(); }
 
 
     /** Food in the bag heals, like a player who eats: nothing is conjured, the food is eaten (review 22.10: he never healed). */
@@ -751,6 +754,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void startGatheringLogs(int count) { gathering.startGatheringLogs(count); }
     void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count); }
     void startGatheringDirtForWork(int count) { gathering.startGatheringDirtForWork(count); }
+    void startGatheringDirtForWork(int count, CompanionGround ground) { gathering.startGatheringDirtForWork(count, ground); }
     public void stopGathering() { gathering.stopGathering(); }
 
     ServerPlayer getOwnerPlayer() {

@@ -15,7 +15,13 @@ public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop",
-            "gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal");
+    /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
+    static final String FLINT = "minecraft:flint";
+    static final int FLINT_STEP = 8;
+    static final int FLINT_DEFAULT = 2;
+    /** The items a gather_loose order may name: the loose blocks the server digs with a shovel, and the flint in gravel. */
+    private static final Set<String> LOOSE_ITEMS = Set.of("minecraft:sand", "minecraft:red_sand", "minecraft:gravel", FLINT);
     private static final Pattern DSML = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>.*?"
             + "<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>.*?</\\|DSML\\|invoke>");
 
@@ -80,8 +86,11 @@ public final class CompanionPlanCodec {
                 if (!ACTIONS.contains(type)) throw invalid();
                 // No number from the model: what the prompt promises it (ore 4, stone 8), not a single block (game log 22.10).
                 int count = step.has("count") ? step.get("count").getAsBigDecimal().intValueExact()
-                        : "mine_ore".equals(type) ? CompanionPlanRequirements.DEFAULT_ORE : "gather_stone".equals(type) ? 8
+                        : "mine_ore".equals(type) ? CompanionPlanRequirements.DEFAULT_ORE
+                        : "gather_loose".equals(type) && FLINT.equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? FLINT_DEFAULT
+                        : ("gather_stone".equals(type) || "gather_loose".equals(type)) ? 8
                         : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME
+                        : "pursue_goal".equals(type) && "find_diamonds".equals(step.has("item") ? step.get("item").getAsString().trim() : "") ? dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_DEFAULT
                         : "farm_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES
                         : "harvest_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.MAX_HARVEST
                         : "build_pen".equals(type) ? 4 : 1;
@@ -92,8 +101,10 @@ public final class CompanionPlanCodec {
                 if (("build_house".equals(type) || "sort_chests".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
-                // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
-                if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
+                // A long goal is a catalog id with a level of 1 or 2 (iron, diamond), for find_diamonds a count; the model cannot make one up.
+                if ("pursue_goal".equals(type) && (!dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item)
+                        || count > ("find_diamonds".equals(item) ? dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_MAX : 2))) throw invalid();
+                if ("gather_loose".equals(type) && (!LOOSE_ITEMS.contains(item) || FLINT.equals(item) && count > FLINT_STEP)) throw invalid();
                 if ("place_block".equals(type) && !"minecraft:chest".equals(item) && count != 1) throw invalid();
                 if (("store_items".equals(type) || "take_items".equals(type)) && !item.isEmpty() && !Set.of("resources", "all", "logs", "stone").contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();

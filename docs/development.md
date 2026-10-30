@@ -13,7 +13,7 @@ OpenRouter отвечает за свободный диалог и предло
 цель в `CompanionGoals` поддерживает конкретный сценарий каменных кирок
 для компаньона и игрока. Долгие цели ведёт `CompanionAgenda`, но только из
 закрытого каталога `CompanionPlaybooks` (`gear_up`, `prepare_nether`,
-`defeat_ender_dragon`); это не универсальный планировщик: модель выбирает id
+`defeat_ender_dragon`, `find_diamonds`); это не универсальный планировщик: модель выбирает id
 из каталога и не сочиняет этапы, а умения, которых у Олега ещё нет, он называет честно.
 
 Закреплённый стек указан в `gradle.properties` и `build.gradle`:
@@ -62,6 +62,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь, приоритеты, отмена, восстановление плана | `client/CompanionTaskQueue.java`, `CompanionActionExecutor.java`, `CompanionPlanRunner.java`, `CompanionServerPlanPort.java` |
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |
 | Компоненты после разделения больших классов | `entity/CompanionGathering.java`, `CompanionGatherGoals.java`, `CompanionStoneMining.java`, `CompanionOreMining.java`, `CompanionWorkCrafting.java`, `CompanionHunting.java` |
+| Песок, красный песок, гравий и кремень (`gather_loose`; стекло и огниво выходят из них через `obtain_item`) | `entity/CompanionGround.java` (каталог сыпучих блоков и их правила), `CompanionDigGoal.java` (копание лопатой), `CompanionFlint.java` (кремень: поставить гравий из сумки и выкопать), `CompanionObtain.java`; тесты `gametest/CompanionLooseTests.java`, `CompanionFlintProtocolTests.java`, `CompanionObtainTests.java` |
 | Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
 | Раскладка по сундукам (`sort_chests`) | `entity/CompanionSorting.java` (набор, ходки, несомое для игрока), `CompanionSortGroups.java` (группы и «куда что»); тесты `gametest/CompanionSorting*Tests.java`, `CompanionStoreGroupsTests.java` |
 | Загон и разведение животных | `entity/CompanionPen.java` (забор с калиткой вокруг животных), `CompanionBreeding.java` (кормление пар); тесты `gametest/CompanionPenTests.java` |
@@ -69,6 +70,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
 | Долгая цель (броня, Незер, дракон): каталог, этапы, состояние, экран | `entity/CompanionAgenda.java` (движок, раз в секунду), `CompanionPlaybooks.java` (каталог), `CompanionMilestones.java` и `CompanionFacts.java` (этапы по фактам), `CompanionAgendaData.java` (сохранение `aicompanion_agenda`), `CompanionAgendaView.java` (экран и строка «Долгая цель» для модели); действие `pursue_goal` — `client/CompanionPlanCodec.java`; фразы «отмени цель», «отложи цель» — `client/CompanionLocalCommands.java`; экран — `client/CompanionTasksScreen.java`, `entity/CompanionTaskBoard.java`; тесты `gametest/CompanionAgendaTests.java`, `CompanionAgendaModelTests.java`, `CompanionAgendaBoardTests.java` |
+| Алмазная шахта (`find_diamonds`, шаг `dig_for_diamonds`): лестница, тоннель 2×2, пещеры, отступление, свои чанки | `entity/CompanionExpedition.java` (стадии шага) и `CompanionExpedition*.java` (копание, ходьба, подъём, руда, пещера, отступление), `CompanionShaftPlan.java` (клетки лестницы и тоннеля), `CompanionMineSite.java` (запись шахты в NBT), `CompanionCaveSense.java` (оценка опасности), `CompanionSeal.java` (заделка), `CompanionChunkTicket.java` (загрузка своих чанков); этап `EXPEDITION` — `CompanionMilestones.java`; фразы — `client/CompanionWorkCommands.java`; тесты `gametest/CompanionDiamond*Tests.java`, `CompanionExpedition*Tests.java`, `CompanionCave*Tests.java`, `CompanionRetreatTests.java`, `CompanionMineFoundationTests.java` |
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
 | Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java` |
@@ -106,8 +108,11 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
+| Сыпучие блоки, кремень, стекло, огниво | `.\scripts\verify-loose.ps1` (всегда `CompanionLooseTests`; `-Classes CompanionObtainTests,...` добавляет другие классы, `-Repetitions N` повторы; временно переписывает эти файлы, запускать последовательно) |
 | Долгая цель: движок, этапы, фразы, строка для модели, доска задач | `.\scripts\verify-agenda.ps1 -Repetitions 1` (`CompanionAgendaTests`, `CompanionAgendaModelTests`, `CompanionAgendaBoardTests`; по умолчанию 3 повтора; временно переписывает эти три файла, запускать последовательно, нужны загруженные зависимости: Gradle идёт с `--offline`) |
 | Долгая цель при настоящем перезапуске сервера | `.\scripts\verify-agenda-restart.ps1`: этапы prepare, resume, verify; каталог `build/diagnostics/` скрипт создаёт сам |
+| Алмазная шахта и цель `find_diamonds` | `.scriptserify-diamond-mine.ps1` (всегда `CompanionDiamondMineTests`; `-Classes CompanionCaveTests,...` добавляет классы, `-Repetitions N` повторы, останавливается на первом красном; временно переписывает эти файлы, запускать последовательно; журналы `build/diagnostics/diamond-targeted-N.txt` в UTF-16) |
+| Шахта при настоящем перезапуске сервера | `.scriptserify-mine-restart.ps1`: этапы prepare (шаг прерван под землёй), resume (та же шахта, алмаз, без дублей), verify |
 | Партия плавки при настоящем перезапуске сервера | `.\scripts\verify-furnace-restart.ps1` после создания `build/diagnostics/` |
 | Самостоятельные реплики, свои темы Олега и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
 | Тихая работа, речь и восстановление поручений | `.\scripts\verify-quiet-work.ps1` |

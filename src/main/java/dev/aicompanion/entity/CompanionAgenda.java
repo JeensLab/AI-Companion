@@ -360,7 +360,7 @@ public final class CompanionAgenda {
         if (goal.companion == null) { goal.companion = c.getUUID(); data.setDirty(); }
         // The same companion loaded again (a reload, a chunk): the run waits on the work of an entity that is gone.
         if (run != null && run.entity != c.getId()) { cancelRun(owner, null); run = null; }
-        if (danger(c, player)) {
+        if (danger(c, player) && !ownsExpedition(run, c)) {
             if (goal.state != State.PAUSED_DANGER) {
                 var enemy = c.getTarget();
                 cancelRun(owner, c);
@@ -423,6 +423,8 @@ public final class CompanionAgenda {
         if (goal.workTicks >= STALL_TICKS) { block(data, owner, goal, c, "давно нет продвижения: " + pick.label(goal.fallback) + "."); return; }
         List<PlannedAction> plan = pick.method(facts, goal.fallback, all).stream()
                 .map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList();
+        if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) plan = List.of(plan.getLast());
+        goal.mineAsIs = false;
         if (!pick.key().equals(goal.announced)) {
             if (!goal.announced.isEmpty()) c.autonomySay("Дальше: " + pick.label(goal.fallback) + ".");
             goal.announced = pick.key();
@@ -435,10 +437,13 @@ public final class CompanionAgenda {
     private static Milestone pick(Goal goal, CompanionFacts facts, CompanionEntity c) {
         List<Milestone> all = goal.book().milestones();
         List<Item> cooking = c.level() instanceof ServerLevel level ? c.batches().cookingOutputs(level) : List.of();
+        boolean waitsAhead = false;
         for (Milestone milestone : all) {
             if (milestone.satisfied(facts, goal.fallback, all)) continue;
             if (!milestone.supported()) return null;
-            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) continue;
+            // The mine needs what comes before it in hand (the iron pickaxe still in the furnace): it is not dug meanwhile.
+            if (waitsAhead && milestone.kind() == Kind.EXPEDITION) return null;
+            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) { waitsAhead = true; continue; }
             return milestone;
         }
         return null;
@@ -494,6 +499,13 @@ public final class CompanionAgenda {
         var book = goal.book();
         Milestone milestone = book.milestone(run.milestone);
         if (milestone == null) return;
+        // A top-up that stopped the plan before the mine is no failure of the mine: the next step goes down with what he has.
+        if (milestone.kind() == Kind.EXPEDITION && error == null && outcome != null
+                && outcome.skipped().stream().anyMatch(step -> "dig_for_diamonds".equals(step.type()))) {
+            goal.mineAsIs = true; goal.reason = reason(outcome.report());
+            data.setDirty();
+            return;
+        }
         int[] counter = goal.counter(milestone.key());
         counter[0]++;
         CompanionFacts facts = CompanionFacts.of(c);
@@ -508,7 +520,12 @@ public final class CompanionAgenda {
         data.setDirty();
         // A step that moved the bag (ingots smelted, ore mined, meat hunted) is progress, not a failure.
         boolean progressed = run.progress != null && !run.progress.equals(milestone.progress(facts, goal.fallback, book.milestones()));
-        if (progressed) { counter[1] = 0; return; }
+        if (progressed) {
+            counter[1] = 0;
+            // A mine step that opened new cells is the goal moving: steps and time are not counted against it.
+            if (milestone.kind() == Kind.EXPEDITION) { counter[0] = 0; goal.workTicks = 0; }
+            return;
+        }
         counter[1]++;
         if (milestone.concernsDiamonds(goal.fallback) && !goal.fallback && hasFreeSlot(c)) {
             // One empty search does not end an honest hunt for diamonds; the second one in a row does.
@@ -615,6 +632,11 @@ public final class CompanionAgenda {
     private static boolean free(CompanionEntity c) {
         return !c.hasActiveWorkOrder() && !c.isGatheringTask() && !c.hasPendingLoot() && c.canWorkNow() && !c.isSelfRescuing()
                 && c.actionAnimation() == 0 && !c.autonomy().running();
+    }
+
+    /** The mine step deals with a fight, a fire and low health itself (it retreats); cancelling it from here would leave him underground. */
+    private static boolean ownsExpedition(Run run, CompanionEntity c) {
+        return run != null && run.port != null && c.work.job == CompanionWork.Job.EXPEDITION && run.port.ownedWorkId() == c.activeWorkId();
     }
 
     private static boolean danger(CompanionEntity c, ServerPlayer player) {

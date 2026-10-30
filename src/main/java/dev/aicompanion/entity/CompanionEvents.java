@@ -307,12 +307,12 @@ public final class CompanionEvents {
             case "craft_item" -> {
                 CompanionActionResult repeat = count == 1 && !goalDispatch ? companion.alreadyMade(item) : null;
                 if (repeat != null) yield repeat;
-                if (CompanionWork.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
+                if (CompanionCraftCosts.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
                 if (companion.benchWalkNeeded(item, count)) yield companion.startWork("bench_craft", item, count);
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -348,6 +348,7 @@ public final class CompanionEvents {
             case "collect_smelt" -> companion.startWork("collect_smelt", item, 1);
             case "mine_ore" -> companion.startWork("mine_ore", item, count);
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
+            case "dig_for_diamonds" -> companion.startWork(action, "", count);
             case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.

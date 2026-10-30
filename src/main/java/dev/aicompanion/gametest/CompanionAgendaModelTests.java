@@ -45,7 +45,8 @@ public final class CompanionAgendaModelTests {
         h.assertTrue(tiered.equals(List.of(new PlannedAction("pursue_goal", 0, 2, "gear_up", "auto", "near_player"))), "Tier 2 goal decoded as " + tiered);
         for (String id : CompanionPlaybooks.IDS) {
             var steps = CompanionPlanCodec.parsePlan(JsonParser.parseString("{\"steps\":" + plan(goal(id, "")) + "}"));
-            h.assertTrue(steps.equals(List.of(new PlannedAction("pursue_goal", 0, 1, id, "auto", "near_player"))), "Goal " + id + " decoded as " + steps);
+            int count = "find_diamonds".equals(id) ? CompanionPlaybooks.DIAMONDS_DEFAULT : 1;
+            h.assertTrue(steps.equals(List.of(new PlannedAction("pursue_goal", 0, count, id, "auto", "near_player"))), "Goal " + id + " decoded as " + steps);
         }
         String follow = "{\"action\":\"follow\"}";
         String[] refused = {plan(goal("no_such_goal", "")), plan(goal("minecraft:iron_ingot", "")), plan(goal("", "")), plan("{\"action\":\"pursue_goal\"}"),
