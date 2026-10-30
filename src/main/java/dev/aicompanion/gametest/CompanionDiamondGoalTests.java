@@ -37,7 +37,7 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class CompanionDiamondGoalTests {
     private static final String GOAL = "find_diamonds", RETREATED = "отступил";
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
+    static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
     private static final int STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25;
     private static final int TIMEOUT = 24000, SAVE_TIMEOUT = 100, FIGHT_DEADLINE = 600, RETARGET_EVERY = 20, FORCED_RETREATS = 3, NEW_CELLS = 3;
     private static final float LOW = 7;
@@ -48,7 +48,7 @@ public final class CompanionDiamondGoalTests {
     @AfterBatch(batch = "diamond_goal_save") public static void afterSave(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_fight") public static void afterFight(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
-    private record Rig(CompanionEntity c, ServerPlayer p) { }
+    record Rig(CompanionEntity c, ServerPlayer p) { }
 
     /** Everything the goal needs is in the bag: the goal has nothing to prepare and goes straight down; two diamonds come from the strip. */
     @GameTest(template = "marathon_cave", batch = "diamond_goal_ends", timeoutTicks = TIMEOUT)
@@ -178,26 +178,26 @@ public final class CompanionDiamondGoalTests {
         });
     }
 
-    private static void start(GameTestHelper h, Rig r, int count) {
+    static void start(GameTestHelper h, Rig r, int count) {
         var result = CompanionEvents.executeAction(r.p(), "pursue_goal", GOAL, count);
         h.assertTrue(result.status() == CompanionActionResult.Status.ACCEPTED, "Goal not accepted: " + result.message());
     }
 
-    private static CompanionAgendaData.Goal goal(GameTestHelper h, Rig r) { return CompanionAgenda.goal(h.getLevel().getServer(), r.p().getUUID()); }
+    static CompanionAgendaData.Goal goal(GameTestHelper h, Rig r) { return CompanionAgenda.goal(h.getLevel().getServer(), r.p().getUUID()); }
 
-    private static CompanionAgenda.State state(GameTestHelper h, Rig r) {
+    static CompanionAgenda.State state(GameTestHelper h, Rig r) {
         var goal = goal(h, r);
         return goal == null ? null : goal.state();
     }
 
     /** Iron pickaxe, the given torches and stone pickaxes, bread, cobblestone for plugs. */
-    private static ItemStack[] supplies(int torches, int stonePickaxes) {
+    static ItemStack[] supplies(int torches, int stonePickaxes) {
         List<ItemStack> bag = new ArrayList<>(List.of(new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, torches), new ItemStack(Items.COBBLESTONE, 8)));
         for (int i = 0; i < stonePickaxes; i++) bag.add(new ItemStack(Items.STONE_PICKAXE));
         return bag.toArray(new ItemStack[0]);
     }
 
-    private static Rig rig(GameTestHelper h, boolean strip, ItemStack... bag) {
+    static Rig rig(GameTestHelper h, boolean strip, ItemStack... bag) {
         mountain(h, strip);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
@@ -206,14 +206,14 @@ public final class CompanionDiamondGoalTests {
     }
 
     /** A flat bedrock floor and a bench, as the other goal tests have. */
-    private static Rig bare(GameTestHelper h) {
+    static Rig bare(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         h.setBlock(new BlockPos(17, 1, 16), Blocks.CRAFTING_TABLE);
         return bind(h, h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16), 5);
     }
 
     /** A real survival player (the agenda looks its owner up in the player list), off by this many blocks along both axes. */
-    private static Rig bind(GameTestHelper h, CompanionEntity c, int distance) {
+    static Rig bind(GameTestHelper h, CompanionEntity c, int distance) {
         var cookie = net.minecraft.server.network.CommonListenerCookie.createInitial(new com.mojang.authlib.GameProfile(UUID.randomUUID(), "test-mock-player"), false);
         var p = new ServerPlayer(h.getLevel().getServer(), h.getLevel(), cookie.gameProfile(), cookie.clientInformation());
         var connection = new net.minecraft.network.Connection(net.minecraft.network.protocol.PacketFlow.SERVERBOUND);
@@ -229,7 +229,7 @@ public final class CompanionDiamondGoalTests {
     }
 
     /** Bedrock floor and walls, deepslate up to Y -52, stone, dirt, grass; the strip of deepslate diamond ore under the tunnel when asked. */
-    private static void mountain(GameTestHelper h, boolean strip) {
+    static void mountain(GameTestHelper h, boolean strip) {
         var level = h.getLevel();
         for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) for (int y = 0; y <= GROUND; y++) {
             boolean edge = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;
@@ -241,23 +241,23 @@ public final class CompanionDiamondGoalTests {
         }
     }
 
-    private static int advanced(CompanionEntity c) { return c.mineSite().tunnels().stream().mapToInt(CompanionMineSite.Tunnel::length).sum(); }
+    static int advanced(CompanionEntity c) { return c.mineSite().tunnels().stream().mapToInt(CompanionMineSite.Tunnel::length).sum(); }
 
     /** Position relative to the arena corner; GameTestHelper.relativePos mirrors X and Z in a rotated arena, so the frame is read from absolutePos. */
-    private static BlockPos rel(GameTestHelper h, BlockPos world) {
+    static BlockPos rel(GameTestHelper h, BlockPos world) {
         BlockPos origin = h.absolutePos(BlockPos.ZERO), dx = h.absolutePos(new BlockPos(1, 0, 0)).subtract(origin), dz = h.absolutePos(new BlockPos(0, 0, 1)).subtract(origin);
         BlockPos d = world.subtract(origin);
         return new BlockPos(d.getX() * dx.getX() + d.getZ() * dx.getZ(), d.getY(), d.getX() * dz.getX() + d.getZ() * dz.getZ());
     }
 
-    private static String report(GameTestHelper h, Rig r) {
+    static String report(GameTestHelper h, Rig r) {
         var goal = goal(h, r);
         CompanionEntity c = r.c();
         return "goal " + (goal == null ? "none" : goal.state() + " '" + goal.reason() + "' results " + goal.resultCount()) + ", at " + rel(h, c.blockPosition()).toShortString() + ", hp " + c.getHealth()
                 + ", mine " + (c.mineSite().exists() ? c.mineSite().opened() + " cells" : "none") + " | " + c.getDeedsForAi() + " | " + c.getLastTaskResult() + " | bag: " + c.getStoredItemsSummary();
     }
 
-    private static int count(CompanionEntity companion, Item item) {
+    static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();
         for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
