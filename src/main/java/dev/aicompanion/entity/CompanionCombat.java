@@ -27,8 +27,15 @@ final class CompanionCombat {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
         private int nextSwing;
-        @Override public boolean canUse() { return super.canUse() && !c.work.expedition.shuns(c.getTarget()); }
+        /** A foe already in reach is met this tick, not at vanilla's next once-a-second check: every tick of delay is a blow taken. */
+        @Override public boolean canUse() {
+            LivingEntity target = c.getTarget();
+            if (target == null || !target.isAlive() || c.work.expedition.shuns(target)) return false;
+            return c.isWithinMeleeAttackRange(target) || super.canUse();
+        }
         @Override public boolean canContinueToUse() { return super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget()); }
+        /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
+        @Override public void start() { super.start(); c.selectWeaponForCombat(); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
@@ -100,13 +107,16 @@ final class CompanionCombat {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
                 || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
+        // Deep in his own mine, the player far above: a monster that has chosen him is met before its first blow, not after it;
+        // waiting for the hit gives a zombie the lead in an even trade.
+        if (monster.getTarget() == c && c.work.expedition.underground() && monster.distanceToSqr(c) <= MINE_RANGE * MINE_RANGE) return true;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
         if (owner == null || owner.level() != c.level() || owner.isSpectator() || c.distanceToSqr(owner) > GUARD_RANGE * GUARD_RANGE) return false;
         return monster.distanceToSqr(owner) <= 6 * 6 || monster.distanceToSqr(c) <= 4 * 4
                 || (monster.getTarget() == owner || monster.getTarget() == c) && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
     }
-    /** How far from the player Oleg still steps in for him, and how far a fight may take him. */
-    private static final int GUARD_RANGE = 16;
+    /** How far from the player Oleg still steps in for him, and how far a fight may take him; how close a monster hunting him in his mine is met. */
+    private static final int GUARD_RANGE = 16, MINE_RANGE = 8;
 
     boolean isThreateningOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || !(target instanceof Monster monster)) return false;

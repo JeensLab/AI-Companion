@@ -178,14 +178,19 @@ final class CompanionEquipment {
             if (matchesEquipment(c.getMainHandItem(), c.preferredWeapon)) return;
             if (equipItemInternal(c.preferredWeapon, "mainhand").success()) return;
         }
-        double best = equipmentScore(c.getMainHandItem(), EquipmentSlot.MAINHAND);
+        ItemStack choice = bestWeapon(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
+        // No sword or axe: the hardest-hitting pickaxe, as a player would; a stone pickaxe against a zombie in his tunnel is an
+        // even trade he can lose by one blow while an iron one lies in the bag.
+        if (choice.isEmpty()) choice = bestWeapon(stack -> stack.is(ItemTags.PICKAXES));
+        if (!choice.isEmpty() && equipmentScore(choice, EquipmentSlot.MAINHAND) > equipmentScore(c.getMainHandItem(), EquipmentSlot.MAINHAND))
+            equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+    }
+
+    private ItemStack bestWeapon(java.util.function.Predicate<ItemStack> kind) {
         ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : c.companionInventory) if ((stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES))
-                && equipmentScore(stack, EquipmentSlot.MAINHAND) > best) {
-            best = equipmentScore(stack, EquipmentSlot.MAINHAND);
-            choice = stack;
-        }
-        if (!choice.isEmpty()) equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+        for (ItemStack stack : c.companionInventory)
+            if (kind.test(stack) && (choice.isEmpty() || equipmentScore(stack, EquipmentSlot.MAINHAND) > equipmentScore(choice, EquipmentSlot.MAINHAND))) choice = stack;
+        return choice;
     }
 
     private void preferCurrentWeapon() {
