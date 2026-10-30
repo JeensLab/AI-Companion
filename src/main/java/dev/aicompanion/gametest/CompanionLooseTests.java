@@ -171,11 +171,127 @@ public final class CompanionLooseTests {
         helper.succeedWhen(() -> {
             helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
             helper.assertTrue(refused[0] || !companion.didLastTaskSucceed(), "A full bag was reported as success: " + diagnostic(companion));
+            helper.assertTrue(companion.getLastTaskResult().startsWith("Сумка полна"), "A full bag was not said: " + diagnostic(companion));
+            helper.assertTrue(blocksLeft(helper, Blocks.SAND, patch) == patch.length, "Sand was dug into a full bag");
             int standing = blocksLeft(helper, Blocks.SAND, patch);
             helper.assertTrue(standing + count(companion, Items.SAND) + onGround(helper, Items.SAND) == patch.length,
                     "Sand was lost: " + standing + " standing, " + count(companion, Items.SAND) + " in the bag, " + onGround(helper, Items.SAND) + " on the ground");
             helper.assertTrue(count(companion, Items.COBBLESTONE) == cobblestone, "The bag changed: " + companion.getStoredItemsSummary());
         });
+    }
+
+    /** Flint that has no room is never dug for: the gravel stands, and the reply is the bag, not «no flint fell». */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void fullBagStopsTheFlintLoopBeforeAnyBlockIsTouched(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper);
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) companion.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        companion.setItem(0, new ItemStack(Items.GRAVEL, 32));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SHOVEL));
+        gravelPatch(helper);
+        int before = blocksInWorld(helper, Blocks.GRAVEL);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 2);
+        boolean[] refused = {!started.success()};
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(refused[0] || !companion.didLastTaskSucceed(), "A full bag was reported as success: " + diagnostic(companion));
+            helper.assertTrue(companion.getLastTaskResult().startsWith("Сумка полна"), "A full bag was not said: " + diagnostic(companion));
+            helper.assertTrue(blocksInWorld(helper, Blocks.GRAVEL) == before, "The gravel was touched: " + blocksInWorld(helper, Blocks.GRAVEL) + " of " + before);
+            helper.assertTrue(onGround(helper, Items.GRAVEL) + onGround(helper, Items.FLINT) == 0, "Something was left on the ground");
+            helper.assertTrue(count(companion, Items.GRAVEL) == 32, "The bag changed: " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** Game report 29.10: he took the top of a sand roof, the hanging layer under it came down in a chain and buried a cow in the passage. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void sandRoofOverACowIsLeftAndTheOrderIsDugElsewhere(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        var player = owner(helper, companion);
+        BlockPos[] roof = sandRoof(helper, companion);
+        for (int x = 10; x <= 13; x++) for (int z = 14; z <= 17; z++) helper.setBlock(new BlockPos(x, 3, z), Blocks.SAND);
+        var cow = new net.minecraft.world.entity.LivingEntity[1];
+        boolean[] ordered = {false};
+        helper.runAfterDelay(5, () -> {
+            hollowUnderRoof(helper);
+            cow[0] = helper.spawnWithNoFreeWill(net.minecraft.world.entity.EntityType.COW, new BlockPos(19, 1, 20));
+            var started = CompanionEvents.executeAction(player, "gather_loose", "minecraft:sand", 4);
+            helper.assertTrue(started.success(), "Sand order rejected: " + started.message());
+            ordered[0] = true;
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(ordered[0] && !companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(cow[0].isAlive() && cow[0].getHealth() == cow[0].getMaxHealth(), "The cow was buried: " + cow[0].getHealth());
+            helper.assertTrue(blocksLeft(helper, Blocks.SAND, roof) == roof.length, "The roof was touched: " + blocksLeft(helper, Blocks.SAND, roof) + " of " + roof.length);
+            helper.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.SAND) >= 4, "The safe patch was not dug: " + diagnostic(companion));
+        });
+    }
+
+    /** Only the roof in reach: it stays over the player, and the order ends with the truth. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void sandRoofOverThePlayerStaysAndTheOrderEndsHonestly(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.OAK_LOG, 2));
+        var player = owner(helper, companion);
+        BlockPos[] roof = sandRoof(helper, companion);
+        boolean[] ordered = {false};
+        helper.runAfterDelay(5, () -> {
+            hollowUnderRoof(helper);
+            BlockPos under = helper.absolutePos(new BlockPos(19, 1, 20));
+            player.teleportTo(under.getX() + .5, under.getY(), under.getZ() + .5);
+            var started = CompanionEvents.executeAction(player, "gather_loose", "minecraft:sand", 4);
+            helper.assertTrue(started.success(), "Sand order rejected: " + started.message());
+            ordered[0] = true;
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(ordered[0] && !companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(!companion.didLastTaskSucceed(), "The roof was reported as dug: " + diagnostic(companion));
+            helper.assertTrue(blocksLeft(helper, Blocks.SAND, roof) == roof.length, "The roof was touched: " + blocksLeft(helper, Blocks.SAND, roof) + " of " + roof.length);
+            helper.assertTrue(player.getHealth() == player.getMaxHealth(), "The player was hurt: " + player.getHealth());
+        });
+    }
+
+    /** A desert: no shovel, no wood anywhere. Sand comes off by hand, a shovel only makes it quicker. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4800)
+    public static void sandIsDugByHandWhereThereIsNoWood(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper);
+        sandPatch(helper);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:sand", 3);
+        helper.assertTrue(started.success(), "Sand order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.SAND) >= 3, "Sand was not dug by hand: " + diagnostic(companion));
+        });
+    }
+
+    /** On a gravel field the bag's gravel goes down on the field: the natural blocks under it are not spent on flint. */
+    @GameTest(template = "tall_tree", timeoutTicks = 4800)
+    public static void flintOnAGravelFieldDoesNotDigTheField(GameTestHelper helper) {
+        CompanionEntity companion = setupClear(helper); companion.setItem(0, new ItemStack(Items.GRAVEL, 4));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SHOVEL));
+        BlockPos[] field = new BlockPos[289]; int index = 0;
+        for (int x = 8; x <= 24; x++) for (int z = 8; z <= 24; z++) { field[index] = new BlockPos(x, 1, z); helper.setBlock(field[index++], Blocks.GRAVEL); }
+        BlockPos on = helper.absolutePos(new BlockPos(16, 2, 16));
+        companion.teleportTo(on.getX() + .5, on.getY(), on.getZ() + .5);
+        var started = CompanionEvents.executeAction(owner(helper, companion), "gather_loose", "minecraft:flint", 1);
+        helper.assertTrue(started.success(), "Flint order rejected: " + started.message());
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Still working: " + diagnostic(companion));
+            helper.assertTrue(blocksLeft(helper, Blocks.GRAVEL, field) >= field.length - 1, "The field lost blocks: " + (field.length - blocksLeft(helper, Blocks.GRAVEL, field)));
+        });
+    }
+
+    /** Stone ground with a 4×4 sand roof, two layers thick, set into it; the player's plot. The hollow comes later: {@link #hollowUnderRoof}. */
+    private static BlockPos[] sandRoof(GameTestHelper helper, CompanionEntity companion) {
+        for (int x = 6; x <= 28; x++) for (int y = 1; y <= 2; y++) for (int z = 8; z <= 28; z++) helper.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        BlockPos[] roof = new BlockPos[32]; int index = 0;
+        for (int x = 18; x <= 21; x++) for (int z = 19; z <= 22; z++) for (int y = 3; y <= 4; y++) { roof[index] = new BlockPos(x, y, z); helper.setBlock(roof[index++], Blocks.SAND); }
+        BlockPos on = helper.absolutePos(new BlockPos(16, 3, 19));
+        companion.teleportTo(on.getX() + .5, on.getY(), on.getZ() + .5);
+        return roof;
+    }
+
+    /** The stone goes without a block update, as under sand that was generated hanging. */
+    private static void hollowUnderRoof(GameTestHelper helper) {
+        for (int x = 18; x <= 21; x++) for (int z = 19; z <= 22; z++) for (int y = 1; y <= 2; y++)
+            helper.getLevel().setBlock(helper.absolutePos(new BlockPos(x, y, z)), Blocks.AIR.defaultBlockState(), 2 | 16);
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
