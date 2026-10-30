@@ -38,8 +38,11 @@ final class CompanionLava {
     private static final List<Item> PLUGS = List.of(Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.DIRT, Items.NETHERRACK,
             Items.STONE, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF);
 
-    /** Why an ore may not be opened now: its drop would fall into lava, lava would run in and there is nothing to plug it with, or a lava fall stands beside it. */
-    enum Opening { SAFE, OVER_LAVA, NO_PLUG, FALL }
+    /**
+     * Why an ore may not be opened now: its drop would fall into lava, lava would run in and there is nothing to plug it with, a lava fall
+     * stands beside it, or (the plugs go to lava first) a spring would run in and nothing is left to plug it with.
+     */
+    enum Opening { SAFE, OVER_LAVA, NO_PLUG, NO_SPRING, FALL }
 
     private CompanionLava() {}
 
@@ -65,25 +68,32 @@ final class CompanionLava {
 
     /**
      * The springs that run into this cell when it is opened: water in a wall, as the same rule as lava finds it, that nothing but this
-     * cell opens to. A pond, a flooded passage, water that lies in his tunnel or where he stands is no spring: it runs in again whatever
-     * is put into it, and a plug there only walls him off.
+     * cell opens to. A pond, a flooded passage, water that lies in his tunnel (a cell of {@code own}) or where he stands is no spring:
+     * it runs in again whatever is put into it, and a plug there only walls him off.
      */
     static List<BlockPos> waterInflow(Level level, BlockPos opened, Collection<BlockPos> own) {
         List<BlockPos> springs = new ArrayList<>(2);
-        for (BlockPos cell : inflow(level, opened, FluidTags.WATER)) if (!own.contains(cell) && closedSpring(level, cell, opened, own)) springs.add(cell);
+        for (BlockPos cell : inflow(level, opened, FluidTags.WATER)) if (!own.contains(cell) && closedSpring(level, cell, opened)) springs.add(cell);
         return springs;
+    }
+
+    /** The springs that run in when all these cells are opened (a spring beside two of them is counted once). */
+    static Set<BlockPos> springs(Level level, Collection<BlockPos> opened, Collection<BlockPos> own) {
+        Set<BlockPos> cells = new LinkedHashSet<>();
+        for (BlockPos cell : opened) cells.addAll(waterInflow(level, cell, own));
+        return cells;
     }
 
     /**
      * The block itself is water (not a chest or a slab with water in it) and every side of it but the opened cell is something solid
-     * (not air, not liquid, not replaceable, not a cell of his own way, not a block holding water).
+     * (not air, not liquid, not replaceable, not a block holding water).
      */
-    private static boolean closedSpring(Level level, BlockPos cell, BlockPos opened, Collection<BlockPos> own) {
+    private static boolean closedSpring(Level level, BlockPos cell, BlockPos opened) {
         if (!level.getBlockState(cell).is(Blocks.WATER)) return false;
         for (Direction d : Direction.values()) {
             BlockPos next = cell.relative(d);
             if (next.equals(opened)) continue;
-            if (!level.isLoaded(next) || own.contains(next)) return false;
+            if (!level.isLoaded(next)) return false;
             BlockState state = level.getBlockState(next);
             if (state.isAir() || state.canBeReplaced() || !state.getFluidState().isEmpty()) return false;
         }
@@ -128,12 +138,6 @@ final class CompanionLava {
         return cells;
     }
 
-    /** Water in a cell touching this one: an ore that lies in a flooded vein. */
-    static boolean wetBeside(Level level, BlockPos pos) {
-        for (Direction d : Direction.values()) if (level.isLoaded(pos.relative(d)) && level.getFluidState(pos.relative(d)).is(FluidTags.WATER)) return true;
-        return false;
-    }
-
     /** Plug blocks in his bag. */
     static int plugsCarried(CompanionEntity owner) {
         int count = 0;
@@ -141,11 +145,20 @@ final class CompanionLava {
         return count;
     }
 
-    /** Whether he may break this ore: not on lava, and with enough plugs for the lava that runs in once it is gone. */
+    /**
+     * Whether he may break this ore: not on lava, and with enough plugs for the lava that runs in once it is gone, then for the springs
+     * (none of the water is his own way yet: stricter is no harm).
+     */
     static Opening opening(CompanionEntity owner, Level level, BlockPos ore) {
         if (at(level, ore.below())) return Opening.OVER_LAVA;
         if (besideFall(level, List.of(ore))) return Opening.FALL;
-        return inflow(level, ore).size() <= plugsCarried(owner) ? Opening.SAFE : Opening.NO_PLUG;
+        return plugsFor(owner, inflow(level, ore).size(), springs(level, List.of(ore), Set.of()).size());
+    }
+
+    /** SAFE if the plugs in his bag cover the lava and the springs that run in, else the first thing they fall short of: lava goes first. */
+    static Opening plugsFor(CompanionEntity owner, int lava, int springs) {
+        int plugs = plugsCarried(owner);
+        return lava > plugs ? Opening.NO_PLUG : lava + springs > plugs ? Opening.NO_SPRING : Opening.SAFE;
     }
 
     /** The rank of the plug in this slot (0 is the cheapest), or -1 if what lies there is no plug or is carried for the player. */

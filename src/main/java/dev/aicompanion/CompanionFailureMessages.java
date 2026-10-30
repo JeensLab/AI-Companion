@@ -24,9 +24,9 @@ public final class CompanionFailureMessages {
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
         // Not yet up from his own tunnel: said before any ore reason, the player should know he is still down there.
         if (text.contains("выбрался")) return Kind.ROUTE;
-        // Water that flooded the way and nothing to plug it with (before the lava line: both reports end in «заткнуть нечем»). Lava beats it
+        // A spring and nothing to plug it with (before the lava line: both reports end in «заткнуть нечем»). Lava beats it
         // only by its own phrases: the no-safe-way sentence always says «лавы рядом».
-        if (text.contains("залило водой") && !mentionsLava(text)) return Kind.WATER;
+        if (text.contains("родник") && !mentionsLava(text)) return Kind.WATER;
         // Ahead of the route: the engine puts the lava reason beside «не нашёл безопасного хода», and lava is the one to name.
         if (text.contains("заткнуть нечем") || text.contains("над лавой") || text.contains("лавопад")) return Kind.LAVA;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
@@ -48,7 +48,7 @@ public final class CompanionFailureMessages {
                     ? "Рядом лава, а заткнуть её нечем. Нужен булыжник или земля." + (primary(report).contains("над лавой") ? " И руда лежит над лавой, добыча сгорит." : "")
                     : primary(report).contains("лавопад") ? "Рядом лавопад, пробкой его не остановить. Руду не трогал."
                     : "Руда лежит над лавой, добыча сгорит. Не трогал.";
-            case WATER -> "Залило водой, заткнуть нечем. Нужен булыжник или земля.";
+            case WATER -> "Рядом родник, а заткнуть его нечем. Нужен булыжник или земля.";
             // No way at all to the player, as the wide search proved it: said as such, not as a lost way.
             case ROUTE -> primary(report).contains("выбрался") ? "Я пока внизу, ищу безопасный выход."
                     : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти."

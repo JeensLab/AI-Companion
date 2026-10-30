@@ -136,11 +136,6 @@ final class CompanionLoot {
                 || owner.canStoreDrops(List.of(item.getItem().copyWithCount(1)))
                 && (chaseable(level, id) || !unreachable.contains(id) && settling(level, id, item)));
     }
-    /** A drop waits that he has given up reaching from where he stood, or has failed to reach before: the pickup is stuck, not just under way. */
-    boolean stranded() {
-        if (!(owner.level() instanceof ServerLevel level)) return false;
-        return pending.stream().anyMatch(id -> level.getEntity(id) instanceof ItemEntity item && item.isAlive() && (unreachable.contains(id) || attempts.getOrDefault(id, 0) > 0));
-    }
     private boolean settling(ServerLevel level, UUID id, ItemEntity item) {
         return item.hasPickUpDelay() || level.getGameTime() - born.getOrDefault(id, 0L) < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
     }

@@ -7,13 +7,16 @@ import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
@@ -33,7 +36,7 @@ public final class CompanionWaterMiningTests {
 
     private CompanionWaterMiningTests() { }
 
-    /** Iron with a water source right behind it in the wall: mined, the raw iron (floating in the water that flowed out) is in his bag. */
+    /** Iron with a water source right behind it in the wall and a plug in the bag: the spring is plugged as the ore goes, the raw iron is in his bag. */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
     public static void oreBesideWaterIsMinedAndPickedUp(GameTestHelper h) {
         CompanionEntity c = flat(h);
@@ -41,6 +44,7 @@ public final class CompanionWaterMiningTests {
         BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.IRON_ORE);
         h.setBlock(new BlockPos(21, 1, 16), Blocks.WATER);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
         h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
         h.succeedWhen(() -> {
             idle(h, c);
@@ -52,8 +56,8 @@ public final class CompanionWaterMiningTests {
 
     /**
      * Iron buried in the ground, a player's stairs down to it; the last cell of the stairs, beside the ore, is a pocket of water
-     * (his tunnel goes through it, a cell flooded at the floor is open) and more water lies along it. He digs the stairs, stands in
-     * the water to the knee, mines the ore, and climbs back up the stairs he made.
+     * (his tunnel goes through it, a cell flooded at the floor is open) and more water lies along it (springs in the wall: he has
+     * plugs for them). He digs the stairs, stands in the water to the knee, mines the ore, and climbs back up the stairs he made.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void tunnelThroughAndAlongWaterReachesTheOreAndBack(GameTestHelper h) {
@@ -67,6 +71,7 @@ public final class CompanionWaterMiningTests {
         h.setBlock(new BlockPos(17, 3, 21), Blocks.WATER);
         h.setBlock(new BlockPos(15, 3, 21), Blocks.WATER);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
         h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
         h.succeedWhen(() -> {
             idle(h, c);
@@ -202,12 +207,13 @@ public final class CompanionWaterMiningTests {
     }
 
     /**
-     * The same vein and nothing to plug with: he mines what the water lets him, and the work ends, with the ore or with the reason
-     * «залило водой», not hanging in a pickup that never ends; nothing of the bag is put into the water.
+     * The same vein and nothing to plug with: a spring is handled like lava. The ore with the springs in its wall is not opened, the
+     * reason is the spring, nothing of the bag is put into the water, the water is not let out, and the work ends at once (14 ticks
+     * measured, the ceiling is the double and more).
      */
-    @GameTest(template = "large_search", timeoutTicks = 2400)
+    @GameTest(template = "large_search", timeoutTicks = 40)
     public static void aVeinWithWaterBehindItAndNoPlugsEndsHonestlyAndSpendsNothing(GameTestHelper h) {
-        veinWithWater(h);
+        BlockPos[] water = veinWithWater(h);
         CompanionEntity c = veinMiner(h);
         c.setItem(0, new ItemStack(Items.SAND, 5));
         // The stone he digs gives cobblestone: taken out of the bag as it comes, so that he really has nothing to plug with.
@@ -215,22 +221,24 @@ public final class CompanionWaterMiningTests {
         h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 2).success(), "Ore order not accepted"));
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 10 && !c.isGatheringTask() && !c.isWorking(), "Work still active after " + h.getTick() + ": " + c.getLastTaskResult());
-            h.assertTrue(c.didLastTaskSucceed() || c.getLastTaskResult().contains("Залило водой, заткнуть нечем"), "Neither the ore nor the reason: " + report(c));
+            h.assertTrue(!c.didLastTaskSucceed() && c.getLastTaskResult().contains("рядом родник, заткнуть нечем") && !c.getLastTaskResult().contains("Залило"), "Not the spring as the reason: " + report(c));
+            h.assertTrue(h.getBlockState(new BlockPos(17, 2, 15)).is(Blocks.IRON_ORE) && h.getBlockState(new BlockPos(18, 2, 15)).is(Blocks.IRON_ORE), "The vein was opened: " + report(c));
+            for (BlockPos cell : water) h.assertTrue(h.getBlockState(cell).is(Blocks.WATER), "The spring was let out: " + report(c));
             h.assertTrue(count(c, Items.SAND) == 5 && count(c, Items.DIRT) == 0, "The bag was spent: " + report(c));
         });
     }
 
     /**
-     * Review 3: no plugs at all, the first iron is a wall spring's, five dry irons stand free on the floor far away. The flood clock is for a
-     * drop he cannot get at: the first drop is picked up, so all six are mined (the clock once ended the order after 300 ticks, a dry ore left).
+     * No plugs at all, the first iron is a wall spring's, five dry irons stand free on the floor far away. The spring's ore is left and
+     * named as the reason, the water is not let out, the five dry ones are mined and nothing but their drops is in the bag.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
-    public static void aSpringAtTheFirstOreDoesNotCutTheOrderShortWhileItsDropIsReachable(GameTestHelper h) {
+    public static void aSpringAtTheFirstOreWithNoPlugsIsLeftAndTheDryFiveAreTaken(GameTestHelper h) {
         clear(h);
         box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
         box(h, 20, 1, 10, 23, 3, 22, Blocks.STONE);
-        BlockPos spring = new BlockPos(20, 1, 16);
-        h.setBlock(spring, Blocks.IRON_ORE); h.setBlock(spring.above(), Blocks.AIR); h.setBlock(new BlockPos(21, 1, 16), Blocks.WATER);
+        BlockPos spring = new BlockPos(20, 1, 16), water = new BlockPos(21, 1, 16);
+        h.setBlock(spring, Blocks.IRON_ORE); h.setBlock(spring.above(), Blocks.AIR); h.setBlock(water, Blocks.WATER);
         for (BlockPos dry : new BlockPos[]{new BlockPos(6, 1, 10), new BlockPos(6, 1, 22), new BlockPos(9, 1, 6), new BlockPos(9, 1, 26), new BlockPos(4, 1, 16)})
             h.setBlock(dry, Blocks.IRON_ORE);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
@@ -240,7 +248,10 @@ public final class CompanionWaterMiningTests {
         h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 6).success(), "Ore order not accepted"));
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
-            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 6, "Not six of six: " + c.getLastTaskResult());
+            h.assertTrue(!c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 5 && c.getLastTaskResult().contains("рядом родник, заткнуть нечем") && !c.getLastTaskResult().contains("Залило"),
+                    "Not five of six with the spring as the reason: " + c.getLastTaskResult());
+            h.assertTrue(h.getBlockState(spring).is(Blocks.IRON_ORE) && h.getBlockState(water).is(Blocks.WATER), "The spring's ore was opened: " + h.getBlockState(spring));
+            h.assertTrue(count(c, Items.COBBLESTONE) == 0 && count(c, Items.DIRT) == 0, "The bag holds more than the drops: " + c.getStoredItemsSummary());
         });
     }
 
@@ -381,6 +392,98 @@ public final class CompanionWaterMiningTests {
             h.assertTrue(h.getBlockState(chest).is(Blocks.CHEST) && h.getBlockState(slab).is(Blocks.OAK_SLAB), "Replaced: " + h.getBlockState(chest) + " " + h.getBlockState(slab));
             h.assertTrue(h.getBlockEntity(chest) instanceof ChestBlockEntity box && box.getItem(0).is(Items.DIAMOND) && box.getItem(0).getCount() == 5, "The chest lost its diamonds");
             h.assertTrue(count(c, Items.COBBLESTONE) == 3, "A plug was spent: " + count(c, Items.COBBLESTONE));
+        });
+    }
+
+    /**
+     * Review 4: a closed spring over the next step of his stairs touches two cells of his own way. It is a spring all the same: plugged when
+     * the cell beside it is opened, the ore taken, the water kept out of the stairs.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aSpringInTheCeilingOfHisStairsIsPluggedAndTheOreTaken(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 31, 12, 31, Blocks.STONE);
+        BlockPos ore = new BlockPos(16, 7, 26), spring = new BlockPos(16, 11, 24);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(spring, Blocks.WATER);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 13, 13);
+        bind(h, c, 13, 13, 11);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 16));
+        h.runAfterDelay(20, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 22 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c) + " " + c.getLastTaskResult());
+            h.assertTrue(h.getBlockState(spring).is(Blocks.COBBLESTONE), "The spring in the ceiling was not plugged: " + h.getBlockState(spring));
+            int wet = 0;
+            for (int z = 19; z <= 26; z++) for (int y = 7; y <= 12; y++) if (!h.getLevel().getFluidState(h.absolutePos(new BlockPos(16, y, z))).isEmpty()) wet++;
+            h.assertTrue(wet == 0, wet + " wet cells on the stairs");
+        });
+    }
+
+    /**
+     * Review 4: the spring's ore and a cobblestone of his that lies in a crack he cannot reach (sealed in bedrock), no plugs in the bag: five
+     * of the six irons are his, and the reason is the spring, never «залило».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aSpringAndADropOutOfReachEndWithTheSpringNamed(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 20, 1, 10, 23, 3, 22, Blocks.STONE);
+        BlockPos first = new BlockPos(20, 1, 16);
+        h.setBlock(first, Blocks.IRON_ORE); h.setBlock(first.above(), Blocks.AIR); h.setBlock(new BlockPos(21, 1, 16), Blocks.WATER);
+        for (BlockPos dry : new BlockPos[]{new BlockPos(6, 1, 10), new BlockPos(6, 1, 22), new BlockPos(9, 1, 6), new BlockPos(9, 1, 26), new BlockPos(4, 1, 16)})
+            h.setBlock(dry, Blocks.IRON_ORE);
+        box(h, 12, 1, 18, 14, 3, 20, Blocks.BEDROCK);
+        h.setBlock(new BlockPos(13, 2, 19), Blocks.AIR);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
+        bind(h, c, 13, 1, 13);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        Vec3 in = h.absoluteVec(new Vec3(13.5, 2.0, 19.5));
+        ItemEntity stuck = new ItemEntity(h.getLevel(), in.x, in.y, in.z, new ItemStack(Items.COBBLESTONE));
+        stuck.getPersistentData().putUUID("aicompanion:harvester", c.getUUID());
+        stuck.setDeltaMovement(Vec3.ZERO);
+        h.getLevel().addFreshEntity(stuck);
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 6).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            String said = c.getLastTaskResult();
+            h.assertTrue(!said.contains("Залило") && (c.didLastTaskSucceed() ? count(c, Items.RAW_IRON) == 6
+                    : count(c, Items.RAW_IRON) == 5 && said.contains("рядом родник, заткнуть нечем")), "Neither six of six nor five with the spring: " + said);
+            h.assertTrue(h.getBlockState(new BlockPos(21, 1, 16)).is(Blocks.WATER), "The spring was let out");
+        });
+    }
+
+    /** Review 4: a Silk Touch pickaxe brings the ore block itself: that is a mined ore, not «выпавшее не достал». */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void anOreTakenWithSilkTouchIsDone(GameTestHelper h) {
+        CompanionEntity c = flat(h);
+        BlockPos ore = new BlockPos(20, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        c.setFollowing(false);
+        ItemStack pick = new ItemStack(Items.STONE_PICKAXE);
+        pick.enchant(h.getLevel().registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolderOrThrow(Enchantments.SILK_TOUCH), 1);
+        c.setItemSlot(EquipmentSlot.MAINHAND, pick);
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.IRON_ORE) == 1 && !c.getLastTaskResult().contains("Выпавшее не достал"), report(c) + " " + c.getLastTaskResult());
+        });
+    }
+
+    /** Review 4: Nether gold ore (in the gold ore tag) drops nuggets, not raw gold: the nuggets in the bag are the ore mined. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void aNetherGoldOreGivingNuggetsIsDone(GameTestHelper h) {
+        CompanionEntity c = flat(h);
+        BlockPos ore = new BlockPos(20, 1, 16);
+        h.setBlock(ore, Blocks.NETHER_GOLD_ORE);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:gold_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.GOLD_NUGGET) > 0 && !c.getLastTaskResult().contains("Выпавшее не достал"), report(c) + " " + c.getLastTaskResult());
         });
     }
 

@@ -468,39 +468,39 @@ public final class CompanionPlanRecoveryTests {
         h.succeed();
     }
 
-    /** A flooded vein with nothing to plug it (CompanionOreMining.finishOre) is said as water, not as lava or as «no safe way», in the failure message and the partial report. */
+    /** A spring with nothing to plug it (CompanionOreMining.finishOre) is said as a spring, not as lava or as «no safe way», in the failure message and the partial report. */
     @GameTest(template = "empty")
-    public static void aFloodedVeinIsSaidAsWaterInFailureMessagesAndPartialReports(GameTestHelper h) {
+    public static void aSpringWithNothingToPlugItIsSaidAsSuchInFailureMessagesAndPartialReports(GameTestHelper h) {
         String flooded = "Добыл 1 из 2 блока «железная руда»: в сумке прибавилось 1 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
-                + " Залило водой, заткнуть нечем — нужен булыжник или земля. В сумке: 5 Песок.";
+                + " У 1 блок рядом родник, заткнуть нечем — нужен булыжник или земля. В сумке: 5 Песок.";
         h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind(flooded) == dev.aicompanion.CompanionFailureMessages.Kind.WATER, "Not WATER: " + dev.aicompanion.CompanionFailureMessages.kind(flooded));
-        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded).equals("Залило водой, заткнуть нечем. Нужен булыжник или земля."),
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded).equals("Рядом родник, а заткнуть его нечем. Нужен булыжник или земля."),
                 dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded));
         var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
         String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: " + flooded);
-        h.assertTrue(said.contains("залило водой") && !said.contains("лав"), "Partial report does not say water: " + said);
+        h.assertTrue(said.contains("рядом родник") && !said.contains("лав"), "Partial report does not say spring: " + said);
         h.succeed();
     }
 
     /**
      * Review 3: the engine puts «К N не нашёл безопасного хода … без гравия, песка и лавы рядом» beside any other reason, and its «лавы» is no lava
-     * reason: the flood stays water in every way it is said (kind, explain, a single order, a part of a plan). Lava's own phrases still win.
+     * reason: the spring stays a spring in every way it is said (kind, explain, a single order, a part of a plan). Lava's own phrases still win.
      */
     @GameTest(template = "empty")
-    public static void aFloodedVeinNextToTheNoSafeWaySentenceIsStillWater(GameTestHelper h) {
+    public static void aSpringNextToTheNoSafeWaySentenceIsStillASpring(GameTestHelper h) {
         String route = " К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.";
         String flooded = "Добыл 1 из 3 блоков «железная руда»: в сумке прибавилось 1 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
-                + " Залило водой, заткнуть нечем — нужен булыжник или земля." + route + " В сумке: 5 Песок.";
+                + " У 1 блок рядом родник, заткнуть нечем — нужен булыжник или земля." + route + " В сумке: 5 Песок.";
         String none = flooded.replace("Добыл 1 из 3", "Добыл 0 из 3").replace("прибавилось 1", "прибавилось 0");
         var single = List.of(new PlannedAction("mine_ore", 0, 3, "minecraft:iron_ore"));
         var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
         h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind(flooded) == dev.aicompanion.CompanionFailureMessages.Kind.WATER, "Not WATER: " + dev.aicompanion.CompanionFailureMessages.kind(flooded));
-        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded).startsWith("Залило водой"), dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded));
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded).startsWith("Рядом родник"), dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded));
         String one = CompanionDialogue.summarize(single, "План остановлен: " + flooded), zero = CompanionDialogue.summarize(single, "План остановлен: " + none);
-        h.assertTrue(one.contains("залило водой") && !one.contains("лав") && one.indexOf('—') == one.lastIndexOf('—'), "Single order: " + one);
-        h.assertTrue(zero.contains("залило водой") && !zero.contains("лав") && !zero.contains("остальную") && zero.indexOf('—') == zero.lastIndexOf('—'), "Single order, nothing got: " + zero);
+        h.assertTrue(one.contains("рядом родник") && !one.contains("лав") && !one.contains("залило") && one.indexOf('—') == one.lastIndexOf('—'), "Single order: " + one);
+        h.assertTrue(zero.startsWith("Руду нашёл, но рядом родник, а заткнуть нечем.") && zero.indexOf('—') == zero.lastIndexOf('—'), "Single order, nothing got: " + zero);
         String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: " + flooded);
-        h.assertTrue(said.contains("залило водой") && !said.contains("лав"), "Part of a plan: " + said);
+        h.assertTrue(said.contains("рядом родник") && !said.contains("лав"), "Part of a plan: " + said);
         // Lava beside water: the lava reason is the one said.
         String both = flooded.replace("Больше доступной руды «железная руда» рядом нет.", "Больше доступной руды «железная руда» рядом нет. У 1 блок рядом лава, заткнуть нечем — нужен булыжник или земля.");
         h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind(both) == dev.aicompanion.CompanionFailureMessages.Kind.LAVA, "Not LAVA: " + dev.aicompanion.CompanionFailureMessages.kind(both));

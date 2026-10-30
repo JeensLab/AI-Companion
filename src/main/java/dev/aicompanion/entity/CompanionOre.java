@@ -106,7 +106,8 @@ public final class CompanionOre {
     /**
      * A player's tunnel from a standing cell to the ore: first stairs down (one block sideways per block down, three
      * cells high so the way back up is a walk), then two-high straight to the cell beside the ore. The ore ends up at
-     * feet or head height right in front. Cells already open are skipped. Null when the way is unsafe or too long.
+     * feet or head height right in front. Cells already open are skipped, except water: a flooded cell is his way too (he swims through
+     * it, it is never plugged), so it is listed, but it is no cell to dig ({@link #toDig}). Null when the way is unsafe or too long.
      */
     static List<BlockPos> tunnel(ServerLevel level, BlockPos stand, BlockPos ore) {
         int foot = ore.getY() <= stand.getY() ? ore.getY() : ore.getY() - 1;
@@ -115,7 +116,7 @@ public final class CompanionOre {
         BlockPos at = stand;
         for (int step = 0; step < MAX_REACH + MAX_DROP; step++) {
             int dx = ore.getX() - at.getX(), dz = ore.getZ() - at.getZ();
-            if (at.getY() == foot && Math.abs(dx) + Math.abs(dz) == 1) return cells.size() > MAX_CELLS ? null : List.copyOf(cells);
+            if (at.getY() == foot && Math.abs(dx) + Math.abs(dz) == 1) return toDig(level, cells).size() > MAX_CELLS ? null : List.copyOf(cells);
             // Each step must leave the ore in front, not underfoot: enough sideways room for the remaining descent.
             if (Math.abs(dx) + Math.abs(dz) <= at.getY() - foot) return null;
             Direction direction = Math.abs(dx) >= Math.abs(dz) ? (dx > 0 ? Direction.EAST : Direction.WEST) : (dz > 0 ? Direction.SOUTH : Direction.NORTH);
@@ -126,13 +127,21 @@ public final class CompanionOre {
             for (BlockPos cell : body) {
                 BlockState state = level.getBlockState(cell);
                 // A flooded cell is open like air: he swims through it.
-                if (state.isAir() || state.canBeReplaced() && !state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) continue;
+                if (state.isAir() || state.canBeReplaced() && !state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
+                    if (state.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) cells.add(cell.immutable());
+                    continue;
+                }
                 if (cell.equals(ore) || !tunnelable(state) || !safeTunnelCell(level, cell)) return null;
                 cells.add(cell.immutable());
             }
             at = next;
         }
         return null;
+    }
+
+    /** The cells of a tunnel that are solid now, so that really have to be dug (and open for lava or a spring to run in). */
+    static List<BlockPos> toDig(ServerLevel level, List<BlockPos> cells) {
+        return cells.stream().filter(cell -> !level.getBlockState(cell).isAir() && !level.getBlockState(cell).canBeReplaced()).toList();
     }
 
     /** Where a tunnel to this ore could start: standing cells above or level with it, nearest digging first. */
