@@ -11,6 +11,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
@@ -24,6 +25,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * The expedition of the diamond mine under hazards and bookkeeping: lava and water beside the way, the last pickaxe, torches,
@@ -34,7 +36,7 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionExpeditionTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
-    private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6;
+    private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6, FIRST_ORE_STAND = 6, AFTER_BREAK = 3;
     private static final BlockPos WATER = new BlockPos(25, 4, 3);
     private static final String NO_PICKAXES = "кирок не осталось", STALL = "Полторы минуты";
 
@@ -204,6 +206,44 @@ public final class CompanionExpeditionTests {
             int torches = torches(h) + count(c, Items.TORCH) + ground(h, Items.TORCH), allowed = 4 + 4 * (1 - count(c, Items.COAL));
             h.assertTrue(torches <= allowed, "Torches " + torches + " from 4 given and " + (allowed - 4) + " crafted");
             h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "Iron pickaxes: " + count(c, Items.IRON_PICKAXE));
+        });
+    }
+
+    /** A dimension change or a chunk unload removes him with setRemoved, not remove(): his nine chunks must still be let go. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    public static void releasesHisChunksWhenRemovedWithoutDiscard(GameTestHelper h) {
+        CompanionEntity c = rig(h, RING_FROM, standard(16)).c();
+        UUID id = c.getUUID();
+        start(h, c, 1);
+        h.runAfterDelay(100, () -> {
+            h.assertTrue(c.isWorking() && CompanionChunkTicket.held(id), "Not digging with a ticket after 100 ticks: " + report(c));
+            c.setRemoved(Entity.RemovalReason.CHANGED_DIMENSION);
+        });
+        h.runAfterDelay(105, () -> {
+            boolean kept = CompanionChunkTicket.held(id);
+            CompanionChunkTicket.release(id);
+            h.assertTrue(!kept, "Chunk ticket kept after he was removed by a dimension change");
+            h.succeed();
+        });
+    }
+
+    /**
+     * Diamond ore in the second cell of a stair step: the cell is not open to the stand, so it is broken as part of the column
+     * while the column is still going. A server stop at that moment must not lose the diamond: it is in the world or in the bag.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void aMinedDiamondIsNotOnlyInMemory(GameTestHelper h) {
+        CompanionEntity c = rig(h, NO_RING, standard(16)).c();
+        BlockPos ore = stand(FIRST_ORE_STAND);
+        h.setBlock(ore, Blocks.DEEPSLATE_DIAMOND_ORE);
+        start(h, c, 1);
+        long[] brokenAt = {-1};
+        h.onEachTick(() -> {
+            if (brokenAt[0] < 0 && !h.getBlockState(ore).is(Blocks.DEEPSLATE_DIAMOND_ORE)) brokenAt[0] = h.getTick();
+            if (brokenAt[0] < 0 || h.getTick() < brokenAt[0] + AFTER_BREAK) return;
+            h.assertTrue(count(c, Items.DIAMOND) + ground(h, Items.DIAMOND) >= 1,
+                    "The ore at " + ore.toShortString() + " was broken " + AFTER_BREAK + " ticks ago, but the diamond is neither in the world nor in the bag | " + report(c));
+            h.succeed();
         });
     }
 
