@@ -19,9 +19,10 @@ public final class CompanionFacts {
     private final Map<Item, Integer> carried;
     private final Map<EquipmentSlot, Item> worn;
     private final boolean dragonDead;
+    private final int mineOpened;
 
-    private CompanionFacts(Map<Item, Integer> carried, Map<EquipmentSlot, Item> worn, boolean dragonDead) {
-        this.carried = Map.copyOf(carried); this.worn = Map.copyOf(worn); this.dragonDead = dragonDead;
+    private CompanionFacts(Map<Item, Integer> carried, Map<EquipmentSlot, Item> worn, boolean dragonDead, int mineOpened) {
+        this.carried = Map.copyOf(carried); this.worn = Map.copyOf(worn); this.dragonDead = dragonDead; this.mineOpened = mineOpened;
     }
 
     public static CompanionFacts of(CompanionEntity c) {
@@ -33,7 +34,7 @@ public final class CompanionFacts {
         for (EquipmentSlot slot : ARMOR) if (usable(c.getItemBySlot(slot))) worn.put(slot, c.getItemBySlot(slot).getItem());
         var end = c.getServer() == null ? null : c.getServer().getLevel(Level.END);
         boolean dragonDead = end != null && end.getDragonFight() != null && end.getDragonFight().hasPreviouslyKilledDragon();
-        return new CompanionFacts(carried, worn, dragonDead);
+        return new CompanionFacts(carried, worn, dragonDead, c.mineSite().opened());
     }
 
     /** How many of the item he carries in the bag and in his hands; armour he wears is not counted here. */
@@ -47,6 +48,9 @@ public final class CompanionFacts {
     public Item worn(EquipmentSlot slot) { return worn.get(slot); }
 
     public boolean dragonDead() { return dragonDead; }
+
+    /** Cells his diamond mine has opened (stairs and tunnels): what a step of the expedition leaves behind even without a diamond. */
+    public int mineOpened() { return mineOpened; }
 
     private static void add(Map<Item, Integer> carried, ItemStack stack) {
         if (usable(stack)) carried.merge(stack.getItem(), stack.getCount(), Integer::sum);

@@ -31,7 +31,7 @@ public final class CompanionMilestones {
         Item item(Tier tier) { return BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace(tier.prefix + "_" + suffix)); }
     }
 
-    public enum Kind { PIECE, MATERIALS, FOOD, STOCK, SKILL, DRAGON }
+    public enum Kind { PIECE, MATERIALS, FOOD, STOCK, SKILL, DRAGON, EXPEDITION }
 
     /** One step of a milestone's plan: an allowlisted action as the plan runner takes it. */
     public record Step(String type, String item, int count, String slot) { }
@@ -39,6 +39,8 @@ public final class CompanionMilestones {
     private static final Set<Item> READY_FOOD = Set.of(Items.COOKED_BEEF, Items.COOKED_PORKCHOP, Items.COOKED_MUTTON, Items.COOKED_CHICKEN,
             Items.COOKED_RABBIT, Items.COOKED_COD, Items.COOKED_SALMON, Items.BREAD, Items.BAKED_POTATO, Items.GOLDEN_CARROT);
     private static final Set<Item> RAW_MEAT = Set.of(Items.BEEF, Items.PORKCHOP, Items.MUTTON, Items.CHICKEN, Items.RABBIT);
+    /** What a step of the mine starts with: below the minimum he tops up to the stock on the surface (supplies are never milestones, they are used up below). */
+    private static final int TORCHES_MIN = 16, TORCHES_STOCK = 32, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 4, FOOD_MIN = 4;
 
     /**
      * {@code supported}: Oleg has the skills for it now; the first unmet one without them is where the goal stops and says so.
@@ -62,7 +64,7 @@ public final class CompanionMilestones {
                         : atLeast(piece, effective(tier, fallback)).contains(facts.worn(piece.slot));
                 case MATERIALS -> facts.carried(effective(tier, fallback).material) >= need(facts, fallback, all);
                 case FOOD -> facts.carried(READY_FOOD::contains) >= count;
-                case STOCK -> facts.carried(item) >= count;
+                case STOCK, EXPEDITION -> facts.carried(item) >= count;
                 case SKILL -> false;
                 case DRAGON -> facts.dragonDead();
             };
@@ -91,6 +93,7 @@ public final class CompanionMilestones {
                     signature.add(facts.carried(RAW_MEAT::contains));
                 }
                 case STOCK -> signature.add(facts.carried(item));
+                case EXPEDITION -> { signature.add(facts.carried(item)); signature.add(facts.mineOpened()); }
                 case SKILL, DRAGON -> { }
             }
             return signature;
@@ -103,6 +106,7 @@ public final class CompanionMilestones {
                 case MATERIALS -> output == effective(tier, fallback).material;
                 case FOOD -> READY_FOOD.contains(output);
                 case STOCK -> output == item;
+                case EXPEDITION -> READY_FOOD.contains(output) && facts.carried(READY_FOOD::contains) < FOOD_MIN;
                 case SKILL, DRAGON -> false;
             };
         }
@@ -122,15 +126,25 @@ public final class CompanionMilestones {
                     yield carried != null ? List.of(equip(carried)) : List.of(obtain(wanted, 1), equip(wanted));
                 }
                 case MATERIALS -> List.of(obtain(tier.material, need(facts, fallback, all)));
-                case FOOD -> {
-                    int missing = count - facts.carried(READY_FOOD::contains), raw = facts.carried(RAW_MEAT::contains);
-                    Step cook = new Step("smelt_items", CompanionGame.ANY_MEAT, CompanionWork.ALL_CARRIED, "auto");
-                    yield raw >= missing ? List.of(cook)
-                            : List.of(new Step("hunt_animals", "food", Math.min(CompanionWork.MAX_GAME, missing - raw), "auto"), cook);
+                case FOOD -> foodSteps(facts, count);
+                case EXPEDITION -> {
+                    List<Step> steps = new ArrayList<>();
+                    if (facts.carried(Items.TORCH) < TORCHES_MIN) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
+                    if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
+                    if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
+                    steps.add(new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto"));
+                    yield steps;
                 }
                 case STOCK -> supported ? List.of(obtain(item, count)) : List.of();
                 case SKILL, DRAGON -> List.of();
             };
+        }
+
+        private static List<Step> foodSteps(CompanionFacts facts, int target) {
+            int missing = target - facts.carried(READY_FOOD::contains), raw = facts.carried(RAW_MEAT::contains);
+            Step cook = new Step("smelt_items", CompanionGame.ANY_MEAT, CompanionWork.ALL_CARRIED, "auto");
+            return raw >= missing ? List.of(cook)
+                    : List.of(new Step("hunt_animals", "food", Math.min(CompanionWork.MAX_GAME, missing - raw), "auto"), cook);
         }
 
         /** Material for the pieces of this tier that are neither met nor carried: a carried helmet only needs putting on. */
@@ -158,6 +172,11 @@ public final class CompanionMilestones {
 
     static Milestone stock(Item item, int count, String label, boolean supported) {
         return new Milestone("stock:" + BuiltInRegistries.ITEM.getKey(item).getPath(), Kind.STOCK, null, null, item, count, label, supported);
+    }
+
+    /** The mine: done when the bag holds {@code count} diamonds; each step of it is bounded, the goal repeats the step. */
+    static Milestone expedition(int count) {
+        return new Milestone("expedition:diamond", Kind.EXPEDITION, null, null, Items.DIAMOND, count, "добыть алмазы: " + count, true);
     }
 
     static Milestone skill(String name, String label) {

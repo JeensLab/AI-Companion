@@ -349,6 +349,7 @@ public final class CompanionEvents {
             case "mine_ore" -> companion.startWork("mine_ore", item, count);
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
             case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
+            case "dig_for_diamonds" -> companion.startWork(action, "", count);
             case "verify_item" -> companion.carriedCheck(item, count);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.
             case "autonomy" -> companion.autonomy().setEnabled("on".equals(item));
