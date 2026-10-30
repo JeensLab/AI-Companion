@@ -212,7 +212,7 @@ public final class CompanionDiamondGoalFlowTests {
 
     /** South of the start, off the way north where the stairs go: three trunks, a stone outcrop with coal on its north face and iron on its west face. */
     private static void resources(GameTestHelper h) {
-        for (int[] trunk : new int[][]{{14, 30}, {16, 34}, {12, 26}}) for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
+        for (int[] trunk : new int[][]{{18, 30}, {20, 34}, {16, 26}}) for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
         for (int x = 30; x <= 35; x++) for (int z = 28; z <= 31; z++) for (int y = GROUND + 1; y <= GROUND + 4; y++) {
             boolean coal = z == 28 && x <= 33 && y <= GROUND + 3, iron = x == 30 && z >= 29 && z <= 30 && y <= GROUND + 2;
             h.setBlock(new BlockPos(x, y, z), coal ? Blocks.COAL_ORE : iron ? Blocks.IRON_ORE : Blocks.STONE);
