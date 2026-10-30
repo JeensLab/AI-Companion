@@ -22,7 +22,8 @@ final class CompanionExpedition {
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
-    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, CLIMB_TICKS = 20 * 120, UNDERGROUND_DEPTH = 2;
+    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, CLIMB_TICKS = 20 * 120;
+    static final int UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 2.5;
 
     private final CompanionWork w;

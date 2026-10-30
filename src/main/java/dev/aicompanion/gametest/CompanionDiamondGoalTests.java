@@ -205,6 +205,9 @@ public final class CompanionDiamondGoalTests {
         c.setItem(2, ItemStack.EMPTY);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
         h.assertTrue(swordStep(c) == null, "A diamond sword in hand: " + swordStep(c));
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
+        h.assertTrue(swordStep(c) == null, "Down in his mine he left the mine step for a sword: " + swordStep(c));
         h.succeed();
     }
 

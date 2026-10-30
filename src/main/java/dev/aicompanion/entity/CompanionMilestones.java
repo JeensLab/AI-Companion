@@ -133,7 +133,7 @@ public final class CompanionMilestones {
                     List<Step> steps = new ArrayList<>();
                     if (facts.carried(Items.TORCH) < TORCHES_MIN) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
                     if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
-                    if (facts.carried(MINE_SWORDS::contains) == 0)
+                    if (!facts.belowMine() && facts.carried(MINE_SWORDS::contains) == 0)
                         steps.add(obtain(facts.carried(Items.IRON_INGOT) >= IRON_SWORD_INGOTS ? Items.IRON_SWORD : Items.STONE_SWORD, 1));
                     if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
                     steps.add(new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto"));
