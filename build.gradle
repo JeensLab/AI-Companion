@@ -88,6 +88,14 @@ neoForge {
             systemProperty 'aicompanion.agendaRestartStage', providers.gradleProperty('agendaRestartStage').orElse('disabled').get()
         }
 
+        // Separate, disposable dedicated world used only by the diamond-mine process-restart probe.
+        mineRestartServer {
+            server()
+            gameDirectory = project.file(providers.gradleProperty('mineRestartDirectory').orElse('run/mine-restart'))
+            programArgument '--nogui'
+            systemProperty 'aicompanion.mineRestartStage', providers.gradleProperty('mineRestartStage').orElse('disabled').get()
+        }
+
         // Separate, disposable dedicated world used only by the furnace-batch process-restart probe.
         furnaceRestartServer {
             server()
