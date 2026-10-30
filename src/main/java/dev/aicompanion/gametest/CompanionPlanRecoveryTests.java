@@ -419,7 +419,7 @@ public final class CompanionPlanRecoveryTests {
             plan.add(new PlannedAction("obtain_item", 0, 2, parts.get(i)));
             report.append("\n").append(CompanionDialogue.PARTIAL_PREFIX).append("«").append(CompanionDialogue.itemName(parts.get(i))).append("»: ")
                     .append("Добыл 0 из ").append(ore[i]).append(" блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет. ")
-                    .append("К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.").append(bag);
+                    .append("К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка, лавы и открытой воды рядом.").append(bag);
         }
         report.append("\nНадел: Железный шлем.\nОтдал тебе 1 «Железный шлем».");
         String said = CompanionDialogue.summarize(plan, report.toString());
@@ -435,7 +435,7 @@ public final class CompanionPlanRecoveryTests {
     @GameTest(template = "empty")
     public static void theLavaReasonsOfOreAreSaidAsLavaInPlansAndFailureMessages(GameTestHelper h) {
         String noPlug = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
-                + " У 3 блока рядом лава, заткнуть нечем — нужен булыжник или земля. К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.";
+                + " У 3 блока рядом лава, заткнуть нечем — нужен булыжник или земля. К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка, лавы и открытой воды рядом.";
         String overLava = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
                 + " 2 блока руды над лавой — не трогал, добыча сгорит.";
         String fall = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
@@ -483,12 +483,12 @@ public final class CompanionPlanRecoveryTests {
     }
 
     /**
-     * Review 3: the engine puts «К N не нашёл безопасного хода … без гравия, песка и лавы рядом» beside any other reason, and its «лавы» is no lava
+     * Review 3: the engine puts «К N не нашёл безопасного хода … без гравия, песка, лавы и открытой воды рядом» beside any other reason, and its «лавы» is no lava
      * reason: the spring stays a spring in every way it is said (kind, explain, a single order, a part of a plan). Lava's own phrases still win.
      */
     @GameTest(template = "empty")
     public static void aSpringNextToTheNoSafeWaySentenceIsStillASpring(GameTestHelper h) {
-        String route = " К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и лавы рядом.";
+        String route = " К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка, лавы и открытой воды рядом.";
         String flooded = "Добыл 1 из 3 блоков «железная руда»: в сумке прибавилось 1 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
                 + " У 1 блок рядом родник, заткнуть нечем — нужен булыжник или земля." + route + " В сумке: 5 Песок.";
         String none = flooded.replace("Добыл 1 из 3", "Добыл 0 из 3").replace("прибавилось 1", "прибавилось 0");

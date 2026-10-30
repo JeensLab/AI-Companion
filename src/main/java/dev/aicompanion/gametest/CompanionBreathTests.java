@@ -62,7 +62,7 @@ public final class CompanionBreathTests {
      * The search for a route cannot start from under the tunnel's ceiling, so it is the trip to the air that gets him out: then
      * he breathes, and the order, only paused, is finished without a point of drowning damage.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    @GameTest(template = "large_search", timeoutTicks = 1500)
     public static void heSurfacesForAirInTheMiddleOfWorkAndFinishesIt(GameTestHelper h) {
         tunnel(h, 55);
         CompanionEntity c = oleg(h, 14, 2);
@@ -80,7 +80,7 @@ public final class CompanionBreathTests {
     }
 
     /** No work at all, standing in the flooded tunnel with a ceiling over him: he does not stand there and drown. */
-    @GameTest(template = "tall_tree", timeoutTicks = 800)
+    @GameTest(template = "large_search", timeoutTicks = 800)
     public static void idleUnderWaterHeSwimsToAirAndBreathes(GameTestHelper h) {
         tunnel(h, 55);
         CompanionEntity c = oleg(h, 14, 60);
@@ -95,7 +95,7 @@ public final class CompanionBreathTests {
     }
 
     /** «Стоп» on the way to the air stops the work, not his breath: he still swims to the air and does not drown. */
-    @GameTest(template = "tall_tree", timeoutTicks = 800)
+    @GameTest(template = "large_search", timeoutTicks = 800)
     public static void stopOnTheWayToAirStopsTheWorkNotTheBreath(GameTestHelper h) {
         tunnel(h, 55);
         CompanionEntity c = oleg(h, 14, 60);
@@ -118,7 +118,7 @@ public final class CompanionBreathTests {
      * Sealed in a flooded box, the air a stone block away behind a wall: no way to it. The work stops and tells why, he does not
      * stand still but swims for the air he can see (to the wall).
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    @GameTest(template = "large_search", timeoutTicks = 400)
     public static void withNoWayToAirTheWorkStopsAndTellsWhy(GameTestHelper h) {
         // Stone all round, so that the nearest air he can see is the chamber behind the wall, not the open air outside the arena.
         box(h, 0, 1, 3, 30, 13, 29, Blocks.STONE);
@@ -143,7 +143,7 @@ public final class CompanionBreathTests {
      * Iron beyond a flooded passage (chamber A, sixteen blocks of water two high under a ceiling, chamber B with the ore); his air
      * drops to 110 when he first goes under. Past the breath trip the order goes on and ends: the ore is mined, or refused with a reason (not a standing «ищу»).
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    @GameTest(template = "large_search", timeoutTicks = 2400)
     public static void oreBeyondAFloodedPassageEndsInTheOreOrAReason(GameTestHelper h) {
         box(h, 0, 0, 14, 40, 0, 18, Blocks.BEDROCK);
         box(h, 0, 1, 14, 40, 7, 18, Blocks.STONE);

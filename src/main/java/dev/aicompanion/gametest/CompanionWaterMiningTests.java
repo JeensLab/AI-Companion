@@ -75,8 +75,8 @@ public final class CompanionWaterMiningTests {
 
     /**
      * Iron buried in the ground, a player's stairs down to it; the last cell of the stairs, beside the ore, is a pocket of water
-     * (his tunnel goes through it, a cell flooded at the floor is open) and more water lies along it (springs in the wall: he has
-     * plugs for them). He digs the stairs, stands in the water to the knee, mines the ore, and climbs back up the stairs he made.
+     * (his tunnel goes through it, a cell flooded at the floor is open) and more water lies along it (springs in the wall: the cobblestone of the
+     * stairs he digs plugs them). He digs the stairs, stands in the water to the knee, mines the ore, and climbs back up the stairs he made.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void tunnelThroughAndAlongWaterReachesTheOreAndBack(GameTestHelper h) {
@@ -90,7 +90,6 @@ public final class CompanionWaterMiningTests {
         h.setBlock(new BlockPos(17, 3, 21), Blocks.WATER);
         h.setBlock(new BlockPos(15, 3, 21), Blocks.WATER);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
-        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
         h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
         h.succeedWhen(() -> {
             idle(h, c);
@@ -141,7 +140,7 @@ public final class CompanionWaterMiningTests {
      * Fourteen blocks of a flooded tunnel with a ceiling between him and the player, his lungs full: the search for the way
      * cannot start from a cell with no room for the head, so the way to the player is the swim, not a refusal.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    @GameTest(template = "large_search", timeoutTicks = 1500)
     public static void aRouteStartsInsideAFloodedTunnelUnderACeiling(GameTestHelper h) {
         box(h, 0, 0, 14, 63, 0, 18, Blocks.BEDROCK);
         box(h, 0, 1, 14, 63, 7, 18, Blocks.STONE);
@@ -184,7 +183,7 @@ public final class CompanionWaterMiningTests {
      * The branch's own aRouteStartsInsideAFloodedTunnelUnderACeiling with his air kept full, so that no trip for a breath carries him:
      * the float of the water must not take the jump from the work goal, or the order stands and nothing ticks.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    @GameTest(template = "large_search", timeoutTicks = 1500)
     public static void aRouteThroughAFloodedTunnelIsWalkedWithAFullBreathToo(GameTestHelper h) {
         box(h, 0, 0, 14, 63, 0, 18, Blocks.BEDROCK);
         box(h, 0, 1, 14, 63, 7, 18, Blocks.STONE);
@@ -504,6 +503,120 @@ public final class CompanionWaterMiningTests {
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
             h.assertTrue(c.didLastTaskSucceed() && count(c, Items.GOLD_NUGGET) > 0 && !c.getLastTaskResult().contains("Выпавшее не достал"), report(c) + " " + c.getLastTaskResult());
+        });
+    }
+
+    /**
+     * Game 30.10: iron in the stone at the edge of an underground lake (the lake is shut in, no way into it on foot). The one way to it
+     * (the cell beside it on the dry side is bedrock) runs along the water: a cell dug there would let the lake in. The way is not dug,
+     * the lake stays, the iron stands, the dry iron far from the lake is taken and the reason is «не нашёл безопасного хода».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void anOreAtALakeWithTheWayAlongTheWaterIsLeftAndTheDryOreIsTaken(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y < SURFACE; y++)
+            h.setBlock(new BlockPos(x, y, z), y == 0 || x == 0 || x == 31 || z == 0 || z == 31 ? Blocks.BEDROCK
+                    : y <= 3 ? Blocks.STONE : y == SURFACE - 1 ? Blocks.GRASS_BLOCK : Blocks.DIRT);
+        box(h, 20, 2, 10, 27, 3, 22, Blocks.WATER);
+        BlockPos wet = new BlockPos(19, 2, 16), dry = new BlockPos(6, 3, 16);
+        h.setBlock(wet, Blocks.IRON_ORE); h.setBlock(dry, Blocks.IRON_ORE); h.setBlock(new BlockPos(18, 2, 16), Blocks.BEDROCK);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 12, SURFACE, 16);
+        bind(h, c, 12, SURFACE, 12);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        boolean[] wetWay = {false};
+        h.onEachTick(() -> {
+            for (int x = 17; x <= 19; x++) for (int y = 2; y <= 5; y++) for (int z = 10; z <= 22; z++) wetWay[0] |= !h.getLevel().getFluidState(h.absolutePos(new BlockPos(x, y, z))).isEmpty();
+        });
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 2).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(!wetWay[0], "Water ran into his way: " + report(c));
+            h.assertTrue(h.getBlockState(wet).is(Blocks.IRON_ORE) && !h.getBlockState(dry).is(Blocks.IRON_ORE) && count(c, Items.RAW_IRON) == 1, "Not the dry ore alone: " + report(c));
+            h.assertTrue(!c.didLastTaskSucceed() && c.getLastTaskResult().contains("не нашёл безопасного хода"), "Not the no-safe-way reason: " + report(c));
+            h.assertTrue(c.getHealth() >= c.getMaxHealth(), "Hurt: " + c.getHealth());
+        });
+    }
+
+    /** Iron in a wall on dry land with a lake of several cells behind it (no single spring): left alone as on main, the lake is not let out. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void anOreInAWallWithALakeBehindItIsLeftAndTheLakeStays(GameTestHelper h) {
+        CompanionEntity c = flat(h);
+        wall(h);
+        BlockPos ore = new BlockPos(20, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        box(h, 21, 1, 15, 22, 2, 17, Blocks.WATER);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 16));
+        h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            idle(h, c);
+            h.assertTrue(!c.didLastTaskSucceed() && c.getLastTaskResult().contains("не нашёл безопасного хода") && !c.getLastTaskResult().contains("родник"), report(c));
+            h.assertTrue(h.getBlockState(ore).is(Blocks.IRON_ORE) && h.getBlockState(ore.above()).is(Blocks.STONE), "The wall was opened: " + report(c));
+            h.assertTrue(h.getBlockState(new BlockPos(21, 1, 16)).is(Blocks.WATER) && count(c, Items.COBBLESTONE) == 16, "The lake was touched: " + report(c));
+        });
+    }
+
+    /**
+     * Review 5, finding 1b: nothing to plug with, one iron behind eight cells of stone (the digging gives cobblestone), the other at a
+     * closed spring. The spring is judged when its ore is opened, not when the ore is picked: the cobblestone of the way plugs it, both are taken.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aSpringAtOneOreIsPluggedWithTheCobblestoneOfTheWayToTheOther(GameTestHelper h) {
+        clear(h);
+        box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
+        box(h, 20, 1, 8, 27, 4, 24, Blocks.STONE);
+        BlockPos buried = new BlockPos(24, 1, 12), byWater = new BlockPos(20, 1, 20), spring = new BlockPos(21, 1, 20);
+        h.setBlock(buried, Blocks.IRON_ORE); h.setBlock(byWater, Blocks.IRON_ORE); h.setBlock(spring, Blocks.WATER);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 14, 1, 16);
+        bind(h, c, 10, 1, 16);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 2).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 2, report(c));
+            h.assertTrue(h.getBlockState(spring).is(Blocks.COBBLESTONE), "The spring was not plugged: " + report(c));
+        });
+    }
+
+    /**
+     * Review 5, finding 3: iron at his feet in a wall, two sources in a row behind the block over it (open water: no plug holds it) and
+     * sixteen cobblestones in the bag. The block over the ore is only the player's 1x2: it is not opened, the ore goes from the pocket.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void openWaterBehindTheBlockOverAnOreAtTheFeetIsNotLetIn(GameTestHelper h) {
+        CompanionEntity c = flat(h);
+        wall(h);
+        BlockPos ore = new BlockPos(20, 1, 16), near = new BlockPos(21, 2, 16), far = new BlockPos(22, 2, 16);
+        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(near, Blocks.WATER); h.setBlock(far, Blocks.WATER);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 16));
+        h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            idle(h, c);
+            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c));
+            h.assertTrue(h.getBlockState(near).is(Blocks.WATER) && h.getBlockState(far).is(Blocks.WATER) && h.getBlockState(ore.above()).is(Blocks.STONE), "The water was let in: " + report(c));
+            h.assertTrue(h.getLevel().getFluidState(h.absolutePos(ore)).isEmpty() && count(c, Items.COBBLESTONE) >= 16, "The pocket is wet or plugs went: " + report(c));
+        });
+    }
+
+    /**
+     * Review 5, finding 2: a Silk Touch pickaxe in the iron preparation brings iron ore blocks, no raw iron. That is no iron for the
+     * pickaxe the diamonds need: an honest refusal, not «Готово» with no diamond.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void silkTouchIronOreBlocksAreNoIronForThePickaxeOfTheDiamonds(GameTestHelper h) {
+        CompanionEntity c = flat(h);
+        box(h, 20, 1, 10, 23, 3, 22, Blocks.STONE);
+        for (int z : new int[]{11, 13, 19, 21}) h.setBlock(new BlockPos(20, 1, z), Blocks.IRON_ORE);
+        BlockPos diamond = new BlockPos(20, 1, 16); h.setBlock(diamond, Blocks.DIAMOND_ORE);
+        c.setFollowing(false);
+        ItemStack pick = new ItemStack(Items.STONE_PICKAXE);
+        pick.enchant(h.getLevel().registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolderOrThrow(Enchantments.SILK_TOUCH), 1);
+        c.setItemSlot(EquipmentSlot.MAINHAND, pick);
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:diamond_ore", 1).success(), "Ore order not accepted"));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(!c.didLastTaskSucceed() && c.getLastTaskResult().contains("железа я не набрал") && count(c, Items.DIAMOND) == 0, "False success: " + report(c) + " " + c.getLastTaskResult());
         });
     }
 

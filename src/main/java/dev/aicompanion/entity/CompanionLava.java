@@ -40,9 +40,10 @@ final class CompanionLava {
 
     /**
      * Why an ore may not be opened now: its drop would fall into lava, lava would run in and there is nothing to plug it with, a lava fall
-     * stands beside it, or (the plugs go to lava first) a spring would run in and nothing is left to plug it with.
+     * stands beside it, a spring would run in and nothing is left to plug it with (the plugs go to lava first), or open water (a pond,
+     * a lake, an aquifer) would run in, which no plug holds back.
      */
-    enum Opening { SAFE, OVER_LAVA, NO_PLUG, NO_SPRING, FALL }
+    enum Opening { SAFE, OVER_LAVA, NO_PLUG, NO_SPRING, FALL, FLOOD }
 
     private CompanionLava() {}
 
@@ -75,6 +76,15 @@ final class CompanionLava {
         List<BlockPos> springs = new ArrayList<>(2);
         for (BlockPos cell : inflow(level, opened, FluidTags.WATER)) if (!own.contains(cell) && closedSpring(level, cell, opened)) springs.add(cell);
         return springs;
+    }
+
+    /**
+     * Water runs into this cell when it is opened and it is no spring and no water of his own way ({@code own}): a pond, a lake, an
+     * aquifer, a flooded cave (water itself: a waterlogged block holds its water). It runs in again whatever is put into it, so the cell is not opened.
+     */
+    static boolean floods(Level level, BlockPos opened, Collection<BlockPos> own) {
+        for (BlockPos cell : inflow(level, opened, FluidTags.WATER)) if (level.getBlockState(cell).is(Blocks.WATER) && !own.contains(cell) && !closedSpring(level, cell, opened)) return true;
+        return false;
     }
 
     /** The springs that run in when all these cells are opened (a spring beside two of them is counted once). */
@@ -146,13 +156,17 @@ final class CompanionLava {
     }
 
     /**
-     * Whether he may break this ore: not on lava, and with enough plugs for the lava that runs in once it is gone, then for the springs
-     * (none of the water is his own way yet: stricter is no harm).
+     * Whether he may break this ore: not on lava, and with enough plugs for the lava that runs in once it is gone. When it is picked
+     * ({@code own} null) that is all: his bag is not full yet (the way to the ore gives cobblestone) and his way is not dug. When it is
+     * about to break, open water that would run in is a refusal (unless he stands in water himself: nothing left to flood), and the
+     * plugs must cover the springs too ({@code own}: his tunnel, his feet and head, are no springs).
      */
-    static Opening opening(CompanionEntity owner, Level level, BlockPos ore) {
+    static Opening opening(CompanionEntity owner, Level level, BlockPos ore, Collection<BlockPos> own) {
         if (at(level, ore.below())) return Opening.OVER_LAVA;
         if (besideFall(level, List.of(ore))) return Opening.FALL;
-        return plugsFor(owner, inflow(level, ore).size(), springs(level, List.of(ore), Set.of()).size());
+        if (own == null) return plugsFor(owner, inflow(level, ore).size(), 0);
+        if (!owner.isInWater() && floods(level, ore, own)) return Opening.FLOOD;
+        return plugsFor(owner, inflow(level, ore).size(), springs(level, List.of(ore), own).size());
     }
 
     /** SAFE if the plugs in his bag cover the lava and the springs that run in, else the first thing they fall short of: lava goes first. */
