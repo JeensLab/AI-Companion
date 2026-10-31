@@ -4,7 +4,11 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionMineSite;
+import dev.aicompanion.entity.CompanionShaftPlan;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
@@ -17,6 +21,9 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
+import java.util.Set;
 
 /**
  * Where the staircase meets a hollow, a liquid pocket or gravel, it goes on instead of refusing: the floor is laid under the next
@@ -120,6 +127,80 @@ public final class CompanionShaftDetourTests {
             CompanionActionResult result = ended(h, c, second[0]);
             h.assertTrue(count(c, Items.DIAMOND) >= 1 && result.success(), "The relaunch repeated the move that failed: " + report(c));
         });
+    }
+
+    /** The refused moves and forbidden cells survive a save, an old save without them loads as before, the oldest are dropped past the cap, and clear forgets them. */
+    @GameTest(template = "marathon_cave")
+    public static void mineSiteKeepsRefusedMovesAndForbiddenCellsOverASave(GameTestHelper h) {
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), stand = entrance.below(3), cell = entrance.offset(3, -5, 2);
+        CompanionMineSite site = new CompanionMineSite();
+        site.start(entrance, Direction.NORTH);
+        site.refuse(stand, Direction.NORTH);
+        site.forbid(cell);
+        CompoundTag tag = new CompoundTag();
+        site.save(tag);
+        CompanionMineSite loaded = loadedFrom(tag);
+        h.assertTrue(loaded.refused(stand, Direction.NORTH) && loaded.forbidden(cell), "A refusal or a forbidden cell was lost over the save");
+        h.assertTrue(!loaded.refused(stand, Direction.EAST) && !loaded.refused(stand.below(), Direction.NORTH) && !loaded.forbidden(cell.above()), "Another move counts as refused");
+        h.assertTrue(loaded.avoid().forbidden().contains(cell) && loaded.avoid().refused().test(stand, Direction.NORTH), "avoid() does not show the memory");
+        for (int i = 0; i < 200; i++) loaded.refuse(entrance.offset(i, 0, 0), Direction.WEST);
+        h.assertTrue(!loaded.refused(stand, Direction.NORTH) && loaded.refused(entrance.offset(199, 0, 0), Direction.WEST), "The oldest refusal is not the one dropped past the cap");
+        CompanionMineSite plain = new CompanionMineSite();
+        plain.start(entrance, Direction.NORTH);
+        CompoundTag old = new CompoundTag();
+        plain.save(old);
+        h.assertTrue(!old.getCompound(CompanionMineSite.KEY).contains("Refused") && !old.getCompound(CompanionMineSite.KEY).contains("Forbidden"), "An empty memory is saved");
+        CompanionMineSite fromOld = loadedFrom(old);
+        h.assertTrue(fromOld.exists() && !fromOld.refused(stand, Direction.NORTH) && !fromOld.forbidden(cell), "A save without the keys loads wrong");
+        site.clear();
+        h.assertTrue(!site.refused(stand, Direction.NORTH) && !site.forbidden(cell), "clear() keeps the memory");
+        h.succeed();
+    }
+
+    /** A stand whose floor is gone is where the recorded staircase ends, as one whose column is closed. */
+    @GameTest(template = "marathon_cave")
+    public static void mineSiteIsCutBackAtAStandWithoutAFloor(GameTestHelper h) {
+        mountain(h);
+        var level = h.getLevel();
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        List<BlockPos> stands = CompanionShaftPlan.stands(entrance, Direction.NORTH, 10);
+        for (BlockPos stand : stands) for (BlockPos cell : CompanionShaftPlan.column(stand)) level.setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionMineSite site = new CompanionMineSite();
+        site.start(entrance, Direction.NORTH);
+        for (BlockPos stand : stands.subList(1, stands.size())) site.reached(stand);
+        h.assertTrue(site.verify(level) == 10, "A staircase with floors was cut to " + site.stands().size());
+        level.setBlock(stands.get(6).below(), Blocks.AIR.defaultBlockState(), 2 | 16);
+        int kept = site.verify(level);
+        h.assertTrue(kept == 5 && site.foot().equals(stands.get(5)), "Cut at the missing floor of stand 6 left " + kept);
+        h.succeed();
+    }
+
+    /** A turn that needs nothing placed beats one that needs a floor, which beats one whose next step is blocked; a refused or forbidden side is out. */
+    @GameTest(template = "marathon_cave")
+    public static void turnsAreWeighedByWhatTheyNeedPlaced(GameTestHelper h) {
+        mountain(h);
+        var level = h.getLevel();
+        BlockPos stand = h.absolutePos(new BlockPos(CENTER, 12, CENTER)), westLanding = stand.west(), eastLanding = stand.east();
+        Set<BlockPos> own = Set.of();
+        CompanionShaftPlan.Avoid none = CompanionShaftPlan.Avoid.NONE;
+        h.assertTrue(CompanionShaftPlan.chooseTurn(level, stand, Direction.NORTH, own, none) == Direction.WEST, "Two free sides: the left on a tie");
+        level.setBlock(westLanding.below(), Blocks.AIR.defaultBlockState(), 2 | 16);
+        h.assertTrue(CompanionShaftPlan.turnCost(level, stand, Direction.WEST, own, none) == 1 && CompanionShaftPlan.turnCost(level, stand, Direction.EAST, own, none) == 0, "Costs of a floor to lay and a free side");
+        h.assertTrue(CompanionShaftPlan.chooseTurn(level, stand, Direction.NORTH, own, none) == Direction.EAST, "A free side did not beat a side that needs a floor");
+        level.setBlock(eastLanding.east().above(2), Blocks.GRAVEL.defaultBlockState(), 2 | 16);
+        h.assertTrue(CompanionShaftPlan.turnCost(level, stand, Direction.EAST, own, none) >= 100, "A side with a blocked next step is not a last resort");
+        h.assertTrue(CompanionShaftPlan.chooseTurn(level, stand, Direction.NORTH, own, none) == Direction.WEST, "A side that needs a floor did not beat a blocked next step");
+        var refusesWest = new CompanionShaftPlan.Avoid(Set.of(), (at, d) -> d == Direction.WEST);
+        h.assertTrue(CompanionShaftPlan.chooseTurn(level, stand, Direction.NORTH, own, refusesWest) == Direction.EAST, "The last resort was not taken when the other side is refused");
+        var noWay = new CompanionShaftPlan.Avoid(Set.of(eastLanding), (at, d) -> d == Direction.WEST);
+        h.assertTrue(CompanionShaftPlan.chooseTurn(level, stand, Direction.NORTH, own, noWay) == null, "A refused side and a forbidden landing still gave a turn");
+        h.succeed();
+    }
+
+    private static CompanionMineSite loadedFrom(CompoundTag tag) {
+        CompanionMineSite site = new CompanionMineSite();
+        site.load(tag);
+        return site;
     }
 
     private static BlockPos under(int step) { return new BlockPos(CENTER, GROUND - step, CENTER - step); }

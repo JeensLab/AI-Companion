@@ -5,6 +5,7 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.*;
 import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.PacketFlow;
@@ -46,6 +47,7 @@ public final class CompanionMineRestartProbe {
     // The arena of CompanionDiamondGoalTests moved into the flat world and stretched north, so the pocket lies several advances past the stair foot.
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
     private static final int NORTH_EXTRA = 24, ORIGIN_X = 0, ORIGIN_Y = -60, ORIGIN_Z = NORTH_EXTRA, POCKET_Z = -12, POCKET_X0 = 22, POCKET_X1 = 25;
+    private static final Direction REFUSED_DIRECTION = Direction.EAST;
     private static final int FAR_PLAYER_X = 400, PREPARE_ADVANCES = 2, UNDERGROUND_DEPTH = 3;
     private static final int PREPARE_TIMEOUT = 30000, RESUME_TIMEOUT = 30000, VERIFY_TICKS = 160, FROZEN_TICKS = 1200, NO_TICKET_TICKS = 200;
     private static ServerPlayer player;
@@ -122,6 +124,8 @@ public final class CompanionMineRestartProbe {
         boolean underground = companion.blockPosition().getY() <= ORIGIN_Y + GROUND - UNDERGROUND_DEPTH;
         if (!site.exists() || advanced() < PREPARE_ADVANCES || !underground || companion.activeWorkId() == 0 || count(Items.DIAMOND) > 0) return;
         check(pocketLeft(server) == pocketSize(), "The pocket was touched before the stop");
+        site.refuse(refusedStand(site), REFUSED_DIRECTION);
+        site.forbid(forbiddenCell(site));
         record(goal);
         manifest.setProperty("opened", Integer.toString(site.opened()));
         manifest.setProperty("pocket", Integer.toString(pocketLeft(server)));
@@ -135,6 +139,7 @@ public final class CompanionMineRestartProbe {
         check(goal != null && goal.id().toString().equals(manifest.getProperty("goal")), "Goal did not survive the restart");
         check(site.exists() && Long.toString(site.entrance().asLong()).equals(manifest.getProperty("entrance")), "The mine entrance changed or was lost: " + site.entrance());
         check(manifest.getProperty("stage").equals(STAGE.equals("resume") ? "prepare" : "resume"), "Manifest is from stage " + manifest.getProperty("stage"));
+        check(site.refused(refusedStand(site), REFUSED_DIRECTION) && site.forbidden(forbiddenCell(site)), "A refused move or a forbidden cell was lost over the restart");
         check(standsText().equals(manifest.getProperty("stands")) && tunnelsText().equals(manifest.getProperty("tunnels")),
                 "The mine record changed over the restart: stands " + site.stands().size() + "/" + manifest.getProperty("standCount") + ", tunnels " + tunnelsText() + "/" + manifest.getProperty("tunnels"));
         if (STAGE.equals("resume")) {
@@ -241,6 +246,11 @@ public final class CompanionMineRestartProbe {
         for (Item item : new Item[]{Items.DIAMOND, Items.TORCH, Items.STONE_PICKAXE, Items.COBBLESTONE, Items.DEEPSLATE})
             manifest.setProperty(BuiltInRegistries.ITEM.getKey(item).getPath(), Integer.toString(count(item)));
     }
+
+    /** Far from the mine, so the recorded refusal changes no move of the run itself. */
+    private static BlockPos refusedStand(CompanionMineSite site) { return site.entrance().offset(100, 0, 100); }
+
+    private static BlockPos forbiddenCell(CompanionMineSite site) { return site.entrance().offset(101, 0, 100); }
 
     private static String standsText() {
         StringBuilder text = new StringBuilder();
