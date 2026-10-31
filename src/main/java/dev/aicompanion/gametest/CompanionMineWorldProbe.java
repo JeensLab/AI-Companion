@@ -308,8 +308,6 @@ public final class CompanionMineWorldProbe {
         String unexercised = SCENARIO.equals("retreat") && !retreatTriggered ? "never went deep enough to retreat"
                 : SCENARIO.equals("come") && !resumedAfterCome ? "never came up on the order"
                 : SCENARIO.equals("mobs") && !mobsSpawned ? "the cave was never reached, no mobs were placed" : "";
-        journal.facts.put("retreatTriggered", retreatTriggered); journal.facts.put("retreatRose", retreatRose);
-        journal.facts.put("comeIssued", comeIssued); journal.facts.put("comeArrived", comeArrived); journal.facts.put("mobsSpawned", mobsSpawned);
         finish(server, unexercised.isEmpty() ? "PASS" : "SETUP_FAILED", unexercised.isEmpty() ? "diamonds " + diamonds + " | " + report(goal) : unexercised);
     }
 
@@ -324,6 +322,8 @@ public final class CompanionMineWorldProbe {
             if (companion != null) {
                 journal.facts.putIfAbsent("diamonds", count(Items.DIAMOND));
                 journal.facts.putIfAbsent("gameTicks", ticks - runStart);
+                journal.facts.put("retreatTriggered", retreatTriggered); journal.facts.put("retreatRose", retreatRose);
+                journal.facts.put("comeIssued", comeIssued); journal.facts.put("comeArrived", comeArrived); journal.facts.put("mobsSpawned", mobsSpawned);
                 journal.facts.put("finalState", lastState == null ? "" : lastState.name());
                 journal.facts.put("opened", companion.mineSite().opened());
                 journal.facts.put("lastTask", String.valueOf(companion.getLastTaskResult()));
