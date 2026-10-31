@@ -31,11 +31,8 @@ final class CompanionExpeditionDig {
     private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40;
     private static final double CENTRED = .35, RESTING = .1;
 
-    private record Held(BlockPos pos, List<ItemStack> drops) { }
-
     private final CompanionWork w;
     private final CompanionEntity owner;
-    private final List<Held> held = new ArrayList<>();
     private BlockPos cell, walking;
     private int cellTicks, unseen, walkTicks;
     /** Blocks broken so far: a counter the stall watchdog sees move. */
@@ -99,25 +96,18 @@ final class CompanionExpeditionDig {
             return done();
         }
         List<ItemStack> kept = new ArrayList<>(), spare = new ArrayList<>();
-        int room = SEAL_RESERVE - CompanionSeal.available(owner) - heldCount();
+        int room = SEAL_RESERVE - CompanionSeal.available(owner) - w.mine.heldCount();
         for (ItemStack stack : drops) {
             if (CompanionSeal.seals(stack) && room > 0 && w.items.canStore(List.of(stack))) { kept.add(stack); room -= stack.getCount(); } else spare.add(stack);
         }
-        if (!kept.isEmpty()) held.add(new Held(pos.immutable(), kept));
+        if (!kept.isEmpty()) w.mine.hold(pos, kept);
         toss(level, pos, spare);
         return done();
     }
 
     /** The held drops fall where their blocks stood, to be picked up like any harvest. */
     void flush() {
-        for (Held drop : held) owner.dropHarvest(drop.pos(), drop.drops());
-        held.clear();
-    }
-
-    private int heldCount() {
-        int count = 0;
-        for (Held drop : held) for (ItemStack stack : drop.drops()) count += stack.getCount();
-        return count;
+        for (CompanionMineSite.Held drop : w.mine.takeHeld()) owner.dropHarvest(drop.pos(), drop.drops());
     }
 
     /** Spare rock: a real item in the world, thrown by him, so his pickup does not take it back and nothing waits for it. */

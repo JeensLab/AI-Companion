@@ -5,10 +5,12 @@ import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionChunkTicket;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionMineSite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.Entity;
@@ -243,6 +245,89 @@ public final class CompanionExpeditionTests {
             if (brokenAt[0] < 0 || h.getTick() < brokenAt[0] + AFTER_BREAK) return;
             h.assertTrue(count(c, Items.DIAMOND) + ground(h, Items.DIAMOND) >= 1,
                     "The ore at " + ore.toShortString() + " was broken " + AFTER_BREAK + " ticks ago, but the diamond is neither in the world nor in the bag | " + report(c));
+            h.succeed();
+        });
+    }
+
+    /**
+     * A save in the middle of a column carries the sealing blocks held back for it; the companion loaded from it lets them fall on
+     * its first tick, so the quit loses nothing and a second save of the same state holds nothing twice.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void sealingBlocksHeldMidColumnSurviveASaveAndLoad(GameTestHelper h) {
+        CompanionEntity c = rig(h, NO_RING, standard(16)).c();
+        start(h, c, 1);
+        boolean[] saved = {false};
+        h.onEachTick(() -> {
+            if (saved[0] || c.mineSite().heldCount() == 0) return;
+            saved[0] = true;
+            int held = c.mineSite().heldCount();
+            Item kind = c.mineSite().peekHeld().get(0).drops().get(0).getItem();
+            int before = ground(h, kind) + count(c, kind);
+            CompoundTag tag = new CompoundTag();
+            c.saveWithoutId(tag);
+            h.assertTrue(tag.contains(CompanionMineSite.HELD_KEY), "The save in the middle of the column does not carry the " + held + " held blocks");
+            c.discard();
+            CompanionEntity fresh = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+            fresh.load(tag);
+            h.assertTrue(fresh.mineSite().heldCount() == held, "Loaded " + fresh.mineSite().heldCount() + " held blocks of " + held);
+            h.runAfterDelay(2, () -> {
+                h.assertTrue(fresh.mineSite().loadedHeld() == false && ground(h, kind) + count(fresh, kind) == before + held,
+                        "The held blocks did not fall once on the first tick: ground " + ground(h, kind) + ", held " + held + ", before " + before);
+                h.succeed();
+            });
+        });
+    }
+
+    /** Holding is saved apart from the mine: repeated saves repeat it, a load replaces it, an emptied hold and an old save carry none, and a loaded one falls once. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    public static void heldBlocksAreSavedOnceLoadedOnceAndDroppedOnce(GameTestHelper h) {
+        BlockPos at = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        CompanionMineSite site = new CompanionMineSite();
+        site.hold(at, List.of(new ItemStack(Items.COBBLESTONE, 5)));
+        CompoundTag first = new CompoundTag(), second = new CompoundTag();
+        site.save(first);
+        site.save(second);
+        h.assertTrue(first.contains(CompanionMineSite.HELD_KEY) && first.get(CompanionMineSite.HELD_KEY).equals(second.get(CompanionMineSite.HELD_KEY)), "Two saves of the same hold differ");
+        CompanionMineSite loaded = new CompanionMineSite();
+        loaded.load(first);
+        loaded.load(first);
+        h.assertTrue(loaded.heldCount() == 5 && loaded.loadedHeld(), "Two loads without a tick hold " + loaded.heldCount() + " blocks");
+        loaded.takeHeld();
+        CompoundTag empty = new CompoundTag();
+        loaded.save(empty);
+        h.assertTrue(!empty.contains(CompanionMineSite.HELD_KEY) && !loaded.loadedHeld(), "A dropped hold is still saved");
+        loaded.load(first);
+        loaded.load(empty);
+        h.assertTrue(loaded.heldCount() == 0 && !loaded.loadedHeld(), "A save without a hold loads one");
+        CompanionEntity c = rig(h, NO_RING, standard(16)).c();
+        c.mineSite().hold(at, List.of(new ItemStack(Items.COBBLESTONE, 5)));
+        CompoundTag whole = new CompoundTag();
+        c.saveWithoutId(whole);
+        c.mineSite().takeHeld();
+        c.load(whole);
+        h.assertTrue(c.mineSite().heldCount() == 5, "The companion did not load the hold: " + c.mineSite().heldCount());
+        h.runAfterDelay(2, () -> {
+            h.assertTrue(ground(h, Items.COBBLESTONE) == 5 && c.mineSite().heldCount() == 0, "Dropped " + ground(h, Items.COBBLESTONE) + " of 5, still held " + c.mineSite().heldCount());
+            h.succeed();
+        });
+    }
+
+    /** Told to stop in the middle of a column, he lets the held blocks fall: they are not kept for a mine nobody will dig. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void stoppingMidColumnDropsTheHeldBlocks(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(16));
+        CompanionEntity c = r.c();
+        start(h, c, 1);
+        boolean[] stopped = {false};
+        h.onEachTick(() -> {
+            if (!stopped[0]) {
+                if (c.mineSite().heldCount() == 0) return;
+                stopped[0] = true;
+                CompanionEvents.executeAction(r.owner(), "stop", "", 1);
+                return;
+            }
+            h.assertTrue(c.mineSite().heldCount() == 0 && !c.mineSite().loadedHeld(), "Held blocks outlived the stop: " + c.mineSite().heldCount());
             h.succeed();
         });
     }

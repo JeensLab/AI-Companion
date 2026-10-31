@@ -5,7 +5,10 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -20,8 +23,8 @@ import java.util.Set;
  * still open. Saved under {@link #KEY}; a save without the key has no mine.
  */
 public final class CompanionMineSite {
-    public static final String KEY = "MineSite";
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     private record Move(BlockPos stand, Direction direction) { }
 
@@ -37,6 +40,33 @@ public final class CompanionMineSite {
     private final Set<Move> refused = new LinkedHashSet<>();
     private final Set<BlockPos> forbidden = new LinkedHashSet<>();
     private BlockPos plug;
+    /** Sealing blocks held back mid-column. They are not part of the mine record: they outlive {@link #clear} and are saved apart, so a quit loses none. */
+    private final List<Held> held = new ArrayList<>();
+    private boolean loadedHeld;
+
+    /** Drops of one broken cell, kept until the column is done. */
+    public record Held(BlockPos pos, List<ItemStack> drops) { }
+
+    public void hold(BlockPos pos, List<ItemStack> drops) { held.add(new Held(pos.immutable(), List.copyOf(drops))); }
+
+    public List<Held> peekHeld() { return List.copyOf(held); }
+
+    public int heldCount() {
+        int count = 0;
+        for (Held drop : held) for (ItemStack stack : drop.drops()) count += stack.getCount();
+        return count;
+    }
+
+    /** Hands over everything held and forgets it, so what was dropped is never saved or dropped twice. */
+    public List<Held> takeHeld() {
+        List<Held> taken = List.copyOf(held);
+        held.clear();
+        loadedHeld = false;
+        return taken;
+    }
+
+    /** True once after a load that brought held drops: no column is being dug then, so they fall at once. */
+    public boolean loadedHeld() { return loadedHeld; }
 
     public boolean exists() { return entrance != null; }
 
@@ -172,6 +202,8 @@ public final class CompanionMineSite {
 
     public void save(CompoundTag tag) {
         tag.remove(KEY);
+        tag.remove(HELD_KEY);
+        saveHeld(tag);
         if (entrance == null) return;
         CompoundTag mine = new CompoundTag();
         mine.putLong("Entrance", entrance.asLong());
@@ -201,8 +233,48 @@ public final class CompanionMineSite {
         tag.put(KEY, mine);
     }
 
+    private void saveHeld(CompoundTag tag) {
+        if (held.isEmpty()) return;
+        ListTag list = new ListTag();
+        for (Held drop : held) {
+            CompoundTag entry = new CompoundTag();
+            entry.putLong("Pos", drop.pos().asLong());
+            ListTag stacks = new ListTag();
+            for (ItemStack stack : drop.drops()) {
+                CompoundTag item = new CompoundTag();
+                item.putString("Item", BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+                item.putInt("Count", stack.getCount());
+                stacks.add(item);
+            }
+            entry.put("Drops", stacks);
+            list.add(entry);
+        }
+        tag.put(HELD_KEY, list);
+    }
+
+    private void loadHeld(CompoundTag tag) {
+        held.clear();
+        ListTag list = tag.getList(HELD_KEY, Tag.TAG_COMPOUND);
+        for (int i = 0; i < list.size() && held.size() < MAX_HELD; i++) {
+            CompoundTag entry = list.getCompound(i);
+            if (!entry.contains("Pos", Tag.TAG_LONG)) continue;
+            List<ItemStack> drops = new ArrayList<>();
+            ListTag stacks = entry.getList("Drops", Tag.TAG_COMPOUND);
+            for (int j = 0; j < stacks.size(); j++) {
+                CompoundTag item = stacks.getCompound(j);
+                ResourceLocation id = ResourceLocation.tryParse(item.getString("Item"));
+                int count = Math.max(0, Math.min(64, item.getInt("Count")));
+                if (id == null || count == 0) continue;
+                BuiltInRegistries.ITEM.getOptional(id).ifPresent(found -> drops.add(new ItemStack(found, count)));
+            }
+            if (!drops.isEmpty()) held.add(new Held(BlockPos.of(entry.getLong("Pos")), drops));
+        }
+        loadedHeld = !held.isEmpty();
+    }
+
     public void load(CompoundTag tag) {
         clear();
+        loadHeld(tag);
         if (!tag.contains(KEY, Tag.TAG_COMPOUND)) return;
         CompoundTag mine = tag.getCompound(KEY);
         if (!mine.contains("Entrance", Tag.TAG_LONG)) return;

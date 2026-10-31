@@ -85,7 +85,6 @@ final class CompanionEntityNbt {
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, c.gatheringLogs || c.gatheringDirt);
         c.temporaryPillar.load(tag);
         c.work.load(tag);
-        c.work.mine.load(tag);
         c.batches().load(tag);
         c.setCanPickUpLoot(false);
         if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {
@@ -109,6 +108,8 @@ final class CompanionEntityNbt {
             c.goals.restorePlayerBehavior();
         }
         if (!c.level().isClientSide) c.social.updateExpression();
+        // Last: setFollowing above cancels the work, and a cancel lets the held blocks fall, which must wait for the first tick.
+        c.work.mine.load(tag);
     }
 
     /** What the companion who comes back remembers: name, settings, journal of deeds, places, the house and the chest. */

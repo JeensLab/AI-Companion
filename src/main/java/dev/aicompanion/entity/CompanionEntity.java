@@ -812,6 +812,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         social.tick();
         lighting.tick();
         if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
+        if (work.mine.loadedHeld()) for (CompanionMineSite.Held drop : work.mine.takeHeld()) dropHarvest(drop.pos(), drop.drops());
         goals.tick();
         // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
         // (CompanionGaze, owner 29.10). Work and hunting keep the eyes entirely: he does not turn even to talk (owner 31.10).

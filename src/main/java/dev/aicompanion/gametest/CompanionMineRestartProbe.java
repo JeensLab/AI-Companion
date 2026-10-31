@@ -48,12 +48,14 @@ public final class CompanionMineRestartProbe {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
     private static final int NORTH_EXTRA = 24, ORIGIN_X = 0, ORIGIN_Y = -60, ORIGIN_Z = NORTH_EXTRA, POCKET_Z = -12, POCKET_X0 = 22, POCKET_X1 = 25;
     private static final Direction REFUSED_DIRECTION = Direction.EAST;
+    private static final Item MARKER = Items.STONE;
+    private static final int MARKER_COUNT = 7;
     private static final int FAR_PLAYER_X = 400, PREPARE_ADVANCES = 2, UNDERGROUND_DEPTH = 3;
     private static final int PREPARE_TIMEOUT = 30000, RESUME_TIMEOUT = 30000, VERIFY_TICKS = 160, FROZEN_TICKS = 1200, NO_TICKET_TICKS = 200;
     private static ServerPlayer player;
     private static CompanionEntity companion;
     private static int ticks, frozenFor, noTicketFor;
-    private static boolean finished, initialized, farAway;
+    private static boolean finished, initialized, farAway, markerChecked;
     private static String progress = "";
 
     @SubscribeEvent public static void started(ServerStartedEvent event) {
@@ -126,6 +128,8 @@ public final class CompanionMineRestartProbe {
         check(pocketLeft(server) == pocketSize(), "The pocket was touched before the stop");
         site.refuse(refusedStand(site), REFUSED_DIRECTION);
         site.forbid(forbiddenCell(site));
+        site.hold(companion.blockPosition(), List.of(new ItemStack(MARKER, MARKER_COUNT)));
+        check(markerTotal(server) == MARKER_COUNT, "The marker blocks are not all held at the stop: " + markerTotal(server));
         record(goal);
         manifest.setProperty("opened", Integer.toString(site.opened()));
         manifest.setProperty("pocket", Integer.toString(pocketLeft(server)));
@@ -140,6 +144,7 @@ public final class CompanionMineRestartProbe {
         check(site.exists() && Long.toString(site.entrance().asLong()).equals(manifest.getProperty("entrance")), "The mine entrance changed or was lost: " + site.entrance());
         check(manifest.getProperty("stage").equals(STAGE.equals("resume") ? "prepare" : "resume"), "Manifest is from stage " + manifest.getProperty("stage"));
         check(site.refused(refusedStand(site), REFUSED_DIRECTION) && site.forbidden(forbiddenCell(site)), "A refused move or a forbidden cell was lost over the restart");
+        if (STAGE.equals("resume")) check(markerTotal(server) == MARKER_COUNT, "Held blocks lost or duplicated over the restart: " + markerTotal(server) + " of " + MARKER_COUNT);
         check(standsText().equals(manifest.getProperty("stands")) && tunnelsText().equals(manifest.getProperty("tunnels")),
                 "The mine record changed over the restart: stands " + site.stands().size() + "/" + manifest.getProperty("standCount") + ", tunnels " + tunnelsText() + "/" + manifest.getProperty("tunnels"));
         if (STAGE.equals("resume")) {
@@ -156,6 +161,11 @@ public final class CompanionMineRestartProbe {
         check(goal.state() != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(goal));
         check(ticks < RESUME_TIMEOUT, "Stage timeout: " + report(goal));
         sameMine();
+        if (!markerChecked) {
+            markerChecked = true;
+            check(companion.mineSite().peekHeld().isEmpty() && markerTotal(server) == MARKER_COUNT,
+                    "Held blocks not dropped once on the first tick: held " + companion.mineSite().peekHeld().size() + ", total " + markerTotal(server) + " of " + MARKER_COUNT);
+        }
         String now = companion.blockPosition().toShortString() + "|" + companion.mineSite().opened() + "|" + count(Items.DIAMOND) + "|" + goal.state();
         frozenFor = now.equals(progress) ? frozenFor + 1 : 0;
         progress = now;
@@ -280,11 +290,20 @@ public final class CompanionMineRestartProbe {
         return left;
     }
 
-    private static int groundDiamonds(MinecraftServer server) {
+    private static int groundDiamonds(MinecraftServer server) { return groundOf(server, Items.DIAMOND); }
+
+    private static int groundOf(MinecraftServer server, Item kind) {
         int n = 0;
         var box = new AABB(world(0, 0, -NORTH_EXTRA).getCenter(), world(SIZE, GROUND, SIZE).getCenter());
-        for (ItemEntity item : server.overworld().getEntitiesOfClass(ItemEntity.class, box)) if (item.getItem().is(Items.DIAMOND)) n += item.getItem().getCount();
+        for (ItemEntity item : server.overworld().getEntitiesOfClass(ItemEntity.class, box)) if (item.getItem().is(kind)) n += item.getItem().getCount();
         return n;
+    }
+
+    /** Plain stone is never dug (rock drops cobblestone) and is the last block he places, so the marker is his alone: held, in the bag or lying. */
+    private static int markerTotal(MinecraftServer server) {
+        int held = 0;
+        for (var drop : companion.mineSite().peekHeld()) for (ItemStack stack : drop.drops()) if (stack.is(MARKER)) held += stack.getCount();
+        return held + count(MARKER) + groundOf(server, MARKER);
     }
 
     private static CompanionAgendaData.Goal goal(MinecraftServer server) { return CompanionAgenda.goal(server, PLAYER); }
