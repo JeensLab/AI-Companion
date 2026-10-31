@@ -5,6 +5,10 @@ on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,3 +26,26 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Build with Gradle
         run: ./gradlew build
+      # `build` does not run GameTests, and a failed start can still exit 0 (a stale world lock did that once), so the
+      # success line decides the job. Long scenarios are known to flake, so one retry is allowed before failing.
+      - name: Run GameTests
+        timeout-minutes: 45
+        run: |
+          set -uo pipefail
+          # Each attempt is judged on its own tail and on Gradle's own exit code: a success line from an earlier
+          # attempt must not mask a failing one, and vanilla also prints the unnumbered form of the line.
+          run_tests() {
+            local from=$(( $( [ -f gametest.log ] && wc -l < gametest.log || echo 0 ) + 1 ))
+            local rc=0
+            ./gradlew runGameTestServer --console=plain 2>&1 | tee -a gametest.log || rc=$?
+            tail -n +"$from" gametest.log | grep -Eq "All ([0-9]+ )?required tests passed" && [ "$rc" -eq 0 ]
+          }
+          run_tests || { echo "::warning::GameTests failed once, retrying (long scenarios are known to flake)"; run_tests; }
+      - name: Upload GameTest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gametest-log
+          path: gametest.log
+          retention-days: 7
+          if-no-files-found: ignore
