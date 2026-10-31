@@ -9,6 +9,8 @@ import dev.aicompanion.entity.CompanionShaftPlan;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.monster.Zombie;
@@ -239,6 +241,8 @@ public final class CompanionRetreatTests {
     private static Zombie hostile(GameTestHelper h, int x, int z) {
         Zombie zombie = h.spawn(EntityType.ZOMBIE, x, DIAMOND_FEET, z);
         zombie.setPersistenceRequired();
+        // The sky light of a freshly built mountain lags behind it: by day a mob in the chamber can burn before the cave opens.
+        zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
         return zombie;
     }
 

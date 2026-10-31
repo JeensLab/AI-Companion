@@ -7,6 +7,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
@@ -223,6 +225,8 @@ public final class CompanionCaveEdgeTests {
     private static <T extends Mob> T still(GameTestHelper h, EntityType<T> type, int x, int y, int z) {
         T mob = h.spawn(type, x, y, z);
         mob.setPersistenceRequired();
+        // The sky light of a freshly built mountain lags behind it: by day a mob in the chamber can burn before the cave opens.
+        mob.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
         mob.setNoAi(true);
         return mob;
     }

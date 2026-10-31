@@ -11,6 +11,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.monster.Zombie;
@@ -71,6 +73,8 @@ public final class CompanionMineBacktrackTests {
         for (int[] at : new int[][]{{23, 15}, {24, 16}, {25, 17}, {23, 17}}) {
             Zombie zombie = h.spawn(EntityType.ZOMBIE, at[0], CHAMBER_Y, at[1]);
             zombie.setPersistenceRequired();
+            // The sky light of a freshly built mountain lags behind it: by day a mob in the chamber can burn before the cave opens.
+            zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
             zombies.add(zombie);
         }
         long first = start(h, c, 1);
