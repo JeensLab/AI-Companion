@@ -398,7 +398,11 @@ public final class CompanionEvents {
 
     /** What dies by Oleg's hand drops for him to pick up (the hunt's meat, leather, wool, feathers). */
     public static void onLivingDrops(net.neoforged.neoforge.event.entity.living.LivingDropsEvent event) {
-        if (!event.getEntity().level().isClientSide && event.getSource().getEntity() instanceof CompanionEntity companion) companion.claimDrops(event.getDrops());
+        if (event.getEntity().level().isClientSide) return;
+        if (event.getSource().getEntity() instanceof CompanionEntity companion) { companion.claimDrops(event.getDrops()); return; }
+        // What falls out of a dead player stays his: Oleg may pick it up so it does not despawn, but never uses it.
+        if (event.getEntity() instanceof ServerPlayer) for (net.minecraft.world.entity.item.ItemEntity drop : event.getDrops())
+            drop.getPersistentData().putBoolean(CompanionEntity.PLAYERS_ITEM, true);
     }
 
     /** A farmer does not trample his own field: a step down or a jump onto farmland never turns it to dirt under him. */

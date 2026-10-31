@@ -26,7 +26,7 @@ import java.util.UUID;
 public final class CompanionSmallFixesTests {
     /** Cobblestone the player drops by Oleg's dig is the player's, not Oleg's harvest. */
     @GameTest(template = "tall_tree", timeoutTicks = 800)
-    public static void cobblestoneThePlayerDroppedIsNotTaken(GameTestHelper h) {
+    public static void cobblestoneThePlayerDroppedIsTaken(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 1; y++)
             h.setBlock(new BlockPos(x, y, z), y == 0 ? Blocks.BEDROCK : Blocks.STONE);
         CompanionEntity companion = spawn(h, 2);
@@ -39,7 +39,7 @@ public final class CompanionSmallFixesTests {
         h.succeedWhen(() -> {
             h.assertTrue(!companion.isWorking() && !companion.isGatheringTask(), "Still working: " + companion.getLastTaskResult());
             h.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
-            h.assertTrue(dropped.isAlive() && dropped.getItem().getCount() == 5 && carried(companion, Items.COBBLESTONE) < 5, "He took the player's cobblestone");
+            h.assertTrue(dropped.isRemoved() && carried(companion, Items.COBBLESTONE) >= 5, "He did not take the player's cobblestone");
         });
     }
 

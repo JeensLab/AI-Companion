@@ -619,7 +619,16 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void routeRecovered() { work.routeRecovered(); }
     int workStoneReserve() { return work.stoneReserve(); }
     /** In the middle of «разложи» what he carries for the player is not his to eat, wield, place or burn. */
-    boolean carriedForPlayer(ItemStack stack) { return work.sorting.onlyCarried(stack); }
+    /** What fell out of the dead player stays his: Oleg carries it, does not eat, wear or spend it. */
+    public static final String PLAYERS_ITEM = "aicompanion:players";
+
+    boolean carriedForPlayer(ItemStack stack) { return work.sorting.onlyCarried(stack) || isPlayersItem(stack); }
+
+    /** A stack marked as the player's own: picked up so it does not despawn, but never used by Oleg. */
+    public static boolean isPlayersItem(ItemStack stack) {
+        var data = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+        return data != null && data.copyTag().getBoolean(PLAYERS_ITEM);
+    }
     public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
