@@ -40,14 +40,14 @@ import java.util.function.Consumer;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionCaveTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, TIMEOUT = 12000;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, TIMEOUT = 12000, EXPIRE_AFTER_BREACH = 1;
     private static final int CHAMBER_X0 = 26, CHAMBER_X1 = 30, CHAMBER_Z0 = 3, CHAMBER_Z1 = 7, CORRIDOR_END = 44, CORRIDOR_Z = 7;
     private static final int STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25, EXPLORE_RANGE = 16;
     private static final BlockPos BREACH_FEET = new BlockPos(25, DIAMOND_FEET, 3), BREACH_HEAD = BREACH_FEET.above();
     private static final BlockPos CAVE_DIAMOND = new BlockPos(29, DIAMOND_FEET - 1, 6);
 
     private static final class Watch {
-        boolean breached, settled; // settled: the verdict is in; succeed() has cleared the arena, so per-tick checks stop
+        boolean breached, settled, expired; // settled: the verdict is in; succeed() has cleared the arena, so per-tick checks stop
         long breachTick = -1;
         int insideTicks;
         BlockPos farthest = BREACH_FEET;
@@ -101,6 +101,33 @@ public final class CompanionCaveTests {
         h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
             if (count(c, Items.DIAMOND) < 1) problems.add("no diamond: he did not dig on");
             if (w.insideTicks > 0) problems.add("stood in the cave for " + w.insideTicks + " ticks, first at " + w.firstInside.toShortString());
+        }));
+    }
+
+    /**
+     * The step's time runs out two ticks after the breach is opened, with two zombies in the dark cave: the step waits for the
+     * cave episode and does not end with the breach open.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void closesTheBreachWhenTheStepTimeRunsOutInTheCave(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, true, false, false);
+        CompanionEntity c = rig(h);
+        List<Zombie> zombies = List.of(hostile(h, EntityType.ZOMBIE, 28, 5), hostile(h, EntityType.ZOMBIE, 29, 6));
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            if (w.breached && !w.expired && h.getTick() >= w.breachTick + EXPIRE_AFTER_BREACH) {
+                w.expired = true;
+                c.expireExpeditionStep();
+            }
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % 20 == 0) zombie.setTarget(c);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
+            if (!w.expired) problems.add("SETUP: the step time never ran out in the cave");
         }));
     }
 

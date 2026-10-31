@@ -21,6 +21,8 @@ final class CompanionExpedition {
 
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
+    /** Extra time past the step's end for a cave episode under way to close its breach; a reserve used up ends the step anyway. */
+    private static final int CAVE_RESERVE = 20 * 60;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
     private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
@@ -62,6 +64,8 @@ final class CompanionExpedition {
 
     boolean active() { return active; }
 
+    void expireStep(ServerLevel level) { stepEnd = level.getGameTime(); }
+
     /** Below the mine's entrance: there a monster comes up the tunnel and is fought off wherever the player is. */
     boolean underground() { return active && w.mine.exists() && owner.getY() < w.mine.entrance().getY() - UNDERGROUND_DEPTH; }
 
@@ -69,7 +73,7 @@ final class CompanionExpedition {
         reset();
         active = true;
         stepEnd = level.getGameTime() + STEP_TICKS;
-        w.deadline = stepEnd + 40;
+        w.deadline = stepEnd + CAVE_RESERVE + 40;
         startDiamonds = w.items.countCarried(Items.DIAMOND);
         hadStone = w.items.countCarried(Items.STONE_PICKAXE) > 0;
         unheld = !CompanionChunkTicket.hold(owner);
@@ -98,7 +102,8 @@ final class CompanionExpedition {
     void tick(ServerLevel level) {
         if (!active) return;
         CompanionChunkTicket.follow(owner);
-        if (level.getGameTime() >= stepEnd) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
+        boolean expired = level.getGameTime() >= stepEnd;
+        if (expired && (!cave.busy() || level.getGameTime() >= stepEnd + CAVE_RESERVE)) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
         BlockPos plugged = cave.takePlugged();
@@ -108,6 +113,7 @@ final class CompanionExpedition {
             return;
         }
         if (gained() >= w.requestedCount && !cave.busy()) { end(Ending.FOUND, ""); return; }
+        if (expired) return;
         String danger = stage == Stage.LOCATE || stage == Stage.CLIMB || stage == Stage.RETREAT ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
         if (plan == null && digging && ore.pending() && mineOre(level, CompanionExpeditionOre.Mode.NEAR)) return;

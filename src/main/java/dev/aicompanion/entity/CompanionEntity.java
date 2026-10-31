@@ -538,6 +538,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean isRecoveringSupports() { return temporaryPillar.isRecovering(); }
 
     public boolean isWorking() { return work.isActive(); }
+    public void expireExpeditionStep() { if (level() instanceof ServerLevel s) work.expedition.expireStep(s); }
     /** Read only, for the GameTest observer: a self-rescue running, the work's job/phase, and a visible action in hand. */
     public boolean isSelfRescuing() { return recovery.active(); }
     /** Read only: his own drops still to pick up (after «стоп» too: nothing of his is left lying). */
