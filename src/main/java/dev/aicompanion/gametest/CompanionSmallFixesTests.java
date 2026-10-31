@@ -123,7 +123,8 @@ public final class CompanionSmallFixesTests {
             var left = nether.getEntity(id);
             h.assertTrue(h.getLevel().getEntity(id) instanceof CompanionEntity, "Not back in the Overworld: " + (left == null ? "nowhere" : "in the Nether at " + left.blockPosition().toShortString()));
             CompanionEntity back = (CompanionEntity) h.getLevel().getEntity(id);
-            h.assertTrue(back.isAlive() && back.distanceToSqr(owner) < 4 * 4, "Not by the player: " + back.blockPosition().toShortString());
+            // Where he landed is checked below; since then he may stroll, and following only begins past eight blocks.
+            h.assertTrue(back.isAlive() && back.distanceToSqr(owner) <= 8.5 * 8.5, "Not by the player: " + back.blockPosition().toShortString());
             h.assertTrue(arrived[0] != null && !BlockPos.containing(arrived[0]).equals(pit) && Math.abs(arrived[0].y - owner.getY()) < .01
                     && arrived[0].distanceToSqr(owner.position()) < 2.5, "Put over the pit beside the player: " + arrived[0]);
             h.assertTrue(carried(back, Items.DIAMOND) == 5 && nether.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(room).inflate(4)).isEmpty(),
