@@ -154,7 +154,20 @@ final class CompanionEntityGoals {
         @Override
         public void tick() {
             if (owner == null) return;
-            companion.getLookControl().setLookAt(owner, 20.0F, 30.0F);
+            // The eyes follow the bond (CompanionGaze, owner 29.10): on the player while it is warm, past his shoulder while he is
+            // only wary, and left to themselves once it is bad.
+            switch (CompanionGaze.eyesFor(companion.gazeBondScore())) {
+                case AT_PLAYER -> companion.getLookControl().setLookAt(owner, 20.0F, 30.0F);
+                case PAST_PLAYER -> {
+                    var past = CompanionGaze.past(companion, owner);
+                    companion.getLookControl().setLookAt(past.x, past.y, past.z);
+                }
+                // The eyes rest on the ground ahead, not on the player (CompanionGaze, owner 29.10).
+                case DOWN -> {
+                    var ground = CompanionGaze.groundAhead(companion);
+                    companion.getLookControl().setLookAt(ground.x, ground.y, ground.z);
+                }
+            }
             // Like a player who lost sight of a friend: on foot, in legs round walls and over ridges, as far as the way goes and with
             // no time limit while he is in this world; never a teleport (marathon 23.10). With no way, he says so once and waits
             // where he stands until the player moves, then tries again.
