@@ -136,6 +136,55 @@ public final class CompanionMineBacktrackTests {
         });
     }
 
+    /**
+     * A flat plate of open ground at the foot of the stairs, its floor and walls bedrock: every step down is shut and the landings
+     * would lead him from the stairs' foot west, north, east and back onto it. A turn onto a stand of his own stairs is refused,
+     * so he backs up and branches higher, and no stand is ever recorded twice.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotCircleOnItsOwnStairs(GameTestHelper h) {
+        mountain(h);
+        BlockPos dead = under(DEAD_END).above();
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 1; dz++) {
+            if (dx == 0 && dz == 1) continue;
+            boolean plate = Math.abs(dx) <= 1 && dz <= 0 && dz >= -1;
+            for (int y = -1; y <= 3; y++) h.setBlock(dead.offset(dx, y, dz), plate && y >= 0 && y <= 2 ? Blocks.AIR : Blocks.BEDROCK);
+        }
+        CompanionEntity c = rig(h);
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            List<BlockPos> stands = c.mineSite().stands();
+            h.assertTrue(stands.stream().distinct().count() == stands.size(), "A stand is recorded twice: " + stands.size() + " stands | " + report(c));
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result != null, "No result for the order: " + report(c));
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The plate stopped the mine: " + report(c));
+            h.assertTrue(c.mineSite().backtracks() >= 1, "He did not back up: " + c.mineSite().backtracks());
+            h.succeed();
+        });
+    }
+
+    /** A big cave that he fled from lies on both sides of the stairs, its box would hold them: only its own cells are shut, the stairs and the next step down are not. */
+    @GameTest(template = "marathon_cave")
+    public static void aBigCaveShutsOnlyWhereItIsNotTheWholeStairs(GameTestHelper h) {
+        mountain(h);
+        var level = h.getLevel();
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        List<BlockPos> stairs = CompanionShaftPlan.stands(entrance, Direction.NORTH, 10);
+        for (BlockPos stand : stairs) for (BlockPos cell : CompanionShaftPlan.column(stand)) level.setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionMineSite site = new CompanionMineSite();
+        site.start(entrance, Direction.NORTH);
+        for (BlockPos stand : stairs.subList(1, stairs.size())) site.reached(stand);
+        BlockPos foot = site.foot();
+        List<BlockPos> cave = new ArrayList<>();
+        for (int side : new int[]{-9, 9}) for (int dx = 0; dx < 3; dx++) for (int dy = -2; dy < 3; dy++) for (int dz = 0; dz < 3; dz++) cave.add(foot.offset(side + dx, dy, dz));
+        site.shun(cave);
+        h.assertTrue(site.firstShunned() == -1, "A stand of the stairs is shut by a cave beside them: " + site.firstShunned());
+        h.assertTrue(site.shunned(foot.offset(9, 0, 1)) && site.shunned(foot.offset(-8, 0, 1)), "The cave itself is not shut");
+        h.assertTrue(CompanionShaftPlan.assessStep(level, foot, Direction.NORTH, site.seals(), site.avoid()).kind() != CompanionShaftPlan.Kind.BLOCKED, "The next step down is shut by a cave beside the stairs");
+        h.succeed();
+    }
+
     /** Caves, counters and a restart survive a save; a save without them loads as before; a flat stand of a tunnel base is two cells and stays. */
     @GameTest(template = "marathon_cave")
     public static void mineSiteKeepsCavesAndCountersOverASaveAndAFlatStand(GameTestHelper h) {
@@ -148,19 +197,21 @@ public final class CompanionMineBacktrackTests {
         site.start(entrance, Direction.NORTH);
         for (BlockPos stand : stairs.subList(1, stairs.size())) site.reached(stand);
         BlockPos inside = stairs.get(4).offset(1, 0, 0), outside = stairs.get(4).offset(9, 0, 0);
-        site.shun(stairs.get(4).offset(-1, 0, 0), stairs.get(4).offset(1, 0, 0));
+        site.shun(List.of(stairs.get(4).offset(-1, 0, 0), stairs.get(4).offset(1, 0, 0)));
         site.backtracked();
         site.backtracked();
         site.retreated();
-        h.assertTrue(site.shunned(inside) && !site.shunned(outside) && site.firstShunned() == 3, "Shun box: first shunned stand " + site.firstShunned());
+        h.assertTrue(site.shunned(inside) && !site.shunned(outside) && site.shunned(stairs.get(4)) && site.firstShunned() >= 0 && site.firstShunned() <= 3, "Shun cells: first shunned stand " + site.firstShunned());
         h.assertTrue(site.avoid().shunned().test(inside) && !site.avoid().shunned().test(outside), "avoid() does not show the caves");
         CompoundTag tag = new CompoundTag();
         site.save(tag);
         CompanionMineSite loaded = loadedFrom(tag);
         h.assertTrue(loaded.shunned(inside) && !loaded.shunned(outside) && loaded.backtracks() == 2 && loaded.retreats() == 1 && loaded.restarts() == 0,
                 "The caves or counters were lost over the save: " + loaded.backtracks() + "/" + loaded.retreats());
-        for (int i = 0; i < 40; i++) loaded.shun(entrance.offset(i * 20, 0, 0), entrance.offset(i * 20 + 1, 1, 1));
-        h.assertTrue(!loaded.shunned(inside) && loaded.shunned(entrance.offset(39 * 20, 0, 0)) && !loaded.shunned(entrance.offset(23 * 20, 0, 0)), "The oldest cave is not the one dropped past the cap");
+        // Eight blocks apart and inside one cell each: 2100 cells are more than the cap, so the oldest 52 and the earlier cave drop.
+        BlockPos far = new BlockPos(1, 5, 1);
+        for (int i = 0; i < 2100; i++) loaded.shun(List.of(far.offset(i * 8, 0, 0)));
+        h.assertTrue(!loaded.shunned(inside) && !loaded.shunned(far) && loaded.shunned(far.offset(2099 * 8, 0, 0)) && loaded.shunned(far.offset(60 * 8, 0, 0)), "The oldest cells are not the ones dropped past the cap");
 
         CompanionMineSite fresh = new CompanionMineSite();
         fresh.start(entrance, Direction.NORTH);
