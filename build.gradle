@@ -56,6 +56,9 @@ neoForge {
             client()
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // Optional: `./gradlew runClient -PquickPlay=<world>` opens that world straight away, so a test run needs no clicks.
+            def quickPlay = providers.gradleProperty('quickPlay').getOrNull()
+            if (quickPlay != null) programArguments.addAll('--quickPlaySingleplayer', quickPlay)
         }
 
         server {
