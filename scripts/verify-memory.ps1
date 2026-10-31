@@ -5,13 +5,12 @@ param(
     [string]$Tag='memory'
 )
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'GameTestRun.ps1')
 $projectRoot=Split-Path -Parent $PSScriptRoot
-$namespace='aicompanion_memory'
 $testClasses=@('CompanionMemoryTests','CompanionBondTests','CompanionHappeningsTests','CompanionSoulTests')
 $knownFlaky=@('woodtoolschestandawalk','hundredminutesfullbagorderscancellationandreloads','ninetyminutescavefoodorelightandchangingpassage','escapessoilpitwithoutfreestartingblocks')
 $reports=Join-Path $projectRoot 'build\diagnostics'
 New-Item -ItemType Directory -Path $reports -Force | Out-Null
-$utf8=[Text.UTF8Encoding]::new($false)
 
 $oversized=Get-ChildItem (Join-Path $projectRoot 'src\main\java\dev\aicompanion\entity\*.java') | Where-Object { (Get-Content -LiteralPath $_.FullName).Count -gt 800 }
 if($oversized){ $oversized | ForEach-Object { Write-Output "FAIL $($_.Name) has $((Get-Content -LiteralPath $_.FullName).Count) lines > 800" }; exit 1 }
@@ -32,30 +31,11 @@ try {
     }
     Write-Output 'PASS build'
 
-    # Focused run: only the plan's new test classes, in their own gametest namespace.
-    $sources=@{}
-    foreach($name in $testClasses){
-        $path=Join-Path $projectRoot "src\main\java\dev\aicompanion\gametest\$name.java"
-        if(Test-Path -LiteralPath $path){$sources[$path]=[IO.File]::ReadAllText($path)}
-    }
-    if($sources.Count -eq 0){Write-Output "FAIL no new test classes ($($testClasses -join ', ')) exist"; exit 1}
-    foreach($path in $sources.Keys){ if(!$sources[$path].Contains('@GameTestHolder(AICompanionMod.MOD_ID)')){Write-Output "FAIL $path lacks @GameTestHolder(AICompanionMod.MOD_ID)"; exit 1} }
-    $fixturePath=Join-Path $projectRoot "src\main\resources\data\$namespace"
-    if(Test-Path -LiteralPath $fixturePath){throw 'Temporary fixtures already exist'}
-    $init=Join-Path $reports 'memory-only.init.gradle'
-    [IO.File]::WriteAllText($init,"gradle.projectsEvaluated { rootProject.neoForge.runs.gameTestServer { systemProperty 'neoforge.enabledGameTestNamespaces', '$namespace' } }",$utf8)
-    New-Item -ItemType Directory -Path "$fixturePath\structure" | Out-Null
-    Copy-Item -Path (Join-Path $projectRoot 'src\main\resources\data\aicompanion\structure\*.nbt') -Destination "$fixturePath\structure"
+    # Focused run: only the plan's new test classes.
+    $present=@($testClasses | Where-Object { Test-Path -LiteralPath (Join-Path $projectRoot "src\main\java\dev\aicompanion\gametest\$_.java") })
+    if($present.Count -eq 0){Write-Output "FAIL no new test classes ($($testClasses -join ', ')) exist"; exit 1}
     $focusedLog=Join-Path $reports "$Tag-focused.txt"
-    try {
-        foreach($path in $sources.Keys){[IO.File]::WriteAllText($path,$sources[$path].Replace('@GameTestHolder(AICompanionMod.MOD_ID)',"@GameTestHolder(`"$namespace`")"),$utf8)}
-        $null=Invoke-Gradle @('--init-script',$init,'runGameTestServer') $focusedLog
-    } finally {
-        foreach($path in $sources.Keys){[IO.File]::WriteAllText($path,$sources[$path],$utf8)}
-        $resolved=(Resolve-Path -LiteralPath $fixturePath).Path
-        if($resolved -ne (Join-Path $projectRoot "src\main\resources\data\$namespace")){throw 'Unexpected cleanup path'}
-        Remove-Item -LiteralPath $resolved -Recurse -Force
-    }
+    $null=Invoke-GameTestRun -Log $focusedLog -Directory 'run/memory-tests' -Classes $present
     $focused=Get-Content -LiteralPath $focusedLog -Raw
     $m=[regex]::Match($focused,'All (\d+) required tests passed')
     if(!$m.Success -or [int]$m.Groups[1].Value -ne $Expected){

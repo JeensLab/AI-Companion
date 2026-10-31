@@ -105,12 +105,12 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | --- | --- |
 | Документация и инструкции | Проверить пути, команды и `git diff --check`; игровой запуск не требуется |
 | Java, ресурсы или сборка | `.\gradlew.bat build` плюс подходящая проверка поведения |
-| Игровая механика, планы, навигация | `.\gradlew.bat runGameTestServer`; учитывать длительные сценарии |
+| Игровая механика, планы, навигация | Повседневно `.\scripts\verify-fast.ps1`: все тесты без трёх длинных сценариев `endurance` в 4 процессах, итог в `build/diagnostics/fast-summary.json`. Перед PR один раз полный `.\gradlew.bat runGameTestServer` |
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
-| Сыпучие блоки, кремень, стекло, огниво | `.\scripts\verify-loose.ps1` (всегда `CompanionLooseTests`; `-Classes CompanionObtainTests,...` добавляет другие классы, `-Repetitions N` повторы; временно переписывает эти файлы, запускать последовательно) |
-| Долгая цель: движок, этапы, фразы, строка для модели, доска задач | `.\scripts\verify-agenda.ps1 -Repetitions 1` (`CompanionAgendaTests`, `CompanionAgendaModelTests`, `CompanionAgendaBoardTests`; по умолчанию 3 повтора; временно переписывает эти три файла, запускать последовательно, нужны загруженные зависимости: Gradle идёт с `--offline`) |
+| Сыпучие блоки, кремень, стекло, огниво | `.\scripts\verify-loose.ps1` (всегда `CompanionLooseTests`; `-Classes CompanionObtainTests,...` добавляет другие классы, `-Repetitions N` повторы) |
+| Долгая цель: движок, этапы, фразы, строка для модели, доска задач | `.\scripts\verify-agenda.ps1 -Repetitions 1` (`CompanionAgendaTests`, `CompanionAgendaModelTests`, `CompanionAgendaBoardTests`; по умолчанию 3 повтора; нужны загруженные зависимости: Gradle идёт с `--offline`) |
 | Долгая цель при настоящем перезапуске сервера | `.\scripts\verify-agenda-restart.ps1`: этапы prepare, resume, verify; каталог `build/diagnostics/` скрипт создаёт сам |
 | Партия плавки при настоящем перезапуске сервера | `.\scripts\verify-furnace-restart.ps1` после создания `build/diagnostics/` |
 | Самостоятельные реплики, свои темы Олега и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
@@ -140,11 +140,13 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 ключи OpenRouter/Inworld не нужны. Сценарии с `--offline` сначала требуют
 успешной загрузки зависимостей; при отсутствии кеша начните с обычного `build`.
 
-Выборочные скрипты временно заменяют аннотации/исходники тестов и создают
-структуры в `src/main/resources`. Они возвращают исходный текст в `finally`.
-Запускайте их последовательно, без редактирования затронутых файлов или параллельной
-сборки в этом checkout. После принудительного прерывания проверьте `git diff` и
-временные каталоги; не восстанавливайте файлы вслепую поверх чужих изменений.
+Выборочные скрипты передают выбор свойствами Gradle (`gameTestClasses`,
+`gameTestMethods`, `gameTestSkipMethods`, `gameTestDirectory`), его применяет
+`gametest/CompanionTestSelection`; исходники они не меняют. Исключение —
+`verify-memory-live.ps1`: он создаёт временные структуры в `src/main/resources`
+и удаляет их в `finally`; после принудительного прерывания проверьте `git status`.
+Сервер GameTest не ждёт тиков, поэтому повышение тикрейта прогон не ускоряет:
+время определяет загрузка CPU.
 Отчёты обычно находятся в `build/diagnostics/`; UI-сценарий складывает снимки
 в `build/tasks-client/screenshots/`.
 
