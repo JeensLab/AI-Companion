@@ -64,7 +64,11 @@ final class CompanionExpeditionOre {
         if (target == null) {
             target = find(level, mode);
             ticks = 0;
-            if (target == null) { scan = false; return Result.NONE; }
+            if (target == null) {
+                if (scan) report(level, mode);
+                scan = false;
+                return Result.NONE;
+            }
         }
         if (++ticks > ORE_PATIENCE) { skip(); return Result.WORKING; }
         if (mode != Mode.NEAR) {
@@ -82,6 +86,39 @@ final class CompanionExpeditionOre {
             default -> skip();
         }
         return Result.WORKING;
+    }
+
+    /** A look that found nothing: where he stood, the pickup state, and why each ore block in range was turned down. */
+    private void report(ServerLevel level, Mode mode) {
+        if (!dev.aicompanion.CompanionDiagnostics.enabled()) return;
+        BlockPos feet = owner.blockPosition();
+        int radius = mode == Mode.NEAR ? SCAN_RADIUS : mode == Mode.WALK ? WALK_RADIUS : SIGHT_RADIUS;
+        Vec3 eye = owner.getEyePosition();
+        StringBuilder ores = new StringBuilder();
+        for (BlockPos pos : BlockPos.betweenClosed(feet.offset(-radius, -radius, -radius), feet.offset(radius, radius, radius))) {
+            if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(BlockTags.DIAMOND_ORES)) continue;
+            ores.append('[').append(pos.toShortString()).append(' ').append(rejection(level, mode, eye, feet, pos)).append(']');
+        }
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "ore_scan_ended", "entity", owner.getUUID(), "mode", mode,
+                "feet", feet.toShortString(), "diamonds", ores.length() == 0 ? "none" : ores, "loot", owner.loot.diagnosticState());
+    }
+
+    /** The first reason {@link #find} would turn this ore down for, or "taken". */
+    private String rejection(ServerLevel level, Mode mode, Vec3 eye, BlockPos feet, BlockPos pos) {
+        if (skipped.contains(pos)) return "skipped";
+        if (!exposed(level, pos)) return "closed";
+        if (CompanionOre.liquidNear(level, pos)) return "liquid";
+        if (!allowed.test(pos)) return "outside";
+        if (!dig.hasTool(level.getBlockState(pos))) return "no tool";
+        if (mode == Mode.NEAR) {
+            double distance = eye.distanceToSqr(pos.getCenter());
+            if (pos.getX() == feet.getX() && pos.getZ() == feet.getZ() && pos.getY() < feet.getY()) return "under feet";
+            if (distance > CompanionSeal.REACH * CompanionSeal.REACH) return "out of reach";
+            if (!CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
+            if (!CompanionMiningNavigation.dropCollectable(level, pos, feet)) return "drop not collectable";
+        }
+        if (mode == Mode.SIGHT && !CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
+        return "taken";
     }
 
     private void skip() {
