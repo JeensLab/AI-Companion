@@ -103,9 +103,10 @@ final class CompanionExpedition {
         if (!active) return;
         CompanionChunkTicket.follow(owner);
         boolean expired = level.getGameTime() >= stepEnd;
-        if (expired && (!cave.busy() || level.getGameTime() >= stepEnd + CAVE_RESERVE)) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
+        // The cave looks at a breach a tick after it opens, so it must look before the timeout may end the step.
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
+        if (expired && (!cave.busy() || level.getGameTime() >= stepEnd + CAVE_RESERVE)) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
         BlockPos plugged = cave.takePlugged();
         if (plugged != null && plan != null && plan.needs(plugged)) { plan.why = "дальше пещера"; plan.lasting = true; w.mine.forbid(plugged); blocked(); }
         if (caveTurn) {
