@@ -44,7 +44,18 @@ final class CompanionCaveSense {
         Set<BlockPos> cells = new HashSet<>();
         if (!mine.exists()) return cells;
         cells.addAll(CompanionShaftPlan.column(mine.entrance()));
-        for (BlockPos stand : mine.stands()) cells.addAll(CompanionShaftPlan.column(stand));
+        BlockPos before = mine.entrance();
+        for (BlockPos stand : mine.stands()) {
+            cells.addAll(CompanionShaftPlan.column(stand));
+            // A flat stand is the base of a 2x2 tunnel (see CompanionMineSite#rebase): its second lane is mine too.
+            if (before.getY() == stand.getY() && stand.distManhattan(before) == 1) {
+                Direction along = Direction.getNearest(stand.getX() - before.getX(), 0, stand.getZ() - before.getZ());
+                BlockPos lane = stand.relative(CompanionShaftPlan.right(along));
+                cells.add(lane);
+                cells.add(lane.above());
+            }
+            before = stand;
+        }
         for (CompanionMineSite.Tunnel tunnel : mine.tunnels()) {
             for (int k = 1; k <= tunnel.length(); k++) cells.addAll(CompanionShaftPlan.tunnelCells(mine.foot().relative(tunnel.direction(), k - 1), tunnel.direction()));
         }

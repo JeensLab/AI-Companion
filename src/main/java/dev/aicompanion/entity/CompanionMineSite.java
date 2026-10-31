@@ -16,6 +16,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.LongStream;
 
 /**
  * The record of the companion's diamond mine: where it starts, the stands he has reached down the staircase, the tunnels and
@@ -24,9 +25,16 @@ import java.util.Set;
  */
 public final class CompanionMineSite {
     public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVES = 16, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     private record Move(BlockPos stand, Direction direction) { }
+
+    /** The box around a cave he fled from: nothing of the mine may be dug into it again. */
+    private record Box(BlockPos min, BlockPos max) {
+        boolean contains(BlockPos cell) {
+            return cell.getX() >= min.getX() && cell.getX() <= max.getX() && cell.getY() >= min.getY() && cell.getY() <= max.getY() && cell.getZ() >= min.getZ() && cell.getZ() <= max.getZ();
+        }
+    }
 
     /** One tunnel from the stair foot: its direction and how many advances (of four cells) are open. */
     public record Tunnel(Direction direction, int length) { }
@@ -39,6 +47,9 @@ public final class CompanionMineSite {
     /** Moves (a stand and a direction) that stopped an earlier attempt for good, and cells that must not be opened again; oldest dropped first. */
     private final Set<Move> refused = new LinkedHashSet<>();
     private final Set<BlockPos> forbidden = new LinkedHashSet<>();
+    private final Set<Box> caves = new LinkedHashSet<>();
+    /** How often the stairs were backed up from a dead end, a cave sent him up, and the mine was started again where he stood: each is bounded. */
+    private int backtracks, retreats, restarts;
     private BlockPos plug;
     /** Sealing blocks held back mid-column. They are not part of the mine record: they outlive {@link #clear} and are saved apart, so a quit loses none. */
     private final List<Held> held = new ArrayList<>();
@@ -76,9 +87,20 @@ public final class CompanionMineSite {
         stairDirection = stair;
     }
 
+    /** Starts the mine again at {@code here} (a new entrance cell where he stands), keeping what the caves taught and counting the restart. */
+    public void restart(BlockPos here, Direction stair) {
+        List<Box> kept = List.copyOf(caves);
+        int count = restarts + 1;
+        start(here, stair);
+        caves.addAll(kept);
+        restarts = count;
+    }
+
     public void clear() {
         entrance = null;
         plug = null;
+        caves.clear();
+        backtracks = retreats = restarts = 0;
         stands.clear();
         tunnels.clear();
         seals.clear();
@@ -106,6 +128,18 @@ public final class CompanionMineSite {
         if (count >= stands.size()) return;
         stands.subList(Math.max(0, count), stands.size()).clear();
         tunnels.clear();
+    }
+
+    /**
+     * Puts the base of the tunnels {@code length} cells on along {@code direction} from the foot: the cells become flat stands
+     * and the tunnels are forgotten. False, nothing changed, when that would pass the cap.
+     */
+    public boolean rebase(int length, Direction direction) {
+        if (entrance == null || length < 1 || stands.size() + length > MAX_STANDS) return false;
+        BlockPos foot = foot();
+        for (int k = 1; k <= length; k++) stands.add(foot.relative(direction, k).immutable());
+        tunnels.clear();
+        return true;
     }
 
     public List<Tunnel> tunnels() { return Collections.unmodifiableList(tunnels); }
@@ -151,9 +185,36 @@ public final class CompanionMineSite {
 
     public boolean forbidden(BlockPos cell) { return forbidden.contains(cell); }
 
+    /** Remembers the box of a cave he fled from (its corners are widened by the caller); the oldest of the sixteen is dropped first. */
+    public void shun(BlockPos min, BlockPos max) {
+        if (entrance == null) return;
+        remember(caves, new Box(min.immutable(), max.immutable()), MAX_CAVES);
+    }
+
+    public boolean shunned(BlockPos cell) {
+        for (Box box : caves) if (box.contains(cell)) return true;
+        return false;
+    }
+
+    /** The index of the first stand of the staircase inside a remembered cave, or -1. */
+    public int firstShunned() {
+        for (int i = 0; i < stands.size(); i++) if (shunned(stands.get(i))) return i;
+        return -1;
+    }
+
+    public int backtracks() { return backtracks; }
+
+    public void backtracked() { if (entrance != null) backtracks++; }
+
+    public int retreats() { return retreats; }
+
+    public void retreated() { if (entrance != null) retreats++; }
+
+    public int restarts() { return restarts; }
+
     /** The remembered refusals as the hazard checks take them. */
     public CompanionShaftPlan.Avoid avoid() {
-        return new CompanionShaftPlan.Avoid(Collections.unmodifiableSet(forbidden), this::refused);
+        return new CompanionShaftPlan.Avoid(Collections.unmodifiableSet(forbidden), this::refused, this::shunned);
     }
 
     private static <T> void remember(Set<T> set, T entry, int cap) {
@@ -183,7 +244,7 @@ public final class CompanionMineSite {
             truncate(0);
         } else {
             int kept = 0;
-            while (kept < stands.size() && !closed(level, stands.get(kept))) kept++;
+            while (kept < stands.size() && !closed(level, stands.get(kept), kept == 0 ? entrance : stands.get(kept - 1))) kept++;
             truncate(kept);
         }
         seals.removeIf(cell -> level.hasChunkAt(cell) && level.getBlockState(cell).isAir());
@@ -192,11 +253,13 @@ public final class CompanionMineSite {
     }
 
     /** The stand's column is open, or closed only by his own plug (a retreat leaves it; the next step takes it out), and a floor holds under it. */
-    private boolean closed(ServerLevel level, BlockPos stand) {
+    private boolean closed(ServerLevel level, BlockPos stand, BlockPos previous) {
         if (!level.hasChunkAt(stand)) return false;
         BlockPos floor = stand.below();
         if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return true;
-        for (BlockPos cell : CompanionShaftPlan.column(stand)) {
+        // A stand level with the one before it is the base of a tunnel, which is two cells high.
+        List<BlockPos> column = stand.getY() == previous.getY() ? List.of(stand, stand.above()) : CompanionShaftPlan.column(stand);
+        for (BlockPos cell : column) {
             if (!CompanionShaftPlan.open(level, cell) && !cell.equals(plug)) return true;
         }
         return false;
@@ -214,6 +277,10 @@ public final class CompanionMineSite {
         mine.putLongArray("Seals", seals.stream().mapToLong(BlockPos::asLong).toArray());
         if (plug != null) mine.putLong("Plug", plug.asLong());
         if (!forbidden.isEmpty()) mine.putLongArray("Forbidden", forbidden.stream().mapToLong(BlockPos::asLong).toArray());
+        if (!caves.isEmpty()) mine.putLongArray("Caves", caves.stream().flatMapToLong(box -> LongStream.of(box.min().asLong(), box.max().asLong())).toArray());
+        if (backtracks > 0) mine.putInt("Backtracks", backtracks);
+        if (retreats > 0) mine.putInt("Retreats", retreats);
+        if (restarts > 0) mine.putInt("Restarts", restarts);
         if (!refused.isEmpty()) {
             ListTag moves = new ListTag();
             for (Move move : refused) {
@@ -286,6 +353,11 @@ public final class CompanionMineSite {
         for (long packed : mine.getLongArray("Seals")) if (seals.size() < MAX_SEALS) seals.add(BlockPos.of(packed));
         if (mine.contains("Plug", Tag.TAG_LONG)) plug = BlockPos.of(mine.getLong("Plug"));
         for (long packed : mine.getLongArray("Forbidden")) if (forbidden.size() < MAX_FORBIDDEN) forbidden.add(BlockPos.of(packed));
+        long[] boxes = mine.getLongArray("Caves");
+        for (int i = 0; i + 1 < boxes.length && caves.size() < MAX_CAVES; i += 2) caves.add(new Box(BlockPos.of(boxes[i]), BlockPos.of(boxes[i + 1])));
+        backtracks = Math.max(0, mine.getInt("Backtracks"));
+        retreats = Math.max(0, mine.getInt("Retreats"));
+        restarts = Math.max(0, mine.getInt("Restarts"));
         ListTag moves = mine.getList("Refused", Tag.TAG_COMPOUND);
         for (int i = 0; i < moves.size() && refused.size() < MAX_REFUSED; i++) {
             CompoundTag entry = moves.getCompound(i);

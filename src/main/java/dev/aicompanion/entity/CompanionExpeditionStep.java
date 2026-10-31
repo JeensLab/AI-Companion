@@ -32,6 +32,8 @@ final class CompanionExpeditionStep {
     String why = "";
     /** True when the advance failed for a reason that will not change by itself (a hazard, a plug, no floor to lay), not a stuck walk or a missing tool. */
     boolean lasting;
+    /** True when the advance failed because he could not walk to the cell it needed: the stairs may be lost from under him. */
+    boolean lost;
     private int index, tries, seals;
     private boolean safe, moved;
     /** Set when the new stand has no floor: it is laid after the cells are open and before he walks onto it. */
@@ -74,7 +76,7 @@ final class CompanionExpeditionStep {
                 Result laid = layFloor(level);
                 if (laid != null) return laid;
             }
-            if (!dig.reach(to)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
+            if (!dig.reach(to)) return dig.walkStuck() ? lose() : Result.WORKING;
             moved = true;
         }
         if (index < cells.size()) return open(level, cells.size());
@@ -83,7 +85,7 @@ final class CompanionExpeditionStep {
     }
 
     private Result check(ServerLevel level) {
-        if (!dig.reach(from)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
+        if (!dig.reach(from)) return dig.walkStuck() ? lose() : Result.WORKING;
         CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, from, cells, floor, w.mine.seals(), w.mine.avoid(), kind != Kind.TUNNEL);
         switch (hazard.kind()) {
             case OK -> safe = true;
@@ -112,7 +114,7 @@ final class CompanionExpeditionStep {
     }
 
     private Result open(ServerLevel level, int limit) {
-        if (!dig.reach(moved ? to : from)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
+        if (!dig.reach(moved ? to : from)) return dig.walkStuck() ? lose() : Result.WORKING;
         switch (dig.dig(level, cells.get(index))) {
             case DONE -> { if (++index == limit) dig.flush(); }
             case NO_TOOL -> { return Result.NO_TOOL; }
@@ -122,6 +124,11 @@ final class CompanionExpeditionStep {
             case WORKING -> { }
         }
         return Result.WORKING;
+    }
+
+    private Result lose() {
+        lost = true;
+        return fail(WALK);
     }
 
     private Result refuse(String reason) {

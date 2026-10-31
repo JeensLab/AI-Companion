@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 
 /**
  * Geometry of a player's diamond mine: one straight diagonal staircase, a forced 90 degree turn only where the way is blocked,
@@ -40,12 +41,14 @@ public final class CompanionShaftPlan {
     }
 
     /** Cells the mine must not open again and moves (a stand and a direction) that already failed; consulted only by the overloads that take it. */
-    public record Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused) {
+    public record Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused, Predicate<BlockPos> shunned) {
         public static final Avoid NONE = new Avoid(Set.of(), (stand, d) -> false);
+
+        public Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused) { this(forbidden, refused, cell -> false); }
     }
 
     /** Cost added to a turn whose first step along is blocked: the landing is reachable, but it only moves the dead end aside. */
-    private static final int FALLBACK_TURN = 100;
+    static final int FALLBACK_TURN = 100;
     public static final int NO_TURN = Integer.MAX_VALUE;
 
     /** Feet height of the tunnel floor: six above the world bottom, never deeper than the diamond layer at -58. */
@@ -211,7 +214,7 @@ public final class CompanionShaftPlan {
 
     /** As above; a forbidden cell is blocked, and hidden liquid exactly at {@code laid} (a floor cell to lay) is left to the floor laying. */
     static Hazard classify(ServerLevel level, BlockPos stand, BlockPos cell, Set<BlockPos> own, Avoid avoid, BlockPos laid) {
-        if (avoid.forbidden().contains(cell)) return Hazard.BLOCKED;
+        if (avoid.forbidden().contains(cell) || avoid.shunned().test(cell)) return Hazard.BLOCKED;
         if (!level.hasChunkAt(cell) || !level.getWorldBorder().isWithinBounds(cell) || level.isOutsideBuildHeight(cell)) return Hazard.BLOCKED;
         BlockPos liquid = null;
         for (BlockPos pos : around(cell)) {

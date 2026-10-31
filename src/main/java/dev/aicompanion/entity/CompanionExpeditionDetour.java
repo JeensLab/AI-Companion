@@ -11,17 +11,16 @@ import net.minecraft.server.level.ServerLevel;
 final class CompanionExpeditionDetour {
     private CompanionExpeditionDetour() { }
 
+    /** The step to take from {@code stand}, or null when the straight step is blocked or refused and there is no turn: the stairs end here. */
     static CompanionExpeditionStep next(CompanionWork w, CompanionExpeditionDig dig, ServerLevel level, BlockPos stand, Direction dir, boolean mayTurn) {
-        if (mayTurn) {
-            CompanionShaftPlan.Avoid avoid = w.mine.avoid();
-            boolean refused = avoid.refused().test(stand, dir);
-            if (refused || CompanionShaftPlan.assessStep(level, stand, dir, w.mine.seals(), avoid).kind() == CompanionShaftPlan.Kind.FLOOR) {
-                Direction side = CompanionShaftPlan.chooseTurn(level, stand, dir, w.mine.seals(), avoid);
-                if (side != null && (refused || CompanionShaftPlan.turnCost(level, stand, side, w.mine.seals(), avoid) == 0)) {
-                    return CompanionExpeditionStep.landing(w, dig, stand, side);
-                }
-            }
+        CompanionShaftPlan.Avoid avoid = w.mine.avoid();
+        boolean refused = avoid.refused().test(stand, dir);
+        CompanionShaftPlan.Kind kind = CompanionShaftPlan.assessStep(level, stand, dir, w.mine.seals(), avoid).kind();
+        boolean shut = refused || kind == CompanionShaftPlan.Kind.BLOCKED;
+        Direction side = mayTurn && (shut || kind == CompanionShaftPlan.Kind.FLOOR) ? CompanionShaftPlan.chooseTurn(level, stand, dir, w.mine.seals(), avoid) : null;
+        if (side != null && (refused || kind != CompanionShaftPlan.Kind.BLOCKED && CompanionShaftPlan.turnCost(level, stand, side, w.mine.seals(), avoid) == 0)) {
+            return CompanionExpeditionStep.landing(w, dig, stand, side);
         }
-        return CompanionExpeditionStep.stair(w, dig, stand, dir);
+        return shut && side == null ? null : CompanionExpeditionStep.stair(w, dig, stand, dir);
     }
 }

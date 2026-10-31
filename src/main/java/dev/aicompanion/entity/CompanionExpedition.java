@@ -17,7 +17,7 @@ import java.util.List;
  * it ends honestly with what was found, why it stopped and what is left undone.
  */
 final class CompanionExpedition {
-    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, CLIMB, RETREAT }
+    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, BACKTRACK, CLIMB, RETREAT }
 
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
@@ -36,6 +36,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionOre ore;
     private final CompanionExpeditionCave cave;
     private final CompanionExpeditionRetreat retreat;
+    private final CompanionExpeditionBacktrack backtrack;
     private final CompanionExpeditionSupply supply;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
@@ -56,6 +57,7 @@ final class CompanionExpedition {
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
+        this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.supply = new CompanionExpeditionSupply(owner);
     }
 
@@ -89,6 +91,7 @@ final class CompanionExpedition {
         ore.reset();
         cave.reset();
         retreat.reset();
+        backtrack.reset();
         supply.reset();
         tunnelWhy = "";
         stage = Stage.LOCATE;
@@ -125,6 +128,7 @@ final class CompanionExpedition {
             case WALK_DOWN -> walkDown(level);
             case DESCEND -> descend();
             case BRANCH -> branch();
+            case BACKTRACK -> backtrack();
             case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) end(Ending.SUPPLIES, climb.text()); }
             case RETREAT -> { if (retreat.tick(level) == CompanionExpeditionRetreat.Result.DONE) end(Ending.RETREAT, retreat.text()); }
         }
@@ -142,6 +146,7 @@ final class CompanionExpedition {
         plan = null;
         cave.close();
         lead.clear();
+        backtrack.reset();
         dig.reset();
         stepEnd = Math.max(stepEnd, level.getGameTime() + CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
         w.deadline = Math.max(w.deadline, stepEnd + 40);
@@ -252,8 +257,36 @@ final class CompanionExpedition {
     }
 
     private void descend() {
-        if (plan == null) plan = CompanionExpeditionDetour.next(w, dig, (ServerLevel) owner.level(), stand, dir, turns < MAX_TURNS);
+        if (plan == null) {
+            plan = CompanionExpeditionDetour.next(w, dig, (ServerLevel) owner.level(), stand, dir, turns < MAX_TURNS);
+            if (plan == null) { startBacktrack("Дальше лестницу не прокопать: некуда свернуть"); return; }
+        }
         advance();
+    }
+
+    /** The stairs end here: back up them to a stand with a side to turn off to, or start again where he stands. */
+    private void startBacktrack(String why) {
+        if (!backtrack.begin((ServerLevel) owner.level())) { restartHere(why + "."); return; }
+        stage = Stage.BACKTRACK;
+        owner.workStatus("Лестница упёрлась, поднимаюсь по ней и сверну в сторону.");
+    }
+
+    private void backtrack() {
+        switch (backtrack.tick((ServerLevel) owner.level())) {
+            case WORKING -> { }
+            case STUCK -> restartHere("Не смог подняться по своей лестнице, чтобы свернуть в сторону.");
+            case DONE -> {
+                stand = backtrack.target();
+                dir = backtrack.side();
+                turns = softFails = 0;
+                plan = CompanionExpeditionStep.landing(w, dig, stand, dir);
+                stage = Stage.DESCEND;
+            }
+        }
+    }
+
+    private void restartHere(String why) {
+        end(Ending.BLOCKED, why);
     }
 
     private void branch() {
@@ -344,14 +377,19 @@ final class CompanionExpedition {
             case STAIR -> {
                 if (!failed.lasting && ++softFails <= SOFT_RETRIES) return;
                 if (failed.lasting) w.mine.refuse(stand, dir);
+                if (failed.lost) { restartHere("Потерял свою лестницу: " + failed.why + "."); return; }
                 Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), stand, dir, w.mine.seals(), w.mine.avoid());
-                if (side == null) end(Ending.BLOCKED, "Дальше лестницу не прокопать: " + failed.why + ".");
+                if (side == null) startBacktrack("Дальше лестницу не прокопать: " + failed.why);
                 else plan = CompanionExpeditionStep.landing(w, dig, stand, side);
             }
             case LANDING -> {
                 if (!failed.lasting && ++softFails <= SOFT_RETRIES) { plan = CompanionExpeditionStep.landing(w, dig, failed.from, failed.turn); return; }
-                if (failed.lasting) w.mine.refuse(failed.from, failed.turn);
-                end(Ending.BLOCKED, "Свернуть в сторону тоже не вышло: " + failed.why + ".");
+                if (failed.lost) { restartHere("Потерял свою лестницу: " + failed.why + "."); return; }
+                if (!failed.lasting) { startBacktrack("Свернуть в сторону тоже не вышло: " + failed.why); return; }
+                w.mine.refuse(failed.from, failed.turn);
+                Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), failed.from, dir, w.mine.seals(), w.mine.avoid());
+                if (side == null) startBacktrack("Свернуть в сторону тоже не вышло: " + failed.why);
+                else plan = CompanionExpeditionStep.landing(w, dig, failed.from, side);
             }
             case TUNNEL -> { tunnel = null; tunnelWhy = failed.why; }
         }

@@ -23,7 +23,7 @@ import java.util.function.BooleanSupplier;
 final class CompanionExpeditionCave {
     private enum Phase { IDLE, WAIT, EXPLORE, BACK, SEAL }
 
-    private static final int EXPLORE_RANGE = 16, EXPLORE_TICKS = 20 * 120, SPACING = 5, SETTLE = 30, PIT_TRIES = 60, SEAL_PATIENCE = 200, WATCH_EVERY = 10, LOOK_EVERY = 5, NOTES = 6;
+    private static final int EXPLORE_RANGE = 16, EXPLORE_TICKS = 20 * 120, SPACING = 5, SETTLE = 30, PIT_TRIES = 60, SEAL_PATIENCE = 200, WATCH_EVERY = 10, LOOK_EVERY = 5, NOTES = 6, SHUN_MARGIN = 2;
     private static final double ARRIVED = 2.5;
 
     private final CompanionWork w;
@@ -64,6 +64,23 @@ final class CompanionExpeditionCave {
         boolean now = retreat && phase == Phase.IDLE;
         if (now) retreat = false;
         return now;
+    }
+
+    /** A very dangerous cave sends him up and is remembered, so no later step of the mine is dug back into it. */
+    private void markRetreat(CompanionCaveSense.Danger danger) {
+        if (danger != CompanionCaveSense.Danger.VERY_DANGEROUS) return;
+        retreat = true;
+        if (cave.air().isEmpty()) return;
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (BlockPos cell : cave.air()) {
+            minX = Math.min(minX, cell.getX());
+            minY = Math.min(minY, cell.getY());
+            minZ = Math.min(minZ, cell.getZ());
+            maxX = Math.max(maxX, cell.getX());
+            maxY = Math.max(maxY, cell.getY());
+            maxZ = Math.max(maxZ, cell.getZ());
+        }
+        w.mine.shun(new BlockPos(minX - SHUN_MARGIN, minY - SHUN_MARGIN, minZ - SHUN_MARGIN), new BlockPos(maxX + SHUN_MARGIN, maxY + SHUN_MARGIN, maxZ + SHUN_MARGIN));
     }
 
     /** The cell of the advance under way a plug went into (once), or null; if the advance needs the cell, the expedition gives it up. */
@@ -167,7 +184,7 @@ final class CompanionExpeditionCave {
         CompanionCaveSense.Danger danger = CompanionCaveSense.judge(cave, facts);
         hostile = facts.hostiles() > 0;
         note("Наткнулся на пещеру (" + CompanionCaveSense.describe(cave, facts) + ").");
-        retreat = danger == CompanionCaveSense.Danger.VERY_DANGEROUS;
+        markRetreat(danger);
         phase = danger == CompanionCaveSense.Danger.SAFE ? Phase.WAIT : Phase.SEAL;
         idle = 0;
         return true;
@@ -177,7 +194,7 @@ final class CompanionExpeditionCave {
     private boolean waiting(ServerLevel level, List<BlockPos> planCells) {
         if (!planCells.isEmpty()) return false;
         CompanionCaveSense.Danger now = CompanionCaveSense.judge(cave, CompanionCaveSense.sense(w, level, cave, true));
-        if (now != CompanionCaveSense.Danger.SAFE) { retreat |= now == CompanionCaveSense.Danger.VERY_DANGEROUS; sealing(); return true; }
+        if (now != CompanionCaveSense.Danger.SAFE) { markRetreat(now); sealing(); return true; }
         home = owner.blockPosition();
         until = level.getGameTime() + EXPLORE_TICKS;
         visited.clear();
@@ -196,7 +213,7 @@ final class CompanionExpeditionCave {
         if (enough.getAsBoolean() || now >= until) return leave("");
         CompanionCaveSense.Danger watch = now % WATCH_EVERY == 0 ? CompanionCaveSense.judge(cave, CompanionCaveSense.sense(w, level, cave, true)) : CompanionCaveSense.Danger.SAFE;
         if (watch != CompanionCaveSense.Danger.SAFE) {
-            retreat |= watch == CompanionCaveSense.Danger.VERY_DANGEROUS;
+            markRetreat(watch);
             return leave("В пещере стало опасно, вернулся.");
         }
         if (settle > 0) { settle--; return true; }

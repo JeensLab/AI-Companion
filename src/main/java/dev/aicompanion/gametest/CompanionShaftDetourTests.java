@@ -121,9 +121,10 @@ public final class CompanionShaftDetourTests {
         long[] second = {0};
         h.succeedWhen(() -> {
             if (!relaunched[0]) {
-                CompanionActionResult refused = ended(h, c, first);
-                h.assertTrue(!refused.success() && count(c, Items.DIAMOND) == 0, "SETUP: the first launch should end in a refusal at the pocket: stands "
-                        + c.mineSite().stands().subList(Math.max(0, c.mineSite().stands().size() - 3), c.mineSite().stands().size()) + ", plug " + c.mineSite().plug() + " | " + report(c));
+                // The launch itself now backs up and turns elsewhere on its own, so the relaunch is staged by stopping it at the refusal.
+                h.assertTrue(c.mineSite().refused(h.absolutePos(new BlockPos(24, 11, 13)), Direction.NORTH), "SETUP: the first launch should refuse the step under the gravel | " + report(c));
+                c.setFollowing(true);
+                h.assertTrue(!c.isWorking(), "SETUP: the first launch is still working | " + report(c));
                 relaunched[0] = true;
                 second[0] = start(h, c, 1);
                 h.fail("Relaunched, waiting for the second end");
