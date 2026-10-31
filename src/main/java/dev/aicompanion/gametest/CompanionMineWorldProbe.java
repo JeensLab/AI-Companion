@@ -177,6 +177,11 @@ public final class CompanionMineWorldProbe {
         ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_PICKAXE, 4), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.TORCH, 32),
                 new ItemStack(Items.BREAD, 16), new ItemStack(Items.COBBLESTONE, 32)};
         for (int slot = 0; slot < bag.length; slot++) companion.setItem(slot, bag[slot]);
+        // The plain descent keeps the short bag so that fetching the rest of the kit on the surface stays under test.
+        if (!SCENARIO.equals("descent")) {
+            companion.setItem(bag.length, new ItemStack(Items.CRAFTING_TABLE));
+            companion.setItem(bag.length + 1, new ItemStack(Items.STICK, 8));
+        }
         setup(CompanionEvents.executeAction(player, "pursue_goal", "find_diamonds", REQUESTED_DIAMONDS).status() == CompanionActionResult.Status.ACCEPTED, "Goal not accepted");
         phase = Phase.RUN; runStart = ticks;
     }
