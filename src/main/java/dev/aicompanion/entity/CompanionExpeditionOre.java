@@ -112,7 +112,7 @@ final class CompanionExpeditionOre {
         if (!dig.hasTool(level.getBlockState(pos))) return "no tool";
         if (mode == Mode.NEAR) {
             double distance = eye.distanceToSqr(pos.getCenter());
-            if (pos.getX() == feet.getX() && pos.getZ() == feet.getZ() && pos.getY() < feet.getY()) return "under feet";
+            if (underFeet(feet, pos) && !floorHolds(level, pos)) return "under feet";
             if (distance > CompanionSeal.REACH * CompanionSeal.REACH) return "out of reach";
             if (!CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
             if (!CompanionMiningNavigation.dropCollectable(level, pos, feet)) return "drop not collectable";
@@ -149,11 +149,20 @@ final class CompanionExpeditionOre {
         return best;
     }
 
-    /** In reach and sight, its drop to be picked up, and not the floor under his own feet. */
+    /** In reach and sight, and its drop to be picked up; the floor under his own feet only when what lies under that ore holds him. */
     private boolean withinHands(ServerLevel level, Vec3 eye, BlockPos feet, BlockPos pos, double distanceSqr) {
-        boolean underFeet = pos.getX() == feet.getX() && pos.getZ() == feet.getZ() && pos.getY() < feet.getY();
-        return !underFeet && distanceSqr <= CompanionSeal.REACH * CompanionSeal.REACH && CompanionMiningNavigation.visible(owner, eye, pos)
-                && CompanionMiningNavigation.dropCollectable(level, pos, feet);
+        return (!underFeet(feet, pos) || floorHolds(level, pos)) && distanceSqr <= CompanionSeal.REACH * CompanionSeal.REACH
+                && CompanionMiningNavigation.visible(owner, eye, pos) && CompanionMiningNavigation.dropCollectable(level, pos, feet);
+    }
+
+    private static boolean underFeet(BlockPos feet, BlockPos pos) {
+        return pos.getX() == feet.getX() && pos.getZ() == feet.getZ() && pos.getY() < feet.getY();
+    }
+
+    /** Taking the ore he stands over drops him one block: solid and dry ground must be under it, or he would fall into a shaft or the water. */
+    private static boolean floorHolds(ServerLevel level, BlockPos pos) {
+        BlockPos below = pos.below();
+        return level.getBlockState(below).isFaceSturdy(level, below, Direction.UP) && level.getFluidState(below).isEmpty();
     }
 
     /** An open face to mine it from, and no gravel or sand above to come down on him. */

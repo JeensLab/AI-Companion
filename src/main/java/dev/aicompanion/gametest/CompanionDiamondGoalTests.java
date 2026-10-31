@@ -20,11 +20,13 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -47,6 +49,7 @@ public final class CompanionDiamondGoalTests {
     private static final float LOW = 7;
 
     @AfterBatch(batch = "diamond_goal_ends") public static void afterEnds(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "diamond_goal_underfoot") public static void afterUnderfoot(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_top_up") public static void afterTopUp(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_progress") public static void afterProgress(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_save") public static void afterSave(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -74,6 +77,55 @@ public final class CompanionDiamondGoalTests {
             h.assertTrue(count(c, Items.DIAMOND) >= 2, "The goal is done but the bag has " + count(c, Items.DIAMOND) + " of 2 diamonds | " + report(h, r));
             h.assertTrue(dug[0] && goal(h, r).resultCount() >= 1,
                     "No dig_for_diamonds step behind the goal: dug " + dug[0] + " | " + report(h, r));
+        });
+    }
+
+    /**
+     * The only ore of the arena lies under the tunnel floor at the stand the third advance of the first tunnel ends on, (24,2,1):
+     * nothing but the look after that advance can find it, and from there it is under his feet.
+     */
+    @GameTest(template = "marathon_cave", batch = "diamond_goal_underfoot", timeoutTicks = TIMEOUT)
+    public static void takesTheOnlyOreRightUnderHisFeet(GameTestHelper h) {
+        Rig r = rig(h, false, supplies(32, 4));
+        h.setBlock(new BlockPos(CENTER, DIAMOND_FEET - 1, STRIP_Z), Blocks.DEEPSLATE_DIAMOND_ORE);
+        CompanionEntity c = r.c();
+        start(h, r, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(h, r));
+            h.assertTrue(state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(h, r));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time | " + report(h, r)));
+        h.succeedWhen(() -> {
+            h.assertTrue(state(h, r) == CompanionAgenda.State.COMPLETED, "Goal incomplete | " + report(h, r));
+            h.assertTrue(count(c, Items.DIAMOND) >= 1, "No diamond | " + report(h, r));
+        });
+    }
+
+    /**
+     * The first diamond's drop is taken away the moment it appears, as a pickup that gave up would leave it: the strip is still
+     * ahead of him, and the goal must go on to the next ore and not stop with the tunnels walked.
+     */
+    @GameTest(template = "marathon_cave", batch = "diamond_goal_underfoot", timeoutTicks = TIMEOUT)
+    public static void goesOnToTheStripWhenTheFirstDropIsLost(GameTestHelper h) {
+        Rig r = rig(h, true, supplies(32, 4));
+        start(h, r, 2);
+        boolean[] lost = {false};
+        h.onEachTick(() -> {
+            if (!lost[0]) {
+                for (ItemEntity drop : h.getLevel().getEntities(EntityTypeTest.forClass(ItemEntity.class), h.getBounds(), e -> e.getItem().is(Items.DIAMOND))) {
+                    drop.discard();
+                    lost[0] = true;
+                    break;
+                }
+            }
+            h.assertTrue(r.c().isAlive(), "Died at " + rel(h, r.c().blockPosition()).toShortString() + " | " + report(h, r));
+            h.assertTrue(state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(h, r));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time | " + report(h, r)));
+        h.succeedWhen(() -> {
+            h.assertTrue(lost[0], "No diamond drop ever appeared | " + report(h, r));
+            h.assertTrue(state(h, r) == CompanionAgenda.State.COMPLETED, "Goal incomplete | " + report(h, r));
+            h.assertTrue(count(r.c(), Items.DIAMOND) >= 2, "Only " + count(r.c(), Items.DIAMOND) + " of 2 diamonds | " + report(h, r));
         });
     }
 
