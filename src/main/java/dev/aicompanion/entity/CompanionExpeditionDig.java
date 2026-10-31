@@ -28,7 +28,7 @@ final class CompanionExpeditionDig {
 
     /** Sealing blocks worth keeping in the bag; every other rock and the sealing blocks beyond them are left lying, untagged, so the work never waits for them. */
     static final int SEAL_RESERVE = 64;
-    private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40, PATH_AFTER = 20;
+    private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40, PATH_AFTER = 20, SPARE_DURABILITY = 60;
     private static final double CENTRED = .35, RESTING = .1;
 
     private final CompanionWork w;
@@ -49,6 +49,8 @@ final class CompanionExpeditionDig {
     int walked;
     /** The last NO_TOOL was for an ore (it needs a better pickaxe), not for rock (it needs a stone pickaxe). */
     boolean lackedOre;
+    /** A stone pickaxe could not be made: the rock is dug with the iron one while it has wear to spare. */
+    boolean ironForRock;
 
     CompanionExpeditionDig(CompanionWork w) {
         this.w = w;
@@ -130,9 +132,9 @@ final class CompanionExpeditionDig {
         return owner.getMainHandItem().is(tool) || owner.equipForWork(BuiltInRegistries.ITEM.getKey(tool).toString()).success();
     }
 
-    /** Rock and soil with stone pickaxes only; ore with the cheapest pickaxe that gets its drop. */
+    /** Rock and soil with stone pickaxes, an iron one with wear to spare once no stone pickaxe could be made; ore with the cheapest pickaxe that gets its drop. */
     private Item toolFor(BlockState state) {
-        if (!state.is(Tags.Blocks.ORES)) return w.items.countCarried(Items.STONE_PICKAXE) > 0 ? Items.STONE_PICKAXE : null;
+        if (!state.is(Tags.Blocks.ORES)) return rockTool();
         Item best = null;
         int least = Integer.MAX_VALUE;
         for (ItemStack stack : w.items.carriedItems()) {
@@ -141,6 +143,19 @@ final class CompanionExpeditionDig {
             least = stack.getMaxDamage();
         }
         return best;
+    }
+
+    private Item rockTool() {
+        if (w.items.countCarried(Items.STONE_PICKAXE) > 0) return Items.STONE_PICKAXE;
+        return ironForRock && spareIron() ? Items.IRON_PICKAXE : null;
+    }
+
+    /** An iron pickaxe in the bag with wear to spare. */
+    boolean spareIron() {
+        for (ItemStack stack : w.items.carriedItems()) {
+            if (stack.is(Items.IRON_PICKAXE) && stack.getMaxDamage() - stack.getDamageValue() > SPARE_DURABILITY) return true;
+        }
+        return false;
     }
 
     /** Steps towards the cell with the move control (neighbouring cells of his own mine); true once he stands in it. */
@@ -184,6 +199,7 @@ final class CompanionExpeditionDig {
     void reset() {
         flush();
         cell = walking = lastBroken = null;
+        ironForRock = false;
         reaching = null;
         around = List.of();
         minedOre.clear();

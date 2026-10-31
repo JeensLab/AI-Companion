@@ -15,6 +15,7 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -36,7 +37,7 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
-    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6;
+    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10;
 
 
     private CompanionMineBacktrackTests() { }
@@ -183,6 +184,88 @@ public final class CompanionMineBacktrackTests {
         h.assertTrue(site.shunned(foot.offset(9, 0, 1)) && site.shunned(foot.offset(-8, 0, 1)), "The cave itself is not shut");
         h.assertTrue(CompanionShaftPlan.assessStep(level, foot, Direction.NORTH, site.seals(), site.avoid()).kind() != CompanionShaftPlan.Kind.BLOCKED, "The next step down is shut by a cave beside the stairs");
         h.succeed();
+    }
+
+    /** The order starts at the far end of a tunnel of eighteen cells, the ore lies in the rock beyond it: he digs on from where he stands instead of walking to its first cell and back. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void reentersALongTunnelFromItsFarEnd(GameTestHelper h) {
+        mountain(h, false);
+        h.setBlock(new BlockPos(3, DIAMOND_FEET, FOOT_Z), Blocks.DEEPSLATE_DIAMOND_ORE);
+        CompanionEntity c = rig(h);
+        carveMine(h, c, LONG_TUNNEL);
+        BlockPos end = c.mineSite().foot().relative(Direction.WEST, LONG_TUNNEL);
+        c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
+        long id = start(h, c, 1);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            if (h.getTick() - begun == NEAR_END_TICKS) h.assertTrue(c.blockPosition().distManhattan(end) <= 3, "Walked away from the far end to " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result != null && result.success() && count(c, Items.DIAMOND) >= 1, "The far end of the tunnel was not mined: " + report(c));
+            h.succeed();
+        });
+    }
+
+    /** The stone pickaxes are gone and the iron one has wear to spare: he digs the rock with it instead of going up for supplies. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void digsStoneWithTheIronPickaxeWhenItIsTheLastOne(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The iron pickaxe was not used for the rock: " + report(c));
+            h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "The iron pickaxe was worn out: " + report(c));
+        });
+    }
+
+    /** A creeper that does not move waits four stairs below him: he goes up the stairs, away from it, and when it is gone he digs on. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void stepsAwayFromACreeperOnTheStairs(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos from = stairs.get(START_STAND), at = stairs.get(CREEPER_STAND);
+        c.teleportTo(from.getX() + .5, from.getY(), from.getZ() + .5);
+        Creeper creeper = h.spawn(EntityType.CREEPER, rel(h, at));
+        creeper.setNoAi(true);
+        creeper.setPersistenceRequired();
+        long id = start(h, c, 1);
+        long begun = h.getTick();
+        boolean[] away = {false};
+        h.onEachTick(() -> {
+            if (!away[0]) {
+                away[0] = c.getY() >= from.getY() + 4;
+                h.assertTrue(away[0] || h.getTick() - begun < STEP_AWAY_TICKS, "He did not go up away from the creeper: at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+                if (away[0]) creeper.discard();
+                return;
+            }
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result != null && result.success() && count(c, Items.DIAMOND) >= 1, "He did not dig on after the creeper: " + report(c));
+            h.succeed();
+        });
+    }
+
+    /** Digs out the stairs to the diamond depth and a tunnel of {@code tunnel} cells west of the foot and puts them in the record; returns the stands, the entrance first. */
+    private static List<BlockPos> carveMine(GameTestHelper h, CompanionEntity c, int tunnel) {
+        var level = h.getLevel();
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        List<BlockPos> stairs = CompanionShaftPlan.stands(entrance, Direction.NORTH, GROUND + 1 - DIAMOND_FEET);
+        for (BlockPos stand : stairs) for (BlockPos cell : CompanionShaftPlan.column(stand)) level.setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionMineSite site = c.mineSite();
+        site.start(entrance, Direction.NORTH);
+        for (BlockPos stand : stairs.subList(1, stairs.size())) site.reached(stand);
+        if (tunnel > 0) site.openTunnel(Direction.WEST);
+        for (int k = 1; k <= tunnel; k++) {
+            BlockPos cell = site.foot().relative(Direction.WEST, k);
+            level.setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+            level.setBlock(cell.above(), Blocks.AIR.defaultBlockState(), 2 | 16);
+            site.extendTunnel();
+        }
+        return stairs;
     }
 
     /** Caves, counters and a restart survive a save; a save without them loads as before; a flat stand of a tunnel base is two cells and stays. */

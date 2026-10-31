@@ -196,6 +196,9 @@ public final class CompanionMineSite {
 
     public boolean shunned(BlockPos cell) { return caves.contains(coarse(cell)); }
 
+    /** The remembered cave cells as packed positions, oldest first; the persistence probe reads them. */
+    public Set<Long> caveCells() { return Collections.unmodifiableSet(caves); }
+
     private static long coarse(BlockPos pos) { return BlockPos.asLong(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2); }
 
     /** The index of the first stand of the staircase inside a remembered cave, or -1. */

@@ -24,11 +24,13 @@ final class CompanionExpeditionWalk {
         index = start;
     }
 
-    /** The cells of a tunnel off the stairs' foot, from the foot out to its end or from its end back to the foot. */
-    void inTunnel(BlockPos foot, CompanionMineSite.Tunnel tunnel, boolean outward) {
+    /** The cells of a tunnel off the stairs' foot, from the foot out to its end or from its end back to the foot; the walk starts at the cell nearest to {@code here}. */
+    void inTunnel(BlockPos foot, CompanionMineSite.Tunnel tunnel, boolean outward, BlockPos here) {
         List<BlockPos> path = new ArrayList<>(tunnel.length() + 1);
         for (int k = 0; k <= tunnel.length(); k++) path.add(foot.relative(tunnel.direction(), outward ? k : tunnel.length() - k));
-        set(path, outward ? 1 : 0);
+        int start = 0;
+        for (int i = 1; i < path.size(); i++) if (path.get(i).distSqr(here) < path.get(start).distSqr(here)) start = i;
+        set(path, outward ? Math.max(1, start) : start);
     }
 
     boolean done() { return index >= cells.size(); }

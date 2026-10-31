@@ -37,6 +37,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionOre ore;
     private final CompanionExpeditionCave cave;
     private final CompanionExpeditionRetreat retreat;
+    private final CompanionExpeditionCreeper creeper;
     private final CompanionExpeditionBacktrack backtrack;
     private final CompanionExpeditionSupply supply;
     private List<BlockPos> route = List.of();
@@ -58,6 +59,7 @@ final class CompanionExpedition {
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
+        this.creeper = new CompanionExpeditionCreeper(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.supply = new CompanionExpeditionSupply(owner);
     }
@@ -92,6 +94,7 @@ final class CompanionExpedition {
         ore.reset();
         cave.reset();
         retreat.reset();
+        creeper.reset();
         backtrack.reset();
         supply.reset();
         tunnelWhy = "";
@@ -121,6 +124,7 @@ final class CompanionExpedition {
         if (expired) return;
         String danger = stage == Stage.LOCATE || stage == Stage.CLIMB || stage == Stage.RETREAT ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
+        if ((stage == Stage.WALK_DOWN || digging) && creeper.tick(level)) return;
         if (plan == null && digging && ore.pending() && mineOre(level, CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null) craftTorches(level);
         switch (stage) {
@@ -149,6 +153,7 @@ final class CompanionExpedition {
         CompanionExpeditionRecord.rememberMove(w.mine, stage == Stage.BRANCH ? tunnel : null, plan, stand, dir);
         plan = null;
         cave.close();
+        creeper.reset();
         lead.clear();
         backtrack.reset();
         dig.reset();
@@ -324,7 +329,7 @@ final class CompanionExpedition {
         if (plan == null) {
             if (tunnel == null && !startTunnel()) return;
             if (!lead.done()) {
-                if (lead.tick() == CompanionExpeditionWalk.Result.STUCK) end(Ending.BLOCKED, "Не смог вернуться в свой тоннель.");
+                if (lead.tick() == CompanionExpeditionWalk.Result.STUCK) tunnel = null;
                 return;
             }
             List<CompanionMineSite.Tunnel> tunnels = w.mine.tunnels();
@@ -343,7 +348,7 @@ final class CompanionExpedition {
         if (w.mine.refused(w.mine.foot(), last.direction())) { tunnel = null; atFoot = true; return; }
         tunnel = last.direction();
         head = w.mine.foot().relative(tunnel, last.length());
-        lead.inTunnel(w.mine.foot(), last, true);
+        lead.inTunnel(w.mine.foot(), last, true, owner.blockPosition());
     }
 
     /** The next direction from the stairs' foot; the way back is skipped, it would break through the step above. */
@@ -358,7 +363,7 @@ final class CompanionExpedition {
             used = 0;
             lead.set(base.path(), 0);
             owner.workStatus("Все тоннели пройдены, переношу начало тоннелей на конец длинного.");
-        } else if (used > 0 && !atFoot) lead.inTunnel(w.mine.foot(), w.mine.tunnels().get(used - 1), false);
+        } else if (used > 0 && !atFoot) lead.inTunnel(w.mine.foot(), w.mine.tunnels().get(used - 1), false, owner.blockPosition());
         atFoot = false;
         tunnel = order.get(used);
 
@@ -375,6 +380,7 @@ final class CompanionExpedition {
             case NO_TOOL -> {
                 plan = null;
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
+                if (!dig.lackedOre && !dig.ironForRock && dig.spareIron()) { dig.ironForRock = true; return; }
                 stage = Stage.CLIMB;
                 climb.begin(CompanionExpeditionClimb.shortage(dig.lackedOre, hadStone), owner.blockPosition());
             }

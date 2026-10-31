@@ -50,7 +50,7 @@ public final class CompanionMineRestartProbe {
     private static final Direction REFUSED_DIRECTION = Direction.EAST;
     private static final Item MARKER = Items.STONE;
     private static final int MARKER_COUNT = 7;
-    private static final int FAR_PLAYER_X = 400, PREPARE_ADVANCES = 2, UNDERGROUND_DEPTH = 3;
+    private static final int FAR_PLAYER_X = 400, FAR_CAVE = 512, PREPARE_ADVANCES = 2, UNDERGROUND_DEPTH = 3;
     private static final int PREPARE_TIMEOUT = 30000, RESUME_TIMEOUT = 30000, VERIFY_TICKS = 160, FROZEN_TICKS = 1200, NO_TICKET_TICKS = 200;
     private static ServerPlayer player;
     private static CompanionEntity companion;
@@ -128,6 +128,9 @@ public final class CompanionMineRestartProbe {
         check(pocketLeft(server) == pocketSize(), "The pocket was touched before the stop");
         site.refuse(refusedStand(site), REFUSED_DIRECTION);
         site.forbid(forbiddenCell(site));
+        site.shun(List.of(site.entrance().offset(FAR_CAVE, 0, FAR_CAVE)));
+        site.backtracked();
+        site.retreated();
         site.hold(companion.blockPosition(), List.of(new ItemStack(MARKER, MARKER_COUNT)));
         check(markerTotal(server) == MARKER_COUNT, "The marker blocks are not all held at the stop: " + markerTotal(server));
         record(goal);
@@ -145,6 +148,7 @@ public final class CompanionMineRestartProbe {
         check(manifest.getProperty("stage").equals(STAGE.equals("resume") ? "prepare" : "resume"), "Manifest is from stage " + manifest.getProperty("stage"));
         check(site.refused(refusedStand(site), REFUSED_DIRECTION) && site.forbidden(forbiddenCell(site)), "A refused move or a forbidden cell was lost over the restart");
         if (STAGE.equals("resume")) check(markerTotal(server) == MARKER_COUNT, "Held blocks lost or duplicated over the restart: " + markerTotal(server) + " of " + MARKER_COUNT);
+        check(memoryText().equals(manifest.getProperty("memory")), "The caves or counters changed over the restart: " + memoryText() + "/" + manifest.getProperty("memory"));
         check(standsText().equals(manifest.getProperty("stands")) && tunnelsText().equals(manifest.getProperty("tunnels")),
                 "The mine record changed over the restart: stands " + site.stands().size() + "/" + manifest.getProperty("standCount") + ", tunnels " + tunnelsText() + "/" + manifest.getProperty("tunnels"));
         if (STAGE.equals("resume")) {
@@ -251,6 +255,7 @@ public final class CompanionMineRestartProbe {
         manifest.setProperty("standCount", Integer.toString(site.stands().size()));
         manifest.setProperty("stands", standsText()); manifest.setProperty("tunnels", tunnelsText());
         manifest.setProperty("tunnelCells", Integer.toString(advanced()));
+        manifest.setProperty("memory", memoryText());
         manifest.setProperty("ticket", Boolean.toString(CompanionChunkTicket.held(companion.getUUID())));
         manifest.setProperty("at", companion.blockPosition().toShortString());
         for (Item item : new Item[]{Items.DIAMOND, Items.TORCH, Items.STONE_PICKAXE, Items.COBBLESTONE, Items.DEEPSLATE})
@@ -261,6 +266,12 @@ public final class CompanionMineRestartProbe {
     private static BlockPos refusedStand(CompanionMineSite site) { return site.entrance().offset(100, 0, 100); }
 
     private static BlockPos forbiddenCell(CompanionMineSite site) { return site.entrance().offset(101, 0, 100); }
+
+    /** The caves and counters the mine remembers: they must come back over a restart as they were saved. */
+    private static String memoryText() {
+        var site = companion.mineSite();
+        return site.caveCells().stream().sorted().map(String::valueOf).collect(java.util.stream.Collectors.joining(",")) + "|" + site.backtracks() + "/" + site.retreats() + "/" + site.restarts();
+    }
 
     private static String standsText() {
         StringBuilder text = new StringBuilder();
