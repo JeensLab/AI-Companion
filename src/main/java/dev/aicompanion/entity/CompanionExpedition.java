@@ -27,6 +27,7 @@ final class CompanionExpedition {
     private static final int SOFT_RETRIES = 3, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 1.0;
+    private static final String CAVE_DANGER = "в пещере слишком опасно";
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -41,10 +42,10 @@ final class CompanionExpedition {
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, hadStone, unheld, joining;
+    private boolean active, hadStone, unheld, joining, atFoot;
     private long stepEnd, nextCraft;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails;
-    private BlockPos stand, head;
+    private BlockPos stand, head, sealCell;
     private Direction dir, tunnel;
     private String tunnelWhy = "";
 
@@ -87,7 +88,7 @@ final class CompanionExpedition {
         climb.reset();
         lead.clear();
         CompanionChunkTicket.release(owner);
-        active = hadStone = unheld = joining = false;
+        active = hadStone = unheld = joining = atFoot = false;
         ore.reset();
         cave.reset();
         retreat.reset();
@@ -97,7 +98,7 @@ final class CompanionExpedition {
         stage = Stage.LOCATE;
         plan = null;
         route = List.of();
-        stand = head = null;
+        stand = head = sealCell = null;
         dir = tunnel = null;
         progress = stairSteps = turns = routeIndex = softFails = 0;
     }
@@ -136,18 +137,26 @@ final class CompanionExpedition {
 
     /** Why he must go up now (a very dangerous cave dealt with, or health at the cave limit), or null. */
     private String dangerNow() {
-        if (!cave.busy() && cave.takeRetreat()) return "в пещере слишком опасно";
+        if (!cave.busy() && cave.takeRetreat()) return CAVE_DANGER;
         float health = owner.getHealth();
         return health <= CompanionCaveSense.HEALTH_VERY ? "мало здоровья (" + (int) Math.ceil(health) + ")" : null;
     }
 
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */
     private void startRetreat(ServerLevel level, String why) {
+        // A repeat danger from a cave with health to spare is not climbed away from again: he backs up the stairs and turns off.
+        boolean again = why.equals(CAVE_DANGER) && w.mine.retreats() >= 1 && owner.getHealth() > CompanionCaveSense.HEALTH_WARY;
+        CompanionExpeditionRecord.rememberMove(w.mine, stage == Stage.BRANCH ? tunnel : null, plan, stand, dir);
         plan = null;
         cave.close();
         lead.clear();
         backtrack.reset();
         dig.reset();
+        if (again && backtrack.begin(level)) {
+            stage = Stage.BACKTRACK;
+            owner.workStatus("Пещера снова опасна, поднимаюсь по лестнице и сверну в сторону.");
+            return;
+        }
         stepEnd = Math.max(stepEnd, level.getGameTime() + CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
         w.deadline = Math.max(w.deadline, stepEnd + 40);
         retreat.begin(why);
@@ -172,11 +181,13 @@ final class CompanionExpedition {
         joining = false;
         if (mine.exists()) {
             mine.verify(level);
+            int shunned = mine.firstShunned();
+            if (shunned >= 0) { sealCell = mine.stands().get(shunned).above(); mine.forbid(sealCell); mine.truncate(shunned); }
             route = new ArrayList<>(List.of(mine.entrance()));
             route.addAll(mine.stands());
             routeIndex = nearest(here);
             if (routeIndex < 0 && atTunnel(here)) routeIndex = route.size() - 1;
-            if (routeIndex < 0 && !mine.stands().isEmpty() && here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH) { joining = true; stage = Stage.CHECK_NEAR; return; }
+            if (routeIndex < 0 && !mine.stands().isEmpty() && here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !level.canSeeSky(here.above())) { joining = true; stage = Stage.CHECK_NEAR; return; }
             if (routeIndex >= 0 || here.distSqr(mine.entrance()) <= FAR_ENTRANCE * FAR_ENTRANCE) { stage = Stage.CHECK_NEAR; return; }
         }
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
@@ -211,7 +222,7 @@ final class CompanionExpedition {
         if (routeIndex < 0) {
             int target = joining ? route.size() - 1 : 0;
             CompanionTravel.Step walk = w.route.legs(route.get(target), ENTRANCE_NEAR);
-            if (walk == CompanionTravel.Step.FAILED) end(Ending.BLOCKED, joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
+            if (walk == CompanionTravel.Step.FAILED) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
             else if (walk == CompanionTravel.Step.NEAR) routeIndex = target;
             return;
         }
@@ -219,6 +230,10 @@ final class CompanionExpedition {
             if (route.get(routeIndex + 1).equals(w.mine.plug())) { takeOutPlug(level); return; }
             if (dig.walkTo(route.get(routeIndex + 1))) routeIndex++;
             else if (dig.walkStuck()) end(Ending.BLOCKED, "Не смог спуститься по своей лестнице.");
+            return;
+        }
+        if (sealCell != null) {
+            if (backtrack.seal(level, sealCell)) sealCell = null;
             return;
         }
         stand = route.get(routeIndex);
@@ -285,8 +300,24 @@ final class CompanionExpedition {
         }
     }
 
+    /** The stairs are lost: the mine starts again where he stands, if the ground there allows and the restarts are not used up. */
     private void restartHere(String why) {
-        end(Ending.BLOCKED, why);
+        ServerLevel level = (ServerLevel) owner.level();
+        BlockPos here = owner.blockPosition();
+        Direction side = CompanionExpeditionRecord.restartSide(level, w.mine, here);
+        if (side == null) { end(Ending.BLOCKED, why); return; }
+        plan = null;
+        sealCell = null;
+        lead.clear();
+        backtrack.reset();
+        dig.reset();
+        w.mine.restart(here, side);
+        route = new ArrayList<>(List.of(here));
+        routeIndex = 0;
+        tunnel = null;
+        turns = softFails = 0;
+        stage = Stage.CHECK_NEAR;
+        owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
     }
 
     private void branch() {
@@ -309,6 +340,7 @@ final class CompanionExpedition {
         List<CompanionMineSite.Tunnel> tunnels = w.mine.tunnels();
         if (tunnels.isEmpty()) { tunnel = null; return; }
         CompanionMineSite.Tunnel last = tunnels.get(tunnels.size() - 1);
+        if (w.mine.refused(w.mine.foot(), last.direction())) { tunnel = null; atFoot = true; return; }
         tunnel = last.direction();
         head = w.mine.foot().relative(tunnel, last.length());
         lead.inTunnel(w.mine.foot(), last, true);
@@ -318,9 +350,18 @@ final class CompanionExpedition {
     private boolean startTunnel() {
         List<Direction> order = CompanionShaftPlan.tunnelOrder(dir);
         int used = w.mine.tunnels().size();
-        if (used >= order.size() - 1) { end(Ending.BLOCKED, "Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")") + "."); return false; }
+        if (used >= order.size() - 1) {
+            CompanionExpeditionRecord.Base base = CompanionExpeditionRecord.moveBase(w.mine, atFoot);
+            if (base == null) { end(Ending.BLOCKED, "Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")") + "."); return false; }
+            dir = base.direction();
+            order = CompanionShaftPlan.tunnelOrder(dir);
+            used = 0;
+            lead.set(base.path(), 0);
+            owner.workStatus("Все тоннели пройдены, переношу начало тоннелей на конец длинного.");
+        } else if (used > 0 && !atFoot) lead.inTunnel(w.mine.foot(), w.mine.tunnels().get(used - 1), false);
+        atFoot = false;
         tunnel = order.get(used);
-        if (used > 0) lead.inTunnel(w.mine.foot(), w.mine.tunnels().get(used - 1), false);
+
         w.mine.openTunnel(tunnel);
         head = w.mine.foot();
         return true;

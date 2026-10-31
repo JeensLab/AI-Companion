@@ -59,7 +59,13 @@ final class CompanionExpeditionBacktrack {
             lowerStand = pos(mine, i + 1);
             plugCell = lowerStand.above();
             List<BlockPos> way = new ArrayList<>();
-            for (int j = stands.size() - 2; j >= i; j--) way.add(pos(mine, j));
+            List<CompanionMineSite.Tunnel> tunnels = mine.tunnels();
+            if (!tunnels.isEmpty()) {
+                CompanionMineSite.Tunnel last = tunnels.get(tunnels.size() - 1);
+                for (int k = last.length(); k >= 1; k--) way.add(mine.foot().relative(last.direction(), k));
+            }
+            for (int j = stands.size() - 1; j >= i; j--) way.add(pos(mine, j));
+
             walk.set(way, 0);
             mine.backtracked();
             return true;
@@ -78,14 +84,22 @@ final class CompanionExpeditionBacktrack {
         return plug(level);
     }
 
-    /** The way he came from is closed from the stand above it; a plug that cannot be placed does not stop him, the cell is forbidden either way. */
-    private Result plug(ServerLevel level) {
+    /** One tick of closing {@code cell} from the stand beside it; true when done. A plug that cannot be placed does not stop him. */
+    boolean seal(ServerLevel level, BlockPos cell) {
         // A torch he hung on the stair wall may stand in the cell: it comes out like a plant, as in a cave plug.
-        if (!CompanionSeal.replaceable(level, plugCell) && CompanionShaftPlan.open(level, plugCell)) { level.destroyBlock(plugCell, true, owner); return Result.WORKING; }
-        CompanionSeal.Result result = CompanionSeal.place(owner, plugCell);
-        if (result.placed()) w.mine.sealed(plugCell);
-        else if (result != CompanionSeal.Result.NO_BLOCK && ++tries <= PLUG_TRIES) return Result.WORKING;
+        if (!CompanionSeal.replaceable(level, cell) && CompanionShaftPlan.open(level, cell)) { level.destroyBlock(cell, true, owner); return false; }
+        CompanionSeal.Result result = CompanionSeal.place(owner, cell);
+        if (result.placed()) w.mine.sealed(cell);
+        else if (result != CompanionSeal.Result.NO_BLOCK && ++tries <= PLUG_TRIES) return false;
+        tries = 0;
+        return true;
+    }
+
+    /** The way he came from is closed from the stand above it; the cell is forbidden either way. */
+    private Result plug(ServerLevel level) {
+        if (!seal(level, plugCell)) return Result.WORKING;
         Direction stairs = toward(target, lowerStand);
+
         if (stairs != null) w.mine.refuse(target, stairs);
         w.mine.forbid(plugCell);
         w.mine.truncate(at + 1);
