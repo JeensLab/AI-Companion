@@ -192,7 +192,7 @@ public final class CompanionMineWorldProbe {
 
     private static void run(MinecraftServer server) throws IOException {
         if (companion == null || !companion.isAlive()) {
-            if (companion != null) { journal.deaths++; System.out.println("MINE_WORLD_DEATH scenario=" + SCENARIO + " tick=" + ticks); }
+            if (companion != null) { journal.deaths++; wasBelow = false; System.out.println("MINE_WORLD_DEATH scenario=" + SCENARIO + " tick=" + ticks); }
             companion = CompanionEvents.getOwnedCompanion(player);
             lostFor = companion == null ? lostFor + 1 : 0;
             check(lostFor < LOST_TICKS, "Companion is gone");

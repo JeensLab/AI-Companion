@@ -24,8 +24,9 @@ import java.util.function.Predicate;
  * classifies the staircase line under each one by what the world has there, using the mine's own hazard check.
  */
 final class CompanionMineWorldSites {
-    static final List<String> SCENARIOS = List.of("descent", "void", "lava", "mobs", "water", "retreat", "come", "restart", "deepdark");
-    private static final int GRID = 8, ENTRANCE_RADIUS = 12, CAVE_MIN_DEPTH = 3;
+    /** The void scenario runs on several separate floor-void entrances ("void-2", ...): one cavity under one staircase proves little. */
+    static final List<String> SCENARIOS = List.of("descent", "void", "void-2", "void-3", "void-4", "void-5", "lava", "mobs", "water", "retreat", "come", "restart", "deepdark");
+    private static final int GRID = 8, ENTRANCE_RADIUS = 12, CAVE_MIN_DEPTH = 3, APART = 40;
 
     enum Cause { NONE, FLOOR, LIQUID, FALLING, SOLID, BUILT }
 
@@ -134,9 +135,11 @@ final class CompanionMineWorldSites {
         return cells;
     }
 
-    /** The nearest site of the kind a scenario needs; null when the world has none. */
+    /** The nearest site of the kind a scenario needs (the n-th, at least APART blocks from the earlier ones, for "void-n"); null when the world has none. */
     static Site pick(String scenario, List<Site> sites) {
-        Predicate<Site> wanted = switch (scenario) {
+        String base = scenario.replaceFirst("-[0-9]+$", "");
+        int index = base.equals(scenario) ? 0 : Integer.parseInt(scenario.substring(base.length() + 1)) - 1;
+        Predicate<Site> wanted = switch (base) {
             case "void" -> s -> s.cause() == Cause.FLOOR && s.failAt() >= 3;
             case "lava" -> s -> s.lava() && s.diamonds();
             case "mobs" -> s -> s.cave() != null;
@@ -145,14 +148,19 @@ final class CompanionMineWorldSites {
             case "deepdark" -> Site::deepDark;
             default -> Site::diamonds;
         };
-        var found = sites.stream().filter(wanted).findFirst();
-        if (found.isPresent() || !List.of("retreat", "come", "restart").contains(scenario)) return found.orElse(null);
-        return sites.stream().filter(Site::diamonds).findFirst().orElse(null);
+        List<Site> chosen = new ArrayList<>();
+        for (Site site : sites) {
+            if (!wanted.test(site) || chosen.stream().anyMatch(other -> other.feet().distSqr(site.feet()) < (double) APART * APART)) continue;
+            chosen.add(site);
+            if (chosen.size() > index) return site;
+        }
+        boolean cleanOnly = List.of("retreat", "come", "restart").contains(base);
+        return cleanOnly ? sites.stream().filter(Site::diamonds).findFirst().orElse(null) : null;
     }
 
     static void store(Properties out, String scenario, Site site) {
         if (site == null) {
-            out.setProperty(scenario + ".status", scenario.equals("deepdark") ? "SKIPPED" : "NONE");
+            out.setProperty(scenario + ".status", scenario.equals("deepdark") || scenario.matches("void-[0-9]+") ? "SKIPPED" : "NONE");
             return;
         }
         out.setProperty(scenario + ".status", "OK");
