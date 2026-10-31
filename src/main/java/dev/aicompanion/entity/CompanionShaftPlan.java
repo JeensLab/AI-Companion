@@ -14,6 +14,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 /**
  * Geometry of a player's diamond mine: one straight diagonal staircase, a forced 90 degree turn only where the way is blocked,
@@ -29,13 +30,23 @@ public final class CompanionShaftPlan {
 
     private CompanionShaftPlan() { }
 
-    public enum Kind { OK, SEAL, BLOCKED }
+    public enum Kind { OK, SEAL, FLOOR, BLOCKED }
 
-    /** What stands before opening a cell: nothing, a liquid cell to seal first, or no way through. {@code cell} is null unless SEAL. */
+    /** What stands before opening a cell: nothing, a liquid cell to seal first, a floor cell to lay, or no way through. {@code cell} is null unless SEAL or FLOOR. */
     public record Hazard(Kind kind, BlockPos cell) {
         public static final Hazard OK = new Hazard(Kind.OK, null), BLOCKED = new Hazard(Kind.BLOCKED, null);
         public static Hazard seal(BlockPos cell) { return new Hazard(Kind.SEAL, cell); }
+        public static Hazard floor(BlockPos cell) { return new Hazard(Kind.FLOOR, cell); }
     }
+
+    /** Cells the mine must not open again and moves (a stand and a direction) that already failed; consulted only by the overloads that take it. */
+    public record Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused) {
+        public static final Avoid NONE = new Avoid(Set.of(), (stand, d) -> false);
+    }
+
+    /** Cost added to a turn whose first step along is blocked: the landing is reachable, but it only moves the dead end aside. */
+    private static final int FALLBACK_TURN = 100;
+    public static final int NO_TURN = Integer.MAX_VALUE;
 
     /** Feet height of the tunnel floor: six above the world bottom, never deeper than the diamond layer at -58. */
     public static int targetFeetY(int minBuildHeight) { return Math.max(minBuildHeight + FEET_ABOVE_BOTTOM, DEEPEST_FEET_Y); }
@@ -195,12 +206,21 @@ public final class CompanionShaftPlan {
      * bedrock, a chest or an unloaded chunk block it. Cells already open and cells of the own mine are fine.
      */
     public static Hazard classify(ServerLevel level, BlockPos stand, BlockPos cell, Set<BlockPos> own) {
+        return classify(level, stand, cell, own, Avoid.NONE, null);
+    }
+
+    /** As above; a forbidden cell is blocked, and hidden liquid exactly at {@code laid} (a floor cell to lay) is left to the floor laying. */
+    static Hazard classify(ServerLevel level, BlockPos stand, BlockPos cell, Set<BlockPos> own, Avoid avoid, BlockPos laid) {
+        if (avoid.forbidden().contains(cell)) return Hazard.BLOCKED;
         if (!level.hasChunkAt(cell) || !level.getWorldBorder().isWithinBounds(cell) || level.isOutsideBuildHeight(cell)) return Hazard.BLOCKED;
         BlockPos liquid = null;
         for (BlockPos pos : around(cell)) {
             if (!level.hasChunkAt(pos)) return Hazard.BLOCKED;
             if (level.getFluidState(pos).isEmpty()) continue;
-            if (!sealable(level, stand, pos)) return Hazard.BLOCKED;
+            if (!sealable(level, stand, pos)) {
+                if (pos.equals(laid)) continue;
+                return Hazard.BLOCKED;
+            }
             if (liquid == null) liquid = pos;
         }
         BlockState state = level.getBlockState(cell);
@@ -214,16 +234,24 @@ public final class CompanionShaftPlan {
 
     /** The worst hazard of the cells of one advance (staircase step or tunnel advance) and of the floor of its new stand. */
     public static Hazard assess(ServerLevel level, BlockPos stand, List<BlockPos> cells, List<BlockPos> floor, Set<BlockPos> own) {
+        return assess(level, stand, cells, floor, own, Avoid.NONE, false);
+    }
+
+    /** As above; with {@code laysFloor} a single floor cell that is air, replaceable or liquid is a FLOOR hazard, not a block. */
+    static Hazard assess(ServerLevel level, BlockPos stand, List<BlockPos> cells, List<BlockPos> floor, Set<BlockPos> own, Avoid avoid, boolean laysFloor) {
+        BlockPos laid = laysFloor && floor.size() == 1 ? floor.getFirst() : null;
         Hazard seal = Hazard.OK;
         for (BlockPos cell : cells) {
-            Hazard hazard = classify(level, stand, cell, own);
+            Hazard hazard = classify(level, stand, cell, own, avoid, laid);
             if (hazard.kind() == Kind.BLOCKED) return hazard;
             if (hazard.kind() == Kind.SEAL && seal.kind() == Kind.OK) seal = hazard;
         }
         if (seal.kind() == Kind.SEAL) return seal;
         for (BlockPos under : floor) {
             if (!level.hasChunkAt(under)) return Hazard.BLOCKED;
-            if (!level.getBlockState(under).isFaceSturdy(level, under, Direction.UP)) return Hazard.BLOCKED;
+            BlockState state = level.getBlockState(under);
+            if (state.isFaceSturdy(level, under, Direction.UP)) continue;
+            return under.equals(laid) && (state.isAir() || state.canBeReplaced() || !state.getFluidState().isEmpty()) ? Hazard.floor(under) : Hazard.BLOCKED;
         }
         return Hazard.OK;
     }
@@ -232,27 +260,42 @@ public final class CompanionShaftPlan {
         return assess(level, stand, advanceCells(stand, d), List.of(nextStand(stand, d).below()), own);
     }
 
+    /** A staircase step that may lack its floor: the answer is FLOOR (lay it) instead of BLOCKED. */
+    public static Hazard assessStep(ServerLevel level, BlockPos stand, Direction d, Set<BlockPos> own, Avoid avoid) {
+        return assess(level, stand, advanceCells(stand, d), List.of(nextStand(stand, d).below()), own, avoid, true);
+    }
+
     public static Hazard assessTunnel(ServerLevel level, BlockPos stand, Direction t, Set<BlockPos> own) {
         return assess(level, stand, tunnelCells(stand, t), tunnelFloor(stand, t), own);
     }
 
-    /**
-     * The side of a forced turn: of the two perpendicular directions the one whose landing and first step are free; one
-     * needing no seal beats one needing a seal; the left on a tie. Null when both are blocked.
-     */
+    /** The side of a forced turn: of the two perpendicular directions the cheaper by {@link #turnCost}, the left on a tie; null when both are out. */
     public static Direction chooseTurn(ServerLevel level, BlockPos stand, Direction d, Set<BlockPos> own) {
+        return chooseTurn(level, stand, d, own, Avoid.NONE);
+    }
+
+    /** As above, skipping the moves {@code avoid} refuses; a floor still to lay costs like a seal. */
+    public static Direction chooseTurn(ServerLevel level, BlockPos stand, Direction d, Set<BlockPos> own, Avoid avoid) {
         Direction best = null;
-        int bestRank = Integer.MAX_VALUE;
+        int bestCost = NO_TURN;
         for (Direction side : List.of(left(d), right(d))) {
-            BlockPos landing = landing(stand, side);
-            Hazard onto = assess(level, stand, column(landing), List.of(landing.below()), own);
-            if (onto.kind() == Kind.BLOCKED) continue;
-            Hazard along = assessStep(level, landing, side, own);
-            if (along.kind() == Kind.BLOCKED) continue;
-            int rank = (onto.kind() == Kind.SEAL ? 1 : 0) + (along.kind() == Kind.SEAL ? 1 : 0);
-            if (rank < bestRank) { best = side; bestRank = rank; }
+            int cost = turnCost(level, stand, side, own, avoid);
+            if (cost < bestCost) { best = side; bestCost = cost; }
         }
         return best;
+    }
+
+    /**
+     * What a turn to {@code side} needs before the walk goes on: 0 when its landing and first step are free, one per seal or floor
+     * to place, plus a large penalty when the step along is blocked. {@link #NO_TURN} when the landing is blocked or the move was refused.
+     */
+    public static int turnCost(ServerLevel level, BlockPos stand, Direction side, Set<BlockPos> own, Avoid avoid) {
+        if (avoid.refused().test(stand, side)) return NO_TURN;
+        BlockPos landing = landing(stand, side);
+        Hazard onto = assess(level, stand, column(landing), List.of(landing.below()), own, avoid, true);
+        if (onto.kind() == Kind.BLOCKED) return NO_TURN;
+        Hazard along = assessStep(level, landing, side, own, avoid);
+        return (onto.kind() == Kind.OK ? 0 : 1) + (along.kind() == Kind.BLOCKED ? FALLBACK_TURN : along.kind() == Kind.OK ? 0 : 1);
     }
 
     /** A liquid cell can be sealed from a stand when it is within 4.5 of the eye and nothing but air lies between. */

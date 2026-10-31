@@ -17,6 +17,7 @@ final class CompanionExpeditionStep {
     enum Result { WORKING, DONE, BLOCKED, NO_TOOL, FULL }
 
     private static final int MAX_SEALS = 24, SEAL_TRIES = 20;
+    private static final CompanionShaftPlan.Avoid AVOID = CompanionShaftPlan.Avoid.NONE;
     private static final String WALK = "застрял на ходу: не смог дойти до нужной клетки";
 
     final Kind kind;
@@ -32,6 +33,8 @@ final class CompanionExpeditionStep {
     String why = "";
     private int index, tries, seals;
     private boolean safe, moved;
+    /** Set when the new stand has no floor: it is laid after the cells are open and before he walks onto it. */
+    private CompanionExpeditionFloor laying;
 
     CompanionExpeditionStep(CompanionWork w, CompanionExpeditionDig dig, Kind kind, BlockPos from, BlockPos to, Direction turn,
                             List<BlockPos> cells, List<BlockPos> floor, int stepAt) {
@@ -66,6 +69,10 @@ final class CompanionExpeditionStep {
         if (!safe) return check(level);
         if (index < stepAt) return open(level, stepAt);
         if (!moved) {
+            if (laying != null) {
+                Result laid = layFloor(level);
+                if (laid != null) return laid;
+            }
             if (!dig.walkTo(to)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
             moved = true;
         }
@@ -76,9 +83,10 @@ final class CompanionExpeditionStep {
 
     private Result check(ServerLevel level) {
         if (!dig.walkTo(from)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
-        CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, from, cells, floor, w.mine.seals());
+        CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, from, cells, floor, w.mine.seals(), AVOID, kind != Kind.TUNNEL);
         switch (hazard.kind()) {
             case OK -> safe = true;
+            case FLOOR -> { laying = new CompanionExpeditionFloor(hazard.cell()); safe = true; }
             case BLOCKED -> { return fail(diagnose(level)); }
             case SEAL -> {
                 CompanionSeal.Result placed = CompanionSeal.place(w.owner, hazard.cell());
@@ -89,6 +97,16 @@ final class CompanionExpeditionStep {
             }
         }
         return Result.WORKING;
+    }
+
+    /** Null once the floor holds and the walk may go on; a hazard-like failure ends the advance, a missing block is only reported. */
+    private Result layFloor(ServerLevel level) {
+        switch (laying.lay(w.owner, level)) {
+            case LAID -> { laying = null; return null; }
+            case NO_BLOCK -> { return fail("пол под новой ступенью надо уложить, а блоков для этого в сумке нет"); }
+            case FAILED -> { return fail("не смог уложить пол под новой ступенью: не дотянулся или клетка занята"); }
+            default -> { return Result.WORKING; }
+        }
     }
 
     private Result open(ServerLevel level, int limit) {
@@ -112,7 +130,8 @@ final class CompanionExpeditionStep {
     /** The first cause that makes a cell of this advance impassable, in the order the hazard check looks at them. */
     private String diagnose(ServerLevel level) {
         for (BlockPos cell : cells) {
-            if (CompanionShaftPlan.classify(level, from, cell, w.mine.seals()).kind() != CompanionShaftPlan.Kind.BLOCKED) continue;
+            if (CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), AVOID, null).kind() != CompanionShaftPlan.Kind.BLOCKED) continue;
+            if (AVOID.forbidden().contains(cell)) return "в этой клетке моя пробка: там пещера";
             if (!level.hasChunkAt(cell) || !level.getWorldBorder().isWithinBounds(cell) || level.isOutsideBuildHeight(cell)) return "дальше граница мира или незагруженная земля";
             if (liquidAround(level, cell)) return "рядом жидкость, до которой не дотянуться, чтобы заделать";
             if (!CompanionShaftPlan.open(level, cell) && !w.mine.seals().contains(cell) && !CompanionOre.tunnelable(level.getBlockState(cell))) return "на пути коренная порода или неподходящий блок";
