@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerLevel;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -20,7 +21,9 @@ import java.util.Set;
  */
 public final class CompanionMineSite {
     public static final String KEY = "MineSite";
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+
+    private record Move(BlockPos stand, Direction direction) { }
 
     /** One tunnel from the stair foot: its direction and how many advances (of four cells) are open. */
     public record Tunnel(Direction direction, int length) { }
@@ -30,6 +33,9 @@ public final class CompanionMineSite {
     private final List<BlockPos> stands = new ArrayList<>();
     private final List<Tunnel> tunnels = new ArrayList<>();
     private final Set<BlockPos> seals = new LinkedHashSet<>();
+    /** Moves (a stand and a direction) that stopped an earlier attempt for good, and cells that must not be opened again; oldest dropped first. */
+    private final Set<Move> refused = new LinkedHashSet<>();
+    private final Set<BlockPos> forbidden = new LinkedHashSet<>();
     private BlockPos plug;
 
     public boolean exists() { return entrance != null; }
@@ -46,6 +52,8 @@ public final class CompanionMineSite {
         stands.clear();
         tunnels.clear();
         seals.clear();
+        refused.clear();
+        forbidden.clear();
     }
 
     public BlockPos entrance() { return entrance; }
@@ -98,6 +106,36 @@ public final class CompanionMineSite {
 
     public void unsealed(BlockPos cell) { seals.remove(cell); }
 
+    /** Remembers that this step failed for a reason that will not change by itself, so a repeat attempt takes another move. */
+    public void refuse(BlockPos stand, Direction direction) {
+        if (entrance == null) return;
+        remember(refused, new Move(stand.immutable(), direction), MAX_REFUSED);
+    }
+
+    public boolean refused(BlockPos stand, Direction direction) { return refused.contains(new Move(stand, direction)); }
+
+    /** A cell that must not be opened again (a cave behind it plugged by him). */
+    public void forbid(BlockPos cell) {
+        if (entrance != null) remember(forbidden, cell.immutable(), MAX_FORBIDDEN);
+    }
+
+    public boolean forbidden(BlockPos cell) { return forbidden.contains(cell); }
+
+    /** The remembered refusals as the hazard checks take them. */
+    public CompanionShaftPlan.Avoid avoid() {
+        return new CompanionShaftPlan.Avoid(Collections.unmodifiableSet(forbidden), this::refused);
+    }
+
+    private static <T> void remember(Set<T> set, T entry, int cap) {
+        set.remove(entry);
+        if (set.size() >= cap) {
+            Iterator<T> oldest = set.iterator();
+            oldest.next();
+            oldest.remove();
+        }
+        set.add(entry);
+    }
+
     /** The cork set behind him on the first step up when retreating; the next step takes it out again. */
     public BlockPos plug() { return plug; }
 
@@ -122,8 +160,10 @@ public final class CompanionMineSite {
         return stands.size();
     }
 
-    /** The stand's column is open, or closed only by his own plug (a retreat leaves it; the next step takes it out). */
+    /** The stand's column is open, or closed only by his own plug (a retreat leaves it; the next step takes it out), and a floor holds under it. */
     private boolean passable(ServerLevel level, BlockPos stand) {
+        BlockPos floor = stand.below();
+        if (!level.hasChunkAt(floor) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return false;
         for (BlockPos cell : CompanionShaftPlan.column(stand)) {
             if (!level.hasChunkAt(cell) || !CompanionShaftPlan.open(level, cell) && !cell.equals(plug)) return false;
         }
@@ -139,6 +179,17 @@ public final class CompanionMineSite {
         mine.putLongArray("Stands", stands.stream().mapToLong(BlockPos::asLong).toArray());
         mine.putLongArray("Seals", seals.stream().mapToLong(BlockPos::asLong).toArray());
         if (plug != null) mine.putLong("Plug", plug.asLong());
+        if (!forbidden.isEmpty()) mine.putLongArray("Forbidden", forbidden.stream().mapToLong(BlockPos::asLong).toArray());
+        if (!refused.isEmpty()) {
+            ListTag moves = new ListTag();
+            for (Move move : refused) {
+                CompoundTag entry = new CompoundTag();
+                entry.putLong("Stand", move.stand().asLong());
+                entry.putByte("Direction", (byte) move.direction().get2DDataValue());
+                moves.add(entry);
+            }
+            mine.put("Refused", moves);
+        }
         ListTag list = new ListTag();
         for (Tunnel tunnel : tunnels) {
             CompoundTag entry = new CompoundTag();
@@ -160,6 +211,12 @@ public final class CompanionMineSite {
         for (long packed : mine.getLongArray("Stands")) if (stands.size() < MAX_STANDS) stands.add(BlockPos.of(packed));
         for (long packed : mine.getLongArray("Seals")) if (seals.size() < MAX_SEALS) seals.add(BlockPos.of(packed));
         if (mine.contains("Plug", Tag.TAG_LONG)) plug = BlockPos.of(mine.getLong("Plug"));
+        for (long packed : mine.getLongArray("Forbidden")) if (forbidden.size() < MAX_FORBIDDEN) forbidden.add(BlockPos.of(packed));
+        ListTag moves = mine.getList("Refused", Tag.TAG_COMPOUND);
+        for (int i = 0; i < moves.size() && refused.size() < MAX_REFUSED; i++) {
+            CompoundTag entry = moves.getCompound(i);
+            if (entry.contains("Stand", Tag.TAG_LONG)) refused.add(new Move(BlockPos.of(entry.getLong("Stand")), Direction.from2DDataValue(entry.getByte("Direction"))));
+        }
         ListTag list = mine.getList("Tunnels", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size() && tunnels.size() < MAX_TUNNELS; i++) {
             CompoundTag entry = list.getCompound(i);

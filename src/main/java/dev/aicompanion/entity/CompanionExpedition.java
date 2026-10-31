@@ -99,7 +99,7 @@ final class CompanionExpedition {
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
         BlockPos plugged = cave.takePlugged();
-        if (plugged != null && plan != null && plan.needs(plugged)) { plan.why = "дальше пещера"; blocked(); }
+        if (plugged != null && plan != null && plan.needs(plugged)) { plan.why = "дальше пещера"; plan.lasting = true; w.mine.forbid(plugged); blocked(); }
         if (caveTurn) {
             if (cave.failure() != null) end(Ending.BLOCKED, cave.failure());
             return;
@@ -234,7 +234,7 @@ final class CompanionExpedition {
     }
 
     private void descend() {
-        if (plan == null) plan = CompanionExpeditionStep.stair(w, dig, stand, dir);
+        if (plan == null) plan = CompanionExpeditionDetour.next(w, dig, (ServerLevel) owner.level(), stand, dir, turns < MAX_TURNS);
         advance();
     }
 
@@ -322,11 +322,15 @@ final class CompanionExpedition {
         plan = null;
         switch (failed.kind) {
             case STAIR -> {
-                Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), stand, dir, w.mine.seals());
+                if (failed.lasting) w.mine.refuse(stand, dir);
+                Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), stand, dir, w.mine.seals(), w.mine.avoid());
                 if (side == null) end(Ending.BLOCKED, "Дальше лестницу не прокопать: " + failed.why + ".");
                 else plan = CompanionExpeditionStep.landing(w, dig, stand, side);
             }
-            case LANDING -> end(Ending.BLOCKED, "Свернуть в сторону тоже не вышло: " + failed.why + ".");
+            case LANDING -> {
+                if (failed.lasting) w.mine.refuse(failed.from, failed.turn);
+                end(Ending.BLOCKED, "Свернуть в сторону тоже не вышло: " + failed.why + ".");
+            }
             case TUNNEL -> { tunnel = null; tunnelWhy = failed.why; }
         }
     }
