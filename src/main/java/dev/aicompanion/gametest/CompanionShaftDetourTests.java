@@ -13,6 +13,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -33,7 +34,7 @@ import java.util.Set;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionShaftDetourTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, UNKILLABLE = 1024;
     private static final String FLOOR_REFUSAL = "неустойчив";
 
     /** A 7x7x5 empty dungeon under the stairs: the steps that fall into it have no floor, he lays one block after another down to the dungeon's bottom. */
@@ -110,6 +111,8 @@ public final class CompanionShaftDetourTests {
         for (int x : new int[]{21, 22}) {
             Zombie zombie = h.spawn(EntityType.ZOMBIE, new BlockPos(x, 10, 13));
             zombie.setNoAi(true);
+            zombie.getAttribute(Attributes.MAX_HEALTH).setBaseValue(UNKILLABLE);
+            zombie.setHealth(UNKILLABLE);
             zombie.setPersistenceRequired();
         }
         CompanionEntity c = rig(h);
@@ -119,7 +122,8 @@ public final class CompanionShaftDetourTests {
         h.succeedWhen(() -> {
             if (!relaunched[0]) {
                 CompanionActionResult refused = ended(h, c, first);
-                h.assertTrue(!refused.success() && count(c, Items.DIAMOND) == 0, "SETUP: the first launch should end in a refusal at the pocket: " + report(c));
+                h.assertTrue(!refused.success() && count(c, Items.DIAMOND) == 0, "SETUP: the first launch should end in a refusal at the pocket: stands "
+                        + c.mineSite().stands().subList(Math.max(0, c.mineSite().stands().size() - 3), c.mineSite().stands().size()) + ", plug " + c.mineSite().plug() + " | " + report(c));
                 relaunched[0] = true;
                 second[0] = start(h, c, 1);
                 h.fail("Relaunched, waiting for the second end");
