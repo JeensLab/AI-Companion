@@ -4,6 +4,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
@@ -39,8 +40,13 @@ public final class CompanionMilestones {
     private static final Set<Item> READY_FOOD = Set.of(Items.COOKED_BEEF, Items.COOKED_PORKCHOP, Items.COOKED_MUTTON, Items.COOKED_CHICKEN,
             Items.COOKED_RABBIT, Items.COOKED_COD, Items.COOKED_SALMON, Items.BREAD, Items.BAKED_POTATO, Items.GOLDEN_CARROT);
     private static final Set<Item> RAW_MEAT = Set.of(Items.BEEF, Items.PORKCHOP, Items.MUTTON, Items.CHICKEN, Items.RABBIT);
-    /** What a step of the mine starts with: below the minimum he tops up to the stock on the surface (supplies are never milestones, they are used up below). */
-    private static final int TORCHES_MIN = 16, TORCHES_STOCK = 32, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 4, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
+    /**
+     * What a step of the mine starts with: below the minimum he tops up to the stock on the surface (supplies are never milestones,
+     * they are used up below). Blocks to plug caves with, a bench and sticks for a pickaxe made on the spot belong to the kit.
+     */
+    static final int TORCHES_STOCK = 32;
+    private static final int TORCHES_MIN = 16, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 4, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
+    private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 4, STICKS_STOCK = 8;
     /** Swords he goes down with; without one he fights the tunnel's monsters with his pickaxes (a wooden or golden one is no better). */
     private static final Set<Item> MINE_SWORDS = Set.of(Items.STONE_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD, Items.NETHERITE_SWORD);
 
@@ -130,18 +136,27 @@ public final class CompanionMilestones {
                 case MATERIALS -> List.of(obtain(tier.material, need(facts, fallback, all)));
                 case FOOD -> foodSteps(facts, count);
                 case EXPEDITION -> {
-                    List<Step> steps = new ArrayList<>();
-                    if (facts.carried(Items.TORCH) < TORCHES_MIN) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
-                    if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
-                    if (!facts.belowMine() && facts.carried(MINE_SWORDS::contains) == 0)
-                        steps.add(obtain(facts.carried(Items.IRON_INGOT) >= IRON_SWORD_INGOTS ? Items.IRON_SWORD : Items.STONE_SWORD, 1));
-                    if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
+                    // Below the entrance nothing is topped up: the way up is for a retreat or a pickaxe he cannot make there.
+                    List<Step> steps = facts.belowMine() ? new ArrayList<>() : supplySteps(facts);
                     steps.add(new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto"));
                     yield steps;
                 }
                 case STOCK -> supported ? List.of(obtain(item, count)) : List.of();
                 case SKILL, DRAGON -> List.of();
             };
+        }
+
+        private static List<Step> supplySteps(CompanionFacts facts) {
+            List<Step> steps = new ArrayList<>();
+            if (facts.carried(Items.TORCH) < TORCHES_MIN) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
+            if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
+            if (facts.carried(MINE_SWORDS::contains) == 0)
+                steps.add(obtain(facts.carried(Items.IRON_INGOT) >= IRON_SWORD_INGOTS ? Items.IRON_SWORD : Items.STONE_SWORD, 1));
+            if (facts.carried(Items.CRAFTING_TABLE) == 0) steps.add(obtain(Items.CRAFTING_TABLE, 1));
+            if (facts.carried(Items.STICK) < STICKS_MIN) steps.add(obtain(Items.STICK, STICKS_STOCK));
+            if (facts.carried(held -> CompanionSeal.seals(new ItemStack(held))) < SEALS_MIN) steps.add(obtain(Items.COBBLESTONE, SEALS_STOCK));
+            if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
+            return steps;
         }
 
         private static List<Step> foodSteps(CompanionFacts facts, int target) {

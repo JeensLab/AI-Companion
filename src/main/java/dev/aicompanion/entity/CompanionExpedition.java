@@ -22,7 +22,7 @@ final class CompanionExpedition {
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
-    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, CLIMB_TICKS = 20 * 120;
+    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 1.0;
 
@@ -34,6 +34,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionOre ore;
     private final CompanionExpeditionCave cave;
     private final CompanionExpeditionRetreat retreat;
+    private final CompanionExpeditionSupply supply;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
@@ -53,6 +54,7 @@ final class CompanionExpedition {
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
+        this.supply = new CompanionExpeditionSupply(owner);
     }
 
     /** What the stall watchdog sees move: blocks broken, steps finished, plugs placed in a cave, health regained while resting. */
@@ -83,6 +85,7 @@ final class CompanionExpedition {
         ore.reset();
         cave.reset();
         retreat.reset();
+        supply.reset();
         tunnelWhy = "";
         stage = Stage.LOCATE;
         plan = null;
@@ -287,6 +290,7 @@ final class CompanionExpedition {
             case BLOCKED -> blocked();
             case NO_TOOL -> {
                 plan = null;
+                if (!dig.lackedOre && supply.craftStonePickaxe()) return;
                 stage = Stage.CLIMB;
                 climb.begin(CompanionExpeditionClimb.shortage(dig.lackedOre, hadStone), owner.blockPosition());
             }
@@ -340,11 +344,11 @@ final class CompanionExpedition {
         }
     }
 
-    /** Torches are laid by the lighting as he works; here only the supply is topped up from coal and sticks. */
+    /** Torches are laid by the lighting as he works; here the stock the step started with is kept up from coal and sticks. */
     private void craftTorches(ServerLevel level) {
         if (level.getGameTime() < nextCraft) return;
         nextCraft = level.getGameTime() + CRAFT_EVERY;
-        if (w.items.countCarried(Items.TORCH) >= TORCHES_LOW) return;
+        if (w.items.countCarried(Items.TORCH) >= CompanionMilestones.TORCHES_STOCK) return;
         boolean coal = false, handle = false;
         for (ItemStack stack : w.items.carriedItems()) {
             coal |= stack.is(ItemTags.COALS);

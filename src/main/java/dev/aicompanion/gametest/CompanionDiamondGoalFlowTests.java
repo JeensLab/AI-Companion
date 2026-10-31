@@ -35,13 +35,15 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.*;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionDiamondGoalFlowTests {
-    private static final int TIMEOUT = 24000, EMPTY_BAG_TIMEOUT = 36000, WORN_USES_LEFT = 4, BREAD_GIVEN = 3, BENCH_DX = 3;
+    private static final int TIMEOUT = 24000, EMPTY_BAG_TIMEOUT = 36000, WORN_USES_LEFT = 4, BREAD_GIVEN = 3, BENCH_DX = 3, STILL_TICKS = 2400, DARK_TICKS = 14000;
     private static final int TORCHES = 16, STONE_PICKAXES = 2, FAILURES = 3, DIAMONDS = 2;
 
     @AfterBatch(batch = "flow_empty_bag") public static void afterEmptyBag(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "flow_second_step") public static void afterSecondStep(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "flow_failed_step") public static void afterFailedStep(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "flow_bread") public static void afterBread(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "flow_pickaxe") public static void afterPickaxe(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "flow_dark") public static void afterDark(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "flow_death") public static void afterDeath(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** Bare hands and bread only; wood, coal and iron stand on the grass: the kit is made first, and only then is the first cell opened. */
@@ -108,6 +110,60 @@ public final class CompanionDiamondGoalFlowTests {
             if (y < GROUND) h.assertTrue(count(c, Items.TORCH) >= TORCHES && count(c, Items.STONE_PICKAXE) >= STONE_PICKAXES,
                     "Went down again with " + count(c, Items.TORCH) + " torches and " + count(c, Items.STONE_PICKAXE) + " stone pickaxes | " + report(h, r));
             if (y <= deepest[0] && c.mineSite().opened() > openedAfterFirst[0]) h.succeed();
+        });
+    }
+
+    /** The stone pickaxes wear out down the stairs: with a bench, sticks and the stone he has dug he makes another one there and does not climb. */
+    @GameTest(template = "marathon_cave", batch = "flow_pickaxe", timeoutTicks = TIMEOUT)
+    public static void ranOutOfPickaxesCraftedOneOnTheSpot(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), worn(), worn(), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, TORCHES),
+                new ItemStack(Items.STONE_SWORD), new ItemStack(Items.STICK, 24), new ItemStack(Items.COBBLESTONE, 16), new ItemStack(Items.CRAFTING_TABLE)};
+        for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
+        Rig r = bind(h, c, 3);
+        start(h, r, 1);
+        boolean[] worked = {false};
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time | " + report(h, r)));
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(h, r));
+            h.assertTrue(state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(h, r));
+            int y = rel(h, c.blockPosition()).getY();
+            if (c.mineSite().opened() > 0 && count(c, Items.STONE_PICKAXE) == 0) worked[0] = true;
+            if (!worked[0]) return;
+            h.assertTrue(y < GROUND, "Climbed to the surface for a stone pickaxe | " + report(h, r));
+            if (count(c, Items.STONE_PICKAXE) > 0) h.succeed();
+        });
+    }
+
+    /** Down the stairs with no torch and no coal to make one: he goes on in the dark or climbs, but never stands for minutes. */
+    @GameTest(template = "marathon_cave", batch = "flow_dark", timeoutTicks = TIMEOUT)
+    public static void outOfTorchesAtDepthHeKeepsWorkingOrLeaves(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_PICKAXE, 4), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.TORCH, 32),
+                new ItemStack(Items.BREAD, 16), new ItemStack(Items.COBBLESTONE, 32), new ItemStack(Items.STICK, 8), new ItemStack(Items.CRAFTING_TABLE)};
+        for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
+        Rig r = bind(h, c, 3);
+        start(h, r, 1);
+        int[] dark = {-1}, still = {0}, opened = {0};
+        BlockPos[] at = {null};
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time | " + report(h, r)));
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(h, r));
+            int y = rel(h, c.blockPosition()).getY();
+            if (dark[0] < 0) {
+                if (y > GROUND - 8) return;
+                for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.TORCH)) c.setItem(slot, ItemStack.EMPTY);
+                dark[0] = 0;
+                return;
+            }
+            dark[0]++;
+            BlockPos here = c.blockPosition();
+            still[0] = here.equals(at[0]) && c.mineSite().opened() == opened[0] ? still[0] + 1 : 0;
+            at[0] = here; opened[0] = c.mineSite().opened();
+            h.assertTrue(still[0] < STILL_TICKS, "Stood for " + STILL_TICKS + " ticks at " + rel(h, here).toShortString() + " without torches | " + report(h, r));
+            if (y >= GROUND || dark[0] > DARK_TICKS) h.succeed();
         });
     }
 

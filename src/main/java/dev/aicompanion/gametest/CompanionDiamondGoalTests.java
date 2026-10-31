@@ -134,7 +134,7 @@ public final class CompanionDiamondGoalTests {
     public static void topsUpTorchesOnTheSurfaceBeforeTheNextStep(GameTestHelper h) {
         ItemStack[] bag = {new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE),
                 new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 2), new ItemStack(Items.COAL, 8), new ItemStack(Items.STICK, 9),
-                new ItemStack(Items.COBBLESTONE, 8)};
+                new ItemStack(Items.COBBLESTONE, 32), new ItemStack(Items.CRAFTING_TABLE)};
         Rig r = rig(h, true, bag);
         h.setBlock(new BlockPos(CENTER + 3, GROUND + 1, CENTER), Blocks.CRAFTING_TABLE);
         start(h, r, 1);
@@ -263,9 +263,30 @@ public final class CompanionDiamondGoalTests {
         h.succeed();
     }
 
-    private static String swordStep(CompanionEntity c) {
+    /** Down in the mine nothing is planned but the dig, so a meal eaten there sends him on, not up; on the surface the kit is topped up in full. */
+    @GameTest(template = "tall_tree", batch = "diamond_goal_sword", timeoutTicks = SAVE_TIMEOUT)
+    public static void ateFoodUndergroundTheNextStepGoesDown(GameTestHelper h) {
+        Rig r = bare(h);
+        CompanionEntity c = r.c();
+        c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        c.setItem(1, new ItemStack(Items.BREAD, 3));
+        c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
+        List<CompanionMilestones.Step> down = mineSteps(c);
+        h.assertTrue(down.size() == 1 && down.getFirst().type().equals("dig_for_diamonds"), "Underground with three bread the plan was " + down);
+        c.mineSite().clear();
+        List<String> kit = mineSteps(c).stream().map(CompanionMilestones.Step::item).toList();
+        for (String needed : List.of("minecraft:torch", "minecraft:stone_pickaxe", "minecraft:crafting_table", "minecraft:stick", "minecraft:cobblestone"))
+            h.assertTrue(kit.contains(needed), "On the surface the kit lacks " + needed + ": " + kit);
+        h.succeed();
+    }
+
+    private static List<CompanionMilestones.Step> mineSteps(CompanionEntity c) {
         var book = CompanionPlaybooks.of(GOAL, 3);
-        List<CompanionMilestones.Step> steps = book.milestones().getLast().method(CompanionFacts.of(c), false, book.milestones());
+        return book.milestones().getLast().method(CompanionFacts.of(c), false, book.milestones());
+    }
+
+    private static String swordStep(CompanionEntity c) {
+        List<CompanionMilestones.Step> steps = mineSteps(c);
         if (!steps.getLast().type().equals("dig_for_diamonds")) throw new IllegalStateException("The mine step is not last: " + steps);
         return steps.stream().filter(step -> step.item().endsWith("_sword")).map(CompanionMilestones.Step::item).findFirst().orElse(null);
     }
@@ -297,7 +318,7 @@ public final class CompanionDiamondGoalTests {
 
     /** Iron pickaxe, a stone sword, the given torches and stone pickaxes, bread, cobblestone for plugs. */
     static ItemStack[] supplies(int torches, int stonePickaxes) {
-        List<ItemStack> bag = new ArrayList<>(List.of(new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, torches), new ItemStack(Items.COBBLESTONE, 8)));
+        List<ItemStack> bag = new ArrayList<>(List.of(new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, torches), new ItemStack(Items.COBBLESTONE, 32), new ItemStack(Items.STICK, 8), new ItemStack(Items.CRAFTING_TABLE)));
         for (int i = 0; i < stonePickaxes; i++) bag.add(new ItemStack(Items.STONE_PICKAXE));
         return bag.toArray(new ItemStack[0]);
     }
