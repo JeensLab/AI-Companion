@@ -13,6 +13,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -37,6 +38,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
@@ -686,12 +688,107 @@ public final class CompanionEntity extends PathfinderMob implements Container {
      * 0.2158 blocks a tick, but the sprint's +30% would make 0.365 where a player's is 0.2806. The square root of 1.3 gives it.
      */
     @Override public void setSpeed(float speed) { super.setSpeed(isSprinting() ? speed / 1.1402F : speed); }
+    /** How hard he is pushed out of blocks sideways, and how high he jumps when the only way out is up. */
+    private static final double STUCK_PUSH = 0.2D;
+
+    /** How long the push is tried before he is simply put down at the nearest free spot. */
+    private static final int STUCK_PATIENCE = 20;
+    /** How far that spot is looked for, nearest first. */
+    private static final double[] STUCK_SEARCH = {0.5D, 1.0D, 1.5D, 2.0D, 3.0D};
+    /** Ticks he has been inside blocks in a row. */
+    private int stuckTicks;
+
+    /**
+     * A body inside blocks — a wall, a tree, a hole a block fell into — gets out instead of standing there and
+     * suffocating (the owner asked for this, 31.10). A dropped item only gets a nudge along one axis, which leaves a
+     * tall body's feet stuck, so here the way out is looked for over the whole box, and upwards he jumps.
+     */
+    private void pushOutOfBlocks() {
+        if (isPassenger() || !stuckInBlocks()) {
+            stuckTicks = 0;
+            return;
+        }
+        // The push works for most cases; when it does not, a few seconds of suffocating is enough to put him down elsewhere.
+        if (++stuckTicks > STUCK_PATIENCE) {
+            placeAtFreeSpot();
+            return;
+        }
+        var box = getBoundingBox();
+        var move = getDeltaMovement();
+        if (freeAt(box.move(0.0D, 1.0D, 0.0D))) {
+            // One jump, not a fresh boost every tick: the upward speed is only replaced while he is not already rising.
+            if (move.y <= 0.01D) setDeltaMovement(move.x * 0.75D, jumpPower(), move.z * 0.75D);
+            return;
+        }
+        // Half his width plus half a block: a smaller step would leave the box inside the block he is in.
+        double step = getBbWidth() / 2.0D + 0.5D;
+        if (freeAt(box.move(step, 0.0D, 0.0D))) setDeltaMovement(STUCK_PUSH, move.y, move.z * 0.75D);
+        else if (freeAt(box.move(-step, 0.0D, 0.0D))) setDeltaMovement(-STUCK_PUSH, move.y, move.z * 0.75D);
+        else if (freeAt(box.move(0.0D, 0.0D, step))) setDeltaMovement(move.x * 0.75D, move.y, STUCK_PUSH);
+        else if (freeAt(box.move(0.0D, 0.0D, -step))) setDeltaMovement(move.x * 0.75D, move.y, -STUCK_PUSH);
+        // Nowhere free on any side: the dropped-item nudge, which still works its way out over a few ticks.
+        else moveTowardsClosestSpace(getX(), (box.minY + box.maxY) / 2.0D, getZ());
+    }
+
+    /**
+     * The nearest place he fits, nearest first; the owner's feet when nothing is free near him. A last resort for the
+     * walls a push cannot get him out of (a block in his head, a room closed on every side).
+     */
+    private void placeAtFreeSpot() {
+        var box = getBoundingBox();
+        for (double distance : STUCK_SEARCH) {
+            for (var offset : new Vec3[]{new Vec3(distance, 0.0D, 0.0D), new Vec3(-distance, 0.0D, 0.0D),
+                    new Vec3(0.0D, 0.0D, distance), new Vec3(0.0D, 0.0D, -distance)}) {
+                var target = box.move(offset);
+                if (!freeAt(target)) continue;
+                putAt(target);
+                return;
+            }
+        }
+        // Upwards only onto something solid, or gravity drops him back into the same block.
+        for (double height : new double[]{0.5D, 1.0D, 2.0D}) {
+            var target = box.move(0.0D, height, 0.0D);
+            if (!freeAt(target) || !supported(target)) continue;
+            putAt(target);
+            return;
+        }
+        var owner = getOwnerPlayer();
+        if (owner != null && owner.level() == level()) {
+            var target = box.move(owner.getX() - getX(), owner.getY() - getY(), owner.getZ() - getZ());
+            if (freeAt(target)) putAt(target);
+        }
+    }
+
+    private void putAt(AABB target) {
+        teleportTo(target.minX + getBbWidth() / 2.0D, target.minY, target.minZ + getBbWidth() / 2.0D);
+        stuckTicks = 0;
+    }
+
+    /** Solid ground under the spot, so he stays there instead of falling back into the block. */
+    private boolean supported(AABB box) {
+        var below = BlockPos.containing(box.getCenter().x, box.minY - 0.1D, box.getCenter().z);
+        return !level().getBlockState(below).getCollisionShape(level(), below).isEmpty();
+    }
+
+    /** Inside blocks, his own walk would fight the way out, so travel drops it until he is free. */
+    private boolean stuckInBlocks() {
+        return !level().noCollision(this, getBoundingBox().deflate(1.0E-7));
+    }
+
+    /** A place he can be: no block in the way, and not standing over lava. */
+    private boolean freeAt(AABB box) {
+        if (!level().noCollision(this, box)) return false;
+        var below = BlockPos.containing(box.getCenter().x, box.minY - 0.1D, box.getCenter().z);
+        return !level().getFluidState(below).is(FluidTags.LAVA);
+    }
+
     /**
      * In the water a mob's stroke is its walking speed (0.3), a player's the whole push of the key (0.98): in water to the knee,
      * where no bobbing helps, he waded a block in two seconds and fell behind the player swimming to the island (marathon
      * 23.10, «берег»). Like a player: the push of the key, as far as he means to go at a walk.
      */
     @Override public void travel(Vec3 input) {
+        if (stuckInBlocks()) input = new Vec3(0.0D, input.y, 0.0D);
         if (isInWater() && !isInLava() && (input.x != 0 || input.z != 0)) {
             double scale = .98 / getAttributeBaseValue(Attributes.MOVEMENT_SPEED), horizontal = Math.hypot(input.x, input.z) * scale;
             if (horizontal > .98) scale *= .98 / horizontal;
@@ -710,6 +807,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         swimming.stroke();
         swimming.climbOutOfWater();
+        pushOutOfBlocks();
         meals.tickEating();
         loot.tickNearby();
         recovery.observe();
