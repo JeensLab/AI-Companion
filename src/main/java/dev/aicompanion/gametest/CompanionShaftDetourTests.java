@@ -201,6 +201,30 @@ public final class CompanionShaftDetourTests {
         h.succeed();
     }
 
+    /**
+     * Two walls close the entrance cell at the feet's height and he stands on the diagonal beyond them: the move control cannot squeeze
+     * between the two corners, the way round them is a few cells of path. The first step must not end the goal as a stuck walk.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void reachesTheEntranceCellRoundACornerThePushCannotPass(GameTestHelper h) {
+        mountain(h);
+        BlockPos feet = new BlockPos(CENTER, GROUND + 1, CENTER);
+        for (int y = feet.getY(); y <= feet.getY() + 1; y++) {
+            h.setBlock(new BlockPos(CENTER + 1, y, CENTER), Blocks.STONE);
+            h.setBlock(new BlockPos(CENTER, y, CENTER - 1), Blocks.STONE);
+        }
+        CompanionEntity c = rig(h);
+        c.mineSite().start(h.absolutePos(feet), Direction.SOUTH);
+        BlockPos diagonal = h.absolutePos(new BlockPos(CENTER + 1, GROUND + 1, CENTER - 1));
+        c.teleportTo(diagonal.getX() + 0.3, diagonal.getY(), diagonal.getZ() + 0.7);
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result == null || !result.message().contains("застрял"), "Goal ended on a stuck walk: " + report(c));
+        });
+        h.succeedWhen(() -> h.assertTrue(c.mineSite().stands().size() >= 2, "No stairs dug yet: " + report(c)));
+    }
+
     private static CompanionMineSite loadedFrom(CompoundTag tag) {
         CompanionMineSite site = new CompanionMineSite();
         site.load(tag);

@@ -28,13 +28,17 @@ final class CompanionExpeditionDig {
 
     /** Sealing blocks worth keeping in the bag; every other rock and the sealing blocks beyond them are left lying, untagged, so the work never waits for them. */
     static final int SEAL_RESERVE = 64;
-    private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40;
+    private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40, PATH_AFTER = 20;
     private static final double CENTRED = .35, RESTING = .1;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
     private BlockPos cell, walking;
     private int cellTicks, unseen, walkTicks;
+    private List<BlockPos> around = List.of();
+    private BlockPos reaching;
+    private int aroundIndex;
+    private boolean tried;
     /** Blocks broken so far: a counter the stall watchdog sees move. */
     int broken;
     /** The cell broken last, to see what it opened onto. */
@@ -150,6 +154,25 @@ final class CompanionExpeditionDig {
         return false;
     }
 
+    /**
+     * {@link #walkTo}, and once the straight push has not brought him into the cell, the way round what blocks it (see
+     * {@link CompanionExpeditionApproach}), walked cell by cell. No way found leaves the straight push to run out its patience.
+     */
+    boolean reach(BlockPos to) {
+        if (!to.equals(reaching)) { reaching = to.immutable(); around = List.of(); aroundIndex = 0; tried = false; }
+        if (aroundIndex < around.size()) {
+            if (walkTo(around.get(aroundIndex)) && ++aroundIndex == around.size()) { reaching = null; return true; }
+            return false;
+        }
+        if (walkTo(to)) { reaching = null; return true; }
+        if (!tried && walkTicks >= PATH_AFTER) {
+            tried = true;
+            List<BlockPos> path = CompanionExpeditionApproach.path((ServerLevel) owner.level(), owner.blockPosition(), to);
+            if (path != null && path.size() > 1) { around = path; aroundIndex = 0; }
+        }
+        return false;
+    }
+
     boolean walkStuck() { return walkTicks > WALK_PATIENCE; }
 
     private boolean centred(BlockPos to) {
@@ -161,6 +184,8 @@ final class CompanionExpeditionDig {
     void reset() {
         flush();
         cell = walking = lastBroken = null;
+        reaching = null;
+        around = List.of();
         minedOre.clear();
         cellTicks = unseen = walkTicks = 0;
         w.breaking.reset();

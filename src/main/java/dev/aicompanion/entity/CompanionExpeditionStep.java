@@ -74,7 +74,7 @@ final class CompanionExpeditionStep {
                 Result laid = layFloor(level);
                 if (laid != null) return laid;
             }
-            if (!dig.walkTo(to)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
+            if (!dig.reach(to)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
             moved = true;
         }
         if (index < cells.size()) return open(level, cells.size());
@@ -83,7 +83,7 @@ final class CompanionExpeditionStep {
     }
 
     private Result check(ServerLevel level) {
-        if (!dig.walkTo(from)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
+        if (!dig.reach(from)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
         CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, from, cells, floor, w.mine.seals(), w.mine.avoid(), kind != Kind.TUNNEL);
         switch (hazard.kind()) {
             case OK -> safe = true;
@@ -112,7 +112,7 @@ final class CompanionExpeditionStep {
     }
 
     private Result open(ServerLevel level, int limit) {
-        if (!dig.walkTo(moved ? to : from)) return dig.walkStuck() ? Result.BLOCKED : Result.WORKING;
+        if (!dig.reach(moved ? to : from)) return dig.walkStuck() ? Result.BLOCKED : Result.WORKING;
         switch (dig.dig(level, cells.get(index))) {
             case DONE -> { if (++index == limit) dig.flush(); }
             case NO_TOOL -> { return Result.NO_TOOL; }
