@@ -11,7 +11,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -20,6 +22,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -31,6 +34,8 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
+    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6;
+
 
     private CompanionMineBacktrackTests() { }
 
@@ -52,6 +57,78 @@ public final class CompanionMineBacktrackTests {
             h.assertTrue(!h.getBlockState(dead.above()).isAir(), "No plug behind him at " + dead.above().toShortString() + " | " + report(c));
             h.assertTrue(c.mineSite().stands().contains(h.absolutePos(before.west())) || c.mineSite().stands().contains(h.absolutePos(before.east())), "No branch off stand 11: " + c.mineSite().stands().size() + " stands | " + report(c));
             h.assertTrue(c.mineSite().backtracks() == 1, "Backtracks " + c.mineSite().backtracks());
+        });
+    }
+
+    /** Four zombies in a chamber the stairs break into: after the retreat the next order does not dig back into that cave but turns off above it and goes round it to the ore in the west wall. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void doesNotReturnToACrowdedCaveAfterARetreat(GameTestHelper h) {
+        mountain(h, false);
+        for (int z = 1; z < SIZE - 1; z++) for (int x = 1; x <= WEST_LODE; x++) h.setBlock(new BlockPos(x, DIAMOND_FEET - 1, z), Blocks.DEEPSLATE_DIAMOND_ORE);
+        for (int x = CHAMBER_X0; x <= CHAMBER_X1; x++) for (int z = CHAMBER_Z0; z <= CHAMBER_Z1; z++) for (int y = CHAMBER_Y; y <= CHAMBER_Y + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        List<Zombie> zombies = new ArrayList<>();
+        for (int[] at : new int[][]{{23, 15}, {24, 16}, {25, 17}, {23, 17}}) {
+            Zombie zombie = h.spawn(EntityType.ZOMBIE, at[0], CHAMBER_Y, at[1]);
+            zombie.setPersistenceRequired();
+            zombies.add(zombie);
+        }
+        long first = start(h, c, 1);
+        long[] second = {-1};
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % RETARGET_EVERY == 0) zombie.setTarget(c);
+            if (c.isWorking() || c.isGatheringTask()) {
+                BlockPos at = rel(h, c.blockPosition());
+                boolean inCave = at.getX() >= CHAMBER_X0 && at.getX() <= CHAMBER_X1 && at.getZ() >= CHAMBER_Z0 && at.getZ() <= CHAMBER_Z1 && at.getY() >= CHAMBER_Y && at.getY() <= CHAMBER_Y + 2;
+
+                h.assertTrue(second[0] < 0 || !inCave, "Back in the cave at " + at.toShortString() + " | " + report(c));
+                return;
+            }
+            if (second[0] < 0) {
+                CompanionActionResult result = c.workResult(first);
+                if (result == null) return;
+                h.assertTrue(result.message().contains("отступил") && c.getHealth() >= RECOVERED, "The first order did not end in a retreat: " + report(c));
+                second[0] = start(h, c, 1);
+                return;
+            }
+            CompanionActionResult result = c.workResult(second[0]);
+            if (result == null) return;
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The second order found nothing, retreats " + c.mineSite().retreats() + ": " + report(c));
+            h.assertTrue(c.mineSite().retreats() == 1, "Retreats " + c.mineSite().retreats() + " | " + report(c));
+            for (BlockPos stand : c.mineSite().stands()) h.assertTrue(!c.mineSite().shunned(stand), "A stand in the cave box at " + rel(h, stand).toShortString());
+            h.succeed();
+        });
+    }
+
+    /** Bedrock at the arena's edge ends the tunnels north, west and east of the stairs' foot: the base moves to the end of the long west one and the ore south of it is found. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void movesTheBaseWhenAllTunnelsAreDone(GameTestHelper h) {
+        mountain(h, false);
+        for (int x = 2; x <= 4; x++) for (int z = 26; z <= 28; z++) h.setBlock(new BlockPos(x, DIAMOND_FEET - 1, z), Blocks.DEEPSLATE_DIAMOND_ORE);
+        CompanionEntity c = rig(h);
+        // Three long tunnels in deepslate wear out more stone pickaxes than the usual bag holds.
+        for (int slot = 6; slot < 6 + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The mine ended without the ore: " + report(c));
+            h.assertTrue(c.mineSite().stands().size() > GROUND - DIAMOND_FEET + 10, "The base did not move: " + c.mineSite().stands().size() + " stands | " + report(c));
+        });
+    }
+
+    /** He stands in a closed pit well below the entrance, his stairs are not there: the mine starts again from the pit and still gets to the ore. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainWhereHeStandsWhenTheStairsAreLost(GameTestHelper h) {
+        mountain(h, true);
+        for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h, PIT, DEEPSLATE_TOP, PIT);
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again: " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
         });
     }
 
@@ -124,20 +201,23 @@ public final class CompanionMineBacktrackTests {
     private static BlockPos under(int step) { return new BlockPos(CENTER, GROUND - step, CENTER - step); }
 
     /** Bedrock floor and walls, deepslate up to Y -52, stone, dirt, grass; deepslate diamond ore in a ring under the tunnel floor. */
-    private static void mountain(GameTestHelper h) {
+    private static void mountain(GameTestHelper h) { mountain(h, true); }
+
+    private static void mountain(GameTestHelper h, boolean ring) {
         var level = h.getLevel();
         for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) for (int y = 0; y <= GROUND; y++) {
             boolean edge = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;
-            int ring = Math.max(Math.abs(x - CENTER), Math.abs(z - CENTER));
             Block block = y == 0 || edge ? Blocks.BEDROCK
-                    : y == DIAMOND_FEET - 1 && ring >= RING_FROM ? Blocks.DEEPSLATE_DIAMOND_ORE
+                    : y == DIAMOND_FEET - 1 && ring && Math.max(Math.abs(x - CENTER), Math.abs(z - CENTER)) >= RING_FROM ? Blocks.DEEPSLATE_DIAMOND_ORE
                     : y <= DEEPSLATE_TOP ? Blocks.DEEPSLATE : y < GROUND - 2 ? Blocks.STONE : y < GROUND ? Blocks.DIRT : Blocks.GRASS_BLOCK;
             level.setBlock(h.absolutePos(new BlockPos(x, y, z)), block.defaultBlockState(), 2 | 16);
         }
     }
 
-    private static CompanionEntity rig(GameTestHelper h) {
-        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+    private static CompanionEntity rig(GameTestHelper h) { return rig(h, CENTER, GROUND + 1, CENTER); }
+
+    private static CompanionEntity rig(GameTestHelper h, int x, int y, int z) {
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), x, y, z);
         var owner = h.makeMockServerPlayerInLevel();
         owner.teleportTo(companion.getX() - 3, companion.getY(), companion.getZ() - 3);
         companion.setOwnerId(owner.getUUID());
@@ -160,6 +240,13 @@ public final class CompanionMineBacktrackTests {
         CompanionActionResult result = c.workResult(id);
         h.assertTrue(result != null, "No result for the order: " + report(c));
         return result;
+    }
+
+    /** Position relative to the arena corner; GameTestHelper.relativePos mirrors X and Z in a rotated arena, so the frame is read from absolutePos. */
+    private static BlockPos rel(GameTestHelper h, BlockPos world) {
+        BlockPos origin = h.absolutePos(BlockPos.ZERO), dx = h.absolutePos(new BlockPos(1, 0, 0)).subtract(origin), dz = h.absolutePos(new BlockPos(0, 0, 1)).subtract(origin);
+        BlockPos d = world.subtract(origin);
+        return new BlockPos(d.getX() * dx.getX() + d.getZ() * dx.getZ(), d.getY(), d.getX() * dz.getX() + d.getZ() * dz.getZ());
     }
 
     private static String report(CompanionEntity companion) { return companion.getDeedsForAi() + " | " + companion.getLastTaskResult() + " | bag: " + companion.getStoredItemsSummary(); }
