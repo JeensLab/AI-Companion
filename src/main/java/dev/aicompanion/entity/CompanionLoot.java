@@ -115,18 +115,50 @@ final class CompanionLoot {
             int before = offered.getCount(); owner.storeLoot(offered);
             int moved = before - offered.getCount();
             if (moved == 0) continue;
-            dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "item_picked_up", "entity", owner.getUUID(),
-                    "dropEntity", item.getUUID(), "item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getItem().getItem()),
-                    "count", moved, "position", item.position());
             if (item.getItem().is(ItemTags.LOGS)) collectedLogs += moved;
             if (item.getItem().is(ItemTags.STONE_TOOL_MATERIALS)) collectedStone += moved;
             if (CompanionTools.soilItem(item.getItem())) collectedSoil += moved;
             for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose() && ground == owner.gathering.ground && ground.counts(item.getItem())) collectedLoose[ground.ordinal()] += moved;
-            owner.take(item, moved);
-            level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
-            if (offered.isEmpty()) { item.discard(); pending.remove(id); } else item.setItem(offered);
+            takeFrom(item, offered, moved, false);
+            if (offered.isEmpty()) pending.remove(id);
         }
+        collectLoose(level);
         owner.syncWorkState();
+    }
+
+    /**
+     * Anything lying within reach goes into the bag, whoever dropped or threw it — the owner asked for this on 31.10.
+     * His own harvest is taken by the loop above; a gift handed to the player and a drop of another companion are not.
+     */
+    private void collectLoose(ServerLevel level) {
+        for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, owner.getBoundingBox().inflate(2.0D),
+                found -> !found.hasPickUpDelay())) {
+            if (pending.contains(item.getUUID())) continue;
+            var data = item.getPersistentData();
+            if (data.getBoolean("aicompanion:gift")) continue; // handed to the player, never taken back
+            if (item.getUUID().equals(owner.goals().giftEntity())) continue;
+            // An item aimed at somebody is theirs: a gift aimed at the player, a drop claimed elsewhere.
+            if (item.getTarget() != null && !item.getTarget().equals(owner.getUUID())) continue;
+            if (data.hasUUID(HARVESTER) && !owner.getUUID().equals(data.getUUID(HARVESTER))) continue;
+            if (!touches(owner.position(), item)) continue;
+            ItemStack offered = item.getItem().copy();
+            int before = offered.getCount();
+            owner.storeLoot(offered);
+            int moved = before - offered.getCount();
+            if (moved == 0) continue;
+            // Not counted as harvest progress: this was lying there, not gathered for a task.
+            takeFrom(item, offered, moved, true);
+        }
+    }
+
+    /** Hands over what was stored: the pickup sound, the note in the log, and the rest of the stack left on the floor. */
+    private void takeFrom(ItemEntity item, ItemStack offered, int moved, boolean loose) {
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "item_picked_up", "entity", owner.getUUID(),
+                "dropEntity", item.getUUID(), "item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getItem().getItem()),
+                "count", moved, "position", item.position(), "loose", loose);
+        owner.take(item, moved);
+        if (owner.level() instanceof ServerLevel level) level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
+        if (offered.isEmpty()) item.discard(); else item.setItem(offered);
     }
     boolean hasPending() {
         if (!(owner.level() instanceof ServerLevel level)) return false;
