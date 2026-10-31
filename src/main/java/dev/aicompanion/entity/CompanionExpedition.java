@@ -24,7 +24,7 @@ final class CompanionExpedition {
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
     private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, TORCHES_LOW = 6, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
-    private static final double ENTRANCE_NEAR = 2.5;
+    private static final double ENTRANCE_NEAR = 1.0;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -213,11 +213,16 @@ final class CompanionExpedition {
     /** His own plug from the last retreat comes out of the step before he goes down it; the block drops and is picked up like any other. */
     private void takeOutPlug(ServerLevel level) {
         BlockPos plug = w.mine.plug();
-        switch (dig.dig(level, plug)) {
+        CompanionExpeditionDig.Status status = dig.dig(level, plug);
+        switch (status) {
             case WORKING -> { }
             case DONE -> { dig.flush(); w.mine.plugged(null); }
             case FULL -> end(Ending.BLOCKED, "Сумка полна, свою пробку на лестнице убрать некуда.");
-            default -> end(Ending.BLOCKED, "Свою пробку на лестнице убрать не смог.");
+            default -> end(Ending.BLOCKED, "Свою пробку на лестнице убрать не смог (" + switch (status) {
+                case NO_TOOL -> "нет подходящей кирки";
+                case NO_HAND -> "не взял кирку в руку";
+                default -> "не вижу её, не дотягиваюсь или не разбирается";
+            } + ").");
         }
     }
 
