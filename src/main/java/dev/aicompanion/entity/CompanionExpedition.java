@@ -24,7 +24,7 @@ final class CompanionExpedition {
     /** Extra time past the step's end for a cave episode under way to close its breach; a reserve used up ends the step anyway. */
     private static final int CAVE_RESERVE = 20 * 60;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
-    private static final int MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
+    private static final int SOFT_RETRIES = 3, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 1.0;
 
@@ -40,9 +40,9 @@ final class CompanionExpedition {
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, hadStone, unheld;
+    private boolean active, hadStone, unheld, joining;
     private long stepEnd, nextCraft;
-    private int startDiamonds, progress, stairSteps, turns, routeIndex;
+    private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails;
     private BlockPos stand, head;
     private Direction dir, tunnel;
     private String tunnelWhy = "";
@@ -85,7 +85,7 @@ final class CompanionExpedition {
         climb.reset();
         lead.clear();
         CompanionChunkTicket.release(owner);
-        active = hadStone = unheld = false;
+        active = hadStone = unheld = joining = false;
         ore.reset();
         cave.reset();
         retreat.reset();
@@ -96,7 +96,7 @@ final class CompanionExpedition {
         route = List.of();
         stand = head = null;
         dir = tunnel = null;
-        progress = stairSteps = turns = routeIndex = 0;
+        progress = stairSteps = turns = routeIndex = softFails = 0;
     }
 
     void tick(ServerLevel level) {
@@ -163,12 +163,14 @@ final class CompanionExpedition {
         if (level.dimension() != Level.OVERWORLD) { end(Ending.BLOCKED, "Шахту копаю только в Верхнем мире."); return; }
         CompanionMineSite mine = w.mine;
         BlockPos here = owner.blockPosition();
-        if (mine.exists() && level.hasChunkAt(mine.entrance())) {
+        joining = false;
+        if (mine.exists()) {
             mine.verify(level);
             route = new ArrayList<>(List.of(mine.entrance()));
             route.addAll(mine.stands());
             routeIndex = nearest(here);
             if (routeIndex < 0 && atTunnel(here)) routeIndex = route.size() - 1;
+            if (routeIndex < 0 && !mine.stands().isEmpty() && here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH) { joining = true; stage = Stage.CHECK_NEAR; return; }
             if (routeIndex >= 0 || here.distSqr(mine.entrance()) <= FAR_ENTRANCE * FAR_ENTRANCE) { stage = Stage.CHECK_NEAR; return; }
         }
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
@@ -201,9 +203,10 @@ final class CompanionExpedition {
 
     private void walkDown(ServerLevel level) {
         if (routeIndex < 0) {
-            CompanionTravel.Step walk = w.route.legs(route.get(0), ENTRANCE_NEAR);
-            if (walk == CompanionTravel.Step.FAILED) end(Ending.BLOCKED, "Не смог дойти до входа в шахту.");
-            else if (walk == CompanionTravel.Step.NEAR) routeIndex = 0;
+            int target = joining ? route.size() - 1 : 0;
+            CompanionTravel.Step walk = w.route.legs(route.get(target), ENTRANCE_NEAR);
+            if (walk == CompanionTravel.Step.FAILED) end(Ending.BLOCKED, joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
+            else if (walk == CompanionTravel.Step.NEAR) routeIndex = target;
             return;
         }
         if (routeIndex + 1 < route.size()) {
@@ -308,6 +311,7 @@ final class CompanionExpedition {
         CompanionExpeditionStep done = plan;
         plan = null;
         progress++;
+        softFails = 0;
         ore.scan = true;
         switch (done.kind) {
             case STAIR -> {
@@ -337,12 +341,14 @@ final class CompanionExpedition {
         plan = null;
         switch (failed.kind) {
             case STAIR -> {
+                if (!failed.lasting && ++softFails <= SOFT_RETRIES) return;
                 if (failed.lasting) w.mine.refuse(stand, dir);
                 Direction side = turns >= MAX_TURNS ? null : CompanionShaftPlan.chooseTurn((ServerLevel) owner.level(), stand, dir, w.mine.seals(), w.mine.avoid());
                 if (side == null) end(Ending.BLOCKED, "Дальше лестницу не прокопать: " + failed.why + ".");
                 else plan = CompanionExpeditionStep.landing(w, dig, stand, side);
             }
             case LANDING -> {
+                if (!failed.lasting && ++softFails <= SOFT_RETRIES) { plan = CompanionExpeditionStep.landing(w, dig, failed.from, failed.turn); return; }
                 if (failed.lasting) w.mine.refuse(failed.from, failed.turn);
                 end(Ending.BLOCKED, "Свернуть в сторону тоже не вышло: " + failed.why + ".");
             }

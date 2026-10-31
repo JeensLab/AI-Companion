@@ -225,6 +225,23 @@ public final class CompanionShaftDetourTests {
         h.succeedWhen(() -> h.assertTrue(c.mineSite().stands().size() >= 2, "No stairs dug yet: " + report(c)));
     }
 
+    /** The entrance end of a deep staircase lies in chunks that are not loaded: the record is not judged there, and a stand that is loaded and shut is still cut. */
+    @GameTest(template = "marathon_cave")
+    public static void keepsStairsInUnloadedChunksWhenTheRecordIsChecked(GameTestHelper h) {
+        mountain(h);
+        var level = h.getLevel();
+        BlockPos far = new BlockPos(1_000_000, 70, 1_000_000);
+        h.assertTrue(!level.hasChunkAt(far), "The far cell is loaded");
+        CompanionMineSite site = new CompanionMineSite();
+        site.start(far, Direction.NORTH);
+        site.reached(far.below().north());
+        site.reached(far.below(2).north(2));
+        h.assertTrue(site.verify(level) == 2 && site.stands().size() == 2, "Stands in unloaded chunks were cut: " + site.stands().size());
+        site.reached(h.absolutePos(new BlockPos(CENTER, 10, CENTER)));
+        h.assertTrue(site.verify(level) == 2, "A shut stand in a loaded chunk was kept: " + site.stands().size());
+        h.succeed();
+    }
+
     private static CompanionMineSite loadedFrom(CompoundTag tag) {
         CompanionMineSite site = new CompanionMineSite();
         site.load(tag);

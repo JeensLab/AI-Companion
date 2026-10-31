@@ -173,31 +173,33 @@ public final class CompanionMineSite {
 
     /**
      * Cuts the staircase back to the stands whose three cells are all still open, from the entrance down, and forgets own
-     * blocks that are gone. An unloaded chunk ends the verified part (loading it here would stall the tick).
+     * blocks that are gone. A stand in an unloaded chunk is not judged and stays (loading it here would stall the tick, and the stairs far below him
+     * must not be cut off because the entrance end is out of range).
      * Returns how many stands remain; tunnels are dropped with any stand that goes.
      */
     public int verify(ServerLevel level) {
         if (entrance == null) return 0;
-        if (!CompanionShaftPlan.columnOpen(level, entrance)) {
+        if (level.hasChunkAt(entrance) && !CompanionShaftPlan.columnOpen(level, entrance)) {
             truncate(0);
         } else {
             int kept = 0;
-            while (kept < stands.size() && passable(level, stands.get(kept))) kept++;
+            while (kept < stands.size() && !closed(level, stands.get(kept))) kept++;
             truncate(kept);
         }
-        seals.removeIf(cell -> !level.hasChunkAt(cell) || level.getBlockState(cell).isAir());
-        if (plug != null && (!level.hasChunkAt(plug) || level.getBlockState(plug).isAir())) plug = null;
+        seals.removeIf(cell -> level.hasChunkAt(cell) && level.getBlockState(cell).isAir());
+        if (plug != null && level.hasChunkAt(plug) && level.getBlockState(plug).isAir()) plug = null;
         return stands.size();
     }
 
     /** The stand's column is open, or closed only by his own plug (a retreat leaves it; the next step takes it out), and a floor holds under it. */
-    private boolean passable(ServerLevel level, BlockPos stand) {
+    private boolean closed(ServerLevel level, BlockPos stand) {
+        if (!level.hasChunkAt(stand)) return false;
         BlockPos floor = stand.below();
-        if (!level.hasChunkAt(floor) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return false;
+        if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return true;
         for (BlockPos cell : CompanionShaftPlan.column(stand)) {
-            if (!level.hasChunkAt(cell) || !CompanionShaftPlan.open(level, cell) && !cell.equals(plug)) return false;
+            if (!CompanionShaftPlan.open(level, cell) && !cell.equals(plug)) return true;
         }
-        return true;
+        return false;
     }
 
     public void save(CompoundTag tag) {

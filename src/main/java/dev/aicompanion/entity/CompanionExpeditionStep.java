@@ -112,7 +112,7 @@ final class CompanionExpeditionStep {
     }
 
     private Result open(ServerLevel level, int limit) {
-        if (!dig.reach(moved ? to : from)) return dig.walkStuck() ? Result.BLOCKED : Result.WORKING;
+        if (!dig.reach(moved ? to : from)) return dig.walkStuck() ? fail(WALK) : Result.WORKING;
         switch (dig.dig(level, cells.get(index))) {
             case DONE -> { if (++index == limit) dig.flush(); }
             case NO_TOOL -> { return Result.NO_TOOL; }
