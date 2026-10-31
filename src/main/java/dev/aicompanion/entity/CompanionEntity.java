@@ -88,6 +88,17 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
     static final double LOG_INTERACTION_RANGE_SQR = 16.0D;
+    /** How long the eyes stay on the player after he says something (CompanionGaze): three seconds. */
+    static final int GAZE_TALK_TICKS = 60;
+    /** How far the player's own gaze reaches him, and the cosine of the cone that counts as looking at him. */
+    static final double GAZE_SEEN_COS = 0.94D;
+    /** How close the player's body must be for the touch to count: the two bodies touch at about a block. */
+    static final double GAZE_TOUCH_RANGE_SQR = 1.5D * 1.5D;
+    /** How far away the player's own gaze still reaches him: ten blocks, no eye contact across the meadow (owner 29.10). */
+    static final double GAZE_SEEN_RANGE_SQR = 10.0D * 10.0D;
+    /** How fast the head turns to the player when he speaks to him. */
+    static final float GAZE_TURN_YAW = 30.0F;
+    static final float GAZE_TURN_PITCH = 30.0F;
     UUID ownerId;
     boolean following = true;
     boolean protecting;
@@ -149,9 +160,35 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void syncAutonomy() { if (!level().isClientSide) entityData.set(DATA_AUTONOMY, autonomy.enabled()); }
     /** A rare autonomous notice, shown and voiced by the client. Routine progress stays in workStatus and the journal. */
     void autonomySay(String text) { autonomySay(text, true); }
+    /** Ticks left of the eye contact he keeps while he says something (CompanionGaze). */
+    private int gazeTalkTicks;
+
+    /** He holds the player's eyes while he speaks; a bad bond gives none (the owner asked for this, 29.10). */
+    public void gazeTalk() { if (!level().isClientSide) gazeTalkTicks = GAZE_TALK_TICKS; }
+
+    /** The owner's bond score, or the base one when nobody is bound yet. */
+    public int gazeBondScore() {
+        ServerPlayer owner = getOwnerPlayer();
+        if (owner == null || !(level() instanceof ServerLevel serverLevel)) return CompanionBond.BASE;
+        CompanionBonds bonds = CompanionBonds.get(serverLevel.getServer());
+        return bonds.knows(owner.getUUID()) ? bonds.bond(owner.getUUID()).score() : CompanionBond.BASE;
+    }
+
+    /** Whether his own work claims the eyes: the same busy set CompanionAutonomy.notNow uses for its deeds, plus a fight. */
+    public boolean gazeBusy() {
+        return getTarget() != null || hasActiveWorkOrder() || hasPendingLoot() || isSelfRescuing() || !canCollectItems();
+    }
+
+    /** Whether his idle gaze may settle on the player at all. */
+    public boolean gazeLooksAtPlayer() { return CompanionGaze.looksAtPlayer(gazeBondScore()); }
+
+    /** Whether he meets the player's eyes when spoken to or touched: an offended companion does not. */
+    public boolean gazeMeetsEyes() { return CompanionGaze.meetsEyes(gazeBondScore()); }
+
     /** Not as the work status where it would replace the result of the last order (the status then keeps it, like CompanionRecovery). */
     void autonomySay(String text, boolean asStatus) {
         entityData.set(DATA_SAY, text); entityData.set(DATA_SAY_SERIAL, entityData.get(DATA_SAY_SERIAL) + 1); entityData.set(DATA_SAY_TIME, level().getGameTime());
+        gazeTalk();
         if (asStatus) workStatus(text);
     }
     public String autonomyLine() { return entityData.get(DATA_SAY); }
@@ -291,7 +328,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
-        this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F));
+        this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F) {
+            // The owner asked (29.10): the eyes are on him while the bond is warm, and a bad one takes the gaze away (CompanionGaze).
+            @Override public boolean canUse() { return gazeLooksAtPlayer() && super.canUse(); }
+            @Override public boolean canContinueToUse() { return gazeLooksAtPlayer() && super.canContinueToUse(); }
+        });
         this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.65D) {
             @Override public boolean canUse() { return following && !protecting && !autonomy.staysAtWork() && inventoryViewers == 0 && super.canUse(); }
             @Override public boolean canContinueToUse() { return !autonomy.staysAtWork() && super.canContinueToUse(); }
@@ -678,6 +719,34 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         lighting.tick();
         if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
         goals.tick();
+        // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
+        // (CompanionGaze, owner 29.10). Work and hunting keep the eyes entirely: he does not turn even to talk (owner 31.10).
+        if (gazeTalkTicks > 0) {
+            gazeTalkTicks--;
+            var spokenTo = getOwnerPlayer();
+            // A body that touches him is answered even while he works; a fight keeps its target (owner 31.10).
+            boolean touched = spokenTo != null && getTarget() == null && distanceToSqr(spokenTo) < GAZE_TOUCH_RANGE_SQR;
+            if (spokenTo != null && (touched || !gazeBusy()) && distanceToSqr(spokenTo) <= GAZE_SEEN_RANGE_SQR) {
+                if (gazeMeetsEyes()) getLookControl().setLookAt(spokenTo, GAZE_TURN_YAW, GAZE_TURN_PITCH);
+                else {
+                    var ground = CompanionGaze.groundAhead(this);
+                    getLookControl().setLookAt(ground.x, ground.y, ground.z);
+                }
+            }
+        }
+        // The player looks at him or touches him: he looks back while those eyes are on him, but never while he works
+        // (CompanionGaze, owner 29.10).
+        var lookingAtMe = getOwnerPlayer();
+        if (lookingAtMe != null && !level().isClientSide && gazeMeetsEyes()) {
+            // A body that touches his own counts as being addressed even in the middle of work (the owner asked for this, 31.10).
+            if (distanceToSqr(lookingAtMe) < GAZE_TOUCH_RANGE_SQR) gazeTalk();
+            // The gaze of the player only counts while his own work does not hold his eyes.
+            else if (!gazeBusy() && distanceToSqr(lookingAtMe) < GAZE_SEEN_RANGE_SQR && lookingAtMe.hasLineOfSight(this)) {
+                var sight = lookingAtMe.getViewVector(1.0F);
+                var toMe = new Vec3(getX() - lookingAtMe.getX(), getEyeY() - lookingAtMe.getEyeY(), getZ() - lookingAtMe.getZ()).normalize();
+                if (sight.dot(toMe) > GAZE_SEEN_COS) gazeTalk();
+            }
+        }
         autonomy.tick();
         diagnostics.tick();
         if (tickCount % 100 == 0) refreshPlaces();
@@ -732,6 +801,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (hurt) {
             lastHurtTick = tickCount;
             CompanionHappeningEvents.playerHit(this, source);
+            // A touch from the player turns his eyes to him (CompanionGaze, owner 29.10).
+            if (!level().isClientSide && source.getEntity() instanceof ServerPlayer player && player.getUUID().equals(ownerId)) gazeTalk();
             if (!level().isClientSide && amount >= 4) expressions.react(dev.aicompanion.CompanionExpression.WORRIED, level().getGameTime(), 100);
         }
         return hurt;
