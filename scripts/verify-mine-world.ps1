@@ -15,8 +15,6 @@ if(-not $env:JAVA_HOME){
     $taskJdk='C:\Users\Admin\.gradle\jdks\eclipse_adoptium-21-amd64-windows.2'
     if(Test-Path -LiteralPath $taskJdk){$env:JAVA_HOME=$taskJdk}
 }
-# Scenarios that isolate one hazard run without the natural mobs of the caves; the mobs, deep dark and the plain descent keep them.
-$taskPeaceful=@('void','void-2','void-3','void-4','void-5','lava','water','retreat','come','restart')
 $taskProps="online-mode=false`nserver-port=0`nlevel-type=minecraft:normal`nlevel-seed=$Seed`nspawn-protection=0`nmax-tick-time=-1`nview-distance=4`nsimulation-distance=4`nspawn-monsters=true`nspawn-animals=false`nspawn-npcs=false`ngenerate-structures=true`n"
 $taskDiagnostics=Join-Path $taskRoot 'build/diagnostics'
 $taskSummary=Join-Path $taskDiagnostics "$RunName-summary.json"
@@ -25,10 +23,10 @@ $taskStart=Get-Date
 $taskResults=@()
 $taskBad=$false
 
-function Write-Dir([string]$dir,[string]$difficulty){
+function Write-Dir([string]$dir){
     New-Item -ItemType Directory -Path $dir | Out-Null
     [IO.File]::WriteAllText((Join-Path $dir 'eula.txt'),'eula=true',[Text.UTF8Encoding]::new($false))
-    [IO.File]::WriteAllText((Join-Path $dir 'server.properties'),($taskProps+"difficulty=$difficulty`n"),[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $dir 'server.properties'),($taskProps+"difficulty=normal`n"),[Text.UTF8Encoding]::new($false))
 }
 
 function Invoke-Stage([string]$name,[string]$dir,[string]$stage,[string]$scenario){
@@ -38,12 +36,12 @@ function Invoke-Stage([string]$name,[string]$dir,[string]$stage,[string]$scenari
     finally {$ErrorActionPreference='Stop'}
     $text=[IO.File]::ReadAllText($log)
     $saved=$text.Contains('All dimensions are saved')
-    $marks=[regex]::Matches($text,"MINE_WORLD_(PASS|FAIL|SETUP_FAILED|SKIPPED|ERROR|PREPARED) scenario=$scenario [^\r\n]*")
+    $marks=[regex]::Matches($text,"MINE_WORLD_(PASS|FAIL|UNPROVEN|SETUP_FAILED|SKIPPED|ERROR|PREPARED) scenario=$scenario [^\r\n]*")
     $verdict=if($marks.Count -gt 0){$marks[$marks.Count-1].Groups[1].Value}else{'ERROR'}
     $line=if($marks.Count -gt 0){$marks[$marks.Count-1].Value}else{"no verdict line, gradle exit $exit, see $log"}
     $json=Join-Path $taskRun "$dir/mine-world-$stage.json"
     $detail=if(Test-Path -LiteralPath $json){ConvertFrom-Json ([IO.File]::ReadAllText($json))}else{$null}
-    if($detail){$line="MINE_WORLD_$verdict scenario=$scenario stage=$stage climbs=$($detail.climbs) goalBlocked=$($detail.goalBlocked) floorRefusals=$($detail.floorRefusals) stairStops=$($detail.stairStops) deaths=$($detail.deaths) ticks=$($detail.gameTicks) wall=$($detail.wallSeconds)s reason=`"$($detail.reason)`""}
+    if($detail){$hazard=if($null -eq $detail.hazardMet){'n/a'}else{"$($detail.hazardMet)".ToLower()}; $line="MINE_WORLD_$verdict scenario=$scenario stage=$stage hazardMet=$hazard climbs=$($detail.climbs) goalBlocked=$($detail.goalBlocked) floorRefusals=$($detail.floorRefusals) stairStops=$($detail.stairStops) deaths=$($detail.deaths) ticks=$($detail.gameTicks) wall=$($detail.wallSeconds)s reason=`"$($detail.reason)`""}
     if($verdict -ne 'SKIPPED' -and -not $saved -and $verdict -ne 'SETUP_FAILED'){$line+=' [world was not saved cleanly]'}
     return [ordered]@{scenario=$scenario;stage=$stage;verdict=$verdict;line=$line;exitCode=$exit;saved=$saved;log=$log;detail=$detail}
 }
@@ -55,7 +53,7 @@ function Save-Summary(){
 
 Push-Location $taskRoot
 try {
-    Write-Dir (Join-Path $taskRun 'scan') 'normal'
+    Write-Dir (Join-Path $taskRun 'scan')
     $taskScan=Invoke-Stage 'scan' 'scan' 'scan' 'scan'
     $taskScanText=[IO.File]::ReadAllText($taskScan.log)
     if(-not $taskScanText.Contains('MINE_WORLD_SCAN_DONE') -or -not $taskScan.saved){
@@ -65,7 +63,7 @@ try {
     ([regex]::Matches($taskScanText,'MINE_WORLD_(SITE|SCAN_DONE)[^\r\n]*') | ForEach-Object {$_.Value}) | Write-Output
     foreach($taskScenario in $Scenarios){
         $taskDir=$taskScenario
-        Write-Dir (Join-Path $taskRun $taskDir) $(if($taskPeaceful -contains $taskScenario){'peaceful'}else{'normal'})
+        Write-Dir (Join-Path $taskRun $taskDir)
         Copy-Item -LiteralPath (Join-Path $taskRun 'scan/world') -Destination (Join-Path $taskRun "$taskDir/world") -Recurse
         Copy-Item -LiteralPath (Join-Path $taskRun 'scan/sites.properties') -Destination (Join-Path $taskRun "$taskDir/sites.properties")
         $taskStages=if($taskScenario -eq 'restart'){@('prepare','resume')}else{@('run')}
@@ -79,12 +77,17 @@ try {
         }
         Save-Summary
         Write-Output ("{0,-9} {1}" -f $taskFinal.verdict,$taskFinal.line)
-        if($taskFinal.verdict -in @('FAIL','SETUP_FAILED','ERROR')){$taskBad=$true}
+        if($taskFinal.verdict -in @('FAIL','UNPROVEN','SETUP_FAILED','ERROR')){$taskBad=$true}
     }
 }
 finally {Pop-Location}
 Save-Summary
-$taskCounts=$taskResults | Where-Object {$_.verdict -ne 'PREPARED'} | Group-Object {$_.verdict} | ForEach-Object {"$($_.Name)=$($_.Count)"}
+$taskFinals=@($taskResults | Where-Object {$_.verdict -ne 'PREPARED'})
+$taskCounts=@($taskFinals | Group-Object {$_.verdict} | ForEach-Object {"$($_.Name)=$($_.Count)"})
+$taskPasses=@($taskFinals | Where-Object {$_.verdict -eq 'PASS'})
+$taskMet=@($taskPasses | Where-Object {$_.detail -and $_.detail.hazardMet -eq $true}).Count
+$taskAvoided=@($taskPasses | Where-Object {$_.detail -and $_.detail.hazardMet -eq $false}).Count
+$taskCounts+="PASS-hazard-met=$taskMet PASS-hazard-avoided=$taskAvoided PASS-no-hazard=$($taskPasses.Count-$taskMet-$taskAvoided)"
 Write-Output ("TOTAL {0} in {1} s; summary {2}" -f ($taskCounts -join ' '),[int]((Get-Date)-$taskStart).TotalSeconds,$taskSummary)
 if($taskBad){Write-Output 'RED: at least one scenario failed';exit 1}
 Write-Output 'GREEN';exit 0

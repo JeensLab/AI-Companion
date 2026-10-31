@@ -166,6 +166,7 @@ final class CompanionMineWorldSites {
         out.setProperty(scenario + ".status", "OK");
         out.setProperty(scenario + ".entrance", site.feet().getX() + "," + site.feet().getY() + "," + site.feet().getZ());
         out.setProperty(scenario + ".dir", site.dir().name());
+        out.setProperty(scenario + ".failAt", Integer.toString(site.cause() == Cause.FLOOR ? site.failAt() : -1));
         if (site.cave() != null) out.setProperty(scenario + ".cave", site.cave().getX() + "," + site.cave().getY() + "," + site.cave().getZ());
         out.setProperty(scenario + ".facts", site.facts());
     }

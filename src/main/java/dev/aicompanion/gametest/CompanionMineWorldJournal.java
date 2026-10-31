@@ -30,6 +30,8 @@ final class CompanionMineWorldJournal {
     final Map<String, Object> facts = new LinkedHashMap<>();
     int resumes, climbs, deaths, maxDepth, diagnosticBlocked, floorRefusals, unloadedRefusals, stairStops, caveSentences, patchSentences;
     long maxEntityTickNanos, slowEntityTicks;
+    /** Whether the hazard of the scenario really met Oleg; null for scenarios that have none. */
+    Boolean hazardMet;
 
     CompanionMineWorldJournal(String scenario, String stage) { this.scenario = scenario; this.stage = stage; }
 
@@ -68,6 +70,7 @@ final class CompanionMineWorldJournal {
         out.put("scenario", scenario);
         out.put("stage", stage);
         out.put("verdict", verdict);
+        if (hazardMet != null) out.put("hazardMet", hazardMet);
         out.put("reason", reason);
         out.put("wallSeconds", Math.round(wallSeconds()));
         out.put("goalBlocked", blocked.size());
