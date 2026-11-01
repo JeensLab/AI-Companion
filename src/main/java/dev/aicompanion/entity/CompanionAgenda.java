@@ -59,6 +59,8 @@ public final class CompanionAgenda {
     private static final long IDLE_SAY_TICKS = 20L * 60 * 5, IDLE_BLOCK_TICKS = 20L * 60 * 30;
     /** The things of a dead companion are searched this far round his death place, and fetched from no farther than a trip he can make. */
     private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4;
+    /** The health he goes for his things with after a death: the same he rests up to in a retreat. */
+    private static final float RECOVER_HEALTH = CompanionExpeditionRetreat.FIT;
     private static final String COLLECT = "collect";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
@@ -594,10 +596,14 @@ public final class CompanionAgenda {
         BlockPos place = goal.deathPlace;
         if (place == null) return false;
         UUID owner = c.getOwnerId();
+        // Hurt, he goes for his things only after he has mended; with nothing to mend him the try is spent, with the reason said.
+        boolean hurt = c.getHealth() < RECOVER_HEALTH;
+        if (hurt && (c.satiety > 0 || c.eatTicks > 0 || CompanionEating.hasFood(c))) { waiting(data, owner, goal, c, "жду, пока поправлюсь, прежде чем идти за вещами"); return true; }
         String why = !level.dimension().equals(goal.deathDimension) ? "это другое измерение"
                 : !level.isLoaded(place) ? "туда не дойти, место не загружено"
                 : c.blockPosition().distSqr(place) > RECOVER_RANGE * RECOVER_RANGE ? "до них слишком далеко"
-                : unsafe(level, place) ? "там лава или пустота" : null;
+                : unsafe(level, place) ? "там лава или пустота"
+                : hurt ? "я ранен, а лечиться нечем" : null;
         goal.deathPlace = null; goal.deathDimension = null;
         data.setDirty();
         List<ItemEntity> mine = why != null ? List.of() : level.getEntitiesOfClass(ItemEntity.class, new AABB(place).inflate(RECOVER_RADIUS),
