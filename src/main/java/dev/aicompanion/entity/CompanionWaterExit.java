@@ -1,0 +1,79 @@
+package dev.aicompanion.entity;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.EnumSet;
+
+/**
+ * The way out of deep water for an order that waits on it. The game's float (priority 0) holds the jump flag the work goal also
+ * needs, so in water above the knee the order neither starts nor goes on, and nothing else takes him sideways: at a column of
+ * falling water with air one step away he bobbed until he drowned. This goal moves him to the nearest dry cell, with the move
+ * flag only: the float goes on lifting him, and the guard (priority 0) keeps the turn if it has it.
+ */
+final class CompanionWaterExit extends Goal {
+    private static final int RADIUS = 6, STEP_UP = 1, STEP_DOWN = 3, REPLAN_EVERY = 10;
+
+    private final CompanionEntity c;
+    private BlockPos target;
+    private long nextPlan;
+
+    CompanionWaterExit(CompanionEntity c) {
+        this.c = c;
+        setFlags(EnumSet.of(Flag.MOVE));
+    }
+
+    @Override public boolean canUse() {
+        return c.inventoryViewers == 0 && c.work.isActive() && !c.gatheringLogs && !c.gatheringDirt && c.canWorkNow()
+                && deepInWater() && (target = nearestDry()) != null;
+    }
+
+    @Override public boolean canContinueToUse() { return c.inventoryViewers == 0 && c.isAlive() && c.isInWater(); }
+    @Override public boolean requiresUpdateEveryTick() { return true; }
+    @Override public void start() { nextPlan = c.level().getGameTime() + REPLAN_EVERY; c.getNavigation().stop(); }
+    @Override public void stop() { target = null; }
+
+    @Override public void tick() {
+        if (target == null || c.level().getGameTime() >= nextPlan) {
+            nextPlan = c.level().getGameTime() + REPLAN_EVERY;
+            BlockPos found = nearestDry();
+            if (found != null) target = found;
+        }
+        if (target == null) return;
+        c.getMoveControl().setWantedPosition(target.getX() + .5, target.getY(), target.getZ() + .5, 1.0);
+        // A bank a block over the water: the float's lift stops short of it, so the last push is a jump, as a player's.
+        if (target.getY() > c.getY() && c.horizontalCollision && c.getDeltaMovement().y < .2 && c.tickCount >= c.nextWaterJump) {
+            c.nextWaterJump = c.tickCount + 10;
+            c.setDeltaMovement(c.getDeltaMovement().x, c.jumpPower(), c.getDeltaMovement().z);
+        }
+    }
+
+    /** The condition of the float itself: it is what keeps the order from the jump flag. */
+    private boolean deepInWater() {
+        return c.isInWater() && !c.isInLava() && c.getFluidHeight(FluidTags.WATER) > c.getFluidJumpThreshold();
+    }
+
+    private BlockPos nearestDry() {
+        BlockPos from = c.blockPosition();
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (int dx = -RADIUS; dx <= RADIUS; dx++) for (int dz = -RADIUS; dz <= RADIUS; dz++) for (int dy = -STEP_DOWN; dy <= STEP_UP; dy++) {
+            BlockPos pos = from.offset(dx, dy, dz);
+            double distance = pos.distSqr(from);
+            if (distance >= bestDistance || !CompanionMiningNavigation.standable(c, pos) || !open(from, pos)) continue;
+            best = pos;
+            bestDistance = distance;
+        }
+        return best;
+    }
+
+    /** No block between his middle and the cell's: a swim is a straight line, not a route. */
+    private boolean open(BlockPos from, BlockPos to) {
+        Vec3 start = Vec3.atCenterOf(from), end = Vec3.atCenterOf(to);
+        return c.level().clip(new ClipContext(start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c)).getType() == HitResult.Type.MISS;
+    }
+}
