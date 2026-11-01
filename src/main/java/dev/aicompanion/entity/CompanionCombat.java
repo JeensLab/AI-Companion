@@ -31,13 +31,14 @@ final class CompanionCombat {
         @Override public boolean canUse() {
             LivingEntity target = c.getTarget();
             if (c.archery.wants(target) || target == null || !target.isAlive() || c.work.expedition.shuns(target)) return false;
-            return c.isWithinMeleeAttackRange(target) || super.canUse();
+            return c.isWithinMeleeAttackRange(target) || c.work.expedition.engages(target) || super.canUse();
         }
         @Override public boolean canContinueToUse() {
             return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget());
         }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
-        @Override public void start() { super.start(); c.selectWeaponForCombat(); }
+        @Override public void start() { c.work.expedition.fightBegan(); super.start(); c.selectWeaponForCombat(); }
+        @Override public void tick() { super.tick(); c.work.expedition.fightGoing(); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
@@ -103,12 +104,14 @@ final class CompanionCombat {
     /**
      * Without a guard order, like a friend (the player 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня
      * напал»): a monster at the player's side, or one going for the player or for Oleg, is met first. Only while Oleg is near the
-     * player; never a creeper (a hit beside the player may end in its blast — wolves leave them alone too), never his own hunt.
+     * player; never his own hunt, and never a creeper unless he is on an expedition and fights it with the sword (a hit beside the player
+     * may end in its blast — wolves leave them alone too). In an expedition any hostile mob near him is met.
      */
     boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
-                || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
+                || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights()) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
+        if (c.work.expedition.engages(monster)) return true;
         // Deep in his own mine, the player far above: a monster that has chosen him is met before its first blow, not after it;
         // waiting for the hit gives a zombie the lead in an even trade.
         if (monster.getTarget() == c && c.work.expedition.underground() && monster.distanceToSqr(c) <= MINE_RANGE * MINE_RANGE) return true;

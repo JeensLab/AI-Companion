@@ -191,6 +191,16 @@ final class CompanionEquipment {
             equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
     }
 
+    static boolean isMelee(ItemStack stack) { return stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES); }
+
+    /** A sword or an axe in the hand or the bag (a pickaxe is a last resort, not a weapon he goes at a creeper with). */
+    boolean hasMeleeWeapon() { return isMelee(c.getMainHandItem()) || !bestWeapon(CompanionEquipment::isMelee).isEmpty(); }
+
+    /** The stone pickaxe is in the hand or the bag: the stone he carries is then not what it is still to be made of. */
+    boolean hasStonePickaxe() {
+        return c.getMainHandItem().is(net.minecraft.world.item.Items.STONE_PICKAXE) || c.companionInventory.stream().anyMatch(stack -> stack.is(net.minecraft.world.item.Items.STONE_PICKAXE));
+    }
+
     private ItemStack bestWeapon(java.util.function.Predicate<ItemStack> kind) {
         ItemStack choice = ItemStack.EMPTY;
         for (ItemStack stack : c.companionInventory)

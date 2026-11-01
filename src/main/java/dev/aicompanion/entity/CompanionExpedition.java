@@ -43,11 +43,12 @@ final class CompanionExpedition {
     private final CompanionExpeditionSupply supply;
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
+    private final CompanionExpeditionFight fight;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
     private boolean active, hadStone, unheld, joining, atFoot;
-    private long stepEnd, nextCraft;
+    private long stepEnd, nextCraft, nextArm;
     private long credited;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails;
     private BlockPos stand, head, sealCell;
@@ -67,6 +68,7 @@ final class CompanionExpedition {
         this.supply = new CompanionExpeditionSupply(w);
         this.bench = new CompanionExpeditionBench(w);
         this.stock = new CompanionExpeditionStock(w, dig);
+        this.fight = new CompanionExpeditionFight(w);
     }
 
     /** What the stall watchdog sees move: blocks broken, steps finished, plugs placed in a cave, health regained while resting. */
@@ -122,6 +124,7 @@ final class CompanionExpedition {
         supply.reset();
         bench.reset();
         stock.reset();
+        fight.reset();
         tunnelWhy = "";
         stage = Stage.LOCATE;
         plan = null;
@@ -139,6 +142,8 @@ final class CompanionExpedition {
         CompanionChunkTicket.follow(owner);
         boolean expired = level.getGameTime() >= stepEnd;
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
+        // A foe is fought before anything else is done; the time it takes is given back to the step.
+        if (!expired && fight.hold(level, stage == Stage.RETREAT)) return;
         // The cave looks at a breach a tick after it opens, so it must look before the timeout may end the step.
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
         if (expired && (!cave.busy() || level.getGameTime() >= stepEnd + CAVE_RESERVE)) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
@@ -157,6 +162,7 @@ final class CompanionExpedition {
         if (plan == null && digging && ore.pending() && mineOre(level, CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
         if (plan == null) craftTorches(level);
+        if (plan == null) arm(level);
         switch (stage) {
             case LOCATE -> locate(level);
             case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }
@@ -173,7 +179,10 @@ final class CompanionExpedition {
     private String dangerNow() {
         if (!cave.busy() && cave.takeRetreat()) return CAVE_DANGER;
         float health = owner.getHealth();
-        return health <= CompanionCaveSense.HEALTH_VERY ? "мало здоровья (" + (int) Math.ceil(health) + ")" : null;
+        if (health > CompanionCaveSense.HEALTH_VERY) return null;
+        // Just out of a fight with food in the bag, he eats on the spot; climbing at once would give up the order for a meal.
+        if (fight.justEnded(owner.level().getGameTime()) && CompanionEating.hasFood(owner)) return null;
+        return "мало здоровья (" + (int) Math.ceil(health) + ")";
     }
 
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */
@@ -204,7 +213,17 @@ final class CompanionExpedition {
     }
 
     /** True when a fight would draw him into a cave the mine has opened: see {@link CompanionExpeditionCave#shuns}. */
-    boolean shuns(net.minecraft.world.entity.LivingEntity target) { return active && cave.shuns(target); }
+    boolean shuns(net.minecraft.world.entity.LivingEntity target) {
+        return active && (cave.shuns(target) || fight.avoids(target, stage == Stage.RETREAT)
+                || target instanceof net.minecraft.world.entity.monster.Creeper && !owner.creeperGuard.fights());
+    }
+
+    /** A mob the expedition fights now, wherever it stands within sight: the melee goal goes for it even from afar. */
+    boolean engages(net.minecraft.world.entity.LivingEntity target) { return active && fight.isFoe(target); }
+
+    void fightBegan() { if (active) fight.began(); }
+
+    void fightGoing() { if (active) fight.going(); }
 
     private int gained() { return w.items.countCarried(Items.DIAMOND) - startDiamonds; }
 
@@ -511,6 +530,13 @@ final class CompanionExpedition {
             handle |= stack.is(Items.STICK) || stack.is(ItemTags.PLANKS) || stack.is(ItemTags.LOGS);
         }
         if (coal && handle) owner.craftFromBag("minecraft:torch", 4);
+    }
+
+    /** A sword in the bag, or one made from the stone and sticks he carries, at a bench set down and taken up like the pickaxe's. */
+    private void arm(ServerLevel level) {
+        if (level.getGameTime() < nextArm) return;
+        nextArm = level.getGameTime() + CRAFT_EVERY;
+        if (!owner.equipment.hasMeleeWeapon() && supply.spareForSword()) supply.craftStoneSword();
     }
 
     private void end(Ending ending, String why) {
