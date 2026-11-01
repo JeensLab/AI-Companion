@@ -780,6 +780,14 @@ public final class CompanionMemoryTests {
         h.succeed();
     }
 
+    /** Issue #70: he called a hoglin peaceful, and hoglins are no monsters in the snapshot of threats. */
+    @GameTest(template="empty")
+    public static void systemPromptDoesNotCallHoglinsPeaceful(GameTestHelper h) {
+        String prompt = OpenRouterClient.buildSystemPrompt(OpenRouterClient.buildPersona("Весёлый напарник.", "Гоша", Map.of()), true, "лучший друг");
+        h.assertTrue(prompt.contains("хоглины (кабаны в Незере) нападают сами"), "Nothing tells him hoglins are enemies");
+        h.succeed();
+    }
+
     @GameTest(template="empty")
     public static void recallReadsCleanlyWithoutAddressRepeat(GameTestHelper h) {
         var memory = new CompanionMemory();
