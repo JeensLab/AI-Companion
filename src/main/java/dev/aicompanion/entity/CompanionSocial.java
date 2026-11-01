@@ -138,7 +138,7 @@ final class CompanionSocial {
                 owner.hasActiveWorkOrder() || owner.isMiningAnimation() || owner.actionAnimation() != 0);
         owner.getEntityData().set(CompanionEntity.DATA_EXPRESSION, expression.ordinal());
         // A hunt for meat is no fight; a monster he fights or one near him after either of them is.
-        owner.getEntityData().set(CompanionEntity.DATA_FIGHTING, combat && owner.getTarget() instanceof Monster || attacked);
+        owner.getEntityData().set(CompanionEntity.DATA_FIGHTING, combat && CompanionCombat.hostile(owner.getTarget()) || attacked);
         owner.getEntityData().set(CompanionEntity.DATA_SOCIAL_SAFE, !danger && !combat && !owner.nearbySocialThreat && owner.tickCount - owner.lastHurtTick > 200
                 && (owner.getOwnerPlayer() == null || owner.getOwnerPlayer().getHealth() > 8 && owner.getOwnerPlayer().hurtTime == 0));
     }

@@ -15,13 +15,13 @@ final class CompanionHunting {
     CompanionHunting(CompanionWork w) { this.w = w; }
 
     void fightNearby(ServerLevel level) {
-        java.util.List<net.minecraft.world.entity.monster.Monster> remaining = new ArrayList<>();
+        java.util.List<net.minecraft.world.entity.Mob> remaining = new ArrayList<>();
         boolean unavailable = false;
         for (java.util.UUID id : w.huntTargets) {
             if (w.huntDead.contains(id)) continue;
             var entity = level.getEntity(id);
             if (entity == null) { unavailable = true; continue; }
-            if (entity instanceof net.minecraft.world.entity.monster.Monster monster && monster.isAlive()) remaining.add(monster);
+            if (entity instanceof net.minecraft.world.entity.Mob monster && monster.isAlive()) remaining.add(monster);
             else w.huntDead.add(id);
         }
         if (remaining.isEmpty()) {

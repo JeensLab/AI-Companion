@@ -67,6 +67,57 @@ public final class CompanionFairFightTests {
         });
     }
 
+    /** The game's classes make a hoglin an animal, not a monster; for the player beside it, it is one. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void hoglinBesideThePlayerIsMet(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+        var hoglin = h.spawn(EntityType.HOGLIN, 13, 1, 16); hoglin.setNoAi(true);
+        boolean[] fighting = {false};
+        h.onEachTick(() -> fighting[0] |= companion.fighting());
+        h.succeedWhen(() -> {
+            h.assertTrue(!hoglin.isAlive(), "The hoglin beside the player is still alive");
+            h.assertTrue(fighting[0], "Hitting a hoglin was no fight for him");
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void hoglinThatHitThePlayerIsAnswered(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+        var hoglin = h.spawn(EntityType.HOGLIN, 26, 1, 16); hoglin.setNoAi(true);
+        h.runAtTickTime(5, () -> owner(h, companion).setLastHurtByMob(hoglin));
+        h.succeedWhen(() -> h.assertTrue(!hoglin.isAlive(), "The hoglin that hit the player is still alive"));
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void huntTakesTheHoglin(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+        var hoglin = h.spawn(EntityType.HOGLIN, 19, 1, 16); hoglin.setNoAi(true);
+        h.assertTrue(companion.startWork("hunt_mobs", "", 1).success(), "Hunt refused");
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isWorking(), "Still hunting: " + companion.getLastTaskResult());
+            h.assertTrue(!hoglin.isAlive(), "The hunt left the hoglin alive: " + companion.getLastTaskResult());
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void hoglinFightDoesNotLeadAwayFromThePlayer(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        var hoglin = h.spawn(EntityType.HOGLIN, 28, 1, 26); hoglin.setNoAi(true);
+        companion.teleportTo(h.absolutePos(new BlockPos(28, 1, 28)).getX() + .5, companion.getY(), h.absolutePos(new BlockPos(28, 1, 28)).getZ() + .5);
+        h.runAtTickTime(3, () -> {
+            var corner = h.absolutePos(new BlockPos(1, 1, 1));
+            owner(h, companion).teleportTo(corner.getX() + .5, corner.getY(), corner.getZ() + .5);
+        });
+        h.runAtTickTime(6, () -> companion.setTarget(hoglin));
+        h.runAtTickTime(12, () -> {
+            h.assertTrue(companion.getTarget() == null, "He went on after the hoglin far from the player");
+            h.succeed();
+        });
+    }
+
     private static CompanionEntity setup(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
