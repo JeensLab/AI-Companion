@@ -136,8 +136,9 @@ public final class CompanionMilestones {
                 case MATERIALS -> List.of(obtain(tier.material, need(facts, fallback, all)));
                 case FOOD -> foodSteps(facts, count);
                 case EXPEDITION -> {
-                    // Below the entrance nothing is topped up: the way up is for a retreat or a pickaxe he cannot make there.
-                    List<Step> steps = facts.belowMine() ? new ArrayList<>() : supplySteps(facts);
+                    // Below the entrance only the sword is made up (after a death he comes back to his things down there and must not
+                    // go on bare-handed); the rest of the kit waits, the way up is for a retreat or a pickaxe he cannot make there.
+                    List<Step> steps = facts.belowMine() ? swordSteps(facts) : supplySteps(facts);
                     steps.add(new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto"));
                     yield steps;
                 }
@@ -150,12 +151,18 @@ public final class CompanionMilestones {
             List<Step> steps = new ArrayList<>();
             if (facts.carried(Items.TORCH) < TORCHES_MIN) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
             if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
-            if (facts.carried(MINE_SWORDS::contains) == 0)
-                steps.add(obtain(facts.carried(Items.IRON_INGOT) >= IRON_SWORD_INGOTS ? Items.IRON_SWORD : Items.STONE_SWORD, 1));
+            steps.addAll(swordSteps(facts));
             if (facts.carried(Items.CRAFTING_TABLE) == 0) steps.add(obtain(Items.CRAFTING_TABLE, 1));
             if (facts.carried(Items.STICK) < STICKS_MIN) steps.add(obtain(Items.STICK, STICKS_STOCK));
             if (facts.carried(held -> CompanionSeal.seals(new ItemStack(held))) < SEALS_MIN) steps.add(obtain(Items.COBBLESTONE, SEALS_STOCK));
             if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
+            return steps;
+        }
+
+        private static List<Step> swordSteps(CompanionFacts facts) {
+            List<Step> steps = new ArrayList<>();
+            if (facts.carried(MINE_SWORDS::contains) == 0)
+                steps.add(obtain(facts.carried(Items.IRON_INGOT) >= IRON_SWORD_INGOTS ? Items.IRON_SWORD : Items.STONE_SWORD, 1));
             return steps;
         }
 
