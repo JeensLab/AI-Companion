@@ -433,7 +433,7 @@ public final class CompanionMineBacktrackTests {
     /** Bedrock floor and walls, deepslate up to Y -52, stone, dirt, grass; deepslate diamond ore in a ring under the tunnel floor. */
     static void mountain(GameTestHelper h) { mountain(h, true); }
 
-    private static void mountain(GameTestHelper h, boolean ring) {
+    static void mountain(GameTestHelper h, boolean ring) {
         var level = h.getLevel();
         for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) for (int y = 0; y <= GROUND; y++) {
             boolean edge = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;

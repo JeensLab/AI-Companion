@@ -34,7 +34,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionCreeperGuardTests {
-    private static final int OPEN_CAVE_TICKS = 600, CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3;
+    private static final int STEP_CHECK_TICKS = 2400, OPEN_CAVE_TICKS = 600, CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3;
 
     private CompanionCreeperGuardTests() { }
 
@@ -107,6 +107,28 @@ public final class CompanionCreeperGuardTests {
             h.assertTrue(creeper.isRemoved() || creeper.distanceTo(c) > 3, "The creeper is at his side: " + creeper.distanceTo(c) + " | " + report(c));
             h.succeed();
         });
+    }
+
+    /** The guard takes the work off him for a while: the time of the step is given back, or the timeout would end the step for the time spent on the creeper. */
+    @GameTest(template = "marathon_cave", timeoutTicks = STEP_CHECK_TICKS)
+    public static void anEpisodeWithACreeperGivesTheStepItsTimeBack(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        int foot = stairs.size() - 1;
+        place(h, c, stairs.get(foot - 2));
+        creeper(h, stairs.get(foot - 6)).getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        start(h, c, 1);
+        long[] first = {-1};
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            if (first[0] < 0) {
+                if (!c.expeditionStage().isEmpty()) first[0] = c.expeditionStepEnd();
+                return;
+            }
+            if (c.expeditionStepEnd() > first[0]) h.succeed();
+        });
+        h.runAtTickTime(STEP_CHECK_TICKS - 5, () -> h.fail("The step kept its end " + first[0] + " after the creeper: " + c.expeditionStepEnd() + " | " + report(c)));
     }
 
     private static void place(GameTestHelper h, CompanionEntity c, BlockPos stand) {

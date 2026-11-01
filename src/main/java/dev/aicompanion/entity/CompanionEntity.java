@@ -300,6 +300,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** For the diagnostics: where the mine expedition is (stage and cave phase), empty outside one. */
     public String expeditionStage() { return work.expedition.stageName(); }
     public String expeditionCavePhase() { return work.expedition.cavePhase(); }
+    public long expeditionStepEnd() { return work.expedition.stepEnd(); }
     net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
     /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
