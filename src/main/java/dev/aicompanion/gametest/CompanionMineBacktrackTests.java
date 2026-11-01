@@ -37,7 +37,8 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
     static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
-    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10;
+    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10,
+            CAVITY_X0 = 2, CAVITY_X1 = 45, CAVITY_Z0 = 6, CAVITY_Z1 = 20, CAVITY_Y0 = 10, CAVITY_Y1 = 20, CAVITY_STAND = 12, SURFACE_MARGIN = 2;
 
 
     private CompanionMineBacktrackTests() { }
@@ -158,6 +159,105 @@ public final class CompanionMineBacktrackTests {
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The caves shut every side of the restart: " + report(c));
             h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
         });
+    }
+
+    /** Three sides of the pit were tried and refused in earlier steps: the restart takes the fourth, the one nobody refused, and does not spend its tries on the refused ones. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void restartsOnTheSideNobodyRefused(GameTestHelper h) {
+        mountain(h, true);
+        digPit(h);
+        CompanionEntity c = rig(h, PIT, DEEPSLATE_TOP, PIT);
+        BlockPos here = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        for (Direction side : List.of(Direction.NORTH, Direction.EAST, Direction.WEST)) c.mineSite().refuse(here, side);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The restart took a refused side: " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /** Every side of the pit is refused and it is no mine of the surface: the order ends at once, without three empty restarts. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void endsAtOnceWhenEverySideIsRefused(GameTestHelper h) {
+        mountain(h, true);
+        digPit(h);
+        CompanionEntity c = rig(h, PIT, DEEPSLATE_TOP, PIT);
+        BlockPos here = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        c.mineSite().start(here, Direction.NORTH);
+        for (Direction side : Direction.Plane.HORIZONTAL) c.mineSite().refuse(here, side);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.success() && result.message().contains("некуда свернуть"), "Not a stop for want of a side: " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 0, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /**
+     * A cavity round his stairs, stuck in it with every side refused: he walks up the stairs back to the entrance on the surface
+     * and begins stairs to another side of it, where the rock is whole. One order, at most one restart and two climbs to the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void leavesABigCavityForTheOtherSideOfTheEntrance(GameTestHelper h) {
+        mountain(h, true);
+        List<BlockPos> cavity = new ArrayList<>();
+        for (int x = CAVITY_X0; x <= CAVITY_X1; x++) for (int z = CAVITY_Z0; z <= CAVITY_Z1; z++) for (int y = CAVITY_Y0; y <= CAVITY_Y1; y++) {
+            h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+            cavity.add(h.absolutePos(new BlockPos(x, y, z)));
+        }
+        CompanionEntity c = rig(h, CENTER, CAVITY_Y0, CENTER - CAVITY_STAND);
+        // The stairs run through the cavity on steps of their own: that is his way back up.
+        for (BlockPos stand : carveMine(h, c, 0)) {
+            if (h.getLevel().getBlockState(stand.below()).isAir()) h.getLevel().setBlock(stand.below(), Blocks.STONE.defaultBlockState(), 2 | 16);
+        }
+        CompanionMineSite site = c.mineSite();
+        BlockPos here = h.absolutePos(under(CAVITY_STAND).above());
+        site.restart(here, Direction.NORTH);
+        site.buried(true);
+        site.newStep();
+        for (Direction side : Direction.Plane.HORIZONTAL) site.refuse(here, side);
+        site.shun(cavity);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY() - SURFACE_MARGIN;
+        int[] climbs = {0};
+        boolean[] below = {true};
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            boolean now = c.getBlockY() < surface;
+            if (below[0] && !now) climbs[0]++;
+            below[0] = now;
+        });
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The cavity stopped the mine: " + report(c));
+            h.assertTrue(site.restarts() == 1, "Restarts " + site.restarts());
+            h.assertTrue(climbs[0] <= 2, "Climbs to the surface " + climbs[0]);
+        });
+    }
+
+    /** A step that opened nothing hands its restarts to the next one within the window; a step that opened a stand, or a window run out, gives them back. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 40)
+    public static void aFruitlessStepCarriesItsRestartsOver(GameTestHelper h) {
+        CompanionMineSite site = new CompanionMineSite();
+        long t = 1000;
+        site.start(new BlockPos(0, 70, 0), Direction.NORTH);
+        site.restart(new BlockPos(0, 60, 0), Direction.NORTH);
+        site.backtracked();
+        site.newStep(t);
+        h.assertTrue(site.restarts() == 1 && site.backtracks() == 0, "A fruitless step's counters: " + site.restarts() + ", " + site.backtracks());
+        site.newStep(t + CompanionMineSite.RESTARTS_CARRIED);
+        h.assertTrue(site.restarts() == 0, "Restarts after the window: " + site.restarts());
+        site.restart(new BlockPos(0, 50, 0), Direction.NORTH);
+        site.reached(new BlockPos(0, 49, 1));
+        site.newStep(t + CompanionMineSite.RESTARTS_CARRIED + 10);
+        h.assertTrue(site.restarts() == 0, "Restarts after a step that opened a stand: " + site.restarts());
+        h.succeed();
+    }
+
+    /** A pit of air three cells across and high in the deepslate, as in the other restart tests. */
+    private static void digPit(GameTestHelper h) {
+        for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
     }
 
     /**
