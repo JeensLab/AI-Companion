@@ -24,7 +24,7 @@ final class CompanionExpedition {
     /** Extra time past the step's end for a cave episode under way to close its breach; a reserve used up ends the step anyway. */
     private static final int CAVE_RESERVE = 20 * 60;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
-    private static final int SOFT_RETRIES = 3, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
+    private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 1.0;
     private static final String CAVE_DANGER = "в пещере слишком опасно";
@@ -105,6 +105,9 @@ final class CompanionExpedition {
         dir = tunnel = null;
         progress = stairSteps = turns = routeIndex = softFails = 0;
     }
+
+    /** The game time of the next try after a failed walk to the stairs. */
+    private long walkAgain;
 
     void tick(ServerLevel level) {
         if (!active) return;
@@ -224,11 +227,14 @@ final class CompanionExpedition {
     }
 
     private void walkDown(ServerLevel level) {
+        if (level.getGameTime() < walkAgain) return;
         if (routeIndex < 0) {
             int target = joining ? route.size() - 1 : 0;
             CompanionTravel.Step walk = w.route.legs(route.get(target), ENTRANCE_NEAR);
-            if (walk == CompanionTravel.Step.FAILED) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
-            else if (walk == CompanionTravel.Step.NEAR) routeIndex = target;
+            if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; }
+            // A failed search can be a passing one (a mob in the way), and a restart gives up the whole staircase.
+            else if (walk == CompanionTravel.Step.FAILED && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
+            else if (walk == CompanionTravel.Step.FAILED) walkAgain = level.getGameTime() + WALK_RETRY;
             return;
         }
         if (routeIndex + 1 < route.size()) {
@@ -317,6 +323,7 @@ final class CompanionExpedition {
         backtrack.reset();
         dig.reset();
         w.mine.restart(here, side);
+        w.mine.buried(!level.canSeeSky(here.above()));
         route = new ArrayList<>(List.of(here));
         routeIndex = 0;
         tunnel = null;
@@ -380,7 +387,8 @@ final class CompanionExpedition {
             case NO_TOOL -> {
                 plan = null;
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
-                if (!dig.lackedOre && !dig.ironForRock && dig.spareIron()) { dig.ironForRock = true; return; }
+                // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up.
+                if (!dig.lackedOre && !dig.ironForRock && w.mine.buried() && dig.spareIron()) { dig.ironForRock = true; return; }
                 stage = Stage.CLIMB;
                 climb.begin(CompanionExpeditionClimb.shortage(dig.lackedOre, hadStone), owner.blockPosition());
             }

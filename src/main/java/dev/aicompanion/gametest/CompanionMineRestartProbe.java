@@ -110,6 +110,8 @@ public final class CompanionMineRestartProbe {
             level.setBlock(world(x, y, z), block.defaultBlockState(), 2 | 16);
         }
         BlockPos at = world(CENTER, GROUND + 1, CENTER), near = world(CENTER - 3, GROUND + 1, CENTER - 3);
+        // No real client loads chunks here: without this a start can leave him in a chunk that never ticks.
+        level.getChunkSource().updateChunkForced(new net.minecraft.world.level.ChunkPos(at), true);
         player.teleportTo(near.getX() + 0.5, near.getY(), near.getZ() + 0.5);
         companion.teleportTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5);
         companion.setOwnerId(PLAYER); companion.setSearchRadius(16); companion.setLifestyle(false, false);
@@ -165,7 +167,8 @@ public final class CompanionMineRestartProbe {
         check(goal.state() != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(goal));
         check(ticks < RESUME_TIMEOUT, "Stage timeout: " + report(goal));
         sameMine();
-        if (!markerChecked) {
+        // The load gives him a tick count of zero: the promise is about his first tick, which can come after this one.
+        if (!markerChecked && companion.tickCount > 0) {
             markerChecked = true;
             check(companion.mineSite().peekHeld().isEmpty() && markerTotal(server) == MARKER_COUNT,
                     "Held blocks not dropped once on the first tick: held " + companion.mineSite().peekHeld().size() + ", total " + markerTotal(server) + " of " + MARKER_COUNT);

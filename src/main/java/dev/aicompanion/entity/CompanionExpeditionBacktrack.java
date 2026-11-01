@@ -22,6 +22,7 @@ final class CompanionExpeditionBacktrack {
 
     private final CompanionWork w;
     private final CompanionEntity owner;
+    private final CompanionExpeditionDig dig;
     private final CompanionExpeditionWalk walk;
     private Phase phase = Phase.WALK;
     /** Index in the record of the stand he goes back to; -1 is the entrance. */
@@ -33,6 +34,7 @@ final class CompanionExpeditionBacktrack {
     CompanionExpeditionBacktrack(CompanionWork w, CompanionExpeditionDig dig) {
         this.w = w;
         this.owner = w.owner;
+        this.dig = dig;
         this.walk = new CompanionExpeditionWalk(dig);
     }
 
@@ -50,7 +52,7 @@ final class CompanionExpeditionBacktrack {
         int jump = 1 << mine.backtracks();
         for (int i = stands.size() - 1 - jump; i >= -1; i--) {
             BlockPos stand = pos(mine, i);
-            if (mine.shunned(stand)) continue;
+            if (mine.shunned(stand) || !dig.floored(stand)) continue;
             Direction turn = sideAt(level, mine, i);
             if (turn == null) continue;
             at = i;

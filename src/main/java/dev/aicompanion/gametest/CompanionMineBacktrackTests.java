@@ -226,13 +226,18 @@ public final class CompanionMineBacktrackTests {
         });
     }
 
-    /** The stone pickaxes are gone and the iron one has wear to spare: he digs the rock with it instead of going up for supplies. */
+    /** A mine started again under the ground and the stone pickaxes gone: there is no way up, so the iron one digs the rock while it has wear to spare. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void digsStoneWithTheIronPickaxeWhenItIsTheLastOne(GameTestHelper h) {
+    public static void digsRockWithTheIronPickaxeWhenThereIsNoWayUp(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
         c.setItem(0, ItemStack.EMPTY);
         c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(START_STAND);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        c.mineSite().restart(here, Direction.NORTH);
+        c.mineSite().buried(true);
         long id = start(h, c, 1);
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);

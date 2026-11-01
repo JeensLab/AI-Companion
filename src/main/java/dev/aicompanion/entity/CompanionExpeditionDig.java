@@ -50,7 +50,7 @@ final class CompanionExpeditionDig {
     int walked;
     /** The last NO_TOOL was for an ore (it needs a better pickaxe), not for rock (it needs a stone pickaxe). */
     boolean lackedOre;
-    /** A stone pickaxe could not be made: the rock is dug with the iron one while it has wear to spare. */
+    /** Stranded under the ground with no stone pickaxe: the rock is dug with the iron one while it has wear to spare. */
     boolean ironForRock;
 
     CompanionExpeditionDig(CompanionWork w) {

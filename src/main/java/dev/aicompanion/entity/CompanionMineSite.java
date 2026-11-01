@@ -48,6 +48,8 @@ public final class CompanionMineSite {
     private final Set<Long> caves = new LinkedHashSet<>();
     /** How often the stairs were backed up from a dead end, a cave sent him up, and the mine was started again where he stood: each is bounded. */
     private int backtracks, retreats, restarts;
+    /** The mine was started again under the ground: its entrance is no way to the surface, and nothing can be topped up from it. */
+    private boolean buried;
     private BlockPos plug;
     /** Sealing blocks held back mid-column. They are not part of the mine record: they outlive {@link #clear} and are saved apart, so a quit loses none. */
     private final List<Held> held = new ArrayList<>();
@@ -97,8 +99,11 @@ public final class CompanionMineSite {
                 for (int z = (here.getZ() - CAVE_FORGOTTEN) >> 2; z <= (here.getZ() + CAVE_FORGOTTEN) >> 2; z++) near.add(BlockPos.asLong(x, y, z));
         List<Long> kept = caves.stream().filter(cell -> !near.contains(cell)).toList();
         int count = restarts + 1;
+        // His plugs stay his: a block he laid must not read as a wall of the rock around the new mine.
+        List<BlockPos> laid = List.copyOf(seals);
         start(here, stair);
         caves.addAll(kept);
+        seals.addAll(laid);
         restarts = count;
     }
 
@@ -107,6 +112,7 @@ public final class CompanionMineSite {
         plug = null;
         caves.clear();
         backtracks = retreats = restarts = 0;
+        buried = false;
         stands.clear();
         tunnels.clear();
         seals.clear();
@@ -225,6 +231,10 @@ public final class CompanionMineSite {
 
     public int restarts() { return restarts; }
 
+    public boolean buried() { return buried; }
+
+    public void buried(boolean now) { buried = now; }
+
     /** The remembered refusals as the hazard checks take them; a turn onto a stand of his own stairs is refused, or flat landings would lead him round in a ring. */
     public CompanionShaftPlan.Avoid avoid() {
         Set<BlockPos> own = new HashSet<>(stands);
@@ -296,6 +306,7 @@ public final class CompanionMineSite {
         if (backtracks > 0) mine.putInt("Backtracks", backtracks);
         if (retreats > 0) mine.putInt("Retreats", retreats);
         if (restarts > 0) mine.putInt("Restarts", restarts);
+        if (buried) mine.putBoolean("Buried", true);
         if (!refused.isEmpty()) {
             ListTag moves = new ListTag();
             for (Move move : refused) {
@@ -372,6 +383,7 @@ public final class CompanionMineSite {
         backtracks = Math.max(0, mine.getInt("Backtracks"));
         retreats = Math.max(0, mine.getInt("Retreats"));
         restarts = Math.max(0, mine.getInt("Restarts"));
+        buried = mine.getBoolean("Buried");
         ListTag moves = mine.getList("Refused", Tag.TAG_COMPOUND);
         for (int i = 0; i < moves.size() && refused.size() < MAX_REFUSED; i++) {
             CompoundTag entry = moves.getCompound(i);
