@@ -37,7 +37,9 @@ final class CompanionExpeditionWalk {
 
     Result tick() {
         if (done()) return Result.DONE;
-        if (dig.walkTo(cells.get(index))) index++;
+        // A cell with nothing firm under it cannot be entered, and his record can hold one whose floor is gone: the walk goes on past it, never leaving out the last.
+        while (index < cells.size() - 1 && !dig.floored(cells.get(index))) index++;
+        if (dig.reach(cells.get(index))) index++;
         else if (dig.walkStuck()) {
             dig.diagnoseStuck(cells.get(index), index, cells.size());
             return Result.STUCK;

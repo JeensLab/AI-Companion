@@ -66,7 +66,11 @@ final class CompanionExpeditionBacktrack {
             }
             for (int j = stands.size() - 1; j >= i; j--) way.add(pos(mine, j));
 
-            walk.set(way, 0);
+            // He may have been moved from the first cell of the way (a fight, a fall): the walk starts at the cell nearest to him.
+            BlockPos here = owner.blockPosition();
+            int nearest = 0;
+            for (int k = 1; k < way.size(); k++) if (way.get(k).distSqr(here) < way.get(nearest).distSqr(here)) nearest = k;
+            walk.set(way, nearest);
             mine.backtracked();
             return true;
         }

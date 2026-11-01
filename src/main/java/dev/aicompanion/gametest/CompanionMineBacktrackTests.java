@@ -37,7 +37,7 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
-    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10;
+    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10;
 
 
     private CompanionMineBacktrackTests() { }
@@ -265,6 +265,47 @@ public final class CompanionMineBacktrackTests {
             if (c.isWorking() || c.isGatheringTask()) return;
             CompanionActionResult result = c.workResult(id);
             h.assertTrue(result != null && result.success() && count(c, Items.DIAMOND) >= 1, "He did not dig on after the creeper: " + report(c));
+            h.succeed();
+        });
+    }
+
+    /**
+     * Stairs north with a landing west and a second run down west, bedrock closing the end of it. Once he is on his way up the floor
+     * under the landing is gone: the cell hangs in the air and cannot be entered, so the walk leaves it out and he goes on up to the stand to turn off at.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void walksUpPastAStandWithoutAFloor(GameTestHelper h) {
+        mountain(h);
+        var level = h.getLevel();
+        CompanionEntity c = rig(h);
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        List<BlockPos> stands = new ArrayList<>(CompanionShaftPlan.stands(entrance, Direction.NORTH, LANDING_AT));
+        BlockPos landing = stands.get(LANDING_AT).relative(Direction.WEST);
+        stands.add(landing);
+        for (int step = 1; step <= WEST_RUN; step++) stands.add(landing.relative(Direction.WEST, step).below(step));
+        for (BlockPos stand : stands) for (BlockPos cell : CompanionShaftPlan.column(stand)) level.setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        BlockPos dead = stands.get(stands.size() - 1);
+        for (int y = -1; y <= 1; y++) level.setBlock(dead.west().above(y), Blocks.BEDROCK.defaultBlockState(), 2 | 16);
+        for (int y = 0; y <= 2; y++) {
+            level.setBlock(dead.north().above(y), Blocks.BEDROCK.defaultBlockState(), 2 | 16);
+            level.setBlock(dead.south().above(y), Blocks.BEDROCK.defaultBlockState(), 2 | 16);
+        }
+        c.mineSite().start(entrance, Direction.NORTH);
+        for (BlockPos stand : stands.subList(1, stands.size())) c.mineSite().reached(stand);
+        // Past a few backtracks the next one goes back eight stands: above the landing.
+        for (int i = 0; i < PRIOR_BACKTRACKS; i++) c.mineSite().backtracked();
+        c.teleportTo(dead.getX() + .5, dead.getY(), dead.getZ() + .5);
+        long id = start(h, c, 1);
+        // After the first tick, which checks the record against the world, and before he is up at the landing.
+        h.runAfterDelay(FLOOR_GONE_AFTER, () -> {
+            h.assertTrue(c.mineSite().stands().size() == stands.size() - 1 && c.getY() < landing.getY(), "The setup is off: " + c.mineSite().stands().size() + " stands, he is at " + c.blockPosition().toShortString());
+            level.setBlock(landing.below(), Blocks.AIR.defaultBlockState(), 2 | 16);
+        });
+        h.onEachTick(() -> {
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result != null && result.success() && count(c, Items.DIAMOND) >= 1, "He did not get past the landing without a floor: " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 0 && c.mineSite().backtracks() == PRIOR_BACKTRACKS + 1, "Restarts " + c.mineSite().restarts() + ", backtracks " + c.mineSite().backtracks() + " | " + report(c));
             h.succeed();
         });
     }

@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
@@ -189,6 +190,13 @@ final class CompanionExpeditionDig {
     }
 
     boolean walkStuck() { return walkTicks > WALK_PATIENCE; }
+
+    /** A firm floor under the cell; a cell in an unloaded chunk is not judged. */
+    boolean floored(BlockPos cell) {
+        var level = owner.level();
+        BlockPos floor = cell.below();
+        return !level.hasChunkAt(floor) || level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP);
+    }
 
     void diagnoseStuck(BlockPos to, int index, int size) {
         if (!dev.aicompanion.CompanionDiagnostics.enabled()) return;
