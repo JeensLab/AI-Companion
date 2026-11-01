@@ -111,9 +111,30 @@ public final class CompanionFairFightTests {
             var corner = h.absolutePos(new BlockPos(1, 1, 1));
             owner(h, companion).teleportTo(corner.getX() + .5, corner.getY(), corner.getZ() + .5);
         });
-        h.runAtTickTime(6, () -> companion.setTarget(hoglin));
+        h.runAtTickTime(6, () -> {
+            companion.setTarget(hoglin);
+            h.assertTrue(companion.getTarget() == hoglin, "Test setup: the hoglin did not become his target");
+        });
         h.runAtTickTime(12, () -> {
             h.assertTrue(companion.getTarget() == null, "He went on after the hoglin far from the player");
+            h.succeed();
+        });
+    }
+
+    /** In the air the hunt only waits for the ground; the fight he is in stays his, as with a monster. */
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void hoglinStaysHisTargetWhileTheHuntWaits(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        var hoglin = h.spawn(EntityType.HOGLIN, 26, 1, 16); hoglin.setNoAi(true);
+        h.runAtTickTime(5, () -> {
+            h.assertTrue(companion.startWork("hunt_animals", "minecraft:cow", 1).success(), "Hunt refused");
+            companion.teleportTo(companion.getX(), companion.getY() + 8, companion.getZ());
+            companion.setOnGround(false);
+            companion.setTarget(hoglin);
+        });
+        h.runAtTickTime(8, () -> {
+            h.assertTrue(companion.isWorking(), "Test setup: the hunt did not wait: " + companion.getLastTaskResult());
+            h.assertTrue(companion.getTarget() == hoglin, "The hunt took the hoglin from his target");
             h.succeed();
         });
     }

@@ -46,7 +46,7 @@ final class CompanionHunting {
         if (w.gameKills >= w.gameWanted) { w.finish(true, gameReport(true)); return; }
         var current = level.getEntity(w.gameTarget == null ? CompanionWork.NO_ID : w.gameTarget) instanceof net.minecraft.world.entity.animal.Animal animal && animal.isAlive() ? animal : null;
         if (current == null) {
-            if (w.owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal) w.owner.setTarget(null);
+            if (w.owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal animal && !CompanionCombat.hostile(animal)) w.owner.setTarget(null);
             // Vanilla builds no route at all while he is in the air: that is no evidence against any animal.
             if (!w.owner.onGround() && !w.owner.isInWater()) return;
             if (w.gameTravel != null && travelToGame(level)) return;
