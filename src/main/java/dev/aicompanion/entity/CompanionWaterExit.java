@@ -16,11 +16,13 @@ import java.util.EnumSet;
  * flag only: the float goes on lifting him, and the guard (priority 0) keeps the turn if it has it.
  */
 final class CompanionWaterExit extends Goal {
-    private static final int RADIUS = 6, STEP_UP = 1, STEP_DOWN = 3, REPLAN_EVERY = 10;
+    private static final int RADIUS = 6, STEP_UP = 1, STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60;
+    private static final double DRIFT = 2;
 
     private final CompanionEntity c;
     private BlockPos target;
-    private long nextPlan;
+    private long nextPlan, treadingSince;
+    private Vec3 anchor;
 
     CompanionWaterExit(CompanionEntity c) {
         this.c = c;
@@ -29,13 +31,22 @@ final class CompanionWaterExit extends Goal {
 
     @Override public boolean canUse() {
         return c.inventoryViewers == 0 && c.work.isActive() && !c.gatheringLogs && !c.gatheringDirt && c.canWorkNow()
-                && deepInWater() && (target = nearestDry()) != null;
+                && treadingWater() && (target = nearestDry()) != null;
+    }
+
+    /** A swim that gets somewhere is left alone: crossing a river to the player is not a reason to turn back to the nearest bank. */
+    private boolean treadingWater() {
+        if (!deepInWater()) { anchor = null; return false; }
+        long now = c.level().getGameTime();
+        double dx = anchor == null ? 0 : c.getX() - anchor.x, dz = anchor == null ? 0 : c.getZ() - anchor.z;
+        if (anchor == null || dx * dx + dz * dz > DRIFT * DRIFT) { anchor = c.position(); treadingSince = now; return false; }
+        return now - treadingSince >= TREADING_TICKS;
     }
 
     @Override public boolean canContinueToUse() { return c.inventoryViewers == 0 && c.isAlive() && c.isInWater(); }
     @Override public boolean requiresUpdateEveryTick() { return true; }
     @Override public void start() { nextPlan = c.level().getGameTime() + REPLAN_EVERY; c.getNavigation().stop(); }
-    @Override public void stop() { target = null; }
+    @Override public void stop() { target = null; anchor = null; }
 
     @Override public void tick() {
         if (target == null || c.level().getGameTime() >= nextPlan) {
