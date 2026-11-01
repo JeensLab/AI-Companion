@@ -50,6 +50,7 @@ public final class CompanionMineStopsTests {
     private static final int FAR_TREE_AT = 3;
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
+    private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
 
     private CompanionMineStopsTests() { }
 
@@ -482,6 +483,37 @@ public final class CompanionMineStopsTests {
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The unreachable entrance stopped the order: " + result.message() + " | " + report(c));
         });
     }
+
+    /**
+     * Run m9b/void-2 (seed 20261102): the cell the walk to the stairs pushes him to lies across ground that gives way (the corner of a shelf in
+     * a cave, 38 blocks above its floor) and the straight push walked him off it: dead of the fall at the start of the order. Here the cell is four
+     * blocks across a gap in a hall; he stays on his shelf.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_ledge", timeoutTicks = LEDGE_WATCH + 40)
+    public static void doesNotPushOffHisShelfTowardsAStairsCellAcrossAGap(GameTestHelper h) {
+        mountain(h, true);
+        for (BlockPos cell : BlockPos.betweenClosed(h.absolutePos(new BlockPos(HALL_FROM, DEEPSLATE_TOP + 1, HALL_FROM)), h.absolutePos(new BlockPos(HALL_TO, HALL_TOP, HALL_TO)))) {
+            h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        BlockPos shelf = h.absolutePos(new BlockPos(SHELF_AT, SHELF_Y, HALL_MID)), pillar = h.absolutePos(new BlockPos(SHELF_AT + GAP, SHELF_Y, HALL_MID));
+        h.getLevel().setBlock(shelf, Blocks.STONE.defaultBlockState(), 2 | 16);
+        h.getLevel().setBlock(pillar, Blocks.STONE.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.teleportTo(shelf.getX() + .5, shelf.getY() + 1, shelf.getZ() + .5);
+        c.mineSite().start(pillar.above(), Direction.NORTH);
+        long[] id = {0};
+        boolean[] over = {false};
+        h.onEachTick(() -> {
+            if (over[0]) return;
+            h.assertTrue(c.isAlive() && (id[0] == 0 || c.getY() > shelf.getY() + 1 - LEDGE_DROP), "He walked off the shelf into the gap or died: " + c.position() + " | " + report(c));
+        });
+        h.runAfterDelay(1, () -> id[0] = start(h, c, 1));
+        h.runAfterDelay(LEDGE_WATCH, () -> h.assertTrue(c.getY() > shelf.getY() + 1 - LEDGE_DROP, "He is below the shelf: " + c.position()));
+        h.runAfterDelay(LEDGE_WATCH + 1, () -> { over[0] = true; h.succeed(); });
+    }
+
+    @AfterBatch(batch = "mine_stops_ledge") public static void afterLedge(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** Three restarts spent and carried to the next step, the mine buried at {@code at}: its stairs stay in the record as the way up. */
     private static void spendRestartsOnTheStairs(GameTestHelper h, CompanionEntity c, BlockPos at) {
