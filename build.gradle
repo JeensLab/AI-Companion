@@ -51,6 +51,12 @@ neoForge {
 
     // Default run configurations.
     // These can be tweaked, removed, or duplicated as needed.
+    def gameTestShards = providers.gradleProperty('gameTestShards').orElse('4').get() as int
+    tasks.register('runFastGameTests') {
+        group = 'verification'
+        description = 'Runs every game test except the endurance batch across parallel server processes.'
+        dependsOn((0..<gameTestShards).collect { "runGameTestShard$it" })
+    }
     runs {
         client {
             client()
@@ -72,7 +78,24 @@ neoForge {
         // The gametest system is also enabled by default for other run configs under the /test command.
         gameTestServer {
             type = "gameTestServer"
+            gameDirectory = project.file(providers.gradleProperty('gameTestDirectory').orElse('run'))
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // Optional comma-separated narrowing, read by gametest/CompanionTestSelection.
+            systemProperty 'aicompanion.gameTests.classes', providers.gradleProperty('gameTestClasses').orElse('').get()
+            systemProperty 'aicompanion.gameTests.methods', providers.gradleProperty('gameTestMethods').orElse('').get()
+            systemProperty 'aicompanion.gameTests.skipMethods', providers.gradleProperty('gameTestSkipMethods').orElse('').get()
+        }
+
+        // The everyday gate: every test except the three long endurance arenas, split across processes. See scripts/verify-fast.ps1.
+        (0..<gameTestShards).each { shard ->
+            create("gameTestShard$shard") {
+                type = "gameTestServer"
+                gameDirectory = project.file("run/shard-$shard")
+                systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+                systemProperty 'aicompanion.gameTests.skipMethods', 'twoHoursForestToolsStorageAndReturningPlayer,ninetyMinutesCaveFoodOreLightAndChangingPassage,hundredMinutesFullBagOrdersCancellationAndReloads'
+                systemProperty 'aicompanion.gameTests.shard', "$shard/$gameTestShards".toString()
+                disableIdeRun()
+            }
         }
 
         // Separate, disposable dedicated world used only by the process-restart persistence probe.

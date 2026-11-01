@@ -25,7 +25,7 @@ public final class CompanionFixtureCleanup {
     @AfterBatch(batch = "autonomy_session")
     public static void afterSessions(ServerLevel level) { clean(level); }
 
-    private static void clean(ServerLevel level) {
+    static void clean(ServerLevel level) {
         if (!(level.getServer() instanceof GameTestServer)) return;
         List<CompanionEntity> completed = new ArrayList<>();
         for (var entity : level.getAllEntities()) if (entity instanceof CompanionEntity companion) completed.add(companion);
