@@ -680,6 +680,26 @@ public final class CompanionMineStopsTests {
         climbAboveAGap(h, stairs -> h.getLevel().setBlock(stairs.get(GAP_AT), Blocks.WATER.defaultBlockState(), 2 | 16), true, false);
     }
 
+    /**
+     * Run m13b/void (seed 20261102): the record has a gap, and in it the floor under the cells he would step on is air (a pit, a shaft of
+     * his own): no walk over firm floor joins the two ends, and «Подняться не вышло: путь наверх закрыт» was said every twenty ticks to the end of
+     * the clock. With blocks in the bag he lays the floor under the cells of the gap as he goes and reaches the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void laysAFloorAcrossAGapOfAirInTheWayUp(GameTestHelper h) {
+        climbAboveAGap(h, stairs -> airUnder(h, stairs), true, true);
+    }
+
+    /** The same gap with no block to lay: the climb ends once, said as it is, and he stays where he is. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void endsTheClimbOnceWhenAGapOfAirHasNoBlockToBridgeIt(GameTestHelper h) {
+        climbAboveAGap(h, stairs -> airUnder(h, stairs), false, true);
+    }
+
+    private static void airUnder(GameTestHelper h, List<BlockPos> stairs) {
+        for (int k = GAP_AT - 6; k <= GAP_AT - 4; k++) h.getLevel().setBlock(stairs.get(k).below(), Blocks.AIR.defaultBlockState(), 2 | 16);
+    }
+
     /** He stands deep on his stairs with no stone pickaxe and the iron one at its reserve, the record lost below the first stands; {@code twist} changes the stairs between. */
     private static void climbAboveAGap(GameTestHelper h, java.util.function.Consumer<List<BlockPos>> twist, boolean hasBlocks, boolean cutRecord) {
         mountain(h, true);

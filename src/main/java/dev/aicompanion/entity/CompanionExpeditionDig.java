@@ -273,6 +273,13 @@ final class CompanionExpeditionDig {
 
     boolean walkStuck() { return walkTicks > WALK_PATIENCE; }
 
+    /** One tick of laying a floor block of his own, kept in the record of his plugs. */
+    CompanionExpeditionFloor.Outcome lay(CompanionExpeditionFloor floor) {
+        CompanionExpeditionFloor.Outcome laid = floor.lay(owner, (ServerLevel) owner.level());
+        if (laid == CompanionExpeditionFloor.Outcome.PLACED) w.mine.sealed(floor.cell);
+        return laid;
+    }
+
     /** A firm floor under the cell; a cell in an unloaded chunk is not judged. */
     boolean floored(BlockPos cell) {
         var level = owner.level();
