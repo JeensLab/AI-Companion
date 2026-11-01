@@ -37,16 +37,17 @@ final class CompanionEating {
 
     /** Below this he eats in an expedition between two foes: the next fight starts from more than the last one left. */
     private static final float EXPEDITION_EATS_BELOW = 14;
-    private static final float DESPERATE = 6, EXPEDITION_DESPERATE = 8;
+    private static final float DESPERATE = 6;
+    private static final double ARMS_REACH_SQR = 4;
 
     /**
-     * A foe so near that a meal (32 ticks of blows) is a loss. Underground he eats from lower on, while the foe is still a step away:
-     * a zombie walks about 7 blocks in the time of one meal, so waiting for the blows would never leave a free moment.
+     * A foe so near that a meal is a loss. Underground a meal costs no swing (the sword hand is free while he eats), so only a foe within
+     * a zombie's arm stops it: a zombie walks about 7 blocks in the time of one meal, and waiting for the blows would never leave a
+     * free moment, while the arrows of a skeleton across the cave go on whether he eats or not.
      */
     private boolean inReach(double distanceSqr, boolean expedition) {
-        float health = c.getHealth();
-        if (!expedition) return distanceSqr < 16 && health > DESPERATE;
-        return distanceSqr < 16 && (health > EXPEDITION_DESPERATE || distanceSqr < 4);
+        if (expedition) return distanceSqr < ARMS_REACH_SQR;
+        return distanceSqr < 16 && c.getHealth() > DESPERATE;
     }
 
     private void finishEating() {
