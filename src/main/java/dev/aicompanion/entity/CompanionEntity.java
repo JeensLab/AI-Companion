@@ -731,8 +731,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     /**
-     * The nearest place he fits, nearest first; the owner's feet when nothing is free near him. A last resort for the
-     * walls a push cannot get him out of (a block in his head, a room closed on every side).
+     * The nearest place he fits, nearest first, three blocks at most (the owner allowed this short step, 01.11; no farther: stuck
+     * in a mine he does not land beside the player). A last resort for the walls a push cannot get him out of.
      */
     private void placeAtFreeSpot() {
         var box = getBoundingBox();
@@ -751,11 +751,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             if (!freeAt(target) || !supported(target)) continue;
             putAt(target);
             return;
-        }
-        var owner = getOwnerPlayer();
-        if (owner != null && owner.level() == level()) {
-            var target = box.move(owner.getX() - getX(), owner.getY() - getY(), owner.getZ() - getZ());
-            if (freeAt(target)) putAt(target);
         }
     }
 
