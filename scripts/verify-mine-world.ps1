@@ -67,7 +67,7 @@ function Invoke-Stage([string]$name,[string]$dir,[string]$stage,[string]$scenari
         $now=Get-Date
         if($null -eq $doneAt -and (Test-StageDone $stage $json $log)){$doneAt=$now}
         if(($now-$began).TotalSeconds -gt $limit){$hung=" [stage timed out after $limit s, killed]";break}
-        if($doneAt -and ($now-$doneAt).TotalSeconds -gt $taskStopGraceSeconds -and (Get-StageServers $began).Count -gt 0){$hung=' [server hung on stop, killed]';break}
+        if($doneAt -and ($now-$doneAt).TotalSeconds -gt $taskStopGraceSeconds -and @(Get-StageServers $began).Count -gt 0){$hung=' [server hung on stop, killed]';break}
     }
     if($hung){Stop-Stage $proc $began}
     $exit=$proc.ExitCode
