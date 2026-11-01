@@ -29,7 +29,7 @@ public final class CompanionMineSite {
     public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
     /** How long after a step that opened nothing the next one still finds the restarts of that step spent. */
     public static final int RESTARTS_CARRIED = 20 * 120;
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, MAX_ABOVE = 1024, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     /** Squared distance within which he counts as standing at a stand; the expedition's own measure of "the same spot". */
     private static final int NEAR_STAND = 12;
@@ -65,6 +65,11 @@ public final class CompanionMineSite {
     private long lastStepAt;
     /** The mine was started again under the ground: its entrance is no way to the surface, and nothing can be topped up from it. */
     private boolean buried;
+    /**
+     * The way up that a restart under the ground leaves behind: the cells of the stairs and tunnel of the record it replaced (and of the ways
+     * above those), from the deepest to the entrance on the surface. The new record knows only the pit; this is how he gets out of it.
+     */
+    private final List<BlockPos> above = new ArrayList<>();
     private BlockPos plug;
     /**
      * Blocks he set down for a while and takes up again (a bench on a step): {@link #verify} reads the cell they stand in as open, so
@@ -126,6 +131,7 @@ public final class CompanionMineSite {
         List<Move> moves = List.copyOf(refused);
         // Under the ground the entrance is no way to the surface: the surface one is kept. A restart on open ground makes that spot the surface entrance.
         BlockPos surface = buried || origin == null ? origin : entrance;
+        List<BlockPos> up = wayAbove(here);
         Set<Direction> sides = EnumSet.noneOf(Direction.class);
         if (buried || entrance.equals(origin)) sides.addAll(originSides); else sides.add(stairDirection);
         int openedBefore = opened, stepBefore = openedAtStep;
@@ -138,6 +144,7 @@ public final class CompanionMineSite {
         originSides.clear();
         originSides.addAll(sides);
         if (here.equals(surface)) originSides.add(stair);
+        above.addAll(up);
         caves.addAll(kept);
         seals.addAll(laid);
         temporary.addAll(standing);
@@ -146,8 +153,25 @@ public final class CompanionMineSite {
         restarts = count;
     }
 
+    /** The cells of the record's own way up, and of the ways above it when it is buried, from the cell nearest {@code here} on: what lies below the restart is no way up. */
+    private List<BlockPos> wayAbove(BlockPos here) {
+        List<BlockPos> way = CompanionExpeditionClimb.wayToSurface(this);
+        int from = 0;
+        double nearest = NEAR_STAND;
+        for (int i = 0; i < way.size(); i++) {
+            double distance = way.get(i).distSqr(here);
+            if (distance <= nearest) { from = i; nearest = distance; }
+        }
+        List<BlockPos> tail = way.subList(from, way.size());
+        return List.copyOf(tail.subList(Math.max(0, tail.size() - MAX_ABOVE), tail.size()));
+    }
+
+    /** The way up that the restarts under the ground left behind, deepest cell first, the entrance on the surface last; empty for a mine not started again there. */
+    public List<BlockPos> above() { return Collections.unmodifiableList(above); }
+
     public void clear() {
         entrance = null;
+        above.clear();
         origin = null;
         originSides.clear();
         opened = openedAtStep = 0;
@@ -310,7 +334,10 @@ public final class CompanionMineSite {
 
     public boolean buried() { return buried; }
 
-    public void buried(boolean now) { buried = now; }
+    public void buried(boolean now) {
+        buried = now;
+        if (!now) above.clear();
+    }
 
     /** The remembered refusals as the hazard checks take them; a turn onto a stand of his own stairs is refused, or flat landings would lead him round in a ring. */
     public CompanionShaftPlan.Avoid avoid() {
@@ -419,6 +446,7 @@ public final class CompanionMineSite {
         if (retreats > 0) mine.putInt("Retreats", retreats);
         if (restarts > 0) mine.putInt("Restarts", restarts);
         if (buried) mine.putBoolean("Buried", true);
+        if (!above.isEmpty()) mine.putLongArray("Above", above.stream().mapToLong(BlockPos::asLong).toArray());
         if (origin != null && !origin.equals(entrance)) {
             mine.putLong("Origin", origin.asLong());
             int mask = 0;
@@ -503,6 +531,7 @@ public final class CompanionMineSite {
         retreats = Math.max(0, mine.getInt("Retreats"));
         restarts = Math.max(0, mine.getInt("Restarts"));
         buried = mine.getBoolean("Buried");
+        for (long packed : mine.getLongArray("Above")) if (above.size() < MAX_ABOVE) above.add(BlockPos.of(packed));
         origin = mine.contains("Origin", Tag.TAG_LONG) ? BlockPos.of(mine.getLong("Origin")) : entrance;
         if (mine.contains("OriginSides", Tag.TAG_BYTE)) {
             for (Direction side : Direction.Plane.HORIZONTAL) if ((mine.getByte("OriginSides") & 1 << side.get2DDataValue()) != 0) originSides.add(side);
