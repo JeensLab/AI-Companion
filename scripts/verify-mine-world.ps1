@@ -22,6 +22,9 @@ New-Item -ItemType Directory -Force -Path $taskDiagnostics | Out-Null
 $taskStart=Get-Date
 $taskResults=@()
 $taskBad=$false
+$taskStopGraceSeconds=60
+$taskStageLimitSeconds=1200
+$taskScanLimitSeconds=1800
 
 function Write-Dir([string]$dir){
     New-Item -ItemType Directory -Path $dir | Out-Null
@@ -29,21 +32,57 @@ function Write-Dir([string]$dir){
     [IO.File]::WriteAllText((Join-Path $dir 'server.properties'),($taskProps+"difficulty=normal`n"),[Text.UTF8Encoding]::new($false))
 }
 
+# The server of a stage sometimes spins forever in its stop (vanilla ChunkMap unload loop) after the verdict is written, so the
+# stage is watched: a grace period after the verdict, plus a hard limit for a stage that never gets that far.
+function Get-StageServers([datetime]$since){
+    $marker=Join-Path $taskRoot 'build\moddev\mineWorldServerRunVmArgs.txt'
+    @(Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object {
+        $_.CommandLine -and $_.CreationDate -ge $since -and $_.CommandLine.Replace('\\','\').Replace('/','\').IndexOf($marker,[StringComparison]::OrdinalIgnoreCase) -ge 0 })
+}
+
+function Test-StageDone([string]$stage,[string]$json,[string]$log){
+    if($stage -ne 'scan'){return (Test-Path -LiteralPath $json)}
+    try {
+        $stream=[IO.File]::Open($log,'Open','Read','ReadWrite,Delete')
+        try {return ([IO.StreamReader]::new($stream)).ReadToEnd().Contains('MINE_WORLD_SCAN_DONE')} finally {$stream.Dispose()}
+    } catch {return $false}
+}
+
+function Stop-Stage($proc,[datetime]$since){
+    foreach($server in Get-StageServers $since){Stop-Process -Id $server.ProcessId -ErrorAction SilentlyContinue}
+    if(-not $proc.WaitForExit(120000)){& taskkill.exe /PID $proc.Id /T /F | Out-Null; $null=$proc.WaitForExit(10000)}
+}
+
 function Invoke-Stage([string]$name,[string]$dir,[string]$stage,[string]$scenario){
     $log=Join-Path $taskDiagnostics "$RunName-$name-$stage.txt"
-    $ErrorActionPreference='Continue'
-    try { & ./gradlew.bat --offline "-PmineWorldDirectory=run/$RunName/$dir" "-PmineWorldStage=$stage" "-PmineWorldScenario=$scenario" runMineWorldServer *> $log; $exit=$LASTEXITCODE }
-    finally {$ErrorActionPreference='Stop'}
+    $json=Join-Path $taskRun "$dir/mine-world-$stage.json"
+    $gradle=Join-Path $taskRoot 'gradlew.bat'
+    $began=Get-Date
+    $proc=Start-Process -FilePath $env:ComSpec -WorkingDirectory $taskRoot -NoNewWindow -PassThru -ArgumentList "/s /d /c `"`"$gradle`" --offline `"-PmineWorldDirectory=run/$RunName/$dir`" `"-PmineWorldStage=$stage`" `"-PmineWorldScenario=$scenario`" runMineWorldServer > `"$log`" 2>&1`""
+    $null=$proc.Handle
+    $limit=if($stage -eq 'scan'){$taskScanLimitSeconds}else{$taskStageLimitSeconds}
+    $doneAt=$null
+    $hung=''
+    while(-not $proc.WaitForExit(2000)){
+        $now=Get-Date
+        if($null -eq $doneAt -and (Test-StageDone $stage $json $log)){$doneAt=$now}
+        if(($now-$began).TotalSeconds -gt $limit){$hung=" [stage timed out after $limit s, killed]";break}
+        if($doneAt -and ($now-$doneAt).TotalSeconds -gt $taskStopGraceSeconds -and (Get-StageServers $began).Count -gt 0){$hung=' [server hung on stop, killed]';break}
+    }
+    if($hung){Stop-Stage $proc $began}
+    $exit=$proc.ExitCode
     $text=[IO.File]::ReadAllText($log)
     $saved=$text.Contains('All dimensions are saved')
     $marks=[regex]::Matches($text,"MINE_WORLD_(PASS|FAIL|UNPROVEN|SETUP_FAILED|SKIPPED|ERROR|PREPARED) scenario=$scenario [^\r\n]*")
     $verdict=if($marks.Count -gt 0){$marks[$marks.Count-1].Groups[1].Value}else{'ERROR'}
-    $line=if($marks.Count -gt 0){$marks[$marks.Count-1].Value}else{"no verdict line, gradle exit $exit, see $log"}
-    $json=Join-Path $taskRun "$dir/mine-world-$stage.json"
+    # The restart stage must leave a saved world for the resume stage to load.
+    if($hung -and $stage -eq 'prepare' -and $verdict -eq 'PREPARED'){$verdict='ERROR'}
+    $line=if($marks.Count -gt 0){$marks[$marks.Count-1].Value -replace '^MINE_WORLD_[A-Z_]+',"MINE_WORLD_$verdict"}else{"no verdict line, gradle exit $exit, see $log"}
     $detail=if(Test-Path -LiteralPath $json){ConvertFrom-Json ([IO.File]::ReadAllText($json))}else{$null}
     if($detail){$hazard=if($null -eq $detail.hazardMet){'n/a'}else{"$($detail.hazardMet)".ToLower()}; $line="MINE_WORLD_$verdict scenario=$scenario stage=$stage hazardMet=$hazard climbs=$($detail.climbs) goalBlocked=$($detail.goalBlocked) floorRefusals=$($detail.floorRefusals) stairStops=$($detail.stairStops) deaths=$($detail.deaths) ticks=$($detail.gameTicks) wall=$($detail.wallSeconds)s reason=`"$($detail.reason)`""}
+    $line+=$hung
     if($verdict -ne 'SKIPPED' -and -not $saved -and $verdict -ne 'SETUP_FAILED'){$line+=' [world was not saved cleanly]'}
-    return [ordered]@{scenario=$scenario;stage=$stage;verdict=$verdict;line=$line;exitCode=$exit;saved=$saved;log=$log;detail=$detail}
+    return [ordered]@{scenario=$scenario;stage=$stage;verdict=$verdict;line=$line;exitCode=$exit;saved=$saved;killed=$hung.Trim();log=$log;detail=$detail}
 }
 
 function Save-Summary(){
