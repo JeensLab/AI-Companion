@@ -40,6 +40,14 @@ final class CompanionExpeditionLedge {
         return best;
     }
 
+    /** He can stand with his feet at this point: his body fits there, no fluid is in it and some part of his footprint rests on a solid floor. */
+    static boolean stands(CompanionEntity owner, ServerLevel level, double x, double y, double z) {
+        BlockPos feet = BlockPos.containing(x, y + SETTLED, z);
+        if (!level.hasChunkAt(feet) || !level.getFluidState(feet).isEmpty() || !level.getFluidState(feet.above()).isEmpty()) return false;
+        if (level.getBlockCollisions(owner, owner.getBoundingBox().move(x - owner.getX(), y - owner.getY(), z - owner.getZ()).deflate(SETTLED)).iterator().hasNext()) return false;
+        return footing(level, x, z, owner.getBbWidth() / 2 - EDGE, feet.getY() - 1, feet.getY() - 1);
+    }
+
     private static boolean standable(ServerLevel level, BlockPos step) {
         BlockPos floor = step.below();
         return level.hasChunkAt(step) && CompanionShaftPlan.open(level, step) && CompanionShaftPlan.open(level, step.above())

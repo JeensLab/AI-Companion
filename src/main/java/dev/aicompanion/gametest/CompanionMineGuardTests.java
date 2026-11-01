@@ -38,6 +38,8 @@ public final class CompanionMineGuardTests {
     private static final float KEPT = 10;
     private static final int PIT_FROM = 8, PIT_TO = 10, PIT_DEPTH = 4, DROP_AT = 12, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, GRACE_TICKS = 6, MAX_CHANGES = 2, HOLD_TICKS = 80, RELEASED_TICKS = 400;
     private static final double CLOSER = 1.5;
+    private static final int ROOM_FROM = 4, ROOM_TO = 16, ROOM_SIDE = 6, RUN_TICKS = 20, CLIFF_DEPTH = 6, DEAD_END_LENGTH = 3;
+    private static final double RUN_GAP = 4, FALL = .5;
 
     private CompanionMineGuardTests() { }
 
@@ -72,6 +74,107 @@ public final class CompanionMineGuardTests {
             h.assertTrue(c.getHealth() >= KEPT, "The blast took him below half his health" + trace);
             h.succeed();
         });
+    }
+
+    /**
+     * The fuse is lit 1.5 blocks off, on the last step of the stairs below him, at the foot of the mine: the fuse is 30 ticks and a blast kills from full health
+     * close to it, so in 20 ticks he must be 4 blocks off (about 10 damage there), not on the way somewhere that he reaches late.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseOnTheStepGetsHimFourBlocksOffInTwentyTicks(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        chamber(h, stairs);
+        place(c, stairs.get(stairs.size() - 2));
+        Creeper creeper = creeper(h, stairs.get(stairs.size() - 1));
+        watchRun(h, c, creeper, false);
+    }
+
+    /**
+     * He stands in a closed room cut off from the stairs (a pocket of a cave), the stairs lie on the far side of a creeper two blocks off
+     * that lights its fuse: the stairs cannot be reached, so he does not set off for them, and he keeps away from the creeper instead.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseInAClosedRoomDoesNotSendHimToTheStairsPastIt(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = carveMine(h, c, 0).get(carveMine(h, c, 0).size() - 1);
+        for (int dx = ROOM_FROM; dx <= ROOM_TO; dx++) for (int dz = -ROOM_SIDE; dz <= ROOM_SIDE; dz++) for (int dy = 0; dy < 2; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        place(c, foot.offset(ROOM_TO - 2, 0, 0));
+        Creeper creeper = creeper(h, foot.offset(ROOM_TO - 4, 0, 0));
+        watchRun(h, c, creeper, false);
+    }
+
+    /** A drop opens along one side of the chamber and the lit creeper stands on the other: the way away from it is along the drop, and he does not fall. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseDoesNotSendHimOverAnEdge(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        for (int dx = 0; dx <= ROOM_TO - 4; dx++) for (int dz = 2; dz <= ROOM_SIDE; dz++) for (int dy = -CLIFF_DEPTH; dy < 0; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        place(c, foot.offset(STAND, 0, 0));
+        Creeper creeper = creeperAt(h, foot, STAND + .5, -1.5);
+        watchRun(h, c, creeper, true);
+    }
+
+    /** He is at the dead end of a one-block corridor and the lit creeper is in its mouth: there is no way off, so he strikes it (its health falls) and lives or not by that, but never stands. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseWithNoWayOffIsAnsweredWithTheSword(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        for (int dx = ROOM_FROM; dx <= ROOM_FROM + DEAD_END_LENGTH; dx++) for (int dy = 0; dy < 2; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, 0), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        place(c, foot.offset(ROOM_FROM + DEAD_END_LENGTH, 0, 0));
+        Creeper creeper = creeperAt(h, foot, ROOM_FROM + DEAD_END_LENGTH + .5 - 1.5, 0);
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "health " + creeper.getHealth() : "gone") + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (creeper.isAlive()) {
+                h.assertTrue(creeper.getHealth() < creeper.getMaxHealth() || creeper.isDeadOrDying() || h.getTick() < RUN_TICKS, "He stood and did not strike" + trace);
+                if (creeper.getHealth() < creeper.getMaxHealth()) h.succeed();
+                return;
+            }
+            h.assertTrue(false, "The creeper blew up, it was not struck" + trace);
+        });
+    }
+
+    /** The creeper stands still and its fuse is lit; he is 4 blocks off in 20 ticks, lives and, on a level floor, never falls. */
+    private static void watchRun(GameTestHelper h, CompanionEntity c, Creeper creeper, boolean level) {
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.ignite();
+        double floor = c.getY();
+        start(h, c, 1);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            long elapsed = h.getTick() - begun;
+            double gap = c.distanceTo(creeper);
+            String trace = " | tick " + elapsed + ", gap " + String.format("%.1f", gap) + (creeper.isAlive() ? "" : " (gone)")
+                    + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(!level || c.getY() > floor - FALL, "He fell" + trace);
+            if (elapsed == RUN_TICKS) h.assertTrue(!creeper.isAlive() || gap >= RUN_GAP, "Less than 4 blocks off in 20 ticks" + trace);
+            if (creeper.isAlive()) {
+                h.assertTrue(elapsed < FUSE_TICKS, "The lit creeper never blew" + trace);
+                return;
+            }
+            h.succeed();
+        });
+    }
+
+    private static Creeper creeperAt(GameTestHelper h, BlockPos foot, double dx, double dz) {
+        Creeper creeper = creeper(h, foot);
+        creeper.setPos(foot.getX() + dx, foot.getY(), foot.getZ() + .5 + dz);
+        return creeper;
     }
 
     /**

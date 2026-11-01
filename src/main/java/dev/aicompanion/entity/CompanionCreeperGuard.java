@@ -2,6 +2,8 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.util.LandRandomPos;
 import net.minecraft.world.entity.monster.Creeper;
@@ -35,7 +37,7 @@ final class CompanionCreeperGuard {
     private static final double ON_HIM = 3;
     private static final int LOOK_EVERY = 5, FIGHT_LOOK_EVERY = 2, PLAN_EVERY = 10, EPISODE_TICKS = 20 * 12, CALM_TICKS = 20, PLACE_TRIES = 20;
     private static final int FLEE_CELLS = 6, SHUT_STANDS = 3, ON_ROUTE_SQR = 2, ROUTE_CREEPER_SQR = 4, PASSAGE_RANGE = 24, FLEE_RANGE = 12, FLEE_HEIGHT = 6;
-    private static final double FLEE_SPEED = 1.3, ARRIVED_SQR = 4;
+    private static final double FLEE_SPEED = 1.3;
     /**
      * The fight. Health above which a creeper is met with the sword; the fuse's length in ticks and a margin of it left over; a blade's
      * reach and the closing speed of the two, for the time to get within it; the retreats from creepers he bears before he gives up the
@@ -46,10 +48,17 @@ final class CompanionCreeperGuard {
     private static final double REACH = 1.6, CLOSING_SPEED = .15;
     /**
      * The way out of a lit fuse: the fuse goes out only beyond 7 blocks (a little more for a margin), at his pace in blocks a tick, after the
-     * ticks it takes the goal to take the turn and the path to start; the speed of that dash, and the cells of the route it runs along.
+     * ticks it takes the goal to take the turn and the path to start; the speed of that dash.
      */
     private static final double SAFE_GAP = 7.4, FLEE_PACE = .4, FIGHT_FLEE_SPEED = 1.6;
-    private static final int LATENCY = 4, FIGHT_CELLS = 9;
+    private static final int LATENCY = 4;
+    /**
+     * The dash itself is no path: each tick he takes the heading, of this many round the compass, that holds floor for this many blocks (sampled
+     * every step) and takes him farthest from the creepers, by at least this much more than he is now; a rise or a drop of one block is a step.
+     */
+    private static final int HEADINGS = 16, RUN_SAMPLES = 8;
+    private static final double RUN_STEP = .5, MIN_GAIN = .5, TURN_AT = 30;
+    private static final double[] RISES = {0, 1, -1};
     /** A creeper with a lit fuse is looked at before any other: this much nearer in the sort. */
     private static final double LIT_FIRST = 10_000;
     /**
@@ -62,7 +71,7 @@ final class CompanionCreeperGuard {
 
     private final CompanionEntity owner;
     private boolean active, finished, noBlock, fighting;
-    private long begun, lastSeen, nextLook, nextPlan, lastRetreat;
+    private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing;
     private int tries, retreats;
     private List<BlockPos> cells = List.of();
     private Vec3 flee;
@@ -135,6 +144,7 @@ final class CompanionCreeperGuard {
         lastSeen = now;
         owner.getLookControl().setLookAt(creeper, 30, 30);
         if ((fighting || engaged()) && !lit(creeper)) { finished = true; return; }
+        if (fighting) { retreat(level, creeper); return; }
         if (now >= nextPlan || cells.isEmpty() && flee == null) {
             nextPlan = now + PLAN_EVERY;
             if (!plan(level, creeper, true)) { finished = true; return; }
@@ -183,11 +193,10 @@ final class CompanionCreeperGuard {
     }
 
     /**
-     * What to do about this creeper. Fighting it: whether to step back now, to a place away from it (along his route under the ground).
-     * Otherwise, or with no way back: blocks to set on his route underground, or a place to walk to. False when there is nothing to do.
+     * What to do about this creeper. Fighting it: whether to step back now ({@link #retreat}). Otherwise: blocks to set on his route
+     * underground, or a place to walk to. False when there is nothing to do.
      */
     private boolean plan(ServerLevel level, Creeper creeper, boolean going) {
-        Vec3 before = flee;
         cells = List.of();
         flee = null;
         CompanionMineSite mine = owner.work.mine;
@@ -197,20 +206,67 @@ final class CompanionCreeperGuard {
         List<Creeper> threats = threats(level);
         if (fights()) {
             if (!mustLeave(creeper, going)) return false;
-            boolean keep = going && before != null && owner.position().distanceToSqr(before) > ARRIVED_SQR;
-            Vec3 preferred = keep ? before : underground ? alongRoute(way, at, creeper, FIGHT_CELLS) : awayFrom(way, creeper, SAFE_GAP + 1);
-            Vec3 away = retreatSpot(way, threats, preferred);
-            fighting = away != null;
-            if (fighting) { flee = away; return true; }
+            fighting = true;
+            return true;
         }
         if (underground && !noBlock && CompanionSeal.available(owner) > 0) {
             cells = shutCells(mine, way, at, creeper);
             if (!cells.isEmpty()) return true;
         }
-        Vec3 target = underground ? alongRoute(way, at, creeper, FLEE_CELLS) : awayFrom(way, creeper, 0);
+        Vec3 target = underground ? alongRoute(way, at, creeper, FLEE_CELLS) : awayFrom(way, creeper);
         Vec3 clear = retreatSpot(way, threats, target);
         flee = clear != null ? clear : target;
         return flee != null;
+    }
+
+    /**
+     * The fuse is lit and he is to be out of its range before it blows: no path to wait for, a push straight along the heading that gets him
+     * farthest from every creeper over floor that holds. With every heading shut or no better than where he stands, a blow at the creeper:
+     * it throws it back, which is more than standing.
+     */
+    private void retreat(ServerLevel level, Creeper creeper) {
+        List<Creeper> threats = threats(level);
+        Vec3 best = null;
+        double bestGap = gap(owner.position(), threats) + MIN_GAIN;
+        for (int heading = 0; heading < HEADINGS; heading++) {
+            double angle = heading * 2 * Math.PI / HEADINGS;
+            Vec3 end = runTo(level, Math.cos(angle), Math.sin(angle));
+            if (end == null || !clear(end, threats, 0)) continue;
+            double gap = gap(end, threats);
+            if (gap > bestGap) { best = end; bestGap = gap; }
+        }
+        if (best == null) { strike(creeper); return; }
+        faceTowards(best);
+        owner.getMoveControl().setWantedPosition(best.x, best.y, best.z, FIGHT_FLEE_SPEED);
+    }
+
+    /** The move control turns him 90 degrees a tick and walks as he faces meanwhile: from facing the creeper that first step would go sideways, so he is turned to the heading at once. */
+    private void faceTowards(Vec3 spot) {
+        float yaw = (float) (Mth.atan2(spot.z - owner.getZ(), spot.x - owner.getX()) * 180 / Math.PI) - 90;
+        if (Math.abs(Mth.wrapDegrees(yaw - owner.getYRot())) > TURN_AT) owner.setYRot(yaw);
+    }
+
+    /** Where a run along the heading ends, or null where the floor fails him, a wall stops him or a fluid lies in the way. */
+    private Vec3 runTo(ServerLevel level, double dx, double dz) {
+        Vec3 from = owner.position(), at = from;
+        for (int i = 1; i <= RUN_SAMPLES; i++) {
+            double x = from.x + dx * i * RUN_STEP, z = from.z + dz * i * RUN_STEP;
+            Vec3 next = null;
+            for (double rise : RISES) {
+                if (CompanionExpeditionLedge.stands(owner, level, x, at.y + rise, z)) { next = new Vec3(x, at.y + rise, z); break; }
+            }
+            if (next == null) return null;
+            at = next;
+        }
+        return at;
+    }
+
+    private void strike(Creeper creeper) {
+        if (owner.tickCount < nextSwing || !owner.isWithinMeleeAttackRange(creeper)) return;
+        nextSwing = owner.tickCount + owner.combat.weaponCooldownTicks();
+        owner.selectWeaponForCombat();
+        owner.swing(InteractionHand.MAIN_HAND);
+        owner.doHurtTarget(creeper);
     }
 
     /** Every creeper about that could hurt him, in sight or not: the way out of one must not lead to another. */
@@ -223,7 +279,7 @@ final class CompanionCreeperGuard {
      * of them (the blast gap is enough), and one he can walk to. Null when there is none.
      */
     private Vec3 retreatSpot(List<BlockPos> way, List<Creeper> threats, Vec3 preferred) {
-        if (preferred != null && clear(preferred, threats)) return preferred;
+        if (preferred != null && clear(preferred, threats, GAP_SLACK)) return preferred;
         if (threats.isEmpty()) return null;
         List<Vec3> spots = new ArrayList<>();
         for (BlockPos cell : way) {
@@ -241,18 +297,18 @@ final class CompanionCreeperGuard {
             Vec3 spot = LandRandomPos.getPosAway(owner, FLEE_RANGE, FLEE_HEIGHT, centre);
             if (spot != null) spots.add(spot);
         }
-        List<Vec3> ranked = spots.stream().filter(spot -> clear(spot, threats))
+        List<Vec3> ranked = spots.stream().filter(spot -> clear(spot, threats, GAP_SLACK))
                 .sorted(Comparator.comparingDouble((Vec3 spot) -> -gap(spot, threats)).thenComparingDouble(owner.position()::distanceToSqr)).limit(PATH_TESTS).toList();
         for (Vec3 spot : ranked) if (reachable(spot)) return spot;
         return null;
     }
 
-    /** The walk from where he stands to the spot passes no creeper nearer than he is to it now (or than the blast gap). */
-    private boolean clear(Vec3 spot, List<Creeper> threats) {
+    /** The walk from where he stands to the spot passes no creeper nearer than he is to it now (or than the blast gap), give or take the slack. */
+    private boolean clear(Vec3 spot, List<Creeper> threats, double slack) {
         Vec3 from = owner.position();
         for (Creeper creeper : threats) {
             double floor = Math.min(from.distanceTo(creeper.position()), SAFE_GAP);
-            if (segmentDistance(from, spot, creeper.position()) < floor - GAP_SLACK) return false;
+            if (segmentDistance(from, spot, creeper.position()) < floor - slack) return false;
         }
         return true;
     }
@@ -327,8 +383,8 @@ final class CompanionCreeperGuard {
     }
 
     /** Off the route: to the nearest cell of his own passage that is farther from the creeper than he is, else simply away from it. */
-    private Vec3 awayFrom(List<BlockPos> way, Creeper creeper, double gap) {
-        double mine = Math.max(creeper.distanceToSqr(owner), gap * gap);
+    private Vec3 awayFrom(List<BlockPos> way, Creeper creeper) {
+        double mine = creeper.distanceToSqr(owner);
         BlockPos best = null;
         double bestDistance = PASSAGE_RANGE * PASSAGE_RANGE;
         for (BlockPos cell : way) {
