@@ -29,7 +29,7 @@ public final class CompanionPlanRunner {
     /** Steps run for one obtain_item, replans included: twice the longest chain the planner gives (CompanionObtain.MAX_STEPS). */
     public static final int MAX_OBTAIN_STEPS = 32;
     /** What a wood search says when it found no log: not a chance to repeat (the search itself ran for minutes), and the same for every part that needs wood. */
-    private static final String NO_TREE = "Не нашёл доступного дерева";
+    public static final String NO_TREE = "Не нашёл доступного дерева";
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
             "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds");

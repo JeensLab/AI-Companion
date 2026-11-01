@@ -528,6 +528,8 @@ public final class CompanionAgenda {
             if (milestone.kind() == Kind.EXPEDITION) { counter[0] = 0; goal.workTicks = 0; }
             return;
         }
+        // No tree to be had is the end of what the bag can be made of here: the next steps would search for wood again, minutes each.
+        if (error == null && outcome != null && outcome.report().contains(CompanionPlanRunner.NO_TREE)) { block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why); return; }
         counter[1]++;
         if (milestone.concernsDiamonds(goal.fallback) && !goal.fallback && hasFreeSlot(c)) {
             // One empty search does not end an honest hunt for diamonds; the second one in a row does.
