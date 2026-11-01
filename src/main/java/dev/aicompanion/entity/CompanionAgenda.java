@@ -420,6 +420,11 @@ public final class CompanionAgenda {
         }
         Milestone pick = pick(goal, facts, c);
         if (pick == null) { waiting(data, owner, goal, c, "жду, пока в печи доготовится партия"); return; }
+        if (goal.descendForOre) {
+            goal.descendForOre = false;
+            Milestone dig = all.stream().filter(milestone -> milestone.kind() == Kind.EXPEDITION && milestone.supported() && !milestone.satisfied(facts, goal.fallback, all)).findFirst().orElse(null);
+            if (dig != null && pick.kind() != Kind.EXPEDITION) { pick = dig; goal.mineAsIs = true; }
+        }
         int[] counter = goal.counter(pick.key());
         if (counter[0] >= MAX_ATTEMPTS) { block(data, owner, goal, c, pick.label(goal.fallback) + " — попытки исчерпаны. " + goal.reason); return; }
         if (goal.workTicks >= STALL_TICKS) { block(data, owner, goal, c, "давно нет продвижения: " + pick.label(goal.fallback) + "."); return; }
@@ -528,6 +533,11 @@ public final class CompanionAgenda {
             if (milestone.kind() == Kind.EXPEDITION) { counter[0] = 0; goal.workTicks = 0; }
             return;
         }
+        // The iron is below what the ore search sees: not a failure of the milestone, the way to it is down (the stairs of the mine), then he looks again.
+        if (milestone.kind() != Kind.EXPEDITION && error == null && outcome != null && ironBeyondReach(outcome.report())) {
+            goal.descendForOre = true; counter[1] = 0;
+            return;
+        }
         // No tree to be had is the end of what the bag can be made of here: the next steps would search for wood again, minutes each.
         if (error == null && outcome != null && outcome.report().contains(CompanionPlanRunner.NO_TREE)) { block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why); return; }
         counter[1]++;
@@ -539,6 +549,11 @@ public final class CompanionAgenda {
             return;
         }
         if (counter[1] >= MAX_FAILURES) block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
+    }
+
+    /** The ore search came back empty for iron: none seen within its depth, or seen but not safely reachable from here. */
+    private static boolean ironBeyondReach(String report) {
+        return report.contains("«железная руда»") && (report.contains("блоков вниз.") || report.contains("не нашёл безопасного хода"));
     }
 
     private static boolean hasFreeSlot(CompanionEntity c) {
