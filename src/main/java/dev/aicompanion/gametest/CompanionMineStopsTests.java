@@ -1,16 +1,20 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.entity.CompanionActionResult;
+import dev.aicompanion.entity.CompanionAgenda;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionShaftPlan;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -40,7 +44,8 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineStopsTests {
-    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2, PIT_STEP = 8, POCKET_TIMEOUT = 24000;
+    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200;
 
     private CompanionMineStopsTests() { }
 
@@ -71,6 +76,46 @@ public final class CompanionMineStopsTests {
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not get past the foe he cannot reach: " + result.message() + " | zombie " + (zombie.isAlive() ? "alive" : "gone") + " | " + report(c));
         });
     }
+
+    /**
+     * The mine was started again in a pit on his own stairs (the record's entrance is the pit), and there is no stone pickaxe and no iron one
+     * with wear to spare; wood and stone lie on the surface by the first entrance. The pit is no place to make a pickaxe, so he goes up to the
+     * first entrance, makes it from real logs and stone, and the goal goes on to the diamond instead of stopping for want of a pickaxe.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_pit", timeoutTicks = POCKET_TIMEOUT)
+    public static void goesUpFromAPitForWoodWhenThereIsNoPickaxe(GameTestHelper h) {
+        mountain(h, true);
+        for (int[] trunk : new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}}) for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
+        CompanionEntity c = h.spawn(dev.aicompanion.AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        ItemStack worn = new ItemStack(Items.IRON_PICKAXE);
+        worn.setDamageValue(worn.getMaxDamage() - 4);
+        ItemStack[] bag = {worn, new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32), new ItemStack(Items.COBBLESTONE, 46),
+                new ItemStack(Items.STICK), new ItemStack(Items.CRAFTING_TABLE)};
+        for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.bind(h, c, 3);
+        BlockPos pit = carveMine(h, c, 0).get(PIT_STEP);
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        c.mineSite().restart(pit, Direction.WEST);
+        c.mineSite().buried(true);
+        boolean[] started = {false};
+        h.onEachTick(() -> {
+            if (!started[0]) return;
+            h.assertTrue(c.isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.succeedWhen(() -> {
+            // The light engine runs between ticks: the goal starts once the pit reads as roofed over, as it does in the world.
+            if (!started[0]) {
+                h.assertTrue(!h.getLevel().canSeeSky(pit.above()), "The light in the pit is not worked out yet");
+                CompanionDiamondGoalTests.start(h, r, 1);
+                started[0] = true;
+            }
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) == CompanionAgenda.State.COMPLETED && count(c, Items.DIAMOND) >= 1,
+                    "No diamond from the pit: " + CompanionDiamondGoalTests.report(h, r));
+        });
+    }
+
+    @AfterBatch(batch = "mine_stops_pit") public static void afterPit(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /**
      * He stands in a closed pit deep under the ground; the record's entrance is far away on the surface and no stairs are left near him,
@@ -122,6 +167,42 @@ public final class CompanionMineStopsTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again from the entrance: " + result.message() + " | " + report(c));
             h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    @AfterBatch(batch = "mine_stops_frozen_drop") public static void afterFrozenDrop(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+
+    /**
+     * Run m4b/lava (seed 20261102): held drops of the tunnels were flushed into chunks nobody ticks, and hung in the air with the pickup
+     * delay not running down. The drop is his harvest and he cannot take it, so the pickup waited for it for ever: the step of the goal ended
+     * «стоял без продвижения» and the goal waited for ever «занят другим делом». The pickup lets such a drop go after a while and the goal
+     * goes on to the diamond.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_frozen_drop", timeoutTicks = GOAL_TIMEOUT)
+    public static void goesOnToTheDiamondWhenADropOfHisNeverSettles(GameTestHelper h) {
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, CompanionDiamondGoalTests.supplies(32, 4));
+        // While the drop hangs he wanders off the spot he began on: the ring of ore is within the reach of a mine from anywhere.
+        mountain(h);
+        BlockPos cell = new BlockPos(CENTER + DROP_AT, DROP_Y, CENTER + DROP_AT);
+        h.setBlock(cell, Blocks.AIR);
+        ItemEntity drop = new ItemEntity(h.getLevel(), h.absolutePos(cell).getX() + .5, h.absolutePos(cell).getY() + .35, h.absolutePos(cell).getZ() + .5, new ItemStack(Items.COBBLED_DEEPSLATE));
+        drop.setNoGravity(true);
+        drop.setDeltaMovement(0, 0, 0);
+        drop.setNeverPickUp();
+        drop.setUnlimitedLifetime();
+        h.getLevel().addFreshEntity(drop);
+        r.c().claimDrops(List.of(drop));
+        CompanionDiamondGoalTests.start(h, r, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.runAtTickTime(STARTED_BY, () -> {
+            if (!r.c().mineSite().exists() || !drop.isAlive()) h.fail("The goal never began its step while the drop hangs: " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) == CompanionAgenda.State.COMPLETED, "Goal incomplete | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.count(r.c(), Items.DIAMOND) >= 1, "No diamond | " + CompanionDiamondGoalTests.report(h, r));
         });
     }
 }

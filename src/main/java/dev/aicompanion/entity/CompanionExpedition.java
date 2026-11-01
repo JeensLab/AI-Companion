@@ -461,7 +461,13 @@ final class CompanionExpedition {
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
                 // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up.
                 if (!dig.lackedOre && !dig.ironForRock && w.mine.buried() && dig.spareIron()) { dig.ironForRock = true; return; }
-                long now = owner.level().getGameTime();
+                // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
+                ServerLevel level = (ServerLevel) owner.level();
+                if (!dig.lackedOre && !towardOrigin && w.mine.buried() && CompanionExpeditionRecord.originSide(level, w.mine) != null) {
+                    restartAtOrigin(level, CompanionExpeditionClimb.shortage(false, hadStone));
+                    return;
+                }
+                long now = level.getGameTime();
                 stepEnd = Math.max(stepEnd, now + CLIMB_TICKS);
                 w.deadline = Math.max(w.deadline, stepEnd + 40);
                 stage = Stage.CLIMB;
