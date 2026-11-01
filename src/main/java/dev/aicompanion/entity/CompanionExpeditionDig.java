@@ -39,6 +39,8 @@ final class CompanionExpeditionDig {
     private final CompanionEntity owner;
     private BlockPos cell, walking;
     private int cellTicks, unseen, walkTicks;
+    /** Why the last {@link Status#STUCK} was said, for the diagnostics. */
+    private String stuckWhy = "";
     private List<BlockPos> around = List.of();
     private BlockPos reaching;
     private int aroundIndex;
@@ -76,7 +78,8 @@ final class CompanionExpeditionDig {
     Status dig(ServerLevel level, BlockPos pos) {
         if (CompanionShaftPlan.open(level, pos)) return done();
         if (!pos.equals(cell)) { cell = pos.immutable(); cellTicks = unseen = 0; }
-        if (++cellTicks > CELL_PATIENCE || !level.getFluidState(pos).isEmpty()) return Status.STUCK;
+        if (++cellTicks > CELL_PATIENCE) return stuck("patience");
+        if (!level.getFluidState(pos).isEmpty()) return stuck("fluid");
         BlockState state = level.getBlockState(pos);
         Item tool = toolFor(state);
         lackedOre = tool == null && state.is(Tags.Blocks.ORES);
@@ -86,9 +89,14 @@ final class CompanionExpeditionDig {
         owner.getLookControl().setLookAt(pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5);
         if (eye.distanceTo(pos.getCenter()) > CompanionSeal.REACH || !CompanionMiningNavigation.visible(owner, eye, pos)) {
             w.breaking.reset();
-            return ++unseen > UNSEEN_PATIENCE ? Status.STUCK : Status.WORKING;
+            return ++unseen > UNSEEN_PATIENCE ? stuck(eye.distanceTo(pos.getCenter()) > CompanionSeal.REACH ? "reach" : "unseen") : Status.WORKING;
         }
         return w.breaking.tick(level, pos) ? harvest(level, pos, state) : Status.WORKING;
+    }
+
+    private Status stuck(String why) {
+        stuckWhy = why;
+        return Status.STUCK;
     }
 
     private Status harvest(ServerLevel level, BlockPos pos, BlockState state) {
@@ -96,7 +104,7 @@ final class CompanionExpeditionDig {
         boolean ore = state.is(Tags.Blocks.ORES);
         List<ItemStack> drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), owner, tool);
         if (ore && !w.items.canStore(drops)) return Status.FULL;
-        if (!level.destroyBlock(pos, false, owner, 512)) return Status.STUCK;
+        if (!level.destroyBlock(pos, false, owner, 512)) return stuck("destroy_refused");
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         broken++;
         lastBroken = pos.immutable();
@@ -285,6 +293,15 @@ final class CompanionExpeditionDig {
         var level = owner.level();
         BlockPos floor = cell.below();
         return !level.hasChunkAt(floor) || level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP);
+    }
+
+    /** The cell a {@link Status#STUCK} was said for: where it is, what is in it and which of the reasons it was. */
+    void diagnoseDig(BlockPos pos) {
+        if (!dev.aicompanion.CompanionDiagnostics.enabled()) return;
+        var level = owner.level();
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "dig_stuck", "entity", owner.getUUID(), "cell", pos.toShortString(), "block", level.getBlockState(pos),
+                "fluid", level.getFluidState(pos), "why", stuckWhy, "cellTicks", cellTicks, "unseen", unseen, "feet", owner.position(), "ground", owner.onGround(),
+                "eye", owner.getEyePosition().distanceTo(pos.getCenter()));
     }
 
     void diagnoseStuck(BlockPos to, int index, int size) {

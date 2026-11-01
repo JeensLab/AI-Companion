@@ -120,7 +120,10 @@ final class CompanionExpeditionStep {
             case NO_TOOL -> { return Result.NO_TOOL; }
             case NO_HAND -> { return fail("не смог взять кирку в руку"); }
             case FULL -> { return Result.FULL; }
-            case STUCK -> { return fail("клетку не удалось разобрать: не вижу её, не дотягиваюсь или в ней жидкость"); }
+            case STUCK -> {
+                dig.diagnoseDig(cells.get(index));
+                return fail("клетку не удалось разобрать: не вижу её, не дотягиваюсь или в ней жидкость");
+            }
             case WORKING -> { }
         }
         return Result.WORKING;
