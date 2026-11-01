@@ -45,6 +45,8 @@ final class CompanionCreeperGuard {
      */
     static final float FIGHT_HEALTH = 12;
     private static final int FUSE = 30, SWING_MARGIN = 2, GIVE_UP = 6, FORGET_TICKS = 20 * 60;
+    /** Steps away from a creeper that has not left the things he went for, before he lets them lie, and for how long. */
+    private static final int FLEES_FOR_LOOT = 4, LEAVE_LOOT_TICKS = 20 * 300;
     private static final double REACH = 1.6, CLOSING_SPEED = .15;
     /**
      * The way out of a lit fuse: the fuse goes out only beyond 7 blocks (a little more for a margin), at his pace in blocks a tick, after the
@@ -71,8 +73,8 @@ final class CompanionCreeperGuard {
 
     private final CompanionEntity owner;
     private boolean active, finished, noBlock, fighting, shielded;
-    private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing;
-    private int tries, retreats;
+    private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing, lastFlee;
+    private int tries, retreats, flees;
     private List<BlockPos> cells = List.of();
     private Vec3 flee;
     private final CompanionShieldGuard shield;
@@ -136,6 +138,18 @@ final class CompanionCreeperGuard {
         owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, " + (cells.isEmpty() ? "ухожу от него." : "закрываю проход блоком."));
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "creeper_guard", "entity", owner.getUUID(),
                 "action", shielded ? "shield" : fighting ? "retreat" : cells.isEmpty() ? "flee" : "block", "cells", cells);
+        if (!shielded && !fighting && cells.isEmpty()) leaveLootAfterFlees(now);
+    }
+
+    /** A creeper that stays by the things he goes for, with nothing to meet it, would have him step away and come back for ever: the things are let lie. */
+    private void leaveLootAfterFlees(long now) {
+        if (now - lastFlee > FORGET_TICKS || !owner.loot.hasPending()) flees = 0;
+        lastFlee = now;
+        if (!owner.loot.hasPending() || ++flees < FLEES_FOR_LOOT) return;
+        flees = 0;
+        owner.loot.shun(now + LEAVE_LOOT_TICKS);
+        owner.autonomy().report("Крипер не отходит от вещей, оставляю их там.");
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "creeper_guard", "entity", owner.getUUID(), "action", "leave_loot");
     }
 
     void tick() {

@@ -440,6 +440,7 @@ final class CompanionLoot {
     }
 
     private boolean chaseable(ServerLevel level, UUID id) {
+        if (shunned.getOrDefault(id, 0L) > level.getGameTime()) return false;
         if (unreachable.contains(id)) {
             // Given up from one spot only: four blocks away the drop is tried again.
             BlockPos from = unreachableFrom.get(id);
@@ -474,7 +475,10 @@ final class CompanionLoot {
         return found;
     }
     private final Map<UUID, Long> reclaimedAt = new HashMap<>();
-    void beginCollection() { collecting = true; leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
+    /** Drops left lying until the given game time (a creeper that will not leave them): not chased, and the work does not wait for them. */
+    private final Map<UUID, Long> shunned = new HashMap<>();
+    void shun(long until) { for (UUID id : pending) shunned.put(id, until); pause(); }
+    void beginCollection() { collecting = true; shunned.clear(); leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
     void resumeCollection() { collecting = true; }
-    void cancel() { collecting = false; leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }
+    void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }
 }
