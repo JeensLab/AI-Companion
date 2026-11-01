@@ -16,6 +16,7 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -44,6 +45,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 public final class CompanionMineFightTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
     private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 9, HALF = 10;
+    private static final double THROWN = 0.6;
 
     private CompanionMineFightTests() { }
 
@@ -248,6 +250,24 @@ public final class CompanionMineFightTests {
                 h.succeed();
             }
             h.assertTrue(h.getTick() - begun < KILL_TICKS, "The foes were not all killed in time" + trace);
+        });
+    }
+
+    /** A zombie struck by him is thrown back about as far as a running player's blow throws it (0.4 from any hit, 0.5 more from the blow), not only by the hit's own 0.4. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void hisBlowThrowsAZombieBackAsARunningPlayersDoes(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(OPEN_CAVE_STAND, 0, 0));
+        Zombie zombie = zombie(h, foot.offset(OPEN_CAVE_STAND + 1, 0, 0));
+        h.runAfterDelay(2, () -> {
+            c.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, zombie.position());
+            zombie.setDeltaMovement(Vec3.ZERO);
+            h.assertTrue(c.doHurtTarget(zombie), "The blow did not land");
+            double thrown = zombie.getDeltaMovement().horizontalDistance();
+            h.assertTrue(thrown >= THROWN, "The zombie was thrown back by only " + thrown);
+            h.succeed();
         });
     }
 
