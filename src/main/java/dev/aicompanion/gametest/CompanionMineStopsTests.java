@@ -251,6 +251,33 @@ public final class CompanionMineStopsTests {
         });
     }
 
+    /**
+     * Run f9b/void-3 (seed 20261102): three restarts spent and carried to the next steps, the walk to the entrance failed, and he stood in the
+     * cave with every side free to begin stairs to: each step ended «Не смог дойти до входа в шахту» at once. The cap alone stops him, so he gets
+     * the one restart past it, here, and the stairs go on.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainOnceMoreWhenOnlyTheCapStopsHim(GameTestHelper h) {
+        mountain(h, true);
+        for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        BlockPos pit = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        BlockPos far = h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER));
+        c.mineSite().start(far, Direction.NORTH);
+        for (int i = 0; i < 3; i++) c.mineSite().restart(far, Direction.NORTH);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(pit.above()), "The light in the pit is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stood with the cap alone against him: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 4, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
     /** The dig out was the last restart past the cap: in the same ring again he ends at once, and burns no more restarts. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void doesNotDigOutOnceMoreWhenTheRestartsAreSpent(GameTestHelper h) {
