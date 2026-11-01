@@ -195,8 +195,9 @@ final class CompanionExpeditionDig {
         if (inside && (centred(to) || to.equals(walking) && walkTicks > WALK_PATIENCE / 2)) { walking = null; walkTicks = 0; walked++; return true; }
         if (!to.equals(walking)) { walking = to.immutable(); walkTicks = 0; }
         walkTicks++;
-        Vec3 centre = Vec3.atBottomCenterOf(to);
-        owner.getMoveControl().setWantedPosition(centre.x, centre.y, centre.z, 1);
+        Vec3 aim = CompanionExpeditionLedge.aim(owner, to);
+        if (aim == null) return false;
+        owner.getMoveControl().setWantedPosition(aim.x, aim.y, aim.z, 1);
         return false;
     }
 
