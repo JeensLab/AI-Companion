@@ -210,7 +210,7 @@ final class CompanionExpedition {
         BlockPos here = owner.blockPosition();
         joining = false;
         if (mine.exists()) {
-            mine.verify(level);
+            mine.verify(level, here);
             int shunned = mine.firstShunned();
             if (shunned >= 0) { sealCell = mine.stands().get(shunned).above(); mine.forbid(sealCell); mine.truncate(shunned); }
             route = new ArrayList<>(List.of(mine.entrance()));

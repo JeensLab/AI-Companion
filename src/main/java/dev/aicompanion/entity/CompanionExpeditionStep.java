@@ -146,6 +146,7 @@ final class CompanionExpeditionStep {
         for (BlockPos cell : cells) {
             if (CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), w.mine.avoid(), null).kind() != CompanionShaftPlan.Kind.BLOCKED) continue;
             if (w.mine.forbidden(cell)) return "в этой клетке моя пробка: там пещера";
+            if (w.mine.carriesStand(cell)) return "в этой клетке пол моей же ступени";
             if (!level.hasChunkAt(cell) || !level.getWorldBorder().isWithinBounds(cell) || level.isOutsideBuildHeight(cell)) return "дальше граница мира или незагруженная земля";
             if (liquidAround(level, cell)) return "рядом жидкость, до которой не дотянуться, чтобы заделать";
             if (!CompanionShaftPlan.open(level, cell) && !w.mine.seals().contains(cell) && !CompanionOre.tunnelable(level.getBlockState(cell))) return "на пути коренная порода или неподходящий блок";
