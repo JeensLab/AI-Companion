@@ -524,12 +524,9 @@ final class CompanionExpedition {
         if (level.getGameTime() < nextCraft) return;
         nextCraft = level.getGameTime() + CRAFT_EVERY;
         if (w.items.countCarried(Items.TORCH) >= CompanionMilestones.TORCHES_STOCK) return;
-        boolean coal = false, handle = false;
-        for (ItemStack stack : w.items.carriedItems()) {
-            coal |= stack.is(ItemTags.COALS);
-            handle |= stack.is(Items.STICK) || stack.is(ItemTags.PLANKS) || stack.is(ItemTags.LOGS);
-        }
-        if (coal && handle) owner.craftFromBag("minecraft:torch", 4);
+        boolean coal = false;
+        for (ItemStack stack : w.items.carriedItems()) coal |= stack.is(ItemTags.COALS);
+        if (coal && supply.spareForTorch()) owner.craftFromBag("minecraft:torch", 4);
     }
 
     /** A sword in the bag, or one made from the stone and sticks he carries, at a bench set down and taken up like the pickaxe's. */

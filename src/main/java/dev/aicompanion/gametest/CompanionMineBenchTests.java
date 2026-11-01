@@ -30,7 +30,7 @@ import java.util.List;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBenchTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 2400, STAIRS = 8, SETTLED = 40, STICKS = 8;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 2400, STAIRS = 8, SETTLED = 40, STICKS = 8, TORCH_WINDOW = 700;
 
     private CompanionMineBenchTests() { }
 
@@ -50,6 +50,25 @@ public final class CompanionMineBenchTests {
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void makesAPickaxeInABuriedMineInsteadOfEndingInAShortage(GameTestHelper h) {
         probe(h, false, true);
+    }
+
+    /** Two sticks are the next stone pickaxe: topping up the torches (which also take a stick each) must leave them alone, underground there is no wood. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void topsUpTorchesWithoutEatingTheSticksOfTheNextPickaxe(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carve(h, c);
+        BlockPos at = stairs.get(STAIRS);
+        c.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(5, new ItemStack(Items.STICK, 2));
+        c.setItem(7, new ItemStack(Items.COAL, 8));
+        start(h, c);
+        int torches = count(c, Items.TORCH);
+        h.runAfterDelay(TORCH_WINDOW, () -> {
+            h.assertTrue(count(c, Items.STICK) == 2 && count(c, Items.TORCH) <= torches, "Torches were made of the pickaxe's sticks: sticks " + count(c, Items.STICK) + ", torches " + torches + " -> " + count(c, Items.TORCH) + " | " + report(c));
+            h.succeed();
+        });
     }
 
     /** Items lie in the only free cell and do not matter; a mob standing there does. */
