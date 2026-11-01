@@ -169,11 +169,15 @@ public final class CompanionMineWorldProbe {
         for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) level.getChunk((entrance.getX() >> 4) + dx, (entrance.getZ() >> 4) + dz, ChunkStatus.FULL, true);
         // An owner hovering in the air makes the idle companion dig stairs up to him, away from the entrance, before the goal even starts.
         player.teleportTo(entrance.getX() + 0.5, entrance.getY(), entrance.getZ() + 0.5);
+        // A headless player does not load a site beyond the view distance: he goes there too and his chunks are held from now on, or the order finds nobody.
+        companion.teleportTo(entrance.getX() + 0.5, entrance.getY(), entrance.getZ() + 0.5);
+        holdChunks();
         settleUntil = ticks + SETTLE_TICKS;
         phase = Phase.SETTLE;
     }
 
     private static void settle(MinecraftServer server) {
+        holdChunks();
         if (ticks < settleUntil) return;
         companion.teleportTo(entrance.getX() + 0.5, entrance.getY(), entrance.getZ() + 0.5);
         companion.setOwnerId(PLAYER); companion.setSearchRadius(16); companion.setLifestyle(false, false);
