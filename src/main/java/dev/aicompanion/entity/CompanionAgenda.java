@@ -9,6 +9,7 @@ import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionAgendaData.Goal;
 import dev.aicompanion.entity.CompanionMilestones.Kind;
 import dev.aicompanion.entity.CompanionMilestones.Milestone;
+import dev.aicompanion.entity.CompanionMilestones.Step;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -61,7 +62,7 @@ public final class CompanionAgenda {
     private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4;
     /** The health he goes for his things with after a death: the same he rests up to in a retreat. */
     private static final float RECOVER_HEALTH = CompanionExpeditionRetreat.FIT;
-    private static final String COLLECT = "collect";
+    private static final String COLLECT = "collect", SHIELD = "shield";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
     /** A request of only these (follow, stay, guard…) holds the goal until the player says to go on. */
@@ -428,13 +429,17 @@ public final class CompanionAgenda {
         int[] counter = goal.counter(pick.key());
         if (counter[0] >= MAX_ATTEMPTS) { block(data, owner, goal, c, pick.label(goal.fallback) + " — попытки исчерпаны. " + goal.reason); return; }
         if (goal.workTicks >= STALL_TICKS) { block(data, owner, goal, c, "давно нет продвижения: " + pick.label(goal.fallback) + "."); return; }
+        List<Step> shield = pick.kind() == Kind.EXPEDITION && !goal.mineAsIs ? Milestone.shieldTrekSteps(facts) : List.of();
+        if (!shield.isEmpty()) {
+            goal.shieldTrek = true;
+            data.setDirty();
+            CompanionDiagnostics.event(c.diagnosticTrace(), "shield_trek_planned", "goal", goal.playbook, "at", c.blockPosition());
+            start(server, owner, goal, c, SHIELD, null, shield.stream().map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList());
+            return;
+        }
         List<PlannedAction> plan = pick.method(facts, goal.fallback, all).stream()
                 .map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList();
         if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) plan = List.of(plan.getLast());
-        else if (pick.kind() == Kind.EXPEDITION && Milestone.shieldTrek(facts)) {
-            goal.shieldTrek = true;
-            CompanionDiagnostics.event(c.diagnosticTrace(), "shield_trek_planned", "goal", goal.playbook, "at", c.blockPosition());
-        }
         goal.mineAsIs = false;
         if (!pick.key().equals(goal.announced)) {
             if (!goal.announced.isEmpty()) c.autonomySay("Дальше: " + pick.label(goal.fallback) + ".");
@@ -506,7 +511,7 @@ public final class CompanionAgenda {
                 || danger(c, player);
         CompanionDiagnostics.event(run.port.trace(), "goal_step_finished", "milestone", run.milestone, "neutral", neutral,
                 "report", outcome == null ? "" : outcome.report(), "error", error == null ? "" : error.toString());
-        if (neutral || COLLECT.equals(run.milestone)) return;
+        if (neutral || COLLECT.equals(run.milestone) || SHIELD.equals(run.milestone)) return;
         var book = goal.book();
         Milestone milestone = book.milestone(run.milestone);
         if (milestone == null) return;

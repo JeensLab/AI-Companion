@@ -266,8 +266,9 @@ public final class CompanionShieldTests {
     }
 
     /**
-     * The plan of the mine step for the iron of a shield: only for ore lying in the open near him, only once for the goal, never down in the mine,
-     * and the sword he lacks takes its ingots first. A shield made again later is made of what he carries.
+     * The run of its own that fetches the iron of a shield, which the agenda plans before the kit: only for ore lying in the open near him, only once
+     * for the goal, never down in the mine, and the sword he lacks takes its ingots first. The kit of the mine step itself never fetches it: a shield
+     * is made there only of what is carried.
      */
     @GameTest(template = "tall_tree", batch = BATCH, timeoutTicks = 100)
     public static void theMineStepGoesOutForShieldIronOnlyForOreInTheOpenAndOnlyOnce(GameTestHelper h) {
@@ -277,16 +278,19 @@ public final class CompanionShieldTests {
         c.setItem(0, new ItemStack(Items.CRAFTING_TABLE));
         c.setItem(1, new ItemStack(Items.STICK, 8));
         c.setItem(2, new ItemStack(Items.STONE_SWORD));
-        h.assertTrue(shieldSteps(c, false).isEmpty(), "No ore anywhere: " + shieldSteps(c, false));
+        h.assertTrue(trekSteps(c, false).isEmpty(), "No ore anywhere: " + trekSteps(c, false));
         h.setBlock(ore, Blocks.IRON_ORE);
-        h.assertTrue(shieldSteps(c, false).equals(shield), "Iron ore in the open: " + shieldSteps(c, false));
-        h.assertTrue(shieldSteps(c, true).isEmpty(), "The goal has gone out for the shield once: " + shieldSteps(c, true));
+        h.assertTrue(trekSteps(c, false).equals(shield), "Iron ore in the open: " + trekSteps(c, false));
+        h.assertTrue(shieldSteps(c, false).isEmpty(), "The kit makes nothing of ore in sight: " + shieldSteps(c, false));
+        h.assertTrue(trekSteps(c, true).isEmpty(), "The goal has gone out for the shield once: " + trekSteps(c, true));
         c.setItem(3, new ItemStack(Items.IRON_INGOT, 2));
         c.setItem(2, ItemStack.EMPTY);
-        h.assertTrue(shieldSteps(c, false).equals(shield), "Two ingots are the sword's, the shield's iron is fetched: " + shieldSteps(c, false));
+        h.assertTrue(trekSteps(c, false).equals(shield), "Two ingots are the sword's, the shield's iron is fetched: " + trekSteps(c, false));
         c.setItem(2, new ItemStack(Items.STONE_SWORD));
-        h.assertTrue(shieldSteps(c, false).isEmpty(), "A spare ingot and no boards: nothing to fetch, nothing to make: " + shieldSteps(c, false));
+        h.assertTrue(trekSteps(c, false).isEmpty(), "A spare ingot: nothing to fetch: " + trekSteps(c, false));
+        h.assertTrue(shieldSteps(c, true).isEmpty(), "A spare ingot and no boards: nothing to make: " + shieldSteps(c, true));
         c.setItem(4, new ItemStack(Items.OAK_PLANKS, SHIELD_BOARDS));
+        h.assertTrue(trekSteps(c, false).isEmpty(), "A spare ingot and boards: made of what is carried, not fetched: " + trekSteps(c, false));
         h.assertTrue(shieldSteps(c, true).equals(shield), "After the trip a shield is made of what is carried: " + shieldSteps(c, true));
         c.setItem(3, ItemStack.EMPTY);
         c.setItem(4, ItemStack.EMPTY);
@@ -294,10 +298,10 @@ public final class CompanionShieldTests {
         BlockPos buried = new BlockPos(25, 1, 25);
         h.setBlock(buried, Blocks.IRON_ORE);
         for (net.minecraft.core.Direction side : net.minecraft.core.Direction.values()) if (side != net.minecraft.core.Direction.DOWN) h.setBlock(buried.relative(side), Blocks.STONE);
-        h.assertTrue(shieldSteps(c, false).isEmpty(), "Ore inside the rock is not seen: " + shieldSteps(c, false));
+        h.assertTrue(trekSteps(c, false).isEmpty(), "Ore inside the rock is not seen: " + trekSteps(c, false));
         h.setBlock(ore, Blocks.IRON_ORE);
         c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
-        h.assertTrue(shieldSteps(c, false).isEmpty(), "Down in the mine nothing is fetched: " + shieldSteps(c, false));
+        h.assertTrue(trekSteps(c, false).isEmpty(), "Down in the mine nothing is fetched: " + trekSteps(c, false));
         h.succeed();
     }
 
@@ -379,7 +383,15 @@ public final class CompanionShieldTests {
 
     private static List<String> shieldSteps(CompanionEntity c, boolean tripSpent) {
         var book = CompanionPlaybooks.of("find_diamonds", 3);
-        List<CompanionMilestones.Step> steps = book.milestones().getLast().method(CompanionFacts.of(c).withShieldTrekSpent(tripSpent), false, book.milestones());
+        return shieldOnly(book.milestones().getLast().method(CompanionFacts.of(c).withShieldTrekSpent(tripSpent), false, book.milestones()));
+    }
+
+    /** The steps of the agenda's run for the iron of a shield, as the agenda reads the facts of the bag and of the place. */
+    private static List<String> trekSteps(CompanionEntity c, boolean tripSpent) {
+        return shieldOnly(CompanionMilestones.Milestone.shieldTrekSteps(CompanionFacts.of(c).withShieldTrekSpent(tripSpent)));
+    }
+
+    private static List<String> shieldOnly(List<CompanionMilestones.Step> steps) {
         return steps.stream().filter(step -> step.item().equals("minecraft:shield")).map(step -> step.type() + " " + step.item() + (step.type().equals("equip_item") ? " " + step.slot() : "")).toList();
     }
 

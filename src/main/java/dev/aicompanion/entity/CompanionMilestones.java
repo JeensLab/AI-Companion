@@ -173,14 +173,14 @@ public final class CompanionMilestones {
 
         /**
          * A shield in the left hand against a creeper's blast. Optional: it is made from iron and boards he carries (a spare ingot, or raw iron
-         * with a furnace in the bag), or after one short walk for iron that lies in the open near him ({@link #shieldTrek}); a bag and a place
-         * without them go down as they are. One carried is only put on.
+         * with a furnace in the bag); a bag without them goes down as it is. One carried is only put on. Iron for it that lies in the open
+         * near him is fetched by a run of its own ({@link #shieldTrekSteps}), before the kit.
          */
         private static List<Step> shieldSteps(CompanionFacts facts, boolean mayMake) {
             List<Step> steps = new ArrayList<>();
             if (facts.worn(EquipmentSlot.OFFHAND) == Items.SHIELD) return steps;
             if (facts.carried(Items.SHIELD) == 0) {
-                if (!mayMake || !shieldAffordable(facts) && !shieldTrek(facts)) return steps;
+                if (!mayMake || !shieldAffordable(facts)) return steps;
                 steps.add(obtain(Items.SHIELD, 1));
             }
             steps.add(equip(Items.SHIELD, "offhand"));
@@ -188,13 +188,14 @@ public final class CompanionMilestones {
         }
 
         /**
-         * The shield is to be made with iron fetched for it: none in the bag to spare, some in the open near him, and the goal has not gone out for it
-         * before (a shield broken or lost later is made again only from what he carries). Its ore comes after the pickaxe's and the sword's iron:
-         * both are made before this step is planned.
+         * The run that makes a shield with iron fetched for it, before the kit so that a step of the kit that fails cannot spend the only trip:
+         * none in the bag to spare, some in the open near him, and the goal has not gone out for it before (a shield broken or lost later is
+         * made again only from what he carries). Its ore comes after the pickaxe's and the sword's iron: both are made before the mine.
          */
-        public static boolean shieldTrek(CompanionFacts facts) {
-            return !facts.belowMine() && !facts.shieldTrekSpent() && facts.carried(Items.SHIELD) == 0 && facts.worn(EquipmentSlot.OFFHAND) != Items.SHIELD
+        public static List<Step> shieldTrekSteps(CompanionFacts facts) {
+            boolean trek = !facts.belowMine() && !facts.shieldTrekSpent() && facts.carried(Items.SHIELD) == 0 && facts.worn(EquipmentSlot.OFFHAND) != Items.SHIELD
                     && !shieldIron(facts) && facts.ironInSight();
+            return trek ? List.of(obtain(Items.SHIELD, 1), equip(Items.SHIELD, "offhand")) : List.of();
         }
 
         private static boolean shieldAffordable(CompanionFacts facts) {
