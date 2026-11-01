@@ -397,7 +397,7 @@ final class CompanionExpedition {
         owner.workStatus("Здесь не свернуть, возвращаюсь ко входу и начну лестницу в другую сторону.");
     }
 
-    /** Walled in by his own plugs, with no side and no way to the entrance: he digs down out of the ring and begins again below it. */
+    /** No side and no way to the entrance: the last restart, past the cap, here or, if his own plugs wall him in, below the ring he digs out of. */
     private boolean startDigOut(ServerLevel level) {
         if (!digOut.begin(level)) return false;
         plan = null;
@@ -406,7 +406,7 @@ final class CompanionExpedition {
         backtrack.reset();
         dig.reset();
         stage = Stage.DIG_OUT;
-        owner.workStatus("Заперт своими пробками, прокапываю выход вниз.");
+        owner.workStatus("Ко входу не пройти и свернуть некуда, пробую начать шахту заново, если надо, прокопав выход вниз.");
         return true;
     }
 
@@ -417,7 +417,7 @@ final class CompanionExpedition {
             case STUCK -> end(Ending.BLOCKED, digOutWhy);
             case DONE -> {
                 restartAt(level, digOut.at(), digOut.side(), 0);
-                owner.workStatus("Прокопал выход вниз, начинаю шахту заново отсюда.");
+                owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
             }
         }
     }

@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * He is walled in by his own cave plugs and no side is left to begin stairs to: he breaks the floor under him, a real break per cell,
- * until the ring of plugs is above him and a side is free, and the mine begins again from that cell.
+ * The last restart of a fruitless chain, one past the cap: where he stands if a side is free (the cap alone stopped him), else, walled in
+ * by his own cave plugs, after he breaks the floor under him, a real break per cell, until the ring of plugs is above him and a side is free.
  */
 final class CompanionExpeditionDigOut {
     enum Result { WORKING, DONE, STUCK }
@@ -34,11 +34,12 @@ final class CompanionExpeditionDigOut {
 
     Direction side() { return side; }
 
-    /** True when he is plugged in with a restart to spare: then {@link #tick} digs. */
+    /** True when the last restart is still his and a side is free here or he is plugged in: then {@link #tick} goes on to it. */
     boolean begin(ServerLevel level) {
         reset();
         BlockPos here = CompanionExpeditionRecord.standingCell(level, owner.blockPosition());
-        return CompanionExpeditionRecord.mayDigOut(w.mine) && CompanionExpeditionRecord.pluggedIn(w.mine, here);
+        return CompanionExpeditionRecord.mayDigOut(w.mine)
+                && (CompanionExpeditionRecord.pluggedIn(w.mine, here) || CompanionExpeditionRecord.digOutSide(level, w.mine, here) != null);
     }
 
     Result tick(ServerLevel level) {
@@ -49,10 +50,8 @@ final class CompanionExpeditionDigOut {
             if (here.getY() > opened.getY()) return Result.WORKING;
             opened = null;
         }
-        if (depth > 0) {
-            side = CompanionExpeditionRecord.digOutSide(level, w.mine, here);
-            if (side != null) { at = here; return Result.DONE; }
-        }
+        side = CompanionExpeditionRecord.digOutSide(level, w.mine, here);
+        if (side != null) { at = here; return Result.DONE; }
         if (depth >= MAX_DEPTH) return Result.STUCK;
         BlockPos cell = here.below();
         // The caves he fled from do not shut the rock under him (a restart forgets the ones beside him as well), and a restart's own entrance

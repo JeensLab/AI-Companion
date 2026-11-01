@@ -78,7 +78,7 @@ final class CompanionExpeditionRecord {
         return false;
     }
 
-    /** The side a restart may take after he dug out of a plugged pocket: one restart past the cap, so a fruitless chain stays bounded by it. */
+    /** The side of the last restart, one past the cap, where he stands or after he dug out of a plugged pocket: a fruitless chain stays bounded by it. */
     static Direction digOutSide(ServerLevel level, CompanionMineSite mine, BlockPos here) {
         return sideOf(level, mine, here, MAX_RESTARTS + 1);
     }
