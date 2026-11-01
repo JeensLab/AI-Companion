@@ -333,6 +333,10 @@ public final class CompanionEvents {
                 companion.setFollowing(false);
                 yield companion.startWork("come", "", 1);
             }
+            case "walk_heading" -> {
+                companion.setFollowing(false);
+                yield companion.startWork("walk_heading", item, count);
+            }
             case "protect", "stop_protect" -> {
                 companion.setProtecting("protect".equals(action));
                 if ("protect".equals(action)) companion.selectWeaponForCombat();

@@ -65,6 +65,7 @@ public final class CompanionDialogue {
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
+            case "walk_heading" -> "Веду " + dev.aicompanion.entity.CompanionCourse.where(actions.getFirst().item()) + ". Не отставай.";
             case "wait" -> "Ладно, жду здесь.";
             case "protect" -> "Держись рядом, я прикрою.";
             case "hunt_mobs" -> "Окей, разберусь с монстрами поблизости.";
@@ -142,6 +143,7 @@ public final class CompanionDialogue {
             case "smelt_items" -> dev.aicompanion.entity.CompanionGame.ANY_MEAT.equals(action.item()) ? "пожарить мясо" : "переплавить «" + itemName(action.item()) + "» ("
                     + (action.count() == PlannedAction.ALL_CARRIED ? "всё, что есть" : action.count() + " шт.") + ")";
             case "come" -> "подойти к тебе";
+            case "walk_heading" -> "провести тебя " + dev.aicompanion.entity.CompanionCourse.where(action.item());
             case "follow" -> "идти за тобой";
             case "wait" -> "подождать";
             case "protect" -> "прикрывать тебя";
