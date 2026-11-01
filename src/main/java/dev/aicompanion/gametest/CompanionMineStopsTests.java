@@ -111,6 +111,8 @@ public final class CompanionMineStopsTests {
                 new ItemStack(Items.STICK, sticks), new ItemStack(Items.CRAFTING_TABLE)};
         for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
         CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.bind(h, c, 3);
+        // The goal starts once the light is worked out; until then he must not follow his owner up the stairs, or the start is a race.
+        c.setFollowing(false);
         BlockPos pit = carveMine(h, c, 0).get(PIT_STEP);
         c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
         c.mineSite().restart(pit, Direction.WEST);
@@ -146,6 +148,7 @@ public final class CompanionMineStopsTests {
         mountain(h, true);
         for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         CompanionEntity c = rig(h);
+        c.setFollowing(false);
         BlockPos pit = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
         c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
         c.mineSite().start(h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER)), Direction.NORTH);
@@ -236,6 +239,8 @@ public final class CompanionMineStopsTests {
     public static void digsOutOfARingOfHisOwnPlugs(GameTestHelper h) {
         mountain(h, true);
         CompanionEntity c = rig(h);
+        // The order starts once the light is worked out; waiting, he must not dig his way up towards his owner.
+        c.setFollowing(false);
         BlockPos entrance = h.absolutePos(new BlockPos(PIT, GROUND + 1, PIT));
         c.mineSite().start(entrance, Direction.NORTH);
         for (Direction d : Direction.Plane.HORIZONTAL) c.mineSite().refuse(entrance, d);
@@ -260,7 +265,7 @@ public final class CompanionMineStopsTests {
         CompanionEntity c = rig(h);
         BlockPos pocket = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
         c.mineSite().start(h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER)), Direction.NORTH);
-        for (int i = 0; i < 3; i++) c.mineSite().restart(pocket, Direction.NORTH);
+        spendRestarts(h, c, pocket, 3);
         c.mineSite().buried(true);
         pluggedPocket(h, c);
         long id = start(h, c, 1);
@@ -281,11 +286,12 @@ public final class CompanionMineStopsTests {
         mountain(h, true);
         for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         CompanionEntity c = rig(h);
+        c.setFollowing(false);
         BlockPos pit = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
         c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
         BlockPos far = h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER));
         c.mineSite().start(far, Direction.NORTH);
-        for (int i = 0; i < 3; i++) c.mineSite().restart(far, Direction.NORTH);
+        spendRestarts(h, c, far, 3);
         long[] id = {0};
         h.succeedWhen(() -> {
             if (id[0] == 0) {
@@ -305,7 +311,7 @@ public final class CompanionMineStopsTests {
         CompanionEntity c = rig(h);
         BlockPos pocket = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
         c.mineSite().start(h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER)), Direction.NORTH);
-        for (int i = 0; i < 4; i++) c.mineSite().restart(pocket, Direction.NORTH);
+        spendRestarts(h, c, pocket, 4);
         c.mineSite().buried(true);
         pluggedPocket(h, c);
         long id = start(h, c, 1);
@@ -315,6 +321,15 @@ public final class CompanionMineStopsTests {
             h.assertTrue(c.mineSite().restarts() == 4, "Restarts " + c.mineSite().restarts());
             h.assertTrue(c.blockPosition().getY() == pocket.getY(), "He dug down at " + c.blockPosition());
         });
+    }
+
+    /**
+     * The restarts a goal has spent: the last step ended empty just now, so the next one carries them, as it does in a world where the clock is far past
+     * {@link dev.aicompanion.entity.CompanionMineSite#RESTARTS_CARRIED}. Restarts made on a record that never ended a step are given back only while the clock is still young.
+     */
+    private static void spendRestarts(GameTestHelper h, CompanionEntity c, BlockPos at, int count) {
+        c.mineSite().newStep(h.getLevel().getGameTime());
+        for (int i = 0; i < count; i++) c.mineSite().restart(at, Direction.NORTH);
     }
 
     /** A pocket at the top of the deepslate closed all round, feet and head, by plugs he sealed and forbade, every side refused; he stands in it. */
