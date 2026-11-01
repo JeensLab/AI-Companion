@@ -404,7 +404,17 @@ final class CompanionExpedition {
         ServerLevel level = (ServerLevel) owner.level();
         BlockPos here = CompanionExpeditionRecord.standingCell(level, owner.blockPosition());
         Direction side = CompanionExpeditionRecord.restartSide(level, w.mine, here);
-        if (side == null) { restartAtOrigin(level, why); return; }
+        if (side == null) {
+            CompanionExpeditionRecord.Shore shore = CompanionExpeditionRecord.shore(level, w.mine, here);
+            if (shore != null) {
+                restartAt(level, shore.cell(), shore.side(), -1);
+                joining = false;
+                owner.workStatus("Я в воде, выбираюсь на берег и начну шахту там.");
+                return;
+            }
+            restartAtOrigin(level, CompanionExpeditionRecord.inWater(level, here) ? "Я в подземном озере, берега не нашёл." : why);
+            return;
+        }
         restartAt(level, here, side, 0);
         owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
     }

@@ -4,16 +4,22 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Edits of the mine record the expedition makes when a move fails: what to refuse, where the tunnels go on from, where the mine starts again. */
 final class CompanionExpeditionRecord {
     /** A tunnel at least this long is worth moving the base to; the last cells stay beyond the new foot, so its first advances are through open cells. */
     private static final int LONG_TUNNEL = 8, KEPT_AHEAD = 2, MAX_RESTARTS = 3, MAX_DROP = 3;
+    /** The shore search: how many strokes and steps from where he stands it looks, and how many cells it visits at most. */
+    private static final int SHORE_RADIUS = 24, SHORE_BUDGET = 6000;
 
     /** Where the tunnels go on from: the way the new base is walked to, and the stairs' direction there. */
     record Base(Direction direction, List<BlockPos> path) { }
@@ -69,6 +75,46 @@ final class CompanionExpeditionRecord {
         }
         if (atFoot || best != last) for (int i = 1; i <= k; i++) path.add(foot.relative(d, i));
         return mine.rebase(k, d) ? new Base(d, path) : null;
+    }
+
+    /** A dry cell on the shore of the water he is in, and the side the mine starts again to from it. */
+    record Shore(BlockPos cell, Direction side) { }
+
+    /** Water in the cell he stands in: no stairs start from such a cell, since its feet are not open. */
+    static boolean inWater(ServerLevel level, BlockPos here) {
+        return level.getFluidState(here).is(FluidTags.WATER);
+    }
+
+    /**
+     * The nearest cell, over the water and the air around him (lava and rock shut), where the mine can start again, or null: he is not in water,
+     * the restarts are used up, or no shore is in reach.
+     */
+    static Shore shore(ServerLevel level, CompanionMineSite mine, BlockPos here) {
+        if (!inWater(level, here) || !mine.exists() || mine.restarts() >= MAX_RESTARTS) return null;
+        Map<BlockPos, Integer> strokes = new HashMap<>();
+        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        strokes.put(here.immutable(), 0);
+        queue.add(here.immutable());
+        while (!queue.isEmpty() && strokes.size() < SHORE_BUDGET) {
+            BlockPos at = queue.poll();
+            Direction side = restartSideOf(level, mine, at);
+            if (side != null) return new Shore(at, side);
+            int next = strokes.get(at) + 1;
+            if (next > SHORE_RADIUS) continue;
+            for (Direction step : Direction.values()) {
+                BlockPos to = at.relative(step);
+                if (strokes.containsKey(to) || !level.hasChunkAt(to) || !swimmable(level, to)) continue;
+                strokes.put(to.immutable(), next);
+                queue.add(to.immutable());
+            }
+        }
+        return null;
+    }
+
+    /** A cell his body passes through: air or water, no lava. */
+    private static boolean swimmable(ServerLevel level, BlockPos cell) {
+        BlockState state = level.getBlockState(cell);
+        return state.getCollisionShape(level, cell).isEmpty() && (state.getFluidState().isEmpty() || state.getFluidState().is(FluidTags.WATER));
     }
 
     /** The side the mine starts again to from where he stands, or null: restarts are used up, or he is not on firm ground with room to stand. */

@@ -52,7 +52,8 @@ public final class CompanionMineStopsTests {
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2, CREEPER_AT = 8;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
-    private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, DIAMOND_AT = 6;
+    private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, DIAMOND_AT = 6;
+    private static final int LAKE_REACH = 7, LEDGE_LENGTH = 4;
     private static final int CANOPY_AT = 12, CANOPY_REACH = 2;
     private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
 
@@ -186,6 +187,39 @@ public final class CompanionMineStopsTests {
             }
             CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again in the pit: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /**
+     * Run m12c/lava (seed 7741901): he stood in the water of a cave lake, deep under the ground, the record's entrance far away on the surface and no
+     * stairs of his around. No side of a cell in water takes stairs, so the order ended «Я под землёй, а своей лестницы рядом нет», though a dry
+     * ledge was a few strokes off. He gets out of the water onto the ledge and the mine starts again there.
+     * The water is a source whose flow thins to its last cell, where he stands: a deeper pool floats him, and the work goal does not run afloat.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainOnTheShoreWhenHeStandsInACaveLake(GameTestHelper h) {
+        mountain(h, true);
+        BlockPos shallows = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        for (BlockPos cell : BlockPos.betweenClosed(shallows.west(LAKE_REACH), shallows)) for (BlockPos open : CompanionShaftPlan.column(cell)) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
+        BlockPos ledge = shallows.offset(1, 1, 0);
+        for (BlockPos cell : BlockPos.betweenClosed(ledge, ledge.east(LEDGE_LENGTH))) for (BlockPos open : CompanionShaftPlan.column(cell)) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
+        h.getLevel().setBlock(shallows.west(LAKE_REACH), Blocks.WATER.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.teleportTo(shallows.getX() + .5, shallows.getY(), shallows.getZ() + .5);
+        BlockPos far = h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER));
+        c.mineSite().start(far, Direction.NORTH);
+        for (Direction d : Direction.Plane.HORIZONTAL) c.mineSite().refuse(far, d);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(shallows.above()), "The light over the lake is not worked out yet");
+                h.assertTrue(!h.getLevel().getFluidState(shallows).isEmpty(), "The water has not reached him yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stayed in the lake: " + result.message() + " | " + report(c));
             h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
         });
     }
@@ -588,6 +622,21 @@ public final class CompanionMineStopsTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void climbsPastAGapInTheRecordAndTakesOutHisOwnPlug(GameTestHelper h) {
+        climbPastAPlug(h, PLUG_AT);
+    }
+
+    /**
+     * Run m12b/void-2 and void-3 (seed 20261102): the pit at the bottom of the stairs, no stone pickaxe, the iron one at its reserve, the record lost
+     * and a plug of his own on the stairs far above the pit. He pushed at the cell beyond the plug in a straight line, from the bottom or from just
+     * under the plug, and said «застрял на ходу» five times. The plug is looked for when the push stalls, he walks the stairs up to it cell by cell,
+     * takes it out and goes on to the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsUpTheStairsToAPlugOfHisOwnThatIsFarFromHim(GameTestHelper h) {
+        climbPastAPlug(h, FAR_PLUG_AT);
+    }
+
+    private static void climbPastAPlug(GameTestHelper h, int plugAt) {
         mountain(h, true);
         CompanionEntity c = rig(h);
         c.setFollowing(false);
@@ -598,7 +647,7 @@ public final class CompanionMineStopsTests {
         BlockPos here = stairs.get(GAP_AT);
         for (BlockPos stand : stairs.subList(GAP_AT + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
         c.mineSite().truncate(KNOWN_STANDS);
-        for (BlockPos cell : List.of(stairs.get(PLUG_AT), stairs.get(PLUG_AT).above())) {
+        for (BlockPos cell : List.of(stairs.get(plugAt), stairs.get(plugAt).above())) {
             h.getLevel().setBlock(cell, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
             c.mineSite().sealed(cell);
         }
@@ -617,7 +666,7 @@ public final class CompanionMineStopsTests {
             }
             CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(heightWhenEnded[0] >= surface, "He said «" + result.message() + "» at height " + heightWhenEnded[0] + ", below the surface at " + surface + " | " + report(c));
-            h.assertTrue(!h.getLevel().getBlockState(stairs.get(PLUG_AT)).is(Blocks.COBBLESTONE), "His plug on the stairs is still there | " + report(c));
+            h.assertTrue(!h.getLevel().getBlockState(stairs.get(plugAt)).is(Blocks.COBBLESTONE), "His plug on the stairs is still there | " + report(c));
         });
     }
 

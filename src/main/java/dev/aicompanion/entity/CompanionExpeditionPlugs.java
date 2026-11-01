@@ -14,18 +14,18 @@ import java.util.Map;
 
 /**
  * The block of his own that shuts his way up: a walk over the cells he can stand in, taking his plugs (blocks he laid to close a cave) as
- * open, to a cell of the way up; the first plug on that walk is the one to take out.
+ * open, to a cell of the way up; the first plug on that walk is the one to take out, and the cells up to it are the way to it.
  */
 final class CompanionExpeditionPlugs {
-    /** A plug to take out, and the cell he stands in to do it. */
-    record Plug(BlockPos stand, BlockPos cell) { }
+    /** The cells to walk to the stand of the first plug (all of the way when none shuts it: {@code cell} is then null), and the plug cell to take out from that stand. */
+    record Way(List<BlockPos> walk, BlockPos cell) { }
 
     private static final int BUDGET = 40000;
 
     private CompanionExpeditionPlugs() { }
 
-    /** The first plug on the shortest walk from {@code from} to within a block of {@code goal}, or null: no walk, or none shut by a plug of his. */
-    static Plug first(ServerLevel level, CompanionMineSite mine, BlockPos from, BlockPos goal) {
+    /** The shortest walk from {@code from} to within a block of {@code goal} cut short at the first plug on it, or null when there is no walk. */
+    static Way way(ServerLevel level, CompanionMineSite mine, BlockPos from, BlockPos goal) {
         Map<BlockPos, BlockPos> before = new HashMap<>();
         ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         BlockPos start = from.immutable();
@@ -50,14 +50,16 @@ final class CompanionExpeditionPlugs {
         for (BlockPos at = end; !at.equals(start); at = before.get(at)) walk.add(at);
         walk.add(start);
         Collections.reverse(walk);
-        BlockPos stand = start;
-        for (BlockPos at : walk) {
+        for (int i = 0; i < walk.size(); i++) {
+            BlockPos at = walk.get(i);
             for (BlockPos cell : new BlockPos[]{at, at.above()}) {
-                if (mine.seals().contains(cell) && !CompanionShaftPlan.open(level, cell)) return new Plug(stand, cell);
+                if (mine.seals().contains(cell) && !CompanionShaftPlan.open(level, cell)) {
+                    List<BlockPos> toStand = List.copyOf(walk.subList(0, Math.max(1, i)));
+                    return new Way(toStand, cell);
+                }
             }
-            stand = at;
         }
-        return null;
+        return new Way(List.copyOf(walk), null);
     }
 
     /** Room for his body over a firm floor, plugs counting as room; {@code headroom}: the cell over the one he steps up from. */
