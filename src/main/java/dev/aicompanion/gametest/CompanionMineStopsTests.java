@@ -168,6 +168,33 @@ public final class CompanionMineStopsTests {
     }
 
     /**
+     * Run m9b/void-4 (seed 20261102): the dry nook of a dripstone cave, dripstone on every side and the record's entrance far away: no side
+     * took stairs, as dripstone was no block he digs, and the order stood «Дальше лестницу не прокопать» five times at the same spot.
+     * Dripstone is rock like any other: the mine starts again in the nook.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainInANookWalledWithDripstone(GameTestHelper h) {
+        mountain(h, true);
+        BlockPos nook = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        for (BlockPos cell : BlockPos.betweenClosed(nook.offset(-2, 0, -2), nook.offset(2, 3, 2))) h.getLevel().setBlock(cell, Blocks.DRIPSTONE_BLOCK.defaultBlockState(), 2 | 16);
+        for (BlockPos cell : CompanionShaftPlan.column(nook)) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.teleportTo(nook.getX() + .5, nook.getY(), nook.getZ() + .5);
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER)), Direction.NORTH);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(nook.above()), "The light in the nook is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stood in the dripstone nook: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /**
      * The record's stairs were turned into flat stands deep down, away from the entrance, and he stands by the entrance on the surface with
      * every side of his cell refused: the way to the stands is gone and the mine cannot start again at his cell. He goes back to the entrance
      * and begins stairs to a side not tried from it, instead of ending with "could not get back to my stairs".

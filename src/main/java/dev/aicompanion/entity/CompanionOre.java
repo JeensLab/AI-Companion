@@ -83,7 +83,7 @@ public final class CompanionOre {
 
     /** Natural ground a tunnel may go through: stone of the world, soil and any ore. Built blocks are never dug. */
     static boolean tunnelable(BlockState state) {
-        return state.is(BlockTags.BASE_STONE_OVERWORLD) || CompanionQuarry.soil(state)
+        return state.is(BlockTags.BASE_STONE_OVERWORLD) || CompanionQuarry.soil(state) || state.is(Blocks.DRIPSTONE_BLOCK)
                 || state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
     }
 
