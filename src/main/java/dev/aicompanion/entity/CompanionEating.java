@@ -26,12 +26,27 @@ final class CompanionEating {
         float missing = c.getMaxHealth() - c.getHealth();
         // Fed, out of a fight for ten seconds: slowly better, as a player with a full stomach.
         if (missing >= 1 && c.satiety > 0 && c.tickCount - c.lastHurtTick > 200 && c.tickCount % 80 == 0) { c.heal(1); c.satiety--; }
-        if (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2) return;
-        if (c.getTarget() != null && c.getTarget().isAlive() && c.distanceToSqr(c.getTarget()) < 16 && c.getHealth() > 6) return;
+        boolean expedition = c.work.expedition.active();
+        if (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2 && !(expedition && c.getHealth() <= EXPEDITION_EATS_BELOW)) return;
+        if (c.getTarget() != null && c.getTarget().isAlive() && inReach(c.distanceToSqr(c.getTarget()), expedition)) return;
         ItemStack food = bestFood(missing);
         if (food.isEmpty()) return;
         c.eating = food.copyWithCount(1); c.eatTicks = CompanionEntity.EAT_TICKS;
         c.animateAction(4, c.blockPosition(), c.eating);
+    }
+
+    /** Below this he eats in an expedition between two foes: the next fight starts from more than the last one left. */
+    private static final float EXPEDITION_EATS_BELOW = 14;
+    private static final float DESPERATE = 6, EXPEDITION_DESPERATE = 8;
+
+    /**
+     * A foe so near that a meal (32 ticks of blows) is a loss. Underground he eats from lower on, while the foe is still a step away:
+     * a zombie walks about 7 blocks in the time of one meal, so waiting for the blows would never leave a free moment.
+     */
+    private boolean inReach(double distanceSqr, boolean expedition) {
+        float health = c.getHealth();
+        if (!expedition) return distanceSqr < 16 && health > DESPERATE;
+        return distanceSqr < 16 && (health > EXPEDITION_DESPERATE || distanceSqr < 4);
     }
 
     private void finishEating() {

@@ -175,7 +175,9 @@ final class CompanionExpedition {
     private String dangerNow() {
         if (!cave.busy() && cave.takeRetreat()) return CAVE_DANGER;
         float health = owner.getHealth();
-        return health <= CompanionCaveSense.HEALTH_VERY ? "мало здоровья (" + (int) Math.ceil(health) + ")" : null;
+        // With food in the bag and no foe about (the fight hold has let go), he eats on the spot; climbing at once would give up the order for a meal.
+        if (health > CompanionCaveSense.HEALTH_VERY || CompanionEating.hasFood(owner)) return null;
+        return "мало здоровья (" + (int) Math.ceil(health) + ")";
     }
 
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */

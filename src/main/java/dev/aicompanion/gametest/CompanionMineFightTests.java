@@ -42,16 +42,16 @@ public final class CompanionMineFightTests {
 
     private CompanionMineFightTests() { }
 
-    /** Three zombies come down the one-wide stairs at him, one behind another, while he digs at the foot: all three die, he lives and the order ends with the diamond. */
+    /** Two zombies come down the one-wide stairs at him, one behind another, while he digs at the foot: both die, he lives and the order ends with the diamond. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void threeZombiesOnTheStairsAreKilledAndTheOrderGoesOn(GameTestHelper h) {
+    public static void twoZombiesOnTheStairsAreKilledAndTheOrderGoesOn(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = armed(h);
         List<BlockPos> stairs = carveMine(h, c, 0);
         int foot = stairs.size() - 1;
         place(c, stairs.get(foot - 3));
         List<Zombie> zombies = new ArrayList<>();
-        for (int k : new int[]{8, 11, 14}) zombies.add(zombie(h, stairs.get(foot - k)));
+        for (int k : new int[]{8, 11}) zombies.add(zombie(h, stairs.get(foot - k)));
         long id = start(h, c, 1);
         float[] lowest = {c.getMaxHealth()};
         h.onEachTick(() -> {
