@@ -39,7 +39,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
-    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60;
     private static final float SURVIVES = 1;
 
     private CompanionMineFightTests() { }
@@ -156,6 +156,40 @@ public final class CompanionMineFightTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
             h.succeed();
+        });
+    }
+
+    /**
+     * The breach of a cave is being sealed and he is on the cave side, in a passage one block wide, with two zombies on him and the stone
+     * sword in the bag: the sealing does not take the turn from the fight, the sword is in his hand and a zombie is struck within three seconds.
+     * (Winning it is not asked: a stone sword and bare skin cost about nine health a zombie.)
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void zombiesOnHimAreStruckAtOnceWhileTheCaveIsBeingSealed(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = -PASSAGE_LENGTH; dx <= 1; dx++) for (int dy = 0; dy < PASSAGE_HEIGHT; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, -PASSAGE_OFFSET), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        place(c, stairs.get(stairs.size() - 3));
+        List<Zombie> zombies = List.of(zombie(h, foot.offset(-3, 0, -PASSAGE_OFFSET)), zombie(h, foot.offset(-4, 0, -PASSAGE_OFFSET)));
+        long begun = h.getTick();
+        long[] sealing = {-1};
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            String phase = c.expeditionCavePhase();
+            if (sealing[0] < 0 && phase.equals("SEAL")) { sealing[0] = h.getTick(); place(c, foot.offset(0, 0, -PASSAGE_OFFSET)); }
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % 20 == 0) zombie.setTarget(c);
+            float struck = 0;
+            for (Zombie zombie : zombies) struck += zombie.getMaxHealth() - zombie.getHealth();
+            String trace = " | zombies struck for " + struck + ", cave phase " + phase + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth()
+                    + ", hand " + c.getMainHandItem().getItem() + ", target " + c.getTarget() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (sealing[0] < 0) { h.assertTrue(h.getTick() - begun < KILL_TICKS, "SETUP: the cave was never sealed" + trace); return; }
+            if (struck > 0 && c.getMainHandItem().is(Items.STONE_SWORD)) h.succeed();
+            h.assertTrue(h.getTick() - sealing[0] < STRIKE_TICKS, "No zombie was struck with the sword while the cave was being sealed" + trace);
         });
     }
 
