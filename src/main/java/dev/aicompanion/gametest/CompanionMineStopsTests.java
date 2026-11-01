@@ -140,7 +140,9 @@ public final class CompanionMineStopsTests {
      */
     @GameTest(template = "marathon_cave", batch = "mine_stops_frozen_drop", timeoutTicks = GOAL_TIMEOUT)
     public static void goesOnToTheDiamondWhenADropOfHisNeverSettles(GameTestHelper h) {
-        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, true, CompanionDiamondGoalTests.supplies(32, 4));
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, CompanionDiamondGoalTests.supplies(32, 4));
+        // While the drop hangs he wanders off the spot he began on: the ring of ore is within the reach of a mine from anywhere.
+        mountain(h);
         BlockPos cell = new BlockPos(CENTER + DROP_AT, DROP_Y, CENTER + DROP_AT);
         h.setBlock(cell, Blocks.AIR);
         ItemEntity drop = new ItemEntity(h.getLevel(), h.absolutePos(cell).getX() + .5, h.absolutePos(cell).getY() + .35, h.absolutePos(cell).getZ() + .5, new ItemStack(Items.COBBLED_DEEPSLATE));

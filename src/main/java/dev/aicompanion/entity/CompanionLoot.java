@@ -143,10 +143,17 @@ final class CompanionLoot {
                 && (chaseable(level, id) || !unreachable.contains(id) && settling(level, id, item)));
     }
     private boolean settling(ServerLevel level, UUID id, ItemEntity item) {
-        return item.hasPickUpDelay() || level.getGameTime() - born.getOrDefault(id, 0L) < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
+        long age = level.getGameTime() - born.getOrDefault(id, 0L);
+        return item.hasPickUpDelay() && age < DELAY_LIMIT || age < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
     }
     /** A drop has this long to come to rest before «no way to it» is believed. */
     private static final int SETTLE = 40;
+    /**
+     * The longest wait for a pickup delay to run out (it is ten ticks for a harvest drop, forty for a thrown one). A drop flushed into a
+     * chunk nobody ticks hangs with its delay for ever (run m4b/lava: the work and the goal stood behind it for good); a drop let go here
+     * is chased again as soon as the delay does run out.
+     */
+    private static final int DELAY_LIMIT = 200;
     /** Where he stood when a drop was found out of reach: from four blocks away it gets another try. */
     private final Map<UUID, BlockPos> unreachableFrom = new HashMap<>();
     private void giveUpFromHere(ServerLevel level, UUID id) {
