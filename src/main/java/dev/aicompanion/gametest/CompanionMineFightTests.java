@@ -17,7 +17,9 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
@@ -37,7 +39,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
-    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7;
     private static final float SURVIVES = 1;
 
     private CompanionMineFightTests() { }
@@ -125,6 +127,35 @@ public final class CompanionMineFightTests {
             h.assertTrue(c.isAlive(), "Died | " + report(c));
             if (count(c, Items.STONE_SWORD) >= 1) h.succeed();
             h.assertTrue(h.getTick() - begun < CRAFT_TICKS, "No stone sword was made | " + report(c));
+        });
+    }
+
+    /** The stairs cross a wide cavern on single blocks and three creepers wait on its floor, deeper than a fall he takes lightly: they are not foes, he walks on down and does not step off after them. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void creepersOnTheFloorOfACavernUnderTheStairsAreNotDivedAfter(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos top = stairs.get(BRIDGE_FROM), bottom = stairs.get(BRIDGE_TO);
+        Set<BlockPos> cavern = new HashSet<>();
+        for (int x = top.getX() - BRIDGE_SIDE; x <= top.getX() + BRIDGE_SIDE; x++) for (int z = bottom.getZ(); z <= top.getZ() + 1; z++) for (int y = bottom.getY() - CAVERN_DEPTH; y <= top.getY() + 2; y++) {
+            BlockPos cell = new BlockPos(x, y, z);
+            h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+            cavern.add(cell);
+        }
+        for (int k = BRIDGE_FROM; k <= BRIDGE_TO; k++) h.getLevel().setBlock(stairs.get(k).below(), Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+        place(c, stairs.get(BRIDGE_FROM));
+        List<Creeper> creepers = new ArrayList<>();
+        for (int dz : new int[]{0, 1, 2}) creepers.add(creeper(h, new BlockPos(top.getX() - 2, bottom.getY() - CAVERN_DEPTH, top.getZ() - BRIDGE_FROM / 2 - dz)));
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            String trace = " | creepers alive " + creepers.stream().filter(Creeper::isAlive).count() + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + ", target " + c.getTarget() + ", ground " + c.onGround() + ", tick " + h.getTick() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(c.getBlockY() > bottom.getY() || c.getBlockZ() <= bottom.getZ(), "He stepped off the bridge after the creepers" + trace);
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The order did not go on to the diamond: " + result.message() + trace);
+            h.succeed();
         });
     }
 

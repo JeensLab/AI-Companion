@@ -17,11 +17,11 @@ import java.util.List;
  * about, the expedition does not dig, step or craft (the melee goal at its priority takes the turn, and this hold covers the ticks between
  * two kills, when no goal has a target yet). He leaves a fight only at low health, and only when leaving is possible: his own way up
  * is under him and nothing is at his back already. The time of the fight is given back to the step, and the tool he held comes back to
- * his hand.
+ * his hand. A foe far below him is no foe: it cannot climb to him, and the chase to it is a step off his stairs or his bridge into its cave.
  */
 final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
-    private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9;
+    private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3;
     private static final int LONGEST = 20 * 45, PAUSE = 20 * 10, MEAL_WINDOW = 20 * 10;
 
     private final CompanionWork w;
@@ -87,7 +87,7 @@ final class CompanionExpeditionFight {
         if (!(entity instanceof Monster monster) || !monster.isAlive() || monster.isNoAi()) return false;
         if (!owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return false;
         if (monster instanceof Creeper && !owner.creeperGuard.fights()) return false;
-        if (w.expedition.shuns(monster)) return false;
+        if (w.expedition.shuns(monster) || below(monster)) return false;
         double distance = owner.distanceTo(monster);
         return owner.hasLineOfSight(monster) && (monster.getTarget() == owner && distance <= AWARE || distance <= ENGAGE);
     }
@@ -98,9 +98,13 @@ final class CompanionExpeditionFight {
      */
     boolean avoids(LivingEntity foe, boolean retreating) {
         if (foe == null) return false;
+        if (below(foe)) return true;
         if (retreating) return !owner.isWithinMeleeAttackRange(foe);
         return owner.getHealth() <= CompanionCaveSense.HEALTH_VERY && canEscape(foe);
     }
+
+    /** The foe stands deeper under his feet than a fall he would take on purpose. */
+    private boolean below(LivingEntity foe) { return foe.getY() < owner.getY() - FALL_LIMIT; }
 
     /** His own way up under him, not at the entrance already, the foe not in contact and not one that shoots. */
     private boolean canEscape(LivingEntity foe) {
