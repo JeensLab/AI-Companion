@@ -33,6 +33,7 @@ public final class CompanionFacts {
         add(carried, c.getItemBySlot(EquipmentSlot.OFFHAND));
         Map<EquipmentSlot, Item> worn = new EnumMap<>(EquipmentSlot.class);
         for (EquipmentSlot slot : ARMOR) if (usable(c.getItemBySlot(slot))) worn.put(slot, c.getItemBySlot(slot).getItem());
+        if (usable(c.getOffhandItem())) worn.put(EquipmentSlot.OFFHAND, c.getOffhandItem().getItem());
         var end = c.getServer() == null ? null : c.getServer().getLevel(Level.END);
         boolean dragonDead = end != null && end.getDragonFight() != null && end.getDragonFight().hasPreviouslyKilledDragon();
         boolean belowMine = c.mineSite().exists() && (c.getY() < c.mineSite().entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH || c.mineSite().buried() && !c.level().canSeeSky(c.blockPosition().above()));
@@ -49,7 +50,7 @@ public final class CompanionFacts {
     /** He stands down in his mine, say after a reload: what is made on the surface waits for the next time he is up. */
     public boolean belowMine() { return belowMine; }
 
-    /** The armour piece in the slot, or null. */
+    /** The armour piece in the slot (or what the left hand holds), or null. */
     public Item worn(EquipmentSlot slot) { return worn.get(slot); }
 
     public boolean dragonDead() { return dragonDead; }

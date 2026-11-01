@@ -2,6 +2,7 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -47,6 +48,8 @@ public final class CompanionMilestones {
     static final int TORCHES_STOCK = 32;
     private static final int TORCHES_MIN = 16, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 4, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
     private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 4, STICKS_STOCK = 8;
+    /** A shield is made of what the bag holds already: six boards and an ingot, with the boards a missing bench and sticks would take kept apart. */
+    private static final int SHIELD_PLANKS = 6, BENCH_PLANKS = 4, STICK_PLANKS = 4, PLANKS_PER_LOG = 4;
     /** Swords he goes down with; without one he fights the tunnel's monsters with his pickaxes (a wooden or golden one is no better). */
     private static final Set<Item> MINE_SWORDS = Set.of(Items.STONE_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD, Items.NETHERITE_SWORD);
 
@@ -139,6 +142,7 @@ public final class CompanionMilestones {
                     // Below the entrance only the sword is made up (after a death he comes back to his things down there and must not
                     // go on bare-handed); the rest of the kit waits, the way up is for a retreat or a pickaxe he cannot make there.
                     List<Step> steps = facts.belowMine() ? swordSteps(facts) : supplySteps(facts);
+                    if (facts.belowMine()) steps.addAll(shieldSteps(facts, false));
                     steps.add(new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto"));
                     yield steps;
                 }
@@ -156,6 +160,7 @@ public final class CompanionMilestones {
             if (facts.carried(Items.STICK) < STICKS_MIN) steps.add(obtain(Items.STICK, STICKS_STOCK));
             if (facts.carried(held -> CompanionSeal.seals(new ItemStack(held))) < SEALS_MIN) steps.add(obtain(Items.COBBLESTONE, SEALS_STOCK));
             if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
+            steps.addAll(shieldSteps(facts, true));
             return steps;
         }
 
@@ -164,6 +169,31 @@ public final class CompanionMilestones {
             if (facts.carried(MINE_SWORDS::contains) == 0)
                 steps.add(obtain(facts.carried(Items.IRON_INGOT) >= IRON_SWORD_INGOTS ? Items.IRON_SWORD : Items.STONE_SWORD, 1));
             return steps;
+        }
+
+        /**
+         * A shield in the left hand against a creeper's blast. Optional: it is made only from iron and boards he carries already (a spare ingot, or
+         * raw iron with a furnace in the bag), never fetched, so a bag without them goes down as it is; one carried is only put on.
+         */
+        private static List<Step> shieldSteps(CompanionFacts facts, boolean mayMake) {
+            List<Step> steps = new ArrayList<>();
+            if (facts.worn(EquipmentSlot.OFFHAND) == Items.SHIELD) return steps;
+            if (facts.carried(Items.SHIELD) == 0) {
+                if (!mayMake || !shieldAffordable(facts)) return steps;
+                steps.add(obtain(Items.SHIELD, 1));
+            }
+            steps.add(equip(Items.SHIELD, "offhand"));
+            return steps;
+        }
+
+        private static boolean shieldAffordable(CompanionFacts facts) {
+            int ingots = facts.carried(Items.IRON_INGOT);
+            // The sword he is yet to make takes its ingots first, the pickaxe is made before the mine.
+            if (facts.carried(MINE_SWORDS::contains) == 0 && ingots >= IRON_SWORD_INGOTS) ingots -= IRON_SWORD_INGOTS;
+            boolean iron = ingots >= 1 || facts.carried(Items.RAW_IRON) >= 1 && facts.carried(Items.FURNACE) >= 1;
+            int wood = facts.carried(held -> new ItemStack(held).is(ItemTags.PLANKS)) + PLANKS_PER_LOG * facts.carried(held -> new ItemStack(held).is(ItemTags.LOGS));
+            int kept = (facts.carried(Items.CRAFTING_TABLE) == 0 ? BENCH_PLANKS : 0) + (facts.carried(Items.STICK) < STICKS_MIN ? STICK_PLANKS : 0);
+            return iron && wood >= SHIELD_PLANKS + kept;
         }
 
         private static List<Step> foodSteps(CompanionFacts facts, int target) {
@@ -236,7 +266,9 @@ public final class CompanionMilestones {
         return new Step("obtain_item", BuiltInRegistries.ITEM.getKey(item).toString(), count, "auto");
     }
 
-    private static Step equip(Item item) {
-        return new Step("equip_item", BuiltInRegistries.ITEM.getKey(item).toString(), 1, "auto");
+    private static Step equip(Item item) { return equip(item, "auto"); }
+
+    private static Step equip(Item item, String slot) {
+        return new Step("equip_item", BuiltInRegistries.ITEM.getKey(item).toString(), 1, slot);
     }
 }
