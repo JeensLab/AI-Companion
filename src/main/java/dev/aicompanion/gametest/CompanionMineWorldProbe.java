@@ -63,7 +63,8 @@ public final class CompanionMineWorldProbe {
     private static int siteFailAt = -1, mostStands;
     private static float lastHealth;
     private static Phase phase = Phase.LOGIN;
-    private static ServerLevel scanLevel;
+    private static ServerLevel scanLevel, heldLevel;
+    private static ChunkPos heldChunk;
     private static List<ChunkPos> scanChunks;
     private static long scanStarted;
     private static int ticks, settleUntil, runStart, stallFor, lostFor, comeAt, lingerFor;
@@ -216,6 +217,7 @@ public final class CompanionMineWorldProbe {
             if (companion == null) return;
             if (returning) { returning = false; parked = comeIssued && !resumedAfterCome; }
         }
+        holdChunks();
         var goal = goal(server);
         check(goal != null, "No goal");
         int depth = entrance.getY() - companion.blockPosition().getY();
@@ -231,6 +233,28 @@ public final class CompanionMineWorldProbe {
         if ((ticks - runStart) % PROGRESS_TICKS == 0) System.out.println("MINE_WORLD_PROGRESS scenario=" + SCENARIO + " " + report(goal) + " depth=" + depth);
         if (ticks - runStart >= SCENARIO_TICKS) fail(server, "game time limit " + SCENARIO_TICKS + " ticks | " + report(goal));
         else if (journal.wallSeconds() > WALL_SECONDS) fail(server, "wall time limit " + WALL_SECONDS + " s | " + report(goal));
+    }
+
+    /**
+     * A real player standing near would keep Oleg's chunks loaded; the stand-in has no chunk loading, and the mine lets its own ticket go
+     * at the end of a step, so the chunk would unload under him. The probe holds his chunk and its neighbours the way a forced chunk is held
+     * (a ticket that is not saved with the level) and moves the hold when he changes chunk.
+     */
+    private static void holdChunks() {
+        if (!(companion.level() instanceof ServerLevel level)) return;
+        ChunkPos now = companion.chunkPosition();
+        if (level == heldLevel && now.equals(heldChunk)) return;
+        List<ChunkPos> wanted = new ArrayList<>(9);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) wanted.add(new ChunkPos(now.x + dx, now.z + dz));
+        for (ChunkPos pos : wanted) level.getChunkSource().updateChunkForced(pos, true);
+        if (heldLevel != null) {
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+                ChunkPos old = new ChunkPos(heldChunk.x + dx, heldChunk.z + dz);
+                if (heldLevel != level || !wanted.contains(old)) heldLevel.getChunkSource().updateChunkForced(old, false);
+            }
+        }
+        heldLevel = level;
+        heldChunk = now;
     }
 
     /** The tester's part: every stop of the goal is recorded, and answered with «продолжай» a bounded number of times. */
