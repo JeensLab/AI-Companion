@@ -146,7 +146,7 @@ final class EnduranceWatch {
                 a.expect(before.equals(ledger()),"Items changed across disk roundtrip: "+before+" -> "+ledger());
                 for(int i=0;i<stacks.size();i++)a.expect(ItemStack.matches(stacks.get(i),next.getItem(i)),"Slot/components changed: "+i);
                 int i=0;for(var slot:EquipmentSlot.values())a.expect(ItemStack.matches(equipment.get(i++),next.getItemBySlot(slot)),"Equipment/components changed: "+slot);
-                if(active)a.expect(!next.didLastTaskSucceed()&&next.getLastTaskResult().contains("прервалась"),"Reload claims completion of interrupted work");
+                if(active){String result=next.getLastTaskResult();a.expect(!next.didLastTaskSucceed()&&(result.contains("прервалась")||result.contains("прервана")),"Reload claims completion of interrupted work: success="+next.didLastTaskSucceed()+", result="+result);}
                 unique();after.run();
             });
         }catch(java.io.IOException e){throw new IllegalStateException(e);}
