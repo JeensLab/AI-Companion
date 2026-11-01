@@ -208,15 +208,17 @@ public final class CompanionMineStopsTests {
 
     /**
      * Runs m4b/void-3 (seed 20261102) and m4a/water (20261031): he stands on a ledge of a cave walled in by his own plugs. The cells beside
-     * him are plugs forbidden for good, every side is refused, the entrance is on the surface straight above and unreachable: the goal stood
-     * «Не смог дойти до входа в шахту» five times. The walk to the entrance fails once, then he digs down out of the ring, the mine begins
-     * again below it and reaches the ore; the ring stays shut.
+     * him are plugs forbidden for good, every side is refused, and no side of the entrance on the surface is left to begin stairs to: the goal
+     * stood «Не смог дойти до входа в шахту» five times. He digs down out of the ring, the mine begins again below it and reaches the ore;
+     * the ring stays shut.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void digsOutOfARingOfHisOwnPlugs(GameTestHelper h) {
         mountain(h, true);
         CompanionEntity c = rig(h);
-        c.mineSite().start(h.absolutePos(new BlockPos(PIT, GROUND + 1, PIT)), Direction.NORTH);
+        BlockPos entrance = h.absolutePos(new BlockPos(PIT, GROUND + 1, PIT));
+        c.mineSite().start(entrance, Direction.NORTH);
+        for (Direction d : Direction.Plane.HORIZONTAL) c.mineSite().refuse(entrance, d);
         BlockPos pocket = pluggedPocket(h, c);
         long[] id = {0};
         h.succeedWhen(() -> {
@@ -226,7 +228,7 @@ public final class CompanionMineStopsTests {
             }
             CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stood in the ring of plugs: " + result.message() + " | " + report(c));
-            h.assertTrue(c.mineSite().restarts() == 2, "Restarts " + c.mineSite().restarts());
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
             for (Direction d : Direction.Plane.HORIZONTAL) h.assertTrue(h.getLevel().getBlockState(pocket.relative(d)).is(Blocks.COBBLESTONE), "A plug of the ring was opened on the " + d);
         });
     }
