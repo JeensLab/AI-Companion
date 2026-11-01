@@ -255,6 +255,23 @@ public final class CompanionMineBacktrackTests {
         h.succeed();
     }
 
+    /** No sealing block in the bag: before the stairs go on he cuts niches in the rock beside a stand, and the order still gets its ore. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void cutsStoneFromTheWallsWhenTheBagHasNone(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        c.setItem(4, ItemStack.EMPTY);
+        c.setItem(5, ItemStack.EMPTY);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The empty bag stopped the mine: " + report(c));
+            boolean niche = false;
+            for (BlockPos stand : c.mineSite().stands()) for (Direction side : List.of(Direction.EAST, Direction.WEST)) niche |= CompanionShaftPlan.open(h.getLevel(), stand.relative(side));
+            h.assertTrue(niche, "No niche beside any stand of " + c.mineSite().stands().size() + " | " + report(c));
+        });
+    }
+
     /** A pit of air three cells across and high in the deepslate, as in the other restart tests. */
     private static void digPit(GameTestHelper h) {
         for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
