@@ -36,7 +36,7 @@ final class CompanionCreeperGuard {
      * reach and the closing speed of the two, for the time to get within it; the retreats from creepers he bears before he gives up the
      * fight, and how long they are remembered.
      */
-    private static final float FIGHT_HEALTH = 12;
+    static final float FIGHT_HEALTH = 12;
     private static final int FUSE = 30, SWING_MARGIN = 2, GIVE_UP = 6, FORGET_TICKS = 20 * 60;
     private static final double REACH = 1.6, CLOSING_SPEED = .15;
     /**

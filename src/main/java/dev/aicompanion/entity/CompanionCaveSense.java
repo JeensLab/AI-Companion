@@ -27,7 +27,10 @@ final class CompanionCaveSense {
     enum Danger { SAFE, DANGEROUS, VERY_DANGEROUS }
 
     static final int MAX_CELLS = 1500, RADIUS = 20, LAVA_RADIUS = 8, WATCH_RADIUS = 16, MAX_DROP = 32;
-    /** Very dangerous: health at or below this, this many hostile mobs in the cave, a creeper closer than this, no sealing block. */
+    /**
+     * Very dangerous: health at or below this, burning, no sealing block; and, when he cannot fight (no sword, or health at or below the
+     * fight's), this many hostile mobs in the cave or a creeper closer than this. With a sword and health to spare mobs are a fight, not a flight.
+     */
     static final float HEALTH_VERY = 8, HEALTH_WARY = 13;
     static final int CROWD = 3, TORCHES_MIN = 8, DROP_DANGEROUS = 3, LIGHT_SPACING = 25;
     static final double CREEPER_CLOSE = 7;
@@ -37,7 +40,7 @@ final class CompanionCaveSense {
     /** The air of a cave: from the cells beside the broken block, without the cells of the mine. {@code surface}: it opens to the sky, so it is the outside. */
     record Cave(BlockPos breach, List<BlockPos> mouth, Set<BlockPos> air, boolean truncated, boolean surface, boolean lava, int drop) { }
 
-    record Facts(int hostiles, double creeper, boolean dark, float health, boolean burning, int torches, int seals) { }
+    record Facts(int hostiles, double creeper, boolean dark, float health, boolean burning, int torches, int seals, boolean fit) { }
 
     /** Every cell the mine owns: the columns of the entrance and the stands, and the cells of the tunnels. */
     static Set<BlockPos> mineCells(CompanionMineSite mine) {
@@ -116,7 +119,8 @@ final class CompanionCaveSense {
         }
         boolean dark = lights(level, cave) * LIGHT_SPACING < cave.air().size();
         int torches = torchesAside ? Integer.MAX_VALUE : w.items.countCarried(Items.TORCH);
-        return new Facts(hostiles, creeper, dark, owner.getHealth(), owner.isOnFire() || owner.isInLava(), torches, CompanionSeal.available(owner));
+        boolean fit = owner.getHealth() > CompanionCreeperGuard.FIGHT_HEALTH && owner.equipment.hasMeleeWeapon();
+        return new Facts(hostiles, creeper, dark, owner.getHealth(), owner.isOnFire() || owner.isInLava(), torches, CompanionSeal.available(owner), fit);
     }
 
     /**
@@ -138,7 +142,7 @@ final class CompanionCaveSense {
     }
 
     static Danger judge(Cave cave, Facts f) {
-        if (f.health() <= HEALTH_VERY || f.hostiles() >= CROWD || f.creeper() < CREEPER_CLOSE || f.burning() || f.seals() == 0) return Danger.VERY_DANGEROUS;
+        if (f.health() <= HEALTH_VERY || f.burning() || f.seals() == 0 || !f.fit() && (f.hostiles() >= CROWD || f.creeper() < CREEPER_CLOSE)) return Danger.VERY_DANGEROUS;
         if (f.hostiles() > 0 || cave.lava() || cave.drop() > DROP_DANGEROUS || f.health() <= HEALTH_WARY || f.torches() < TORCHES_MIN) return Danger.DANGEROUS;
         return Danger.SAFE;
     }
@@ -147,8 +151,8 @@ final class CompanionCaveSense {
     static String veryReasons(Facts f) {
         List<String> reasons = new ArrayList<>();
         if (f.health() <= HEALTH_VERY) reasons.add("health=" + f.health());
-        if (f.hostiles() >= CROWD) reasons.add("hostiles=" + f.hostiles());
-        if (f.creeper() < CREEPER_CLOSE) reasons.add("creeper=" + Math.round(f.creeper() * 10) / 10.0);
+        if (!f.fit() && f.hostiles() >= CROWD) reasons.add("hostiles=" + f.hostiles());
+        if (!f.fit() && f.creeper() < CREEPER_CLOSE) reasons.add("creeper=" + Math.round(f.creeper() * 10) / 10.0);
         if (f.burning()) reasons.add("burning");
         if (f.seals() == 0) reasons.add("seals=0");
         return String.join(",", reasons);
