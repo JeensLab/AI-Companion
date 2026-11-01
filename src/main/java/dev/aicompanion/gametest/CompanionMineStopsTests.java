@@ -14,6 +14,7 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -44,6 +45,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineStopsTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2, PIT_STEP = 8, POCKET_TIMEOUT = 24000;
+    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200;
 
     private CompanionMineStopsTests() { }
 
@@ -165,6 +167,42 @@ public final class CompanionMineStopsTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again from the entrance: " + result.message() + " | " + report(c));
             h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    @AfterBatch(batch = "mine_stops_frozen_drop") public static void afterFrozenDrop(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+
+    /**
+     * Run m4b/lava (seed 20261102): held drops of the tunnels were flushed into chunks nobody ticks, and hung in the air with the pickup
+     * delay not running down. The drop is his harvest and he cannot take it, so the pickup waited for it for ever: the step of the goal ended
+     * «стоял без продвижения» and the goal waited for ever «занят другим делом». The pickup lets such a drop go after a while and the goal
+     * goes on to the diamond.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_frozen_drop", timeoutTicks = GOAL_TIMEOUT)
+    public static void goesOnToTheDiamondWhenADropOfHisNeverSettles(GameTestHelper h) {
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, CompanionDiamondGoalTests.supplies(32, 4));
+        // While the drop hangs he wanders off the spot he began on: the ring of ore is within the reach of a mine from anywhere.
+        mountain(h);
+        BlockPos cell = new BlockPos(CENTER + DROP_AT, DROP_Y, CENTER + DROP_AT);
+        h.setBlock(cell, Blocks.AIR);
+        ItemEntity drop = new ItemEntity(h.getLevel(), h.absolutePos(cell).getX() + .5, h.absolutePos(cell).getY() + .35, h.absolutePos(cell).getZ() + .5, new ItemStack(Items.COBBLED_DEEPSLATE));
+        drop.setNoGravity(true);
+        drop.setDeltaMovement(0, 0, 0);
+        drop.setNeverPickUp();
+        drop.setUnlimitedLifetime();
+        h.getLevel().addFreshEntity(drop);
+        r.c().claimDrops(List.of(drop));
+        CompanionDiamondGoalTests.start(h, r, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.runAtTickTime(STARTED_BY, () -> {
+            if (!r.c().mineSite().exists() || !drop.isAlive()) h.fail("The goal never began its step while the drop hangs: " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) == CompanionAgenda.State.COMPLETED, "Goal incomplete | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.count(r.c(), Items.DIAMOND) >= 1, "No diamond | " + CompanionDiamondGoalTests.report(h, r));
         });
     }
 }
