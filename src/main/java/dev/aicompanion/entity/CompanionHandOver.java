@@ -52,7 +52,7 @@ final class CompanionHandOver {
             boolean walking = w.owner.travel().goal() != null;
             // In a jump the leg stays as it is.
             if (walking && !w.owner.onGround() && !w.owner.isInWater()) return;
-            // In legs round walls and ridges, as far as the way goes, like «иди ко мне» (CompanionWork.returnToPlayer): a short
+            // In legs round walls and ridges, as far as the way goes, like «иди ко мне» (CompanionComeBack): a short
             // search would give up while the way round is longer than it walks.
             if (closing && !w.route.legOver()) {
                 w.owner.workStatus("Несу тебе вещи.");
