@@ -26,7 +26,7 @@ import java.util.UUID;
  */
 final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
-    private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3;
+    private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3, FUSE_NEAR = 12;
     private static final int LONGEST = 20 * 45, MEAL_WINDOW = 20 * 10, HURT_MEMORY = 100;
 
     private final CompanionWork w;
@@ -46,7 +46,14 @@ final class CompanionExpeditionFight {
         if (retreating) return false;
         long now = level.getGameTime();
         Monster foe = nearest(level);
-        if (foe == null) { settle(now); return false; }
+        if (foe == null) {
+            if (!pressed(level)) { settle(now); return false; }
+            // No foe is chosen, yet nothing is dug or sealed and the pickaxe does not come back: the guard moves him, the sword stays.
+            began();
+            lastBusy = now;
+            owner.selectWeaponForCombat();
+            return true;
+        }
         began();
         if (!worthFighting(foe, now)) { settle(now); return false; }
         lastBusy = now;
@@ -55,6 +62,15 @@ final class CompanionExpeditionFight {
         owner.getNavigation().stop();
         owner.selectWeaponForCombat();
         return true;
+    }
+
+    /** A fuse is lit near him, or a hostile mob he has not let go is on him: the work waits and the sword stays in his hand, whoever is a foe. */
+    private boolean pressed(ServerLevel level) {
+        for (Monster monster : level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(FUSE_NEAR), mob -> mob.isAlive() && !mob.isNoAi())) {
+            if (monster instanceof Creeper creeper && CompanionCreeperGuard.lit(creeper) && owner.distanceTo(creeper) < FUSE_NEAR) return true;
+            if (!letGo(monster) && inContact(monster) && owner.hasLineOfSight(monster)) return true;
+        }
+        return false;
     }
 
     /** The melee goal has taken the turn: from here on the fight is under way (called before the weapon is picked, so the tool in hand is still the work's). */

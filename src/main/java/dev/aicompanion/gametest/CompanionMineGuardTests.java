@@ -7,6 +7,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -26,6 +27,7 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.armed;
 import static dev.aicompanion.gametest.CompanionMineFightTests.chamber;
 import static dev.aicompanion.gametest.CompanionMineFightTests.creeper;
 import static dev.aicompanion.gametest.CompanionMineFightTests.place;
+import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 
 /** The creeper guard with several creepers about, and what else may take his turn while one is near. */
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
@@ -34,7 +36,7 @@ public final class CompanionMineGuardTests {
     private static final int FUSE_TICKS = 200, STAND = 6, LIT_AT = 8, FRESH_AT = 1;
     private static final double SLACK = .25;
     private static final float KEPT = 10;
-    private static final int PIT_FROM = 8, PIT_TO = 10, PIT_DEPTH = 4, DROP_AT = 12, HOLD_TICKS = 80, RELEASED_TICKS = 400;
+    private static final int PIT_FROM = 8, PIT_TO = 10, PIT_DEPTH = 4, DROP_AT = 12, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, GRACE_TICKS = 6, MAX_CHANGES = 2, HOLD_TICKS = 80, RELEASED_TICKS = 400;
     private static final double CLOSER = 1.5;
 
     private CompanionMineGuardTests() { }
@@ -105,6 +107,45 @@ public final class CompanionMineGuardTests {
             if (elapsed == HOLD_TICKS) creeper.discard();
             if (!drop.isAlive()) h.succeed();
             h.assertTrue(elapsed < HOLD_TICKS + RELEASED_TICKS, "SETUP: the drop was not taken once the creeper was gone" + trace);
+        });
+    }
+
+    /**
+     * The breach of a cave with mobs in it is being sealed and a creeper in the cave has its fuse lit: nothing is sealed meanwhile, the
+     * stone sword stays in his hand (it does not go back and forth with the pickaxe) until the creeper has blown.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseNearKeepsTheSwordInHandWhileTheCaveIsBeingSealed(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = -PASSAGE_LENGTH; dx <= 1; dx++) for (int dy = 0; dy < 2; dy++)
+            h.getLevel().setBlock(foot.offset(dx, dy, -PASSAGE_OFFSET), Blocks.AIR.defaultBlockState(), 2 | 16);
+        place(c, stairs.get(stairs.size() - 3));
+        for (int dx : new int[]{-3, -4}) zombie(h, foot.offset(dx, 0, -PASSAGE_OFFSET)).setNoAi(true);
+        Creeper creeper = creeper(h, foot.offset(-1, 0, -PASSAGE_OFFSET));
+        creeper.setNoAi(true);
+        long begun = h.getTick();
+        long[] lit = {-1};
+        int[] swaps = {0};
+        Item[] held = {c.getMainHandItem().getItem()};
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            String phase = c.expeditionCavePhase();
+            if (lit[0] < 0 && phase.equals("SEAL")) {
+                lit[0] = h.getTick();
+                creeper.setNoAi(false);
+                creeper.ignite();
+            }
+            if (c.getMainHandItem().getItem() != held[0]) { swaps[0]++; held[0] = c.getMainHandItem().getItem(); }
+            String trace = " | cave phase " + phase + ", creeper " + (creeper.isAlive() ? "lit" : "gone") + ", hand " + held[0] + ", changes " + swaps[0] + ", he at "
+                    + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            if (lit[0] < 0) { h.assertTrue(h.getTick() - begun < FUSE_TICKS * 5, "SETUP: the cave was never sealed" + trace); return; }
+            if (!creeper.isAlive()) { h.succeed(); return; }
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (h.getTick() - lit[0] > GRACE_TICKS) h.assertTrue(held[0] == Items.STONE_SWORD, "The sword was not in his hand with a fuse lit" + trace);
+            h.assertTrue(swaps[0] <= MAX_CHANGES, "The tool went back and forth" + trace);
         });
     }
 
