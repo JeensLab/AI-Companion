@@ -46,12 +46,12 @@ public final class CompanionRetreatTests {
     private static final String RETREATED = "отступил";
     private static final BlockPos BREACH_FEET = new BlockPos(25, DIAMOND_FEET, 3), BREACH_HEAD = BREACH_FEET.above();
 
-    /** Four zombies in a dark chamber: the breach is sealed, he climbs his stairs, plugs the first step behind him, recovers at the entrance and says so. */
+    /** Four zombies in a dark chamber and no sword in the bag: the breach is sealed, he climbs his stairs, plugs the first step behind him, recovers at the entrance and says so. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void retreatsUpHisStairsFromACrowdedCaveAndRecovers(GameTestHelper h) {
         mountain(h, true);
         carveChamber(h);
-        CompanionEntity c = rig(h);
+        CompanionEntity c = rig(h, 3, false);
         List<Zombie> zombies = new ArrayList<>();
         for (int[] at : new int[][]{{27, 4}, {28, 5}, {29, 6}, {30, 7}}) zombies.add(hostile(h, at[0], at[1]));
         long id = start(h, c, 1);
@@ -69,6 +69,31 @@ public final class CompanionRetreatTests {
             BlockPos plug = plug(h, c);
             int level = plug == null ? rel(h, CompanionShaftPlan.stand(c.mineSite().entrance(), c.mineSite().stairDirection(), PLUG_STANDS)).getY() : rel(h, plug).getY();
             for (Zombie zombie : zombies) if (zombie.isAlive() && rel(h, zombie.blockPosition()).getY() >= level) problems.add("a zombie on the surface side of the plug at " + rel(h, zombie.blockPosition()).toShortString());
+        }));
+    }
+
+    /** The same crowd with a sword in the bag and health to spare: he does not climb, fights what comes at him, seals the breach and takes the diamond. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void fightsACrowdedCaveWithTheSwordInsteadOfClimbing(GameTestHelper h) {
+        mountain(h, true);
+        carveChamber(h);
+        CompanionEntity c = rig(h);
+        List<Zombie> zombies = new ArrayList<>();
+        for (int[] at : new int[][]{{27, 4}, {28, 5}, {29, 6}, {30, 7}}) zombies.add(hostile(h, at[0], at[1]));
+        long id = start(h, c, 1);
+        boolean[] done = {false}, breached = {false};
+        h.onEachTick(() -> {
+            if (done[0]) return;
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % RETARGET_EVERY == 0) zombie.setTarget(c);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            breached[0] |= !blocked(h, h.absolutePos(BREACH_FEET)) || !blocked(h, h.absolutePos(BREACH_HEAD));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + state(h, c) + " | " + report(c)));
+        h.onEachTick(() -> verdict(h, c, id, done, problems -> {
+            if (!breached[0]) problems.add("SETUP: the tunnel never broke into the chamber");
+            if (c.workResult(id).message().contains(RETREATED)) problems.add("he climbed away from a crowd he could fight");
+            if (plug(h, c) != null) problems.add("a plug stands in the first stair cells");
+            if (count(c, Items.DIAMOND) < 1) problems.add("no diamond in the bag");
         }));
     }
 
@@ -271,8 +296,10 @@ public final class CompanionRetreatTests {
 
     private static CompanionEntity rig(GameTestHelper h) { return rig(h, 3); }
 
+    private static CompanionEntity rig(GameTestHelper h, int ownerDistance) { return rig(h, ownerDistance, true); }
+
     /** The player stands this many blocks off along both axes. */
-    private static CompanionEntity rig(GameTestHelper h, int ownerDistance) {
+    private static CompanionEntity rig(GameTestHelper h, int ownerDistance, boolean sword) {
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
         var owner = h.makeMockServerPlayerInLevel();
         owner.teleportTo(companion.getX() - ownerDistance, companion.getY(), companion.getZ() - ownerDistance);
@@ -281,7 +308,7 @@ public final class CompanionRetreatTests {
         CompanionEvents.getOwnedCompanion(owner);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         ItemStack[] bag = {new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 16),
-                new ItemStack(Items.COBBLESTONE, 8), new ItemStack(Items.IRON_SWORD)};
+                new ItemStack(Items.COBBLESTONE, 8), sword ? new ItemStack(Items.IRON_SWORD) : ItemStack.EMPTY};
         for (int slot = 0; slot < bag.length; slot++) companion.setItem(slot, bag[slot]);
         return companion;
     }
