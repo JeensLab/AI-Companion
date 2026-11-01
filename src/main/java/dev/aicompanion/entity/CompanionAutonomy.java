@@ -165,10 +165,11 @@ public final class CompanionAutonomy {
     void playerOrder(String action) {
         idleTicks = 0;
         if ("verify_item".equals(action) || "autonomy".equals(action)) return;
+        owner.portals.stop();
         if (deed != null) drop("player_order:" + action);
         boolean wasHeld = held;
         held = switch (action) {
-            case "stop", "wait", "follow", "come", "protect", "wander" -> true;
+            case "stop", "wait", "follow", "come", "protect", "wander", "enter_portal" -> true;
             default -> false;
         };
         halted = stopped = held && ("stop".equals(action) || "wait".equals(action));

@@ -54,6 +54,8 @@ public final class CompanionLocalCommands {
         if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " " + (workAction.item().isEmpty() ? "resources" : workAction.item());
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
+        // Before «стой»: «зайди в портал, жди там» is an order to go in.
+        if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(зайди|заходи|войди|входи|шагни|прыгни|пройди|проходи|иди)\\s+(в|через)\\s+(\\p{L}+\\s+)?(портал|незер)\\b.*")) return "companion enter_portal";
         if (normalized.matches("(?sU).*\\b(стой|останься|жди)\\b.*")
                 || normalized.contains("стой здесь") || normalized.contains("жди тут")) {
             return "companion stay";
@@ -144,7 +146,7 @@ public final class CompanionLocalCommands {
     }
 
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {
-        return !actions.isEmpty() && java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect")
+        return !actions.isEmpty() && java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect", "enter_portal")
                 .contains(actions.getFirst().type());
     }
 }

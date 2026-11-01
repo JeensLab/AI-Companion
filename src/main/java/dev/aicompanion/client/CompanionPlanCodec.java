@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
-    public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop",
+    public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
             "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
@@ -151,6 +151,7 @@ public final class CompanionPlanCodec {
                 if (result.size() > MAX_STEPS) throw invalid();
             }
             requireGoalAlone(result);
+            requirePortalLast(result);
             return List.copyOf(result);
         } catch (RuntimeException exception) { throw invalid(); }
     }
@@ -158,6 +159,11 @@ public final class CompanionPlanCodec {
     /** A long goal runs on the server by itself: it is the only step of its plan, or the whole plan is invalid. */
     private static void requireGoalAlone(List<PlannedAction> steps) {
         if (steps.size() > 1 && steps.stream().anyMatch(step -> "pursue_goal".equals(step.type()))) throw invalid();
+    }
+
+    /** Any step after it would end the walk to the portal at once, or find him in another world. */
+    private static void requirePortalLast(List<PlannedAction> steps) {
+        for (int i = 0; i < steps.size() - 1; i++) if ("enter_portal".equals(steps.get(i).type())) throw invalid();
     }
 
     private static String textContent(JsonElement content) {

@@ -6,6 +6,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.village.poi.PoiManager;
+import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.NetherPortalBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -18,6 +20,7 @@ import java.util.EnumSet;
  * who follows him walks to that portal and steps in, and the game takes him over as any mob. A player's order in hand goes first, «стой»
  * holds; what he says is sent to the player, who is no longer near enough to hear him. Not saved: a world closed on the way leaves him
  * where he stood, for /companion summon. The portal he came by is no part of it: the game sets him beside the player's way out.
+ * «Зайди в портал» sends him the same way into the nearest Nether portal, with the player staying where he is.
  */
 final class CompanionPortals {
     /** The player's last cell here, and how far from it the portal he took may be: the End portal takes him a little above its plane. */
@@ -30,18 +33,42 @@ final class CompanionPortals {
     private final CompanionEntity c;
     private BlockPos playerSeen, portal, entry;
     private long giveUpAt, retryAt;
+    /** Sent by the player's order: the walk goes on with the player still here. */
+    private boolean ordered;
 
     CompanionPortals(CompanionEntity c) { this.c = c; }
 
     boolean walking() { return portal != null; }
 
-    /** Every tick on the server: the moment the player is gone from this world is seen here, while its chunks still tick. */
+    /** Any later order of the player ends the walk. */
+    void stop() { portal = null; ordered = false; }
+
+    /** The player's order: the nearest Nether portal, whoever lit it. What he works on ends here, as on «иди за мной». */
+    CompanionActionResult enter(ServerLevel level) {
+        var found = level.getPoiManager().findClosest(type -> type.is(PoiTypes.NETHER_PORTAL),
+                pos -> level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.NETHER_PORTAL), c.blockPosition(), WALKS_FROM, PoiManager.Occupancy.ANY);
+        if (found.isEmpty()) return CompanionActionResult.failed("Рядом нет портала в Незер.");
+        c.setFollowing(true);
+        // Fresh from a crossing the game keeps him from the portal for as long as he stands in it; an order is no bounce.
+        c.setPortalCooldown(0);
+        walkTo(level, foot(level, found.get()));
+        ordered = true;
+        return CompanionActionResult.ok("Иду к порталу.");
+    }
+
+    private void walkTo(ServerLevel level, BlockPos taken) {
+        portal = taken;
+        entry = entry(level, taken);
+        giveUpAt = level.getGameTime() + PATIENCE_TICKS;
+        retryAt = 0;
+    }
+
     void tick(ServerLevel level) {
         ServerPlayer owner = c.ownerId == null ? null : level.getServer().getPlayerList().getPlayer(c.ownerId);
-        if (owner == null || owner.level() == level) {
+        boolean playerHere = owner != null && owner.level() == level;
+        if (owner == null || playerHere) {
             playerSeen = owner == null ? null : owner.blockPosition();
-            portal = null;
-            return;
+            if (owner == null || !ordered) stop();
         }
         if (portal != null) {
             // An empty world stops ticking its entities after fifteen seconds; his leased chunks do not count as a player there.
@@ -49,7 +76,7 @@ final class CompanionPortals {
             if (level.getGameTime() >= giveUpAt || !isPortal(level.getBlockState(portal))) giveUp(owner);
             return;
         }
-        if (playerSeen == null) return;
+        if (playerHere || owner == null || playerSeen == null) return;
         BlockPos taken = portalNear(level, playerSeen);
         playerSeen = null;
         // Dead, or sent by a command: there is no way to walk after him.
@@ -58,16 +85,13 @@ final class CompanionPortals {
         if (c.blockPosition().distSqr(taken) > WALKS_FROM * WALKS_FROM) { tell(owner, "Я слишком далеко от портала. Позови через /companion summon."); return; }
         // As on «иди за мной»: what he did here stays here, a long goal waits for «продолжай».
         c.goals().playerOrder("follow"); c.autonomy().playerOrder("follow"); CompanionAgenda.playerOrder(owner, c, "follow");
-        portal = taken;
-        entry = entry(level, taken);
-        giveUpAt = level.getGameTime() + PATIENCE_TICKS;
-        retryAt = 0;
+        walkTo(level, taken);
         tell(owner, "Иду за тобой через портал.");
     }
 
     private void giveUp(ServerPlayer owner) {
-        portal = null;
-        tell(owner, "Не смог дойти до портала. Позови через /companion summon.");
+        tell(owner, ordered ? "Не смог дойти до портала." : "Не смог дойти до портала. Позови через /companion summon.");
+        stop();
     }
 
     private void tell(ServerPlayer owner, String text) { owner.sendSystemMessage(Component.literal(c.getName().getString() + ": " + text)); }
@@ -83,9 +107,13 @@ final class CompanionPortals {
             distance = pos.distSqr(seen);
             best = pos.immutable();
         }
-        if (best == null) return null;
-        while (level.getBlockState(best.below()).is(Blocks.NETHER_PORTAL)) best = best.below();
-        return best;
+        return best == null ? null : foot(level, best);
+    }
+
+    private static BlockPos foot(ServerLevel level, BlockPos pos) {
+        BlockPos foot = pos;
+        while (level.getBlockState(foot.below()).is(Blocks.NETHER_PORTAL)) foot = foot.below();
+        return foot;
     }
 
     /** A Nether portal is entered from before or behind its plane, not past the end of its frame; an End portal from anywhere round its rim. */
@@ -100,6 +128,8 @@ final class CompanionPortals {
     }
 
     private void walk() {
+        // The selector checks canContinueToUse every other tick only: on the tick between, a stopped walk still comes here.
+        if (portal == null) return;
         Vec3 inside = Vec3.atBottomCenterOf(portal), before = Vec3.atBottomCenterOf(entry), here = c.position();
         double near = entry.equals(portal) ? STEP_IN_FROM : BEFORE_THE_PLANE;
         if (Math.hypot(before.x - here.x, before.z - here.z) <= near && Math.abs(before.y - here.y) <= STEP_IN_FROM) {

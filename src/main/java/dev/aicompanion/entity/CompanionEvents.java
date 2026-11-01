@@ -67,7 +67,7 @@ public final class CompanionEvents {
                         companion.goals().playerOrder("follow"); companion.autonomy().playerOrder("follow");
                         CompanionAgenda.playerOrder(player, companion, "follow"); companion.setFollowing(true);
                         companion.teleportTo(player.serverLevel(), at.x, at.y, at.z, Set.of(), companion.getYRot(), companion.getXRot());
-                    } else if (at != null) companion.teleportTo(at.x, at.y, at.z);
+                    } else if (at != null) { companion.portals.stop(); companion.teleportTo(at.x, at.y, at.z); }
                     context.getSource().sendSuccess(() -> Component.literal(companion == null
                             ? "Компаньон сейчас выгружен из мира; он не создан повторно."
                             : at == null ? "Рядом с тобой ему негде встать: нужен твёрдый пол без воды и лавы." : "Компаньон рядом."), false);
@@ -328,6 +328,7 @@ public final class CompanionEvents {
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
+            case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
             case "stop" -> { companion.stopGathering(); yield CompanionActionResult.ok("Ладно, остановился."); }
             case "come" -> {
                 companion.setFollowing(false);
