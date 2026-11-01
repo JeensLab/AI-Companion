@@ -17,7 +17,7 @@ import java.util.List;
  * it ends honestly with what was found, why it stopped and what is left undone.
  */
 final class CompanionExpedition {
-    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, BACKTRACK, CLIMB, RETREAT }
+    private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, BACKTRACK, DIG_OUT, CLIMB, RETREAT }
 
     private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
@@ -40,6 +40,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionCave cave;
     private final CompanionExpeditionRetreat retreat;
     private final CompanionExpeditionBacktrack backtrack;
+    private final CompanionExpeditionDigOut digOut;
     private final CompanionExpeditionSupply supply;
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
@@ -53,7 +54,7 @@ final class CompanionExpedition {
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails;
     private BlockPos stand, head, sealCell;
     private Direction dir, tunnel;
-    private String tunnelWhy = "";
+    private String tunnelWhy = "", digOutWhy = "";
 
     CompanionExpedition(CompanionWork w) {
         this.w = w;
@@ -65,6 +66,7 @@ final class CompanionExpedition {
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
+        this.digOut = new CompanionExpeditionDigOut(w, dig);
         this.supply = new CompanionExpeditionSupply(w);
         this.bench = new CompanionExpeditionBench(w);
         this.stock = new CompanionExpeditionStock(w, dig);
@@ -121,11 +123,12 @@ final class CompanionExpedition {
         cave.reset();
         retreat.reset();
         backtrack.reset();
+        digOut.reset();
         supply.reset();
         bench.reset();
         stock.reset();
         fight.reset();
-        tunnelWhy = "";
+        tunnelWhy = digOutWhy = "";
         stage = Stage.LOCATE;
         plan = null;
         route = List.of();
@@ -170,6 +173,7 @@ final class CompanionExpedition {
             case DESCEND -> descend();
             case BRANCH -> branch();
             case BACKTRACK -> backtrack();
+            case DIG_OUT -> digOut();
             case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) end(Ending.SUPPLIES, climb.text()); }
             case RETREAT -> { if (retreat.tick(level) == CompanionExpeditionRetreat.Result.DONE) end(Ending.RETREAT, retreat.text()); }
         }
@@ -232,6 +236,11 @@ final class CompanionExpedition {
         CompanionMineSite mine = w.mine;
         BlockPos here = owner.blockPosition();
         joining = false;
+        // Nothing to dig with and nothing to make a pickaxe of: the walk down his stairs would end at their foot with the climb back.
+        if (mine.exists() && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH && !hadStone && !dig.spareIron() && !supply.canMakePickaxe()) {
+            end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, false) + " Копать нечем, остался наверху.");
+            return;
+        }
         if (mine.exists()) {
             mine.verify(level, here);
             int shunned = mine.firstShunned();
@@ -382,11 +391,40 @@ final class CompanionExpedition {
     private void restartAtOrigin(ServerLevel level, String why) {
         // A walk to the entrance that failed once is not tried again through yet another restart: the order ends instead of burning them all.
         Direction side = towardOrigin ? null : CompanionExpeditionRecord.originSide(level, w.mine);
-        if (side == null) { end(Ending.BLOCKED, why); return; }
+        if (side == null) {
+            if (startDigOut(level)) digOutWhy = why;
+            else end(Ending.BLOCKED, why);
+            return;
+        }
         towardOrigin = true;
         restartAt(level, w.mine.origin(), side, -1);
         joining = false;
         owner.workStatus("Здесь не свернуть, возвращаюсь ко входу и начну лестницу в другую сторону.");
+    }
+
+    /** No side and no way to the entrance: the last restart, past the cap, here or, if his own plugs wall him in, below the ring he digs out of. */
+    private boolean startDigOut(ServerLevel level) {
+        if (!digOut.begin(level)) return false;
+        plan = null;
+        sealCell = null;
+        lead.clear();
+        backtrack.reset();
+        dig.reset();
+        stage = Stage.DIG_OUT;
+        owner.workStatus("Ко входу не пройти и свернуть некуда, пробую начать шахту заново, если надо, прокопав выход вниз.");
+        return true;
+    }
+
+    private void digOut() {
+        ServerLevel level = (ServerLevel) owner.level();
+        switch (digOut.tick(level)) {
+            case WORKING -> { }
+            case STUCK -> end(Ending.BLOCKED, digOutWhy);
+            case DONE -> {
+                restartAt(level, digOut.at(), digOut.side(), 0);
+                owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
+            }
+        }
     }
 
     private void restartAt(ServerLevel level, BlockPos at, Direction side, int index) {
@@ -459,8 +497,9 @@ final class CompanionExpedition {
             case NO_TOOL -> {
                 plan = null;
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
-                // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up.
-                if (!dig.lackedOre && !dig.ironForRock && w.mine.buried() && dig.spareIron()) { dig.ironForRock = true; return; }
+                // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up,
+                // and a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use.
+                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() || !hadStone) && dig.spareIron()) { dig.ironForRock = true; return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
                 ServerLevel level = (ServerLevel) owner.level();
                 if (!dig.lackedOre && !towardOrigin && w.mine.buried() && CompanionExpeditionRecord.originSide(level, w.mine) != null) {

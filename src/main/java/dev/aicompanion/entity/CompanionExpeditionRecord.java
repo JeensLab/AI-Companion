@@ -66,8 +66,29 @@ final class CompanionExpeditionRecord {
     }
 
     private static Direction restartSideOf(ServerLevel level, CompanionMineSite mine, BlockPos here) {
+        return sideOf(level, mine, here, MAX_RESTARTS);
+    }
+
+    /**
+     * Walled in by his own plugs: a cell beside him is one a cave plug closed for good, so no stairs go on from here and no refusal is to blame.
+     * Pure refusals are not this: such a pit ends the order at once.
+     */
+    static boolean pluggedIn(CompanionMineSite mine, BlockPos here) {
+        for (Direction d : Direction.Plane.HORIZONTAL) if (mine.forbidden(here.relative(d))) return true;
+        return false;
+    }
+
+    /** The side of the last restart, one past the cap, where he stands or after he dug out of a plugged pocket: a fruitless chain stays bounded by it. */
+    static Direction digOutSide(ServerLevel level, CompanionMineSite mine, BlockPos here) {
+        return sideOf(level, mine, here, MAX_RESTARTS + 1);
+    }
+
+    /** Whether the cap leaves room for the restart a dig out ends in. */
+    static boolean mayDigOut(CompanionMineSite mine) { return mine.exists() && mine.restarts() <= MAX_RESTARTS; }
+
+    private static Direction sideOf(ServerLevel level, CompanionMineSite mine, BlockPos here, int cap) {
         BlockPos floor = here.below();
-        if (!mine.exists() || mine.restarts() >= MAX_RESTARTS || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return null;
+        if (!mine.exists() || mine.restarts() >= cap || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return null;
         if (!CompanionShaftPlan.open(level, here) || !CompanionShaftPlan.open(level, here.above())) return null;
         // A side refused in an earlier try is no side to restart to: the next step would turn off it at once, and the restart would be spent.
         for (Direction d : Direction.Plane.HORIZONTAL) {

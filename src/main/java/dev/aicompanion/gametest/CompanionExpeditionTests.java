@@ -38,7 +38,7 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class CompanionExpeditionTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
-    private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6, FIRST_ORE_STAND = 6, AFTER_BREAK = 3;
+    private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6, FIRST_ORE_STAND = 6, AFTER_BREAK = 3, DOWN_STAIRS = 4;
     private static final BlockPos WATER = new BlockPos(25, 4, 3);
     private static final String NO_PICKAXES = "кирок не осталось", STALL = "Полторы минуты";
 
@@ -94,6 +94,27 @@ public final class CompanionExpeditionTests {
             h.assertTrue(result.message().contains(NO_PICKAXES), "Result does not say the pickaxes are gone: " + result);
             h.assertTrue(count(c, Items.STONE_PICKAXE) == 0, "A stone pickaxe is left: " + report(c));
             h.assertTrue(count(c, Items.IRON_PICKAXE) == 1 && damage(c, Items.IRON_PICKAXE) <= 2, "Iron pickaxe used on stone, damage " + damage(c, Items.IRON_PICKAXE));
+        });
+    }
+
+    /**
+     * A step that begins with no stone pickaxe, no sticks and no wood (the fetch above ground found none): going up again would
+     * bring nothing back, so the iron pickaxe digs the rock while it has wear to spare, instead of the climb of a mine that ends at once.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void digsRockWithSpareIronWhenAStepBeginsWithoutAStonePickaxe(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 16));
+        CompanionEntity c = r.c();
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            CompanionActionResult result = c.workResult(id);
+            if (result != null) h.fail("Ended instead of digging with the iron pickaxe: " + result + " | " + report(c));
+        });
+        h.succeedWhen(() -> {
+            int depth = GROUND + 1 - h.relativePos(c.blockPosition()).getY();
+            h.assertTrue(depth >= DOWN_STAIRS, "Not down the stairs yet, depth " + depth + " | " + report(c));
+            h.assertTrue(damage(c, Items.IRON_PICKAXE) > 2, "The iron pickaxe has not dug the rock, damage " + damage(c, Items.IRON_PICKAXE));
         });
     }
 
