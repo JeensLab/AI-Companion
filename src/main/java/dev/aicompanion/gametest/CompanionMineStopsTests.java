@@ -205,4 +205,111 @@ public final class CompanionMineStopsTests {
             h.assertTrue(CompanionDiamondGoalTests.count(r.c(), Items.DIAMOND) >= 1, "No diamond | " + CompanionDiamondGoalTests.report(h, r));
         });
     }
+
+    /**
+     * Runs m4b/void-3 (seed 20261102) and m4a/water (20261031): he stands on a ledge of a cave walled in by his own plugs. The cells beside
+     * him are plugs forbidden for good, every side is refused, and no side of the entrance on the surface is left to begin stairs to: the goal
+     * stood «Не смог дойти до входа в шахту» five times. He digs down out of the ring, the mine begins again below it and reaches the ore;
+     * the ring stays shut.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void digsOutOfARingOfHisOwnPlugs(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        BlockPos entrance = h.absolutePos(new BlockPos(PIT, GROUND + 1, PIT));
+        c.mineSite().start(entrance, Direction.NORTH);
+        for (Direction d : Direction.Plane.HORIZONTAL) c.mineSite().refuse(entrance, d);
+        BlockPos pocket = pluggedPocket(h, c);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(pocket.above()), "The light in the pocket is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stood in the ring of plugs: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+            for (Direction d : Direction.Plane.HORIZONTAL) h.assertTrue(h.getLevel().getBlockState(pocket.relative(d)).is(Blocks.COBBLESTONE), "A plug of the ring was opened on the " + d);
+        });
+    }
+
+    /** The water run's record: three restarts spent and carried, buried. The dig out is the one restart past the cap, and its stairs reach the ore. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void digsOutWhenTheRestartsAreSpent(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        BlockPos pocket = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER)), Direction.NORTH);
+        for (int i = 0; i < 3; i++) c.mineSite().restart(pocket, Direction.NORTH);
+        c.mineSite().buried(true);
+        pluggedPocket(h, c);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stood with the restarts spent: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 4, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /**
+     * Run f9b/void-3 (seed 20261102): three restarts spent and carried to the next steps, the walk to the entrance failed, and he stood in the
+     * cave with every side free to begin stairs to: each step ended «Не смог дойти до входа в шахту» at once. The cap alone stops him, so he gets
+     * the one restart past it, here, and the stairs go on.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainOnceMoreWhenOnlyTheCapStopsHim(GameTestHelper h) {
+        mountain(h, true);
+        for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        BlockPos pit = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        BlockPos far = h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER));
+        c.mineSite().start(far, Direction.NORTH);
+        for (int i = 0; i < 3; i++) c.mineSite().restart(far, Direction.NORTH);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(pit.above()), "The light in the pit is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stood with the cap alone against him: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 4, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /** The dig out was the last restart past the cap: in the same ring again he ends at once, and burns no more restarts. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotDigOutOnceMoreWhenTheRestartsAreSpent(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        BlockPos pocket = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER)), Direction.NORTH);
+        for (int i = 0; i < 4; i++) c.mineSite().restart(pocket, Direction.NORTH);
+        c.mineSite().buried(true);
+        pluggedPocket(h, c);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.success() && result.message().contains("некуда свернуть"), "Not a stop with the restarts spent: " + result.message());
+            h.assertTrue(c.mineSite().restarts() == 4, "Restarts " + c.mineSite().restarts());
+            h.assertTrue(c.blockPosition().getY() == pocket.getY(), "He dug down at " + c.blockPosition());
+        });
+    }
+
+    /** A pocket at the top of the deepslate closed all round, feet and head, by plugs he sealed and forbade, every side refused; he stands in it. */
+    private static BlockPos pluggedPocket(GameTestHelper h, CompanionEntity c) {
+        BlockPos here = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        for (BlockPos cell : CompanionShaftPlan.column(here)) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            for (BlockPos cell : List.of(here.relative(d), here.relative(d).above())) {
+                h.getLevel().setBlock(cell, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+                c.mineSite().sealed(cell);
+            }
+            c.mineSite().forbid(here.relative(d));
+            c.mineSite().refuse(here, d);
+        }
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        return here;
+    }
 }
