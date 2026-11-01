@@ -42,6 +42,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionBacktrack backtrack;
     private final CompanionExpeditionSupply supply;
     private final CompanionExpeditionBench bench;
+    private final CompanionExpeditionStock stock;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
@@ -65,10 +66,11 @@ final class CompanionExpedition {
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.supply = new CompanionExpeditionSupply(w);
         this.bench = new CompanionExpeditionBench(w);
+        this.stock = new CompanionExpeditionStock(w, dig);
     }
 
     /** What the stall watchdog sees move: blocks broken, steps finished, plugs placed in a cave, health regained while resting. */
-    int progress() { return progress + dig.broken + dig.walked + cave.progress() + bench.progress() + (stage == Stage.RETREAT ? (int) owner.getHealth() : 0); }
+    int progress() { return progress + dig.broken + dig.walked + cave.progress() + bench.progress() + stock.progress() + (stage == Stage.RETREAT ? (int) owner.getHealth() : 0); }
 
     boolean active() { return active; }
 
@@ -102,7 +104,7 @@ final class CompanionExpedition {
         w.deadline = stepEnd + CAVE_RESERVE + 40;
         startDiamonds = w.items.countCarried(Items.DIAMOND);
         hadStone = w.items.countCarried(Items.STONE_PICKAXE) > 0;
-        w.mine.newStep();
+        w.mine.newStep(level.getGameTime());
         unheld = !CompanionChunkTicket.hold(owner);
         if (unheld) owner.workStatus("Не смог удержать чанки вокруг шахты загруженными: если уйти далеко, могу встать.");
     }
@@ -119,6 +121,7 @@ final class CompanionExpedition {
         backtrack.reset();
         supply.reset();
         bench.reset();
+        stock.reset();
         tunnelWhy = "";
         stage = Stage.LOCATE;
         plan = null;
@@ -152,6 +155,7 @@ final class CompanionExpedition {
         String danger = stage == Stage.LOCATE || stage == Stage.CLIMB || stage == Stage.RETREAT ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
         if (plan == null && digging && ore.pending() && mineOre(level, CompanionExpeditionOre.Mode.NEAR)) return;
+        if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
         if (plan == null) craftTorches(level);
         switch (stage) {
             case LOCATE -> locate(level);
@@ -345,20 +349,33 @@ final class CompanionExpedition {
         ServerLevel level = (ServerLevel) owner.level();
         BlockPos here = CompanionExpeditionRecord.standingCell(level, owner.blockPosition());
         Direction side = CompanionExpeditionRecord.restartSide(level, w.mine, here);
+        if (side == null) { restartAtOrigin(level, why); return; }
+        restartAt(level, here, side, 0);
+        owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
+    }
+
+    /** No side is left under the ground: back to the entrance on the surface, once, to begin stairs to a side not tried from it. */
+    private void restartAtOrigin(ServerLevel level, String why) {
+        Direction side = w.mine.buried() ? CompanionExpeditionRecord.originSide(level, w.mine) : null;
         if (side == null) { end(Ending.BLOCKED, why); return; }
+        restartAt(level, w.mine.origin(), side, -1);
+        joining = false;
+        owner.workStatus("Здесь не свернуть, возвращаюсь ко входу и начну лестницу в другую сторону.");
+    }
+
+    private void restartAt(ServerLevel level, BlockPos at, Direction side, int index) {
         plan = null;
         sealCell = null;
         lead.clear();
         backtrack.reset();
         dig.reset();
-        w.mine.restart(here, side);
-        w.mine.buried(!level.canSeeSky(here.above()));
-        route = new ArrayList<>(List.of(here));
-        routeIndex = 0;
+        w.mine.restart(at, side);
+        w.mine.buried(!level.canSeeSky(at.above()));
+        route = new ArrayList<>(List.of(at));
+        routeIndex = index;
         tunnel = null;
         turns = softFails = 0;
         stage = Stage.CHECK_NEAR;
-        owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
     }
 
     private void branch() {
@@ -393,7 +410,7 @@ final class CompanionExpedition {
         int used = w.mine.tunnels().size();
         if (used >= order.size() - 1) {
             CompanionExpeditionRecord.Base base = CompanionExpeditionRecord.moveBase(w.mine, atFoot);
-            if (base == null) { end(Ending.BLOCKED, "Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")") + "."); return false; }
+            if (base == null) { startBacktrack("Все тоннели от лестницы пройдены" + (tunnelWhy.isEmpty() ? "" : " (" + tunnelWhy + ")")); return false; }
             dir = base.direction();
             order = CompanionShaftPlan.tunnelOrder(dir);
             used = 0;

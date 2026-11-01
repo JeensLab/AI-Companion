@@ -13,6 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -26,6 +27,8 @@ import java.util.Set;
  */
 public final class CompanionMineSite {
     public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
+    /** How long after a step that opened nothing the next one still finds the restarts of that step spent. */
+    public static final int RESTARTS_CARRIED = 20 * 120;
     private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     /** Squared distance within which he counts as standing at a stand; the expedition's own measure of "the same spot". */
@@ -51,6 +54,15 @@ public final class CompanionMineSite {
     private final Set<Long> caves = new LinkedHashSet<>();
     /** How often the stairs were backed up from a dead end, a cave sent him up, and the mine was started again where he stood: each is bounded. */
     private int backtracks, retreats, restarts;
+    /**
+     * The surface entrance the first stairs began at, kept when a restart under the ground replaces {@link #entrance}, and the sides
+     * stairs were begun to from it. When no side is left under the ground, the mine begins again from here to a side not tried.
+     */
+    private BlockPos origin;
+    private final Set<Direction> originSides = EnumSet.noneOf(Direction.class);
+    /** Stands and tunnel advances ever recorded, and the count when the last step began: a step that added none opened nothing. */
+    private int opened, openedAtStep;
+    private long lastStepAt;
     /** The mine was started again under the ground: its entrance is no way to the surface, and nothing can be topped up from it. */
     private boolean buried;
     private BlockPos plug;
@@ -93,6 +105,8 @@ public final class CompanionMineSite {
         clear();
         entrance = entranceFeet.immutable();
         stairDirection = stair;
+        origin = entrance;
+        originSides.add(stair);
     }
 
     /**
@@ -110,7 +124,20 @@ public final class CompanionMineSite {
         // His plugs stay his: a block he laid must not read as a wall of the rock around the new mine.
         List<BlockPos> laid = List.copyOf(seals), banned = List.copyOf(forbidden), standing = List.copyOf(temporary);
         List<Move> moves = List.copyOf(refused);
+        // Under the ground the entrance is no way to the surface: the surface one is kept. A restart on open ground makes that spot the surface entrance.
+        BlockPos surface = buried || origin == null ? origin : entrance;
+        Set<Direction> sides = EnumSet.noneOf(Direction.class);
+        if (buried || entrance.equals(origin)) sides.addAll(originSides); else sides.add(stairDirection);
+        int openedBefore = opened, stepBefore = openedAtStep;
+        long stepAt = lastStepAt;
         start(here, stair);
+        opened = openedBefore;
+        openedAtStep = stepBefore;
+        lastStepAt = stepAt;
+        origin = surface == null ? here.immutable() : surface;
+        originSides.clear();
+        originSides.addAll(sides);
+        if (here.equals(surface)) originSides.add(stair);
         caves.addAll(kept);
         seals.addAll(laid);
         temporary.addAll(standing);
@@ -121,6 +148,10 @@ public final class CompanionMineSite {
 
     public void clear() {
         entrance = null;
+        origin = null;
+        originSides.clear();
+        opened = openedAtStep = 0;
+        lastStepAt = 0;
         plug = null;
         caves.clear();
         backtracks = retreats = restarts = 0;
@@ -137,6 +168,12 @@ public final class CompanionMineSite {
 
     public Direction stairDirection() { return stairDirection; }
 
+    /** The surface entrance the stairs first began at: where the mine begins again when the spot under the ground has no side left. */
+    public BlockPos origin() { return origin; }
+
+    /** True when stairs were already begun from the origin to this side. */
+    public boolean originTried(Direction side) { return originSides.contains(side); }
+
     /** The stands reached after the entrance, in order; a landing of a turn is a stand beside the one before it. */
     public List<BlockPos> stands() { return Collections.unmodifiableList(stands); }
 
@@ -146,6 +183,7 @@ public final class CompanionMineSite {
     public void reached(BlockPos stand) {
         if (entrance == null || stands.size() >= MAX_STANDS || stand.equals(foot())) return;
         stands.add(stand.immutable());
+        opened++;
     }
 
     /** Back to the first {@code count} stands (a retreat or a re-dig); tunnels hang on the foot, so they go with it. */
@@ -164,6 +202,7 @@ public final class CompanionMineSite {
         BlockPos foot = foot();
         for (int k = 1; k <= length; k++) stands.add(foot.relative(direction, k).immutable());
         tunnels.clear();
+        opened++;
         return true;
     }
 
@@ -179,6 +218,7 @@ public final class CompanionMineSite {
         Tunnel last = tunnels.get(tunnels.size() - 1);
         if (last.length() >= MAX_TUNNEL_LENGTH) return false;
         tunnels.set(tunnels.size() - 1, new Tunnel(last.direction(), last.length() + 1));
+        opened++;
         return true;
     }
 
@@ -253,6 +293,18 @@ public final class CompanionMineSite {
 
     /** Each step of a goal gets its own tries: the counters bound one step, and a used-up mine must not stop every later order for good. */
     public void newStep() { backtracks = restarts = 0; }
+
+    /**
+     * As {@link #newStep()}, except that the restarts of a step that opened nothing are not given back to the step that follows it within
+     * {@link #RESTARTS_CARRIED} ticks: the goal's retries would else spend three empty restarts each. The backtracks are always given back.
+     */
+    public void newStep(long now) {
+        boolean fruitless = opened == openedAtStep && now - lastStepAt < RESTARTS_CARRIED;
+        backtracks = 0;
+        if (!fruitless) restarts = 0;
+        openedAtStep = opened;
+        lastStepAt = now;
+    }
 
     public void retreatsForgotten() { retreats = 0; }
 
@@ -367,6 +419,12 @@ public final class CompanionMineSite {
         if (retreats > 0) mine.putInt("Retreats", retreats);
         if (restarts > 0) mine.putInt("Restarts", restarts);
         if (buried) mine.putBoolean("Buried", true);
+        if (origin != null && !origin.equals(entrance)) {
+            mine.putLong("Origin", origin.asLong());
+            int mask = 0;
+            for (Direction side : originSides) mask |= 1 << side.get2DDataValue();
+            mine.putByte("OriginSides", (byte) mask);
+        }
         if (!refused.isEmpty()) {
             ListTag moves = new ListTag();
             for (Move move : refused) {
@@ -445,6 +503,10 @@ public final class CompanionMineSite {
         retreats = Math.max(0, mine.getInt("Retreats"));
         restarts = Math.max(0, mine.getInt("Restarts"));
         buried = mine.getBoolean("Buried");
+        origin = mine.contains("Origin", Tag.TAG_LONG) ? BlockPos.of(mine.getLong("Origin")) : entrance;
+        if (mine.contains("OriginSides", Tag.TAG_BYTE)) {
+            for (Direction side : Direction.Plane.HORIZONTAL) if ((mine.getByte("OriginSides") & 1 << side.get2DDataValue()) != 0) originSides.add(side);
+        } else originSides.add(stairDirection);
         ListTag moves = mine.getList("Refused", Tag.TAG_COMPOUND);
         for (int i = 0; i < moves.size() && refused.size() < MAX_REFUSED; i++) {
             CompoundTag entry = moves.getCompound(i);

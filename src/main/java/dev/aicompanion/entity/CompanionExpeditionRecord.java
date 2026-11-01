@@ -57,7 +57,9 @@ final class CompanionExpeditionRecord {
         Direction side = restartSideOf(level, mine, here);
         if (side == null && dev.aicompanion.CompanionDiagnostics.enabled()) {
             StringBuilder sides = new StringBuilder();
-            for (Direction d : Direction.Plane.HORIZONTAL) sides.append(d).append('=').append(CompanionShaftPlan.assessStep(level, here, d, mine.seals(), mine.avoid())).append(mine.shunned(here.relative(d).below()) ? "(shunned) " : " ");
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                sides.append(d).append('=').append(CompanionShaftPlan.assessStep(level, here, d, mine.seals(), mine.avoid())).append(mine.shunned(here.relative(d).below()) ? "(shunned)" : "").append(mine.refused(here, d) ? "(refused) " : " ");
+            }
             dev.aicompanion.CompanionDiagnostics.event("mine", "restart_refused", "here", here.toShortString(), "restarts", mine.restarts(), "floor", level.getBlockState(here.below()), "feet", level.getBlockState(here), "head", level.getBlockState(here.above()), "sides", sides);
         }
         return side;
@@ -67,16 +69,35 @@ final class CompanionExpeditionRecord {
         BlockPos floor = here.below();
         if (!mine.exists() || mine.restarts() >= MAX_RESTARTS || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return null;
         if (!CompanionShaftPlan.open(level, here) || !CompanionShaftPlan.open(level, here.above())) return null;
+        // A side refused in an earlier try is no side to restart to: the next step would turn off it at once, and the restart would be spent.
         for (Direction d : Direction.Plane.HORIZONTAL) {
-            if (CompanionShaftPlan.assessStep(level, here, d, mine.seals(), mine.avoid()).kind() != CompanionShaftPlan.Kind.BLOCKED) return d;
+            if (!mine.refused(here, d) && CompanionShaftPlan.assessStep(level, here, d, mine.seals(), mine.avoid()).kind() != CompanionShaftPlan.Kind.BLOCKED) return d;
         }
         // The caves he fled from may surround him: the restart forgets the ones beside him, so they do not shut a side.
         CompanionShaftPlan.Avoid avoid = mine.avoid();
         CompanionShaftPlan.Avoid ignoringCaves = new CompanionShaftPlan.Avoid(avoid.forbidden(), avoid.refused(), cell -> false);
         for (Direction d : Direction.Plane.HORIZONTAL) {
-            if (CompanionShaftPlan.assessStep(level, here, d, mine.seals(), ignoringCaves).kind() != CompanionShaftPlan.Kind.BLOCKED) return d;
+            if (!mine.refused(here, d) && CompanionShaftPlan.assessStep(level, here, d, mine.seals(), ignoringCaves).kind() != CompanionShaftPlan.Kind.BLOCKED) return d;
         }
         return null;
+    }
+
+    /**
+     * The side of the entrance on the surface that stairs were not begun to yet, for a mine with no side left under the ground: the
+     * mine begins again there, a side that is not refused and whose first step is open, one needing nothing laid first preferred.
+     * Null when the restarts are used up, the entrance is unknown or unloaded, or every side was tried or is shut.
+     */
+    static Direction originSide(ServerLevel level, CompanionMineSite mine) {
+        BlockPos origin = mine.origin();
+        if (!mine.exists() || origin == null || mine.restarts() >= MAX_RESTARTS || !level.hasChunkAt(origin)) return null;
+        Direction best = null;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            if (mine.originTried(d) || mine.refused(origin, d)) continue;
+            CompanionShaftPlan.Kind kind = CompanionShaftPlan.assessStep(level, origin, d, mine.seals(), mine.avoid()).kind();
+            if (kind == CompanionShaftPlan.Kind.OK) return d;
+            if (kind != CompanionShaftPlan.Kind.BLOCKED && best == null) best = d;
+        }
+        return best;
     }
 
     /** The cell he really stands in: his own, or the first one below it (at most {@code MAX_DROP}) with a firm floor, as mid-jump his feet are in the air above it. */
