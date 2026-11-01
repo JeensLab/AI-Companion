@@ -160,8 +160,12 @@ final class CompanionExpeditionClimb {
 
     private Result openWay(BlockPos beyond) {
         ServerLevel level = (ServerLevel) w.owner.level();
-        plug = plugs >= MAX_PLUGS ? null : CompanionExpeditionPlugs.way(level, w.mine, CompanionExpeditionRecord.standingCell(level, w.owner.blockPosition()), beyond);
+        BlockPos here = CompanionExpeditionRecord.standingCell(level, w.owner.blockPosition());
+        plug = plugs >= MAX_PLUGS ? null : CompanionExpeditionPlugs.way(level, w.mine, here, beyond);
+        boolean bridging = plug == null && plugs < MAX_PLUGS;
+        if (bridging) plug = CompanionExpeditionPlugs.bridge(level, w.mine, here, beyond);
         if (plug == null) return finish(" Подняться не вышло: путь наверх закрыт, остался где стою.");
+        toPlug.bridging(bridging);
         toPlug.set(plug.walk(), 0);
         if (plug.cell() != null) dig.ironForRock(IRON_FOR_PLUGS);
         phase = Phase.UNPLUG;
@@ -173,6 +177,7 @@ final class CompanionExpeditionClimb {
         switch (toPlug.tick()) {
             case WORKING -> { return Result.WORKING; }
             case STUCK -> { return finish(" Подняться по своей лестнице не вышло: застрял на ходу, остался где стою."); }
+            case NO_BLOCK -> { return finish(" Подняться не вышло: в пути наверх нет пола, а блоков, чтобы его настелить, нет, остался где стою."); }
             default -> { }
         }
         if (plug.cell() == null) {

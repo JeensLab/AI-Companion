@@ -11,11 +11,14 @@ import java.util.List;
  * blocks down his own tunnel).
  */
 final class CompanionExpeditionWalk {
-    enum Result { WORKING, DONE, STUCK }
+    enum Result { WORKING, DONE, STUCK, NO_BLOCK }
 
     private final CompanionExpeditionDig dig;
     private List<BlockPos> cells = List.of();
     private int index;
+    /** Cells with no floor are not skipped but given one, from the cell before. */
+    private boolean bridging;
+    private CompanionExpeditionFloor laying;
 
     CompanionExpeditionWalk(CompanionExpeditionDig dig) { this.dig = dig; }
 
@@ -35,10 +38,18 @@ final class CompanionExpeditionWalk {
 
     boolean done() { return index >= cells.size(); }
 
+    void bridging(boolean on) {
+        bridging = on;
+        laying = null;
+    }
+
     Result tick() {
         if (done()) return Result.DONE;
         // A cell with nothing firm under it cannot be entered, and his record can hold one whose floor is gone: the walk goes on past it, never leaving out the last.
-        while (index < cells.size() - 1 && !dig.floored(cells.get(index))) index++;
+        if (bridging) {
+            Result floor = lay(cells.get(index));
+            if (floor != null) return floor;
+        } else while (index < cells.size() - 1 && !dig.floored(cells.get(index))) index++;
         if (dig.reach(cells.get(index))) index++;
         else if (dig.walkStuck()) {
             dig.diagnoseStuck(cells.get(index), index, cells.size());
@@ -47,5 +58,20 @@ final class CompanionExpeditionWalk {
         return done() ? Result.DONE : Result.WORKING;
     }
 
-    void clear() { set(List.of(), 0); }
+    /** Null once the cell has a floor; the floor goes down a block at a time. */
+    private Result lay(BlockPos cell) {
+        if (dig.floored(cell)) { laying = null; return null; }
+        if (laying == null) laying = new CompanionExpeditionFloor(cell.below());
+        switch (dig.lay(laying)) {
+            case LAID -> { laying = null; return null; }
+            case NO_BLOCK -> { return Result.NO_BLOCK; }
+            case FAILED -> { return Result.STUCK; }
+            default -> { return Result.WORKING; }
+        }
+    }
+
+    void clear() {
+        set(List.of(), 0);
+        bridging(false);
+    }
 }

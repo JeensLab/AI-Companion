@@ -671,6 +671,101 @@ public final class CompanionMineStopsTests {
     }
 
     /**
+     * Run m13a/void-4 (seed 20261031): he stood in the bottom of his stairs flooded one block deep and every walk out of it, to the shore and then up
+     * the stairs, was counted lost: in water he bobs and is never on the ground, and a cell is entered only on the ground. The cell he stands in,
+     * with a block of water at its feet, counts as reached, and the climb goes on from it.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsOutOfOneBlockOfWaterAtTheBottomOfHisStairs(GameTestHelper h) {
+        climbAboveAGap(h, stairs -> h.getLevel().setBlock(stairs.get(GAP_AT), Blocks.WATER.defaultBlockState(), 2 | 16), true, false);
+    }
+
+    /**
+     * Run m13b/void (seed 20261102): the record has a gap, and in it the floor under the cells he would step on is air (a pit, a shaft of
+     * his own): no walk over firm floor joins the two ends, and «Подняться не вышло: путь наверх закрыт» was said every twenty ticks to the end of
+     * the clock. With blocks in the bag he lays the floor under the cells of the gap as he goes and reaches the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void laysAFloorAcrossAGapOfAirInTheWayUp(GameTestHelper h) {
+        climbAboveAGap(h, stairs -> airUnder(h, stairs), true, true);
+    }
+
+    /** The same gap with no block to lay: the climb ends once, said as it is, and he stays where he is. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void endsTheClimbOnceWhenAGapOfAirHasNoBlockToBridgeIt(GameTestHelper h) {
+        climbAboveAGap(h, stairs -> airUnder(h, stairs), false, true);
+    }
+
+    private static void airUnder(GameTestHelper h, List<BlockPos> stairs) {
+        for (int k = GAP_AT - 6; k <= GAP_AT - 4; k++) h.getLevel().setBlock(stairs.get(k).below(), Blocks.AIR.defaultBlockState(), 2 | 16);
+    }
+
+    /** He stands deep on his stairs with no stone pickaxe and the iron one at its reserve, the record lost below the first stands; {@code twist} changes the stairs between. */
+    private static void climbAboveAGap(GameTestHelper h, java.util.function.Consumer<List<BlockPos>> twist, boolean hasBlocks, boolean cutRecord) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, wornIron(IRON_LEFT));
+        if (!hasBlocks) { c.setItem(4, ItemStack.EMPTY); c.setItem(5, ItemStack.EMPTY); }
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(GAP_AT);
+        for (BlockPos stand : stairs.subList(GAP_AT + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
+        if (cutRecord) c.mineSite().truncate(KNOWN_STANDS);
+        twist.accept(stairs);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        spendRestartsOnTheStairs(h, c, here);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY() - SURFACE_MARGIN;
+        long[] id = {0};
+        int[] heightWhenEnded = {Integer.MIN_VALUE};
+        h.onEachTick(() -> {
+            if (id[0] != 0 && heightWhenEnded[0] == Integer.MIN_VALUE && c.workResult(id[0]) != null) heightWhenEnded[0] = c.getBlockY();
+        });
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            if (hasBlocks) h.assertTrue(heightWhenEnded[0] >= surface, "He said «" + result.message() + "» at height " + heightWhenEnded[0] + ", below the surface at " + surface + " | " + report(c));
+            else h.assertTrue(!result.success() && heightWhenEnded[0] < surface, "He did not end the climb at the gap: " + result.message() + " at height " + heightWhenEnded[0] + " | " + report(c));
+        });
+    }
+
+    /**
+     * Run m13b/void (seed 20261102): the mine was started again under the ground, so its way to the surface was a record of cells above the pit, and with the
+     * stone pickaxes broke in the step he dug tunnels with the iron one, down to its reserve, and had nothing left for the gap on the way up. With the way up
+     * in the record the iron pickaxe is kept for ore and he goes up for supplies.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void keepsTheIronPickaxeForOreWhenTheRecordHasAWayUp(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        ItemStack last = new ItemStack(Items.STONE_PICKAXE);
+        last.setDamageValue(last.getMaxDamage() - 1);
+        c.setItem(0, last);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(PIT_STEP);
+        for (BlockPos stand : stairs.subList(PIT_STEP + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        spendRestartsOnTheStairs(h, c, here);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            ended(h, c, id[0]);
+            int worn = c.getMainHandItem().is(Items.IRON_PICKAXE) ? c.getMainHandItem().getDamageValue() : 0;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.IRON_PICKAXE)) worn += c.getItem(slot).getDamageValue();
+            h.assertTrue(worn == 0, "The iron pickaxe was spent on rock with the way up in the record: wear " + worn + " | " + report(c));
+        });
+    }
+
+    /**
      * Run m10b/void-4 (seed 20261102): on the surface at the entrance, his plug of the last retreat on the first step of the stairs, no stone
      * pickaxe and no wood to make one, the iron pickaxe whole. The plug is rock: «Свою пробку на лестнице убрать не смог (нет подходящей кирки)»
      * ended the order five times. He takes it out with the iron pickaxe, as he does any rock in his way, and goes on to the ore.
