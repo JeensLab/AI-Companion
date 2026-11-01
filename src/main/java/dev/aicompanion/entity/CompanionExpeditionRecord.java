@@ -3,6 +3,9 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +18,23 @@ final class CompanionExpeditionRecord {
     /** Where the tunnels go on from: the way the new base is walked to, and the stairs' direction there. */
     record Base(Direction direction, List<BlockPos> path) { }
 
+    /** Light a block takes off entirely: rock and soil; the leaves and the glass of a roof take less. */
+    private static final int LIGHT_BLOCKED = 15;
+
     private CompanionExpeditionRecord() { }
+
+    /** Open sky over the cell, the leaves of trees not counted: a jungle's canopy (leaves and branches) shuts the sky light off the whole surface, and the surface under it is not a pit of the mine. */
+    static boolean underSky(LevelReader level, BlockPos pos) {
+        if (level.canSeeSky(pos)) return true;
+        if (!level.hasChunkAt(pos)) return false;
+        BlockPos.MutableBlockPos above = pos.mutable();
+        for (int y = pos.getY(); y < level.getMaxBuildHeight(); y++) {
+            BlockState state = level.getBlockState(above.setY(y));
+            boolean tree = state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS);
+            if (!tree && (state.getLightBlock(level, above) >= LIGHT_BLOCKED || !state.getFluidState().isEmpty())) return false;
+        }
+        return true;
+    }
 
     /** A retreat counts, and the move under way is refused so that the next order takes another one instead of walking into the same trouble. */
     static void rememberMove(CompanionMineSite mine, Direction tunnel, CompanionExpeditionStep plan, BlockPos stand, Direction dir) {

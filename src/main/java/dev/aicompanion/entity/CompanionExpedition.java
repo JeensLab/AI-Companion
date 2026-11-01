@@ -241,7 +241,7 @@ final class CompanionExpedition {
         joining = false;
         // Nothing to dig with and nothing to make a pickaxe of: the walk down his stairs would end at their foot with the climb back.
         // Not in a pit under the ground (a restarted mine's entrance is the pit itself): there the climb for wood is the way, and ending here would repeat for ever.
-        boolean inPit = mine.buried() && !level.canSeeSky(here.above());
+        boolean inPit = mine.buried() && !CompanionExpeditionRecord.underSky(level, here.above());
         if (mine.exists() && !inPit && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH && !hadStone && !dig.spareIron() && !supply.canMakePickaxe()) {
             end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, false) + " Копать нечем, остался наверху.");
             return;
@@ -254,11 +254,11 @@ final class CompanionExpedition {
             route.addAll(mine.stands());
             routeIndex = nearest(here);
             if (routeIndex < 0 && atTunnel(here)) routeIndex = route.size() - 1;
-            if (routeIndex < 0 && !mine.stands().isEmpty() && here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !level.canSeeSky(here.above())) { joining = true; stage = Stage.CHECK_NEAR; return; }
+            if (routeIndex < 0 && !mine.stands().isEmpty() && here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !CompanionExpeditionRecord.underSky(level, here.above())) { joining = true; stage = Stage.CHECK_NEAR; return; }
             if (routeIndex >= 0 || here.distSqr(mine.entrance()) <= FAR_ENTRANCE * FAR_ENTRANCE) { stage = Stage.CHECK_NEAR; return; }
         }
         // Far from the entrance and under the ground with no stairs around: a new mine starts from where he stands, as the surface is no place to choose from.
-        if (mine.exists() && (mine.buried() || here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !level.canSeeSky(here.above()))) { restartHere("Я под землёй, а своей лестницы рядом нет."); return; }
+        if (mine.exists() && (mine.buried() || here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !CompanionExpeditionRecord.underSky(level, here.above()))) { restartHere("Я под землёй, а своей лестницы рядом нет."); return; }
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
         // No spot for a new entrance here (a lake shore): the known mine is the way out, the walk to it ends in a restart at the entrance if it fails.
         if (entrance == null && mine.exists()) { stage = Stage.CHECK_NEAR; return; }
@@ -333,8 +333,13 @@ final class CompanionExpedition {
             case WORKING -> { }
             case DONE -> { dig.flush(); w.mine.plugged(null); }
             case FULL -> end(Ending.BLOCKED, "Сумка полна, свою пробку на лестнице убрать некуда.");
+            case NO_TOOL -> {
+                // The plug is rock like any other: a stone pickaxe made on the spot, else the iron one while it has wear to spare.
+                if (supply.craftStonePickaxe()) return;
+                if (!dig.ironForRock && dig.spareIron()) { dig.ironForRock = true; return; }
+                end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, hadStone) + " Свою пробку на лестнице убрать нечем.");
+            }
             default -> end(Ending.BLOCKED, "Свою пробку на лестнице убрать не смог (" + switch (status) {
-                case NO_TOOL -> "нет подходящей кирки";
                 case NO_HAND -> "не взял кирку в руку";
                 default -> "не вижу её, не дотягиваюсь или не разбирается";
             } + ").");
@@ -499,7 +504,7 @@ final class CompanionExpedition {
         backtrack.reset();
         dig.reset();
         w.mine.restart(at, side);
-        w.mine.buried(!level.canSeeSky(at.above()));
+        w.mine.buried(!CompanionExpeditionRecord.underSky(level, at.above()));
         route = new ArrayList<>(List.of(at));
         routeIndex = index;
         tunnel = null;
