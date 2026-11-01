@@ -66,6 +66,7 @@ public final class CompanionDialogue {
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
             case "enter_portal" -> "Попробую зайти в портал.";
+            case "walk_heading" -> "Веду " + dev.aicompanion.entity.CompanionCourse.where(actions.getFirst().item()) + ". Не отставай.";
             case "wait" -> "Ладно, жду здесь.";
             case "protect" -> "Держись рядом, я прикрою.";
             case "hunt_mobs" -> "Окей, разберусь с монстрами поблизости.";
@@ -144,6 +145,7 @@ public final class CompanionDialogue {
                     + (action.count() == PlannedAction.ALL_CARRIED ? "всё, что есть" : action.count() + " шт.") + ")";
             case "come" -> "подойти к тебе";
             case "enter_portal" -> "зайти в портал";
+            case "walk_heading" -> "провести тебя " + dev.aicompanion.entity.CompanionCourse.where(action.item());
             case "follow" -> "идти за тобой";
             case "wait" -> "подождать";
             case "protect" -> "прикрывать тебя";

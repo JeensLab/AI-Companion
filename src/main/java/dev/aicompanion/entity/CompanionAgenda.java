@@ -63,7 +63,7 @@ public final class CompanionAgenda {
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
     /** A request of only these (follow, stay, guard…) holds the goal until the player says to go on. */
-    public static final Set<String> MODES = Set.of("follow", "wait", "come", "protect", "stop_protect", "stop", "wander", "enter_portal");
+    public static final Set<String> MODES = Set.of("follow", "wait", "come", "walk_heading", "protect", "stop_protect", "stop", "wander", "enter_portal");
     private static final Map<UUID, Integer> LEASES = new ConcurrentHashMap<>();
     private static final Map<UUID, Boolean> REQUESTS = new ConcurrentHashMap<>();
     private static final Map<UUID, Run> RUNS = new HashMap<>();

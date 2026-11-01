@@ -66,6 +66,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
 | Раскладка по сундукам (`sort_chests`) | `entity/CompanionSorting.java` (набор, ходки, несомое для игрока), `CompanionSortGroups.java` (группы и «куда что»); тесты `gametest/CompanionSorting*Tests.java`, `CompanionStoreGroupsTests.java` |
 | Загон и разведение животных | `entity/CompanionPen.java` (забор с калиткой вокруг животных), `CompanionBreeding.java` (кормление пар); тесты `gametest/CompanionPenTests.java` |
+| Путь по стороне света (`walk_heading`, «веди на северо-восток») | `entity/CompanionCourse.java` (точки на линии курса, лава и широкая вода, ожидание игрока, цель пути), фразы — `client/CompanionHeadingCommands.java`; тесты `gametest/CompanionCourseTests.java` |
 | Грядки, посадка и урожай | `entity/CompanionFarming.java` (поле у воды, мотыга, семена, посадка, сбор), `CompanionCrops.java` (культуры); тесты `gametest/CompanionFarmTests.java` |
 | Сохранение, бой, питание и плавание | `entity/CompanionEntityNbt.java`, `CompanionCombat.java`, `CompanionEating.java`, `CompanionSwimming.java` |
 | Лук в бою: натяжение, стрелы из сумки, линия огня | `entity/CompanionArchery.java`; тесты `gametest/CompanionBowTests.java` |

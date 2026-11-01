@@ -169,7 +169,7 @@ public final class CompanionAutonomy {
         if (deed != null) drop("player_order:" + action);
         boolean wasHeld = held;
         held = switch (action) {
-            case "stop", "wait", "follow", "come", "protect", "wander", "enter_portal" -> true;
+            case "stop", "wait", "follow", "come", "walk_heading", "protect", "wander", "enter_portal" -> true;
             default -> false;
         };
         halted = stopped = held && ("stop".equals(action) || "wait".equals(action));
