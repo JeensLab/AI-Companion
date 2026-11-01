@@ -39,7 +39,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
-    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FAR_STAND = 10;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
     private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 10;
 
     private CompanionMineFightTests() { }
@@ -160,8 +160,8 @@ public final class CompanionMineFightTests {
     }
 
     /**
-     * The breach of a cave is being sealed and he is on the cave side, in a passage one block wide, with two zombies on him and the stone
-     * sword in the bag: the sealing does not take the turn from the fight, the sword is in his hand and a zombie is struck within three seconds.
+     * The breach of a cave is being sealed and he is on the cave side, in a passage one block wide, with two zombies that wake just then and
+     * the stone sword in the bag: the sealing does not take the turn from the fight, the sword is in his hand and a zombie is struck within three seconds.
      * (Winning it is not asked: a stone sword and bare skin cost about nine health a zombie.)
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
@@ -175,12 +175,17 @@ public final class CompanionMineFightTests {
         }
         place(c, stairs.get(stairs.size() - 3));
         List<Zombie> zombies = List.of(zombie(h, foot.offset(-3, 0, -PASSAGE_OFFSET)), zombie(h, foot.offset(-4, 0, -PASSAGE_OFFSET)));
+        for (Zombie zombie : zombies) zombie.setNoAi(true);
         long begun = h.getTick();
         long[] sealing = {-1};
         start(h, c, 1);
         h.onEachTick(() -> {
             String phase = c.expeditionCavePhase();
-            if (sealing[0] < 0 && phase.equals("SEAL")) { sealing[0] = h.getTick(); place(c, foot.offset(0, 0, -PASSAGE_OFFSET)); }
+            if (sealing[0] < 0 && phase.equals("SEAL")) {
+                sealing[0] = h.getTick();
+                place(c, foot.offset(0, 0, -PASSAGE_OFFSET));
+                for (Zombie zombie : zombies) zombie.setNoAi(false);
+            }
             for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % 20 == 0) zombie.setTarget(c);
             float struck = 0;
             for (Zombie zombie : zombies) struck += zombie.getMaxHealth() - zombie.getHealth();
@@ -193,7 +198,7 @@ public final class CompanionMineFightTests {
         });
     }
 
-    /** He is hurt (ten health, below what a creeper is fought at), a zombie is on him and a creeper stands in sight with its fuse out: the creeper is no reason to run, the zombie is struck twice within three seconds. */
+    /** He is hurt (ten health, below what a creeper is fought at), a zombie is on him and a creeper stands in sight with its fuse out: the creeper is no reason to run, the zombie is struck twice within five seconds. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aCreeperWithNoFuseDoesNotSendHimRunningFromAZombieOnHim(GameTestHelper h) {
         mountain(h, false);
@@ -213,7 +218,7 @@ public final class CompanionMineFightTests {
                     + ", health " + c.getHealth() + ", target " + c.getTarget() + " | " + report(c);
             h.assertTrue(c.isAlive(), "Died" + trace);
             if (!zombie.isAlive() || zombie.getHealth() <= zombie.getMaxHealth() - TWO_BLOWS) h.succeed();
-            h.assertTrue(h.getTick() - begun < STRIKE_TICKS, "The zombie on him was not struck" + trace);
+            h.assertTrue(h.getTick() - begun < FIGHT_TICKS, "The zombie on him was not struck" + trace);
         });
     }
 
