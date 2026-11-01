@@ -202,7 +202,8 @@ final class CompanionLoot {
     /** The pickup shares the melee goal's priority: once it runs it keeps him walking after a drop while the foe he is fighting strikes. */
     private boolean foeOnHim() {
         LivingEntity foe = owner.getTarget();
-        return foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR && !owner.work.expedition.shuns(foe);
+        if (foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR && !owner.work.expedition.shuns(foe)) return true;
+        return owner.level() instanceof ServerLevel level && owner.combat.footwork.onHim(level);
     }
     void tickChase() {
         if (!(owner.level() instanceof ServerLevel level)) return;

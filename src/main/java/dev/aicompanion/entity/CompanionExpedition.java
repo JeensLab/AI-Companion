@@ -230,7 +230,11 @@ final class CompanionExpedition {
 
     void fightBegan() { if (active) fight.began(); }
 
-    void fightGoing() { if (active) fight.going(); }
+    void fightGoing() {
+        if (!active) return;
+        fight.going();
+        CompanionChunkTicket.follow(owner);
+    }
 
     private int gained() { return w.items.countCarried(Items.DIAMOND) - startDiamonds; }
 
