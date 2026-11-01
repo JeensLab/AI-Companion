@@ -8,7 +8,10 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Skeleton;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -40,7 +43,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
-    private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 10;
+    private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 9, HALF = 10;
 
     private CompanionMineFightTests() { }
 
@@ -222,6 +225,32 @@ public final class CompanionMineFightTests {
         });
     }
 
+    /** Two zombies are on him at once and a skeleton shoots from afar, the stone sword is all he has: all three die and he is never brought below half his health (the blows he strikes throw a foe back, as a player's running blow does). */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void twoZombiesOnHimAndASkeletonAreKilledAndHeLives(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = chamber(h, stairs);
+        place(c, foot.offset(OPEN_CAVE_STAND, 0, 0));
+        List<Mob> foes = List.of(zombie(h, foot.offset(OPEN_CAVE_STAND + 1, 0, 0)), zombie(h, foot.offset(OPEN_CAVE_STAND, 0, 1)), skeleton(h, foot.offset(CHAMBER_REACH - 1, 0, 0)));
+        long begun = h.getTick();
+        float[] lowest = {c.getMaxHealth()};
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            lowest[0] = Math.min(lowest[0], c.getHealth());
+            for (Mob foe : foes) if (foe.isAlive() && foe.getTarget() == null) foe.setTarget(c);
+            String trace = " | foes alive " + foes.stream().filter(Mob::isAlive).count() + ", lowest health " + lowest[0] + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + ", target " + c.getTarget() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (foes.stream().noneMatch(Mob::isAlive)) {
+                h.assertTrue(lowest[0] >= HALF, "He was brought below half his health" + trace);
+                h.succeed();
+            }
+            h.assertTrue(h.getTick() - begun < KILL_TICKS, "The foes were not all killed in time" + trace);
+        });
+    }
+
     private static CompanionEntity armed(GameTestHelper h) {
         CompanionEntity c = rig(h);
         c.setItem(6, new ItemStack(Items.STONE_SWORD));
@@ -252,5 +281,13 @@ public final class CompanionMineFightTests {
         zombie.setPersistenceRequired();
         zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
         return zombie;
+    }
+
+    private static Skeleton skeleton(GameTestHelper h, BlockPos at) {
+        Skeleton skeleton = h.spawn(EntityType.SKELETON, rel(h, at));
+        skeleton.setPersistenceRequired();
+        skeleton.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        skeleton.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
+        return skeleton;
     }
 }

@@ -433,7 +433,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 .add(Attributes.MOVEMENT_SPEED, 0.316D)
                 .add(Attributes.FOLLOW_RANGE, 128.0D)
                 .add(Attributes.ATTACK_DAMAGE, 1.0D)
-                .add(Attributes.ATTACK_KNOCKBACK, 0.0D)
+                .add(Attributes.ATTACK_KNOCKBACK, 1.0D)
                 .build());
     }
 
