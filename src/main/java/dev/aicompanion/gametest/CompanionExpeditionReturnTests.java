@@ -38,7 +38,8 @@ public final class CompanionExpeditionReturnTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
     private static final int RING_FROM = 21, NO_RING = 99, SURFACE = GROUND + 1, NEAR = 6, SCAN_EVERY = 5;
     private static final int WORN_USES_LEFT = 45, TUNNEL_CELLS = 3, RELOAD_TIMEOUT = 12000, TUNNEL_HEAD = DIAMOND_FEET + 1;
-    private static final String CLIMBED = "поднялся за припасами";
+    private static final int IRON_USES_LEFT = 30;
+    private static final String CLIMBED = "поднялся за припасами", NOTHING_TO_DIG = "Копать нечем, остался наверху";
 
     private record Rig(CompanionEntity c, ServerPlayer owner) { }
 
@@ -72,6 +73,35 @@ public final class CompanionExpeditionReturnTests {
             h.assertTrue(count(c, Items.STONE_PICKAXE) == 0, "A stone pickaxe is left, the run did not exhaust it: " + report(c));
             h.assertTrue(count(c, Items.IRON_PICKAXE) == 1 && damage(c, Items.IRON_PICKAXE) <= 2, "Iron pickaxe used on stone, damage " + damage(c, Items.IRON_PICKAXE));
             h.assertTrue(tallestAirColumn(h) <= 4, "A vertical shaft instead of the staircase: " + tallestAirColumn(h));
+        });
+    }
+
+    /** Back on the surface with no stone pickaxe, no wood and an iron one with no wear to spare, an order to dig again ends there at once: the walk down would only end in the climb back. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void staysAboveWhenHeHasNothingToDigWithAfterTheClimb(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(16));
+        CompanionEntity c = r.c();
+        ItemStack worn = new ItemStack(Items.STONE_PICKAXE);
+        worn.setDamageValue(worn.getMaxDamage() - WORN_USES_LEFT);
+        c.setItemSlot(EquipmentSlot.MAINHAND, worn);
+        ItemStack ironLeft = new ItemStack(Items.IRON_PICKAXE);
+        ironLeft.setDamageValue(ironLeft.getMaxDamage() - IRON_USES_LEFT);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, ironLeft);
+        long first = start(h, c, 1);
+        long[] second = {-1};
+        h.onEachTick(() -> {
+            CompanionActionResult result = c.workResult(first);
+            if (second[0] >= 0 || result == null || !result.message().contains(CLIMBED) || c.isGatheringTask() || c.isWorking()) return;
+            // Picking up his drops took him back down the stairs: the order is given at the entrance, where the climb left him.
+            BlockPos entrance = h.absolutePos(new BlockPos(CENTER, SURFACE, CENTER));
+            c.teleportTo(entrance.getX() + 0.5, entrance.getY(), entrance.getZ() + 0.5);
+            second[0] = start(h, c, 1);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(second[0] >= 0, "The first order did not end with the climb: " + report(c));
+            CompanionActionResult result = ended(h, c, second[0]);
+            h.assertTrue(result.message().contains(NOTHING_TO_DIG), "Result does not say he stayed above with nothing to dig with: " + result);
         });
     }
 

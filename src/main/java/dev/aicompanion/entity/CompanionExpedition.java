@@ -232,6 +232,11 @@ final class CompanionExpedition {
         CompanionMineSite mine = w.mine;
         BlockPos here = owner.blockPosition();
         joining = false;
+        // Nothing to dig with and nothing to make a pickaxe of: the walk down his stairs would end at their foot with the climb back.
+        if (mine.exists() && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH && !hadStone && !dig.spareIron() && !supply.canMakePickaxe()) {
+            end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, false) + " Копать нечем, остался наверху.");
+            return;
+        }
         if (mine.exists()) {
             mine.verify(level, here);
             int shunned = mine.firstShunned();
