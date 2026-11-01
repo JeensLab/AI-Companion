@@ -10,6 +10,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Skeleton;
 import net.minecraft.world.entity.monster.Zombie;
@@ -45,7 +46,8 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 public final class CompanionMineFightTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
     private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 9, HALF = 10;
-    private static final double THROWN = 0.6;
+    private static final double THROWN = 0.6, REACHED = 3;
+    private static final int DROP_REACH = 10, PICKUP_UNDER_WAY = 8;
 
     private CompanionMineFightTests() { }
 
@@ -250,6 +252,74 @@ public final class CompanionMineFightTests {
                 h.succeed();
             }
             h.assertTrue(h.getTick() - begun < KILL_TICKS, "The foes were not all killed in time" + trace);
+        });
+    }
+
+    /**
+     * He is after a skeleton far across the chamber (it cannot shoot or come: no bow, no legs) and a zombie on his back strikes him: the zombie is
+     * struck down before he has reached the skeleton, and he is not brought below half his health. A foe that is on him is not left for one that is not.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aZombieOnHimIsKilledBeforeTheFarFoeHeIsAfterIsReached(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(1, 0, 0));
+        Zombie zombie = zombie(h, foot);
+        Skeleton skeleton = skeleton(h, foot.offset(CHAMBER_REACH, 0, 0));
+        skeleton.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        skeleton.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        skeleton.setTarget(c);
+        long begun = h.getTick();
+        float[] lowest = {c.getMaxHealth()};
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            lowest[0] = Math.min(lowest[0], c.getHealth());
+            if (h.getTick() == begun + 1) c.setTarget(skeleton);
+            if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            String trace = " | zombie " + (zombie.isAlive() ? "health " + zombie.getHealth() + " at " + String.format("%.1f", Math.sqrt(c.distanceToSqr(zombie))) : "dead") + ", skeleton at "
+                    + String.format("%.1f", Math.sqrt(c.distanceToSqr(skeleton))) + ", lowest health " + lowest[0] + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + ", target " + c.getTarget() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (!zombie.isAlive()) {
+                h.assertTrue(lowest[0] > HALF, "He was brought to half his health or below" + trace);
+                h.succeed();
+                return;
+            }
+            h.assertTrue(c.distanceToSqr(skeleton) > REACHED * REACHED, "He reached the far foe with the zombie on him alive" + trace);
+            h.assertTrue(h.getTick() - begun < KILL_TICKS, "The zombie on him was not killed in time" + trace);
+        });
+    }
+
+    /** The pickup of a drop ten blocks off is under way when a zombie wakes on him: the zombie is struck first, the pickup waits (it shares the melee goal's priority and would hold him walking while the zombie strikes). */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aZombieOnHimIsStruckBeforeADropIsPickedUp(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(1, 0, 0));
+        Zombie zombie = zombie(h, foot);
+        zombie.setCanPickUpLoot(false);
+        zombie.setNoAi(true);
+        BlockPos at = foot.offset(DROP_REACH, 0, 0);
+        ItemEntity drop = new ItemEntity(h.getLevel(), at.getX() + .5, at.getY(), at.getZ() + .5, new ItemStack(Items.COBBLESTONE));
+        drop.setDeltaMovement(Vec3.ZERO);
+        drop.setNoPickUpDelay();
+        h.getLevel().addFreshEntity(drop);
+        c.claimDrops(List.of(drop));
+        long begun = h.getTick();
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            if (h.getTick() == begun + PICKUP_UNDER_WAY) { zombie.setNoAi(false); zombie.setTarget(c); c.setTarget(zombie); }
+            String trace = " | zombie health " + zombie.getHealth() + ", drop " + (drop.isAlive() ? "lies" : "taken") + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth()
+                    + ", target " + c.getTarget() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (zombie.getHealth() < zombie.getMaxHealth()) {
+                h.assertTrue(drop.isAlive(), "The drop was picked up before the zombie on him was struck" + trace);
+                h.succeed();
+                return;
+            }
+            h.assertTrue(h.getTick() - begun < FIGHT_TICKS, "The zombie on him was not struck" + trace);
         });
     }
 
