@@ -202,7 +202,8 @@ public final class CompanionDiamondGoalFlowTests {
         CompletableFuture<?>[] order = {null};
         int[] tunnelBefore = {0}, highest = {0};
         BlockPos[] entrance = {null};
-        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time, order " + (order[0] == null ? "never given" : order[0].isDone() ? "done" : "running") + " | " + report(h, r)));
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time, order " + (order[0] == null ? "never given" : order[0].isDone() ? "done" : "running") + ", tossed " + tossed(h, r) + ", highest " + highest[0]
+                + ", tunnels " + c.mineSite().tunnels().size() + ", advanced " + advanced(c) + " (before " + tunnelBefore[0] + "), same entrance " + (entrance[0] != null && entrance[0].equals(c.mineSite().entrance())) + " | " + report(h, r)));
         h.onEachTick(() -> {
             h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(h, r));
             if (order[0] == null) {
@@ -217,13 +218,19 @@ public final class CompanionDiamondGoalFlowTests {
         h.succeedWhen(() -> {
             h.assertTrue(order[0] != null && order[0].isDone(), "The bread order is not finished");
             h.assertTrue(highest[0] >= GROUND, "He gave the bread without climbing, highest point " + highest[0] + " | " + report(h, r));
-            int tossed = 0;
-            for (ItemEntity item : h.getLevel().getEntitiesOfClass(ItemEntity.class, r.p().getBoundingBox().inflate(8))) if (item.getItem().is(Items.BREAD)) tossed += item.getItem().getCount();
-            for (int i = 0; i < r.p().getInventory().getContainerSize(); i++) if (r.p().getInventory().getItem(i).is(Items.BREAD)) tossed += r.p().getInventory().getItem(i).getCount();
+            int tossed = tossed(h, r);
             h.assertTrue(tossed == BREAD_GIVEN, "The bread that reached the player: " + tossed + " | " + report(h, r));
             h.assertTrue(state(h, r) == CompanionAgenda.State.COMPLETED && count(c, Items.DIAMOND) >= DIAMONDS, "The goal did not go on after the hand-over | " + report(h, r));
             h.assertTrue(entrance[0].equals(c.mineSite().entrance()) && c.mineSite().tunnels().size() == 1 && advanced(c) >= tunnelBefore[0], "Not the same tunnel | " + report(h, r));
         });
+    }
+
+    /** The bread that lies near the player or is in his bag. */
+    private static int tossed(GameTestHelper h, Rig r) {
+        int tossed = 0;
+        for (ItemEntity item : h.getLevel().getEntitiesOfClass(ItemEntity.class, r.p().getBoundingBox().inflate(8))) if (item.getItem().is(Items.BREAD)) tossed += item.getItem().getCount();
+        for (int i = 0; i < r.p().getInventory().getContainerSize(); i++) if (r.p().getInventory().getItem(i).is(Items.BREAD)) tossed += r.p().getInventory().getItem(i).getCount();
+        return tossed;
     }
 
     /** He dies in the tunnel: his things fall tagged as the owner's, another Oleg comes back and picks them up, and the goal is neither lost nor blocked. */
