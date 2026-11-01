@@ -45,6 +45,8 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineStopsTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2, PIT_STEP = 8, POCKET_TIMEOUT = 24000;
+    /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
+    private static final int FAR_TREE_AT = 3;
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200;
 
     private CompanionMineStopsTests() { }
@@ -84,13 +86,29 @@ public final class CompanionMineStopsTests {
      */
     @GameTest(template = "marathon_cave", batch = "mine_stops_pit", timeoutTicks = POCKET_TIMEOUT)
     public static void goesUpFromAPitForWoodWhenThereIsNoPickaxe(GameTestHelper h) {
+        pitWithoutPickaxe(h, new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}}, 1, false);
+    }
+
+    /**
+     * The same, but the only trees are a long walk from the entrance, beyond the search range of sixteen blocks (run f10e, seed 7741901: no
+     * wood in range, the goal stopped five times with «копать нечем»). A goal's wood for a pickaxe is looked for farther; he walks there,
+     * chops a real trunk, makes the pickaxe and the goal goes on to the diamond. No sticks in the bag either.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_pit", timeoutTicks = POCKET_TIMEOUT)
+    public static void walksFarForWoodWhenNoTreeIsNearAndThereIsNoPickaxe(GameTestHelper h) {
+        pitWithoutPickaxe(h, new int[][]{{FAR_TREE_AT, FAR_TREE_AT}, {FAR_TREE_AT + 2, FAR_TREE_AT}, {FAR_TREE_AT, FAR_TREE_AT + 2}}, 0, true);
+    }
+
+    private static void pitWithoutPickaxe(GameTestHelper h, int[][] trunks, int sticks, boolean chopped) {
         mountain(h, true);
-        for (int[] trunk : new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}}) for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
+        List<BlockPos> cut = new java.util.ArrayList<>();
+        for (int[] trunk : trunks) for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
+        for (int[] trunk : trunks) cut.add(h.absolutePos(new BlockPos(trunk[0], GROUND + 1, trunk[1])));
         CompanionEntity c = h.spawn(dev.aicompanion.AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
         ItemStack worn = new ItemStack(Items.IRON_PICKAXE);
         worn.setDamageValue(worn.getMaxDamage() - 4);
         ItemStack[] bag = {worn, new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32), new ItemStack(Items.COBBLESTONE, 46),
-                new ItemStack(Items.STICK), new ItemStack(Items.CRAFTING_TABLE)};
+                new ItemStack(Items.STICK, sticks), new ItemStack(Items.CRAFTING_TABLE)};
         for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
         CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.bind(h, c, 3);
         BlockPos pit = carveMine(h, c, 0).get(PIT_STEP);
@@ -112,6 +130,8 @@ public final class CompanionMineStopsTests {
             }
             h.assertTrue(CompanionDiamondGoalTests.state(h, r) == CompanionAgenda.State.COMPLETED && count(c, Items.DIAMOND) >= 1,
                     "No diamond from the pit: " + CompanionDiamondGoalTests.report(h, r));
+            if (chopped) h.assertTrue(cut.stream().anyMatch(log -> !h.getLevel().getBlockState(log).is(Blocks.OAK_LOG)),
+                    "No trunk of the far trees was chopped: " + CompanionDiamondGoalTests.report(h, r));
         });
     }
 

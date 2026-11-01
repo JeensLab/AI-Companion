@@ -288,7 +288,8 @@ final class CompanionOreMining {
     private boolean safeOreSwing(ServerLevel level, BlockPos pos) {
         if (blockedOreCell(level, pos)) { w.oreUnreachable++; rejectOre(); return false; }
         if (CompanionLighting.supportsLight(level, pos)) { blockOreCell(level, pos, "path_light"); return false; }
-        if (!w.owner.autonomy().running() && !w.owner.autonomy().protectsReturn()) return true;
+        // A tunnel he came down by is his way up whoever gave the order: its steps are left in a player's or a goal's order too.
+        if (w.oreExit == null && !w.owner.autonomy().running() && !w.owner.autonomy().protectsReturn()) return true;
         if (CompanionMiningNavigation.supportsLivingEntity(w.owner, pos)) {
             w.breaking.reset();
             if (level.getGameTime() - w.lastProgressTick > 160) { blockOreCell(level, pos, "occupied_support"); return false; }
@@ -307,6 +308,8 @@ final class CompanionOreMining {
         return true;
     }
     private boolean blockedOreCell(ServerLevel level, BlockPos pos) {
+        // The floor of a step of his own mine is no cell for a tunnel: dug out, it leaves the way up with a hole.
+        if (w.mine.carriesStand(pos)) return true;
         BlockState blocked = w.oreBlockedCells.get(pos);
         if (blocked == null) return false;
         if (blocked.equals(level.getBlockState(pos))) return true;

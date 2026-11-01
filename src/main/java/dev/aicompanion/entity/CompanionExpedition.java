@@ -236,6 +236,11 @@ final class CompanionExpedition {
         CompanionMineSite mine = w.mine;
         BlockPos here = owner.blockPosition();
         joining = false;
+        // Nothing to dig with and nothing to make a pickaxe of: the walk down his stairs would end at their foot with the climb back.
+        if (mine.exists() && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH && !hadStone && !dig.spareIron() && !supply.canMakePickaxe()) {
+            end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, false) + " Копать нечем, остался наверху.");
+            return;
+        }
         if (mine.exists()) {
             mine.verify(level, here);
             int shunned = mine.firstShunned();
@@ -492,8 +497,9 @@ final class CompanionExpedition {
             case NO_TOOL -> {
                 plan = null;
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
-                // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up.
-                if (!dig.lackedOre && !dig.ironForRock && w.mine.buried() && dig.spareIron()) { dig.ironForRock = true; return; }
+                // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up,
+                // and a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use.
+                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() || !hadStone) && dig.spareIron()) { dig.ironForRock = true; return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
                 ServerLevel level = (ServerLevel) owner.level();
                 if (!dig.lackedOre && !towardOrigin && w.mine.buried() && CompanionExpeditionRecord.originSide(level, w.mine) != null) {

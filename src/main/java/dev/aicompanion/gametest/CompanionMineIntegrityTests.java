@@ -35,7 +35,8 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineIntegrityTests {
-    private static final int TURN_AT = 6, FLOOR_CUT_A = 4, FLOOR_CUT_B = 7, STANDS_ABOVE_FOOT = 3, ORE_WAIT_TICKS = 300, LOCATE_TICKS = 200, CHAMBER_STAND = 6, CHAMBER_LENGTH = 3;
+    private static final int TURN_AT = 6, FLOOR_CUT_A = 4, FLOOR_CUT_B = 7, STANDS_ABOVE_FOOT = 3, ORE_WAIT_TICKS = 300, LOCATE_TICKS = 200, CHAMBER_STAND = 6, CHAMBER_LENGTH = 3,
+            COAL_BESIDE = -1, COAL_BELOW = -4, COAL_BEHIND = 1, FIRST_STEPS = 4;
 
     private CompanionMineIntegrityTests() { }
 
@@ -123,6 +124,26 @@ public final class CompanionMineIntegrityTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not get out of the chamber at " + rel(h, inside).toShortString() + ": " + report(c));
+        });
+    }
+
+    /** Coal fetched for torches beside the top of his stairs is tunnelled to from a step: the tunnel never goes through the floor of another step. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aCoalTunnelAtTheEntranceLeavesTheFloorsOfHisFirstSteps(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        h.getLevel().setBlock(entrance.offset(COAL_BESIDE, COAL_BELOW, COAL_BEHIND), Blocks.COAL_ORE.defaultBlockState(), 2 | 16);
+        h.assertTrue(c.startWork("mine_ore", "minecraft:coal_ore", 1).success(), "Coal order not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.onEachTick(() -> {
+            for (BlockPos stand : stairs.subList(0, FIRST_STEPS)) {
+                h.assertTrue(!h.getLevel().getBlockState(stand.below()).isAir(), "The floor of the step at " + rel(h, stand).toShortString() + " was dug out | " + report(c));
+            }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isGatheringTask() && !c.isWorking() && c.workResult(id) != null, "Work still going: " + report(c));
         });
     }
 }

@@ -88,6 +88,24 @@ public final class CompanionOreTests {
         });
     }
 
+    /**
+     * Run f10e (seed 7741901): the tunnel to a coal vein ended in the vein itself, and the ore under his feet was mined like the rest, one
+     * block deeper each time, until the way up was a shaft. The steps he came down by are left; he may take less than he was asked for,
+     * but he walks back up.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void veinUnderTheTunnelEndDoesNotCutTheWayUp(GameTestHelper h) {
+        CompanionEntity companion = buried(h);
+        for (int x = 16; x <= 17; x++) for (int z = 23; z <= 24; z++) for (int y = 1; y <= 3; y++) h.setBlock(new BlockPos(x, y, z), Blocks.COAL_ORE);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:coal_ore", 12).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(count(companion, Items.COAL) >= 3, "Hardly any coal: " + report(companion));
+            h.assertTrue(companion.getY() >= h.absolutePos(new BlockPos(0, SURFACE, 0)).getY() - .01, "Did not climb back out: " + companion.position() + " | " + report(companion));
+        });
+    }
+
     /** Lava right behind the ore: it is not dug, the reason is said, nothing spills. */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
     public static void oreNextToLavaIsLeftAlone(GameTestHelper h) {

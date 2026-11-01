@@ -7,7 +7,7 @@ import net.minecraft.world.item.Items;
 
 /** What the expedition makes of its own bag on the spot, so that a missing tool is no reason to climb to the surface. */
 final class CompanionExpeditionSupply {
-    private static final int MAX_PICKAXES = 4, MAX_SWORDS = 2, SWORD_STONE = 2, PICKAXE_STONE = 3, SWORD_STICKS = 1, PICKAXE_STICKS = 2;
+    private static final int MAX_PICKAXES = 4, MAX_SWORDS = 2, SWORD_STONE = 2, PICKAXE_STONE = 3, SWORD_STICKS = 1, PICKAXE_STICKS = 2, BENCH_PLANKS = 4;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -29,6 +29,14 @@ final class CompanionExpeditionSupply {
         if (pickaxes >= MAX_PICKAXES) return false;
         pickaxes++;
         return craft("minecraft:stone_pickaxe");
+    }
+
+    /** Stone, wood for the sticks and a bench (carried, or made of the wood) are in the bag: a stone pickaxe can be made on the spot. */
+    boolean canMakePickaxe() {
+        int planks = CompanionTools.count(owner, ItemTags.PLANKS), logs = CompanionTools.count(owner, ItemTags.LOGS);
+        boolean wood = w.items.countCarried(Items.STICK) >= PICKAXE_STICKS || planks >= PICKAXE_STICKS || logs > 0;
+        boolean bench = w.items.countCarried(Items.CRAFTING_TABLE) > 0 || planks >= BENCH_PLANKS || logs > 0;
+        return wood && bench && CompanionTools.count(owner, ItemTags.STONE_TOOL_MATERIALS) >= PICKAXE_STONE;
     }
 
     /** The stone pickaxe in hand, and the stone and sticks of a sword and a pickaxe to spare: the sword must never eat what the pickaxe is to be made of. */
