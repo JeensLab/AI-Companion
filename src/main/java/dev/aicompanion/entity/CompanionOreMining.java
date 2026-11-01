@@ -307,6 +307,8 @@ final class CompanionOreMining {
         return true;
     }
     private boolean blockedOreCell(ServerLevel level, BlockPos pos) {
+        // The floor of a step of his own mine is no cell for a tunnel: dug out, it leaves the way up with a hole.
+        if (w.mine.carriesStand(pos)) return true;
         BlockState blocked = w.oreBlockedCells.get(pos);
         if (blocked == null) return false;
         if (blocked.equals(level.getBlockState(pos))) return true;
