@@ -237,7 +237,9 @@ final class CompanionExpedition {
         BlockPos here = owner.blockPosition();
         joining = false;
         // Nothing to dig with and nothing to make a pickaxe of: the walk down his stairs would end at their foot with the climb back.
-        if (mine.exists() && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH && !hadStone && !dig.spareIron() && !supply.canMakePickaxe()) {
+        // Not in a pit under the ground (a restarted mine's entrance is the pit itself): there the climb for wood is the way, and ending here would repeat for ever.
+        boolean inPit = mine.buried() && !level.canSeeSky(here.above());
+        if (mine.exists() && !inPit && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH && !hadStone && !dig.spareIron() && !supply.canMakePickaxe()) {
             end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, false) + " Копать нечем, остался наверху.");
             return;
         }
