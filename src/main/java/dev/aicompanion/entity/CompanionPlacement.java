@@ -132,6 +132,15 @@ final class CompanionPlacement {
         }
         return false;
     }
+    /** A bench in plain sight within the walk is remembered like one stood next to: the plan walks to it instead of hunting a tree for a new one. */
+    boolean seesCraftingTableWithin(int blocks) {
+        BlockPos origin = c.blockPosition();
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-blocks, -3, -blocks), origin.offset(blocks, 3, blocks))) {
+            if (pos.distSqr(origin) > (double) blocks * blocks || !c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(Blocks.CRAFTING_TABLE)) continue;
+            if (seesBlock(c.getEyePosition(), pos)) { c.rememberObserved(pos.immutable()); return true; }
+        }
+        return false;
+    }
     private boolean seesBlock(Vec3 eye, BlockPos pos) { return seesBlock(c, eye, pos); }
 
     /** Like a player: a bench or chest is usable when any face turned to the eye can be looked at, not only its exact centre. */
