@@ -50,6 +50,8 @@ public final class CompanionMineStopsTests {
     private static final int FAR_TREE_AT = 3;
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
+    /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
+    private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, DIAMOND_AT = 6;
 
     private CompanionMineStopsTests() { }
 
@@ -427,6 +429,77 @@ public final class CompanionMineStopsTests {
             CompanionActionResult second = ended(h, c, id[1]);
             h.assertTrue(second.success() && count(c, Items.DIAMOND) >= 1, "No diamond with a pickaxe from the surface: " + second.message() + " | " + report(c));
         });
+    }
+
+    /**
+     * Run m9a/mobs (seed 20261031): the pit he stood in had lost its stairs from the record (the cells above it began a hundred blocks off) and a
+     * plug of his own closed the stairs over him; the climb pushed at the far cell in a straight line and said «застрял на ходу» five times.
+     * He walks the gap by a search, takes the plug out with the iron pickaxe that has wear left, and really reaches the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsPastAGapInTheRecordAndTakesOutHisOwnPlug(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, wornIron(IRON_LEFT));
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(GAP_AT);
+        for (BlockPos stand : stairs.subList(GAP_AT + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
+        c.mineSite().truncate(KNOWN_STANDS);
+        for (BlockPos cell : List.of(stairs.get(PLUG_AT), stairs.get(PLUG_AT).above())) {
+            h.getLevel().setBlock(cell, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+            c.mineSite().sealed(cell);
+        }
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        spendRestartsOnTheStairs(h, c, here);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY() - SURFACE_MARGIN;
+        long[] id = {0};
+        int[] heightWhenEnded = {Integer.MIN_VALUE};
+        h.onEachTick(() -> {
+            if (id[0] != 0 && heightWhenEnded[0] == Integer.MIN_VALUE && c.workResult(id[0]) != null) heightWhenEnded[0] = c.getBlockY();
+        });
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(heightWhenEnded[0] >= surface, "He said «" + result.message() + "» at height " + heightWhenEnded[0] + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(!h.getLevel().getBlockState(stairs.get(PLUG_AT)).is(Blocks.COBBLESTONE), "His plug on the stairs is still there | " + report(c));
+        });
+    }
+
+    /**
+     * Run m8b/mobs (seed 20261102): the iron pickaxe worn to its reserve of sixty, no stone pickaxe and no sticks, and a diamond lying open a few
+     * blocks off behind the rock. The reserve is for ore, and this is the ore: he digs the rock with the last wear instead of going up.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void spendsTheIronPickaxeOnRockForADiamondInSight(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, wornIron(IRON_LEFT));
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        carveMine(h, c, TUNNEL_START);
+        BlockPos foot = c.mineSite().foot();
+        BlockPos diamond = foot.relative(Direction.WEST, DIAMOND_AT);
+        h.getLevel().setBlock(diamond, Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
+        for (BlockPos open : List.of(diamond.west(), diamond.west().above(), diamond.west(2), diamond.west(2).above())) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
+        BlockPos end = foot.relative(Direction.WEST, TUNNEL_START);
+        c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He went up from a diamond in sight with the iron pickaxe in the bag: " + result.message() + " | " + report(c));
+        });
+    }
+
+    private static ItemStack wornIron(int left) {
+        ItemStack iron = new ItemStack(Items.IRON_PICKAXE);
+        iron.setDamageValue(iron.getMaxDamage() - left);
+        return iron;
     }
 
     /**

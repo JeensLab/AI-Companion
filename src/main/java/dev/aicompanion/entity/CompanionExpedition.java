@@ -28,6 +28,8 @@ final class CompanionExpedition {
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
     private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120, MAX_FRESH = 2;
     static final int UNDERGROUND_DEPTH = 2;
+    /** Wear of the iron pickaxe kept for the diamond itself, and how near a diamond in sight must be to spend the rest on rock. */
+    private static final int DIAMOND_IRON = 4, DIAMOND_SIGHT = 8;
     private static final double ENTRANCE_NEAR = 1.0;
     private static final String CAVE_DANGER = "в пещере слишком опасно";
 
@@ -563,6 +565,8 @@ final class CompanionExpedition {
                 // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up,
                 // and a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use.
                 if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() || !hadStone) && dig.spareIron()) { dig.ironForRock = true; return; }
+                // A diamond in sight is worth the last wear of the iron pickaxe: the wear kept for ore is for this very ore, and the way up needs none.
+                if (!dig.lackedOre && !dig.ironForRock && dig.ironLeft(DIAMOND_IRON) && dig.diamondInSight((ServerLevel) owner.level(), DIAMOND_SIGHT)) { dig.ironForRock(DIAMOND_IRON); return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
                 ServerLevel level = (ServerLevel) owner.level();
                 if (!dig.lackedOre && !towardOrigin && w.mine.buried() && originNear() && CompanionExpeditionRecord.originSide(level, w.mine) != null) {

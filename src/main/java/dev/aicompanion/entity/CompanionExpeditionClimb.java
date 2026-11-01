@@ -1,26 +1,42 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * The way up when the supplies are gone: back along the last tunnel and the stairs he dug to the entrance, one cell at a time.
- * It breaks nothing and places nothing; the record of the mine is the route, and a step that cannot be walked ends the climb
+ * Where the record has a gap (the stairs below a restart are forgotten, the cells above it begin far off) the gap is walked by a
+ * route search, and a plug of his own that shuts it comes out with the pickaxe he has; a step that cannot be done ends the climb
  * where he stands, said as it is.
  */
 final class CompanionExpeditionClimb {
     enum Result { WORKING, DONE }
 
+    private enum Phase { WALK, TRAVEL, UNPLUG }
+
     private static final double SAME_SPOT = 12;
+    /** Two cells of the way further apart than this (squared) are not neighbours: the record has a gap between them. */
+    private static final double GAP = 9;
+    private static final int OWN_STEPS = 4, MAX_PLUGS = 8, IRON_FOR_PLUGS = 8;
+    private static final double TRAVEL_NEAR = 1.0;
 
     private final CompanionWork w;
+    private final CompanionExpeditionDig dig;
     private final CompanionExpeditionWalk walk;
     private String why = "", outcome = "";
+    private List<BlockPos> cells = List.of();
+    /** The end (exclusive) of the stretch being walked: the cell there, if any, lies across a gap. */
+    private int stretchEnd;
+    private Phase phase = Phase.WALK;
+    private CompanionExpeditionPlugs.Plug plug;
+    private int plugs;
 
     CompanionExpeditionClimb(CompanionWork w, CompanionExpeditionDig dig) {
         this.w = w;
+        this.dig = dig;
         this.walk = new CompanionExpeditionWalk(dig);
     }
 
@@ -40,11 +56,15 @@ final class CompanionExpeditionClimb {
         if (!mine.exists()) { outcome = " Своей лестницы нет, остался на месте."; return; }
         // The entrance of a mine started again under the ground is a pit, no way to the surface: only the cells left above it lead there.
         if (mine.buried() && mine.above().isEmpty()) { outcome = " Свою лестницу к поверхности потерял, остался где стою."; return; }
-        List<BlockPos> cells = wayToSurface(mine);
+        cells = wayToSurface(mine);
         int nearest = nearest(cells, here);
         if (nearest < 0) outcome = " Свою лестницу рядом не нашёл, остался где стою.";
         else if (nearest == cells.size() - 1) outcome = mine.buried() ? " Выше меня своей лестницы нет, остался где стою." : " Я и так у входа, остался на месте.";
-        else walk.set(cells, nearest);
+        else {
+            stretchEnd = gapAfter(cells, nearest);
+            walk.set(cells.subList(0, stretchEnd), nearest);
+            phase = Phase.WALK;
+        }
     }
 
     /** True while the climb has a way to walk; false when {@link #begin} found none and said so. */
@@ -82,13 +102,87 @@ final class CompanionExpeditionClimb {
         return nearest;
     }
 
+    /** The first index after {@code from} whose cell is no neighbour of the one before it, or the size of the list: where the next stretch of cells to walk ends. */
+    private static int gapAfter(List<BlockPos> cells, int from) {
+        for (int i = Math.max(1, from + 1); i < cells.size(); i++) if (cells.get(i - 1).distSqr(cells.get(i)) > GAP) return i;
+        return cells.size();
+    }
+
     Result tick() {
         if (!outcome.isEmpty()) return Result.DONE;
+        return switch (phase) {
+            case WALK -> walked();
+            case TRAVEL -> travel();
+            case UNPLUG -> unplug();
+        };
+    }
+
+    private Result walked() {
         switch (walk.tick()) {
             case WORKING -> { return Result.WORKING; }
-            case DONE -> outcome = " Копать нечем, поднялся за припасами.";
-            case STUCK -> outcome = " Подняться по своей лестнице не вышло: застрял на ходу, остался где стою.";
+            case DONE -> {
+                if (stretchEnd >= cells.size()) return finish(" Копать нечем, поднялся за припасами.");
+                phase = Phase.TRAVEL;
+                return Result.WORKING;
+            }
+            default -> { return finish(" Подняться по своей лестнице не вышло: застрял на ходу, остался где стою."); }
         }
+    }
+
+    /** Across a gap of the record: his own steps once near the cell beyond it, a route search until then, and a plug of his that shuts it out of the way. */
+    private Result travel() {
+        BlockPos beyond = cells.get(stretchEnd);
+        if (w.owner.blockPosition().distManhattan(beyond) <= OWN_STEPS) {
+            if (dig.reach(beyond)) return crossed();
+            return dig.walkStuck() ? finish(" Подняться по своей лестнице не вышло: застрял на ходу, остался где стою.") : Result.WORKING;
+        }
+        switch (w.route.legs(beyond, TRAVEL_NEAR)) {
+            case NEAR -> { return crossed(); }
+            case FAILED -> {
+                w.route.legsEnd(false);
+                return openWay(beyond);
+            }
+            default -> { return Result.WORKING; }
+        }
+    }
+
+    private Result crossed() {
+        w.route.legsEnd(true);
+        int from = stretchEnd;
+        stretchEnd = gapAfter(cells, from);
+        walk.set(cells.subList(0, stretchEnd), from);
+        phase = Phase.WALK;
+        return Result.WORKING;
+    }
+
+    private Result openWay(BlockPos beyond) {
+        ServerLevel level = (ServerLevel) w.owner.level();
+        plug = plugs >= MAX_PLUGS ? null : CompanionExpeditionPlugs.first(level, w.mine, CompanionExpeditionRecord.standingCell(level, w.owner.blockPosition()), beyond);
+        if (plug == null) return finish(" Подняться не вышло: путь наверх закрыт, остался где стою.");
+        dig.ironForRock(IRON_FOR_PLUGS);
+        phase = Phase.UNPLUG;
+        return Result.WORKING;
+    }
+
+    private Result unplug() {
+        ServerLevel level = (ServerLevel) w.owner.level();
+        if (!dig.reach(plug.stand())) return dig.walkStuck() ? finish(" Подняться по своей лестнице не вышло: застрял на ходу, остался где стою.") : Result.WORKING;
+        switch (dig.dig(level, plug.cell())) {
+            case WORKING -> { return Result.WORKING; }
+            case DONE -> {
+                dig.flush();
+                w.mine.unsealed(plug.cell());
+                plugs++;
+                phase = Phase.TRAVEL;
+                return Result.WORKING;
+            }
+            default -> { return finish(" Подняться не вышло: свою пробку на пути наверх убрать нечем, остался где стою."); }
+        }
+    }
+
+    private Result finish(String text) {
+        outcome = text;
+        dig.keepIron();
         return Result.DONE;
     }
 
@@ -98,5 +192,9 @@ final class CompanionExpeditionClimb {
     void reset() {
         walk.clear();
         why = outcome = "";
+        cells = List.of();
+        stretchEnd = plugs = 0;
+        phase = Phase.WALK;
+        plug = null;
     }
 }
