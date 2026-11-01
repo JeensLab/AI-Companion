@@ -1,5 +1,6 @@
 package dev.aicompanion.gametest;
 
+import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
@@ -20,6 +21,7 @@ import java.util.List;
 
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.ended;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.mountain;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rel;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.report;
@@ -36,7 +38,7 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 public final class CompanionMineGuardTests {
     private static final int FUSE_TICKS = 200, STAND = 6, LIT_AT = 8, FRESH_AT = 1;
     private static final double SLACK = .25;
-    private static final float KEPT = 10, WEAK = 5;
+    private static final float KEPT = 10, WEAK = 5, SPENT = 7;
     private static final int PIT_FROM = 8, PIT_TO = 10, PIT_DEPTH = 4, DROP_AT = 12, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, GRACE_TICKS = 6, MAX_CHANGES = 2, HOLD_TICKS = 80, RELEASED_TICKS = 400;
     private static final double CLOSER = 1.5;
     private static final int ROOM_FROM = 4, ROOM_TO = 16, ROOM_SIDE = 6, RUN_TICKS = 20, CLIFF_DEPTH = 6, DEAD_END_LENGTH = 3;
@@ -227,6 +229,32 @@ public final class CompanionMineGuardTests {
         place(c, foot.offset(STAND, 0, 0));
         Zombie zombie = zombie(h, foot.offset(STAND - 1, 0, 0));
         watchRun(h, c, creeperAt(h, foot, STAND + 3, 0), true, true, () -> { if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c); });
+    }
+
+    /**
+     * Hurt to seven in the mine, with no food in the bag and nothing in his stomach to heal on: the rest at the entrance cannot mend him, and the
+     * report says why (no food), not only that the rest did not work.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aRestThatCannotMendHimSaysThereIsNoFood(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        carveMine(h, c, 0);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.BREAD)) c.setItem(slot, ItemStack.EMPTY);
+        long id = start(h, c, 1);
+        boolean[] hurt = {false};
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died | " + report(c));
+            String stage = c.expeditionStage();
+            if (!hurt[0]) {
+                if (!stage.isEmpty() && !stage.equals("LOCATE")) { c.setHealth(SPENT); hurt[0] = true; }
+                return;
+            }
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.message().contains("нет еды"), "The rest that could not mend him did not say why: " + result.message());
+            h.succeed();
+        });
     }
 
     private static Creeper creeperAt(GameTestHelper h, BlockPos foot, double dx, double dz) {

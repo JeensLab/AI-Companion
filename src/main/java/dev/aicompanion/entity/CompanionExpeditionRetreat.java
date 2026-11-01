@@ -26,7 +26,7 @@ final class CompanionExpeditionRetreat {
     private Phase phase = Phase.REST;
     private String reason = "";
     private BlockPos plugCell;
-    private boolean climbed, plugged, plugFailed, stuck;
+    private boolean climbed, plugged, plugFailed, stuck, unmendable;
     private long restEnd;
     private int tries;
 
@@ -94,7 +94,8 @@ final class CompanionExpeditionRetreat {
     private Result rest(ServerLevel level) {
         if (restEnd == 0) restEnd = level.getGameTime() + REST_TICKS;
         boolean fit = owner.getHealth() >= FIT;
-        return fit || level.getGameTime() >= restEnd || cannotMend() ? Result.DONE : Result.WORKING;
+        unmendable = !fit && cannotMend();
+        return fit || level.getGameTime() >= restEnd || unmendable ? Result.DONE : Result.WORKING;
     }
 
     /** Nothing left to heal him: no food to eat, and a stomach too empty to heal on its own. */
@@ -111,7 +112,8 @@ final class CompanionExpeditionRetreat {
         if (plugFailed) text.append(" Пробку на лестнице поставить не вышло.");
         if (stuck) text.append(" Подняться по своей лестнице до конца не вышло, остался где стою.");
         int health = (int) owner.getHealth();
-        text.append(owner.getHealth() >= FIT ? " Отдохнул, здоровье " + health + "." : " Отдохнуть до " + (int) FIT + " здоровья не вышло, сейчас " + health + ".");
+        if (owner.getHealth() >= FIT) text.append(" Отдохнул, здоровье ").append(health).append('.');
+        else text.append(" Отдохнуть до ").append((int) FIT).append(unmendable ? " здоровья не вышло: нет еды, а без сытости рана сама не заживает, сейчас " : " здоровья не вышло, сейчас ").append(health).append('.');
         return text.toString();
     }
 
@@ -120,7 +122,7 @@ final class CompanionExpeditionRetreat {
         phase = Phase.REST;
         reason = "";
         plugCell = null;
-        climbed = plugged = plugFailed = stuck = false;
+        climbed = plugged = plugFailed = stuck = unmendable = false;
         restEnd = 0;
         tries = 0;
     }
