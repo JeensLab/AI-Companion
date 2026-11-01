@@ -485,6 +485,39 @@ public final class CompanionPlanRecoveryTests {
         }
     }
 
+    /** The search for a tree found none: it is no chance to try again, and the other parts that need wood are not tried either. */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void noTreeEndsEveryPartThatNeedsWoodAfterOneSearch(GameTestHelper h) {
+        var port = new TreelessPort();
+        var plan = List.of(new PlannedAction("obtain_item", 0, 1, "minecraft:crafting_table"), new PlannedAction("obtain_item", 0, 8, "minecraft:stick"),
+                new PlannedAction("obtain_item", 0, 4, "minecraft:oak_planks"));
+        var future = CompanionPlanRunner.run(plan, port);
+        h.succeedWhen(() -> {
+            Outcome outcome = future.join();
+            long searches = port.calls.stream().filter("gather_wood"::equals).count();
+            h.assertTrue(searches == 1 && !port.calls.contains("craft_item"), "Wood was searched " + searches + " times: " + port.calls);
+            h.assertTrue(outcome.report().contains("Не нашёл доступного дерева") && outcome.skipped().size() == 3, outcome.report() + " " + outcome.skipped());
+        });
+    }
+
+    /** Every obtain is wood, then the craft; a gather finds no tree. */
+    private static final class TreelessPort implements CompanionPlanRunner.Port {
+        final List<String> calls = new ArrayList<>();
+        @Override public String trace() { return "gametest-treeless"; }
+        @Override public boolean cancelled() { return false; }
+        @Override public CompletableFuture<State> state(PlannedAction action) { return CompletableFuture.completedFuture(IDLE); }
+        @Override public CompletableFuture<Void> pause(int seconds) { return CompletableFuture.completedFuture(null); }
+        @Override public CompletableFuture<CompanionPlanRunner.Expansion> expand(PlannedAction action) {
+            return CompletableFuture.completedFuture(new CompanionPlanRunner.Expansion(List.of(new PlannedAction("gather_wood", 0, 1),
+                    new PlannedAction("craft_item", 0, action.count(), action.item()), new PlannedAction("verify_item", 0, action.count(), action.item())), null));
+        }
+        @Override public CompletableFuture<Attempt> run(PlannedAction action) {
+            calls.add(action.type());
+            return CompletableFuture.completedFuture(new Attempt(action.type().equals("gather_wood")
+                    ? CompanionActionResult.failed("Не нашёл доступного дерева для подготовки. Вещи сохранил.") : CompanionActionResult.ok("Готово."), true));
+        }
+    }
+
     private static final PlannedAction OBTAIN_HELMET = new PlannedAction("obtain_item", 0, 1, "minecraft:iron_helmet");
 
     /** A bag in the fake: ore gives ingots, a helmet takes two ingots and a log. expand plans from it like the server planner. */
