@@ -163,7 +163,7 @@ final class CompanionExpedition {
         if (stage != Stage.LOCATE && stage != Stage.RETREAT && bench.tick(level)) return;
         String danger = stage == Stage.LOCATE || stage == Stage.CLIMB || stage == Stage.RETREAT ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
-        if (plan == null && digging && ore.pending() && mineOre(level, CompanionExpeditionOre.Mode.NEAR)) return;
+        if (plan == null && digging && ore.pending() && mineOre(level, stage == Stage.BRANCH ? CompanionExpeditionOre.Mode.TUNNEL : CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
         if (plan == null) craftTorches(level);
         if (plan == null) arm(level);
