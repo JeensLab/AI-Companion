@@ -539,6 +539,9 @@ public final class CompanionMineBacktrackTests {
         site.restart(here, Direction.WEST);
         h.assertTrue(site.entrance().equals(here) && site.stands().isEmpty() && !site.shunned(inside) && site.shunned(distant) && site.restarts() == 1 && site.backtracks() == 0 && site.stairDirection() == Direction.WEST,
                 "restart() did not start over at the spot forgetting the caves beside it only: restarts " + site.restarts());
+        CompoundTag restarted = new CompoundTag();
+        site.save(restarted);
+        h.assertTrue(!site.above().isEmpty() && loadedFrom(restarted).above().equals(site.above()), "The way up left by a restart was lost over the save: " + site.above().size());
         site.clear();
         h.assertTrue(!site.shunned(distant) && site.restarts() == 0, "clear() keeps the memory");
 
