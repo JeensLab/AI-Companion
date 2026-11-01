@@ -250,6 +250,43 @@ public final class CompanionHomeTests {
         });
     }
 
+    /** «Стой» in the middle of the walk ends it: he does not go on to the chest, and the things stay with him. */
+    @GameTest(template = "large_search", timeoutTicks = 400)
+    public static void stopInTheMiddleOfTheWalkEndsIt(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        BlockPos chest = cell(STAND + 60);
+        h.setBlock(chest, Blocks.CHEST); c.rememberPlaced(h.absolutePos(chest));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 6));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, c), "store_items", "stone", 1).success(), "Store order not accepted");
+        double[] stoppedAt = {0};
+        h.runAtTickTime(60, () -> {
+            h.assertTrue(c.isWorking(), "Not on the way: " + c.getLastTaskResult());
+            h.assertTrue(CompanionEvents.executeAction(owner(h, c), "stop", "", 1).success(), "Stop refused");
+            c.setFollowing(false);
+            stoppedAt[0] = c.getX();
+        });
+        h.runAtTickTime(160, () -> {
+            done(h, c);
+            h.assertTrue(Math.abs(c.getX() - stoppedAt[0]) < 3, "Walked on after the stop: " + (c.getX() - stoppedAt[0]));
+            h.assertTrue(carried(c, Items.COBBLESTONE) == 6 && count((Container)h.getBlockEntity(chest), Items.COBBLESTONE) == 0, "Things moved: " + c.getLastTaskResult());
+            h.succeed();
+        });
+    }
+
+    /** The next step of a plan starts from home with the player far off: the block still stands by the player, not by the chest he left. */
+    @GameTest(template = "large_search", timeoutTicks = 1600)
+    public static void placeBlockForAPlayerFarOffIsWalkedInLegs(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        BlockPos away = cell(STAND + 70);
+        owner(h, c).setPos(h.absoluteVec(away.getCenter()));
+        c.setItem(0, new ItemStack(Items.CHEST));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, c), "place_block", "minecraft:chest", 1).success(), "Order not accepted");
+        h.succeedWhen(() -> {
+            done(h, c);
+            h.assertTrue(c.didLastTaskSucceed() && near(h, Blocks.CHEST, away, 5), "Not by the player: " + where(h, Blocks.CHEST) + " " + c.getLastTaskResult());
+        });
+    }
+
     /** A deed of his own that needs a new chest sets it down on the leash, however good a home is known farther on. */
     @GameTest(template = "large_search", batch = "home_deed", timeoutTicks = 20 * 60 * 3)
     public static void deedNeverLeavesLeashForHome(GameTestHelper h) {

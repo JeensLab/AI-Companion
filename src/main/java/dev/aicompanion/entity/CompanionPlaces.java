@@ -78,6 +78,8 @@ final class CompanionPlaces {
     Home home() {
         if (!(owner.level() instanceof ServerLevel level)) return null;
         if (namedHome != null && namedHome.dimension.equals(dimension())) return new Home(namedHome.pos, "назвал игрок");
+        // An entity is read on a worker thread while its chunk loads: the world's save is left to the next refresh on the tick.
+        if (!level.getServer().isSameThread()) return null;
         BlockPos built = owner.getOwnerId() == null ? null : CompanionPlayerBuilds.get(level.getServer()).home(owner.getOwnerId(), level);
         if (built != null) return new Home(built, "здесь строит игрок");
         BlockPos house = owner.work.house.finishedAnchor(level);
