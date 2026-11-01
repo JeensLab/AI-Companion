@@ -52,6 +52,7 @@ public final class CompanionMineStopsTests {
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, DIAMOND_AT = 6;
+    private static final int LAKE_REACH = 7, LEDGE_LENGTH = 4;
     private static final int CANOPY_AT = 12, CANOPY_REACH = 2;
     private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
 
@@ -185,6 +186,39 @@ public final class CompanionMineStopsTests {
             }
             CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again in the pit: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /**
+     * Run m12c/lava (seed 7741901): he stood in the water of a cave lake, deep under the ground, the record's entrance far away on the surface and no
+     * stairs of his around. No side of a cell in water takes stairs, so the order ended «Я под землёй, а своей лестницы рядом нет», though a dry
+     * ledge was a few strokes off. He gets out of the water onto the ledge and the mine starts again there.
+     * The water is a source whose flow thins to its last cell, where he stands: a deeper pool floats him, and the work goal does not run afloat.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainOnTheShoreWhenHeStandsInACaveLake(GameTestHelper h) {
+        mountain(h, true);
+        BlockPos shallows = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        for (BlockPos cell : BlockPos.betweenClosed(shallows.west(LAKE_REACH), shallows)) for (BlockPos open : CompanionShaftPlan.column(cell)) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
+        BlockPos ledge = shallows.offset(1, 1, 0);
+        for (BlockPos cell : BlockPos.betweenClosed(ledge, ledge.east(LEDGE_LENGTH))) for (BlockPos open : CompanionShaftPlan.column(cell)) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
+        h.getLevel().setBlock(shallows.west(LAKE_REACH), Blocks.WATER.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.teleportTo(shallows.getX() + .5, shallows.getY(), shallows.getZ() + .5);
+        BlockPos far = h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER));
+        c.mineSite().start(far, Direction.NORTH);
+        for (Direction d : Direction.Plane.HORIZONTAL) c.mineSite().refuse(far, d);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(shallows.above()), "The light over the lake is not worked out yet");
+                h.assertTrue(!h.getLevel().getFluidState(shallows).isEmpty(), "The water has not reached him yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stayed in the lake: " + result.message() + " | " + report(c));
             h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
         });
     }
