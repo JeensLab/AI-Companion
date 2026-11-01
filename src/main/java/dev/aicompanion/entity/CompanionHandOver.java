@@ -164,20 +164,33 @@ final class CompanionHandOver {
         if (!CompanionMiningNavigation.preservesAutonomousReturn(w.owner, w.packTarget)) {
             w.packTarget = null; w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + left + " Он нужен для обратного хода.", w.packResult.status(), w.packResult.evidence())); return;
         }
+        switch (takeUp(level, w.packTarget)) {
+            case WORKING -> { }
+            case FULL -> { w.packTarget = null;
+                w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + left + " В сумке нет места.", w.packResult.status(), w.packResult.evidence())); }
+            case DONE -> {
+                w.packedBenchFrom = w.packTarget;
+                w.packTarget = null; // finished on the next tick, once the dropped bench has been picked up
+            }
+        }
+    }
+
+    enum Taking { WORKING, FULL, DONE }
+
+    /** One tick of taking a block of his own up by hand, in reach: the tool for it, the cracks, then the drop falls to be picked up. */
+    Taking takeUp(ServerLevel level, BlockPos pos) {
         w.owner.getNavigation().stop();
-        BlockState state = level.getBlockState(w.packTarget);
+        BlockState state = level.getBlockState(pos);
         w.owner.selectToolForBlock(state);
         w.owner.workStatus("Забираю свой походный верстак.");
-        if (!w.breaking.tick(level, w.packTarget)) return;
+        if (!w.breaking.tick(level, pos)) return Taking.WORKING;
         ItemStack tool = w.owner.getMainHandItem();
-        var drops = Block.getDrops(state, level, w.packTarget, level.getBlockEntity(w.packTarget), w.owner, tool);
-        if (!w.items.canStore(drops)) { w.packTarget = null;
-            w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + left + " В сумке нет места.", w.packResult.status(), w.packResult.evidence())); return; }
-        if (!level.destroyBlock(w.packTarget, false, w.owner, 512)) return;
-        tool.getItem().mineBlock(tool, level, state, w.packTarget, w.owner);
-        w.owner.dropHarvest(w.packTarget, drops);
+        var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);
+        if (!w.items.canStore(drops)) return Taking.FULL;
+        if (!level.destroyBlock(pos, false, w.owner, 512)) return Taking.WORKING;
+        tool.getItem().mineBlock(tool, level, state, pos, w.owner);
+        w.owner.dropHarvest(pos, drops);
         w.breaking.reset();
-        w.packedBenchFrom = w.packTarget;
-        w.packTarget = null; // finished on the next tick, once the dropped bench has been picked up
+        return Taking.DONE;
     }
 }

@@ -12,10 +12,15 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.Vec3;
 
 final class CompanionPlacement {
     final CompanionEntity c;
+    /** The bench set down by the last craft that needed one, null when it set none; the mine expedition reads it to take the bench up again. */
+    BlockPos lastTable;
+    /** The bench is taken up again at once: a cell that shuts the way back for that while is a last resort, not a refusal. */
+    boolean takenUpAtOnce;
 
     CompanionPlacement(CompanionEntity c) { this.c = c; }
 
@@ -52,6 +57,7 @@ final class CompanionPlacement {
                 || !serverLevel.setBlock(tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState(), 3))) {
             return recordActionResult(CompanionActionResult.failed("Не нашёл свободное безопасное место для верстака. Материалы сохранены."));
         }
+        lastTable = tablePosition == null ? null : tablePosition.immutable();
         if (tablePosition != null) c.rememberPlaced(tablePosition);
         if (tablePosition != null && fieldBench) c.fieldBenches.add(tablePosition.immutable());
         for (int slot = 0; slot < c.companionInventory.size(); slot++) c.companionInventory.set(slot, plan.inventory().get(slot).copy());
@@ -154,6 +160,7 @@ final class CompanionPlacement {
     private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
         BlockState state = block.defaultBlockState();
         int returnHeight = CompanionMiningNavigation.provenReturnHeight(c);
+        BlockPos shutting = null;
         // Where he stands and a block up or down first; only then as high or as low as a player reaches (marathon 23.10, «долина»:
         // in a crack of the ravine the bench took the one cell beside him, the furnace found no room, though the top of the bench
         // was right in front of his face).
@@ -179,12 +186,15 @@ final class CompanionPlacement {
                     for (Direction direction : Direction.Plane.HORIZONTAL) if (serverLevel.getBlockState(pos.relative(direction)).getBlock() instanceof net.minecraft.world.level.block.ChestBlock) adjacentChest = true;
                     if (adjacentChest) continue;
                 }
-                AABB collision = new AABB(pos);
-                if (c.getBoundingBox().intersects(collision) || !serverLevel.getEntities(c, collision).isEmpty()) continue;
-                if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) continue;
+                // Only what blocks building counts: a mob or the player, not an item lying in the cell (a stone on every step of his stairs).
+                if (c.getBoundingBox().intersects(new AABB(pos)) || !serverLevel.isUnobstructed(state, pos, CollisionContext.empty())) continue;
+                if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) {
+                    if (takenUpAtOnce && shutting == null) shutting = pos.immutable();
+                    continue;
+                }
                 return pos.immutable();
             }
         }
-        return null;
+        return shutting;
     }
 }

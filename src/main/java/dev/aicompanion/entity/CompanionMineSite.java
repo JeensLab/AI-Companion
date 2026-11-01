@@ -26,7 +26,7 @@ import java.util.Set;
  */
 public final class CompanionMineSite {
     public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     private record Move(BlockPos stand, Direction direction) { }
 
@@ -51,6 +51,11 @@ public final class CompanionMineSite {
     /** The mine was started again under the ground: its entrance is no way to the surface, and nothing can be topped up from it. */
     private boolean buried;
     private BlockPos plug;
+    /**
+     * Blocks he set down for a while and takes up again (a bench on a step): {@link #verify} reads the cell they stand in as open, so
+     * a bench does not cut the staircase below it. Kept apart from {@link #seals}: a seal must cut the staircase, a temporary block must not.
+     */
+    private final Set<BlockPos> temporary = new LinkedHashSet<>();
     /** Sealing blocks held back mid-column. They are not part of the mine record: they outlive {@link #clear} and are saved apart, so a quit loses none. */
     private final List<Held> held = new ArrayList<>();
     private boolean loadedHeld;
@@ -100,11 +105,12 @@ public final class CompanionMineSite {
         List<Long> kept = caves.stream().filter(cell -> !near.contains(cell)).toList();
         int count = restarts + 1;
         // His plugs stay his: a block he laid must not read as a wall of the rock around the new mine.
-        List<BlockPos> laid = List.copyOf(seals), banned = List.copyOf(forbidden);
+        List<BlockPos> laid = List.copyOf(seals), banned = List.copyOf(forbidden), standing = List.copyOf(temporary);
         List<Move> moves = List.copyOf(refused);
         start(here, stair);
         caves.addAll(kept);
         seals.addAll(laid);
+        temporary.addAll(standing);
         forbidden.addAll(banned);
         refused.addAll(moves);
         restarts = count;
@@ -119,6 +125,7 @@ public final class CompanionMineSite {
         stands.clear();
         tunnels.clear();
         seals.clear();
+        temporary.clear();
         refused.clear();
         forbidden.clear();
     }
@@ -184,6 +191,13 @@ public final class CompanionMineSite {
     public void sealed(BlockPos cell) { if (entrance != null && seals.size() < MAX_SEALS) seals.add(cell.immutable()); }
 
     public void unsealed(BlockPos cell) { seals.remove(cell); }
+
+    /** The cells of blocks he set down for a while and has not taken up yet. */
+    public Set<BlockPos> temporary() { return Collections.unmodifiableSet(temporary); }
+
+    public void temporary(BlockPos cell) { if (entrance != null) remember(temporary, cell.immutable(), MAX_TEMPORARY); }
+
+    public void taken(BlockPos cell) { temporary.remove(cell); }
 
     /** Remembers that this step failed for a reason that will not change by itself, so a repeat attempt takes another move. */
     public void refuse(BlockPos stand, Direction direction) {
@@ -273,7 +287,7 @@ public final class CompanionMineSite {
      */
     public int verify(ServerLevel level) {
         if (entrance == null) return 0;
-        if (level.hasChunkAt(entrance) && !CompanionShaftPlan.columnOpen(level, entrance)) {
+        if (level.hasChunkAt(entrance) && !columnOpen(level, entrance)) {
             truncate(0);
         } else {
             int kept = 0;
@@ -281,11 +295,18 @@ public final class CompanionMineSite {
             truncate(kept);
         }
         seals.removeIf(cell -> level.hasChunkAt(cell) && level.getBlockState(cell).isAir());
+        temporary.removeIf(cell -> level.hasChunkAt(cell) && level.getBlockState(cell).isAir());
         if (plug != null && level.hasChunkAt(plug) && level.getBlockState(plug).isAir()) plug = null;
         return stands.size();
     }
 
-    /** The stand's column is open, or closed only by his own plug (a retreat leaves it; the next step takes it out), and a floor holds under it. */
+    /** A stand's three cells are open, or held only by a temporary block of his. */
+    private boolean columnOpen(ServerLevel level, BlockPos stand) {
+        for (BlockPos cell : CompanionShaftPlan.column(stand)) if (!level.hasChunkAt(cell) || !CompanionShaftPlan.open(level, cell) && !temporary.contains(cell)) return false;
+        return true;
+    }
+
+    /** The stand's column is open, or closed only by his own plug (a retreat leaves it; the next step takes it out) or a temporary block, and a floor holds under it. */
     private boolean closed(ServerLevel level, BlockPos stand, BlockPos previous) {
         if (!level.hasChunkAt(stand)) return false;
         BlockPos floor = stand.below();
@@ -293,7 +314,7 @@ public final class CompanionMineSite {
         // A stand level with the one before it is the base of a tunnel, which is two cells high.
         List<BlockPos> column = stand.getY() == previous.getY() ? List.of(stand, stand.above()) : CompanionShaftPlan.column(stand);
         for (BlockPos cell : column) {
-            if (!CompanionShaftPlan.open(level, cell) && !cell.equals(plug)) return true;
+            if (!CompanionShaftPlan.open(level, cell) && !cell.equals(plug) && !temporary.contains(cell)) return true;
         }
         return false;
     }
@@ -309,6 +330,7 @@ public final class CompanionMineSite {
         mine.putLongArray("Stands", stands.stream().mapToLong(BlockPos::asLong).toArray());
         mine.putLongArray("Seals", seals.stream().mapToLong(BlockPos::asLong).toArray());
         if (plug != null) mine.putLong("Plug", plug.asLong());
+        if (!temporary.isEmpty()) mine.putLongArray("Temporary", temporary.stream().mapToLong(BlockPos::asLong).toArray());
         if (!forbidden.isEmpty()) mine.putLongArray("Forbidden", forbidden.stream().mapToLong(BlockPos::asLong).toArray());
         if (!caves.isEmpty()) mine.putLongArray("Caves", caves.stream().mapToLong(Long::longValue).toArray());
         if (backtracks > 0) mine.putInt("Backtracks", backtracks);
@@ -386,6 +408,7 @@ public final class CompanionMineSite {
         for (long packed : mine.getLongArray("Stands")) if (stands.size() < MAX_STANDS) stands.add(BlockPos.of(packed));
         for (long packed : mine.getLongArray("Seals")) if (seals.size() < MAX_SEALS) seals.add(BlockPos.of(packed));
         if (mine.contains("Plug", Tag.TAG_LONG)) plug = BlockPos.of(mine.getLong("Plug"));
+        for (long packed : mine.getLongArray("Temporary")) if (temporary.size() < MAX_TEMPORARY) temporary.add(BlockPos.of(packed));
         for (long packed : mine.getLongArray("Forbidden")) if (forbidden.size() < MAX_FORBIDDEN) forbidden.add(BlockPos.of(packed));
         for (long cell : mine.getLongArray("Caves")) if (caves.size() < MAX_CAVE_CELLS) caves.add(cell);
         backtracks = Math.max(0, mine.getInt("Backtracks"));

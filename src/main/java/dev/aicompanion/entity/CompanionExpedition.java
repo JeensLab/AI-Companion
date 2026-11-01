@@ -40,6 +40,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionCreeper creeper;
     private final CompanionExpeditionBacktrack backtrack;
     private final CompanionExpeditionSupply supply;
+    private final CompanionExpeditionBench bench;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
@@ -61,11 +62,12 @@ final class CompanionExpedition {
         this.retreat = new CompanionExpeditionRetreat(w, dig);
         this.creeper = new CompanionExpeditionCreeper(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
-        this.supply = new CompanionExpeditionSupply(owner);
+        this.supply = new CompanionExpeditionSupply(w);
+        this.bench = new CompanionExpeditionBench(w);
     }
 
     /** What the stall watchdog sees move: blocks broken, steps finished, plugs placed in a cave, health regained while resting. */
-    int progress() { return progress + dig.broken + dig.walked + cave.progress() + (stage == Stage.RETREAT ? (int) owner.getHealth() : 0); }
+    int progress() { return progress + dig.broken + dig.walked + cave.progress() + bench.progress() + (stage == Stage.RETREAT ? (int) owner.getHealth() : 0); }
 
     boolean active() { return active; }
 
@@ -103,6 +105,7 @@ final class CompanionExpedition {
         creeper.reset();
         backtrack.reset();
         supply.reset();
+        bench.reset();
         tunnelWhy = "";
         stage = Stage.LOCATE;
         plan = null;
@@ -131,6 +134,8 @@ final class CompanionExpedition {
         }
         if (gained() >= w.requestedCount && !cave.busy()) { end(Ending.FOUND, ""); return; }
         if (expired) return;
+        // A bench he set down on a step shuts the stairs: it comes up before anything else, a retreat apart.
+        if (stage != Stage.LOCATE && stage != Stage.RETREAT && bench.tick(level)) return;
         String danger = stage == Stage.LOCATE || stage == Stage.CLIMB || stage == Stage.RETREAT ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
         if ((stage == Stage.WALK_DOWN || digging) && creeper.tick(level)) return;
