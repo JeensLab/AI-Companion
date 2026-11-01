@@ -10,24 +10,30 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * A hostile mob near him during an expedition is fought to the end with the sword in his hand, and the work goes on after it: while one is
  * about, the expedition does not dig, step or craft (the melee goal at its priority takes the turn, and this hold covers the ticks between
  * two kills, when no goal has a target yet). He leaves a fight only at low health, and only when leaving is possible: his own way up
  * is under him and nothing is at his back already. The time of the fight is given back to the step, and the tool he held comes back to
- * his hand.
+ * his hand. A foe that is still alive after {@link #LONGEST} (one he sees and cannot get at, across a chasm or on a ledge) is let go for
+ * the rest of the step, until it hurts him: the melee goal would otherwise hold the work for good, as the work does not tick while it runs.
  */
 final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
     private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9;
-    private static final int LONGEST = 20 * 45, PAUSE = 20 * 10, MEAL_WINDOW = 20 * 10;
+    private static final int LONGEST = 20 * 45, MEAL_WINDOW = 20 * 10, HURT_MEMORY = 100;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
-    private long since = -1, lastBusy, pausedUntil, endedAt = -MEAL_WINDOW;
+    private long since = -1, lastBusy, endedAt = -MEAL_WINDOW, chasedSince;
     private Item tool;
+    private LivingEntity chased;
+    private final Set<UUID> givenUp = new HashSet<>();
 
     CompanionExpeditionFight(CompanionWork w) {
         this.w = w;
@@ -40,9 +46,8 @@ final class CompanionExpeditionFight {
         long now = level.getGameTime();
         Monster foe = nearest(level);
         if (foe == null) { settle(now); return false; }
-        if (now < pausedUntil) return false;
         began();
-        if (now - since > LONGEST) { settle(now); pausedUntil = now + PAUSE; return false; }
+        if (!worthFighting(foe, now)) { settle(now); return false; }
         lastBusy = now;
         LivingEntity target = owner.getTarget();
         if (target == null || !target.isAlive() || !isFoe(target)) owner.setTarget(foe);
@@ -62,13 +67,33 @@ final class CompanionExpeditionFight {
     /** A fight ended a moment ago: the time to eat what it cost before the low-health climb is decided. */
     boolean justEnded(long now) { return now - endedAt < MEAL_WINDOW; }
 
-    void going() { lastBusy = owner.level().getGameTime(); }
+    void going() {
+        long now = owner.level().getGameTime();
+        lastBusy = now;
+        if (!worthFighting(owner.getTarget(), now)) { owner.setTarget(null); settle(now); }
+    }
 
     void reset() {
         since = -1;
-        pausedUntil = 0;
         endedAt = -MEAL_WINDOW;
         tool = null;
+        chased = null;
+        givenUp.clear();
+    }
+
+    /** False once the same foe has been fought for {@link #LONGEST} and lives: it is let go. */
+    private boolean worthFighting(LivingEntity foe, long now) {
+        if (foe == null) return true;
+        if (foe != chased) { chased = foe; chasedSince = now; }
+        if (now - chasedSince <= LONGEST) return true;
+        givenUp.add(foe.getUUID());
+        chased = null;
+        return false;
+    }
+
+    /** A foe let go that has struck him since is a foe again. */
+    private boolean letGo(LivingEntity foe) {
+        return givenUp.contains(foe.getUUID()) && !(owner.getLastHurtByMob() == foe && owner.tickCount - owner.getLastHurtByMobTimestamp() < HURT_MEMORY);
     }
 
     /** The fight is over: its time goes back to the step, and the pickaxe (or what was in his hand) comes back. */
@@ -84,7 +109,7 @@ final class CompanionExpeditionFight {
 
     /** A mob he fights: hostile, one that may be fought, awake, in sight (not behind rock, where it can do nothing), and either come for him or near; not one he is leaving or may not follow. */
     boolean isFoe(LivingEntity entity) {
-        if (!(entity instanceof Monster monster) || !monster.isAlive() || monster.isNoAi()) return false;
+        if (!(entity instanceof Monster monster) || !monster.isAlive() || monster.isNoAi() || letGo(monster)) return false;
         if (!owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return false;
         if (monster instanceof Creeper && !owner.creeperGuard.fights()) return false;
         if (w.expedition.shuns(monster)) return false;
@@ -98,6 +123,7 @@ final class CompanionExpeditionFight {
      */
     boolean avoids(LivingEntity foe, boolean retreating) {
         if (foe == null) return false;
+        if (letGo(foe)) return true;
         if (retreating) return !owner.isWithinMeleeAttackRange(foe);
         return owner.getHealth() <= CompanionCaveSense.HEALTH_VERY && canEscape(foe);
     }
