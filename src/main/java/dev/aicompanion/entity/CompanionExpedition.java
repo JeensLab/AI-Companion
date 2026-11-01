@@ -175,8 +175,9 @@ final class CompanionExpedition {
     private String dangerNow() {
         if (!cave.busy() && cave.takeRetreat()) return CAVE_DANGER;
         float health = owner.getHealth();
-        // With food in the bag and no foe about (the fight hold has let go), he eats on the spot; climbing at once would give up the order for a meal.
-        if (health > CompanionCaveSense.HEALTH_VERY || CompanionEating.hasFood(owner)) return null;
+        if (health > CompanionCaveSense.HEALTH_VERY) return null;
+        // Just out of a fight with food in the bag, he eats on the spot; climbing at once would give up the order for a meal.
+        if (fight.justEnded(owner.level().getGameTime()) && CompanionEating.hasFood(owner)) return null;
         return "мало здоровья (" + (int) Math.ceil(health) + ")";
     }
 
@@ -517,7 +518,7 @@ final class CompanionExpedition {
     private void arm(ServerLevel level) {
         if (level.getGameTime() < nextArm) return;
         nextArm = level.getGameTime() + CRAFT_EVERY;
-        if (!owner.equipment.hasMeleeWeapon()) supply.craftStoneSword();
+        if (!owner.equipment.hasMeleeWeapon() && supply.spareForSword()) supply.craftStoneSword();
     }
 
     private void end(Ending ending, String why) {

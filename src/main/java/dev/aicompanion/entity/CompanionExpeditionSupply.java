@@ -1,10 +1,13 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /** What the expedition makes of its own bag on the spot, so that a missing tool is no reason to climb to the surface. */
 final class CompanionExpeditionSupply {
-    private static final int MAX_PICKAXES = 4, MAX_SWORDS = 2;
+    private static final int MAX_PICKAXES = 4, MAX_SWORDS = 2, SWORD_STONE = 2, PICKAXE_STONE = 3, SWORD_STICKS = 1, PICKAXE_STICKS = 2;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -26,6 +29,14 @@ final class CompanionExpeditionSupply {
         if (pickaxes >= MAX_PICKAXES) return false;
         pickaxes++;
         return craft("minecraft:stone_pickaxe");
+    }
+
+    /** The stone pickaxe in hand, and the stone and sticks of a sword and a pickaxe to spare: the sword must never eat what the pickaxe is to be made of. */
+    boolean spareForSword() {
+        int sticks = 0;
+        for (ItemStack stack : owner.companionInventory) if (stack.is(Items.STICK)) sticks += stack.getCount();
+        return owner.equipment.hasStonePickaxe() && sticks >= SWORD_STICKS + PICKAXE_STICKS
+                && CompanionTools.count(owner, ItemTags.STONE_TOOL_MATERIALS) >= SWORD_STONE + PICKAXE_STONE;
     }
 
     /** A stone sword the same way, so that a fight is never met with a pickaxe; bounded per step too. */

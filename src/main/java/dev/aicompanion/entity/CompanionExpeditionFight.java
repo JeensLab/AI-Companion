@@ -22,11 +22,11 @@ import java.util.List;
 final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
     private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9;
-    private static final int LONGEST = 20 * 45, PAUSE = 20 * 10;
+    private static final int LONGEST = 20 * 45, PAUSE = 20 * 10, MEAL_WINDOW = 20 * 10;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
-    private long since = -1, lastBusy, pausedUntil;
+    private long since = -1, lastBusy, pausedUntil, endedAt = -MEAL_WINDOW;
     private Item tool;
 
     CompanionExpeditionFight(CompanionWork w) {
@@ -59,11 +59,15 @@ final class CompanionExpeditionFight {
         tool = hand.isEmpty() || CompanionEquipment.isMelee(hand) ? null : hand.getItem();
     }
 
+    /** A fight ended a moment ago: the time to eat what it cost before the low-health climb is decided. */
+    boolean justEnded(long now) { return now - endedAt < MEAL_WINDOW; }
+
     void going() { lastBusy = owner.level().getGameTime(); }
 
     void reset() {
         since = -1;
         pausedUntil = 0;
+        endedAt = -MEAL_WINDOW;
         tool = null;
     }
 
@@ -72,6 +76,7 @@ final class CompanionExpeditionFight {
         if (since < 0) return;
         long spent = lastBusy - since;
         since = -1;
+        endedAt = now;
         if (spent > 0) w.credit(spent);
         if (tool != null && !owner.getMainHandItem().is(tool)) owner.equipForWork(BuiltInRegistries.ITEM.getKey(tool).toString());
         tool = null;
