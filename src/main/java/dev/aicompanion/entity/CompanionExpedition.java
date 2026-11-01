@@ -272,8 +272,9 @@ final class CompanionExpedition {
         }
         if (routeIndex + 1 < route.size()) {
             if (route.get(routeIndex + 1).equals(w.mine.plug())) { takeOutPlug(level); return; }
-            if (dig.walkTo(route.get(routeIndex + 1))) routeIndex++;
-            else if (dig.walkStuck()) end(Ending.BLOCKED, "Не смог спуститься по своей лестнице.");
+            if (dig.reach(route.get(routeIndex + 1))) routeIndex++;
+            // No way round to the next step (a chamber he cut beside the stairs): back to the stairs as a whole, the search of the walk finds a stand.
+            else if (dig.walkStuck()) { joining = true; routeIndex = -1; softFails = 0; }
             return;
         }
         if (sealCell != null) {

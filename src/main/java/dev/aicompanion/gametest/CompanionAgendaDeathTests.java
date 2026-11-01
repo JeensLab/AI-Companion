@@ -31,6 +31,7 @@ public final class CompanionAgendaDeathTests {
     @AfterBatch(batch = "agenda_recover_hurt") public static void afterHurt(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_no_wood") public static void afterNoWood(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_recover_mend") public static void afterMend(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_recover_cave") public static void afterCave(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** Hurt, with nothing to eat and nothing to heal him: the try for the things is spent at once, with the reason, and he does not set out. */
     @GameTest(template = "tall_tree", batch = "agenda_recover_hurt", timeoutTicks = 600)
@@ -68,6 +69,26 @@ public final class CompanionAgendaDeathTests {
         h.succeedWhen(() -> {
             h.assertTrue(healthAtTheTry[0] >= 0, "The try for the things was never made: " + c.getHealth());
             h.assertTrue(healthAtTheTry[0] >= 18, "He went for his things at health " + healthAtTheTry[0]);
+        });
+    }
+
+    /** His things lie in a cave the mine remembers as dangerous: he does not walk into it, the try is spent and the place is said, so the things are not lost silently. */
+    @GameTest(template = "tall_tree", batch = "agenda_recover_cave", timeoutTicks = 600)
+    public static void hisThingsInACaveTheMineShunsAreNotFetched(GameTestHelper h) {
+        var player = survivalPlayer(h);
+        var c = body(h, player);
+        c.setHealth(c.getMaxHealth());
+        BlockPos place = lieAt(h, player);
+        c.mineSite().start(place, net.minecraft.core.Direction.NORTH);
+        c.mineSite().shun(java.util.List.of(place));
+        start(h, player);
+        CompanionAgenda.died(h.getLevel().getServer(), player.getUUID(), h.getLevel().dimension(), place);
+        h.succeedWhen(() -> {
+            var goal = CompanionAgenda.goal(h.getLevel().getServer(), player.getUUID());
+            h.assertTrue(goal != null && goal.deathPlace() == null, "The try for the things was not made");
+            h.assertTrue(c.autonomy().said().stream().noneMatch(line -> line.contains("Иду за своими вещами")),
+                    "He set out into the cave for his things: " + c.autonomy().said());
+            h.assertTrue(c.autonomy().said().stream().anyMatch(line -> line.contains("пещер") && line.contains(place.toShortString())), "The reason was not said: " + c.autonomy().said());
         });
     }
 

@@ -457,6 +457,27 @@ public final class CompanionMineBacktrackTests {
         });
     }
 
+    /**
+     * Bedrock closes the foot of the stairs on the three sides a tunnel can take, so every tunnel is short and the base cannot move; the ore
+     * lies in the west wall and not under his feet. He goes back up the stairs and turns off there instead of ending the order.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void backsUpFromTheFootWhenEveryTunnelThereIsClosed(GameTestHelper h) {
+        mountain(h, false);
+        for (int z = 1; z < SIZE - 1; z++) for (int x = 1; x <= WEST_LODE; x++) h.setBlock(new BlockPos(x, DIAMOND_FEET - 1, z), Blocks.DEEPSLATE_DIAMOND_ORE);
+        CompanionEntity c = rig(h);
+        carveMine(h, c, 0);
+        BlockPos foot = c.mineSite().foot();
+        for (int y = -1; y <= 2; y++) for (Direction side : new Direction[]{Direction.NORTH, Direction.WEST, Direction.EAST}) h.getLevel().setBlock(foot.relative(side).above(y), Blocks.BEDROCK.defaultBlockState(), 2 | 16);
+        for (int slot = 6; slot < 6 + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The closed foot ended the mine: " + report(c));
+            h.assertTrue(c.mineSite().backtracks() >= 1, "He found the ore without backing up: backtracks " + c.mineSite().backtracks() + " | " + report(c));
+        });
+    }
+
     /** Digs out the stairs to the diamond depth and a tunnel of {@code tunnel} cells west of the foot and puts them in the record; returns the stands, the entrance first. */
     static List<BlockPos> carveMine(GameTestHelper h, CompanionEntity c, int tunnel) {
         var level = h.getLevel();

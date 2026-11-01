@@ -605,6 +605,7 @@ public final class CompanionAgenda {
                 : !level.isLoaded(place) ? "туда не дойти, место не загружено"
                 : c.blockPosition().distSqr(place) > RECOVER_RANGE * RECOVER_RANGE ? "до них слишком далеко"
                 : unsafe(level, place) ? "там лава или пустота"
+                : c.mineSite().shunned(place) ? "там пещера, из которой я бежал"
                 : hurt ? "я ранен, а лечиться нечем" : null;
         goal.deathPlace = null; goal.deathDimension = null;
         data.setDirty();
