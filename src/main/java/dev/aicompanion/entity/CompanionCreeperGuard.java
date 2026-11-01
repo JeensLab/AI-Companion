@@ -32,13 +32,19 @@ final class CompanionCreeperGuard {
     private static final int FLEE_CELLS = 6, SHUT_STANDS = 3, ON_ROUTE_SQR = 2, ROUTE_CREEPER_SQR = 4, PASSAGE_RANGE = 24, FLEE_RANGE = 12, FLEE_HEIGHT = 6;
     private static final double FLEE_SPEED = 1.3, ARRIVED_SQR = 4;
     /**
-     * The fight. Health above which a creeper is met with the sword; the fuse's length in ticks and the part of it in which he may still
-     * strike (the rest is for getting beyond the blast); a blade's reach and the closing speed of the two, for the time to get within
-     * it; the retreats from creepers he bears before he gives up the fight, and how long they are remembered.
+     * The fight. Health above which a creeper is met with the sword; the fuse's length in ticks and a margin of it left over; a blade's
+     * reach and the closing speed of the two, for the time to get within it; the retreats from creepers he bears before he gives up the
+     * fight, and how long they are remembered.
      */
     private static final float FIGHT_HEALTH = 12;
-    private static final int FUSE = 30, HIT_WINDOW = 10, SWING_MARGIN = 2, GIVE_UP = 6, FORGET_TICKS = 20 * 60;
-    private static final double REACH = 1.6, CLOSING_SPEED = .25;
+    private static final int FUSE = 30, SWING_MARGIN = 2, GIVE_UP = 6, FORGET_TICKS = 20 * 60;
+    private static final double REACH = 1.6, CLOSING_SPEED = .15;
+    /**
+     * The way out of a lit fuse: the fuse goes out only beyond 7 blocks (a little more for a margin), at his pace in blocks a tick, after the
+     * ticks it takes the goal to take the turn and the path to start; the speed of that dash, and the cells of the route it runs along.
+     */
+    private static final double SAFE_GAP = 7.4, FLEE_PACE = .4, FIGHT_FLEE_SPEED = 1.6;
+    private static final int LATENCY = 4, FIGHT_CELLS = 9;
     /** A creeper with a lit fuse is looked at before any other: this much nearer in the sort. */
     private static final double LIT_FIRST = 10_000;
 
@@ -106,7 +112,7 @@ final class CompanionCreeperGuard {
             if (!plan(level, creeper, true)) { finished = true; return; }
         }
         if (!cells.isEmpty()) { shut(); return; }
-        if (flee != null) owner.getNavigation().moveTo(flee.x, flee.y, flee.z, FLEE_SPEED);
+        if (flee != null) owner.getNavigation().moveTo(flee.x, flee.y, flee.z, fighting ? FIGHT_FLEE_SPEED : FLEE_SPEED);
     }
 
     void stop() {
@@ -163,7 +169,7 @@ final class CompanionCreeperGuard {
         if (fights()) {
             if (!mustLeave(creeper, going)) return false;
             boolean keep = going && before != null && owner.position().distanceToSqr(before) > ARRIVED_SQR;
-            Vec3 away = keep ? before : underground ? alongRoute(way, at, creeper) : awayFrom(way, creeper);
+            Vec3 away = keep ? before : underground ? alongRoute(way, at, creeper, FIGHT_CELLS) : awayFrom(way, creeper, SAFE_GAP + 1);
             fighting = away != null;
             if (fighting) { flee = away; return true; }
         }
@@ -171,17 +177,18 @@ final class CompanionCreeperGuard {
             cells = shutCells(mine, way, at, creeper);
             if (!cells.isEmpty()) return true;
         }
-        Vec3 target = underground ? alongRoute(way, at, creeper) : awayFrom(way, creeper);
+        Vec3 target = underground ? alongRoute(way, at, creeper, FLEE_CELLS) : awayFrom(way, creeper, 0);
         flee = target;
         return flee != null;
     }
 
-    /** The fuse is lit and he cannot strike once more and still get beyond the blast: the ticks it has run plus the walk to its reach plus a margin, against the window for a blow. */
+    /** The fuse is lit and he cannot strike once more and still get out of its range in time: the ticks it has run, the walk to its reach, the start of the dash and the dash itself, against the fuse. */
     private boolean mustLeave(Creeper creeper, boolean going) {
         if (!lit(creeper)) return false;
         if (going) return true;
-        double ran = creeper.getSwelling(0) * (FUSE - 2), arrive = Math.max(0, owner.distanceTo(creeper) - REACH) / CLOSING_SPEED;
-        return ran + arrive + SWING_MARGIN > HIT_WINDOW;
+        double ran = creeper.getSwelling(0) * (FUSE - 2), distance = owner.distanceTo(creeper);
+        double arrive = Math.max(0, distance - REACH) / CLOSING_SPEED, escape = Math.max(0, SAFE_GAP - Math.min(distance, REACH)) / FLEE_PACE;
+        return ran + arrive + LATENCY + escape + SWING_MARGIN > FUSE;
     }
 
     /** The head-height cells of the stand a few steps off on the creeper's side, far enough that its fuse is not lit; empty when that is shut already or out of reach. */
@@ -219,15 +226,15 @@ final class CompanionCreeperGuard {
     }
 
     /** On his route, away from the creeper's side for a few cells; null where the route ends. */
-    private Vec3 alongRoute(List<BlockPos> way, int at, Creeper creeper) {
+    private Vec3 alongRoute(List<BlockPos> way, int at, Creeper creeper, int cells) {
         int side = sideOf(way, at, creeper);
-        int target = Math.max(0, Math.min(way.size() - 1, at - side * FLEE_CELLS));
+        int target = Math.max(0, Math.min(way.size() - 1, at - side * cells));
         return target == at ? null : Vec3.atBottomCenterOf(way.get(target));
     }
 
     /** Off the route: to the nearest cell of his own passage that is farther from the creeper than he is, else simply away from it. */
-    private Vec3 awayFrom(List<BlockPos> way, Creeper creeper) {
-        double mine = creeper.distanceToSqr(owner);
+    private Vec3 awayFrom(List<BlockPos> way, Creeper creeper, double gap) {
+        double mine = Math.max(creeper.distanceToSqr(owner), gap * gap);
         BlockPos best = null;
         double bestDistance = PASSAGE_RANGE * PASSAGE_RANGE;
         for (BlockPos cell : way) {
