@@ -3,6 +3,7 @@ package dev.aicompanion.gametest;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -18,6 +19,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
 
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.DEEPSLATE_TOP;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.GROUND;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.count;
@@ -35,7 +39,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineStopsTests {
-    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200;
 
     private CompanionMineStopsTests() { }
 
@@ -64,6 +68,31 @@ public final class CompanionMineStopsTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not get past the foe he cannot reach: " + result.message() + " | zombie " + (zombie.isAlive() ? "alive" : "gone") + " | " + report(c));
+        });
+    }
+
+    /**
+     * He stands in a closed pit deep under the ground; the record's entrance is far away on the surface and no stairs are left near him,
+     * and no spot for a new entrance is in reach. He does not give up with "no place for an entrance": the mine starts again in the pit.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainInAPitWhenTheEntranceIsFarAway(GameTestHelper h) {
+        mountain(h, true);
+        for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        BlockPos pit = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER + FAR_ENTRANCE, GROUND + 1, CENTER)), Direction.NORTH);
+        // The light engine runs between ticks: the order starts once the pit reads as roofed over, as it does in the world.
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(pit.above()), "The light in the pit is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again in the pit: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
         });
     }
 }
