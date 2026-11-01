@@ -58,6 +58,8 @@ public final class CompanionAgendaData extends SavedData {
         boolean mineAsIs;
         /** The iron is out of the ore search's reach (too far down, or none seen): the next step digs down, then the search looks again. Not saved: a reload finds out again. */
         boolean descendForOre;
+        /** The step wanted wood and he is under the ground, where there is none: the next step is the way up his stairs, then the step again. Not saved: a reload finds out again. */
+        boolean ascendForWood;
 
         Goal(UUID id, String playbook, int tier) { this.id = id; this.playbook = playbook; this.tier = tier; }
 

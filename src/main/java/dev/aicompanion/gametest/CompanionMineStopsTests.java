@@ -313,6 +313,54 @@ public final class CompanionMineStopsTests {
     }
 
     /**
+     * Run m12b/void-4 (seed 20261031): he came back to his things deep in the mine after a death, and the goal's next milestone was the iron
+     * pickaxe, which wants boards and sticks: «Не нашёл доступного дерева для подготовки», over and over, as the search for logs does not
+     * reach the surface from down there. A tree is on the surface: he goes up his own stairs first, makes the pickaxe there, and the goal
+     * goes on. (The search window of the arena is too small to lose the trees from the bottom of the stairs, so this one guards the way up.)
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = GOAL_TIMEOUT)
+    public static void makesThePickaxeOnTheSurfaceWhenHeIsDeepInTheMineAndNeedsWood(GameTestHelper h) {
+        CompanionDiamondGoalTests.Rig r = deepWithoutWood(h, true);
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.succeedWhen(() -> h.assertTrue(count(r.c(), Items.IRON_PICKAXE) >= 1, "No iron pickaxe | " + CompanionDiamondGoalTests.report(h, r)));
+    }
+
+    /**
+     * The same with no tree anywhere: the goal has to stop, but not at the bottom of the mine with «Не нашёл доступного дерева» said five
+     * times over: he goes up first, looks on the surface, and stops there once.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = GOAL_TIMEOUT)
+    public static void stopsForWantOfWoodOnTheSurfaceNotAtTheBottomOfTheMine(GameTestHelper h) {
+        CompanionDiamondGoalTests.Rig r = deepWithoutWood(h, false);
+        BlockPos entrance = r.c().mineSite().entrance();
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            if (CompanionDiamondGoalTests.state(h, r) != CompanionAgenda.State.BLOCKED) return;
+            h.assertTrue(r.c().getY() >= entrance.getY() - SURFACE_MARGIN, "The goal stopped under the ground: " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.goal(h, r).reason().contains("дерева"), "Stopped for another reason: " + CompanionDiamondGoalTests.report(h, r));
+            h.succeed();
+        });
+    }
+
+    /** Three iron ingots, a bench and no wood in the bag, deep down his own stairs; the logs, if any, stand on the surface by the entrance. The goal is taken up. */
+    private static CompanionDiamondGoalTests.Rig deepWithoutWood(GameTestHelper h, boolean trees) {
+        ItemStack[] bag = {new ItemStack(Items.IRON_INGOT, 3), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32),
+                new ItemStack(Items.COBBLESTONE, 46), new ItemStack(Items.CRAFTING_TABLE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE)};
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, true, bag);
+        CompanionEntity c = r.c();
+        c.setFollowing(false);
+        if (trees) for (int[] trunk : new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}})
+            for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
+        BlockPos deep = carveMine(h, c, 0).get(PIT_STEP);
+        c.teleportTo(deep.getX() + .5, deep.getY(), deep.getZ() + .5);
+        CompanionDiamondGoalTests.start(h, r, 1);
+        return r;
+    }
+
+    /**
      * Runs m4b/void-3 (seed 20261102) and m4a/water (20261031): he stands on a ledge of a cave walled in by his own plugs. The cells beside
      * him are plugs forbidden for good, every side is refused, and no side of the entrance on the surface is left to begin stairs to: the goal
      * stood «Не смог дойти до входа в шахту» five times. He digs down out of the ring, the mine begins again below it and reaches the ore;
