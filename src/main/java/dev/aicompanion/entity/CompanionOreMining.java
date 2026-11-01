@@ -288,7 +288,8 @@ final class CompanionOreMining {
     private boolean safeOreSwing(ServerLevel level, BlockPos pos) {
         if (blockedOreCell(level, pos)) { w.oreUnreachable++; rejectOre(); return false; }
         if (CompanionLighting.supportsLight(level, pos)) { blockOreCell(level, pos, "path_light"); return false; }
-        if (!w.owner.autonomy().running() && !w.owner.autonomy().protectsReturn()) return true;
+        // A tunnel he came down by is his way up whoever gave the order: its steps are left in a player's or a goal's order too.
+        if (w.oreExit == null && !w.owner.autonomy().running() && !w.owner.autonomy().protectsReturn()) return true;
         if (CompanionMiningNavigation.supportsLivingEntity(w.owner, pos)) {
             w.breaking.reset();
             if (level.getGameTime() - w.lastProgressTick > 160) { blockOreCell(level, pos, "occupied_support"); return false; }
