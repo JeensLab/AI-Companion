@@ -1,5 +1,6 @@
 package dev.aicompanion.gametest;
 
+import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionMineSite;
 import dev.aicompanion.entity.CompanionShaftPlan;
@@ -19,6 +20,8 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.GROUND;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.count;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.ended;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.mountain;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rel;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.report;
@@ -32,7 +35,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineIntegrityTests {
-    private static final int TURN_AT = 6, FLOOR_CUT_A = 4, FLOOR_CUT_B = 7, STANDS_ABOVE_FOOT = 3, ORE_WAIT_TICKS = 300, LOCATE_TICKS = 200;
+    private static final int TURN_AT = 6, FLOOR_CUT_A = 4, FLOOR_CUT_B = 7, STANDS_ABOVE_FOOT = 3, ORE_WAIT_TICKS = 300, LOCATE_TICKS = 200, CHAMBER_STAND = 6, CHAMBER_LENGTH = 3;
 
     private CompanionMineIntegrityTests() { }
 
@@ -98,6 +101,28 @@ public final class CompanionMineIntegrityTests {
         h.onEachTick(() -> {
             h.assertTrue(c.mineSite().stands().size() >= stands, "The stairs below the cut were dropped: " + c.mineSite().stands().size() + " of " + stands + " stands, stage " + c.expeditionStage());
             if (h.getTick() - begun >= LOCATE_TICKS) h.succeed();
+        });
+    }
+
+    /**
+     * A stone-gathering step cut a side chamber one level above the floor of his stairs and left him standing in it: the next stand is on the
+     * other side of the wall, a straight push goes nowhere. He walks round it (or back to a stand of the stairs) and the mine goes on to the ore.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void walksOutOfASideChamberBackOntoTheStairs(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos stand = stairs.get(CHAMBER_STAND);
+        for (int dz = 0; dz < CHAMBER_LENGTH; dz++) for (int dx = 1; dx <= 2; dx++) for (int dy = 1; dy <= 3; dy++) {
+            h.getLevel().setBlock(stand.offset(-dx, dy, -dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        BlockPos inside = stand.offset(-1, 1, -1);
+        c.teleportTo(inside.getX() + .5, inside.getY(), inside.getZ() + .5);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not get out of the chamber at " + rel(h, inside).toShortString() + ": " + report(c));
         });
     }
 }
