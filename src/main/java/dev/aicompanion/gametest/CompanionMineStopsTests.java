@@ -410,6 +410,7 @@ public final class CompanionMineStopsTests {
         mountain(h, true);
         CompanionEntity c = rig(h);
         c.setFollowing(false);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         net.minecraft.world.item.Item[] rubble = {Items.DIRT, Items.GRAVEL, Items.SAND, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF};
         for (int i = 0; i < rubble.length; i++) c.setItem(6 + i, new ItemStack(rubble[i], 64));
         for (int slot = 6 + rubble.length; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.WOODEN_HOE));
@@ -418,6 +419,7 @@ public final class CompanionMineStopsTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "No room for the diamond: " + result.message() + " | " + report(c));
             h.assertTrue(count(c, Items.WOODEN_HOE) == c.getContainerSize() - 6 - rubble.length, "A tool was thrown out instead of the rubble | " + report(c));
+            h.assertTrue(c.getOffhandItem().is(Items.SHIELD), "The shield in the left hand went with the rubble | " + report(c));
         });
     }
 
