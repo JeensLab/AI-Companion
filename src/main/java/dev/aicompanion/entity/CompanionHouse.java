@@ -82,6 +82,13 @@ final class CompanionHouse {
                 && pos.getX() > base.getX() && pos.getX() < base.getX() + 4
                 && pos.getZ() > base.getZ() && pos.getZ() < base.getZ() + 4;
     }
+    /** Inside the house he finished; null while it is not finished and once a loaded chunk shows it gone. An unloaded house is taken on memory. */
+    BlockPos finishedAnchor(ServerLevel level) {
+        if (base == null || steps.isEmpty() || placed.cardinality() != steps.size()) return null;
+        BlockPos center = interiorAnchor();
+        boolean loaded = level.hasChunkAt(center) && level.hasChunkAt(center.above(3));
+        return !loaded || interiorAvailable(level) ? center : null;
+    }
     boolean interiorAvailable(ServerLevel level) {
         if (base == null) return false;
         BlockPos center = interiorAnchor();

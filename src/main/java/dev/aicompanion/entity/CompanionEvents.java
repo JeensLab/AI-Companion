@@ -267,7 +267,8 @@ public final class CompanionEvents {
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
-        if (!autonomousDispatch && !goalDispatch) {
+        // Naming the home is a word, not an order: whatever he is busy with goes on.
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
@@ -324,6 +325,11 @@ public final class CompanionEvents {
             case "unequip_item" -> {
                 if (companion.hasActiveWorkOrder()) companion.setFollowing(false);
                 yield companion.unequipItem(slot);
+            }
+            case "set_home" -> {
+                companion.places.nameHome(player.blockPosition());
+                companion.refreshPlaces();
+                yield CompanionActionResult.ok("Запомнил: наш дом здесь.");
             }
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
@@ -399,6 +405,12 @@ public final class CompanionEvents {
     /** A farmer does not trample his own field: a step down or a jump onto farmland never turns it to dirt under him. */
     public static void onFarmlandTrample(net.neoforged.neoforge.event.level.BlockEvent.FarmlandTrampleEvent event) {
         if (event.getEntity() instanceof CompanionEntity) event.setCanceled(true);
+    }
+
+    /** What the player builds tells where he lives (Oleg's own blocks are set directly and never come here). */
+    public static void onBlockPlaced(net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player && !(player instanceof net.neoforged.neoforge.common.util.FakePlayer) && event.getLevel() instanceof ServerLevel level)
+            CompanionPlayerBuilds.get(level.getServer()).record(player.getUUID(), level, event.getPos(), event.getPlacedBlock());
     }
 
     public static CompanionEntity getOwnedCompanion(ServerPlayer player) {

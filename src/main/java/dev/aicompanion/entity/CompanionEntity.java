@@ -842,7 +842,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         autonomy.tick();
         diagnostics.tick();
-        if (tickCount % 100 == 0) refreshPlaces();
+        if (tickCount % 100 == 0) { places.discoverHome(); refreshPlaces(); }
         if (tickCount % 20 == 0) {
             if (level() instanceof ServerLevel serverLevel) { batches.tick(serverLevel); entityData.set(DATA_FURNACES, batches.forAi()); entityData.set(DATA_GOAL, CompanionAgendaView.line(this)); }
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;

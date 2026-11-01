@@ -42,6 +42,7 @@ final class CompanionFurnaces {
      * With no furnace at all, one is made from real stone and set down.
      */
     void prepareFurnace(ServerLevel level) {
+        if (w.trip.walk()) return;
         if (!w.owner.onGround()) return;
         int wanted = wantedFurnaces();
         while (w.lots.size() < wanted) {
@@ -49,6 +50,7 @@ final class CompanionFurnaces {
             if (free == null) break;
             w.lots.add(new CompanionWork.Lot(free, false));
         }
+        if (w.lots.isEmpty() && w.trip.toStation("minecraft:furnace")) return;
         boolean carriesFurnace = w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.FURNACE));
         if (w.lots.size() < wanted && carriesFurnace && w.furnacesPlaced < CompanionWork.MAX_FURNACES + 2) {
             BlockPos group = w.lots.isEmpty() ? null : w.lots.getFirst().pos;
@@ -62,7 +64,8 @@ final class CompanionFurnaces {
                     w.owner.movementIntent(w.furnaceRoom);
                     if (w.approach(level, w.furnaceRoom, 2.5D)) { w.owner.workStatus("Здесь тесно для печи, выхожу туда, где есть место."); return; }
                 }
-                CompanionActionResult placed = w.owner.placeBlockNearResult("minecraft:furnace", w.owner.blockPosition());
+                if (w.lots.isEmpty() && w.furnaceRoom == null && w.trip.toHome()) return;
+                CompanionActionResult placed = w.trip.place("minecraft:furnace");
                 if (placed.success() && w.owner.lastPlacedPosition() != null) {
                     w.furnacesPlaced++;
                     w.lots.add(new CompanionWork.Lot(w.owner.lastPlacedPosition(), true));
