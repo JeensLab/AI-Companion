@@ -28,6 +28,9 @@ public final class CompanionMineSite {
     public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
     private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
+    /** Squared distance within which he counts as standing at a stand; the expedition's own measure of "the same spot". */
+    private static final int NEAR_STAND = 12;
+
     private record Move(BlockPos stand, Direction direction) { }
 
     /** One tunnel from the stair foot: its direction and how many advances (of four cells) are open. */
@@ -261,7 +264,16 @@ public final class CompanionMineSite {
     public CompanionShaftPlan.Avoid avoid() {
         Set<BlockPos> own = new HashSet<>(stands);
         if (entrance != null) own.add(entrance);
-        return new CompanionShaftPlan.Avoid(Collections.unmodifiableSet(forbidden), (at, d) -> refused(at, d) || own.contains(at.relative(d)), this::shunned);
+        // The floor under a step is no cell to open either: a landing or a tunnel dug through it would drop the stairs below.
+        Set<BlockPos> shut = new HashSet<>(forbidden);
+        for (BlockPos stand : own) shut.add(stand.below());
+        return new CompanionShaftPlan.Avoid(Collections.unmodifiableSet(shut), (at, d) -> refused(at, d) || own.contains(at.relative(d)), this::shunned);
+    }
+
+    /** The cell is the floor of a stand of his own stairs (or of the entrance): breaking it would open a hole under the step. */
+    public boolean carriesStand(BlockPos floor) {
+        BlockPos above = floor.above();
+        return above.equals(entrance) || stands.contains(above);
     }
 
     private static <T> void remember(Set<T> set, T entry, int cap) {
@@ -285,12 +297,19 @@ public final class CompanionMineSite {
      * must not be cut off because the entrance end is out of range).
      * Returns how many stands remain; tunnels are dropped with any stand that goes.
      */
-    public int verify(ServerLevel level) {
+    public int verify(ServerLevel level) { return verify(level, null); }
+
+    /**
+     * As above, for a companion at {@code here}: a stand he is on or beside (null: none) starts the check, so a cut in the stairs above him
+     * does not take the part below, which is the way he is going. With no stand near him the check starts at the entrance.
+     */
+    public int verify(ServerLevel level, BlockPos here) {
         if (entrance == null) return 0;
-        if (level.hasChunkAt(entrance) && !columnOpen(level, entrance)) {
+        int near = here == null ? 0 : routeNear(here);
+        if (near == 0 && level.hasChunkAt(entrance) && !columnOpen(level, entrance)) {
             truncate(0);
         } else {
-            int kept = 0;
+            int kept = Math.max(near - 1, 0);
             while (kept < stands.size() && !closed(level, stands.get(kept), kept == 0 ? entrance : stands.get(kept - 1))) kept++;
             truncate(kept);
         }
@@ -298,6 +317,17 @@ public final class CompanionMineSite {
         temporary.removeIf(cell -> level.hasChunkAt(cell) && level.getBlockState(cell).isAir());
         if (plug != null && level.hasChunkAt(plug) && level.getBlockState(plug).isAir()) plug = null;
         return stands.size();
+    }
+
+    /** The place on the route (the entrance is 0, the stands follow) he stands at or beside, as the expedition finds it; 0 also when none is near, as then the whole stairs are judged. */
+    private int routeNear(BlockPos here) {
+        int best = 0;
+        double bestDistance = NEAR_STAND;
+        for (int i = 0; i <= stands.size(); i++) {
+            double distance = (i == 0 ? entrance : stands.get(i - 1)).distSqr(here);
+            if (distance <= bestDistance) { best = i; bestDistance = distance; }
+        }
+        return best;
     }
 
     /** A stand's three cells are open, or held only by a temporary block of his. */

@@ -112,6 +112,7 @@ final class CompanionExpeditionOre {
         if (!dig.hasTool(level.getBlockState(pos))) return "no tool";
         if (mode == Mode.NEAR) {
             double distance = eye.distanceToSqr(pos.getCenter());
+            if (w.mine.carriesStand(pos)) return "under a step";
             if (underFeet(feet, pos) && !floorHolds(level, pos)) return "under feet";
             if (distance > CompanionSeal.REACH * CompanionSeal.REACH) return "out of reach";
             if (!CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
@@ -149,9 +150,9 @@ final class CompanionExpeditionOre {
         return best;
     }
 
-    /** In reach and sight, and its drop to be picked up; the floor under his own feet only when what lies under that ore holds him. */
+    /** In reach and sight, and its drop to be picked up; the floor under his own feet only when what lies under that ore holds him, and never the floor of a step of his own stairs. */
     private boolean withinHands(ServerLevel level, Vec3 eye, BlockPos feet, BlockPos pos, double distanceSqr) {
-        return (!underFeet(feet, pos) || floorHolds(level, pos)) && distanceSqr <= CompanionSeal.REACH * CompanionSeal.REACH
+        return !w.mine.carriesStand(pos) && (!underFeet(feet, pos) || floorHolds(level, pos)) && distanceSqr <= CompanionSeal.REACH * CompanionSeal.REACH
                 && CompanionMiningNavigation.visible(owner, eye, pos) && CompanionMiningNavigation.dropCollectable(level, pos, feet);
     }
 
