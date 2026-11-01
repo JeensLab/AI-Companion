@@ -160,6 +160,27 @@ public final class CompanionCaveTests {
         }));
     }
 
+    /**
+     * The same cave with a live creeper that cannot walk (speed 0) but swells when he comes within three blocks: whatever he does about
+     * it (the sword, the dance, a block between them) he lives, the breach is closed in the end and the order has ended.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLiveCreeperAtTheBreachCostsHimNothingAndTheBreachIsClosed(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, true, false, false);
+        CompanionEntity c = rig(h);
+        Creeper creeper = hostile(h, EntityType.CREEPER, 28, 5);
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + ", creeper " + creeper.isAlive() + " | " + report(c));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> { }));
+    }
+
     /** Once the order has ended: the breach was reached at all (otherwise the test proves nothing), no air path joins the cave and his mine, plus the test's own checks. */
     private static void settle(GameTestHelper h, CompanionEntity c, long id, Watch w, Set<BlockPos> cave, Consumer<List<String>> own) {
         if (c.isGatheringTask() || c.isWorking() || c.workResult(id) == null) return;
