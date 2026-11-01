@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
@@ -54,6 +55,7 @@ final class CompanionExpeditionDig {
     boolean lackedOre;
     /** Stranded under the ground with no stone pickaxe: the rock is dug with the iron one while it has wear to spare. */
     boolean ironForRock;
+    private int ironReserve = SPARE_DURABILITY;
 
     CompanionExpeditionDig(CompanionWork w) {
         this.w = w;
@@ -154,11 +156,36 @@ final class CompanionExpeditionDig {
     }
 
     /** An iron pickaxe in the bag with wear to spare. */
-    boolean spareIron() {
+    boolean spareIron() { return ironLeft(ironReserve); }
+
+    /** An iron pickaxe in the bag with more than {@code reserve} wear left. */
+    boolean ironLeft(int reserve) {
         for (ItemStack stack : w.items.carriedItems()) {
-            if (stack.is(Items.IRON_PICKAXE) && stack.getMaxDamage() - stack.getDamageValue() > SPARE_DURABILITY) return true;
+            if (stack.is(Items.IRON_PICKAXE) && stack.getMaxDamage() - stack.getDamageValue() > reserve) return true;
         }
         return false;
+    }
+
+    /** A diamond ore with an open face within {@code radius} of his feet: one he has seen, as the ore search sees it, not through the rock. */
+    boolean diamondInSight(ServerLevel level, int radius) {
+        BlockPos feet = owner.blockPosition();
+        for (BlockPos pos : BlockPos.betweenClosed(feet.offset(-radius, -radius, -radius), feet.offset(radius, radius, radius))) {
+            if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(BlockTags.DIAMOND_ORES)) continue;
+            for (Direction side : Direction.values()) if (CompanionShaftPlan.open(level, pos.relative(side))) return true;
+        }
+        return false;
+    }
+
+    /** The rock is dug with the iron pickaxe down to {@code reserve} wear left, for what only it can still do (a diamond, a plug of his own on the way out). */
+    void ironForRock(int reserve) {
+        ironForRock = true;
+        ironReserve = reserve;
+    }
+
+    /** Back to keeping {@link #SPARE_DURABILITY} wear of the iron pickaxe for ore. */
+    void keepIron() {
+        ironForRock = false;
+        ironReserve = SPARE_DURABILITY;
     }
 
     /** Steps towards the cell with the move control (neighbouring cells of his own mine); true once he stands in it. */
@@ -240,7 +267,7 @@ final class CompanionExpeditionDig {
     void reset() {
         flush();
         cell = walking = lastBroken = null;
-        ironForRock = false;
+        keepIron();
         reaching = null;
         around = List.of();
         minedOre.clear();
