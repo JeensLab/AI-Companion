@@ -67,7 +67,7 @@ public final class CompanionEvents {
                         companion.goals().playerOrder("follow"); companion.autonomy().playerOrder("follow");
                         CompanionAgenda.playerOrder(player, companion, "follow"); companion.setFollowing(true);
                         companion.teleportTo(player.serverLevel(), at.x, at.y, at.z, Set.of(), companion.getYRot(), companion.getXRot());
-                    } else if (at != null) companion.teleportTo(at.x, at.y, at.z);
+                    } else if (at != null) { companion.portals.stop(); companion.teleportTo(at.x, at.y, at.z); }
                     context.getSource().sendSuccess(() -> Component.literal(companion == null
                             ? "Компаньон сейчас выгружен из мира; он не создан повторно."
                             : at == null ? "Рядом с тобой ему негде встать: нужен твёрдый пол без воды и лавы." : "Компаньон рядом."), false);
@@ -275,7 +275,6 @@ public final class CompanionEvents {
                 if (!action.equals("pursue_goal")) companion.goals().playerOrder(action);
                 // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
-                if (!action.equals("verify_item") && !action.startsWith("goal_")) companion.portals.stop();
             }
             // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
             CompanionAgenda.playerOrder(player, companion, action);

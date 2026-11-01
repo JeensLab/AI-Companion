@@ -147,13 +147,19 @@ public final class CompanionPortalTests {
 
     /** «Стой» on the way ends the walk: he stays out of the portal the order sent him to. */
     @GameTest(template = "tall_tree", timeoutTicks = 500, batch = "portal")
-    public static void stoppedOnTheWayHeStaysOut(GameTestHelper h) { stopOnTheWay(h, 20); }
+    public static void stoppedOnTheWayHeStaysOut(GameTestHelper h) { stopOnTheWay(h, 20, owner -> CompanionEvents.executeAction(owner, "wait", "", 1)); }
 
     /** The goal selector looks at a running goal every other tick: a stop on either tick must not reach the walk with no portal. */
     @GameTest(template = "tall_tree", timeoutTicks = 500, batch = "portal")
-    public static void stoppedOnTheOtherTickHeStaysOut(GameTestHelper h) { stopOnTheWay(h, 21); }
+    public static void stoppedOnTheOtherTickHeStaysOut(GameTestHelper h) { stopOnTheWay(h, 21, owner -> CompanionEvents.executeAction(owner, "wait", "", 1)); }
 
-    private static void stopOnTheWay(GameTestHelper h, int stopAt) {
+    /** The typed commands reach him past the plan's way in; they stop him as well. */
+    @GameTest(template = "tall_tree", timeoutTicks = 500, batch = "portal")
+    public static void stoppedByTheTypedCommandHeStaysOut(GameTestHelper h) {
+        stopOnTheWay(h, 20, owner -> owner.getServer().getCommands().performPrefixedCommand(owner.createCommandSourceStack(), "companion stay"));
+    }
+
+    private static void stopOnTheWay(GameTestHelper h, int stopAt, java.util.function.Consumer<net.minecraft.server.level.ServerPlayer> stop) {
         ground(h);
         CompanionEntity companion = spawn(h, 6, 16);
         UUID id = companion.getUUID();
@@ -162,7 +168,7 @@ public final class CompanionPortalTests {
         var nether = server.getLevel(Level.NETHER);
         lightPortal(h);
         h.runAfterDelay(2, () -> h.assertTrue(CompanionEvents.executeAction(owner, "enter_portal", "", 1).success(), "The order was refused"));
-        h.runAfterDelay(stopAt, () -> CompanionEvents.executeAction(owner, "wait", "", 1));
+        h.runAfterDelay(stopAt, () -> stop.accept(owner));
         h.runAtTickTime(300, () -> h.succeedIf(() -> {
             h.assertTrue(h.getLevel().getEntity(id) == companion && nether.getEntity(id) == null, "He left");
             h.assertTrue(companion.blockPosition().distManhattan(h.absolutePos(new BlockPos(15, GROUND + 2, 16))) > 2, "He walked on to the portal: " + companion.blockPosition());
@@ -171,7 +177,7 @@ public final class CompanionPortalTests {
 
     @GameTest(template = "empty", timeoutTicks = 20, batch = "portal")
     public static void thePhrasesThatSendHimIn(GameTestHelper h) {
-        for (String phrase : new String[] {"Олег, зайди в портал", "зайди в этот портал", "иди в портал", "войди в портал", "пройди через портал", "заходи в незер"}) {
+        for (String phrase : new String[] {"Олег, зайди в портал", "зайди в этот портал", "иди в портал", "войди в портал", "пройди через портал", "заходи в незер", "зайди в портал, жди там"}) {
             String routed = CompanionLocalCommands.route(phrase, "Олег");
             h.assertTrue("companion enter_portal".equals(routed), "«" + phrase + "» went to " + routed);
             h.assertTrue("enter_portal".equals(CompanionLocalCommands.action(routed).type()), "«" + phrase + "» is another step");
@@ -179,6 +185,10 @@ public final class CompanionPortalTests {
         for (String phrase : new String[] {"не заходи в портал", "что такое портал", "построй портал", "зайди в портал и жди"})
             h.assertTrue(!"companion enter_portal".equals(CompanionLocalCommands.route(phrase, "Олег")), "«" + phrase + "» sent him in");
         h.assertTrue(CompanionPlanCodec.ACTIONS.contains("enter_portal"), "The model cannot ask for it");
+        h.assertTrue(CompanionPlanCodec.decode(plan("[{\\\"action\\\":\\\"come\\\"},{\\\"action\\\":\\\"enter_portal\\\"}]")).actions().size() == 2, "The last step was refused");
+        boolean refused = false;
+        try { CompanionPlanCodec.decode(plan("[{\\\"action\\\":\\\"enter_portal\\\"},{\\\"action\\\":\\\"wait\\\"}]")); } catch (IllegalStateException expected) { refused = true; }
+        h.assertTrue(refused, "A step after the portal was let through");
         h.succeed();
     }
 
@@ -203,6 +213,10 @@ public final class CompanionPortalTests {
             if (x == 14 || x == 17 || y == GROUND + 1 || y == GROUND + 5) h.setBlock(new BlockPos(x, y, 16), Blocks.OBSIDIAN);
         h.setBlock(new BlockPos(15, GROUND + 2, 16), Blocks.FIRE);
         h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(16, GROUND + 4, 16));
+    }
+
+    private static com.google.gson.JsonObject plan(String steps) {
+        return com.google.gson.JsonParser.parseString("{\"content\":null,\"tool_calls\":[{\"function\":{\"name\":\"queue_companion_plan\",\"arguments\":\"{\\\"steps\\\":" + steps + "}\"}}]}").getAsJsonObject();
     }
 
     private static CompanionEntity spawn(GameTestHelper h, int x, int z) {

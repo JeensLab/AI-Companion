@@ -151,6 +151,7 @@ public final class CompanionPlanCodec {
                 if (result.size() > MAX_STEPS) throw invalid();
             }
             requireGoalAlone(result);
+            requirePortalLast(result);
             return List.copyOf(result);
         } catch (RuntimeException exception) { throw invalid(); }
     }
@@ -158,6 +159,11 @@ public final class CompanionPlanCodec {
     /** A long goal runs on the server by itself: it is the only step of its plan, or the whole plan is invalid. */
     private static void requireGoalAlone(List<PlannedAction> steps) {
         if (steps.size() > 1 && steps.stream().anyMatch(step -> "pursue_goal".equals(step.type()))) throw invalid();
+    }
+
+    /** Any step after it would end the walk to the portal at once, or find him in another world. */
+    private static void requirePortalLast(List<PlannedAction> steps) {
+        for (int i = 0; i < steps.size() - 1; i++) if ("enter_portal".equals(steps.get(i).type())) throw invalid();
     }
 
     private static String textContent(JsonElement content) {
