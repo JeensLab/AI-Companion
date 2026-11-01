@@ -61,13 +61,17 @@ final class CompanionCreeperGuard {
     private static final int[] RING_RADII = {5, 9};
 
     private final CompanionEntity owner;
-    private boolean active, finished, noBlock, fighting;
+    private boolean active, finished, noBlock, fighting, shielded;
     private long begun, lastSeen, nextLook, nextPlan, lastRetreat;
     private int tries, retreats;
     private List<BlockPos> cells = List.of();
     private Vec3 flee;
+    private final CompanionShieldGuard shield;
 
-    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; }
+    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; shield = new CompanionShieldGuard(owner); }
+
+    /** The shield is up against a lit fuse: the idle lowering of it (CompanionEntity) waits. */
+    boolean shielding() { return shield.holding(); }
 
     /** True when a creeper is met with the sword: on an expedition, armed, healthy, and not after a run of retreats from it. */
     boolean fights() {
@@ -83,7 +87,8 @@ final class CompanionCreeperGuard {
         nextLook = now + (fights() ? FIGHT_LOOK_EVERY : LOOK_EVERY);
         Creeper creeper = seen(level);
         noBlock = false;
-        return creeper != null && !(!lit(creeper) && engaged()) && plan(level, creeper, false);
+        shielded = creeper != null && shield.covers(level, creeper);
+        return creeper != null && (shielded || !(!lit(creeper) && engaged()) && plan(level, creeper, false));
     }
 
     /**
@@ -119,15 +124,20 @@ final class CompanionCreeperGuard {
             retreats++;
             lastRetreat = now;
         }
-        owner.workStatus(fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, " + (cells.isEmpty() ? "ухожу от него." : "закрываю проход блоком."));
+        owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, " + (cells.isEmpty() ? "ухожу от него." : "закрываю проход блоком."));
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "creeper_guard", "entity", owner.getUUID(),
-                "action", fighting ? "retreat" : cells.isEmpty() ? "flee" : "block", "cells", cells);
+                "action", shielded ? "shield" : fighting ? "retreat" : cells.isEmpty() ? "flee" : "block", "cells", cells);
     }
 
     void tick() {
         if (!(owner.level() instanceof ServerLevel level)) return;
         long now = level.getGameTime();
         Creeper creeper = seen(level);
+        if (shielded) {
+            shielded = creeper != null && shield.hold(level, creeper);
+            if (shielded) lastSeen = now; else finished = true;
+            return;
+        }
         if (creeper == null) {
             if (now - lastSeen >= CALM_TICKS) finished = true;
             return;
@@ -145,7 +155,8 @@ final class CompanionCreeperGuard {
 
     void stop() {
         if (!active) return;
-        active = fighting = false;
+        active = fighting = shielded = false;
+        shield.release();
         flee = null;
         cells = List.of();
         owner.getNavigation().stop();
