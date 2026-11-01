@@ -23,6 +23,8 @@ final class CompanionExpedition {
 
     /** Extra time past the step's end for a cave episode under way to close its breach; a reserve used up ends the step anyway. */
     private static final int CAVE_RESERVE = 20 * 60;
+    /** The most time the creeper guard may add to one step: a creeper that never leaves cannot hold the step open for ever. */
+    private static final int GUARD_RESERVE = 20 * 120;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
     private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
@@ -37,7 +39,6 @@ final class CompanionExpedition {
     private final CompanionExpeditionOre ore;
     private final CompanionExpeditionCave cave;
     private final CompanionExpeditionRetreat retreat;
-    private final CompanionExpeditionCreeper creeper;
     private final CompanionExpeditionBacktrack backtrack;
     private final CompanionExpeditionSupply supply;
     private final CompanionExpeditionBench bench;
@@ -46,6 +47,7 @@ final class CompanionExpedition {
     private Stage stage = Stage.LOCATE;
     private boolean active, hadStone, unheld, joining, atFoot;
     private long stepEnd, nextCraft;
+    private long credited;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails;
     private BlockPos stand, head, sealCell;
     private Direction dir, tunnel;
@@ -60,7 +62,6 @@ final class CompanionExpedition {
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
-        this.creeper = new CompanionExpeditionCreeper(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.supply = new CompanionExpeditionSupply(w);
         this.bench = new CompanionExpeditionBench(w);
@@ -78,6 +79,18 @@ final class CompanionExpedition {
 
     void expireStep(ServerLevel level) { stepEnd = level.getGameTime(); }
 
+    long stepEnd() { return stepEnd; }
+
+    /** The time the creeper guard took from the work is given back to the step, its order and the cave's explore time, up to a reserve. */
+    void credit(long ticks) {
+        long given = Math.min(ticks, GUARD_RESERVE - credited);
+        if (!active || given <= 0) return;
+        credited += given;
+        stepEnd += given;
+        w.deadline += given;
+        cave.delay(given);
+    }
+
     /** Below the mine's entrance: there a monster comes up the tunnel and is fought off wherever the player is. */
     boolean underground() { return active && w.mine.exists() && (owner.getY() < w.mine.entrance().getY() - UNDERGROUND_DEPTH || w.mine.buried()); }
 
@@ -85,6 +98,7 @@ final class CompanionExpedition {
         reset();
         active = true;
         stepEnd = level.getGameTime() + STEP_TICKS;
+        credited = 0;
         w.deadline = stepEnd + CAVE_RESERVE + 40;
         startDiamonds = w.items.countCarried(Items.DIAMOND);
         hadStone = w.items.countCarried(Items.STONE_PICKAXE) > 0;
@@ -102,7 +116,6 @@ final class CompanionExpedition {
         ore.reset();
         cave.reset();
         retreat.reset();
-        creeper.reset();
         backtrack.reset();
         supply.reset();
         bench.reset();
@@ -138,7 +151,6 @@ final class CompanionExpedition {
         if (stage != Stage.LOCATE && stage != Stage.RETREAT && bench.tick(level)) return;
         String danger = stage == Stage.LOCATE || stage == Stage.CLIMB || stage == Stage.RETREAT ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
-        if ((stage == Stage.WALK_DOWN || digging) && creeper.tick(level)) return;
         if (plan == null && digging && ore.pending() && mineOre(level, CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null) craftTorches(level);
         switch (stage) {
@@ -167,7 +179,6 @@ final class CompanionExpedition {
         CompanionExpeditionRecord.rememberMove(w.mine, stage == Stage.BRANCH ? tunnel : null, plan, stand, dir);
         plan = null;
         cave.close();
-        creeper.reset();
         lead.clear();
         backtrack.reset();
         dig.reset();

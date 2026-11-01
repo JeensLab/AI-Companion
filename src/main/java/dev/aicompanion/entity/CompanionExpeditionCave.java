@@ -59,6 +59,9 @@ final class CompanionExpeditionCave {
 
     boolean busy() { return phase != Phase.IDLE; }
 
+    /** The explore time runs on the game clock: a stretch spent elsewhere is not taken from it. */
+    void delay(long ticks) { if (phase == Phase.EXPLORE) until += ticks; }
+
     String phaseName() { return phase.name(); }
 
     /** True once after a very dangerous cave has been sealed as far as he could; the expedition then retreats. */

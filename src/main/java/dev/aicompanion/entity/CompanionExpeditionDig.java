@@ -31,6 +31,8 @@ final class CompanionExpeditionDig {
     static final int SEAL_RESERVE = 64;
     private static final int CELL_PATIENCE = 400, UNSEEN_PATIENCE = 40, WALK_PATIENCE = 100, SETTLED = 40, PATH_AFTER = 20, SPARE_DURABILITY = 60;
     private static final double CENTRED = .35, RESTING = .1;
+    /** A creeper this close to a block of his own is waited out before the block comes out: opened, it would be at his side before the block could be set again. */
+    private static final double CREEPER_CLEAR = 3;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -161,6 +163,7 @@ final class CompanionExpeditionDig {
 
     /** Steps towards the cell with the move control (neighbouring cells of his own mine); true once he stands in it. */
     boolean walkTo(BlockPos to) {
+        if (takingUpTemporary(to)) return false;
         boolean inside = owner.onGround() && owner.blockPosition().equals(to);
         if (inside && (centred(to) || to.equals(walking) && walkTicks > WALK_PATIENCE / 2)) { walking = null; walkTicks = 0; walked++; return true; }
         if (!to.equals(walking)) { walking = to.immutable(); walkTicks = 0; }
@@ -168,6 +171,29 @@ final class CompanionExpeditionDig {
         Vec3 centre = Vec3.atBottomCenterOf(to);
         owner.getMoveControl().setWantedPosition(centre.x, centre.y, centre.z, 1);
         return false;
+    }
+
+    /**
+     * A temporary block of his own (a creeper block) shutting the column of the cell he is to walk into comes out by hand first, up or
+     * down the stairs alike. True while that goes on: with a creeper still near the block he waits, he does not open it onto the creeper.
+     */
+    private boolean takingUpTemporary(BlockPos to) {
+        CompanionMineSite mine = w.mine;
+        if (mine.temporary().isEmpty() || !(owner.level() instanceof ServerLevel level)) return false;
+        BlockPos shut = null;
+        for (BlockPos cell : CompanionShaftPlan.column(to)) if (mine.temporary().contains(cell) && !CompanionShaftPlan.open(level, cell)) { shut = cell; break; }
+        if (shut == null || owner.getEyePosition().distanceTo(shut.getCenter()) > CompanionSeal.REACH) return false;
+        if (!level.getEntitiesOfClass(net.minecraft.world.entity.monster.Creeper.class, new net.minecraft.world.phys.AABB(shut).inflate(CREEPER_CLEAR),
+                creeper -> creeper.isAlive() && !creeper.isNoAi()).isEmpty()) {
+            owner.workStatus("Жду, пока крипер за моим блоком отойдёт.");
+            owner.getNavigation().stop();
+            return true;
+        }
+        switch (w.handOver.takeUp(level, shut, "Убираю свой блок с лестницы.")) {
+            case WORKING -> { return true; }
+            case DONE -> { mine.taken(shut); return true; }
+            default -> { return false; }
+        }
     }
 
     /**

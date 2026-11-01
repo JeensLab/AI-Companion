@@ -178,11 +178,13 @@ final class CompanionHandOver {
     enum Taking { WORKING, FULL, DONE }
 
     /** One tick of taking a block of his own up by hand, in reach: the tool for it, the cracks, then the drop falls to be picked up. */
-    Taking takeUp(ServerLevel level, BlockPos pos) {
+    Taking takeUp(ServerLevel level, BlockPos pos) { return takeUp(level, pos, "Забираю свой походный верстак."); }
+
+    Taking takeUp(ServerLevel level, BlockPos pos, String status) {
         w.owner.getNavigation().stop();
         BlockState state = level.getBlockState(pos);
         w.owner.selectToolForBlock(state);
-        w.owner.workStatus("Забираю свой походный верстак.");
+        w.owner.workStatus(status);
         if (!w.breaking.tick(level, pos)) return Taking.WORKING;
         ItemStack tool = w.owner.getMainHandItem();
         var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);

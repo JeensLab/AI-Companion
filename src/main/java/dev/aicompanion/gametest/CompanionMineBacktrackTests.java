@@ -36,7 +36,7 @@ import java.util.List;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
+    static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
     private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10;
 
 
@@ -265,30 +265,36 @@ public final class CompanionMineBacktrackTests {
         h.succeed();
     }
 
-    /** A creeper that does not move waits four stairs below him: he goes up the stairs, away from it, and when it is gone he digs on. */
+    /**
+     * A creeper that stands still (alive, its speed is nil) waits four stairs below him: he shuts the stairs with a block of his own
+     * between them; once it is gone he takes the block up again and digs on.
+     */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void stepsAwayFromACreeperOnTheStairs(GameTestHelper h) {
+    public static void shutsTheStairsOnACreeperBelowAndTakesTheBlockUp(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
         List<BlockPos> stairs = carveMine(h, c, 0);
         BlockPos from = stairs.get(START_STAND), at = stairs.get(CREEPER_STAND);
         c.teleportTo(from.getX() + .5, from.getY(), from.getZ() + .5);
         Creeper creeper = h.spawn(EntityType.CREEPER, rel(h, at));
-        creeper.setNoAi(true);
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
         creeper.setPersistenceRequired();
+        CompanionMineSite site = c.mineSite();
         long id = start(h, c, 1);
         long begun = h.getTick();
-        boolean[] away = {false};
+        boolean[] shut = {false};
         h.onEachTick(() -> {
-            if (!away[0]) {
-                away[0] = c.getY() >= from.getY() + 4;
-                h.assertTrue(away[0] || h.getTick() - begun < STEP_AWAY_TICKS, "He did not go up away from the creeper: at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
-                if (away[0]) creeper.discard();
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            if (!shut[0]) {
+                shut[0] = !site.temporary().isEmpty();
+                h.assertTrue(shut[0] || h.getTick() - begun < STEP_AWAY_TICKS, "He did not shut the stairs against the creeper: at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+                if (shut[0]) creeper.discard();
                 return;
             }
             if (c.isWorking() || c.isGatheringTask()) return;
             CompanionActionResult result = c.workResult(id);
             h.assertTrue(result != null && result.success() && count(c, Items.DIAMOND) >= 1, "He did not dig on after the creeper: " + report(c));
+            h.assertTrue(site.temporary().isEmpty(), "His block is still on the stairs: " + site.temporary() + " | " + report(c));
             h.succeed();
         });
     }
@@ -335,7 +341,7 @@ public final class CompanionMineBacktrackTests {
     }
 
     /** Digs out the stairs to the diamond depth and a tunnel of {@code tunnel} cells west of the foot and puts them in the record; returns the stands, the entrance first. */
-    private static List<BlockPos> carveMine(GameTestHelper h, CompanionEntity c, int tunnel) {
+    static List<BlockPos> carveMine(GameTestHelper h, CompanionEntity c, int tunnel) {
         var level = h.getLevel();
         BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
         List<BlockPos> stairs = CompanionShaftPlan.stands(entrance, Direction.NORTH, GROUND + 1 - DIAMOND_FEET);
@@ -422,10 +428,10 @@ public final class CompanionMineBacktrackTests {
     }
 
     /** The floor cell under stand {@code step}. */
-    private static BlockPos under(int step) { return new BlockPos(CENTER, GROUND - step, CENTER - step); }
+    static BlockPos under(int step) { return new BlockPos(CENTER, GROUND - step, CENTER - step); }
 
     /** Bedrock floor and walls, deepslate up to Y -52, stone, dirt, grass; deepslate diamond ore in a ring under the tunnel floor. */
-    private static void mountain(GameTestHelper h) { mountain(h, true); }
+    static void mountain(GameTestHelper h) { mountain(h, true); }
 
     private static void mountain(GameTestHelper h, boolean ring) {
         var level = h.getLevel();
@@ -438,7 +444,7 @@ public final class CompanionMineBacktrackTests {
         }
     }
 
-    private static CompanionEntity rig(GameTestHelper h) { return rig(h, CENTER, GROUND + 1, CENTER); }
+    static CompanionEntity rig(GameTestHelper h) { return rig(h, CENTER, GROUND + 1, CENTER); }
 
     private static CompanionEntity rig(GameTestHelper h, int x, int y, int z) {
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), x, y, z);
@@ -454,12 +460,12 @@ public final class CompanionMineBacktrackTests {
         return companion;
     }
 
-    private static long start(GameTestHelper h, CompanionEntity c, int count) {
+    static long start(GameTestHelper h, CompanionEntity c, int count) {
         h.assertTrue(c.startWork("dig_for_diamonds", "", count).success(), "Diamond mine not accepted: " + c.getLastTaskResult());
         return c.activeWorkId();
     }
 
-    private static CompanionActionResult ended(GameTestHelper h, CompanionEntity c, long id) {
+    static CompanionActionResult ended(GameTestHelper h, CompanionEntity c, long id) {
         h.assertTrue(!c.isGatheringTask() && !c.isWorking(), "Work still active: " + c.getLastTaskResult());
         CompanionActionResult result = c.workResult(id);
         h.assertTrue(result != null, "No result for the order: " + report(c));
@@ -467,15 +473,15 @@ public final class CompanionMineBacktrackTests {
     }
 
     /** Position relative to the arena corner; GameTestHelper.relativePos mirrors X and Z in a rotated arena, so the frame is read from absolutePos. */
-    private static BlockPos rel(GameTestHelper h, BlockPos world) {
+    static BlockPos rel(GameTestHelper h, BlockPos world) {
         BlockPos origin = h.absolutePos(BlockPos.ZERO), dx = h.absolutePos(new BlockPos(1, 0, 0)).subtract(origin), dz = h.absolutePos(new BlockPos(0, 0, 1)).subtract(origin);
         BlockPos d = world.subtract(origin);
         return new BlockPos(d.getX() * dx.getX() + d.getZ() * dx.getZ(), d.getY(), d.getX() * dz.getX() + d.getZ() * dz.getZ());
     }
 
-    private static String report(CompanionEntity companion) { return companion.getDeedsForAi() + " | " + companion.getLastTaskResult() + " | bag: " + companion.getStoredItemsSummary(); }
+    static String report(CompanionEntity companion) { return companion.getDeedsForAi() + " | " + companion.getLastTaskResult() + " | bag: " + companion.getStoredItemsSummary(); }
 
-    private static int count(CompanionEntity companion, Item item) {
+    static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();
         for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
