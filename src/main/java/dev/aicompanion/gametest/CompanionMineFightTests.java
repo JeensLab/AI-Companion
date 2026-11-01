@@ -39,8 +39,8 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
-    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60;
-    private static final float SURVIVES = 1;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FAR_STAND = 10;
+    private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 10;
 
     private CompanionMineFightTests() { }
 
@@ -190,6 +190,30 @@ public final class CompanionMineFightTests {
             if (sealing[0] < 0) { h.assertTrue(h.getTick() - begun < KILL_TICKS, "SETUP: the cave was never sealed" + trace); return; }
             if (struck > 0 && c.getMainHandItem().is(Items.STONE_SWORD)) h.succeed();
             h.assertTrue(h.getTick() - sealing[0] < STRIKE_TICKS, "No zombie was struck with the sword while the cave was being sealed" + trace);
+        });
+    }
+
+    /** He is hurt (ten health, below what a creeper is fought at), a zombie is on him and a creeper stands in sight with its fuse out: the creeper is no reason to run, the zombie is struck twice within three seconds. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aCreeperWithNoFuseDoesNotSendHimRunningFromAZombieOnHim(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = chamber(h, stairs);
+        place(c, foot.offset(FAR_STAND, 0, 0));
+        c.setHealth(HURT);
+        Zombie zombie = zombie(h, foot.offset(FAR_STAND + 1, 0, 0));
+        Creeper creeper = creeper(h, foot.offset(FAR_STAND + 3, 0, 5));
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        long begun = h.getTick();
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            if (zombie.isAlive() && zombie.getTarget() == null) zombie.setTarget(c);
+            String trace = " | zombie " + (zombie.isAlive() ? "health " + zombie.getHealth() : "dead") + ", creeper fuse " + creeper.getSwellDir() + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + ", target " + c.getTarget() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (!zombie.isAlive() || zombie.getHealth() <= zombie.getMaxHealth() - TWO_BLOWS) h.succeed();
+            h.assertTrue(h.getTick() - begun < STRIKE_TICKS, "The zombie on him was not struck" + trace);
         });
     }
 
