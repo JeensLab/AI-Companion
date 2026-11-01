@@ -401,6 +401,27 @@ public final class CompanionMineStopsTests {
     }
 
     /**
+     * Run m10a/void (seed 20261031): every one of the twenty-seven slots held something, dirt and gravel and wooden tools among them, and the diamond
+     * he had mined out had no slot to fall into: «Сумка полна, добытое некуда класть» five times. He throws the rubble out (real items, in the
+     * world) until the diamond fits, and keeps the tools.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void throwsOutRubbleWhenTheBagIsFullAndADiamondHasNoRoom(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        net.minecraft.world.item.Item[] rubble = {Items.DIRT, Items.GRAVEL, Items.SAND, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF};
+        for (int i = 0; i < rubble.length; i++) c.setItem(6 + i, new ItemStack(rubble[i], 64));
+        for (int slot = 6 + rubble.length; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.WOODEN_HOE));
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "No room for the diamond: " + result.message() + " | " + report(c));
+            h.assertTrue(count(c, Items.WOODEN_HOE) == c.getContainerSize() - 6 - rubble.length, "A tool was thrown out instead of the rubble | " + report(c));
+        });
+    }
+
+    /**
      * The restarts a goal has spent: the last step ended empty just now, so the next one carries them, as it does in a world where the clock is far past
      * {@link dev.aicompanion.entity.CompanionMineSite#RESTARTS_CARRIED}. Restarts made on a record that never ended a step are given back only while the clock is still young.
      */
