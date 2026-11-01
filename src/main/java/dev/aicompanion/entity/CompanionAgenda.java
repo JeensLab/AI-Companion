@@ -62,7 +62,7 @@ public final class CompanionAgenda {
     private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4;
     /** The health he goes for his things with after a death: the same he rests up to in a retreat. */
     private static final float RECOVER_HEALTH = CompanionExpeditionRetreat.FIT;
-    private static final String COLLECT = "collect", SHIELD = "shield";
+    private static final String COLLECT = "collect", SHIELD = "shield", ASCEND = "ascend";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
     /** A request of only these (follow, stay, guard…) holds the goal until the player says to go on. */
@@ -421,6 +421,10 @@ public final class CompanionAgenda {
         }
         Milestone pick = pick(goal, facts, c);
         if (pick == null) { waiting(data, owner, goal, c, "жду, пока в печи доготовится партия"); return; }
+        if (goal.ascendForWood) {
+            goal.ascendForWood = false;
+            if (facts.belowMine()) { start(server, owner, goal, c, ASCEND, null, List.of(new PlannedAction("dig_for_diamonds", 0, 1, CompanionExpedition.SURFACE))); return; }
+        }
         if (goal.descendForOre) {
             goal.descendForOre = false;
             Milestone dig = all.stream().filter(milestone -> milestone.kind() == Kind.EXPEDITION && milestone.supported() && !milestone.satisfied(facts, goal.fallback, all)).findFirst().orElse(null);
@@ -512,6 +516,11 @@ public final class CompanionAgenda {
         CompanionDiagnostics.event(run.port.trace(), "goal_step_finished", "milestone", run.milestone, "neutral", neutral,
                 "report", outcome == null ? "" : outcome.report(), "error", error == null ? "" : error.toString());
         if (neutral || COLLECT.equals(run.milestone) || SHIELD.equals(run.milestone)) return;
+        if (ASCEND.equals(run.milestone)) {
+            if (error != null || CompanionFacts.of(c).belowMine())
+                block(data, owner, goal, c, "не выбраться наверх за деревом: " + (error != null ? "сбой механики, подробности в журнале диагностики." : reason(outcome.report())));
+            return;
+        }
         var book = goal.book();
         Milestone milestone = book.milestone(run.milestone);
         if (milestone == null) return;
@@ -548,7 +557,12 @@ public final class CompanionAgenda {
             return;
         }
         // No tree to be had is the end of what the bag can be made of here: the next steps would search for wood again, minutes each.
-        if (error == null && outcome != null && outcome.report().contains(CompanionPlanRunner.NO_TREE)) { block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why); return; }
+        if (error == null && outcome != null && outcome.report().contains(CompanionPlanRunner.NO_TREE)) {
+            // Under the ground there is no tree to look for: the surface is up his own stairs, and the trees are looked for there.
+            if (facts.belowMine()) { goal.ascendForWood = true; counter[1] = 0; return; }
+            block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
+            return;
+        }
         counter[1]++;
         if (milestone.concernsDiamonds(goal.fallback) && !goal.fallback && hasFreeSlot(c)) {
             // One empty search does not end an honest hunt for diamonds; the second one in a row does.

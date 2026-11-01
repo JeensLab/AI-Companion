@@ -16,6 +16,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -48,7 +49,7 @@ public final class CompanionMineStopsTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2, PIT_STEP = 8, POCKET_TIMEOUT = 24000;
     /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
     private static final int FAR_TREE_AT = 3;
-    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2;
+    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2, CREEPER_AT = 8;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, DIAMOND_AT = 6;
@@ -278,6 +279,85 @@ public final class CompanionMineStopsTests {
             h.assertTrue(CompanionDiamondGoalTests.state(h, r) == CompanionAgenda.State.COMPLETED, "Goal incomplete | " + CompanionDiamondGoalTests.report(h, r));
             h.assertTrue(CompanionDiamondGoalTests.count(r.c(), Items.DIAMOND) >= 1, "No diamond | " + CompanionDiamondGoalTests.report(h, r));
         });
+    }
+
+    /**
+     * Run m12a/void (seed 20261031): he died with everything on him and came back to the surface with empty hands, and a creeper stood by
+     * the things he went for. Without a sword he cannot meet it, so he stepped away, the pickup brought him back, and so on, 979 times in
+     * 57 000 ticks, with the goal waiting for the pickup. The creeper does not leave: after a few steps away he lets the things lie
+     * and the goal goes on.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = GOAL_TIMEOUT)
+    public static void letsADropLieWhenACreeperWillNotLeaveItAndTheGoalGoesOn(GameTestHelper h) {
+        ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32), new ItemStack(Items.COBBLESTONE, 32),
+                new ItemStack(Items.STICK, 8), new ItemStack(Items.CRAFTING_TABLE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE)};
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, bag);
+        r.c().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        BlockPos dropAt = h.absolutePos(new BlockPos(CENTER - CREEPER_AT - 2, GROUND + 1, CENTER));
+        Creeper creeper = h.spawn(EntityType.CREEPER, new BlockPos(CENTER - CREEPER_AT, GROUND + 1, CENTER));
+        creeper.setPersistenceRequired();
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        ItemEntity drop = new ItemEntity(h.getLevel(), dropAt.getX() + .5, dropAt.getY(), dropAt.getZ() + .5, new ItemStack(Items.COBBLESTONE));
+        drop.setDeltaMovement(0, 0, 0);
+        drop.setNoPickUpDelay();
+        drop.setUnlimitedLifetime();
+        h.getLevel().addFreshEntity(drop);
+        r.c().claimDrops(List.of(drop));
+        CompanionDiamondGoalTests.start(h, r, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(creeper.isAlive() && drop.isAlive(), "SETUP: the creeper or the drop is gone | " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.succeedWhen(() -> h.assertTrue(!r.c().expeditionStage().isEmpty() || r.c().mineSite().exists(),
+                "The goal still waits for the drop beside the creeper | " + CompanionDiamondGoalTests.report(h, r)));
+    }
+
+    /**
+     * Run m12b/void-4 (seed 20261031): he came back to his things deep in the mine after a death, and the goal's next milestone was the iron
+     * pickaxe, which wants boards and sticks: «Не нашёл доступного дерева для подготовки», over and over, as the search for logs does not
+     * reach the surface from down there. A tree is on the surface: he goes up his own stairs first, makes the pickaxe there, and the goal
+     * goes on. (The search window of the arena is too small to lose the trees from the bottom of the stairs, so this one guards the way up.)
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = GOAL_TIMEOUT)
+    public static void makesThePickaxeOnTheSurfaceWhenHeIsDeepInTheMineAndNeedsWood(GameTestHelper h) {
+        CompanionDiamondGoalTests.Rig r = deepWithoutWood(h, true);
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.succeedWhen(() -> h.assertTrue(count(r.c(), Items.IRON_PICKAXE) >= 1, "No iron pickaxe | " + CompanionDiamondGoalTests.report(h, r)));
+    }
+
+    /**
+     * The same with no tree anywhere: the goal has to stop, but not at the bottom of the mine with «Не нашёл доступного дерева» said five
+     * times over: he goes up first, looks on the surface, and stops there once.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = GOAL_TIMEOUT)
+    public static void stopsForWantOfWoodOnTheSurfaceNotAtTheBottomOfTheMine(GameTestHelper h) {
+        CompanionDiamondGoalTests.Rig r = deepWithoutWood(h, false);
+        BlockPos entrance = r.c().mineSite().entrance();
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            if (CompanionDiamondGoalTests.state(h, r) != CompanionAgenda.State.BLOCKED) return;
+            h.assertTrue(r.c().getY() >= entrance.getY() - SURFACE_MARGIN, "The goal stopped under the ground: " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(CompanionDiamondGoalTests.goal(h, r).reason().contains("дерева"), "Stopped for another reason: " + CompanionDiamondGoalTests.report(h, r));
+            h.succeed();
+        });
+    }
+
+    /** Three iron ingots, a bench and no wood in the bag, deep down his own stairs; the logs, if any, stand on the surface by the entrance. The goal is taken up. */
+    private static CompanionDiamondGoalTests.Rig deepWithoutWood(GameTestHelper h, boolean trees) {
+        ItemStack[] bag = {new ItemStack(Items.IRON_INGOT, 3), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32),
+                new ItemStack(Items.COBBLESTONE, 46), new ItemStack(Items.CRAFTING_TABLE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE)};
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, true, bag);
+        CompanionEntity c = r.c();
+        c.setFollowing(false);
+        if (trees) for (int[] trunk : new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}})
+            for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
+        BlockPos deep = carveMine(h, c, 0).get(PIT_STEP);
+        c.teleportTo(deep.getX() + .5, deep.getY(), deep.getZ() + .5);
+        CompanionDiamondGoalTests.start(h, r, 1);
+        return r;
     }
 
     /**

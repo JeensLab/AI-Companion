@@ -32,6 +32,8 @@ final class CompanionExpedition {
     private static final int DIAMOND_IRON = 4, DIAMOND_SIGHT = 8;
     private static final double ENTRANCE_NEAR = 1.0;
     private static final String CAVE_DANGER = "в пещере слишком опасно";
+    /** The item of an order that is only the way up his own stairs, for a goal whose step needs the surface (wood) while he is deep in the mine. */
+    static final String SURFACE = "surface";
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -50,7 +52,7 @@ final class CompanionExpedition {
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, hadStone, unheld, joining, atFoot, towardOrigin;
+    private boolean active, hadStone, unheld, joining, atFoot, towardOrigin, surfaceOnly;
     private long stepEnd, nextCraft, nextArm;
     private long credited;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails, fresh;
@@ -113,6 +115,12 @@ final class CompanionExpedition {
         w.mine.newStep(level.getGameTime());
         unheld = !CompanionChunkTicket.hold(owner);
         if (unheld) owner.workStatus("Не смог удержать чанки вокруг шахты загруженными: если уйти далеко, могу встать.");
+        if (SURFACE.equals(w.requestedItem)) {
+            surfaceOnly = true;
+            climb.begin("Под землёй дерева нет.", owner.blockPosition());
+            stage = Stage.CLIMB;
+            owner.workStatus("Поднимаюсь по своей лестнице на поверхность: под землёй дерева нет.");
+        }
     }
 
     void reset() {
@@ -120,7 +128,7 @@ final class CompanionExpedition {
         climb.reset();
         lead.clear();
         CompanionChunkTicket.release(owner);
-        active = hadStone = unheld = joining = atFoot = towardOrigin = false;
+        active = hadStone = unheld = joining = atFoot = towardOrigin = surfaceOnly = false;
         ore.reset();
         cave.reset();
         retreat.reset();
@@ -443,6 +451,11 @@ final class CompanionExpedition {
     }
 
     private void climbed(ServerLevel level) {
+        if (surfaceOnly) {
+            if (CompanionFacts.of(owner).belowMine()) end(Ending.BLOCKED, climb.text());
+            else end(Ending.FOUND, "Поднялся на поверхность.");
+            return;
+        }
         if (resurfaceWhy == null) { end(Ending.SUPPLIES, climb.text()); return; }
         String why = resurfaceWhy;
         resurfaceWhy = null;

@@ -47,7 +47,7 @@ public final class CompanionMilestones {
      */
     static final int TORCHES_STOCK = 32;
     private static final int TORCHES_MIN = 16, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 4, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
-    private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 4, STICKS_STOCK = 8;
+    private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 4, STICKS_STOCK = 16;
     /** A shield is made of what the bag holds already: six boards and an ingot, with the boards a missing bench and sticks would take kept apart. */
     private static final int SHIELD_PLANKS = 6, BENCH_PLANKS = 4, STICK_PLANKS = 4, PLANKS_PER_LOG = 4;
     /** Swords he goes down with; without one he fights the tunnel's monsters with his pickaxes (a wooden or golden one is no better). */

@@ -60,6 +60,8 @@ public final class CompanionAgendaData extends SavedData {
         boolean descendForOre;
         /** The goal has gone out once for the iron of a shield, finished or not: it does not go again, and a reload does not give it back. */
         boolean shieldTrek;
+        /** The step wanted wood and he is under the ground, where there is none: the next step is the way up his stairs, then the step again. Not saved: a reload finds out again. */
+        boolean ascendForWood;
 
         Goal(UUID id, String playbook, int tier) { this.id = id; this.playbook = playbook; this.tier = tier; }
 
