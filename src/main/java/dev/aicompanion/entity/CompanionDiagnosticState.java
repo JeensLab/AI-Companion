@@ -1,7 +1,10 @@
 package dev.aicompanion.entity;
 
 import dev.aicompanion.CompanionDiagnostics;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
@@ -54,7 +57,28 @@ final class CompanionDiagnosticState {
                 "lastSuccess", owner.didLastTaskSucceed(), "inventory", inventory(), "equipment", equipment(),
                 "navigationDone", owner.getNavigation().isDone(), "pathReachable", path != null && path.canReach(),
                 "pathTarget", path == null ? "none" : path.getTarget(), "pathNode", path == null ? -1 : path.getNextNodeIndex(),
-                "pathNodes", path == null ? 0 : path.getNodeCount(), "stationarySeconds", stationarySamples * 5);
+                "pathNodes", path == null ? 0 : path.getNodeCount(), "stationarySeconds", stationarySamples * 5,
+                "stage", owner.work.expedition.stageName(), "cavePhase", owner.work.expedition.cavePhase(), "air", owner.getAirSupply());
+    }
+
+    /** What hit him, from where and what it left of him: the hits of the mine are read back from this, a creeper's blast included. */
+    void hurt(DamageSource source, float amount) {
+        if (!CompanionDiagnostics.enabled()) return;
+        Entity attacker = source.getEntity() != null ? source.getEntity() : source.getDirectEntity();
+        Vec3 from = attacker != null ? attacker.position() : source.getSourcePosition();
+        CompanionDiagnostics.event(trace, "companion_hurt", "entity", owner.getUUID(), "tick", owner.level().getGameTime(),
+                "source", source.getMsgId(), "attacker", attacker == null ? "none" : attacker.getType().getDescriptionId(),
+                "damage", amount, "health", owner.getHealth(), "position", owner.blockPosition(),
+                "sourcePosition", from == null ? "none" : BlockPos.containing(from), "distance", from == null ? -1 : owner.position().distanceTo(from),
+                "stage", owner.work.expedition.stageName(), "cavePhase", owner.work.expedition.cavePhase(), "air", owner.getAirSupply());
+    }
+
+    void died(DamageSource source) {
+        if (!CompanionDiagnostics.enabled()) return;
+        Entity attacker = source.getEntity();
+        CompanionDiagnostics.event(trace, "death", "entity", owner.getUUID(), "tick", owner.level().getGameTime(),
+                "source", source.getMsgId(), "attacker", attacker == null ? "none" : attacker.getType().getDescriptionId(), "position", owner.blockPosition(),
+                "stage", owner.work.expedition.stageName(), "cavePhase", owner.work.expedition.cavePhase(), "air", owner.getAirSupply());
     }
 
     private String inventory() {

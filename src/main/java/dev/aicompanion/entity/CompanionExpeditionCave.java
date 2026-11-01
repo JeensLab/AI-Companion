@@ -59,6 +59,8 @@ final class CompanionExpeditionCave {
 
     boolean busy() { return phase != Phase.IDLE; }
 
+    String phaseName() { return phase.name(); }
+
     /** True once after a very dangerous cave has been sealed as far as he could; the expedition then retreats. */
     boolean takeRetreat() {
         boolean now = retreat && phase == Phase.IDLE;
@@ -67,8 +69,10 @@ final class CompanionExpeditionCave {
     }
 
     /** A very dangerous cave sends him up and is remembered, so no later step of the mine is dug back into it. */
-    private void markRetreat(CompanionCaveSense.Danger danger) {
+    private void markRetreat(CompanionCaveSense.Danger danger, CompanionCaveSense.Facts facts, String where) {
         if (danger != CompanionCaveSense.Danger.VERY_DANGEROUS) return;
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "cave_very_dangerous", "entity", owner.getUUID(), "where", where,
+                "reasons", CompanionCaveSense.veryReasons(facts), "breach", cave.breach(), "position", owner.blockPosition());
         retreat = true;
         w.mine.shun(cave.air());
     }
@@ -174,7 +178,7 @@ final class CompanionExpeditionCave {
         CompanionCaveSense.Danger danger = CompanionCaveSense.judge(cave, facts);
         hostile = facts.hostiles() > 0;
         note("Наткнулся на пещеру (" + CompanionCaveSense.describe(cave, facts) + ").");
-        markRetreat(danger);
+        markRetreat(danger, facts, "found");
         phase = danger == CompanionCaveSense.Danger.SAFE ? Phase.WAIT : Phase.SEAL;
         idle = 0;
         return true;
@@ -183,8 +187,9 @@ final class CompanionExpeditionCave {
     /** A safe cave is entered between two advances, never in the middle of one. */
     private boolean waiting(ServerLevel level, List<BlockPos> planCells) {
         if (!planCells.isEmpty()) return false;
-        CompanionCaveSense.Danger now = CompanionCaveSense.judge(cave, CompanionCaveSense.sense(w, level, cave, true));
-        if (now != CompanionCaveSense.Danger.SAFE) { markRetreat(now); sealing(); return true; }
+        CompanionCaveSense.Facts facts = CompanionCaveSense.sense(w, level, cave, true);
+        CompanionCaveSense.Danger now = CompanionCaveSense.judge(cave, facts);
+        if (now != CompanionCaveSense.Danger.SAFE) { markRetreat(now, facts, "waiting"); sealing(); return true; }
         home = owner.blockPosition();
         until = level.getGameTime() + EXPLORE_TICKS;
         visited.clear();
@@ -201,9 +206,10 @@ final class CompanionExpeditionCave {
         if (pit != null) { plug(); return true; }
         long now = level.getGameTime();
         if (enough.getAsBoolean() || now >= until) return leave("");
-        CompanionCaveSense.Danger watch = now % WATCH_EVERY == 0 ? CompanionCaveSense.judge(cave, CompanionCaveSense.sense(w, level, cave, true)) : CompanionCaveSense.Danger.SAFE;
+        CompanionCaveSense.Facts watched = now % WATCH_EVERY == 0 ? CompanionCaveSense.sense(w, level, cave, true) : null;
+        CompanionCaveSense.Danger watch = watched == null ? CompanionCaveSense.Danger.SAFE : CompanionCaveSense.judge(cave, watched);
         if (watch != CompanionCaveSense.Danger.SAFE) {
-            markRetreat(watch);
+            markRetreat(watch, watched, "explore");
             return leave("В пещере стало опасно, вернулся.");
         }
         if (settle > 0) { settle--; return true; }

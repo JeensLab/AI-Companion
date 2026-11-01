@@ -143,6 +143,17 @@ final class CompanionCaveSense {
         return Danger.SAFE;
     }
 
+    /** Which of the very-dangerous conditions of {@link #judge} hold, for the diagnostics. */
+    static String veryReasons(Facts f) {
+        List<String> reasons = new ArrayList<>();
+        if (f.health() <= HEALTH_VERY) reasons.add("health=" + f.health());
+        if (f.hostiles() >= CROWD) reasons.add("hostiles=" + f.hostiles());
+        if (f.creeper() < CREEPER_CLOSE) reasons.add("creeper=" + Math.round(f.creeper() * 10) / 10.0);
+        if (f.burning()) reasons.add("burning");
+        if (f.seals() == 0) reasons.add("seals=0");
+        return String.join(",", reasons);
+    }
+
     /** The facts as the report tells them, in Russian. */
     static String describe(Cave cave, Facts f) {
         List<String> parts = new ArrayList<>();

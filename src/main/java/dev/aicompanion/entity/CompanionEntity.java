@@ -296,6 +296,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String diagnosticTrace() { return diagnostics.trace(); }
     public void diagnosticSnapshot(String event) { if (dev.aicompanion.CompanionDiagnostics.enabled()) diagnostics.snapshot(event); }
     String diagnosticState() { return diagnostics.diagnosticState(); }
+    /** For the diagnostics: where the mine expedition is (stage and cave phase), empty outside one. */
+    public String expeditionStage() { return work.expedition.stageName(); }
+    public String expeditionCavePhase() { return work.expedition.cavePhase(); }
     net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
     /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
@@ -876,6 +879,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (!dead && !isRemoved() && level() instanceof ServerLevel) {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
+            diagnostics.died(source);
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
             boolean dropped = bag.dropBelongings();
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
@@ -897,6 +901,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         boolean hurt = super.hurt(source, amount);
         if (hurt) {
             lastHurtTick = tickCount;
+            if (!level().isClientSide) diagnostics.hurt(source, amount);
             CompanionHappeningEvents.playerHit(this, source);
             // A touch from the player turns his eyes to him (CompanionGaze, owner 29.10).
             if (!level().isClientSide && source.getEntity() instanceof ServerPlayer player && player.getUUID().equals(ownerId)) gazeTalk();

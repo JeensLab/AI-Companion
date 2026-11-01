@@ -39,7 +39,8 @@ final class CompanionPlacement {
         CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId,
                 requestedCount, hasCraftingTableNearby());
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "craft_decision", "entity", c.getUUID(),
-                "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(), "message", plan.message());
+                "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(),
+                "message", plan.placeTable() ? plan.message().replaceFirst("^Скрафтил", "План: скрафтить после постановки верстака") : plan.message());
         if (!plan.success()) return recordActionResult(plan.shortage() ? CompanionActionResult.shortage(plan.message()) : CompanionActionResult.failed(plan.message()));
         // A remembered bench far away is not worth the walk: a player would set down another one from own wood.
         if (plan.placeTable() && !c.newBenchAllowed && c.hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK))

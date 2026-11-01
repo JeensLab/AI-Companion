@@ -47,7 +47,7 @@ public final class CompanionMineWorldProbe {
     private static final Path SITES = Path.of("sites.properties"), MANIFEST = Path.of("mine-world-probe.properties");
     private static final int SCAN_CHUNK_RADIUS = 12, SCAN_SPAN = 160, SCAN_WALL_SECONDS = 900;
     private static final int REQUESTED_DIAMONDS = 1, SPRINT_TICKS = 1_000_000;
-    private static final int LOGIN_TICKS = 400, SETTLE_TICKS = 80, FOLLOW_EVERY = 10, FOLLOW_ABOVE = 10, HOVER_DEPTH = 15, BELOW_SLACK = 2;
+    private static final int LOGIN_TICKS = 400, SETTLE_TICKS = 80, FOLLOW_EVERY = 10, FOLLOW_ABOVE = 10;
     private static final int SCENARIO_TICKS = 72_000, STALL_TICKS = 6_000, WALL_SECONDS = 420, MAX_RESUMES = 4, MAX_CLIMBS = 2, LOST_TICKS = 1_200;
     private static final int DEEP_ENOUGH = 25, RETREAT_HEALTH = 6, RETREAT_RISE = 8, COME_TICKS = 9_000, COME_NEAR = 8, COME_LINGER = 100;
     private static final int RESTART_DEPTH = 12, PROGRESS_TICKS = 6_000, LIQUID_EVERY = 4;
@@ -59,6 +59,7 @@ public final class CompanionMineWorldProbe {
     private static ServerPlayer player;
     private static CompanionEntity companion;
     private static CompanionMineWorldJournal journal;
+    private static final CompanionMineWorldCreepers creepers = new CompanionMineWorldCreepers();
     private static BlockPos entrance;
     private static int siteFailAt = -1, mostStands;
     private static float lastHealth;
@@ -68,9 +69,10 @@ public final class CompanionMineWorldProbe {
     private static List<ChunkPos> scanChunks;
     private static long scanStarted;
     private static int ticks, settleUntil, runStart, stallFor, lostFor, comeAt, lingerFor;
-    private static boolean finished, wasBelow, parked, mobsSpawned, comeIssued, comeArrived, resumedAfterCome, returning, retreatTriggered, retreatRose, mobsMet, liquidMet, restartMet;
+    private static boolean finished, parked, mobsSpawned, comeIssued, comeArrived, resumedAfterCome, returning, retreatTriggered, retreatRose, mobsMet, liquidMet, restartMet;
     private static int retreatY;
     private static CompanionAgenda.State lastState;
+    private static CompanionMineWorldClimbs.State climbState = CompanionMineWorldClimbs.State.START;
     private static String signature = "";
     private static long entityTickStart;
 
@@ -202,7 +204,7 @@ public final class CompanionMineWorldProbe {
     private static void run(MinecraftServer server) throws IOException {
         if (companion == null || !companion.isAlive()) {
             if (companion != null) {
-                journal.deaths++; wasBelow = false;
+                journal.deaths++; climbState = climbState.afterDeath();
                 var source = companion.getLastDamageSource();
                 String cause = source == null ? "unknown" : source.getMsgId() + (source.getEntity() == null ? "" : " by " + source.getEntity().getType().getDescriptionId());
                 journal.facts.put("death" + journal.deaths, cause + " at " + companion.blockPosition().toShortString() + " tick " + ticks);
@@ -224,8 +226,9 @@ public final class CompanionMineWorldProbe {
         journal.maxDepth = Math.max(journal.maxDepth, depth);
         observe(server, goal, depth);
         if (finished) return;
+        if (companion.level() instanceof ServerLevel level) creepers.watch(level, companion, ticks);
         // Near the surface an owner hovering in the air makes the companion dig stairs up to him, so he stands level there.
-        if (!parked && ticks % FOLLOW_EVERY == 0) player.teleportTo(companion.getX(), companion.getY() + (depth > HOVER_DEPTH ? FOLLOW_ABOVE : 0), companion.getZ());
+        if (!parked && ticks % FOLLOW_EVERY == 0) player.teleportTo(companion.getX(), companion.getY() + (depth > CompanionMineWorldClimbs.HOVER_DEPTH ? FOLLOW_ABOVE : 0), companion.getZ());
         scenarioHooks(server, goal, depth);
         if (finished) return;
         if (STAGE.equals("prepare") && prepared(server, goal, depth)) return;
@@ -260,12 +263,11 @@ public final class CompanionMineWorldProbe {
     /** The tester's part: every stop of the goal is recorded, and answered with «продолжай» a bounded number of times. */
     private static void observe(MinecraftServer server, CompanionAgendaData.Goal goal, int depth) {
         var state = goal.state();
-        boolean below = depth > BELOW_SLACK;
-        if (wasBelow && !below && lastState != null && lastState.suppressesDeeds() && state.suppressesDeeds()) {
-            journal.climbs++;
+        climbState = CompanionMineWorldClimbs.next(climbState, depth, lastState != null && lastState.suppressesDeeds() && state.suppressesDeeds());
+        if (climbState.count() > journal.climbs) {
+            journal.climbs = climbState.count();
             System.out.println("MINE_WORLD_CLIMB scenario=" + SCENARIO + " n=" + journal.climbs + " tick=" + ticks);
         }
-        wasBelow = below;
         if (state == CompanionAgenda.State.BLOCKED && lastState != CompanionAgenda.State.BLOCKED) {
             journal.blocked.add(new CompanionMineWorldJournal.Blocked(ticks, goal.reason(), companion.blockPosition().toShortString(), String.valueOf(companion.getLastTaskResult())));
             System.out.println("MINE_WORLD_BLOCKED scenario=" + SCENARIO + " n=" + journal.blocked.size() + " reason=\"" + goal.reason() + "\" at=" + companion.blockPosition().toShortString()
@@ -392,6 +394,8 @@ public final class CompanionMineWorldProbe {
                 journal.facts.put("retreatTriggered", retreatTriggered); journal.facts.put("retreatRose", retreatRose);
                 journal.facts.put("comeIssued", comeIssued); journal.facts.put("comeArrived", comeArrived); journal.facts.put("mobsSpawned", mobsSpawned);
                 journal.facts.put("finalState", lastState == null ? "" : lastState.name());
+                journal.facts.put("finalStage", companion.expeditionStage()); journal.facts.put("finalCavePhase", companion.expeditionCavePhase());
+                journal.facts.put("finalAir", companion.getAirSupply());
                 journal.facts.put("opened", companion.mineSite().opened());
                 journal.facts.put("lastTask", String.valueOf(companion.getLastTaskResult()));
                 journal.facts.put("bag", companion.getStoredItemsSummary());

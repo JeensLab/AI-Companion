@@ -69,6 +69,11 @@ final class CompanionExpedition {
 
     boolean active() { return active; }
 
+    /** For the diagnostics: where the expedition is while it runs, else empty. */
+    String stageName() { return active ? stage.name() : ""; }
+
+    String cavePhase() { return active ? cave.phaseName() : ""; }
+
     void expireStep(ServerLevel level) { stepEnd = level.getGameTime(); }
 
     /** Below the mine's entrance: there a monster comes up the tunnel and is fought off wherever the player is. */

@@ -20,6 +20,8 @@ final class CompanionMineWorldJournal {
     private static final String FLOOR_REFUSAL = "неустойчивый пол", UNLOADED_REFUSAL = "незагруженн", STAIR_STOP = "Дальше лестницу не прокопать";
     private static final String CAVE_MARK = "Наткнулся на пещеру", PATCH_MARK = "Пролом заделал";
     private static final long SLOW_ENTITY_TICK_NANOS = 50_000_000L;
+    /** The last rows of each kind kept in the journal: how a death came about is in the end of the run. */
+    private static final int KEPT = 40;
 
     record Blocked(long tick, String reason, String at, String lastTask) { }
 
@@ -27,6 +29,8 @@ final class CompanionMineWorldJournal {
     final long startedNanos = System.nanoTime();
     final List<Blocked> blocked = new ArrayList<>();
     final List<String> caveNotes = new ArrayList<>();
+    /** Rows of the entity's own diagnostics that explain a death: hits taken, creepers met, very dangerous caves, the deaths themselves. */
+    final List<String> hurts = new ArrayList<>(), creeperEvents = new ArrayList<>(), veryDangerous = new ArrayList<>(), deathEvents = new ArrayList<>();
     final Map<String, Object> facts = new LinkedHashMap<>();
     int resumes, climbs, deaths, maxDepth, diagnosticBlocked, floorRefusals, unloadedRefusals, stairStops, caveSentences, patchSentences;
     long maxEntityTickNanos, slowEntityTicks;
@@ -52,6 +56,13 @@ final class CompanionMineWorldJournal {
                 JsonObject row = JsonParser.parseString(line).getAsJsonObject();
                 String event = text(row, "event");
                 if (event.equals("goal_blocked")) diagnosticBlocked++;
+                switch (event) {
+                    case "companion_hurt" -> keep(hurts, row, "tick", "source", "attacker", "damage", "health", "position", "sourcePosition", "distance", "stage", "cavePhase", "air");
+                    case "creeper_seen", "creeper_swell" -> keep(creeperEvents, row, "event", "probeTick", "creeperPosition", "distance", "position", "health", "stage", "cavePhase", "air");
+                    case "cave_very_dangerous" -> keep(veryDangerous, row, "where", "reasons", "breach", "position");
+                    case "death" -> keep(deathEvents, row, "tick", "source", "attacker", "position", "stage", "cavePhase", "air");
+                    default -> { }
+                }
                 if (!event.equals("goal_step_finished")) continue;
                 String report = text(row, "report");
                 if (report.contains(FLOOR_REFUSAL)) floorRefusals++;
@@ -88,8 +99,20 @@ final class CompanionMineWorldJournal {
         out.put("slowEntityTicks", slowEntityTicks);
         out.put("caveNotes", caveNotes.stream().limit(8).toList());
         out.put("blocked", blocked);
+        out.put("hurts", hurts);
+        out.put("creeperEvents", creeperEvents);
+        out.put("veryDangerous", veryDangerous);
+        out.put("deathEvents", deathEvents);
         out.putAll(facts);
         Files.writeString(file, JSON.toJson(out), StandardCharsets.UTF_8);
+    }
+
+    /** One line of the named fields of the row, the oldest line dropped once there are too many. */
+    private static void keep(List<String> into, JsonObject row, String... keys) {
+        StringBuilder line = new StringBuilder();
+        for (String key : keys) line.append(line.isEmpty() ? "" : " ").append(key).append('=').append(text(row, key));
+        if (into.size() >= KEPT) into.remove(0);
+        into.add(line.toString());
     }
 
     private static String text(JsonObject row, String key) { return row.has(key) && !row.get(key).isJsonNull() ? row.get(key).getAsString() : ""; }
