@@ -116,6 +116,26 @@ final class CompanionExpeditionDig {
         return done();
     }
 
+    /** What he can do without when the bag is full, the most useless first: rubble, what mobs leave, raw copper, wooden tools worn out by the stone ones. */
+    private static final List<Set<Item>> SPARE = List.of(
+            Set.of(Items.DIRT, Items.COARSE_DIRT, Items.ROOTED_DIRT, Items.GRAVEL, Items.SAND, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF, Items.NETHERRACK),
+            Set.of(Items.ROTTEN_FLESH, Items.BONE, Items.SPIDER_EYE), Set.of(Items.RAW_COPPER), Set.of(Items.WOODEN_PICKAXE, Items.WOODEN_SHOVEL));
+
+    /** A slot for a drop that has none (a diamond): the most spare stack is thrown out as a real item in the world. False when nothing in the bag is spare. */
+    boolean makeRoom(ServerLevel level) {
+        int slot = -1, rank = SPARE.size();
+        for (int i = 0; i < owner.getContainerSize(); i++) {
+            for (int r = 0; r < rank; r++) {
+                if (SPARE.get(r).contains(owner.getItem(i).getItem())) { slot = i; rank = r; break; }
+            }
+        }
+        if (slot < 0) return false;
+        ItemStack thrown = owner.getItem(slot);
+        owner.setItem(slot, ItemStack.EMPTY);
+        toss(level, owner.blockPosition(), List.of(thrown));
+        return true;
+    }
+
     /** The held drops fall where their blocks stood, to be picked up like any harvest. */
     void flush() {
         for (CompanionMineSite.Held drop : w.mine.takeHeld()) owner.dropHarvest(drop.pos(), drop.drops());

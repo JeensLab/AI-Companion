@@ -52,6 +52,7 @@ public final class CompanionMineStopsTests {
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, DIAMOND_AT = 6;
+    private static final int CANOPY_AT = 12, CANOPY_REACH = 2;
     private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
 
     private CompanionMineStopsTests() { }
@@ -91,7 +92,17 @@ public final class CompanionMineStopsTests {
      */
     @GameTest(template = "marathon_cave", batch = "mine_stops_pit", timeoutTicks = POCKET_TIMEOUT)
     public static void goesUpFromAPitForWoodWhenThereIsNoPickaxe(GameTestHelper h) {
-        pitWithoutPickaxe(h, new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}}, 1, false);
+        pitWithoutPickaxe(h, new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}}, 1, false, false);
+    }
+
+    /**
+     * Runs m10b/mobs and m10b/void-4 (seed 20261102): a jungle, where the leaves of the trees roof the whole surface. The climb for supplies ends at the
+     * entrance on the surface, but with leaves overhead he read as still down in the mine, and the next step of the goal was the mine alone,
+     * without the pickaxe to make: «Каменной кирки у меня нет» five times at height 65. The leaves are no roof: he makes the pickaxe on the surface.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_pit", timeoutTicks = POCKET_TIMEOUT)
+    public static void makesHisPickaxeOnTheSurfaceUnderALeafCanopy(GameTestHelper h) {
+        pitWithoutPickaxe(h, new int[][]{{CENTER - 6, CENTER + 6}, {CENTER - 4, CENTER + 8}, {CENTER - 8, CENTER + 4}}, 1, false, true);
     }
 
     /**
@@ -101,11 +112,12 @@ public final class CompanionMineStopsTests {
      */
     @GameTest(template = "marathon_cave", batch = "mine_stops_pit", timeoutTicks = POCKET_TIMEOUT)
     public static void walksFarForWoodWhenNoTreeIsNearAndThereIsNoPickaxe(GameTestHelper h) {
-        pitWithoutPickaxe(h, new int[][]{{FAR_TREE_AT, FAR_TREE_AT}, {FAR_TREE_AT + 2, FAR_TREE_AT}, {FAR_TREE_AT, FAR_TREE_AT + 2}}, 0, true);
+        pitWithoutPickaxe(h, new int[][]{{FAR_TREE_AT, FAR_TREE_AT}, {FAR_TREE_AT + 2, FAR_TREE_AT}, {FAR_TREE_AT, FAR_TREE_AT + 2}}, 0, true, false);
     }
 
-    private static void pitWithoutPickaxe(GameTestHelper h, int[][] trunks, int sticks, boolean chopped) {
+    private static void pitWithoutPickaxe(GameTestHelper h, int[][] trunks, int sticks, boolean chopped, boolean canopy) {
         mountain(h, true);
+        if (canopy) leafCanopy(h);
         List<BlockPos> cut = new java.util.ArrayList<>();
         for (int[] trunk : trunks) for (int y = GROUND + 1; y <= GROUND + 5; y++) h.setBlock(new BlockPos(trunk[0], y, trunk[1]), Blocks.OAK_LOG);
         for (int[] trunk : trunks) cut.add(h.absolutePos(new BlockPos(trunk[0], GROUND + 1, trunk[1])));
@@ -132,6 +144,7 @@ public final class CompanionMineStopsTests {
             // The light engine runs between ticks: the goal starts once the pit reads as roofed over, as it does in the world.
             if (!started[0]) {
                 h.assertTrue(!h.getLevel().canSeeSky(pit.above()), "The light in the pit is not worked out yet");
+                if (canopy) h.assertTrue(!h.getLevel().canSeeSky(h.absolutePos(new BlockPos(CENTER, GROUND + 2, CENTER))), "The light under the leaves is not worked out yet");
                 CompanionDiamondGoalTests.start(h, r, 1);
                 started[0] = true;
             }
@@ -140,6 +153,12 @@ public final class CompanionMineStopsTests {
             if (chopped) h.assertTrue(cut.stream().anyMatch(log -> !h.getLevel().getBlockState(log).is(Blocks.OAK_LOG)),
                     "No trunk of the far trees was chopped: " + CompanionDiamondGoalTests.report(h, r));
         });
+    }
+
+    /** A patch of leaves high over the entrance, above the trunks: the sky light does not reach the entrance, and the rest of the arena stays open. */
+    private static void leafCanopy(GameTestHelper h) {
+        for (int x = CENTER - CANOPY_REACH; x <= CENTER + CANOPY_REACH; x++) for (int z = CENTER - CANOPY_REACH; z <= CENTER + CANOPY_REACH; z++)
+            h.getLevel().setBlock(h.absolutePos(new BlockPos(x, GROUND + CANOPY_AT, z)), Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true), 2 | 16);
     }
 
     @AfterBatch(batch = "mine_stops_pit") public static void afterPit(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -382,6 +401,27 @@ public final class CompanionMineStopsTests {
     }
 
     /**
+     * Run m10a/void (seed 20261031): every one of the twenty-seven slots held something, dirt and gravel and wooden tools among them, and the diamond
+     * he had mined out had no slot to fall into: «Сумка полна, добытое некуда класть» five times. He throws the rubble out (real items, in the
+     * world) until the diamond fits, and keeps the tools.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void throwsOutRubbleWhenTheBagIsFullAndADiamondHasNoRoom(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        net.minecraft.world.item.Item[] rubble = {Items.DIRT, Items.GRAVEL, Items.SAND, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF};
+        for (int i = 0; i < rubble.length; i++) c.setItem(6 + i, new ItemStack(rubble[i], 64));
+        for (int slot = 6 + rubble.length; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.WOODEN_HOE));
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "No room for the diamond: " + result.message() + " | " + report(c));
+            h.assertTrue(count(c, Items.WOODEN_HOE) == c.getContainerSize() - 6 - rubble.length, "A tool was thrown out instead of the rubble | " + report(c));
+        });
+    }
+
+    /**
      * The restarts a goal has spent: the last step ended empty just now, so the next one carries them, as it does in a world where the clock is far past
      * {@link dev.aicompanion.entity.CompanionMineSite#RESTARTS_CARRIED}. Restarts made on a record that never ended a step are given back only while the clock is still young.
      */
@@ -496,6 +536,33 @@ public final class CompanionMineStopsTests {
             CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(heightWhenEnded[0] >= surface, "He said «" + result.message() + "» at height " + heightWhenEnded[0] + ", below the surface at " + surface + " | " + report(c));
             h.assertTrue(!h.getLevel().getBlockState(stairs.get(PLUG_AT)).is(Blocks.COBBLESTONE), "His plug on the stairs is still there | " + report(c));
+        });
+    }
+
+    /**
+     * Run m10b/void-4 (seed 20261102): on the surface at the entrance, his plug of the last retreat on the first step of the stairs, no stone
+     * pickaxe and no wood to make one, the iron pickaxe whole. The plug is rock: «Свою пробку на лестнице убрать не смог (нет подходящей кирки)»
+     * ended the order five times. He takes it out with the iron pickaxe, as he does any rock in his way, and goes on to the ore.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void takesOutHisPlugAtTheEntranceWithTheIronPickaxeWhenNoStonePickaxeIsLeft(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        // The retreat closes the second stand of the record behind him.
+        BlockPos plug = stairs.get(2);
+        h.getLevel().setBlock(plug, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+        c.mineSite().plugged(plug);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) id[0] = start(h, c, 1);
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The plug stopped the order: " + result.message() + " | " + report(c));
+            h.assertTrue(!h.getLevel().getBlockState(plug).is(Blocks.COBBLESTONE), "His plug on the stairs is still there | " + report(c));
         });
     }
 

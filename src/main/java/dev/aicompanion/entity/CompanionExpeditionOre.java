@@ -92,7 +92,7 @@ final class CompanionExpeditionOre {
             case WORKING -> { }
             case DONE -> { dig.flush(); target = null; walking = false; return Result.DONE; }
             case FULL -> {
-                if (level.getBlockState(target).is(BlockTags.DIAMOND_ORES)) return Result.FULL;
+                if (level.getBlockState(target).is(BlockTags.DIAMOND_ORES)) return dig.makeRoom(level) ? Result.WORKING : Result.FULL;
                 skip();
             }
             default -> skip();
