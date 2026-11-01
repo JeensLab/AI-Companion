@@ -38,11 +38,23 @@ final class CompanionExpeditionClimb {
         w.owner.getNavigation().stop();
         CompanionMineSite mine = w.mine;
         if (!mine.exists()) { outcome = " Своей лестницы нет, остался на месте."; return; }
-        List<BlockPos> cells = wayUp(mine);
+        // The entrance of a mine started again under the ground is a pit, no way to the surface: only the cells left above it lead there.
+        if (mine.buried() && mine.above().isEmpty()) { outcome = " Свою лестницу к поверхности потерял, остался где стою."; return; }
+        List<BlockPos> cells = wayToSurface(mine);
         int nearest = nearest(cells, here);
         if (nearest < 0) outcome = " Свою лестницу рядом не нашёл, остался где стою.";
-        else if (nearest == cells.size() - 1) outcome = " Я и так у входа, остался на месте.";
+        else if (nearest == cells.size() - 1) outcome = mine.buried() ? " Выше меня своей лестницы нет, остался где стою." : " Я и так у входа, остался на месте.";
         else walk.set(cells, nearest);
+    }
+
+    /** True while the climb has a way to walk; false when {@link #begin} found none and said so. */
+    boolean walking() { return outcome.isEmpty(); }
+
+    /** The way up to the surface: {@link #wayUp}, and for a mine started again under the ground the ways above its pit. */
+    static List<BlockPos> wayToSurface(CompanionMineSite mine) {
+        List<BlockPos> cells = wayUp(mine);
+        if (mine.buried()) cells.addAll(mine.above());
+        return cells;
     }
 
     /** The last tunnel's cells from its end, then the stands from the foot up, then the entrance. */

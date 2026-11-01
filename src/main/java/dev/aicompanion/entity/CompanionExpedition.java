@@ -26,7 +26,7 @@ final class CompanionExpedition {
     /** The most time the creeper guard may add to one step: a creeper that never leaves cannot hold the step open for ever. */
     private static final int GUARD_RESERVE = 20 * 120;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
-    private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
+    private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120, MAX_FRESH = 2;
     static final int UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 1.0;
     private static final String CAVE_DANGER = "в пещере слишком опасно";
@@ -51,10 +51,10 @@ final class CompanionExpedition {
     private boolean active, hadStone, unheld, joining, atFoot, towardOrigin;
     private long stepEnd, nextCraft, nextArm;
     private long credited;
-    private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails;
+    private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails, fresh;
     private BlockPos stand, head, sealCell;
     private Direction dir, tunnel;
-    private String tunnelWhy = "", digOutWhy = "";
+    private String tunnelWhy = "", digOutWhy = "", resurfaceWhy;
 
     CompanionExpedition(CompanionWork w) {
         this.w = w;
@@ -129,12 +129,13 @@ final class CompanionExpedition {
         stock.reset();
         fight.reset();
         tunnelWhy = digOutWhy = "";
+        resurfaceWhy = null;
         stage = Stage.LOCATE;
         plan = null;
         route = List.of();
         stand = head = sealCell = null;
         dir = tunnel = null;
-        progress = stairSteps = turns = routeIndex = softFails = 0;
+        progress = stairSteps = turns = routeIndex = softFails = fresh = 0;
     }
 
     /** The game time of the next try after a failed walk to the stairs. */
@@ -174,7 +175,7 @@ final class CompanionExpedition {
             case BRANCH -> branch();
             case BACKTRACK -> backtrack();
             case DIG_OUT -> digOut();
-            case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) end(Ending.SUPPLIES, climb.text()); }
+            case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) climbed(level); }
             case RETREAT -> { if (retreat.tick(level) == CompanionExpeditionRetreat.Result.DONE) end(Ending.RETREAT, retreat.text()); }
         }
     }
@@ -392,16 +393,76 @@ final class CompanionExpedition {
     /** No side is left where he stands: back to the entrance on the surface, once, to begin stairs to a side not tried from it. */
     private void restartAtOrigin(ServerLevel level, String why) {
         // A walk to the entrance that failed once is not tried again through yet another restart: the order ends instead of burning them all.
-        Direction side = towardOrigin ? null : CompanionExpeditionRecord.originSide(level, w.mine);
+        Direction side = towardOrigin || !originNear() ? null : CompanionExpeditionRecord.originSide(level, w.mine);
         if (side == null) {
             if (startDigOut(level)) digOutWhy = why;
-            else end(Ending.BLOCKED, why);
+            else if (!leaveForSurface(level, why)) end(Ending.BLOCKED, why);
             return;
         }
         towardOrigin = true;
         restartAt(level, w.mine.origin(), side, -1);
         joining = false;
         owner.workStatus("Здесь не свернуть, возвращаюсь ко входу и начну лестницу в другую сторону.");
+    }
+
+    /** The entrance on the surface is close enough to the pit for a way to it to be built; from further off the search finds no leg. */
+    private boolean originNear() {
+        BlockPos origin = w.mine.origin();
+        return origin != null && origin.distSqr(w.mine.entrance()) <= FAR_ENTRANCE * FAR_ENTRANCE;
+    }
+
+    /**
+     * Nothing left to restart from under the ground: up the recorded way to the surface, where a mine starts at an entrance of the ground there.
+     * False when there is no way up or the surface starts are used up; on the surface already, the new mine starts at once.
+     */
+    private boolean leaveForSurface(ServerLevel level, String why) {
+        CompanionMineSite mine = w.mine;
+        if (!mine.exists() || mine.origin() == null || fresh >= MAX_FRESH) return false;
+        if (owner.getY() >= mine.origin().getY() - UNDERGROUND_DEPTH) return startOnSurface(level);
+        climb.begin(why, owner.blockPosition());
+        if (!climb.walking()) { climb.reset(); return false; }
+        resurfaceWhy = why;
+        plan = null;
+        sealCell = null;
+        lead.clear();
+        backtrack.reset();
+        dig.reset();
+        long now = level.getGameTime();
+        stepEnd = Math.max(stepEnd, now + CLIMB_TICKS);
+        w.deadline = Math.max(w.deadline, stepEnd + 40);
+        stage = Stage.CLIMB;
+        owner.workStatus("Ни свернуть, ни начать заново здесь не выходит, поднимаюсь по своей лестнице к поверхности.");
+        return true;
+    }
+
+    private void climbed(ServerLevel level) {
+        if (resurfaceWhy == null) { end(Ending.SUPPLIES, climb.text()); return; }
+        String why = resurfaceWhy;
+        resurfaceWhy = null;
+        if (!startOnSurface(level)) end(Ending.BLOCKED, why);
+    }
+
+    /** On the surface with the old entrance out of reach: the mine begins at another entrance near him, on a side not tried from the first one. */
+    private boolean startOnSurface(ServerLevel level) {
+        CompanionMineSite mine = w.mine;
+        BlockPos here = owner.blockPosition();
+        if (fresh >= MAX_FRESH || mine.origin() == null || here.getY() < mine.origin().getY() - UNDERGROUND_DEPTH) return false;
+        CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
+        if (entrance == null) return false;
+        Direction side = entrance.direction();
+        if (entrance.feet().equals(mine.origin())) {
+            for (Direction d : Direction.Plane.HORIZONTAL) {
+                if (mine.originTried(d) || CompanionShaftPlan.assessStep(level, entrance.feet(), d, mine.seals(), mine.avoid()).kind() == CompanionShaftPlan.Kind.BLOCKED) continue;
+                side = d;
+                break;
+            }
+        }
+        fresh++;
+        restartAt(level, entrance.feet(), side, -1);
+        mine.buried(false);
+        joining = false;
+        owner.workStatus("Ко входу не пройти, начинаю шахту в другом месте на поверхности.");
+        return true;
     }
 
     /** No side and no way to the entrance: the last restart, past the cap, here or, if his own plugs wall him in, below the ring he digs out of. */
@@ -421,7 +482,7 @@ final class CompanionExpedition {
         ServerLevel level = (ServerLevel) owner.level();
         switch (digOut.tick(level)) {
             case WORKING -> { }
-            case STUCK -> end(Ending.BLOCKED, digOutWhy);
+            case STUCK -> { if (!leaveForSurface(level, digOutWhy)) end(Ending.BLOCKED, digOutWhy); }
             case DONE -> {
                 restartAt(level, digOut.at(), digOut.side(), 0);
                 owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
@@ -504,7 +565,7 @@ final class CompanionExpedition {
                 if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() || !hadStone) && dig.spareIron()) { dig.ironForRock = true; return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
                 ServerLevel level = (ServerLevel) owner.level();
-                if (!dig.lackedOre && !towardOrigin && w.mine.buried() && CompanionExpeditionRecord.originSide(level, w.mine) != null) {
+                if (!dig.lackedOre && !towardOrigin && w.mine.buried() && originNear() && CompanionExpeditionRecord.originSide(level, w.mine) != null) {
                     restartAtOrigin(level, CompanionExpeditionClimb.shortage(false, hadStone));
                     return;
                 }
@@ -512,6 +573,7 @@ final class CompanionExpedition {
                 stepEnd = Math.max(stepEnd, now + CLIMB_TICKS);
                 w.deadline = Math.max(w.deadline, stepEnd + 40);
                 stage = Stage.CLIMB;
+                resurfaceWhy = null;
                 climb.begin(CompanionExpeditionClimb.shortage(dig.lackedOre, hadStone), owner.blockPosition());
             }
             case FULL -> end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");

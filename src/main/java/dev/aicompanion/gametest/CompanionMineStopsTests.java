@@ -12,6 +12,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -47,7 +48,7 @@ public final class CompanionMineStopsTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2, PIT_STEP = 8, POCKET_TIMEOUT = 24000;
     /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
     private static final int FAR_TREE_AT = 3;
-    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200;
+    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2;
 
     private CompanionMineStopsTests() { }
 
@@ -330,6 +331,111 @@ public final class CompanionMineStopsTests {
     private static void spendRestarts(GameTestHelper h, CompanionEntity c, BlockPos at, int count) {
         c.mineSite().newStep(h.getLevel().getGameTime());
         for (int i = 0; i < count; i++) c.mineSite().restart(at, Direction.NORTH);
+    }
+
+    /**
+     * Run m8a/void-4 (seed 20261031): three restarts spent and carried, every side of his cell refused, cobblestone under him and nothing
+     * left of his stairs in the record: five steps in a row ended «Я под землёй, а своей лестницы рядом нет» at the same spot. He goes
+     * up the way he came, begins stairs again on the surface, and the order reaches the ore.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsOutWhenTheRestartsAreSpentAndEverySideIsRefused(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        BlockPos here = carveMine(h, c, 0).get(PIT_STEP);
+        h.getLevel().setBlock(here.below(), Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        spendRestartsOnTheStairs(h, c, here);
+        for (Direction d : Direction.Plane.HORIZONTAL) c.mineSite().refuse(here, d);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He stood with the restarts spent: " + result.message() + " | " + report(c));
+        });
+    }
+
+    /**
+     * Run m8b/mobs (seed 20261102): the bottom of a deep shaft, no stone pickaxe, no wood to make one, the iron one worn to its reserve, the
+     * restarts spent. «Копать нечем, поднялся за припасами» was said five times by a man who never left the bottom. He really goes up his
+     * old way to the surface; given a pickaxe there, the next order reaches the ore.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsToTheSurfaceForSuppliesWhenThereIsNoPickaxe(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        ItemStack worn = new ItemStack(Items.IRON_PICKAXE);
+        worn.setDamageValue(worn.getMaxDamage() - 4);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, worn);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(PIT_STEP);
+        // The stairs below the spot he restarted at are rock again: it is the end of the shaft he can walk.
+        for (BlockPos stand : stairs.subList(PIT_STEP + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        spendRestartsOnTheStairs(h, c, here);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY() - SURFACE_MARGIN;
+        long[] id = {0, 0};
+        int[] heightWhenFirstEnded = {Integer.MIN_VALUE};
+        h.onEachTick(() -> {
+            if (id[0] != 0 && id[1] == 0 && heightWhenFirstEnded[0] == Integer.MIN_VALUE && c.workResult(id[0]) != null) heightWhenFirstEnded[0] = c.getBlockY();
+        });
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            if (id[1] == 0) {
+                CompanionActionResult first = ended(h, c, id[0]);
+                h.assertTrue(heightWhenFirstEnded[0] >= surface, "He said «" + first.message() + "» at height " + heightWhenFirstEnded[0] + ", below the surface at " + surface + " | " + report(c));
+                c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+                id[1] = start(h, c, 1);
+            }
+            CompanionActionResult second = ended(h, c, id[1]);
+            h.assertTrue(second.success() && count(c, Items.DIAMOND) >= 1, "No diamond with a pickaxe from the surface: " + second.message() + " | " + report(c));
+        });
+    }
+
+    /**
+     * Run m8b/retreat (seed 20261102): on the surface after the preparation, the entrance four blocks away cannot be walked to (the jungle),
+     * and every side of his own cell is shut: the step ended «Не смог дойти до входа в шахту» twice, and the goal with it. He begins the
+     * mine at another spot of the surface instead.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsElsewhereWhenTheEntranceCannotBeWalkedTo(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        BlockPos entrance = new BlockPos(CENTER + CAGE_AT, GROUND + 1, CENTER);
+        // Planks over the ground round the entrance: crafted blocks are never dug, so no side of any cell there is free to begin stairs to.
+        for (int dx = -CAGE_PAD; dx <= CAGE_PAD; dx++) for (int dz = -CAGE_PAD; dz <= CAGE_PAD; dz++) h.setBlock(new BlockPos(entrance.getX() + dx, GROUND, entrance.getZ() + dz), Blocks.OAK_PLANKS);
+        // The entrance itself is walled in with bedrock: the search finds no way to it and he does not move.
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int dy = 0; dy <= 3; dy++) {
+            if (dx != 0 || dz != 0 || dy == 3) h.setBlock(entrance.offset(dx, dy, dz), Blocks.BEDROCK);
+        }
+        BlockPos stand = h.absolutePos(new BlockPos(CENTER + CAGE_AT - CAGE_NEAR, GROUND + 1, CENTER));
+        c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        c.mineSite().start(h.absolutePos(entrance), Direction.NORTH);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The unreachable entrance stopped the order: " + result.message() + " | " + report(c));
+        });
+    }
+
+    /** Three restarts spent and carried to the next step, the mine buried at {@code at}: its stairs stay in the record as the way up. */
+    private static void spendRestartsOnTheStairs(GameTestHelper h, CompanionEntity c, BlockPos at) {
+        c.mineSite().newStep(h.getLevel().getGameTime());
+        for (int i = 0; i < 3; i++) {
+            c.mineSite().restart(at, Direction.NORTH);
+            c.mineSite().buried(true);
+        }
     }
 
     /** A pocket at the top of the deepslate closed all round, feet and head, by plugs he sealed and forbade, every side refused; he stands in it. */
