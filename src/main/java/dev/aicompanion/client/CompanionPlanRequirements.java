@@ -145,7 +145,7 @@ public final class CompanionPlanRequirements {
     }
 
     /** Steps that carry no count of their own, so a number in the request can only mean the gathering. */
-    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("follow", "come", "wait", "store_items", "sort_chests", "stop", "protect", "stop_protect");
+    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("set_home", "follow", "come", "wait", "store_items", "sort_chests", "stop", "protect", "stop_protect");
     static final int DEFAULT_ORE = 4;
     static final int DEFAULT_GAME = 3;
     /** Unnumbered food/hunting requests make a larger, bounded food run. */

@@ -100,6 +100,11 @@ final class CompanionPlacement {
         return recordActionResult(CompanionActionResult.ok("Поставил " + blockId + ". В сумке: " + c.getStoredItemsSummary() + "."));
     }
 
+    /** Whether a block of this kind could be set down here now; nothing is placed and nothing goes into the journal. */
+    boolean canPlaceNear(String requestedBlockId, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
+        return c.level() instanceof ServerLevel level && findPlacementPosition(level, BuiltInRegistries.BLOCK.get(ResourceLocation.parse(requestedBlockId)), origin, allowed) != null;
+    }
+
     public CompanionActionResult recordActionResult(CompanionActionResult result) {
         c.lastTaskSucceeded = result.success();
         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, result.message());

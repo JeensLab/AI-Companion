@@ -31,6 +31,7 @@ final class CompanionChests {
     void store(ServerLevel level) {
         if (w.job == CompanionWork.Job.TAKE) { retrieve(level); return; }
         if (w.job == CompanionWork.Job.PLACE_CHEST) { placeRequestedChests(); return; }
+        if (w.trip.walk()) return;
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
         if (w.job == CompanionWork.Job.STORE && (eligibleCount() == 0 || storeQuota() <= 0)) { w.finish(true, w.transferred > 0 ? "Сложил " + w.transferred + " предметов в сундук." : "Лишних вещей для сундука сейчас нет."); return; }
         if (w.target == null) {
@@ -38,6 +39,7 @@ final class CompanionChests {
             w.resetApproach();
             if (w.target == null) {
                 if (w.newChests >= 1) { w.finish(false, "Сложил " + w.transferred + " предметов, но оставшиеся вещи не помещаются. Они остались в сумке."); return; }
+                if (w.trip.toStation("minecraft:chest")) return;
                 if (!hasChestItem()) {
                     if (w.crafting.approachCraftingTable()) return;
                     if (!w.items.moveHandMaterialsToBag()) return;
@@ -49,8 +51,8 @@ final class CompanionChests {
                     }
                     return; // Let the crafting/table gesture finish before placing the chest.
                 }
-                CompanionActionResult placed = w.owner.placeBlockNearResult("minecraft:chest", w.insideHouse ? w.placementAnchor : w.owner.blockPosition(),
-                        pos -> !w.insideHouse || w.house.inside(pos));
+                if (w.trip.toHome()) return;
+                CompanionActionResult placed = w.trip.place("minecraft:chest");
                 if (!placed.success()) { w.finish(false, placed.message()); return; }
                 w.newChests++;
                 w.target = findChest(level);
@@ -104,6 +106,13 @@ final class CompanionChests {
             return;
         }
         if (w.owner.distanceToSqr(w.placementAnchor.getCenter()) > 3 * 3 || w.insideHouse && !w.house.inside(w.owner.blockPosition())) {
+            // Set out from home for a player far off: the plain approach below gives up after 160 ticks without coming closer.
+            if (!w.owner.level().hasChunkAt(w.placementAnchor) || w.owner.distanceToSqr(w.placementAnchor.getCenter()) > CompanionHomeTrip.FAR_WALK * CompanionHomeTrip.FAR_WALK) {
+                var leg = w.owner.travel().toward(w.placementAnchor, CompanionHomeTrip.FAR_WALK - 8);
+                if (leg == CompanionTravel.Step.WALKING) return;
+                w.owner.travel().reset();
+                if (leg == CompanionTravel.Step.FAILED) { w.finish(false, "Блок есть в сумке, но не смог вернуться к месту установки на " + w.placementAnchor.toShortString() + "."); return; }
+            }
             if (!w.placementMoving) { w.resetApproach(); w.placementMoving = true; }
             w.owner.movementIntent(w.placementAnchor);
             double distance = w.owner.distanceToSqr(w.placementAnchor.getCenter());
@@ -146,9 +155,12 @@ final class CompanionChests {
     }
 
     private void retrieve(ServerLevel level) {
+        if (w.trip.walk()) return;
         if (!w.owner.onGround()) return;
         if (w.target == null) { w.target = findChest(level); w.resetApproach(); }
         if (w.target == null) {
+            // «Забери всё» that has found something ends there; a chest elsewhere is for what is still missing.
+            if ((w.transferred == 0 || !w.requestedItem.equals("all")) && (w.trip.toStation("minecraft:chest") || w.trip.toHome())) return;
             w.finish(w.transferred > 0 && (w.requestedItem.equals("all") || w.transferred >= w.requestedCount),
                     "Забрал " + w.transferred + (w.requestedItem.equals("all") ? " предметов" : " из " + w.requestedCount) + ". В доступных сундуках больше нужных вещей нет. В сумке: " + w.owner.getStoredItemsSummary() + "."); return;
         }
