@@ -56,6 +56,8 @@ public final class CompanionAgendaData extends SavedData {
         boolean idleSaid;
         /** The top-up of supplies for the mine failed (no game to hunt): the next mine step goes down with what he has, once. */
         boolean mineAsIs;
+        /** The iron is out of the ore search's reach (too far down, or none seen): the next step digs down, then the search looks again. Not saved: a reload finds out again. */
+        boolean descendForOre;
 
         Goal(UUID id, String playbook, int tier) { this.id = id; this.playbook = playbook; this.tier = tier; }
 

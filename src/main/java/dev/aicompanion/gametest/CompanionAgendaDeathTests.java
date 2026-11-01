@@ -32,6 +32,7 @@ public final class CompanionAgendaDeathTests {
     @AfterBatch(batch = "agenda_no_wood") public static void afterNoWood(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_recover_mend") public static void afterMend(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_recover_cave") public static void afterCave(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_descend") public static void afterDescend(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** Hurt, with nothing to eat and nothing to heal him: the try for the things is spent at once, with the reason, and he does not set out. */
     @GameTest(template = "tall_tree", batch = "agenda_recover_hurt", timeoutTicks = 600)
@@ -110,6 +111,30 @@ public final class CompanionAgendaDeathTests {
             var goal = CompanionAgenda.goal(h.getLevel().getServer(), player.getUUID());
             h.assertTrue(goal != null && goal.state() == CompanionAgenda.State.BLOCKED, "The goal did not stop by tick " + h.getTick() + ": " + (goal == null ? null : goal.state()));
             h.assertTrue(goal.reason().contains("дерев"), "Stopped for another reason: " + goal.reason());
+        });
+    }
+
+    /** The iron lies below the reach of the ore search and the iron pickaxe is gone (a death): he digs down with the stone one to where the search sees it, instead of standing and stopping the goal. */
+    @GameTest(template = "tall_tree", batch = "agenda_descend", timeoutTicks = 6000)
+    public static void ironBelowTheOreSearchIsSoughtByDiggingDown(GameTestHelper h) {
+        var player = survivalPlayer(h);
+        var c = body(h, player);
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= 14; y++) h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        for (int x = 15; x <= 17; x++) for (int z = 15; z <= 17; z++) h.setBlock(new BlockPos(x, 2, z), Blocks.IRON_ORE);
+        BlockPos stand = h.absolutePos(new BlockPos(16, 15, 16));
+        c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        c.setHealth(c.getMaxHealth());
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE, 2)); c.setItem(1, new ItemStack(Items.COBBLESTONE, 40)); c.setItem(2, new ItemStack(Items.TORCH, 24));
+        c.setItem(3, new ItemStack(Items.STONE_SWORD)); c.setItem(4, new ItemStack(Items.CRAFTING_TABLE)); c.setItem(5, new ItemStack(Items.STICK, 8));
+        c.setItem(6, new ItemStack(Items.BREAD, 8)); c.setItem(7, new ItemStack(Items.COAL, 8));
+        var result = CompanionEvents.executeAction(player, "pursue_goal", "find_diamonds", 1);
+        h.assertTrue(result.status() == CompanionActionResult.Status.ACCEPTED, "Goal not accepted: " + result.message());
+        double[] lowest = {c.getY()};
+        h.onEachTick(() -> lowest[0] = Math.min(lowest[0], c.getY()));
+        h.succeedWhen(() -> {
+            var goal = CompanionAgenda.goal(h.getLevel().getServer(), player.getUUID());
+            h.assertTrue(goal != null && goal.state() != CompanionAgenda.State.BLOCKED, "The goal stopped on the surface: " + (goal == null ? null : goal.reason()));
+            h.assertTrue(lowest[0] <= stand.getY() - 6, "He did not go down: lowest " + lowest[0] + ", started at " + stand.getY());
         });
     }
 

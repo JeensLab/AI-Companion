@@ -39,6 +39,16 @@ final class CompanionExpeditionSupply {
                 && CompanionTools.count(owner, ItemTags.STONE_TOOL_MATERIALS) >= SWORD_STONE + PICKAXE_STONE;
     }
 
+    /** A torch takes a stick: wood in the bag makes more, otherwise the two sticks of the next stone pickaxe stay (underground there is no wood). */
+    boolean spareForTorch() {
+        int sticks = 0;
+        for (ItemStack stack : owner.companionInventory) {
+            if (stack.is(ItemTags.PLANKS) || stack.is(ItemTags.LOGS)) return true;
+            if (stack.is(Items.STICK)) sticks += stack.getCount();
+        }
+        return sticks > PICKAXE_STICKS;
+    }
+
     /** A stone sword the same way, so that a fight is never met with a pickaxe; bounded per step too. */
     boolean craftStoneSword() {
         if (swords >= MAX_SWORDS) return false;
