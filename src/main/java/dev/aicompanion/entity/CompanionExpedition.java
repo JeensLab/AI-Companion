@@ -47,7 +47,7 @@ final class CompanionExpedition {
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, hadStone, unheld, joining, atFoot;
+    private boolean active, hadStone, unheld, joining, atFoot, towardOrigin;
     private long stepEnd, nextCraft, nextArm;
     private long credited;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails;
@@ -116,7 +116,7 @@ final class CompanionExpedition {
         climb.reset();
         lead.clear();
         CompanionChunkTicket.release(owner);
-        active = hadStone = unheld = joining = atFoot = false;
+        active = hadStone = unheld = joining = atFoot = towardOrigin = false;
         ore.reset();
         cave.reset();
         retreat.reset();
@@ -243,7 +243,11 @@ final class CompanionExpedition {
             if (routeIndex < 0 && !mine.stands().isEmpty() && here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !level.canSeeSky(here.above())) { joining = true; stage = Stage.CHECK_NEAR; return; }
             if (routeIndex >= 0 || here.distSqr(mine.entrance()) <= FAR_ENTRANCE * FAR_ENTRANCE) { stage = Stage.CHECK_NEAR; return; }
         }
+        // Far from the entrance and under the ground with no stairs around: a new mine starts from where he stands, as the surface is no place to choose from.
+        if (mine.exists() && (mine.buried() || here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !level.canSeeSky(here.above()))) { restartHere("Я под землёй, а своей лестницы рядом нет."); return; }
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
+        // No spot for a new entrance here (a lake shore): the known mine is the way out, the walk to it ends in a restart at the entrance if it fails.
+        if (entrance == null && mine.exists()) { stage = Stage.CHECK_NEAR; return; }
         if (entrance == null) { end(Ending.BLOCKED, "Рядом нет места для входа в шахту: нужна твёрдая земля без построек и воды."); return; }
         mine.start(entrance.feet(), entrance.direction());
         route = List.of(entrance.feet());
@@ -374,10 +378,12 @@ final class CompanionExpedition {
         owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
     }
 
-    /** No side is left under the ground: back to the entrance on the surface, once, to begin stairs to a side not tried from it. */
+    /** No side is left where he stands: back to the entrance on the surface, once, to begin stairs to a side not tried from it. */
     private void restartAtOrigin(ServerLevel level, String why) {
-        Direction side = w.mine.buried() ? CompanionExpeditionRecord.originSide(level, w.mine) : null;
+        // A walk to the entrance that failed once is not tried again through yet another restart: the order ends instead of burning them all.
+        Direction side = towardOrigin ? null : CompanionExpeditionRecord.originSide(level, w.mine);
         if (side == null) { end(Ending.BLOCKED, why); return; }
+        towardOrigin = true;
         restartAt(level, w.mine.origin(), side, -1);
         joining = false;
         owner.workStatus("Здесь не свернуть, возвращаюсь ко входу и начну лестницу в другую сторону.");
