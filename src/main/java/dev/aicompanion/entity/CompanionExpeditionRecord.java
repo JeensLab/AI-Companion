@@ -54,6 +54,16 @@ final class CompanionExpeditionRecord {
 
     /** The side the mine starts again to from where he stands, or null: restarts are used up, or he is not on firm ground with room to stand. */
     static Direction restartSide(ServerLevel level, CompanionMineSite mine, BlockPos here) {
+        Direction side = restartSideOf(level, mine, here);
+        if (side == null && dev.aicompanion.CompanionDiagnostics.enabled()) {
+            StringBuilder sides = new StringBuilder();
+            for (Direction d : Direction.Plane.HORIZONTAL) sides.append(d).append('=').append(CompanionShaftPlan.assessStep(level, here, d, mine.seals(), mine.avoid())).append(mine.shunned(here.relative(d).below()) ? "(shunned) " : " ");
+            dev.aicompanion.CompanionDiagnostics.event("mine", "restart_refused", "here", here.toShortString(), "restarts", mine.restarts(), "floor", level.getBlockState(here.below()), "feet", level.getBlockState(here), "head", level.getBlockState(here.above()), "sides", sides);
+        }
+        return side;
+    }
+
+    private static Direction restartSideOf(ServerLevel level, CompanionMineSite mine, BlockPos here) {
         BlockPos floor = here.below();
         if (!mine.exists() || mine.restarts() >= MAX_RESTARTS || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return null;
         if (!CompanionShaftPlan.open(level, here) || !CompanionShaftPlan.open(level, here.above())) return null;

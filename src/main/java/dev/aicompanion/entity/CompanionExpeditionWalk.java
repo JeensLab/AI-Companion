@@ -38,7 +38,10 @@ final class CompanionExpeditionWalk {
     Result tick() {
         if (done()) return Result.DONE;
         if (dig.walkTo(cells.get(index))) index++;
-        else if (dig.walkStuck()) return Result.STUCK;
+        else if (dig.walkStuck()) {
+            dig.diagnoseStuck(cells.get(index), index, cells.size());
+            return Result.STUCK;
+        }
         return done() ? Result.DONE : Result.WORKING;
     }
 

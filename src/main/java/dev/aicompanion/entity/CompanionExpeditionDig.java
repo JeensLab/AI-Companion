@@ -190,6 +190,13 @@ final class CompanionExpeditionDig {
 
     boolean walkStuck() { return walkTicks > WALK_PATIENCE; }
 
+    void diagnoseStuck(BlockPos to, int index, int size) {
+        if (!dev.aicompanion.CompanionDiagnostics.enabled()) return;
+        var level = owner.level();
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "walk_stuck", "entity", owner.getUUID(), "feet", owner.position(), "ground", owner.onGround(),
+                "to", to.toShortString(), "cell", index + "/" + size, "below", level.getBlockState(to.below()), "at", level.getBlockState(to), "above", level.getBlockState(to.above()), "above2", level.getBlockState(to.above(2)));
+    }
+
     private boolean centred(BlockPos to) {
         Vec3 centre = Vec3.atBottomCenterOf(to);
         double dx = owner.getX() - centre.x, dz = owner.getZ() - centre.z;
