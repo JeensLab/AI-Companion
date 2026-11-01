@@ -389,10 +389,10 @@ final class CompanionExpeditionCave {
         return cells;
     }
 
-    /** He never strikes a creeper, and a chase does not lead him into the cave. */
+    /** A creeper is struck only when the guard lets him (see {@link CompanionCreeperGuard#fights}), and a chase does not lead him into the cave. */
     private void calm() {
         LivingEntity target = owner.getTarget();
-        if (target instanceof Creeper || shuns(target)) owner.setTarget(null);
+        if (target instanceof Creeper && !owner.creeperGuard.fights() || shuns(target)) owner.setTarget(null);
     }
 
     /** A target standing in the cave while he is not exploring it: the melee goal runs ahead of the work, so it must not follow it in. */
