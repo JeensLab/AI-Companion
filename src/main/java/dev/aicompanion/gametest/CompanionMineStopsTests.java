@@ -48,6 +48,7 @@ public final class CompanionMineStopsTests {
     /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
     private static final int FAR_TREE_AT = 3;
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200;
+    private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
 
     private CompanionMineStopsTests() { }
 
@@ -320,6 +321,32 @@ public final class CompanionMineStopsTests {
             h.assertTrue(!result.success() && result.message().contains("некуда свернуть"), "Not a stop with the restarts spent: " + result.message());
             h.assertTrue(c.mineSite().restarts() == 4, "Restarts " + c.mineSite().restarts());
             h.assertTrue(c.blockPosition().getY() == pocket.getY(), "He dug down at " + c.blockPosition());
+        });
+    }
+
+    @AfterBatch(batch = "mine_stops_tunnel") public static void afterTunnel(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+
+    /**
+     * Run m8b/void-4: the tunnel is two lanes wide and he walks the left one, so a diamond in the wall behind the right lane (its drop would
+     * rest two columns off) and one over the right lane (not in sight through the ceiling) lay open and untaken for the whole order. Both
+     * have an open face on a cell of his own tunnel: he steps to the right lane, takes them and goes on.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_tunnel", timeoutTicks = TIMEOUT)
+    public static void takesDiamondsOpenBesideTheLaneHeWalks(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        // Long tunnels in deepslate wear out more stone pickaxes than the usual bag holds.
+        for (int slot = 6; slot < 6 + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
+        carveMine(h, c, TUNNEL_START);
+        BlockPos foot = c.mineSite().foot();
+        h.getLevel().setBlock(foot.relative(Direction.WEST, BESIDE_AT).north(2), Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
+        h.getLevel().setBlock(foot.relative(Direction.WEST, OVERHEAD_AT).north().above(2), Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
+        BlockPos end = foot.relative(Direction.WEST, TUNNEL_START);
+        c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
+        long id = start(h, c, 2);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 2, "Diamonds left open beside the tunnel: " + count(c, Items.DIAMOND) + " | " + result.message() + " | " + report(c));
         });
     }
 

@@ -17,19 +17,24 @@ import java.util.function.Predicate;
  * asks for that, and mines it with the best pickaxe he has. Ore that cannot be taken in time is skipped, not retried.
  */
 final class CompanionExpeditionOre {
-    /** NEAR: what the hands reach from the feet while digging. WALK: up to twelve blocks off, walking there. SIGHT: what he sees from here, walking there. */
-    enum Mode { NEAR, WALK, SIGHT }
+    /**
+     * NEAR: what the hands reach from the feet while digging. WALK: up to twelve blocks off, walking there. SIGHT: what he sees from here, walking there.
+     * TUNNEL: NEAR, and when that takes nothing, a diamond open on a cell of his tunnel that the lane he walks does not reach, stepping to it.
+     */
+    enum Mode { NEAR, WALK, SIGHT, TUNNEL }
 
     /** NONE: no ore to take; WORKING: busy with one; DONE: one taken this tick; FULL: a diamond, and the bag has no room for it. */
     enum Result { NONE, WORKING, DONE, FULL }
 
-    private static final int SCAN_RADIUS = 4, WALK_RADIUS = 12, SIGHT_RADIUS = 16, ORE_PATIENCE = 600, TORCHES_ENOUGH = 16;
+    private static final int SCAN_RADIUS = 4, TUNNEL_BESIDE = 2, WALK_RADIUS = 12, SIGHT_RADIUS = 16, ORE_PATIENCE = 600, TORCHES_ENOUGH = 16;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
     private final CompanionExpeditionDig dig;
     private final Set<BlockPos> skipped = new HashSet<>();
     private BlockPos target;
+    /** The target is walked to before it is mined. */
+    private boolean walking;
     private Predicate<BlockPos> allowed = pos -> true;
     private int ticks;
     /** Ore is worth looking for: set after every advance, cleared when a look finds none. */
@@ -54,6 +59,7 @@ final class CompanionExpeditionOre {
     void reset() {
         skipped.clear();
         target = null;
+        walking = false;
         allowed = pos -> true;
         ticks = 0;
         scan = missedDiamond = false;
@@ -62,23 +68,29 @@ final class CompanionExpeditionOre {
     /** One tick of mining the ore in sight. */
     Result step(ServerLevel level, Mode mode) {
         if (target == null) {
-            target = find(level, mode);
+            Mode looking = mode == Mode.TUNNEL ? Mode.NEAR : mode;
+            target = find(level, looking);
+            walking = looking != Mode.NEAR;
+            if (target == null && mode == Mode.TUNNEL) {
+                target = findBesideTunnel(level);
+                walking = target != null;
+            }
             ticks = 0;
             if (target == null) {
-                if (scan) report(level, mode);
+                if (scan) report(level, looking);
                 scan = false;
                 return Result.NONE;
             }
         }
         if (++ticks > ORE_PATIENCE) { skip(); return Result.WORKING; }
-        if (mode != Mode.NEAR) {
+        if (walking) {
             int reach = w.items.reachBlock(level, target, true);
             if (reach < 0) skip();
             if (reach != 1) return Result.WORKING;
         }
         switch (dig.dig(level, target)) {
             case WORKING -> { }
-            case DONE -> { dig.flush(); target = null; return Result.DONE; }
+            case DONE -> { dig.flush(); target = null; walking = false; return Result.DONE; }
             case FULL -> {
                 if (level.getBlockState(target).is(BlockTags.DIAMOND_ORES)) return Result.FULL;
                 skip();
@@ -125,6 +137,7 @@ final class CompanionExpeditionOre {
     private void skip() {
         skipped.add(target);
         target = null;
+        walking = false;
         dig.forget();
     }
 
@@ -148,6 +161,36 @@ final class CompanionExpeditionOre {
             bestDistance = distance;
         }
         return best;
+    }
+
+    /**
+     * A diamond the lane he walks does not reach (its drop rests two columns off, or the ceiling hides it) but that lies open on a cell
+     * of his own tunnel beside him: not through the rock, and not into a cave that is shut.
+     */
+    private BlockPos findBesideTunnel(ServerLevel level) {
+        BlockPos feet = owner.blockPosition();
+        Vec3 eye = owner.getEyePosition();
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (BlockPos pos : BlockPos.betweenClosed(feet.offset(-SCAN_RADIUS, -SCAN_RADIUS, -SCAN_RADIUS), feet.offset(SCAN_RADIUS, SCAN_RADIUS, SCAN_RADIUS))) {
+            if (!level.hasChunkAt(pos) || skipped.contains(pos) || !level.getBlockState(pos).is(BlockTags.DIAMOND_ORES)) continue;
+            double distance = eye.distanceToSqr(pos.getCenter());
+            if (distance >= bestDistance || !exposed(level, pos) || CompanionOre.liquidNear(level, pos) || !allowed.test(pos) || w.mine.carriesStand(pos)) continue;
+            if (!dig.hasTool(level.getBlockState(pos)) || !opensOnTunnel(level, feet, pos)) continue;
+            best = pos.immutable();
+            bestDistance = distance;
+        }
+        return best;
+    }
+
+    /** An open face on a cell within two blocks of his feet that no cave record has shut. */
+    private boolean opensOnTunnel(ServerLevel level, BlockPos feet, BlockPos pos) {
+        for (Direction side : Direction.values()) {
+            BlockPos next = pos.relative(side);
+            if (Math.abs(next.getX() - feet.getX()) <= TUNNEL_BESIDE && Math.abs(next.getY() - feet.getY()) <= TUNNEL_BESIDE && Math.abs(next.getZ() - feet.getZ()) <= TUNNEL_BESIDE
+                    && level.hasChunkAt(next) && CompanionShaftPlan.open(level, next) && !w.mine.shunned(next)) return true;
+        }
+        return false;
     }
 
     /** In reach and sight, and its drop to be picked up; the floor under his own feet only when what lies under that ore holds him, and never the floor of a step of his own stairs. */
