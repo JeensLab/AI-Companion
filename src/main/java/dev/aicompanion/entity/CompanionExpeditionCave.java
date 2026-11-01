@@ -24,7 +24,7 @@ final class CompanionExpeditionCave {
     private enum Phase { IDLE, WAIT, EXPLORE, BACK, SEAL }
 
     private static final int EXPLORE_RANGE = 16, EXPLORE_TICKS = 20 * 120, SPACING = 5, SETTLE = 30, PIT_TRIES = 60, SEAL_PATIENCE = 200, WATCH_EVERY = 10, LOOK_EVERY = 5, NOTES = 6;
-    private static final double ARRIVED = 2.5;
+    private static final double ARRIVED = 2.5, CONTACT_SQR = 9;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -402,11 +402,13 @@ final class CompanionExpeditionCave {
 
     /**
      * No fight now: the target is in the cave and out of reach (in reach, he strikes it where he stands, see {@link #guards}), or he is
-     * himself on the cave side while the plug is yet to be laid, and the way back to his mine comes first.
+     * himself on the cave side while the plug is yet to be laid, and the way back to his mine comes first. Never a mob within three blocks
+     * of him: it is on him already, and walking away from it, or laying a plug, is a blow in the back.
      */
     boolean shuns(LivingEntity target) {
+        if (target == null || owner.distanceToSqr(target) <= CONTACT_SQR) return false;
         boolean outside = (phase == Phase.SEAL || phase == Phase.BACK) && cave != null && cave.air().contains(owner.blockPosition());
-        return target != null && (outside || guards(target) && !owner.isWithinMeleeAttackRange(target));
+        return outside || guards(target) && !owner.isWithinMeleeAttackRange(target);
     }
 
     private void note(String text) {

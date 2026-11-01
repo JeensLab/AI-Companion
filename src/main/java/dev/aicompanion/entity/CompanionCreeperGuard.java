@@ -5,6 +5,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.util.LandRandomPos;
 import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -28,6 +29,8 @@ import java.util.List;
 final class CompanionCreeperGuard {
     /** How near a creeper in sight is a reason to act: its fuse starts at three blocks and a blast kills from full health inside about 2.5. */
     static final double NEAR = 9;
+    /** How near another hostile is on him, a blow away. */
+    private static final double ON_HIM = 3;
     private static final int LOOK_EVERY = 5, FIGHT_LOOK_EVERY = 2, PLAN_EVERY = 10, EPISODE_TICKS = 20 * 12, CALM_TICKS = 20, PLACE_TRIES = 20;
     private static final int FLEE_CELLS = 6, SHUT_STANDS = 3, ON_ROUTE_SQR = 2, ROUTE_CREEPER_SQR = 4, PASSAGE_RANGE = 24, FLEE_RANGE = 12, FLEE_HEIGHT = 6;
     private static final double FLEE_SPEED = 1.3, ARRIVED_SQR = 4;
@@ -71,7 +74,17 @@ final class CompanionCreeperGuard {
         nextLook = now + (fights() ? FIGHT_LOOK_EVERY : LOOK_EVERY);
         Creeper creeper = seen(level);
         noBlock = false;
-        return creeper != null && plan(level, creeper, false);
+        return creeper != null && !(!lit(creeper) && engaged()) && plan(level, creeper, false);
+    }
+
+    /**
+     * Armed on an expedition with another hostile on him: a creeper whose fuse is not lit is no reason to turn his back on it, whatever his
+     * health. The turn is the fight's; the guard takes it back when the fuse is lit.
+     */
+    private boolean engaged() {
+        if (!owner.work.expedition.active() || !owner.equipment.hasMeleeWeapon()) return false;
+        return !owner.level().getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(ON_HIM),
+                foe -> !(foe instanceof Creeper) && foe.isAlive() && !foe.isNoAi() && owner.hasLineOfSight(foe)).isEmpty();
     }
 
     /** Vanilla sets the swell direction only on its next tick after {@code ignite()}, so the flag counts as a lit fuse too. */
@@ -106,7 +119,7 @@ final class CompanionCreeperGuard {
         }
         lastSeen = now;
         owner.getLookControl().setLookAt(creeper, 30, 30);
-        if (fighting && !lit(creeper)) { finished = true; return; }
+        if ((fighting || engaged()) && !lit(creeper)) { finished = true; return; }
         if (now >= nextPlan || cells.isEmpty() && flee == null) {
             nextPlan = now + PLAN_EVERY;
             if (!plan(level, creeper, true)) { finished = true; return; }

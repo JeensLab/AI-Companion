@@ -51,7 +51,7 @@ final class CompanionExpeditionFight {
         if (!worthFighting(foe, now)) { settle(now); return false; }
         lastBusy = now;
         LivingEntity target = owner.getTarget();
-        if (target == null || !target.isAlive() || !isFoe(target)) owner.setTarget(foe);
+        if (target == null || !target.isAlive() || !isFoe(target) || target != foe && !inContact(target) && inContact(foe)) owner.setTarget(foe);
         owner.getNavigation().stop();
         owner.selectWeaponForCombat();
         return true;
@@ -129,6 +129,9 @@ final class CompanionExpeditionFight {
         if (retreating) return !owner.isWithinMeleeAttackRange(foe);
         return owner.getHealth() <= CompanionCaveSense.HEALTH_VERY && canEscape(foe);
     }
+
+    /** The foe is on him already: it is struck before one that is still on its way, or shooting from afar. */
+    private boolean inContact(LivingEntity foe) { return owner.distanceToSqr(foe) < CONTACT_SQR; }
 
     /** The foe stands deeper under his feet than a fall he would take on purpose. */
     private boolean below(LivingEntity foe) { return foe.getY() < owner.getY() - FALL_LIMIT; }
