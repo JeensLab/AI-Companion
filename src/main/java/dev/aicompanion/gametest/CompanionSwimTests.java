@@ -8,6 +8,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -223,6 +224,39 @@ public final class CompanionSwimTests {
         h.succeedWhen(() -> {
             h.assertTrue(oleg.distanceToSqr(player(h, oleg)) < 5 * 5, "Not by the player: " + oleg.blockPosition());
             h.assertTrue(fast[0] == 0, "Swam fast in knee-deep water for " + fast[0] + " ticks");
+        });
+    }
+
+    /**
+     * A column of falling water in a shaft, a plateau one block over its middle (an opening two blocks high in the wall), and an
+     * order that cannot start while he swims: the game's float holds the jump flag against the order, and nothing else takes him
+     * sideways (the mine world, a drowning at a waterfall with air one step away).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void inAColumnOfFallingWaterWithAirOneStepAwayHeGetsOutAndDoesNotDrown(GameTestHelper h) {
+        for (int x = 8; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 0; y <= 16; y++) {
+            boolean shaft = x == 12 && z == 16, wall = Math.abs(x - 12) + Math.abs(z - 16) == 1 && y <= 15;
+            boolean opening = x == 13 && z == 16 && (y == 6 || y == 7);
+            net.minecraft.world.level.block.state.BlockState block = y <= 5 && !(shaft && y >= 1) ? Blocks.STONE.defaultBlockState()
+                    : opening ? Blocks.AIR.defaultBlockState()
+                    : shaft && y == 14 ? Blocks.WATER.defaultBlockState()
+                    : shaft && y >= 1 && y < 14 ? Fluids.FLOWING_WATER.getFlowing(8, true).createLegacyBlock()
+                    : wall || shaft && y == 15 ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState();
+            h.setBlock(new BlockPos(x, y, z), block);
+        }
+        CompanionEntity oleg = spawn(h, 12, 7, 16);
+        var at = h.absoluteVec(new Vec3(20.5, 6, 16.5));
+        player(h, oleg).teleportTo(at.x, at.y, at.z);
+        h.assertTrue(CompanionEvents.executeAction(player(h, oleg), "come", "", 1).success(), "The order was not accepted");
+        float[] lowestHealth = {oleg.getMaxHealth()};
+        int[] lowestAir = {oleg.getAirSupply()};
+        h.onEachTick(() -> {
+            lowestHealth[0] = Math.min(lowestHealth[0], oleg.getHealth());
+            lowestAir[0] = Math.min(lowestAir[0], oleg.getAirSupply());
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!oleg.isInWater() && oleg.onGround(), "Still in the water at " + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+            h.assertTrue(lowestHealth[0] >= oleg.getMaxHealth() && lowestAir[0] > 0, "Drowned: health " + lowestHealth[0] + ", air " + lowestAir[0]);
         });
     }
 }
