@@ -403,7 +403,7 @@ public final class CompanionAgenda {
         if (orphan > 0) { start(server, owner, goal, c, COLLECT, null, List.of(new PlannedAction("collect_smelt", 0, 1, String.valueOf(orphan)))); return; }
         var book = goal.book();
         List<Milestone> all = book.milestones();
-        CompanionFacts facts = CompanionFacts.of(c);
+        CompanionFacts facts = CompanionFacts.of(c).withShieldTrekSpent(goal.shieldTrek);
         int done = (int) all.stream().filter(milestone -> milestone.satisfied(facts, goal.fallback, all)).count();
         if (done != goal.done) {
             if (done > goal.done) { goal.workTicks = 0; goal.idleTicks = 0; goal.idleSaid = false; }
@@ -431,6 +431,10 @@ public final class CompanionAgenda {
         List<PlannedAction> plan = pick.method(facts, goal.fallback, all).stream()
                 .map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList();
         if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) plan = List.of(plan.getLast());
+        else if (pick.kind() == Kind.EXPEDITION && Milestone.shieldTrek(facts)) {
+            goal.shieldTrek = true;
+            CompanionDiagnostics.event(c.diagnosticTrace(), "shield_trek_planned", "goal", goal.playbook, "at", c.blockPosition());
+        }
         goal.mineAsIs = false;
         if (!pick.key().equals(goal.announced)) {
             if (!goal.announced.isEmpty()) c.autonomySay("Дальше: " + pick.label(goal.fallback) + ".");

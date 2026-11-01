@@ -172,28 +172,42 @@ public final class CompanionMilestones {
         }
 
         /**
-         * A shield in the left hand against a creeper's blast. Optional: it is made only from iron and boards he carries already (a spare ingot, or
-         * raw iron with a furnace in the bag), never fetched, so a bag without them goes down as it is; one carried is only put on.
+         * A shield in the left hand against a creeper's blast. Optional: it is made from iron and boards he carries (a spare ingot, or raw iron
+         * with a furnace in the bag), or after one short walk for iron that lies in the open near him ({@link #shieldTrek}); a bag and a place
+         * without them go down as they are. One carried is only put on.
          */
         private static List<Step> shieldSteps(CompanionFacts facts, boolean mayMake) {
             List<Step> steps = new ArrayList<>();
             if (facts.worn(EquipmentSlot.OFFHAND) == Items.SHIELD) return steps;
             if (facts.carried(Items.SHIELD) == 0) {
-                if (!mayMake || !shieldAffordable(facts)) return steps;
+                if (!mayMake || !shieldAffordable(facts) && !shieldTrek(facts)) return steps;
                 steps.add(obtain(Items.SHIELD, 1));
             }
             steps.add(equip(Items.SHIELD, "offhand"));
             return steps;
         }
 
+        /**
+         * The shield is to be made with iron fetched for it: none in the bag to spare, some in the open near him, and the goal has not gone out for it
+         * before (a shield broken or lost later is made again only from what he carries). Its ore comes after the pickaxe's and the sword's iron:
+         * both are made before this step is planned.
+         */
+        public static boolean shieldTrek(CompanionFacts facts) {
+            return !facts.belowMine() && !facts.shieldTrekSpent() && facts.carried(Items.SHIELD) == 0 && facts.worn(EquipmentSlot.OFFHAND) != Items.SHIELD
+                    && !shieldIron(facts) && facts.ironInSight();
+        }
+
         private static boolean shieldAffordable(CompanionFacts facts) {
+            int wood = facts.carried(held -> new ItemStack(held).is(ItemTags.PLANKS)) + PLANKS_PER_LOG * facts.carried(held -> new ItemStack(held).is(ItemTags.LOGS));
+            int kept = (facts.carried(Items.CRAFTING_TABLE) == 0 ? BENCH_PLANKS : 0) + (facts.carried(Items.STICK) < STICKS_MIN ? STICK_PLANKS : 0);
+            return shieldIron(facts) && wood >= SHIELD_PLANKS + kept;
+        }
+
+        private static boolean shieldIron(CompanionFacts facts) {
             int ingots = facts.carried(Items.IRON_INGOT);
             // The sword he is yet to make takes its ingots first, the pickaxe is made before the mine.
             if (facts.carried(MINE_SWORDS::contains) == 0 && ingots >= IRON_SWORD_INGOTS) ingots -= IRON_SWORD_INGOTS;
-            boolean iron = ingots >= 1 || facts.carried(Items.RAW_IRON) >= 1 && facts.carried(Items.FURNACE) >= 1;
-            int wood = facts.carried(held -> new ItemStack(held).is(ItemTags.PLANKS)) + PLANKS_PER_LOG * facts.carried(held -> new ItemStack(held).is(ItemTags.LOGS));
-            int kept = (facts.carried(Items.CRAFTING_TABLE) == 0 ? BENCH_PLANKS : 0) + (facts.carried(Items.STICK) < STICKS_MIN ? STICK_PLANKS : 0);
-            return iron && wood >= SHIELD_PLANKS + kept;
+            return ingots >= 1 || facts.carried(Items.RAW_IRON) >= 1 && facts.carried(Items.FURNACE) >= 1;
         }
 
         private static List<Step> foodSteps(CompanionFacts facts, int target) {

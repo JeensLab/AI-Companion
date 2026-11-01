@@ -58,6 +58,8 @@ public final class CompanionAgendaData extends SavedData {
         boolean mineAsIs;
         /** The iron is out of the ore search's reach (too far down, or none seen): the next step digs down, then the search looks again. Not saved: a reload finds out again. */
         boolean descendForOre;
+        /** The goal has gone out once for the iron of a shield, finished or not: it does not go again, and a reload does not give it back. */
+        boolean shieldTrek;
 
         Goal(UUID id, String playbook, int tier) { this.id = id; this.playbook = playbook; this.tier = tier; }
 
@@ -67,6 +69,7 @@ public final class CompanionAgendaData extends SavedData {
         public State state() { return state; }
         public String reason() { return reason; }
         public boolean fallback() { return fallback; }
+        public boolean shieldTrek() { return shieldTrek; }
         public int deaths() { return deaths; }
         public BlockPos deathPlace() { return deathPlace; }
         public int resultCount() { return results.size(); }
@@ -98,6 +101,7 @@ public final class CompanionAgendaData extends SavedData {
                 counterList.add(counter);
             });
             tag.put("Counters", counterList);
+            if (shieldTrek) tag.putBoolean("ShieldTrek", true);
             ListTag resultList = new ListTag();
             results.forEach(result -> resultList.add(result.copy()));
             tag.put("Results", resultList);
@@ -119,6 +123,7 @@ public final class CompanionAgendaData extends SavedData {
             goal.companion = tag.hasUUID("Companion") ? tag.getUUID("Companion") : null;
             goal.announced = tag.getString("Announced"); goal.done = Math.max(0, tag.getInt("Done"));
             goal.workTicks = Math.max(0, tag.getLong("WorkTicks"));
+            goal.shieldTrek = tag.getBoolean("ShieldTrek");
             ResourceLocation deathDimension = tag.contains("DeathPos", Tag.TAG_LONG) && tag.contains("DeathDim", Tag.TAG_STRING) ? ResourceLocation.tryParse(tag.getString("DeathDim")) : null;
             if (deathDimension != null) {
                 goal.deathPlace = BlockPos.of(tag.getLong("DeathPos")); goal.deathDimension = ResourceKey.create(Registries.DIMENSION, deathDimension);

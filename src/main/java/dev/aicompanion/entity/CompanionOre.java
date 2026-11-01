@@ -202,6 +202,12 @@ public final class CompanionOre {
         int radius() { return radius; }
         int depth() { return origin.getY() - minY; }
 
+        /** Ore of the kind with a face in the open and no liquid beside it, within the radius: what he can see from outside, not ore inside the rock. */
+        boolean anyInSight(ServerLevel level) {
+            while (!scan(level)) { /* the sections are few, a radius this small is searched in one go */ }
+            return found.stream().anyMatch(pos -> exposed(level, pos) && !liquidNear(level, pos));
+        }
+
         private static boolean exposed(ServerLevel level, BlockPos pos) {
             for (Direction side : Direction.values())
                 if (level.getBlockState(pos.relative(side)).getCollisionShape(level, pos.relative(side)).isEmpty()) return true;
