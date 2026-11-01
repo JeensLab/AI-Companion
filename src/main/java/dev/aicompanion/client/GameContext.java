@@ -79,7 +79,7 @@ public final class GameContext {
                         ? "пока нет" : companions.getFirst().getLastTaskResult())
                         + ", журнал его недавних дел (старые первыми, настоящие итоги)=" + companions.getFirst().getDeedsForAi())
                 + (remembered.isEmpty() ? "" : ", " + remembered)
-                + ". Это только видимые клиенту сведения; не додумывай неизвестное.";
+                + ". Это только видимые клиенту сведения; не додумывай неизвестное. Ход своих дел, печи и цель не докладывай, если товарищ о них не спросил.";
     }
 
     public static String timeOfDay(long dayTime) {
