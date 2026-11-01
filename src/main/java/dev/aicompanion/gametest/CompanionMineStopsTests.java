@@ -51,7 +51,7 @@ public final class CompanionMineStopsTests {
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
-    private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, DIAMOND_AT = 6;
+    private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, DIAMOND_AT = 6;
     private static final int CANOPY_AT = 12, CANOPY_REACH = 2;
     private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
 
@@ -506,6 +506,21 @@ public final class CompanionMineStopsTests {
      */
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void climbsPastAGapInTheRecordAndTakesOutHisOwnPlug(GameTestHelper h) {
+        climbPastAPlug(h, PLUG_AT);
+    }
+
+    /**
+     * Run m12b/void-2 and void-3 (seed 20261102): the pit at the bottom of the stairs, no stone pickaxe, the iron one at its reserve, the record lost
+     * and a plug of his own on the stairs far above the pit. He pushed at the cell beyond the plug in a straight line, from the bottom or from just
+     * under the plug, and said «застрял на ходу» five times. The plug is looked for when the push stalls, he walks the stairs up to it cell by cell,
+     * takes it out and goes on to the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsUpTheStairsToAPlugOfHisOwnThatIsFarFromHim(GameTestHelper h) {
+        climbPastAPlug(h, FAR_PLUG_AT);
+    }
+
+    private static void climbPastAPlug(GameTestHelper h, int plugAt) {
         mountain(h, true);
         CompanionEntity c = rig(h);
         c.setFollowing(false);
@@ -516,7 +531,7 @@ public final class CompanionMineStopsTests {
         BlockPos here = stairs.get(GAP_AT);
         for (BlockPos stand : stairs.subList(GAP_AT + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
         c.mineSite().truncate(KNOWN_STANDS);
-        for (BlockPos cell : List.of(stairs.get(PLUG_AT), stairs.get(PLUG_AT).above())) {
+        for (BlockPos cell : List.of(stairs.get(plugAt), stairs.get(plugAt).above())) {
             h.getLevel().setBlock(cell, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
             c.mineSite().sealed(cell);
         }
@@ -535,7 +550,7 @@ public final class CompanionMineStopsTests {
             }
             CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(heightWhenEnded[0] >= surface, "He said «" + result.message() + "» at height " + heightWhenEnded[0] + ", below the surface at " + surface + " | " + report(c));
-            h.assertTrue(!h.getLevel().getBlockState(stairs.get(PLUG_AT)).is(Blocks.COBBLESTONE), "His plug on the stairs is still there | " + report(c));
+            h.assertTrue(!h.getLevel().getBlockState(stairs.get(plugAt)).is(Blocks.COBBLESTONE), "His plug on the stairs is still there | " + report(c));
         });
     }
 
