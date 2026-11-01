@@ -734,6 +734,38 @@ public final class CompanionMineStopsTests {
     }
 
     /**
+     * Run m13b/void (seed 20261102): the mine was started again under the ground, so its way to the surface was a record of cells above the pit, and with the
+     * stone pickaxes broke in the step he dug tunnels with the iron one, down to its reserve, and had nothing left for the gap on the way up. With the way up
+     * in the record the iron pickaxe is kept for ore and he goes up for supplies.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void keepsTheIronPickaxeForOreWhenTheRecordHasAWayUp(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        ItemStack last = new ItemStack(Items.STONE_PICKAXE);
+        last.setDamageValue(last.getMaxDamage() - 1);
+        c.setItem(0, last);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(PIT_STEP);
+        for (BlockPos stand : stairs.subList(PIT_STEP + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        spendRestartsOnTheStairs(h, c, here);
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            ended(h, c, id[0]);
+            int worn = c.getMainHandItem().is(Items.IRON_PICKAXE) ? c.getMainHandItem().getDamageValue() : 0;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.IRON_PICKAXE)) worn += c.getItem(slot).getDamageValue();
+            h.assertTrue(worn == 0, "The iron pickaxe was spent on rock with the way up in the record: wear " + worn + " | " + report(c));
+        });
+    }
+
+    /**
      * Run m10b/void-4 (seed 20261102): on the surface at the entrance, his plug of the last retreat on the first step of the stairs, no stone
      * pickaxe and no wood to make one, the iron pickaxe whole. The plug is rock: «Свою пробку на лестнице убрать не смог (нет подходящей кирки)»
      * ended the order five times. He takes it out with the iron pickaxe, as he does any rock in his way, and goes on to the ore.

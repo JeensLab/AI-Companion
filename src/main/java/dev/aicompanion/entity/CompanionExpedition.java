@@ -594,9 +594,9 @@ final class CompanionExpedition {
             case NO_TOOL -> {
                 plan = null;
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
-                // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up,
+                // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground with no cells of the way up in the record there is no way up,
                 // and a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use.
-                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() || !hadStone) && dig.spareIron()) { dig.ironForRock = true; return; }
+                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() && w.mine.above().isEmpty() || !hadStone) && dig.spareIron()) { dig.ironForRock = true; return; }
                 // A diamond in sight is worth the last wear of the iron pickaxe: the wear kept for ore is for this very ore, and the way up needs none.
                 if (!dig.lackedOre && !dig.ironForRock && dig.ironLeft(DIAMOND_IRON) && dig.diamondInSight((ServerLevel) owner.level(), DIAMOND_SIGHT)) { dig.ironForRock(DIAMOND_IRON); return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
