@@ -129,6 +129,16 @@ public final class CompanionEquipmentTests {
     }
 
     @GameTest(template = "empty")
+    public static void aSwordBeatsAnAxeThatHitsHarderButTwiceAsRarely(GameTestHelper helper) {
+        CompanionEntity companion = companion(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_AXE));
+        companion.setItem(0, new ItemStack(Items.STONE_SWORD));
+        companion.selectWeaponForCombat();
+        helper.assertTrue(companion.getMainHandItem().is(Items.STONE_SWORD) && count(companion, Items.WOODEN_AXE) == 1, "Fights with " + companion.getMainHandItem());
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
     public static void duplicateMergePreservesBothHandsAndArmor(GameTestHelper helper) {
         CompanionEntity canonical = companion(helper);
         CompanionEntity duplicate = companion(helper);

@@ -187,9 +187,12 @@ final class CompanionEquipment {
         // tunnel is an even trade he can lose by one blow while an iron one lies in the bag. The hand is not in the bag: a held sword stays.
         ItemStack hand = c.getMainHandItem();
         if (choice.isEmpty() && !hand.is(ItemTags.SWORDS) && !hand.is(ItemTags.AXES)) choice = bestWeapon(stack -> stack.is(ItemTags.PICKAXES));
-        if (!choice.isEmpty() && equipmentScore(choice, EquipmentSlot.MAINHAND) > equipmentScore(c.getMainHandItem(), EquipmentSlot.MAINHAND))
+        if (!choice.isEmpty() && meleeScore(choice) > meleeScore(c.getMainHandItem()))
             equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
     }
+
+    /** Damage over time, not per blow: a wooden axe hits harder than a stone sword but twice as rarely, and loses a fight the sword wins. */
+    private double meleeScore(ItemStack stack) { return equipmentScore(stack, EquipmentSlot.MAINHAND) * CompanionCombat.attackSpeed(stack); }
 
     static boolean isMelee(ItemStack stack) { return stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES); }
 
@@ -204,7 +207,7 @@ final class CompanionEquipment {
     private ItemStack bestWeapon(java.util.function.Predicate<ItemStack> kind) {
         ItemStack choice = ItemStack.EMPTY;
         for (ItemStack stack : c.companionInventory)
-            if (kind.test(stack) && !c.carriedForPlayer(stack) && (choice.isEmpty() || equipmentScore(stack, EquipmentSlot.MAINHAND) > equipmentScore(choice, EquipmentSlot.MAINHAND))) choice = stack;
+            if (kind.test(stack) && !c.carriedForPlayer(stack) && (choice.isEmpty() || meleeScore(stack) > meleeScore(choice))) choice = stack;
         return choice;
     }
 

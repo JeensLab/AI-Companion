@@ -47,12 +47,14 @@ final class CompanionCombat {
         }
     }
 
-    int weaponCooldownTicks() {
+    int weaponCooldownTicks() { return Math.max(6, Math.min(40, (int) Math.ceil(20 / Math.max(.5, attackSpeed(c.getMainHandItem()))))); }
+
+    static double attackSpeed(net.minecraft.world.item.ItemStack stack) {
         double speed = 4.0;
-        for (var entry : c.getMainHandItem().getAttributeModifiers().modifiers())
+        for (var entry : stack.getAttributeModifiers().modifiers())
             if (entry.attribute().is(Attributes.ATTACK_SPEED) && entry.slot().test(EquipmentSlot.MAINHAND)
                     && entry.modifier().operation() == net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_VALUE) speed += entry.modifier().amount();
-        return Math.max(6, Math.min(40, (int) Math.ceil(20 / Math.max(.5, speed))));
+        return speed;
     }
 
     /** A visible recent attacker of the owner interrupts work without waiting for an LLM. */
