@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 /** Executes plan steps on the server thread and waits for the result of their own workId. Shared by the client and GameTests. */
 public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
+    private static final int DIG_RETREAT_SECONDS = 360;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
             "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds");
@@ -268,6 +269,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static int limitSeconds(PlannedAction action) {
         int items = action.count() == PlannedAction.ALL_CARRIED ? 64 : action.count();
         if ("smelt_items".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * items + 120;
+        // A retreat may start as the step ends: its climb and rest grow the server's deadline, and the client must not cut them short.
+        if ("dig_for_diamonds".equals(action.type())) return WORK_LIMIT_SECONDS + DIG_RETREAT_SECONDS;
         // A safety net over the server's own deadline of a collection (CompanionFurnaceBatches.collectDeadline): the cooking left, a refuel, the walk.
         if ("collect_smelt".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * 64 + 120 + 180;
         // Iron tools and gold or diamonds without an iron pickaxe: ore, furnace and bench in one order, each stage with its

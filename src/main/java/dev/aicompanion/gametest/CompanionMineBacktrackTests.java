@@ -37,6 +37,7 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
+    private static final int SPARE_PICKAXES_FROM = 10, SPARE_PICKAXES = 4;
     private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10;
 
 
@@ -70,6 +71,8 @@ public final class CompanionMineBacktrackTests {
         for (int z = 1; z < SIZE - 1; z++) for (int x = 1; x <= WEST_LODE; x++) h.setBlock(new BlockPos(x, DIAMOND_FEET - 1, z), Blocks.DEEPSLATE_DIAMOND_ORE);
         for (int x = CHAMBER_X0; x <= CHAMBER_X1; x++) for (int z = CHAMBER_Z0; z <= CHAMBER_Z1; z++) for (int y = CHAMBER_Y; y <= CHAMBER_Y + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         CompanionEntity c = rig(h);
+        // Two orders on one bag: this is about the cave, not about running out of pickaxes.
+        for (int slot = SPARE_PICKAXES_FROM; slot < SPARE_PICKAXES_FROM + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
         List<Zombie> zombies = new ArrayList<>();
         for (int[] at : new int[][]{{23, 15}, {24, 16}, {25, 17}, {23, 17}}) {
             Zombie zombie = h.spawn(EntityType.ZOMBIE, at[0], CHAMBER_Y, at[1]);
@@ -94,13 +97,14 @@ public final class CompanionMineBacktrackTests {
                 CompanionActionResult result = c.workResult(first);
                 if (result == null) return;
                 h.assertTrue(result.message().contains("отступил") && c.getHealth() >= RECOVERED, "The first order did not end in a retreat: " + report(c));
+                h.assertTrue(c.mineSite().retreats() == 1, "Retreats after the first order " + c.mineSite().retreats() + " | " + report(c));
                 second[0] = start(h, c, 1);
                 return;
             }
             CompanionActionResult result = c.workResult(second[0]);
             if (result == null) return;
-            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The second order found nothing, retreats " + c.mineSite().retreats() + ": " + report(c));
-            h.assertTrue(c.mineSite().retreats() == 1, "Retreats " + c.mineSite().retreats() + " | " + report(c));
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The second order found nothing, retreats " + c.mineSite().retreats() + ", stands " + c.mineSite().stands().size() + ", first shut " + c.mineSite().firstShunned() + ": " + report(c));
+            h.assertTrue(c.mineSite().retreats() == 0, "A found diamond leaves retreats " + c.mineSite().retreats() + " | " + report(c));
             for (BlockPos stand : c.mineSite().stands()) h.assertTrue(!c.mineSite().shunned(stand), "A stand in the cave box at " + rel(h, stand).toShortString());
             h.succeed();
         });
@@ -246,6 +250,22 @@ public final class CompanionMineBacktrackTests {
         });
     }
 
+    /** The step's limits of a mine: a new step has its tries back, and the client waits out a retreat that starts as the step ends. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 40)
+    public static void aNewStepHasItsTriesBackAndARetreatIsWaitedFor(GameTestHelper h) {
+        CompanionMineSite site = new CompanionMineSite();
+        site.start(new BlockPos(0, 70, 0), Direction.NORTH);
+        site.restart(new BlockPos(0, 60, 0), Direction.NORTH);
+        site.backtracked();
+        site.retreated();
+        site.newStep();
+        h.assertTrue(site.restarts() == 0 && site.backtracks() == 0 && site.retreats() == 1, "A step's counters: " + site.restarts() + ", " + site.backtracks() + ", " + site.retreats());
+        int stepSeconds = 540, caveSeconds = 60, climbSeconds = 120, restSeconds = 240;
+        int limit = dev.aicompanion.client.CompanionServerPlanPort.limitSeconds(new dev.aicompanion.client.PlannedAction("dig_for_diamonds", 0, 1, ""));
+        h.assertTrue(limit >= stepSeconds + caveSeconds + climbSeconds + restSeconds, "The client gives up on a retreat after " + limit + " s");
+        h.succeed();
+    }
+
     /** A creeper that does not move waits four stairs below him: he goes up the stairs, away from it, and when it is gone he digs on. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void stepsAwayFromACreeperOnTheStairs(GameTestHelper h) {
@@ -297,10 +317,10 @@ public final class CompanionMineBacktrackTests {
         }
         c.mineSite().start(entrance, Direction.NORTH);
         for (BlockPos stand : stands.subList(1, stands.size())) c.mineSite().reached(stand);
-        // Past a few backtracks the next one goes back eight stands: above the landing.
-        for (int i = 0; i < PRIOR_BACKTRACKS; i++) c.mineSite().backtracked();
         c.teleportTo(dead.getX() + .5, dead.getY(), dead.getZ() + .5);
         long id = start(h, c, 1);
+        // Past a few backtracks of this step the next one goes back eight stands: above the landing.
+        for (int i = 0; i < PRIOR_BACKTRACKS; i++) c.mineSite().backtracked();
         // After the first tick, which checks the record against the world, and before he is up at the landing.
         h.runAfterDelay(FLOOR_GONE_AFTER, () -> {
             h.assertTrue(c.mineSite().stands().size() == stands.size() - 1 && c.getY() < landing.getY(), "The setup is off: " + c.mineSite().stands().size() + " stands, he is at " + c.blockPosition().toShortString());

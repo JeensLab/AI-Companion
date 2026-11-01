@@ -24,7 +24,7 @@ final class CompanionExpedition {
     /** Extra time past the step's end for a cave episode under way to close its breach; a reserve used up ends the step anyway. */
     private static final int CAVE_RESERVE = 20 * 60;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
-    private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
+    private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120;
     static final int UNDERGROUND_DEPTH = 2;
     private static final double ENTRANCE_NEAR = 1.0;
     private static final String CAVE_DANGER = "в пещере слишком опасно";
@@ -72,7 +72,7 @@ final class CompanionExpedition {
     void expireStep(ServerLevel level) { stepEnd = level.getGameTime(); }
 
     /** Below the mine's entrance: there a monster comes up the tunnel and is fought off wherever the player is. */
-    boolean underground() { return active && w.mine.exists() && owner.getY() < w.mine.entrance().getY() - UNDERGROUND_DEPTH; }
+    boolean underground() { return active && w.mine.exists() && (owner.getY() < w.mine.entrance().getY() - UNDERGROUND_DEPTH || w.mine.buried()); }
 
     void begin(ServerLevel level) {
         reset();
@@ -81,6 +81,7 @@ final class CompanionExpedition {
         w.deadline = stepEnd + CAVE_RESERVE + 40;
         startDiamonds = w.items.countCarried(Items.DIAMOND);
         hadStone = w.items.countCarried(Items.STONE_PICKAXE) > 0;
+        w.mine.newStep();
         unheld = !CompanionChunkTicket.hold(owner);
         if (unheld) owner.workStatus("Не смог удержать чанки вокруг шахты загруженными: если уйти далеко, могу встать.");
     }
@@ -230,6 +231,13 @@ final class CompanionExpedition {
         if (level.getGameTime() < walkAgain) return;
         if (routeIndex < 0) {
             int target = joining ? route.size() - 1 : 0;
+            // A search stops up to two blocks short of its goal: the last steps are his own.
+            if (owner.blockPosition().distManhattan(route.get(target)) <= OWN_STEPS) {
+                if (dig.reach(route.get(target))) { routeIndex = target; softFails = 0; }
+                else if (dig.walkStuck() && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
+                else if (dig.walkStuck()) walkAgain = level.getGameTime() + WALK_RETRY;
+                return;
+            }
             CompanionTravel.Step walk = w.route.legs(route.get(target), ENTRANCE_NEAR);
             if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; }
             // A failed search can be a passing one (a mob in the way), and a restart gives up the whole staircase.
@@ -389,6 +397,9 @@ final class CompanionExpedition {
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
                 // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground there is no way up.
                 if (!dig.lackedOre && !dig.ironForRock && w.mine.buried() && dig.spareIron()) { dig.ironForRock = true; return; }
+                long now = owner.level().getGameTime();
+                stepEnd = Math.max(stepEnd, now + CLIMB_TICKS);
+                w.deadline = Math.max(w.deadline, stepEnd + 40);
                 stage = Stage.CLIMB;
                 climb.begin(CompanionExpeditionClimb.shortage(dig.lackedOre, hadStone), owner.blockPosition());
             }
@@ -465,6 +476,7 @@ final class CompanionExpedition {
 
     private void end(Ending ending, String why) {
         dig.flush();
+        if (ending == Ending.FOUND) w.mine.retreatsForgotten();
         String text = report() + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why;
         if (ore.missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
         if (unheld) text += " Чанки вокруг шахты удержать не удалось.";

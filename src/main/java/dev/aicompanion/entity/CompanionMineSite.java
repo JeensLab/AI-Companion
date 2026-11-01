@@ -90,7 +90,7 @@ public final class CompanionMineSite {
     /**
      * Starts the mine again at {@code here} (a new entrance cell where he stands), keeping what the caves taught and counting the restart.
      * The caves within {@link #CAVE_FORGOTTEN} blocks of {@code here} are forgotten: he already stands by that cave, and getting away from here
-     * matters more than its ban, or the first step would be refused again. The restarts are capped by the expedition, so this cannot repeat for ever.
+     * matters more than its ban, or the first step would be refused again. {@link #newStep} counts the restarts per step, and the goal gives up after a few fruitless steps.
      */
     public void restart(BlockPos here, Direction stair) {
         Set<Long> near = new HashSet<>();
@@ -100,10 +100,13 @@ public final class CompanionMineSite {
         List<Long> kept = caves.stream().filter(cell -> !near.contains(cell)).toList();
         int count = restarts + 1;
         // His plugs stay his: a block he laid must not read as a wall of the rock around the new mine.
-        List<BlockPos> laid = List.copyOf(seals);
+        List<BlockPos> laid = List.copyOf(seals), banned = List.copyOf(forbidden);
+        List<Move> moves = List.copyOf(refused);
         start(here, stair);
         caves.addAll(kept);
         seals.addAll(laid);
+        forbidden.addAll(banned);
+        refused.addAll(moves);
         restarts = count;
     }
 
@@ -230,6 +233,11 @@ public final class CompanionMineSite {
     public void retreated() { if (entrance != null) retreats++; }
 
     public int restarts() { return restarts; }
+
+    /** Each step of a goal gets its own tries: the counters bound one step, and a used-up mine must not stop every later order for good. */
+    public void newStep() { backtracks = restarts = 0; }
+
+    public void retreatsForgotten() { retreats = 0; }
 
     public boolean buried() { return buried; }
 

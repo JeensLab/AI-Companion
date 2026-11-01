@@ -35,7 +35,7 @@ public final class CompanionFacts {
         for (EquipmentSlot slot : ARMOR) if (usable(c.getItemBySlot(slot))) worn.put(slot, c.getItemBySlot(slot).getItem());
         var end = c.getServer() == null ? null : c.getServer().getLevel(Level.END);
         boolean dragonDead = end != null && end.getDragonFight() != null && end.getDragonFight().hasPreviouslyKilledDragon();
-        boolean belowMine = c.mineSite().exists() && (c.getY() < c.mineSite().entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH || c.mineSite().buried());
+        boolean belowMine = c.mineSite().exists() && (c.getY() < c.mineSite().entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH || c.mineSite().buried() && !c.level().canSeeSky(c.blockPosition().above()));
         return new CompanionFacts(carried, worn, dragonDead, c.mineSite().opened(), belowMine);
     }
 
