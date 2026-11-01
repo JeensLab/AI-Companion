@@ -76,6 +76,7 @@ public final class CompanionLocalCommands {
             return "companion summon";
         }
         if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
+        if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(зайди|заходи|войди|входи|шагни|прыгни|пройди|проходи|иди)\\s+(в|через)\\s+(\\p{L}+\\s+)?(портал|незер)\\b.*")) return "companion enter_portal";
         return CompanionEquipmentCommands.parse(normalized);
     }
 
@@ -144,7 +145,7 @@ public final class CompanionLocalCommands {
     }
 
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {
-        return !actions.isEmpty() && java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect")
+        return !actions.isEmpty() && java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect", "enter_portal")
                 .contains(actions.getFirst().type());
     }
 }

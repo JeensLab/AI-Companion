@@ -275,6 +275,7 @@ public final class CompanionEvents {
                 if (!action.equals("pursue_goal")) companion.goals().playerOrder(action);
                 // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
+                if (!action.equals("verify_item") && !action.startsWith("goal_")) companion.portals.stop();
             }
             // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
             CompanionAgenda.playerOrder(player, companion, action);
@@ -328,6 +329,7 @@ public final class CompanionEvents {
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
+            case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
             case "stop" -> { companion.stopGathering(); yield CompanionActionResult.ok("Ладно, остановился."); }
             case "come" -> {
                 companion.setFollowing(false);
