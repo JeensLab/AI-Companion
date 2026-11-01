@@ -257,9 +257,24 @@ public final class CompanionDiamondGoalTests {
         c.setItem(2, ItemStack.EMPTY);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
         h.assertTrue(swordStep(c) == null, "A diamond sword in hand: " + swordStep(c));
-        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
         c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
-        h.assertTrue(swordStep(c) == null, "Down in his mine he left the mine step for a sword: " + swordStep(c));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+        h.assertTrue(swordStep(c) == null, "Down in his mine with a diamond sword the mine step still asks for one: " + swordStep(c));
+        h.succeed();
+    }
+
+    /** After a death he comes back to his things down in the mine with nothing in the bag: the mine step makes the sword before the dig, as on the surface. */
+    @GameTest(template = "tall_tree", batch = "diamond_goal_sword", timeoutTicks = SAVE_TIMEOUT)
+    public static void afterADeathDownInTheMineTheStepMakesTheSwordBeforeTheDig(GameTestHelper h) {
+        Rig r = bare(h);
+        CompanionEntity c = r.c();
+        c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
+        h.assertTrue("minecraft:stone_sword".equals(swordStep(c)), "Down in his mine with an empty bag the plan has no sword: " + mineSteps(c));
+        c.setItem(0, new ItemStack(Items.IRON_INGOT, 2));
+        h.assertTrue("minecraft:iron_sword".equals(swordStep(c)), "Two iron ingots down in the mine: " + mineSteps(c));
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, new ItemStack(Items.STONE_SWORD));
+        h.assertTrue(swordStep(c) == null, "A stone sword in the bag down in the mine: " + mineSteps(c));
         h.succeed();
     }
 
@@ -270,6 +285,7 @@ public final class CompanionDiamondGoalTests {
         CompanionEntity c = r.c();
         c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
         c.setItem(1, new ItemStack(Items.BREAD, 3));
+        c.setItem(2, new ItemStack(Items.STONE_SWORD));
         c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
         List<CompanionMilestones.Step> down = mineSteps(c);
         h.assertTrue(down.size() == 1 && down.getFirst().type().equals("dig_for_diamonds"), "Underground with three bread the plan was " + down);

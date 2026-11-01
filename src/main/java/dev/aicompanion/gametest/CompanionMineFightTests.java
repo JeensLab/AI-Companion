@@ -341,14 +341,14 @@ public final class CompanionMineFightTests {
         });
     }
 
-    private static CompanionEntity armed(GameTestHelper h) {
+    static CompanionEntity armed(GameTestHelper h) {
         CompanionEntity c = rig(h);
         c.setItem(6, new ItemStack(Items.STONE_SWORD));
         return c;
     }
 
     /** A chamber at the foot of the stairs, wide enough to cross; returns the foot. */
-    private static BlockPos chamber(GameTestHelper h, List<BlockPos> stairs) {
+    static BlockPos chamber(GameTestHelper h, List<BlockPos> stairs) {
         BlockPos foot = stairs.get(stairs.size() - 1);
         for (int dx = 0; dx <= CHAMBER_REACH; dx++) for (int dz = -CHAMBER_REACH / 2; dz <= CHAMBER_REACH / 2; dz++) for (int dy = 0; dy < CHAMBER_HEIGHT; dy++) {
             h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
@@ -356,17 +356,17 @@ public final class CompanionMineFightTests {
         return foot;
     }
 
-    private static void place(CompanionEntity c, BlockPos stand) {
+    static void place(CompanionEntity c, BlockPos stand) {
         c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
     }
 
-    private static Creeper creeper(GameTestHelper h, BlockPos at) {
+    static Creeper creeper(GameTestHelper h, BlockPos at) {
         Creeper creeper = h.spawn(EntityType.CREEPER, rel(h, at));
         creeper.setPersistenceRequired();
         return creeper;
     }
 
-    private static Zombie zombie(GameTestHelper h, BlockPos at) {
+    static Zombie zombie(GameTestHelper h, BlockPos at) {
         Zombie zombie = h.spawn(EntityType.ZOMBIE, rel(h, at));
         zombie.setPersistenceRequired();
         zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));

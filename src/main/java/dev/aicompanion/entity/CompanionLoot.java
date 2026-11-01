@@ -28,6 +28,8 @@ final class CompanionLoot {
     private static final String HARVESTER = "aicompanion:harvester";
     /** How near a hostile he is fighting must be for the pickup to wait. */
     private static final double FOE_NEAR = 7;
+    /** How near a creeper in sight must be for the pickup to wait, whether or not he fights it: the drop may lie beside it. */
+    static final double CREEPER_NEAR = 7;
     private final CompanionEntity owner;
     private final Set<UUID> pending = new HashSet<>();
     private final Set<UUID> unreachable = new HashSet<>();
@@ -193,7 +195,7 @@ final class CompanionLoot {
     }
     boolean canChase() {
         if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.getTemporarySupportCount() > 0
-                || owner.isSwingingAtBlock() || foeOnHim()) return false;
+                || owner.isSwingingAtBlock() || foeOnHim() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
     }

@@ -6,9 +6,11 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.util.LandRandomPos;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -50,6 +52,13 @@ final class CompanionCreeperGuard {
     private static final int LATENCY = 4, FIGHT_CELLS = 9;
     /** A creeper with a lit fuse is looked at before any other: this much nearer in the sort. */
     private static final double LIT_FIRST = 10_000;
+    /**
+     * The way out must not lead to another creeper: the creepers about are taken in to this range (in sight or not), the way out keeps off each
+     * of them by what he has now or the blast gap, whichever is less, give or take the slack; and the places tried when his own preference fails.
+     */
+    private static final double THREAT_RANGE = 16, GAP_SLACK = .25;
+    private static final int RING_HEADINGS = 8, AWAY_TRIES = 4, PATH_TESTS = 6;
+    private static final int[] RING_RADII = {5, 9};
 
     private final CompanionEntity owner;
     private boolean active, finished, noBlock, fighting;
@@ -87,8 +96,14 @@ final class CompanionCreeperGuard {
                 foe -> !(foe instanceof Creeper) && foe.isAlive() && !foe.isNoAi() && owner.hasLineOfSight(foe)).isEmpty();
     }
 
+    /** A creeper that can hurt him stands in sight within this many blocks, foe or not: a pickup or a torch must not take his turn then. */
+    boolean nearby(double range) {
+        return !owner.level().getEntitiesOfClass(Creeper.class, owner.getBoundingBox().inflate(range),
+                creeper -> creeper.isAlive() && !creeper.isNoAi() && creeper.distanceTo(owner) < range && owner.hasLineOfSight(creeper)).isEmpty();
+    }
+
     /** Vanilla sets the swell direction only on its next tick after {@code ignite()}, so the flag counts as a lit fuse too. */
-    private static boolean lit(Creeper creeper) { return creeper.getSwellDir() > 0 || creeper.isIgnited(); }
+    static boolean lit(Creeper creeper) { return creeper.getSwellDir() > 0 || creeper.isIgnited(); }
 
     boolean canContinue() { return active && !finished && owner.isAlive() && owner.level().getGameTime() - begun < EPISODE_TICKS; }
 
@@ -179,10 +194,12 @@ final class CompanionCreeperGuard {
         List<BlockPos> way = mine.exists() ? CompanionExpeditionClimb.wayUp(mine) : List.of();
         int at = indexOf(way, owner.blockPosition(), ON_ROUTE_SQR);
         boolean underground = at >= 0 && !level.canSeeSky(owner.blockPosition());
+        List<Creeper> threats = threats(level);
         if (fights()) {
             if (!mustLeave(creeper, going)) return false;
             boolean keep = going && before != null && owner.position().distanceToSqr(before) > ARRIVED_SQR;
-            Vec3 away = keep ? before : underground ? alongRoute(way, at, creeper, FIGHT_CELLS) : awayFrom(way, creeper, SAFE_GAP + 1);
+            Vec3 preferred = keep ? before : underground ? alongRoute(way, at, creeper, FIGHT_CELLS) : awayFrom(way, creeper, SAFE_GAP + 1);
+            Vec3 away = retreatSpot(way, threats, preferred);
             fighting = away != null;
             if (fighting) { flee = away; return true; }
         }
@@ -191,8 +208,72 @@ final class CompanionCreeperGuard {
             if (!cells.isEmpty()) return true;
         }
         Vec3 target = underground ? alongRoute(way, at, creeper, FLEE_CELLS) : awayFrom(way, creeper, 0);
-        flee = target;
+        Vec3 clear = retreatSpot(way, threats, target);
+        flee = clear != null ? clear : target;
         return flee != null;
+    }
+
+    /** Every creeper about that could hurt him, in sight or not: the way out of one must not lead to another. */
+    private List<Creeper> threats(ServerLevel level) {
+        return level.getEntitiesOfClass(Creeper.class, owner.getBoundingBox().inflate(THREAT_RANGE), creeper -> creeper.isAlive() && !creeper.isNoAi());
+    }
+
+    /**
+     * The preferred place to go if the walk to it keeps clear of every creeper about; else the best place that is: farthest from the nearest
+     * of them (the blast gap is enough), and one he can walk to. Null when there is none.
+     */
+    private Vec3 retreatSpot(List<BlockPos> way, List<Creeper> threats, Vec3 preferred) {
+        if (preferred != null && clear(preferred, threats)) return preferred;
+        if (threats.isEmpty()) return null;
+        List<Vec3> spots = new ArrayList<>();
+        for (BlockPos cell : way) {
+            Vec3 spot = Vec3.atBottomCenterOf(cell);
+            if (owner.distanceToSqr(spot) <= PASSAGE_RANGE * PASSAGE_RANGE) spots.add(spot);
+        }
+        for (int heading = 0; heading < RING_HEADINGS; heading++) for (int radius : RING_RADII) {
+            double angle = heading * 2 * Math.PI / RING_HEADINGS;
+            spots.add(owner.position().add(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        Vec3 centre = Vec3.ZERO;
+        for (Creeper creeper : threats) centre = centre.add(creeper.position());
+        centre = centre.scale(1.0 / threats.size());
+        for (int i = 0; i < AWAY_TRIES; i++) {
+            Vec3 spot = LandRandomPos.getPosAway(owner, FLEE_RANGE, FLEE_HEIGHT, centre);
+            if (spot != null) spots.add(spot);
+        }
+        List<Vec3> ranked = spots.stream().filter(spot -> clear(spot, threats))
+                .sorted(Comparator.comparingDouble((Vec3 spot) -> -gap(spot, threats)).thenComparingDouble(owner.position()::distanceToSqr)).limit(PATH_TESTS).toList();
+        for (Vec3 spot : ranked) if (reachable(spot)) return spot;
+        return null;
+    }
+
+    /** The walk from where he stands to the spot passes no creeper nearer than he is to it now (or than the blast gap). */
+    private boolean clear(Vec3 spot, List<Creeper> threats) {
+        Vec3 from = owner.position();
+        for (Creeper creeper : threats) {
+            double floor = Math.min(from.distanceTo(creeper.position()), SAFE_GAP);
+            if (segmentDistance(from, spot, creeper.position()) < floor - GAP_SLACK) return false;
+        }
+        return true;
+    }
+
+    /** How far the spot is from the nearest creeper, counted up to the blast gap and no farther. */
+    private static double gap(Vec3 spot, List<Creeper> threats) {
+        double nearest = SAFE_GAP + 1;
+        for (Creeper creeper : threats) nearest = Math.min(nearest, spot.distanceTo(creeper.position()));
+        return nearest;
+    }
+
+    private static double segmentDistance(Vec3 from, Vec3 to, Vec3 point) {
+        Vec3 line = to.subtract(from);
+        double length = line.lengthSqr();
+        double along = length == 0 ? 0 : Math.max(0, Math.min(1, point.subtract(from).dot(line) / length));
+        return from.add(line.scale(along)).distanceTo(point);
+    }
+
+    private boolean reachable(Vec3 spot) {
+        Path path = owner.getNavigation().createPath(BlockPos.containing(spot), 0);
+        return path != null && path.canReach();
     }
 
     /** The fuse is lit and he cannot strike once more and still get out of its range in time: the ticks it has run, the walk to its reach, the start of the dash and the dash itself, against the fuse. */
