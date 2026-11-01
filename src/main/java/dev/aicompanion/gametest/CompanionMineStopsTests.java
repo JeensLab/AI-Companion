@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionShaftPlan;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -39,7 +40,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineStopsTests {
-    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2;
 
     private CompanionMineStopsTests() { }
 
@@ -92,6 +93,34 @@ public final class CompanionMineStopsTests {
             }
             CompanionActionResult result = ended(h, c, id[0]);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again in the pit: " + result.message() + " | " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
+    /**
+     * The record's stairs were turned into flat stands deep down, away from the entrance, and he stands by the entrance on the surface with
+     * every side of his cell refused: the way to the stands is gone and the mine cannot start again at his cell. He goes back to the entrance
+     * and begins stairs to a side not tried from it, instead of ending with "could not get back to my stairs".
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void startsAgainFromTheEntranceWhenTheRecordedStandsAreCutOff(GameTestHelper h) {
+        mountain(h, true);
+        BlockPos pocket = h.absolutePos(new BlockPos(CENTER - POCKET_AT, DEEPSLATE_TOP + 2, CENTER + POCKET_AT));
+        for (BlockPos cell : CompanionShaftPlan.column(pocket)) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h);
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), here = h.absolutePos(new BlockPos(CENTER + OWN_STAND - 1, GROUND + 1, CENTER));
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        c.mineSite().start(entrance, Direction.NORTH);
+        c.mineSite().reached(pocket);
+        // The search takes him over the stands: every cell above them is refused on all sides, as the log showed, the entrance cell is not.
+        BlockPos above = new BlockPos(pocket.getX(), entrance.getY(), pocket.getZ());
+        for (BlockPos cell : BlockPos.betweenClosed(above.offset(-NEAR_CELLS, 0, -NEAR_CELLS), above.offset(NEAR_CELLS, 0, NEAR_CELLS))) {
+            for (Direction d : Direction.Plane.HORIZONTAL) c.mineSite().refuse(cell.immutable(), d);
+        }
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not start again from the entrance: " + result.message() + " | " + report(c));
             h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
         });
     }
