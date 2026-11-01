@@ -72,7 +72,7 @@ final class CompanionCreeperGuard {
     private static final int[] RING_RADII = {5, 9};
 
     private final CompanionEntity owner;
-    private boolean active, finished, noBlock, fighting, shielded;
+    private boolean active, finished, noBlock, fighting, shielded, dashing;
     private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing, lastFlee;
     private int tries, retreats, flees;
     private List<BlockPos> cells = List.of();
@@ -137,7 +137,7 @@ final class CompanionCreeperGuard {
         }
         owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, " + (cells.isEmpty() ? "ухожу от него." : "закрываю проход блоком."));
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "creeper_guard", "entity", owner.getUUID(),
-                "action", shielded ? "shield" : fighting ? "retreat" : cells.isEmpty() ? "flee" : "block", "cells", cells);
+                "action", shielded ? "shield" : fighting ? "retreat" : dashing ? "dash" : cells.isEmpty() ? "flee" : "block", "cells", cells);
         if (!shielded && !fighting && cells.isEmpty()) leaveLootAfterFlees(now);
     }
 
@@ -169,7 +169,8 @@ final class CompanionCreeperGuard {
         owner.getLookControl().setLookAt(creeper, 30, 30);
         if ((fighting || engaged()) && !lit(creeper)) { finished = true; return; }
         if (fighting) { retreat(level, creeper); return; }
-        if (now >= nextPlan || cells.isEmpty() && flee == null) {
+        if (dashing && lit(creeper)) { retreat(level, creeper); return; }
+        if (now >= nextPlan || cells.isEmpty() && flee == null || cells.isEmpty() && dashing != lit(creeper)) {
             nextPlan = now + PLAN_EVERY;
             if (!plan(level, creeper, true)) { finished = true; return; }
         }
@@ -179,7 +180,7 @@ final class CompanionCreeperGuard {
 
     void stop() {
         if (!active) return;
-        active = fighting = shielded = false;
+        active = fighting = shielded = dashing = false;
         shield.release();
         flee = null;
         cells = List.of();
@@ -219,11 +220,13 @@ final class CompanionCreeperGuard {
 
     /**
      * What to do about this creeper. Fighting it: whether to step back now ({@link #retreat}). Otherwise: blocks to set on his route
-     * underground, or a place to walk to. False when there is nothing to do.
+     * underground; with its fuse lit and no blocks to set, the same dash as in the fight (a path has a start to wait for and may lead past
+     * the creeper or nowhere, and the fuse is 30 ticks); else a place to walk to. False when there is nothing to do.
      */
     private boolean plan(ServerLevel level, Creeper creeper, boolean going) {
         cells = List.of();
         flee = null;
+        dashing = false;
         CompanionMineSite mine = owner.work.mine;
         List<BlockPos> way = mine.exists() ? CompanionExpeditionClimb.wayUp(mine) : List.of();
         int at = indexOf(way, owner.blockPosition(), ON_ROUTE_SQR);
@@ -238,6 +241,7 @@ final class CompanionCreeperGuard {
             cells = shutCells(mine, way, at, creeper);
             if (!cells.isEmpty()) return true;
         }
+        if (lit(creeper)) { dashing = true; return true; }
         Vec3 target = underground ? alongRoute(way, at, creeper, FLEE_CELLS) : awayFrom(way, creeper);
         Vec3 clear = retreatSpot(way, threats, target);
         flee = clear != null ? clear : target;

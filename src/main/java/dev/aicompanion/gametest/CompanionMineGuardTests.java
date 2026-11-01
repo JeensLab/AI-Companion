@@ -126,16 +126,6 @@ public final class CompanionMineGuardTests {
     /** He is at the dead end of a one-block corridor and the lit creeper is in its mouth: there is no way off, so he strikes it (its health falls) and lives or not by that, but never stands. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aLitFuseWithNoWayOffIsAnsweredWithTheSword(GameTestHelper h) {
-        deadEnd(h, false);
-    }
-
-    /** The same hurt below what a creeper is fought at: there is still no way off, and he still strikes it rather than stand or go back to what he was at. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aLitFuseWithNoWayOffIsAnsweredWithTheSwordWhenHurtToo(GameTestHelper h) {
-        deadEnd(h, true);
-    }
-
-    private static void deadEnd(GameTestHelper h, boolean hurt) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         BlockPos foot = chamber(h, carveMine(h, c, 0));
@@ -143,20 +133,36 @@ public final class CompanionMineGuardTests {
             h.getLevel().setBlock(foot.offset(dx, dy, 0), Blocks.AIR.defaultBlockState(), 2 | 16);
         }
         place(c, foot.offset(ROOM_FROM + DEAD_END_LENGTH, 0, 0));
-        if (hurt) c.setHealth(WEAK);
         Creeper creeper = creeperAt(h, foot, ROOM_FROM + DEAD_END_LENGTH + .5 - 1.5, 0);
         creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
         creeper.ignite();
         start(h, c, 1);
         h.onEachTick(() -> {
             String trace = " | creeper " + (creeper.isAlive() ? "health " + creeper.getHealth() : "gone") + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
-            h.assertTrue(c.isAlive() || hurt, "Died" + trace);
+            h.assertTrue(c.isAlive(), "Died" + trace);
             if (creeper.isAlive()) {
                 h.assertTrue(creeper.getHealth() < creeper.getMaxHealth() || creeper.isDeadOrDying() || h.getTick() < RUN_TICKS, "He stood and did not strike" + trace);
                 if (creeper.getHealth() < creeper.getMaxHealth()) h.succeed();
                 return;
             }
             h.assertTrue(false, "The creeper blew up, it was not struck" + trace);
+        });
+    }
+
+    /** Hurt below what a creeper is fought at, the fuse is lit a block off, at his side: he never closes on it (a path may lead past it), is four blocks off in twenty ticks and alive. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseOneBlockOffWhileTooHurtToFightGetsHimFourBlocksOffInTwentyTicks(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(STAND, 0, 0));
+        c.setHealth(WEAK);
+        Creeper creeper = creeperAt(h, foot, STAND - .5, 0);
+        double[] first = {-1};
+        watchRun(h, c, creeper, true, true, () -> {
+            double gap = c.distanceTo(creeper);
+            if (first[0] < 0) first[0] = gap;
+            h.assertTrue(!creeper.isAlive() || gap >= first[0] - SLACK, "He closed on the lit fuse: " + String.format("%.2f", gap) + " from " + String.format("%.2f", first[0]));
         });
     }
 
