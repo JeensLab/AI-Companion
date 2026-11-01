@@ -211,7 +211,7 @@ final class CompanionExpeditionDig {
     /** Steps towards the cell with the move control (neighbouring cells of his own mine); true once he stands in it. */
     boolean walkTo(BlockPos to) {
         if (takingUpTemporary(to)) return false;
-        boolean inside = owner.onGround() && owner.blockPosition().equals(to);
+        boolean inside = standsIn(to);
         if (inside && (centred(to) || to.equals(walking) && walkTicks > WALK_PATIENCE / 2)) { walking = null; walkTicks = 0; walked++; return true; }
         if (!to.equals(walking)) { walking = to.immutable(); walkTicks = 0; }
         walkTicks++;
@@ -219,6 +219,14 @@ final class CompanionExpeditionDig {
         if (aim == null) return false;
         owner.getMoveControl().setWantedPosition(aim.x, aim.y, aim.z, 1);
         return false;
+    }
+
+    /** On the ground in the cell, or afloat in the water of it: swimming he bobs a block up and down and is never on the ground. */
+    private boolean standsIn(BlockPos to) {
+        BlockPos at = owner.blockPosition();
+        if (owner.onGround() && at.equals(to)) return true;
+        return owner.isInWater() && at.getX() == to.getX() && at.getZ() == to.getZ() && at.getY() >= to.getY() && at.getY() <= to.getY() + 1
+                && !owner.level().getFluidState(to).isEmpty();
     }
 
     /**
