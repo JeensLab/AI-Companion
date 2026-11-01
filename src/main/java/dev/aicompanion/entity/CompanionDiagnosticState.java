@@ -70,7 +70,21 @@ final class CompanionDiagnosticState {
                 "source", source.getMsgId(), "attacker", attacker == null ? "none" : attacker.getType().getDescriptionId(),
                 "damage", amount, "health", owner.getHealth(), "position", owner.blockPosition(),
                 "sourcePosition", from == null ? "none" : BlockPos.containing(from), "distance", from == null ? -1 : owner.position().distanceTo(from),
-                "stage", owner.work.expedition.stageName(), "cavePhase", owner.work.expedition.cavePhase(), "air", owner.getAirSupply());
+                "stage", owner.work.expedition.stageName(), "cavePhase", owner.work.expedition.cavePhase(), "air", owner.getAirSupply(),
+                "eating", owner.eatTicks > 0, "goals", owner.runningGoals());
+    }
+
+    /** A blow he struck, or swung and missed: with what, at whom and what it left of the foe; the pace of a fight is read back from this. */
+    void struck(Entity target, boolean hit) {
+        if (!CompanionDiagnostics.enabled()) return;
+        float left = target instanceof net.minecraft.world.entity.LivingEntity living ? living.getHealth() : -1;
+        CompanionDiagnostics.event(trace, "companion_strike", "entity", owner.getUUID(), "tick", owner.level().getGameTime(),
+                "weapon", BuiltInRegistries.ITEM.getKey(owner.getMainHandItem().getItem()).toString(), "target", target.getType().getDescriptionId(),
+                "hit", hit, "left", left, "health", owner.getHealth(), "distance", owner.distanceTo(target), "stage", owner.work.expedition.stageName(),
+                "targetInvulnerable", target.invulnerableTime, "targetHurtTime", target instanceof net.minecraft.world.entity.LivingEntity living ? living.hurtTime : -1,
+                "targetInWall", target.isInWall(), "targetAt", target.position(), "at", owner.position(), "eating", owner.eatTicks > 0, "pushable", target.isPushable(), "goals", owner.runningGoals(),
+                "targetTicks", target.tickCount, "targetTicking", target.level() instanceof net.minecraft.server.level.ServerLevel level && level.isPositionEntityTicking(target.blockPosition()),
+                "ownTicking", owner.level() instanceof net.minecraft.server.level.ServerLevel own && own.isPositionEntityTicking(owner.blockPosition()));
     }
 
     void died(DamageSource source) {

@@ -297,6 +297,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String diagnosticTrace() { return diagnostics.trace(); }
     public void diagnosticSnapshot(String event) { if (dev.aicompanion.CompanionDiagnostics.enabled()) diagnostics.snapshot(event); }
     String diagnosticState() { return diagnostics.diagnosticState(); }
+    /** For the diagnostics of a fight: the goals that hold him this tick and whom he is after. */
+    String runningGoals() { return goalSelector.getAvailableGoals().stream().filter(net.minecraft.world.entity.ai.goal.WrappedGoal::isRunning).map(g -> g.getGoal().getClass().getSimpleName()).collect(java.util.stream.Collectors.joining(",")) + "|" + (getTarget() == null ? "none" : getTarget().getType().getDescriptionId()); }
     /** For the diagnostics: where the mine expedition is (stage and cave phase), empty outside one. */
     public String expeditionStage() { return work.expedition.stageName(); }
     public String expeditionCavePhase() { return work.expedition.cavePhase(); }
@@ -918,6 +920,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     @Override public boolean doHurtTarget(Entity target) {
         boolean hit = super.doHurtTarget(target);
+        if (!level().isClientSide) diagnostics.struck(target, hit);
         if (hit && target instanceof LivingEntity living) work.hitEnemy(living);
         ItemStack weapon = getMainHandItem();
         if (hit && target instanceof LivingEntity living && !weapon.isEmpty() && weapon.getItem().hurtEnemy(weapon, living, this)) {

@@ -255,27 +255,27 @@ final class CompanionCreeperGuard {
         double bestGap = gap(owner.position(), threats) + MIN_GAIN;
         for (int heading = 0; heading < HEADINGS; heading++) {
             double angle = heading * 2 * Math.PI / HEADINGS;
-            Vec3 end = runTo(level, Math.cos(angle), Math.sin(angle));
+            Vec3 end = runTo(owner, level, Math.cos(angle), Math.sin(angle), RUN_SAMPLES, RUN_STEP);
             if (end == null || !clear(end, threats, 0)) continue;
             double gap = gap(end, threats);
             if (gap > bestGap) { best = end; bestGap = gap; }
         }
         if (best == null) { strike(creeper); return; }
-        faceTowards(best);
+        faceTowards(owner, best);
         owner.getMoveControl().setWantedPosition(best.x, best.y, best.z, FIGHT_FLEE_SPEED);
     }
 
     /** The move control turns him 90 degrees a tick and walks as he faces meanwhile: from facing the creeper that first step would go sideways, so he is turned to the heading at once. */
-    private void faceTowards(Vec3 spot) {
+    static void faceTowards(CompanionEntity owner, Vec3 spot) {
         float yaw = (float) (Mth.atan2(spot.z - owner.getZ(), spot.x - owner.getX()) * 180 / Math.PI) - 90;
         if (Math.abs(Mth.wrapDegrees(yaw - owner.getYRot())) > TURN_AT) owner.setYRot(yaw);
     }
 
     /** Where a run along the heading ends, or null where the floor fails him, a wall stops him or a fluid lies in the way. */
-    private Vec3 runTo(ServerLevel level, double dx, double dz) {
+    static Vec3 runTo(CompanionEntity owner, ServerLevel level, double dx, double dz, int samples, double step) {
         Vec3 from = owner.position(), at = from;
-        for (int i = 1; i <= RUN_SAMPLES; i++) {
-            double x = from.x + dx * i * RUN_STEP, z = from.z + dz * i * RUN_STEP;
+        for (int i = 1; i <= samples; i++) {
+            double x = from.x + dx * i * step, z = from.z + dz * i * step;
             Vec3 next = null;
             for (double rise : RISES) {
                 if (CompanionExpeditionLedge.stands(owner, level, x, at.y + rise, z)) { next = new Vec3(x, at.y + rise, z); break; }

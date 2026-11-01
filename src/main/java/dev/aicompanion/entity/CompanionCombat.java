@@ -15,8 +15,9 @@ import java.util.EnumSet;
 
 final class CompanionCombat {
     final CompanionEntity c;
+    final CompanionFootwork footwork;
 
-    CompanionCombat(CompanionEntity c) { this.c = c; }
+    CompanionCombat(CompanionEntity c) { this.c = c; footwork = new CompanionFootwork(c); }
 
     /**
      * Swings as often as the weapon in hand lets a player (a stone sword 1.6 a second, an axe 0.8), not the mob's once a second
@@ -37,8 +38,22 @@ final class CompanionCombat {
             return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget());
         }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
-        @Override public void start() { c.work.expedition.fightBegan(); super.start(); c.selectWeaponForCombat(); }
-        @Override public void tick() { super.tick(); c.work.expedition.fightGoing(); }
+        @Override public void start() { c.work.expedition.fightBegan(); c.combat.footwork.begin(); super.start(); c.selectWeaponForCombat(); }
+        /** What is on him is struck before what is not; and between two swings he steps out of the foe's reach (CompanionFootwork). */
+        @Override public void tick() {
+            if (c.level() instanceof ServerLevel level) {
+                LivingEntity nearer = c.combat.footwork.nearer(level, c.getTarget());
+                if (nearer != null) c.setTarget(nearer);
+                LivingEntity target = c.getTarget();
+                if (target != null && c.combat.footwork.keepOut(level, c.tickCount >= nextSwing)) {
+                    c.getLookControl().setLookAt(target);
+                    c.work.expedition.fightGoing();
+                    return;
+                }
+            }
+            super.tick();
+            c.work.expedition.fightGoing();
+        }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
