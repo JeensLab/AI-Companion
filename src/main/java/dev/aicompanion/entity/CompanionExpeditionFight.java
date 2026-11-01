@@ -77,14 +77,14 @@ final class CompanionExpeditionFight {
         tool = null;
     }
 
-    /** A mob he fights: hostile, one that may be fought, awake, and either come for him or near and in sight; not one he is leaving or may not follow. */
+    /** A mob he fights: hostile, one that may be fought, awake, in sight (not behind rock, where it can do nothing), and either come for him or near; not one he is leaving or may not follow. */
     boolean isFoe(LivingEntity entity) {
         if (!(entity instanceof Monster monster) || !monster.isAlive() || monster.isNoAi()) return false;
         if (!owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return false;
         if (monster instanceof Creeper && !owner.creeperGuard.fights()) return false;
         if (w.expedition.shuns(monster)) return false;
         double distance = owner.distanceTo(monster);
-        return monster.getTarget() == owner && distance <= AWARE || distance <= ENGAGE && owner.hasLineOfSight(monster);
+        return owner.hasLineOfSight(monster) && (monster.getTarget() == owner && distance <= AWARE || distance <= ENGAGE);
     }
 
     /**
