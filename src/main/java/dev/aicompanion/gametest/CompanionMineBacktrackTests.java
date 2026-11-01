@@ -37,7 +37,6 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
-    private static final int SPARE_PICKAXES_FROM = 10, SPARE_PICKAXES = 4;
     private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10;
 
 
@@ -72,7 +71,7 @@ public final class CompanionMineBacktrackTests {
         for (int x = CHAMBER_X0; x <= CHAMBER_X1; x++) for (int z = CHAMBER_Z0; z <= CHAMBER_Z1; z++) for (int y = CHAMBER_Y; y <= CHAMBER_Y + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
         CompanionEntity c = rig(h);
         // Two orders on one bag: this is about the cave, not about running out of pickaxes.
-        for (int slot = SPARE_PICKAXES_FROM; slot < SPARE_PICKAXES_FROM + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
+        for (int slot = 6; slot < 6 + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
         List<Zombie> zombies = new ArrayList<>();
         for (int[] at : new int[][]{{23, 15}, {24, 16}, {25, 17}, {23, 17}}) {
             Zombie zombie = h.spawn(EntityType.ZOMBIE, at[0], CHAMBER_Y, at[1]);
