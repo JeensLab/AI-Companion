@@ -10,7 +10,7 @@ import java.util.List;
 /** Edits of the mine record the expedition makes when a move fails: what to refuse, where the tunnels go on from, where the mine starts again. */
 final class CompanionExpeditionRecord {
     /** A tunnel at least this long is worth moving the base to; the last cells stay beyond the new foot, so its first advances are through open cells. */
-    private static final int LONG_TUNNEL = 8, KEPT_AHEAD = 2, MAX_RESTARTS = 3;
+    private static final int LONG_TUNNEL = 8, KEPT_AHEAD = 2, MAX_RESTARTS = 3, MAX_DROP = 3;
 
     /** Where the tunnels go on from: the way the new base is walked to, and the stairs' direction there. */
     record Base(Direction direction, List<BlockPos> path) { }
@@ -70,6 +70,21 @@ final class CompanionExpeditionRecord {
         for (Direction d : Direction.Plane.HORIZONTAL) {
             if (CompanionShaftPlan.assessStep(level, here, d, mine.seals(), mine.avoid()).kind() != CompanionShaftPlan.Kind.BLOCKED) return d;
         }
+        // The caves he fled from may surround him: the restart forgets the ones beside him, so they do not shut a side.
+        CompanionShaftPlan.Avoid avoid = mine.avoid();
+        CompanionShaftPlan.Avoid ignoringCaves = new CompanionShaftPlan.Avoid(avoid.forbidden(), avoid.refused(), cell -> false);
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            if (CompanionShaftPlan.assessStep(level, here, d, mine.seals(), ignoringCaves).kind() != CompanionShaftPlan.Kind.BLOCKED) return d;
+        }
         return null;
+    }
+
+    /** The cell he really stands in: his own, or the first one below it (at most {@code MAX_DROP}) with a firm floor, as mid-jump his feet are in the air above it. */
+    static BlockPos standingCell(ServerLevel level, BlockPos here) {
+        for (int drop = 0; drop <= MAX_DROP; drop++) {
+            BlockPos cell = here.below(drop), floor = cell.below();
+            if (level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return cell;
+        }
+        return here;
     }
 }

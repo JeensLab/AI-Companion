@@ -26,7 +26,7 @@ import java.util.Set;
  */
 public final class CompanionMineSite {
     public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     private record Move(BlockPos stand, Direction direction) { }
 
@@ -85,9 +85,17 @@ public final class CompanionMineSite {
         stairDirection = stair;
     }
 
-    /** Starts the mine again at {@code here} (a new entrance cell where he stands), keeping what the caves taught and counting the restart. */
+    /**
+     * Starts the mine again at {@code here} (a new entrance cell where he stands), keeping what the caves taught and counting the restart.
+     * The caves within {@link #CAVE_FORGOTTEN} blocks of {@code here} are forgotten: he already stands by that cave, and getting away from here
+     * matters more than its ban, or the first step would be refused again. The restarts are capped by the expedition, so this cannot repeat for ever.
+     */
     public void restart(BlockPos here, Direction stair) {
-        List<Long> kept = List.copyOf(caves);
+        Set<Long> near = new HashSet<>();
+        for (int x = (here.getX() - CAVE_FORGOTTEN) >> 2; x <= (here.getX() + CAVE_FORGOTTEN) >> 2; x++)
+            for (int y = (here.getY() - CAVE_FORGOTTEN) >> 2; y <= (here.getY() + CAVE_FORGOTTEN) >> 2; y++)
+                for (int z = (here.getZ() - CAVE_FORGOTTEN) >> 2; z <= (here.getZ() + CAVE_FORGOTTEN) >> 2; z++) near.add(BlockPos.asLong(x, y, z));
+        List<Long> kept = caves.stream().filter(cell -> !near.contains(cell)).toList();
         int count = restarts + 1;
         start(here, stair);
         caves.addAll(kept);

@@ -137,6 +137,26 @@ public final class CompanionMineBacktrackTests {
         });
     }
 
+    /** The pit is a cave he fled from, every cell around him is remembered as shut: the mine still starts again from where he stands, and forgets that cave. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void restartsBesideACaveHeFled(GameTestHelper h) {
+        mountain(h, true);
+        List<BlockPos> pit = new ArrayList<>();
+        for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) for (int y = DEEPSLATE_TOP; y <= DEEPSLATE_TOP + 2; y++) {
+            h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+            pit.add(h.absolutePos(new BlockPos(x, y, z)));
+        }
+        CompanionEntity c = rig(h, PIT, DEEPSLATE_TOP, PIT);
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        c.mineSite().shun(pit);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The caves shut every side of the restart: " + report(c));
+            h.assertTrue(c.mineSite().restarts() == 1, "Restarts " + c.mineSite().restarts());
+        });
+    }
+
     /**
      * A flat plate of open ground at the foot of the stairs, its floor and walls bedrock: every step down is shut and the landings
      * would lead him from the stairs' foot west, north, east and back onto it. A turn onto a stand of his own stairs is refused,
@@ -305,12 +325,13 @@ public final class CompanionMineBacktrackTests {
         CompanionMineSite fromOld = loadedFrom(plain);
         h.assertTrue(fromOld.exists() && !fromOld.shunned(inside) && fromOld.firstShunned() == -1 && fromOld.backtracks() == 0 && fromOld.restarts() == 0, "A save without the keys loads wrong");
 
-        BlockPos here = entrance.offset(0, -8, 3);
+        BlockPos here = entrance.offset(0, -8, 3), distant = inside.offset(40, 0, 0);
+        site.shun(List.of(distant));
         site.restart(here, Direction.WEST);
-        h.assertTrue(site.entrance().equals(here) && site.stands().isEmpty() && site.shunned(inside) && site.restarts() == 1 && site.backtracks() == 0 && site.stairDirection() == Direction.WEST,
-                "restart() did not start over at the spot keeping the caves: restarts " + site.restarts());
+        h.assertTrue(site.entrance().equals(here) && site.stands().isEmpty() && !site.shunned(inside) && site.shunned(distant) && site.restarts() == 1 && site.backtracks() == 0 && site.stairDirection() == Direction.WEST,
+                "restart() did not start over at the spot forgetting the caves beside it only: restarts " + site.restarts());
         site.clear();
-        h.assertTrue(!site.shunned(inside) && site.restarts() == 0, "clear() keeps the memory");
+        h.assertTrue(!site.shunned(distant) && site.restarts() == 0, "clear() keeps the memory");
 
         CompanionMineSite flat = new CompanionMineSite();
         flat.start(entrance, Direction.NORTH);
