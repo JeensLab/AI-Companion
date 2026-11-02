@@ -14,6 +14,9 @@ final class CompanionSwimming {
     private static final int FAST_STROKE_AHEAD = 3;
     /** The fast stroke is held a few ticks more, as a player keeps Ctrl held: see stroke(). */
     private int fastStrokeUntil;
+    /** Fallen behind a player swimming at the ordinary stroke, he catches up with the fast one to this many blocks. */
+    private static final int CAUGHT_UP = 6;
+    private boolean catchingUp;
 
     /**
      * A long way through deep water like a player holding Ctrl: sprinting, lying flat. The water then holds him back less (0.9
@@ -22,7 +25,15 @@ final class CompanionSwimming {
      */
     void stroke() {
         var path = c.getNavigation().getPath();
-        boolean ahead = c.isInWater() && swimAhead(path);
+        // After a player swimming at the ordinary stroke, the ordinary stroke too, unless fallen far behind (as on foot: CompanionTravel
+        // runs only after a sprinting player or a far one). The fast one caught him up in seconds, he stood up at the player's heels
+        // and lay down again as the player swam on (issue 58). Once catching up, he keeps on until close: his ordinary stroke is a
+        // little slower than the player's, and at the edge of «far» he lay down and stood up again every second.
+        var player = c.getOwnerPlayer();
+        catchingUp = player != null && (c.travel().running() || catchingUp && c.distanceToSqr(player) > CAUGHT_UP * CAUGHT_UP);
+        boolean paced = c.travel().followsPlayer() && player != null && c.level().getFluidState(player.blockPosition()).is(FluidTags.WATER)
+                && !player.isSprinting() && !catchingUp;
+        boolean ahead = c.isInWater() && !paced && swimAhead(path);
         if (ahead) fastStrokeUntil = c.tickCount + 5;
         // Between two routes (one ends, the next comes a tick later), or bobbed out of the water by the float for a tick: still the
         // same swim, not a stop (28.10: else he stood up and lay down again there). A route taken away («стой», the player
@@ -45,13 +56,20 @@ final class CompanionSwimming {
         int ahead = Math.min(path.getNodeCount(), path.getNextNodeIndex() + FAST_STROKE_AHEAD);
         // A route the search cut short goes on from its end (water costs the search more, and its steps ran out after fourteen
         // blocks of the pool in the tests): only the real end of the way slows him down.
-        if (ahead - path.getNextNodeIndex() < FAST_STROKE_AHEAD && path.canReach()) return false;
+        // A route to where the player was is not the end either while he swims on past it (issue 58: else Oleg stood up at every
+        // old route's end and lay down on the next, over and over).
+        if (ahead - path.getNextNodeIndex() < FAST_STROKE_AHEAD && path.canReach() && !goesOn(path)) return false;
         for (int index = path.getNextNodeIndex(); index < ahead; index++) {
             BlockPos node = path.getNodePos(index);
             // Two blocks deep at least: in water to the knees a player stands, and his eyes over it never start the swim.
             if (node.getY() > c.getY() + .5 || !c.level().getFluidState(node).is(FluidTags.WATER) || !c.level().getFluidState(node.below()).is(FluidTags.WATER)) return false;
         }
         return true;
+    }
+
+    private boolean goesOn(Path path) {
+        BlockPos destination = c.recoveryDestination();
+        return destination != null && destination.distSqr(path.getTarget()) > FAST_STROKE_AHEAD * FAST_STROKE_AHEAD;
     }
 
     /**

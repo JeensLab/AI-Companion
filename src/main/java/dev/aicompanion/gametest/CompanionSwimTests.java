@@ -166,6 +166,52 @@ public final class CompanionSwimTests {
     }
 
     /**
+     * Issue 58 (owner's stream 01.11): the player swimming on across a lake, Oleg after him stood up in the water and lay down
+     * again every second or so. Now each stroke is kept for a while: after a sprinting player the fast one all the way (it ended
+     * at the end of every route to where the player had been), after a slow one the ordinary one, the fast only to catch up
+     * (it caught him up in seconds and stopped at his heels).
+     */
+    @GameTest(template = "large_search", timeoutTicks = 1200)
+    public static void afterAPlayerSwimmingAtASprintHeStaysFlat(GameTestHelper h) { afterASwimmingPlayer(h, 3.9, true); }
+
+    @GameTest(template = "large_search", timeoutTicks = 1200)
+    public static void afterAPlayerSwimmingSlowlyHeSwimsAtHisPace(GameTestHelper h) { afterASwimmingPlayer(h, 2.0, false); }
+
+    private static void afterASwimmingPlayer(GameTestHelper h, double speed, boolean sprint) {
+        for (int x = 0; x < 128; x++) for (int z = 0; z < 128; z++) for (int y = 0; y <= 4; y++) {
+            boolean edge = x == 0 || x == 127 || z == 0 || z == 127;
+            h.setBlock(new BlockPos(x, y, z), y == 0 || edge ? Blocks.BEDROCK : Blocks.WATER);
+        }
+        CompanionEntity oleg = spawn(h, 6, 3, 64);
+        var owner = player(h, oleg);
+        owner.setSprinting(sprint);
+        if (sprint) owner.setPose(Pose.SWIMMING);
+        oleg.setFollowing(true);
+        long[] since = {-1}, shortest = {Long.MAX_VALUE};
+        Pose[] pose = {null};
+        StringBuilder log = new StringBuilder();
+        h.onEachTick(() -> {
+            long t = h.getTick();
+            var at = h.absoluteVec(new Vec3(Math.min(118, 14 + speed * t / 20.0), 3.6, 64.5));
+            owner.teleportTo(at.x, at.y, at.z);
+            double x = oleg.getX() - h.absoluteVec(Vec3.ZERO).x;
+            // Out in the lake, till the player stops at the far end.
+            if (x < 20 || at.x - h.absoluteVec(Vec3.ZERO).x >= 118 || !oleg.isInWater()) return;
+            if (pose[0] != null && oleg.getPose() != pose[0]) {
+                if (since[0] >= 0) shortest[0] = Math.min(shortest[0], t - since[0]);
+                since[0] = t;
+                log.append(String.format(" %s at t=%d x=%.1f gap=%.1f;", oleg.getPose(), t, x, oleg.distanceTo(owner)));
+            }
+            pose[0] = oleg.getPose();
+        });
+        h.runAfterDelay(1100, () -> {
+            h.assertTrue(pose[0] != null, "Never out in the lake: " + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+            h.assertTrue(shortest[0] >= 40, "Stood up and lay down again within " + shortest[0] + " ticks after the swimming player:" + log);
+            h.succeed();
+        });
+    }
+
+    /**
      * The player on a jetty three blocks over the water, five blocks back from its edge: no way up. At its foot he treads water
      * upright — the short new routes the following makes there every moment are not a swim.
      */
