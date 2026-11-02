@@ -78,10 +78,11 @@ final class CompanionFuseEscape {
 
     /**
      * Sets the wall: blocks from the bag at his feet and head on the next step towards the creeper, which stands while its fuse burns. True while
-     * the wall goes up or stands; false where there is no block, or the creeper, a wall or the reach stand in the way of it.
+     * the wall goes up or stands; false where there is no block, or the creeper, a wall or the reach stand in the way of it, or he is in the open
+     * (nobody takes a wall out there).
      */
     boolean shut(ServerLevel level, Creeper creeper) {
-        if (CompanionSeal.available(owner) <= 0) return false;
+        if (CompanionSeal.available(owner) <= 0 || level.canSeeSky(owner.blockPosition())) return false;
         boolean shut = false;
         for (BlockPos cell : wall(level, creeper)) {
             CompanionSeal.Result result = CompanionSeal.place(owner, cell);

@@ -6,7 +6,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
@@ -17,6 +19,8 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 import java.util.Map;
 
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.GROUND;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.ended;
@@ -30,6 +34,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineReviewTests {
     private static final int GAP_AT = 12, WALL_AT = 5, IRON_LEFT = 60;
+    private static final int TRENCH_LENGTH = 8, TRENCH_CREEPER = 3, FUSE_SETTLED = 100;
 
     /**
      * The stairs are shut at feet and head by blocks he did not put there, the record knows of none and he has only the worn iron pickaxe.
@@ -85,5 +90,28 @@ public final class CompanionMineReviewTests {
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void leavesAPlugOnTheStairsThatHoldsLavaBack(GameTestHelper h) {
         leavesOthersBlocksOnTheStairs(h, Blocks.COBBLESTONE, Blocks.COBBLESTONE, true);
+    }
+
+    /**
+     * A dead end of the open ground, no mine anywhere, a creeper with a lit fuse three blocks off: a wall of blocks there would stay in the
+     * world for good, nobody takes it out. He has the sword to strike with; the cobblestone stays in his bag.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void setsNoWallOnTheOpenGroundWhenAFuseIsLit(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = CompanionMineFightTests.armed(h);
+        for (int x = 0; x <= TRENCH_LENGTH; x++) for (int y = GROUND - 2; y <= GROUND; y++) h.setBlock(new BlockPos(CENTER + x, y, CENTER), Blocks.AIR);
+        BlockPos stand = h.absolutePos(new BlockPos(CENTER, GROUND - 2, CENTER));
+        c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        h.assertTrue(h.getLevel().canSeeSky(stand), "The trench is roofed");
+        Creeper creeper = h.spawn(EntityType.CREEPER, new BlockPos(CENTER + TRENCH_CREEPER, GROUND - 2, CENTER));
+        creeper.setPersistenceRequired();
+        creeper.ignite();
+        h.onEachTick(() -> {
+            for (int x = 0; x <= TRENCH_LENGTH; x++) for (int y = GROUND - 2; y <= GROUND; y++) {
+                h.assertTrue(!h.getBlockState(new BlockPos(CENTER + x, y, CENTER)).is(Blocks.COBBLESTONE), "A wall of his stands on the open ground at " + x + "," + y + " | " + report(c));
+            }
+        });
+        h.runAfterDelay(FUSE_SETTLED, h::succeed);
     }
 }
