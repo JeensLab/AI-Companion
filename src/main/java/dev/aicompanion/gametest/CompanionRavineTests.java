@@ -86,15 +86,28 @@ public final class CompanionRavineTests {
 
     /**
      * After issue 65: down the ravine with no pickaxe he cut the steps by hand, some 7.5 s a stone, with logs in the bag. A player
-     * makes a wooden pickaxe first, setting a bench down for it and taking it again: one log for the pickaxe, the bench in the bag.
+     * makes a wooden pickaxe first, setting a bench down for it and taking it again: two logs of planks, the bench in the bag.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void withLogsButNoPickaxeHeMakesOneToCutTheSteps(GameTestHelper h) {
+        pickaxeMadeInTheRavine(h, false);
+    }
+
+    /** Cobblestone in the bag too: still a wooden pickaxe (the stone may be the work's), and no failed craft among his deeds. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void withCobblestoneTooThePickaxeIsAWoodenOne(GameTestHelper h) {
+        pickaxeMadeInTheRavine(h, true);
+    }
+
+    private static void pickaxeMadeInTheRavine(GameTestHelper h, boolean cobblestone) {
         ravine(h);
         CompanionEntity companion = spawn(h, 16, 3, 16);
         companion.setItem(0, new ItemStack(Items.OAK_LOG, 4));
+        if (cobblestone) companion.setItem(1, new ItemStack(Items.COBBLESTONE, 3));
         companion.setFollowing(true);
         h.succeedWhen(() -> {
+            h.assertTrue(count(companion, Items.STONE_PICKAXE) == 0 && !companion.getDeedsForAi().contains("Не могу сделать"),
+                    "Stone pickaxe or a failed craft: " + companion.getStoredItemsSummary() + " / " + companion.getDeedsForAi());
             h.assertTrue(companion.getY() >= h.absolutePos(new BlockPos(0, TOP + 1, 0)).getY() - .01, "Still down in the ravine at "
                     + h.relativePos(companion.blockPosition()) + ": " + companion.getLastTaskResult());
             h.assertTrue(count(companion, Items.WOODEN_PICKAXE) == 1, "No pickaxe made: " + companion.getStoredItemsSummary());

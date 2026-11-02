@@ -102,16 +102,17 @@ final class CompanionRecovery {
     void cancel() {
         restoreHand();
         active = false; stalled = 0; observed = owner.position(); jumpCell = digTarget = null; stepUp = null;
-        breaking.reset(); retryAfter = owner.level().getGameTime() + 40;
+        breaking.reset(); retryAfter = owner.level().getGameTime() + 40; leaveBench();
     }
     void tick() {
         if (!(owner.level() instanceof ServerLevel level) || !active) return;
+        // The bench set down for a pickaxe is taken again first, past the limits too: left, it shuts the cells beside it to digging.
+        if (bench != null && owner.onGround()) { packBench(level); return; }
         // Steps dug up a wall take longer and dig more than a short clearance; still bounded.
         if (++elapsed > (climbing ? 1800 : 600) || placed >= 8 || dug >= (climbing ? 60 : 12) || destination == null) { stop(false); return; }
         if (jumpCell != null) { jump(level); return; }
         if (stepUp != null) { stepUp(); return; }
         if (!owner.onGround()) return;
-        if (bench != null) { packBench(level); return; }
         int busy = owner.work.route.busyAnswers();
         Path exit = owner.work.route.toCells(java.util.Set.of(destination), 1);
         // This tick's cells went elsewhere: no way is not known yet, he does not dig or climb for it.
@@ -339,15 +340,15 @@ final class CompanionRecovery {
         breaking.reset(); digTarget = null;
     }
     /**
-     * No pickaxe for the stone: one is made of the wood in the bag, even wood kept for the work — a log against some 7.5 s a stone by
-     * hand. Only when the craft will go through (a failed one would be a deed and a worried face each stone), not of the player's
+     * No pickaxe for the stone: one is made of the wood in the bag, even wood kept for the work — two logs' worth against some 7.5 s a
+     * stone by hand. A wooden one: stone may be the work's or the player's. Only when the craft will go through (a failed one would be a deed and a worried face each stone), not of the player's
      * things. True when a bench was set down for it: taken again first.
      */
     private boolean makePickaxe(ServerLevel level, BlockState state) {
         if (digTarget.equals(pickaxeCheckedFor)) return false;
         pickaxeCheckedFor = digTarget;
-        // «Сложи в сундук»: the logs are on their way to the player's chest.
-        if (owner.work.job == CompanionWork.Job.STORE) return false;
+        // «Сложи в сундук», «дай мне»: the logs may be on their way to the player.
+        if (owner.work.job == CompanionWork.Job.STORE || owner.work.job == CompanionWork.Job.GIVE) return false;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             ItemStack stack = owner.getItem(slot);
             if ((stack.is(ItemTags.LOGS) || stack.is(ItemTags.PLANKS)) && owner.carriedForPlayer(stack)) return false;
@@ -358,9 +359,10 @@ final class CompanionRecovery {
         // Stuck down here, the bench he remembers up there is no walk: a new one is set down as for a work that cannot reach it.
         boolean newBench = owner.newBenchAllowed;
         owner.allowNewBench(true); owner.placement.benchSetDown = null;
-        boolean made = CompanionTools.craft(owner, "pickaxe", state, ItemTags.PICKAXES);
+        boolean made = owner.craftFromBag("minecraft:wooden_pickaxe", 1).success();
         owner.allowNewBench(newBench);
-        bench = made ? owner.placement.benchSetDown : null;
+        bench = owner.placement.benchSetDown;
+        if (made) CompanionTools.equip(owner, ItemTags.PICKAXES, state);
         if (bench != null) breaking.reset();
         return bench != null;
     }
@@ -373,10 +375,15 @@ final class CompanionRecovery {
         if (!breaking.tick(level, bench)) return;
         var tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, bench, level.getBlockEntity(bench), owner, tool);
-        if (owner.canStoreDrops(drops) && level.destroyBlock(bench, false, owner, 512)) {
-            tool.getItem().mineBlock(tool, level, state, bench, owner); owner.dropHarvest(bench, drops);
-        }
-        breaking.reset(); bench = null;
+        breaking.reset();
+        if (!owner.canStoreDrops(drops)) { leaveBench(); return; }
+        if (level.destroyBlock(bench, false, owner, 512)) { tool.getItem().mineBlock(tool, level, state, bench, owner); owner.dropHarvest(bench, drops); }
+        bench = null;
+    }
+    /** Not taken now (a new order, no room in the bag): a travelling bench, which the work order picks up when it ends. */
+    private void leaveBench() {
+        if (bench != null && !owner.fieldBenches.contains(bench)) owner.fieldBenches.add(bench);
+        bench = null;
     }
     private void stop(boolean success) {
         restoreHand();
