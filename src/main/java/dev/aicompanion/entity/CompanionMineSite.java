@@ -31,7 +31,7 @@ public final class CompanionMineSite {
     public static final int RESTARTS_CARRIED = 20 * 120;
     /** The ways of getting on from a stop that came again: the stairs anew from the spot, then the way up. Past them the stop is final until he stands elsewhere. */
     public static final int STOP_WAYS = 2;
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, MAX_ABOVE = 1024, MAX_DUG = 4096, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, MAX_ABOVE = 1024, MAX_DUG = 4096, CAVE_FORGOTTEN = 8, DEATH_STANDS = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     /** Squared distance within which he counts as standing at a stand; the expedition's own measure of "the same spot". */
     private static final int NEAR_STAND = 12;
@@ -317,6 +317,12 @@ public final class CompanionMineSite {
             for (Direction d : Direction.values()) cells.add(coarse(pos.relative(d)));
         }
         for (long cell : cells) remember(caves, cell, MAX_CAVE_CELLS);
+    }
+
+    /** He died under the ground and the monsters hold the place: the last stands of the stairs lead to them, so they count as a cave he fled from. */
+    public void shunTheEnd(BlockPos place) {
+        if (origin == null || place.getY() >= origin.getY() - CompanionExpedition.UNDERGROUND_DEPTH) return;
+        shun(stands.subList(Math.max(0, stands.size() - DEATH_STANDS), stands.size()));
     }
 
     public boolean shunned(BlockPos cell) { return caves.contains(coarse(cell)); }

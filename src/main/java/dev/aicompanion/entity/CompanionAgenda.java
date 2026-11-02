@@ -64,6 +64,7 @@ public final class CompanionAgenda {
     /** The things of a dead companion are searched this far round his death place, and fetched from no farther than a trip he can make. */
     private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4, FOE_RADIUS = 12;
     /** The health he goes for his things with after a death: the same he rests up to in a retreat. */
+    private static final String FOES_AT_THE_THINGS = "рядом с вещами мобы, а оружия у меня нет";
     private static final float RECOVER_HEALTH = CompanionExpeditionRetreat.FIT;
     private static final String COLLECT = "collect", SHIELD = "shield", ASCEND = "ascend";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
@@ -666,8 +667,9 @@ public final class CompanionAgenda {
                 : c.blockPosition().distSqr(place) > RECOVER_RANGE * RECOVER_RANGE ? "до них слишком далеко"
                 : unsafe(level, place) ? "там лава или пустота"
                 : c.mineSite().shunned(place) ? "там пещера, из которой я бежал"
-                : !c.equipment.hasMeleeWeapon() && foeNear(level, place) ? "рядом с вещами мобы, а оружия у меня нет"
+                : !c.equipment.hasMeleeWeapon() && foeNear(level, place) ? FOES_AT_THE_THINGS
                 : hurt ? "я ранен, а лечиться нечем" : null;
+        if (FOES_AT_THE_THINGS.equals(why)) c.mineSite().shunTheEnd(place);
         goal.deathPlace = null; goal.deathDimension = null;
         data.setDirty();
         List<ItemEntity> mine = why != null ? List.of() : level.getEntitiesOfClass(ItemEntity.class, new AABB(place).inflate(RECOVER_RADIUS),
