@@ -228,6 +228,34 @@ public final class CompanionFoodLightTests {
         });
     }
 
+    /** The same coal put in while he walks to the player's empty furnace he chose: it is looked at again before loading. */
+    @GameTest(template="tall_tree",timeoutTicks=2400)
+    public static void aDeedOfHisOwnDropsThePlayersFurnaceFuelledOnTheWay(GameTestHelper h) {
+        var f=fixture(h,false,8,16);
+        f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
+        f.oleg.setItem(0,new ItemStack(Items.OAK_LOG,16)); f.oleg.setItem(1,new ItemStack(Items.COBBLESTONE,32));
+        f.oleg.setItem(2,new ItemStack(Items.COAL,8)); f.oleg.setItem(3,new ItemStack(Items.BEEF,6));
+        BlockPos players=new BlockPos(22,1,16);
+        h.setBlock(players,Blocks.FURNACE);
+        var oven=(net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity)h.getBlockEntity(players);
+        boolean[] fuelled={false};
+        h.onEachTick(()->{
+            if(!fuelled[0] && f.oleg.isWorking() && f.oleg.distanceToSqr(h.absolutePos(players).getCenter())<8*8) { oven.setItem(1,new ItemStack(Items.COAL,5)); fuelled[0]=true; }
+        });
+        f.oleg.autonomy().setEnabled(true);
+        h.succeedWhen(()->{
+            // His own furnace may still hold the batch while he is on the next deed: the full suite runs slower than the class alone.
+            int cooked=count(f,Items.COOKED_BEEF);
+            for(int x=0;x<32;x++) for(int z=0;z<32;z++) for(int y=1;y<=7;y++)
+                if(h.getBlockState(new BlockPos(x,y,z)).is(Blocks.FURNACE) && h.getBlockEntity(new BlockPos(x,y,z)) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity any
+                        && any.getItem(2).is(Items.COOKED_BEEF)) cooked+=any.getItem(2).getCount();
+            h.assertTrue(fuelled[0] && cooked==6,"Meat not cooked: "+cooked+" "+f.oleg.getLastTaskResult()+" "+f.oleg.getStoredItemsSummary());
+            h.assertTrue(oven.getItem(1).is(Items.COAL) && oven.getItem(1).getCount()==5 && oven.getItem(0).isEmpty() && oven.getItem(2).isEmpty(),
+                    "The player's furnace was used: "+oven.getItem(0)+" / "+oven.getItem(1)+" / "+oven.getItem(2));
+            f.oleg.autonomy().setEnabled(false); f.oleg.setFollowing(false);
+        });
+    }
+
     @GameTest(template="tall_tree",timeoutTicks=1200)
     public static void workingLogsComeFromHisOwnChest(GameTestHelper h) {
         var f=fixture(h,false,12,16);

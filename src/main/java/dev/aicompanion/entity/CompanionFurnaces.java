@@ -109,14 +109,19 @@ final class CompanionFurnaces {
     private BlockPos findFurnace(ServerLevel level) {
         BlockPos center = w.owner.blockPosition();
         BlockPos group = w.lots.isEmpty() ? null : w.lots.getFirst().pos;
-        // On a deed of his own the player's furnace is taken only standing idle, with nothing of the player's in it to burn or
-        // mix with: a new furnace beside it is waste (issue 62, stream 01.11).
         return w.chests.blockEntitiesNear(level).stream().filter(pos -> !w.triedFurnaces.contains(pos)
                         && w.lots.stream().noneMatch(lot -> lot.pos.equals(pos)) && !w.owner.batches().reserved(level, pos)
                         && (group == null || pos.distSqr(group) <= CompanionWork.FURNACE_GROUP * CompanionWork.FURNACE_GROUP)
-                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven)
-                        && (!w.owner.ownPlacesOnly() || w.owner.leashAllows(pos) && (w.owner.placedByMe(pos) || oven.isEmpty())))
+                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven) && allowed(pos, oven))
                 .min(Comparator.comparingDouble(pos -> pos.distSqr(center))).map(BlockPos::immutable).orElse(null);
+    }
+
+    /**
+     * On a deed of his own the player's furnace is taken only standing idle, with nothing of the player's in it to burn or mix
+     * with: a new furnace beside it is waste (issue 62, stream 01.11). Looked at again at loading: the player may fill it meanwhile.
+     */
+    private boolean allowed(BlockPos pos, AbstractFurnaceBlockEntity oven) {
+        return !w.owner.ownPlacesOnly() || w.owner.leashAllows(pos) && (w.owner.placedByMe(pos) || oven.isEmpty());
     }
 
     /** Someone else's furnace at work stays theirs: only an empty input slot, and an output our product can join. */
@@ -186,7 +191,7 @@ final class CompanionFurnaces {
 
     /** Raw material into the top slot, fuel under it: the same two slots a player fills. */
     private void loadLot(ServerLevel level, CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven, int remaining) {
-        if (!freeFor(oven)) { dropLot(lot); return; }
+        if (!freeFor(oven) || !lot.placed && !allowed(lot.pos, oven)) { dropLot(lot); return; }
         int carried = CompanionSmelting.count(w.items.carriedItems(), w.smelt.input());
         if (carried <= 0) {
             w.smeltCount = loadedTotal();
