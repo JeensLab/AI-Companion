@@ -17,7 +17,7 @@ import static dev.aicompanion.gametest.CompanionSingleRouteTests.spawn;
 /**
  * Run p1d/void-2 (seed 20261102): the gathering goals stood on one spot for six thousand ticks, every target of theirs «no route», and the
  * work guard that ends an order after ninety seconds without progress never looked, as the work's own tick does not run while a goal gathers.
- * The arena: his platform, a wall no walk crosses, and the soil he wants on the far side.
+ * The arena: his closed room, and the soil he wants all round it.
  */
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -25,16 +25,19 @@ public final class CompanionMineGatherStallTests {
     private static final int TIMEOUT = 3300;
     /** The guard's ninety seconds and a little more; the goals' own limits run to three thousand six hundred ticks and over. */
     private static final int SETTLED_BY = 2400;
-    private static final int STAND_X = 4, STAND_Y = 2, STAND_Z = 16, WALL_FROM = 7, WALL_TO = 14, ISLAND_X = 15;
+    private static final int STAND_X = 3, STAND_Y = 2, STAND_Z = 15, TOP_Y = 23, LAST = 31;
 
-    /** His platform at the west edge, a wall eight cells thick across the whole arena, soil from the far bank on. */
+    /**
+     * His room is a closed box of bedrock, two cells by two and three high, so that his drifting inside it never reaches the two blocks
+     * the guard counts as a move. All round it a hill of soil with uneven tops reaches into his search: the search finds many blocks, each a
+     * target of its own to be refused, and none has a way.
+     */
     private static void island(GameTestHelper h) {
-        box(h, 0, 0, 0, 31, 23, 31, Blocks.AIR);
-        box(h, 0, 0, 0, 31, 1, 31, Blocks.BEDROCK);
-        box(h, WALL_FROM, 0, 0, WALL_TO, 23, 31, Blocks.BEDROCK);
-        // Walled in on his side too: a walk round the arena's edge would be a way to the soil.
-        box(h, 0, 0, 0, 0, 23, 31, Blocks.BEDROCK); box(h, 0, 0, 0, WALL_FROM, 23, 0, Blocks.BEDROCK); box(h, 0, 0, 31, WALL_FROM, 23, 31, Blocks.BEDROCK);
-        box(h, ISLAND_X, 1, 0, 31, 1, 31, Blocks.DIRT);
+        box(h, 0, 0, 0, LAST, TOP_Y, LAST, Blocks.AIR);
+        box(h, 0, 0, 0, LAST, 1, LAST, Blocks.BEDROCK);
+        for (int x = 0; x <= LAST; x++) for (int z = 0; z <= LAST; z++) box(h, x, 1, z, x, 1 + (x * 3 + z * 7) % 6, z, Blocks.DIRT);
+        box(h, STAND_X - 1, 0, STAND_Z - 1, STAND_X + 2, 5, STAND_Z + 2, Blocks.BEDROCK);
+        box(h, STAND_X, STAND_Y, STAND_Z, STAND_X + 1, 4, STAND_Z + 1, Blocks.AIR);
     }
 
     private static void ends(GameTestHelper h, CompanionEntity c, long[] id, BlockPos stand) {
