@@ -130,7 +130,7 @@ public final class CompanionOwnSearchTests {
     }
 
     /** The world is left and loaded again in the middle of a long walk: the way is searched anew, he arrives with his things, and he is the only one. */
-    @GameTest(template = "marathon_far", timeoutTicks = 3000)
+    @GameTest(template = "marathon_far", timeoutTicks = 3000, batch = "own_search_reload")
     public static void aReloadInTheMiddleOfALongWalkLeavesHimArrivingWithHisThings(GameTestHelper h) {
         box(h, 40, 0, 0, 71, 14, 171, Blocks.AIR);
         box(h, 39, 1, 0, 39, 14, 171, Blocks.BARRIER);
