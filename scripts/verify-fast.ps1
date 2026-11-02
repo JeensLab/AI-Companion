@@ -5,7 +5,9 @@ $ErrorActionPreference='Stop'
 function Read-Shard([int]$Shard) {
     $log=Join-Path $gameTestRoot "run\shard-$Shard\logs\latest.log"
     if(!(Test-Path -LiteralPath $log)){return [ordered]@{shard=$Shard;passed=0;expected=0;pool=0;failed=@("no log: $log")}}
-    $output=[IO.File]::ReadAllText($log)
+    # Another process may still hold the log for a moment after its server exits: a shared read must not turn a green run red.
+    $stream=[IO.File]::Open($log,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+    try { $reader=[IO.StreamReader]::new($stream); $output=$reader.ReadToEnd() } finally { $stream.Dispose() }
     $selection=[regex]::Match($output,'Game test selection: pool=\d+ selected=\d+ pool-required=(\d+) selected-required=(\d+)')
     $match=[regex]::Match($output,'All (\d+) required tests passed')
     $failed=@([regex]::Matches($output,'\]: ([^\r\n]+) failed at [^\r\n]*?! ([^\r\n]{0,200})') | ForEach-Object {"$($_.Groups[1].Value): $($_.Groups[2].Value)"} | Select-Object -Unique)

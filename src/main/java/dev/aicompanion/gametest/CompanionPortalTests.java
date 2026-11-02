@@ -30,6 +30,8 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class CompanionPortalTests {
     private static final int GROUND = 5;
+    /** A new portal is built up to 16 blocks from the scaled point, one chunk either way; one more for his first steps. */
+    private static final int LANDING_CHUNKS = 2;
 
     @AfterBatch(batch = "portal")
     public static void afterPortal(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -44,9 +46,11 @@ public final class CompanionPortalTests {
         var server = h.getLevel().getServer();
         var nether = server.getLevel(Level.NETHER);
         h.assertTrue(nether != null, "No Nether to test with");
+        Runnable keepLanding = prepareLanding(h, nether, new BlockPos(15, GROUND + 1, 16));
         Player owner = stepInto(h, companion, new BlockPos(15, GROUND + 1, 16));
         leaveFor(h, owner, nether, 0, 100, 0);
         h.succeedWhen(() -> {
+            keepLanding.run();
             h.assertTrue(nether.getEntity(id) instanceof CompanionEntity, "Still at " + (h.getLevel().getEntity(id) == null ? "nowhere" : h.getLevel().getEntity(id).blockPosition()));
             h.assertTrue(h.getLevel().getEntity(id) == null, "He is in two worlds");
             CompanionEntity over = (CompanionEntity) nether.getEntity(id);
@@ -118,8 +122,10 @@ public final class CompanionPortalTests {
         var nether = server.getLevel(Level.NETHER);
         h.assertTrue(nether != null, "No Nether to test with");
         lightPortal(h);
+        Runnable keepLanding = prepareLanding(h, nether, new BlockPos(15, GROUND + 2, 16));
         h.runAfterDelay(2, () -> h.assertTrue(CompanionEvents.executeAction(owner, "enter_portal", "", 1).success(), "The order was refused"));
         h.succeedWhen(() -> {
+            keepLanding.run();
             h.assertTrue(nether.getEntity(id) instanceof CompanionEntity, "Still at " + (h.getLevel().getEntity(id) == null ? "nowhere" : h.getLevel().getEntity(id).blockPosition()));
             h.assertTrue(h.getLevel().getEntity(id) == null, "He is in two worlds");
             CompanionEntity over = (CompanionEntity) nether.getEntity(id);
@@ -213,6 +219,19 @@ public final class CompanionPortalTests {
             if (x == 14 || x == 17 || y == GROUND + 1 || y == GROUND + 5) h.setBlock(new BlockPos(x, y, 16), Blocks.OBSIDIAN);
         h.setBlock(new BlockPos(15, GROUND + 2, 16), Blocks.FIRE);
         h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(16, GROUND + 4, 16));
+    }
+
+    /**
+     * A test server ticks far faster than a fresh Nether generates: he stood hidden in his new chunk for 5.4 s, and 2400 ticks can pass
+     * in 4.7. Made here, the wait stops the ticks instead of spending them; the returned ticket, renewed each tick, outlives the game's 300.
+     */
+    private static Runnable prepareLanding(GameTestHelper h, ServerLevel nether, BlockPos portalCell) {
+        BlockPos portal = h.absolutePos(portalCell);
+        net.minecraft.world.level.ChunkPos landing = new net.minecraft.world.level.ChunkPos(new BlockPos(portal.getX() / 8, 64, portal.getZ() / 8));
+        for (int x = -LANDING_CHUNKS; x <= LANDING_CHUNKS; x++) for (int z = -LANDING_CHUNKS; z <= LANDING_CHUNKS; z++) nether.getChunk(landing.x + x, landing.z + z);
+        Runnable keep = () -> nether.getChunkSource().addRegionTicket(net.minecraft.server.level.TicketType.PORTAL, landing, 3, landing.getWorldPosition());
+        keep.run();
+        return keep;
     }
 
     private static com.google.gson.JsonObject plan(String steps) {
