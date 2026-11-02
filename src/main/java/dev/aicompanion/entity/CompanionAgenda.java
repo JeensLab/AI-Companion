@@ -18,6 +18,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
@@ -59,7 +60,7 @@ public final class CompanionAgenda {
      */
     private static final long IDLE_SAY_TICKS = 20L * 60 * 5, IDLE_BLOCK_TICKS = 20L * 60 * 30;
     /** The things of a dead companion are searched this far round his death place, and fetched from no farther than a trip he can make. */
-    private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4;
+    private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, LAVA_RADIUS = 2, VOID_MARGIN = 4, FOE_RADIUS = 12;
     /** The health he goes for his things with after a death: the same he rests up to in a retreat. */
     private static final float RECOVER_HEALTH = CompanionExpeditionRetreat.FIT;
     private static final String COLLECT = "collect", SHIELD = "shield", ASCEND = "ascend";
@@ -644,6 +645,7 @@ public final class CompanionAgenda {
                 : c.blockPosition().distSqr(place) > RECOVER_RANGE * RECOVER_RANGE ? "до них слишком далеко"
                 : unsafe(level, place) ? "там лава или пустота"
                 : c.mineSite().shunned(place) ? "там пещера, из которой я бежал"
+                : !c.equipment.hasMeleeWeapon() && foeNear(level, place) ? "рядом с вещами мобы, а оружия у меня нет"
                 : hurt ? "я ранен, а лечиться нечем" : null;
         goal.deathPlace = null; goal.deathDimension = null;
         data.setDirty();
@@ -658,6 +660,11 @@ public final class CompanionAgenda {
         c.loot.claim(mine);
         c.autonomy().report("Иду за своими вещами, что выпали на " + place.toShortString() + ".");
         return true;
+    }
+
+    /** A living hostile with a mind of its own near the place: without a weapon he would meet it with bare hands, as in the death before. */
+    private static boolean foeNear(ServerLevel level, BlockPos place) {
+        return !level.getEntitiesOfClass(Monster.class, new AABB(place).inflate(FOE_RADIUS), foe -> foe.isAlive() && !foe.isNoAi()).isEmpty();
     }
 
     private static boolean unsafe(ServerLevel level, BlockPos place) {
