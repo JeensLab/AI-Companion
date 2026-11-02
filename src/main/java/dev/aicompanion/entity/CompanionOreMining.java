@@ -7,7 +7,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
 
@@ -262,7 +261,7 @@ final class CompanionOreMining {
         if (!safeOreSwing(level, pos)) return false;
         BlockState state = level.getBlockState(pos);
         ItemStack tool = w.owner.getMainHandItem();
-        var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);
+        var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);
         if (!drops.isEmpty() && !w.items.canStore(drops)) { w.finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return false; }
         if (!level.destroyBlock(pos, false, w.owner, 512)) { blockOreCell(level, pos, "destroy_rejected"); return false; }
         tool.getItem().mineBlock(tool, level, state, pos, w.owner);

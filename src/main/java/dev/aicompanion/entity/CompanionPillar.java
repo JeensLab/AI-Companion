@@ -395,7 +395,7 @@ public final class CompanionPillar {
         if (!level.hasChunkAt(pos) || level.getBlockState(pos) != state) return false;
         owner.selectToolForBlock(state);
         ItemStack tool = owner.getMainHandItem();
-        var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), owner, tool);
+        var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), owner, tool);
         if (!level.destroyBlock(pos, false, owner, 512)) return false;
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         owner.swing(InteractionHand.MAIN_HAND);
