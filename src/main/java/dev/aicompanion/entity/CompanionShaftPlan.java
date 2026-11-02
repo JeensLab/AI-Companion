@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
@@ -206,7 +207,7 @@ public final class CompanionShaftPlan {
     /**
      * What must happen before a cell is broken. Liquid in the cell or beside it is sealed first when it can be reached
      * from the stand (in reach, nothing in the way), otherwise the way is blocked. A falling block above, a building,
-     * bedrock, a chest or an unloaded chunk block it. Cells already open and cells of the own mine are fine.
+     * bedrock, a chest or an unloaded chunk block it. Cells already open and cells of the own mine are fine; the leaves of trees are cut like soil.
      */
     public static Hazard classify(ServerLevel level, BlockPos stand, BlockPos cell, Set<BlockPos> own) {
         return classify(level, stand, cell, own, Avoid.NONE, null);
@@ -228,7 +229,7 @@ public final class CompanionShaftPlan {
         }
         BlockState state = level.getBlockState(cell);
         boolean mine = own.contains(cell);
-        if (!open(level, cell) && !mine && !CompanionOre.tunnelable(state)) return Hazard.BLOCKED;
+        if (!open(level, cell) && !mine && !CompanionOre.tunnelable(state) && !state.is(BlockTags.LEAVES)) return Hazard.BLOCKED;
         if (level.getBlockEntity(cell) != null || !mine && builtBeside(level, cell)) return Hazard.BLOCKED;
         BlockPos above = cell.above();
         if (level.hasChunkAt(above) && level.getBlockState(above).getBlock() instanceof FallingBlock) return Hazard.BLOCKED;
