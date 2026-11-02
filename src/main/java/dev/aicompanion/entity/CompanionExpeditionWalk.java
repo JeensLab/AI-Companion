@@ -41,6 +41,9 @@ final class CompanionExpeditionWalk {
 
     boolean done() { return index >= cells.size(); }
 
+    /** The cell of the list he is walking to. */
+    int index() { return index; }
+
     void bridging(boolean on) {
         bridging = on;
         laying = null;

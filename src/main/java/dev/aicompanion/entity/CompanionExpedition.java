@@ -31,7 +31,7 @@ final class CompanionExpedition {
     /** Wear of the iron pickaxe kept for the diamond itself, and how near a diamond in sight must be to spend the rest on rock. */
     private static final int DIAMOND_IRON = 4, DIAMOND_SIGHT = 8;
     private static final double ENTRANCE_NEAR = 1.0;
-    private static final String CAVE_DANGER = "в пещере слишком опасно";
+    private static final String CAVE_DANGER = "в пещере слишком опасно", NO_WAY_HERE = "Отсюда не свернуть и наверх не выйти.";
     /** The item of an order that is only the way up his own stairs, for a goal whose step needs the surface (wood) while he is deep in the mine. */
     static final String SURFACE = "surface";
 
@@ -132,7 +132,24 @@ final class CompanionExpedition {
             climb.begin("Под землёй дерева нет.", owner.blockPosition());
             stage = Stage.CLIMB;
             owner.workStatus("Поднимаюсь по своей лестнице на поверхность: под землёй дерева нет.");
-        }
+        } else changeWay(level);
+    }
+
+    /**
+     * The same stop came again: not the chain of the last order once more, but the next way of getting on. First the stairs anew from the spot, the
+     * refusals forgotten and the dangers kept; with no side for that, and at the next repeat, the way up whatever it takes, to a new mine on the surface.
+     */
+    private void changeWay(ServerLevel level) {
+        int repeats = w.mine.stopRepeats();
+        BlockPos here = CompanionExpeditionRecord.standingCell(level, owner);
+        if (repeats < 1 || repeats > CompanionMineSite.STOP_WAYS || !CompanionExpeditionRecord.deep(level, w.mine, here)) return;
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "stop_again", "here", here.toShortString(), "repeats", repeats, "restarts", w.mine.restarts());
+        w.mine.refusalsForgotten();
+        Direction side = repeats == 1 ? CompanionExpeditionRecord.cleanSide(level, w.mine, here) : null;
+        if (side != null) {
+            restartAt(level, here, side, 0, true);
+            owner.workStatus("Снова встал на том же месте: начинаю лестницу заново отсюда, в другую сторону.");
+        } else leaveForSurface(level, NO_WAY_HERE, true);
     }
 
     void reset() {
@@ -447,7 +464,7 @@ final class CompanionExpedition {
         Direction side = towardOrigin || !originNear() ? null : CompanionExpeditionRecord.originSide(level, w.mine);
         if (side == null) {
             if (startDigOut(level)) digOutWhy = why;
-            else if (!leaveForSurface(level, why)) end(Ending.BLOCKED, why);
+            else if (!leaveForSurface(level, why, false)) end(Ending.BLOCKED, why);
             return;
         }
         towardOrigin = true;
@@ -465,12 +482,14 @@ final class CompanionExpedition {
     /**
      * Nothing left to restart from under the ground: up the recorded way to the surface, where a mine starts at an entrance of the ground there.
      * False when there is no way up or the surface starts are used up; on the surface already, the new mine starts at once.
+     * {@code anyway}: a stop that came again, with no recorded way the whole way to the entrance is opened or cut.
      */
-    private boolean leaveForSurface(ServerLevel level, String why) {
+    private boolean leaveForSurface(ServerLevel level, String why, boolean anyway) {
         CompanionMineSite mine = w.mine;
         if (!mine.exists() || mine.origin() == null || fresh >= MAX_FRESH) return false;
         if (owner.getY() >= mine.origin().getY() - UNDERGROUND_DEPTH) return startOnSurface(level);
-        climb.begin(why, owner.blockPosition());
+        if (anyway) climb.beginAnyway(why, owner.blockPosition());
+        else climb.begin(why, owner.blockPosition());
         if (!climb.walking()) { climb.reset(); return false; }
         resurfaceWhy = why;
         plan = null;
@@ -495,7 +514,7 @@ final class CompanionExpedition {
         if (resurfaceWhy == null) { end(Ending.SUPPLIES, climb.text()); return; }
         String why = resurfaceWhy;
         resurfaceWhy = null;
-        if (!startOnSurface(level)) end(Ending.BLOCKED, why);
+        if (!startOnSurface(level)) end(Ending.BLOCKED, CompanionExpeditionRecord.deep(level, w.mine, owner.blockPosition()) ? climb.text() : why);
     }
 
     /** On the surface with the old entrance out of reach: the mine begins at another entrance near him, on a side not tried from the first one. */
@@ -538,7 +557,7 @@ final class CompanionExpedition {
         ServerLevel level = (ServerLevel) owner.level();
         switch (digOut.tick(level)) {
             case WORKING -> { }
-            case STUCK -> { if (!leaveForSurface(level, digOutWhy)) end(Ending.BLOCKED, digOutWhy); }
+            case STUCK -> { if (!leaveForSurface(level, digOutWhy, false)) end(Ending.BLOCKED, digOutWhy); }
             case DONE -> {
                 restartAt(level, digOut.at(), digOut.side(), 0);
                 owner.workStatus("Потерял свою лестницу, начинаю шахту заново отсюда.");
@@ -546,13 +565,15 @@ final class CompanionExpedition {
         }
     }
 
-    private void restartAt(ServerLevel level, BlockPos at, Direction side, int index) {
+    private void restartAt(ServerLevel level, BlockPos at, Direction side, int index) { restartAt(level, at, side, index, false); }
+
+    private void restartAt(ServerLevel level, BlockPos at, Direction side, int index, boolean keepCaves) {
         plan = null;
         sealCell = null;
         lead.clear();
         backtrack.reset();
         dig.reset();
-        w.mine.restart(at, side);
+        w.mine.restart(at, side, keepCaves);
         w.mine.buried(!CompanionExpeditionRecord.underSky(level, at.above()));
         route = new ArrayList<>(List.of(at));
         routeIndex = index;
@@ -712,7 +733,7 @@ final class CompanionExpedition {
     private void end(Ending ending, String why) {
         dig.flush();
         if (ending == Ending.FOUND) w.mine.retreatsForgotten();
-        String text = report() + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why;
+        String text = report() + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why + rememberStop(ending);
         if (ore.missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
         if (unheld) text += " Чанки вокруг шахты удержать не удалось.";
         text = text.strip();
@@ -723,6 +744,15 @@ final class CompanionExpedition {
             case TIMEOUT -> CompanionActionResult.timeout(text);
             case RETREAT -> CompanionActionResult.blocked(text);
         });
+    }
+
+    /** Keeps the stop for the next order, and says so when every way from it was tried. */
+    private String rememberStop(Ending ending) {
+        if (surfaceOnly || ending == Ending.RETREAT) return "";
+        BlockPos here = owner.blockPosition();
+        if (ending == Ending.FOUND || gained() > 0 || !CompanionExpeditionRecord.deep((ServerLevel) owner.level(), w.mine, here)) { w.mine.stopForgotten(); return ""; }
+        w.mine.stopped(here, ending.ordinal());
+        return w.mine.stopFinal() ? " Лестницу заново отсюда и подъём наверх уже пробовал: сам отсюда не выберусь." : "";
     }
 
     private String report() {

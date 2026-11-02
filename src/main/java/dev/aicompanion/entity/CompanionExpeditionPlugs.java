@@ -43,7 +43,7 @@ final class CompanionExpeditionPlugs {
             for (Direction side : Direction.Plane.HORIZONTAL) {
                 for (int rise = 1; rise >= -1; rise--) {
                     BlockPos next = at.relative(side).above(rise);
-                    if (before.containsKey(next) || !standable(level, mine, next, rise > 0 ? at.above(2) : null, bridging)) continue;
+                    if (before.containsKey(next) || !standable(level, mine, next, headroom(at, next), bridging)) continue;
                     before.put(next, at);
                     queue.add(next);
                     break;
@@ -58,8 +58,9 @@ final class CompanionExpeditionPlugs {
         if (bridging && walk.stream().filter(at -> !firm(level, at.below())).count() > MAX_BRIDGE) return null;
         for (int i = 0; i < walk.size(); i++) {
             BlockPos at = walk.get(i);
-            for (BlockPos cell : new BlockPos[]{at, at.above()}) {
-                if (mine.seals().contains(cell) && !CompanionShaftPlan.open(level, cell)) {
+            BlockPos head = i == 0 ? null : headroom(walk.get(i - 1), at);
+            for (BlockPos cell : new BlockPos[]{at, at.above(), head}) {
+                if (cell != null && mine.seals().contains(cell) && !CompanionShaftPlan.open(level, cell)) {
                     List<BlockPos> toStand = List.copyOf(walk.subList(0, Math.max(1, i)));
                     return new Way(toStand, cell);
                 }
@@ -68,7 +69,13 @@ final class CompanionExpeditionPlugs {
         return new Way(List.copyOf(walk), null);
     }
 
-    /** Room for his body over a firm floor, plugs counting as room; {@code headroom}: the cell over the one he steps up from. */
+    /** The cell a step between two levels takes beyond the body in either of them: over his head as he steps up, over the lower cell's body as he steps down; null on the level. */
+    private static BlockPos headroom(BlockPos from, BlockPos to) {
+        if (to.getY() == from.getY()) return null;
+        return to.getY() > from.getY() ? from.above(2) : to.above(2);
+    }
+
+    /** Room for his body over a firm floor, plugs counting as room; {@code headroom}: see {@link #headroom(BlockPos, BlockPos)}. */
     private static boolean standable(ServerLevel level, CompanionMineSite mine, BlockPos at, BlockPos headroom, boolean bridging) {
         if (!level.hasChunkAt(at) || !level.hasChunkAt(at.below())) return false;
         if (!roomIn(level, mine, at) || !roomIn(level, mine, at.above()) || headroom != null && !roomIn(level, mine, headroom)) return false;

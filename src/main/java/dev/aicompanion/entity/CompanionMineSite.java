@@ -29,6 +29,8 @@ public final class CompanionMineSite {
     public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
     /** How long after a step that opened nothing the next one still finds the restarts of that step spent. */
     public static final int RESTARTS_CARRIED = 20 * 120;
+    /** The ways of getting on from a stop that came again: the stairs anew from the spot, then the way up. Past them the stop is final until he stands elsewhere. */
+    public static final int STOP_WAYS = 2;
     private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, MAX_ABOVE = 1024, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     /** Squared distance within which he counts as standing at a stand; the expedition's own measure of "the same spot". */
@@ -70,6 +72,9 @@ public final class CompanionMineSite {
      * above those), from the deepest to the entrance on the surface. The new record knows only the pit; this is how he gets out of it.
      */
     private final List<BlockPos> above = new ArrayList<>();
+    /** Where the last order stopped short under the ground, how it ended, and how often the same stop came again since; a save without it has none. */
+    private BlockPos stopAt;
+    private int stopEnding, stopRepeats;
     private BlockPos plug;
     /**
      * Blocks he set down for a while and takes up again (a bench on a step): {@link #verify} reads the cell they stand in as open, so
@@ -119,12 +124,15 @@ public final class CompanionMineSite {
      * The caves within {@link #CAVE_FORGOTTEN} blocks of {@code here} are forgotten: he already stands by that cave, and getting away from here
      * matters more than its ban, or the first step would be refused again. {@link #newStep} counts the restarts per step, and the goal gives up after a few fruitless steps.
      */
-    public void restart(BlockPos here, Direction stair) {
+    public void restart(BlockPos here, Direction stair) { restart(here, stair, false); }
+
+    /** As above; with {@code keepCaves} the caves beside him stay banned: a restart that is a change of way must not go where he fled from. */
+    public void restart(BlockPos here, Direction stair, boolean keepCaves) {
         Set<Long> near = new HashSet<>();
         for (int x = (here.getX() - CAVE_FORGOTTEN) >> 2; x <= (here.getX() + CAVE_FORGOTTEN) >> 2; x++)
             for (int y = (here.getY() - CAVE_FORGOTTEN) >> 2; y <= (here.getY() + CAVE_FORGOTTEN) >> 2; y++)
                 for (int z = (here.getZ() - CAVE_FORGOTTEN) >> 2; z <= (here.getZ() + CAVE_FORGOTTEN) >> 2; z++) near.add(BlockPos.asLong(x, y, z));
-        List<Long> kept = caves.stream().filter(cell -> !near.contains(cell)).toList();
+        List<Long> kept = caves.stream().filter(cell -> keepCaves || !near.contains(cell)).toList();
         int count = restarts + 1;
         // His plugs stay his: a block he laid must not read as a wall of the rock around the new mine.
         List<BlockPos> laid = List.copyOf(seals), banned = List.copyOf(forbidden), standing = List.copyOf(temporary);
@@ -136,7 +144,12 @@ public final class CompanionMineSite {
         if (buried || entrance.equals(origin)) sides.addAll(originSides); else sides.add(stairDirection);
         int openedBefore = opened, stepBefore = openedAtStep;
         long stepAt = lastStepAt;
+        BlockPos stop = stopAt;
+        int ending = stopEnding, repeats = stopRepeats;
         start(here, stair);
+        stopAt = stop;
+        stopEnding = ending;
+        stopRepeats = repeats;
         opened = openedBefore;
         openedAtStep = stepBefore;
         lastStepAt = stepAt;
@@ -176,6 +189,8 @@ public final class CompanionMineSite {
         originSides.clear();
         opened = openedAtStep = 0;
         lastStepAt = 0;
+        stopAt = null;
+        stopEnding = stopRepeats = 0;
         plug = null;
         caves.clear();
         backtracks = retreats = restarts = 0;
@@ -332,6 +347,43 @@ public final class CompanionMineSite {
 
     public void retreatsForgotten() { retreats = 0; }
 
+    /**
+     * An order stopped short at {@code here} under the ground: the same spot with the same ending, or a stop of a step that opened nothing, counts
+     * as the same stop again. {@code ending} is any number that tells the endings apart. A final stop is only left behind by standing elsewhere.
+     */
+    public void stopped(BlockPos here, int ending) {
+        if (entrance == null) return;
+        boolean same = stopAt != null && ending == stopEnding && stopAt.distSqr(here) <= NEAR_STAND;
+        boolean fruitless = stopAt != null && opened == openedAtStep && !stopFinal();
+        stopRepeats = same || fruitless ? Math.min(stopRepeats + 1, STOP_WAYS + 1) : 0;
+        stopAt = here.immutable();
+        stopEnding = ending;
+    }
+
+    /** The order got somewhere or stands on the surface: nothing is carried over to the next one. */
+    public void stopForgotten() {
+        stopAt = null;
+        stopEnding = stopRepeats = 0;
+    }
+
+    /** How often the last stop came again: 1 and on up to {@link #STOP_WAYS} name the way due for the next order, 0 none. */
+    public int stopRepeats() { return stopRepeats; }
+
+    /** A stop stands and a way of getting on from it is still untried: the next order is no mere repeat of this one. */
+    public boolean stopWayLeft() { return stopAt != null && stopRepeats <= STOP_WAYS; }
+
+    /** The same stop came again after every way was tried. */
+    public boolean stopFinal() { return stopAt != null && stopRepeats > STOP_WAYS; }
+
+    /**
+     * The way is looked at afresh: the refused moves and the restarts spent are given up. The plugged cells and the caves stay, and lava, water
+     * and the world's edge are read from the world each time, so only what a past failure alone had shut comes open.
+     */
+    public void refusalsForgotten() {
+        refused.clear();
+        restarts = 0;
+    }
+
     public boolean buried() { return buried; }
 
     public void buried(boolean now) {
@@ -446,6 +498,11 @@ public final class CompanionMineSite {
         if (retreats > 0) mine.putInt("Retreats", retreats);
         if (restarts > 0) mine.putInt("Restarts", restarts);
         if (buried) mine.putBoolean("Buried", true);
+        if (stopAt != null) {
+            mine.putLong("StopAt", stopAt.asLong());
+            mine.putInt("StopEnding", stopEnding);
+            mine.putInt("StopRepeats", stopRepeats);
+        }
         if (!above.isEmpty()) mine.putLongArray("Above", above.stream().mapToLong(BlockPos::asLong).toArray());
         if (origin != null && !origin.equals(entrance)) {
             mine.putLong("Origin", origin.asLong());
@@ -531,6 +588,11 @@ public final class CompanionMineSite {
         retreats = Math.max(0, mine.getInt("Retreats"));
         restarts = Math.max(0, mine.getInt("Restarts"));
         buried = mine.getBoolean("Buried");
+        if (mine.contains("StopAt", Tag.TAG_LONG)) {
+            stopAt = BlockPos.of(mine.getLong("StopAt"));
+            stopEnding = mine.getInt("StopEnding");
+            stopRepeats = Math.max(0, Math.min(STOP_WAYS + 1, mine.getInt("StopRepeats")));
+        }
         for (long packed : mine.getLongArray("Above")) if (above.size() < MAX_ABOVE) above.add(BlockPos.of(packed));
         origin = mine.contains("Origin", Tag.TAG_LONG) ? BlockPos.of(mine.getLong("Origin")) : entrance;
         if (mine.contains("OriginSides", Tag.TAG_BYTE)) {

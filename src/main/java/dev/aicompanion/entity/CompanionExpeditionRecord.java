@@ -160,6 +160,23 @@ final class CompanionExpeditionRecord {
         return null;
     }
 
+    /** Under the ground below the entrance on the surface, where the way up is his only one and a stop that comes again calls for a change of way. */
+    static boolean deep(ServerLevel level, CompanionMineSite mine, BlockPos here) {
+        BlockPos origin = mine.origin();
+        return mine.exists() && origin != null && here.getY() < origin.getY() - CompanionExpedition.UNDERGROUND_DEPTH && !underSky(level, here.above());
+    }
+
+    /** The side the stairs start anew to in a change of way, or null: as {@link #sideOf}, past no cap, and a cave he fled from shuts its side here. */
+    static Direction cleanSide(ServerLevel level, CompanionMineSite mine, BlockPos here) {
+        BlockPos floor = here.below();
+        if (!mine.exists() || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return null;
+        if (!CompanionShaftPlan.open(level, here) || !CompanionShaftPlan.open(level, here.above())) return null;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            if (CompanionShaftPlan.assessStep(level, here, d, mine.seals(), mine.avoid()).kind() != CompanionShaftPlan.Kind.BLOCKED) return d;
+        }
+        return null;
+    }
+
     /**
      * The side of the entrance on the surface that stairs were not begun to yet, for a mine with no side left under the ground: the
      * mine begins again there, a side that is not refused and whose first step is open, one needing nothing laid first preferred.

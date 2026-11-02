@@ -564,6 +564,8 @@ public final class CompanionAgenda {
             block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
             return;
         }
+        // The mine has another way to try from this stop: the next step takes it, and only when those are spent does the stop count.
+        if (milestone.kind() == Kind.EXPEDITION && error == null && c.mineSite().stopWayLeft()) return;
         counter[1]++;
         if (milestone.concernsDiamonds(goal.fallback) && !goal.fallback && hasFreeSlot(c)) {
             // One empty search does not end an honest hunt for diamonds; the second one in a row does.
@@ -572,7 +574,8 @@ public final class CompanionAgenda {
             c.autonomySay("Алмазов добыть не вышло: " + why + " Сделаю снаряжение из железа.");
             return;
         }
-        if (counter[1] >= MAX_FAILURES) block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
+        boolean spent = milestone.kind() == Kind.EXPEDITION && c.mineSite().stopFinal();
+        if (counter[1] >= MAX_FAILURES || spent) block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
     }
 
     /** The ore search came back empty for iron: none seen within its depth, or seen but not safely reachable from here. */

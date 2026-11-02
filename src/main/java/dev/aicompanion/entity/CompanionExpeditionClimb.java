@@ -75,6 +75,17 @@ final class CompanionExpeditionClimb {
         }
     }
 
+    /** As {@link #begin} for a stop that came again: with no cell of his own to start from, the whole way to the entrance on the surface is one gap to walk, open or cut. */
+    void beginAnyway(String reason, BlockPos here) {
+        begin(reason, here);
+        BlockPos origin = w.mine.origin();
+        if (walking() || origin == null) return;
+        outcome = "";
+        cells = List.of(origin);
+        stretchEnd = 0;
+        phase = Phase.TRAVEL;
+    }
+
     /** True while the climb has a way to walk; false when {@link #begin} found none and said so. */
     boolean walking() { return outcome.isEmpty(); }
 
@@ -134,7 +145,11 @@ final class CompanionExpeditionClimb {
                 phase = Phase.TRAVEL;
                 return Result.WORKING;
             }
-            default -> { return finish(" Подняться по своей лестнице не вышло: застрял на ходу, остался где стою."); }
+            default -> {
+                // The cell he cannot enter is a gap of its own: a plug over his head or across the step comes out, and rock is cut.
+                stretchEnd = walk.index();
+                return openWay(cells.get(stretchEnd));
+            }
         }
     }
 
@@ -208,7 +223,7 @@ final class CompanionExpeditionClimb {
         ServerLevel level = (ServerLevel) w.owner.level();
         switch (toPlug.tick()) {
             case WORKING -> { return Result.WORKING; }
-            case STUCK -> { return finish(" Подняться по своей лестнице не вышло: застрял на ходу, остался где стою."); }
+            case STUCK -> { return cutOut(); }
             case NO_BLOCK -> { return finish(" Подняться не вышло: в пути наверх нет пола, а блоков, чтобы его настелить, нет, остался где стою."); }
             default -> { }
         }

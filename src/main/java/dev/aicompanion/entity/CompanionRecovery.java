@@ -283,6 +283,8 @@ final class CompanionRecovery {
     private record ListDirection(Direction direction, double score) { }
     private boolean safeToDig(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || owner.distanceToSqr(pos.getCenter()) > 16) return false;
+        // A plug of his closes a cave: a way cut out of the rock does not go through it.
+        if (owner.mineSite().seals().contains(pos) || owner.mineSite().forbidden(pos)) return false;
         BlockState state = level.getBlockState(pos);
         if (!(CompanionQuarry.soil(state) || CompanionWork.isStone(state) || state.is(net.minecraft.tags.BlockTags.LEAVES)) || state.getDestroySpeed(level, pos) < 0) return false;
         for (Direction direction : Direction.values()) {
