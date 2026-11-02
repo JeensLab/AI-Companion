@@ -80,10 +80,11 @@ final class CompanionLava {
 
     /**
      * Water runs into this cell when it is opened and it is no spring and no water of his own way ({@code own}): a pond, a lake, an
-     * aquifer, a flooded cave (water itself: a waterlogged block holds its water). It runs in again whatever is put into it, so the cell is not opened.
+     * aquifer, a flooded cave, a waterlogged block (seagrass, lichen, a slab: its water runs out too). It runs in again whatever is put
+     * into it, so the cell is not opened.
      */
     static boolean floods(Level level, BlockPos opened, Collection<BlockPos> own) {
-        for (BlockPos cell : inflow(level, opened, FluidTags.WATER)) if (level.getBlockState(cell).is(Blocks.WATER) && !own.contains(cell) && !closedSpring(level, cell, opened)) return true;
+        for (BlockPos cell : inflow(level, opened, FluidTags.WATER)) if (!own.contains(cell) && !closedSpring(level, cell, opened)) return true;
         return false;
     }
 
@@ -99,10 +100,14 @@ final class CompanionLava {
      * (not air, not liquid, not replaceable, not a block holding water).
      */
     private static boolean closedSpring(Level level, BlockPos cell, BlockPos opened) {
-        if (!level.getBlockState(cell).is(Blocks.WATER)) return false;
+        return level.getBlockState(cell).is(Blocks.WATER) && pocket(level, cell, List.of(opened));
+    }
+
+    /** Every side of this cell but those of {@code way} is something solid: a pocket in the rock, not the edge of a pond or a passage. */
+    static boolean pocket(Level level, BlockPos cell, Collection<BlockPos> way) {
         for (Direction d : Direction.values()) {
             BlockPos next = cell.relative(d);
-            if (next.equals(opened)) continue;
+            if (way.contains(next)) continue;
             if (!level.isLoaded(next)) return false;
             BlockState state = level.getBlockState(next);
             if (state.isAir() || state.canBeReplaced() || !state.getFluidState().isEmpty()) return false;

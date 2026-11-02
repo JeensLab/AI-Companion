@@ -216,8 +216,10 @@ final class CompanionOreMining {
                 if (cells == null || cells.stream().anyMatch(cell -> blockedOreCell(level, cell))) continue;
                 if (CompanionLava.besideFall(level, cells)) { fall = true; continue; }
                 // Open water along the way is judged here, springs only when a cell is opened: the cobblestone of the way is not in the bag yet.
-                Set<BlockPos> own = new HashSet<>(cells);
-                own.add(stand); own.add(stand.above());
+                // His own water is what digOreTunnel will count as his: the stand is his only once he stands there (a stand in a pond is the pond),
+                // and water on the line of the tunnel only as a pocket in the rock: the edge of a pond on it would run down his stairs (review 6).
+                Set<BlockPos> own = ownWater();
+                for (BlockPos cell : cells) if (!level.getFluidState(cell).isEmpty() && CompanionLava.pocket(level, cell, cells)) own.add(cell);
                 var lack = lacksPlugs(level, cells, candidate, own, false);
                 if (lack != CompanionLava.Opening.SAFE) { if (lack == CompanionLava.Opening.NO_PLUG) lacked = true; continue; }
                 tries++;
@@ -444,11 +446,13 @@ final class CompanionOreMining {
         }
         // The block is broken but its drop is not in the bag (it floated off, it lies where he cannot get at it): not «done».
         // Any drop of the ore counts (nuggets, the ore block under Silk Touch, more under Fortune), not only the usual one; iron for a tool counts only as raw iron.
-        boolean anyDrop = gained > 0 || !w.ironPrep && oreDrops.entrySet().stream().anyMatch(drop -> w.items.countCarried(drop.getKey()) > drop.getValue());
+        boolean anyDrop = gained > 0 || oreDrops.entrySet().stream().anyMatch(drop -> w.items.countCarried(drop.getKey()) > drop.getValue());
         boolean lost = w.oreMined >= w.oreWanted && !anyDrop;
-        if (w.oreMined >= w.oreWanted && !lost) { w.finish(true, "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag); return; }
+        if (w.oreMined >= w.oreWanted && !lost && !w.ironPrep) { w.finish(true, "Добыл " + CompanionWorkItems.blocks(w.oreMined) + " " + got + below + bag); return; }
         int radius = w.oreSearch == null ? w.owner.getSearchRadius() : w.oreSearch.radius(), depth = w.oreSearch == null ? CompanionOre.MAX_DROP : w.oreSearch.depth();
-        String why = lost ? " Выпавшее не достал: оно осталось там, где мне его не взять." : w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» не нашёл в пределах " + radius + " блоков и до " + depth + " блоков вниз."
+        String why = lost ? " Выпавшее не достал: оно осталось там, где мне его не взять."
+                : w.ironPrep && w.oreMined >= w.oreWanted ? " Руда выпала целыми блоками: кирка с «Шёлковым касанием» не даёт сырого железа."
+                : w.oreFound == 0 ? " Руды «" + w.ore.oreName + "» не нашёл в пределах " + radius + " блоков и до " + depth + " блоков вниз."
                 : " Больше доступной руды «" + w.ore.oreName + "» рядом нет.";
         if (standing(overLava) > 0) why += " " + CompanionWorkItems.blocks(standing(overLava)) + " руды над лавой — не трогал, добыча сгорит.";
         if (standing(lavaFalls) > 0) why += " У " + CompanionWorkItems.blocks(standing(lavaFalls)) + " рядом лавопад — пробкой его не остановить, не трогал.";

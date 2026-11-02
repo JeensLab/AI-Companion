@@ -451,6 +451,8 @@ final class CompanionStoneMining {
         if (CompanionLighting.supportsLight(level, pos)) return false;
         if (w.quarrySupports.contains(pos)) return false;
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || CompanionLava.at(level, pos)) return false;
+        // A stone that holds a pond or a lake back is left, as for ore, unless he stands in water already: there is nothing dry to flood.
+        if (!w.owner.isInWater() && CompanionLava.floods(level, pos, List.of())) return false;
         if (level.getBlockEntity(pos.above()) != null || level.getBlockState(pos.above()).is(Blocks.CRAFTING_TABLE)) return false;
         boolean exposed = false;
         for (Direction direction : Direction.values()) {
