@@ -60,7 +60,7 @@ final class CompanionMoves {
             Direction e = d.getClockWise();
             if (!diagonalSides(from, sides[d.get2DDataValue()], sides[e.get2DDataValue()])) continue;
             Node to = accept(x + d.getStepX() + e.getStepX(), y, z + d.getStepZ() + e.getStepZ(), up, floor, d, here, floats);
-            if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0) sink.offer(to, cost(from, to));
+            if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0 && (to.y <= y || roomOverDiagonal(from, d, e, to))) sink.offer(to, cost(from, to));
         }
         if (ladder) {
             ladder(from, y + 1, LADDER_UP, sink);
@@ -159,6 +159,21 @@ final class CompanionMoves {
         AABB box = new AABB(fx - half, eval.floorAt(BlockPos.containing(fx, y + 1, fz)) + .001, fz - half, fx + half,
                 mob.getBbHeight() + eval.floorAt(node.x, node.y, node.z) - .002, fz + half);
         return eval.collides(box) ? null : node;
+    }
+
+    /**
+     * A diagonal jump onto a step passes over three columns, not one: the head must clear them all (forest endurance run: past a niche with a
+     * low ceiling the jump ended in the niche, his head under the ceiling, again and again until the watchdog).
+     */
+    private boolean roomOverDiagonal(Node from, Direction d, Direction e, Node to) {
+        if (mob.getBbWidth() >= 1) return true;
+        double half = mob.getBbWidth() / 2, top = mob.getBbHeight() + eval.floorAt(to.x, to.y, to.z) - .002;
+        for (Direction side : new Direction[]{null, d, e}) {
+            int x = from.x + (side == null ? 0 : side.getStepX()), z = from.z + (side == null ? 0 : side.getStepZ());
+            double fx = x + .5, fz = z + .5;
+            if (eval.collides(new AABB(fx - half, eval.floorAt(new BlockPos(x, to.y, z)) + .001, fz - half, fx + half, top, fz + half))) return false;
+        }
+        return true;
     }
 
     /** Down through air to the first cell with a floor: no deeper than he may fall, unless it is water. */

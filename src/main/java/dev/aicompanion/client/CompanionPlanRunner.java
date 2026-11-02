@@ -29,11 +29,11 @@ public final class CompanionPlanRunner {
     /** Steps run for one obtain_item, replans included: twice the longest chain the planner gives (CompanionObtain.MAX_STEPS). */
     public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
-    public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_stone", "store_items", "take_items", "sort_chests",
+    public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
             "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops");
-    private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_stone");
+    private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
-    private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_stone", "mine_ore", "hunt_animals");
+    private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
 
     public interface Port {
         String trace();
@@ -203,7 +203,7 @@ public final class CompanionPlanRunner {
             CompanionDiagnostics.event(port.trace(), "step_result", "step", number, "action", action, "success", result.success(),
                     "continuePlan", verdict.decision() == Decision.CONTINUE, "decision", verdict.decision(), "reason", verdict.reason(),
                     "status", result.status(), "message", result.message(), "progressBefore", before.progress(), "progressAfter", now.progress(),
-                    "completionCheck", List.of("follow", "protect", "wander").contains(action.type()) ? "mode_acknowledgement_only" : "engine_result");
+                    "completionCheck", List.of("follow", "protect", "wander", "enter_portal").contains(action.type()) ? "mode_acknowledgement_only" : "engine_result");
             // A craft refused at once for lack of materials becomes «get it»: "craft N" is N new ones, "get" counts all in the bag.
             if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "craft_item".equals(action.type())) {
                 return port.carried(action.item()).thenCompose(have -> {

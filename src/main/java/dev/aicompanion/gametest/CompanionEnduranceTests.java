@@ -238,7 +238,7 @@ public final class CompanionEnduranceTests {
         h.getLevel().setBlock(buried.above(),Blocks.BEDROCK.defaultBlockState(),2);
         var selector=net.minecraft.world.entity.Mob.class.getDeclaredField("goalSelector");selector.setAccessible(true);
         var goals=(net.minecraft.world.entity.ai.goal.GoalSelector)selector.get(a.oleg);
-        Object dirt=goals.getAvailableGoals().stream().map(net.minecraft.world.entity.ai.goal.WrappedGoal::getGoal).filter(g->g.getClass().getSimpleName().equals("GatherDirtGoal")).findFirst().orElseThrow();
+        Object dirt=goals.getAvailableGoals().stream().map(net.minecraft.world.entity.ai.goal.WrappedGoal::getGoal).filter(g->g.getClass().getSimpleName().equals("CompanionDigGoal")).findFirst().orElseThrow();
         var approach=dirt.getClass().getDeclaredMethod("findDirtApproachPath",BlockPos.class);approach.setAccessible(true);
         h.assertTrue(approach.invoke(dirt,buried)==null,"Dirt route leads above an enclosed block without a visible/collectable face");h.succeed();
     }

@@ -61,7 +61,7 @@ public final class CompanionPlaybooks {
         List<Milestone> list = gear(Tier.DIAMOND);
         list.add(CompanionMilestones.food(16));
         list.add(CompanionMilestones.stock(Items.COBBLESTONE, 64, "64 булыжника для мостов и столбов", true));
-        list.add(CompanionMilestones.stock(Items.FLINT_AND_STEEL, 1, "огниво", false));
+        list.add(CompanionMilestones.stock(Items.FLINT_AND_STEEL, 1, "огниво", true));
         return list;
     }
 

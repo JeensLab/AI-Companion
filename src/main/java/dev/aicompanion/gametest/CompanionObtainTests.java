@@ -16,6 +16,8 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -49,8 +51,53 @@ public final class CompanionObtainTests {
         var pearl = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:ender_pearl", 1);
         h.assertTrue(pearl.refused() && pearl.steps().isEmpty(), "Ender pearl: " + pearl);
         var glass = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:glass", 1);
-        h.assertTrue(glass.refused(), "Glass needs sand, which he cannot dig yet: " + glass);
+        int sand = indexOf(glass, "gather_loose", "minecraft:sand"), melt = indexOf(glass, "smelt_items", "minecraft:glass");
+        h.assertTrue(!glass.refused() && sand >= 0 && melt > sand, "Glass is dug sand, then smelted: " + glass);
         h.succeed();
+    }
+
+    /** Plan only: a flint and steel from an empty bag is iron ore, the furnace, flint dug out of gravel, then the craft. */
+    @GameTest(template = "empty")
+    public static void flintAndSteelIsPlannedFromOreAndGravel(GameTestHelper h) {
+        var plan = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:flint_and_steel", 1);
+        int ore = indexOf(plan, "mine_ore", "minecraft:iron_ore"), ingot = indexOf(plan, "smelt_items", "minecraft:iron_ingot");
+        int flint = indexOf(plan, "gather_loose", "minecraft:flint"), craft = indexOf(plan, "craft_item", "minecraft:flint_and_steel");
+        h.assertTrue(!plan.refused() && ore >= 0 && ingot > ore && flint >= 0 && craft > flint && craft > ingot && craft == plan.steps().size() - 1, "Flint and steel: " + plan);
+        h.assertTrue(plan.steps().get(flint).count() == 1, "One flint for one flint and steel: " + plan);
+        var many = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:flint", 20);
+        h.assertTrue(!many.refused() && many.steps().stream().allMatch(step -> step.type().equals("gather_loose") && step.item().equals("minecraft:flint") && step.count() <= 8)
+                && many.steps().stream().mapToInt(CompanionObtain.Step::count).sum() == 20, "Twenty flint come in steps of at most eight: " + many);
+        h.succeed();
+    }
+
+    /**
+     * A real flint and steel: the ingot is in the bag, the flint is dug out of a gravel patch, the craft follows. A gravel block dug is
+     * one gravel or one flint item, and the craft eats one flint, so blocks plus items plus the flint inside the steel stay constant.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 4000)
+    public static void flintAndSteelFromAnIngotAndGravel(GameTestHelper h) {
+        ground(h);
+        for (int x = 18; x <= 22; x++) for (int z = 19; z <= 23; z++) h.setBlock(new BlockPos(x, GROUND, z), Blocks.GRAVEL);
+        CompanionEntity companion = spawn(h);
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT));
+        ItemStack shovel = new ItemStack(Items.STONE_SHOVEL);
+        shovel.enchant(h.getLevel().registryAccess().holderOrThrow(Enchantments.FORTUNE), 3);
+        companion.setItem(1, shovel);
+        int units = gravelUnits(h, companion);
+        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:flint_and_steel\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.FLINT_AND_STEEL) == 1 && count(companion, Items.IRON_INGOT) == 0 && !future.join().report().contains("План остановлен"), future.join().report());
+            h.assertTrue(gravelUnits(h, companion) == units, "Gravel units " + units + " became " + gravelUnits(h, companion) + ": " + companion.getStoredItemsSummary());
+        });
+    }
+
+    private static int gravelUnits(GameTestHelper h, CompanionEntity companion) {
+        int total = count(companion, Items.GRAVEL) + count(companion, Items.FLINT) + count(companion, Items.FLINT_AND_STEEL);
+        for (int x = 0; x < 32; x++) for (int y = 1; y <= GROUND + 6; y++) for (int z = 0; z < 32; z++) if (h.getBlockState(new BlockPos(x, y, z)).is(Blocks.GRAVEL)) total++;
+        for (ItemEntity item : h.getLevel().getEntitiesOfClass(ItemEntity.class, h.getBounds().inflate(3), found -> found.getItem().is(Items.GRAVEL) || found.getItem().is(Items.FLINT)))
+            total += item.getItem().getCount();
+        return total + h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.FallingBlockEntity.class, h.getBounds().inflate(3)).size();
     }
 
     /** Torches from an empty bag: wood, a pickaxe for the coal, the coal, sticks, the torches — all real. */
@@ -214,6 +261,10 @@ public final class CompanionObtainTests {
         });
     }
 
+    private static int indexOf(CompanionObtain.Plan plan, String type, String item) {
+        for (int i = 0; i < plan.steps().size(); i++) if (plan.steps().get(i).type().equals(type) && plan.steps().get(i).item().equals(item)) return i;
+        return -1;
+    }
     private static List<String> types(CompanionObtain.Plan plan) { return plan.steps().stream().map(CompanionObtain.Step::type).toList(); }
 
     private static java.util.concurrent.CompletableFuture<CompanionPlanRunner.Outcome> run(GameTestHelper h, CompanionEntity companion, String json) {

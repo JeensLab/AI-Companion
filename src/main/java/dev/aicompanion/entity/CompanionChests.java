@@ -88,15 +88,15 @@ final class CompanionChests {
         if (w.newChests >= w.requestedCount) { finishPlacedChests(); return; }
         boolean hasItem = w.items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem) && !stack.isEmpty());
         if (!hasItem) {
-            if (!CompanionWork.supportsCraft(w.requestedItem, 1)) { w.finish(false, "Нет блока " + w.requestedItem + " в сумке, его подготовку пока не умею."); return; }
+            if (!CompanionCraftCosts.supportsCraft(w.requestedItem, 1)) { w.finish(false, "Нет блока " + w.requestedItem + " в сумке, его подготовку пока не умею."); return; }
             if (w.crafting.needsWorkbench(w.requestedItem) && w.crafting.approachCraftingTable()) return;
             if (!w.items.moveHandMaterialsToBag()) return;
             CompanionActionResult crafted = w.owner.craftFromBag(w.requestedItem, 1);
             if (!crafted.success()) {
                 if (crafted.message().contains("места") || crafted.message().contains("безопасное место"))
                     w.finish(false, "Поставил " + w.newChests + " из " + w.requestedCount + ". " + crafted.message());
-                else if (CompanionWork.stoneCost(w.requestedItem) > w.items.countStoneMaterials()) {
-                    w.wantedStone = CompanionWork.stoneCost(w.requestedItem) - w.items.countStoneMaterials();
+                else if (CompanionCraftCosts.stoneCost(w.requestedItem) > w.items.countStoneMaterials()) {
+                    w.wantedStone = CompanionCraftCosts.stoneCost(w.requestedItem) - w.items.countStoneMaterials();
                     w.stoneCollectedBefore = w.owner.collectedStone(); w.gathered = 0; w.phase = CompanionWork.Phase.PICKAXE;
                     w.stoneSearch = null; w.stoneCandidates = null; w.rejected.clear(); w.dryAnchor = null; w.resetTarget();
                 } else w.crafting.requestWood(CompanionWork.Phase.STORE);

@@ -102,6 +102,12 @@ public final class CompanionMemoryFlow {
         t.server().execute(() -> {
             if (!t.server().isRunning() || gen != OpenRouterClient.generation()) return;
             CompanionBonds.get(t.server()).recordTalk(t.owner(), fromPlayer, text);
+            // A line of his own turns his eyes to the player while he says it (CompanionGaze, owner 29.10).
+            if (!fromPlayer) {
+                var player = t.server().getPlayerList().getPlayer(t.owner());
+                var companion = player == null ? null : dev.aicompanion.entity.CompanionEvents.getOwnedCompanion(player);
+                if (companion != null) companion.gazeTalk();
+            }
         });
         return true;
     }

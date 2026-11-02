@@ -63,7 +63,7 @@ public final class CompanionPlanRequirements {
                 && decoded.actions().stream().anyMatch(step -> step.type().equals("craft_item"));
         if (!make) return decoded;
         boolean gatherAsked = text.matches("(?sU).*(добуд|добыт|добыв|накопа|наруб|собер|собрат|выкопа|копа|натаска|принес).*")
-                || text.matches("(?sU).*\\d+\\s*(камн|бревен|бревн|блок|дерев|земл).*");
+                || text.matches("(?sU).*\\d+\\s*(камн|бревен|бревн|блок|дерев|земл|песк|грави|кремн).*");
         boolean storeAsked = text.matches("(?sU).*(сундук|сложи|сложить|убери|положи).*");
         boolean both = text.matches("(?sU).*(себе и мне|мне и себе|нам обоим|нам двоим|для нас обоих|и мне и себе|и себе и мне).*");
         boolean forMe = !both && !text.contains("себе") && text.matches("(?sU).*\\b(мне|для меня)\\b.*");
@@ -157,7 +157,7 @@ public final class CompanionPlanRequirements {
      * the most one order allows, no number for ore is four. Only a plan with one kind of gathering is touched.
      */
     static CompanionReply spokenQuantity(String text, CompanionReply decoded) {
-        var gathering = decoded.actions().stream().filter(step -> List.of("mine_ore", "gather_stone", "gather_wood", "hunt_animals").contains(step.type())).toList();
+        var gathering = decoded.actions().stream().filter(step -> List.of("mine_ore", "gather_stone", "gather_loose", "gather_wood", "hunt_animals").contains(step.type())).toList();
         if (gathering.isEmpty() || gathering.stream().map(step -> step.type() + "|" + step.item()).distinct().count() != 1) return decoded;
         boolean otherCounts = decoded.actions().stream().anyMatch(step -> !gathering.contains(step) && !COUNTLESS.contains(step.type())
                 && !(step.type().equals("smelt_items") && step.count() == PlannedAction.ALL_CARRIED));
@@ -167,18 +167,20 @@ public final class CompanionPlanRequirements {
         int asked = gathering.stream().mapToInt(PlannedAction::count).sum();
         var said = CompanionNumbers.parse(text);
         boolean game = type.equals("hunt_animals");
+        boolean stoneLike = type.equals("gather_stone") || type.equals("gather_loose");
         boolean foodRun = game && said.count() == 0
                 && text.matches("(?sU).*(охот|мяс|ед[уы]|пожар|приготов).*");
-        int most = type.equals("mine_ore") ? 3 * dev.aicompanion.entity.CompanionWork.MAX_ORE : game ? dev.aicompanion.entity.CompanionWork.MAX_GAME : 64;
+        boolean flint = CompanionPlanCodec.FLINT.equals(first.item());
+        int most = type.equals("mine_ore") ? 3 * dev.aicompanion.entity.CompanionWork.MAX_ORE : game ? dev.aicompanion.entity.CompanionWork.MAX_GAME : flint ? 2 * CompanionPlanCodec.FLINT_STEP : 64;
         int total = said.count() > 0 ? said.count()
-                : said.count() == CompanionNumbers.AS_MANY ? (type.equals("mine_ore") || game ? (game ? dev.aicompanion.entity.CompanionWork.MAX_GAME : dev.aicompanion.entity.CompanionWork.MAX_ORE) : type.equals("gather_stone") ? 64 : 32)
-                : said.count() == CompanionNumbers.MORE ? (type.equals("mine_ore") ? 8 : game ? 6 : type.equals("gather_stone") ? 32 : 16)
+                : said.count() == CompanionNumbers.AS_MANY ? (type.equals("mine_ore") || game ? (game ? dev.aicompanion.entity.CompanionWork.MAX_GAME : dev.aicompanion.entity.CompanionWork.MAX_ORE) : stoneLike ? 64 : 32)
+                : said.count() == CompanionNumbers.MORE ? (type.equals("mine_ore") ? 8 : game ? 6 : stoneLike ? 32 : 16)
                 : said.count() == 0 && type.equals("mine_ore") ? DEFAULT_ORE
                 : said.count() == 0 && game && text.matches("(?sU).*(охот|мяс|ед[уы]|пожар|приготов).*") ? FOOD_RUN : asked;
         total = Math.max(1, Math.min(most, total));
         if (total == asked && !foodRun && !(game && said.count() > 0 && dev.aicompanion.entity.CompanionGame.foodRun(first.item()))) return decoded;
         int chunk = type.equals("mine_ore") ? dev.aicompanion.entity.CompanionWork.MAX_ORE : game ? dev.aicompanion.entity.CompanionWork.MAX_GAME
-                : type.equals("gather_wood") ? CompanionPlanCodec.WOOD_STEP : 64;
+                : type.equals("gather_wood") ? CompanionPlanCodec.WOOD_STEP : flint ? CompanionPlanCodec.FLINT_STEP : 64;
         List<PlannedAction> result = new ArrayList<>();
         boolean placed = false;
         for (PlannedAction step : decoded.actions()) {

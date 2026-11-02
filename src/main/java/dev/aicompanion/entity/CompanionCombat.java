@@ -5,10 +5,12 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.player.Player;
 
 import java.util.EnumSet;
@@ -27,6 +29,9 @@ final class CompanionCombat {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
         private int nextSwing;
+        /** At range the bow has him, when he has one (CompanionArchery). */
+        @Override public boolean canUse() { return !c.archery.wants(c.getTarget()) && super.canUse(); }
+        @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
@@ -56,7 +61,7 @@ final class CompanionCombat {
             timestamp = player.getLastHurtByMobTimestamp();
             attacker = player.getLastHurtByMob();
             return timestamp != handledTimestamp && player.tickCount - timestamp < 100
-                    && attacker instanceof Monster && c.combat.fairTarget(attacker, true) && c.distanceToSqr(attacker) <= 18 * 18 && c.hasLineOfSight(attacker);
+                    && hostile(attacker) && c.combat.fairTarget(attacker, true) && c.distanceToSqr(attacker) <= 18 * 18 && c.hasLineOfSight(attacker);
         }
         @Override public void start() {
             handledTimestamp = timestamp; c.setTarget(attacker); c.selectWeaponForCombat();
@@ -68,6 +73,11 @@ final class CompanionCombat {
                     && c.distanceToSqr(player) <= 24 * 24 && attacker.distanceToSqr(player) <= 18 * 18;
         }
         @Override public void stop() { if (c.getTarget() == attacker) c.setTarget(null); attacker = null; }
+    }
+
+    /** A hoglin attacks on sight like any monster, but the game's classes make it an Animal. */
+    static boolean hostile(net.minecraft.world.entity.Entity entity) {
+        return entity instanceof Monster || entity instanceof Hoglin;
     }
 
     /**
@@ -96,18 +106,27 @@ final class CompanionCombat {
      */
     boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
-                || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
+                || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
         if (owner == null || owner.level() != c.level() || owner.isSpectator() || c.distanceToSqr(owner) > GUARD_RANGE * GUARD_RANGE) return false;
         return monster.distanceToSqr(owner) <= 6 * 6 || monster.distanceToSqr(c) <= 4 * 4
                 || (monster.getTarget() == owner || monster.getTarget() == c) && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
     }
+    /** A flier near the player, while Oleg is near him too: no Monster, so comesForOwner does not see it. */
+    boolean fliesAtOwner(net.minecraft.world.entity.LivingEntity target) {
+        if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.work.isHunting()
+                || !(target instanceof net.minecraft.world.entity.monster.Enemy) || !fairTarget(target, true)) return false;
+        ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
+        return owner != null && owner.level() == c.level() && !owner.isSpectator() && c.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE
+                && target.distanceToSqr(owner) <= FLIER_RANGE * FLIER_RANGE;
+    }
+
     /** How far from the player Oleg still steps in for him, and how far a fight may take him. */
-    private static final int GUARD_RANGE = 16;
+    private static final int GUARD_RANGE = 16, FLIER_RANGE = 32;
 
     boolean isThreateningOwner(net.minecraft.world.entity.LivingEntity target) {
-        if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || !(target instanceof Monster monster)) return false;
+        if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || !hostile(target) || !(target instanceof Mob monster)) return false;
         if (c.work.isHunting()) return c.work.isHuntTarget(target.getUUID());
         if (!fairTarget(monster, provokes(monster))) return false;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);

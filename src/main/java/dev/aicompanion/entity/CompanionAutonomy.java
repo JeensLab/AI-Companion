@@ -165,10 +165,11 @@ public final class CompanionAutonomy {
     void playerOrder(String action) {
         idleTicks = 0;
         if ("verify_item".equals(action) || "autonomy".equals(action)) return;
+        owner.portals.stop();
         if (deed != null) drop("player_order:" + action);
         boolean wasHeld = held;
         held = switch (action) {
-            case "stop", "wait", "follow", "come", "protect", "wander" -> true;
+            case "stop", "wait", "follow", "come", "walk_heading", "protect", "wander", "enter_portal" -> true;
             default -> false;
         };
         halted = stopped = held && ("stop".equals(action) || "wait".equals(action));
@@ -272,7 +273,7 @@ public final class CompanionAutonomy {
         boolean iron = available(Deed.IRON, now) && reserve(stack -> stack.is(Items.RAW_IRON) || stack.is(Items.IRON_INGOT)) < IRON_RESERVE && oreNear(level, CompanionOre.Kind.IRON);
         if (!hasPickaxe() && (stone || coal || iron) && available(Deed.PICK, now)) return Deed.PICK;
         if (available(Deed.COOK, now) && rawMeat() > 0 && !owner.batches().smelting(level, CompanionAutonomy::isMeat)
-                && (stone() >= CompanionWork.stoneCost("minecraft:furnace") || carries(Items.FURNACE) || ownFurnaceNear(level, center()))) return Deed.COOK;
+                && (stone() >= CompanionCraftCosts.stoneCost("minecraft:furnace") || carries(Items.FURNACE) || ownFurnaceNear(level, center()))) return Deed.COOK;
         if (coal && hasPickaxe() && CompanionTools.count(owner, ItemTags.COALS) < COAL_STOCK) return Deed.COAL;
         if (available(Deed.SMELT_IRON, now) && count(Items.RAW_IRON) > 0 && !owner.batches().smelting(level, item -> item == Items.RAW_IRON)
                 && (stone() >= 8 || carries(Items.FURNACE) || ownFurnaceNear(level, center()))) return Deed.SMELT_IRON;

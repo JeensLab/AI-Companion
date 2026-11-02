@@ -4,6 +4,7 @@ import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.inventory.CompanionMenu;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.SimpleMenuProvider;
@@ -15,6 +16,7 @@ final class CompanionNavigation {
         String[] labels = selected.equals("Инвентарь") ? new String[]{"Задачи", "Чат"}
                 : new String[]{"Задачи", "Чат", "Инвентарь", "Поведение"};
         int tabWidth = (width - (labels.length - 1) * 3) / labels.length;
+        boolean inventoryReady = inventoryReady();
         for (int i = 0; i < labels.length; i++) {
             String label = labels[i];
             Button button = Button.builder(Component.literal(label), b -> {
@@ -25,9 +27,25 @@ final class CompanionNavigation {
                     case "Поведение" -> show(new CompanionBehaviorScreen(parent instanceof CompanionInventoryScreen ? new CompanionTasksScreen() : parent));
                 }
             }).bounds(x + i * (tabWidth + 3), y, tabWidth, 20).build();
-            button.active = !label.equals(selected);
+            button.active = !label.equals(selected) && (!label.equals("Инвентарь") || inventoryReady);
+            // A disabled button explains itself on hover instead of a click that silently does nothing.
+            if (label.equals("Инвентарь") && !inventoryReady) {
+                button.setTooltip(Tooltip.create(Component.literal("Подойди к Олегу ближе чем на 8 блоков")));
+            }
             add.accept(button);
         }
+    }
+
+    /**
+     * The inventory opens only when the companion is loaded and no farther than eight blocks — his own stillValid rule,
+     * which the server applies after the click. Asking here first turns a silent refusal into a disabled button.
+     */
+    private static boolean inventoryReady() {
+        var mc = Minecraft.getInstance();
+        if (mc.getSingleplayerServer() == null) return true; // multiplayer: the click itself explains why
+        if (mc.player == null || mc.level == null) return false;
+        var companion = CompanionVoiceAudio.speaker();
+        return companion != null && mc.player.distanceToSqr(companion) < 64.0D;
     }
     static void show(Screen screen) {
         var mc = Minecraft.getInstance();

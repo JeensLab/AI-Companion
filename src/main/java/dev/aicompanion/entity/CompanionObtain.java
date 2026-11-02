@@ -25,7 +25,8 @@ import java.util.Set;
  * one by one; nothing is handed out, everything is mined, hunted, smelted and crafted for real.
  *
  * Wood is one family (any logs, any planks: the recipes take them all), so is crafting stone; planks and sticks are made by the
- * craft that needs them. What none of the skills can get (sand, string, ender pearls…) is said before anything starts.
+ * craft that needs them. Sand, gravel and flint are dug (flint out of gravel), so glass and a flint and steel follow from their
+ * recipes. What none of the skills can get (string, ender pearls…) is said before anything starts.
  */
 public final class CompanionObtain {
     /** One step of the chain: an allowlisted action, its item and count. */
@@ -37,6 +38,8 @@ public final class CompanionObtain {
 
     static final int MAX_STEPS = 16;
     private static final int MAX_DEPTH = 6;
+    private static final String FLINT = "minecraft:flint";
+    private static final int FLINT_STEP = 8;
     private static final String LOGS = "#logs", PLANKS = "#planks", STONE = "#stone";
 
     private final ServerLevel level;
@@ -86,6 +89,8 @@ public final class CompanionObtain {
             case PLANKS -> { return need(LOGS, ceil(count, 4), depth + 1); }               // the craft that needs them makes them
             case "minecraft:stick" -> { return need(PLANKS, ceil(count, 4) * 2, depth + 1); }
             case "minecraft:dirt" -> { return add("gather_dirt", "", count); }
+            case "minecraft:sand", "minecraft:red_sand", "minecraft:gravel" -> { return addSplit("gather_loose", key, count, 64); }
+            case FLINT -> { return addSplit("gather_loose", key, count, FLINT_STEP); }   // gravel dug (and re-placed) until this much flint drops
             default -> { }
         }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
@@ -204,7 +209,7 @@ public final class CompanionObtain {
         for (Step step : steps) {
             Step last = result.isEmpty() ? null : result.getLast();
             boolean gather = step.type().startsWith("gather_");
-            if (last != null && gather && last.type().equals(step.type()) && last.item().equals(step.item()) && last.count() + step.count() <= 64)
+            if (last != null && gather && last.type().equals(step.type()) && last.item().equals(step.item()) && last.count() + step.count() <= (step.item().equals(FLINT) ? FLINT_STEP : 64))
                 result.set(result.size() - 1, new Step(step.type(), step.item(), last.count() + step.count()));
             else result.add(step);
         }

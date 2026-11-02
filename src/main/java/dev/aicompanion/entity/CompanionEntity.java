@@ -13,6 +13,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -24,7 +25,6 @@ import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -36,6 +36,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
@@ -87,6 +88,17 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
     static final double LOG_INTERACTION_RANGE_SQR = 16.0D;
+    /** How long the eyes stay on the player after he says something (CompanionGaze): three seconds. */
+    static final int GAZE_TALK_TICKS = 60;
+    /** How far the player's own gaze reaches him, and the cosine of the cone that counts as looking at him. */
+    static final double GAZE_SEEN_COS = 0.94D;
+    /** How close the player's body must be for the touch to count: the two bodies touch at about a block. */
+    static final double GAZE_TOUCH_RANGE_SQR = 1.5D * 1.5D;
+    /** How far away the player's own gaze still reaches him: ten blocks, no eye contact across the meadow (owner 29.10). */
+    static final double GAZE_SEEN_RANGE_SQR = 10.0D * 10.0D;
+    /** How fast the head turns to the player when he speaks to him. */
+    static final float GAZE_TURN_YAW = 30.0F;
+    static final float GAZE_TURN_PITCH = 30.0F;
     UUID ownerId;
     boolean following = true;
     boolean protecting;
@@ -113,6 +125,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionPlacement placement = new CompanionPlacement(this);
     private final CompanionSwimming swimming = new CompanionSwimming(this);
     final CompanionCombat combat = new CompanionCombat(this);
+    final CompanionArchery archery = new CompanionArchery(this);
+    final CompanionPortals portals = new CompanionPortals(this);
     private final CompanionEating meals = new CompanionEating(this);
     private final CompanionBag bag = new CompanionBag(this);
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
@@ -147,9 +161,35 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void syncAutonomy() { if (!level().isClientSide) entityData.set(DATA_AUTONOMY, autonomy.enabled()); }
     /** A rare autonomous notice, shown and voiced by the client. Routine progress stays in workStatus and the journal. */
     void autonomySay(String text) { autonomySay(text, true); }
+    /** Ticks left of the eye contact he keeps while he says something (CompanionGaze). */
+    private int gazeTalkTicks;
+
+    /** He holds the player's eyes while he speaks; a bad bond gives none (the owner asked for this, 29.10). */
+    public void gazeTalk() { if (!level().isClientSide) gazeTalkTicks = GAZE_TALK_TICKS; }
+
+    /** The owner's bond score, or the base one when nobody is bound yet. */
+    public int gazeBondScore() {
+        ServerPlayer owner = getOwnerPlayer();
+        if (owner == null || !(level() instanceof ServerLevel serverLevel)) return CompanionBond.BASE;
+        CompanionBonds bonds = CompanionBonds.get(serverLevel.getServer());
+        return bonds.knows(owner.getUUID()) ? bonds.bond(owner.getUUID()).score() : CompanionBond.BASE;
+    }
+
+    /** Whether his own work claims the eyes: the same busy set CompanionAutonomy.notNow uses for its deeds, plus a fight. */
+    public boolean gazeBusy() {
+        return getTarget() != null || hasActiveWorkOrder() || hasPendingLoot() || isSelfRescuing() || !canCollectItems();
+    }
+
+    /** Whether his idle gaze may settle on the player at all. */
+    public boolean gazeLooksAtPlayer() { return CompanionGaze.looksAtPlayer(gazeBondScore()); }
+
+    /** Whether he meets the player's eyes when spoken to or touched: an offended companion does not. */
+    public boolean gazeMeetsEyes() { return CompanionGaze.meetsEyes(gazeBondScore()); }
+
     /** Not as the work status where it would replace the result of the last order (the status then keeps it, like CompanionRecovery). */
     void autonomySay(String text, boolean asStatus) {
         entityData.set(DATA_SAY, text); entityData.set(DATA_SAY_SERIAL, entityData.get(DATA_SAY_SERIAL) + 1); entityData.set(DATA_SAY_TIME, level().getGameTime());
+        gazeTalk();
         if (asStatus) workStatus(text);
     }
     public String autonomyLine() { return entityData.get(DATA_SAY); }
@@ -178,7 +218,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String getActivityForAi() {
         if (level().isClientSide) return entityData.get(DATA_ACTIVITY);
         return (recovery.active() ? "пытается выбраться" : temporaryPillar.isRecovering() ? "спускается с опоры"
-                : work.isActive() ? work.currentDescription() : gatheringLogs ? "собирает дерево" : gatheringDirt ? "собирает землю"
+                : work.isActive() ? work.currentDescription() : gatheringLogs ? "собирает дерево" : gatheringDirt ? "собирает " + gathering.ground.accusative()
                 : protecting ? "режим охраны" : following ? "режим следования" : roaming ? "гуляет" : "ожидает")
                 + "; позиция=" + blockPosition().toShortString() + "; за последнюю секунду=" + (activityMoved ? "перемещался" : "стоял")
                 + "; маршрут=" + (getNavigation().isDone() ? "сейчас не выполняется" : "выполняется")
@@ -195,7 +235,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (recovery.active() || temporaryPillar.isRecovering()) return "Выбирается в безопасное место";
         if (work.isActive()) return work.taskDescription();
         return gatheringLogs ? "Собирает дерево · осталось " + logsRemaining
-                : gatheringDirt ? "Собирает землю · осталось " + logsRemaining
+                : gatheringDirt ? "Собирает " + gathering.ground.accusative() + " · осталось " + logsRemaining
                 : protecting ? "Охраняет тебя" : roaming ? "Осматривается" : following ? "Следует за тобой" : "Ожидает";
     }
     public void rememberPlaced(BlockPos pos) { places.remember(pos, true); refreshPlaces(); }
@@ -281,14 +321,20 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
+        this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
+        this.goalSelector.addGoal(3, new CompanionPortals.FollowThroughPortalGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
-        this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherDirtGoal(this));
+        this.goalSelector.addGoal(3, new CompanionDigGoal(this));
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
-        this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F));
+        this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F) {
+            // The owner asked (29.10): the eyes are on him while the bond is warm, and a bad one takes the gaze away (CompanionGaze).
+            @Override public boolean canUse() { return gazeLooksAtPlayer() && super.canUse(); }
+            @Override public boolean canContinueToUse() { return gazeLooksAtPlayer() && super.canContinueToUse(); }
+        });
         this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.65D) {
             @Override public boolean canUse() { return following && !protecting && !autonomy.staysAtWork() && inventoryViewers == 0 && super.canUse(); }
             @Override public boolean canContinueToUse() { return !autonomy.staysAtWork() && super.canContinueToUse(); }
@@ -304,8 +350,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
-        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Monster.class, 10,
+        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
                 true, false, target -> protecting ? combat.isThreateningOwner(target) : combat.comesForOwner(target)));
+        // Who flies is out of the blade's reach: only with a bow (ghasts, phantoms).
+        this.targetSelector.addGoal(2, new CompanionArchery.FlierTargetGoal(this));
     }
 
     @Override
@@ -563,6 +611,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             case "gather_wood" -> loot.collectedLogs();
             case "gather_stone" -> loot.collectedStone();
             case "gather_dirt" -> loot.collectedSoil();
+            case "gather_loose" -> loot.collectedLoose();
             default -> -1;
         };
     }
@@ -639,12 +688,102 @@ public final class CompanionEntity extends PathfinderMob implements Container {
      * 0.2158 blocks a tick, but the sprint's +30% would make 0.365 where a player's is 0.2806. The square root of 1.3 gives it.
      */
     @Override public void setSpeed(float speed) { super.setSpeed(isSprinting() ? speed / 1.1402F : speed); }
+    /** How hard he is pushed out of blocks sideways, and how high he jumps when the only way out is up. */
+    private static final double STUCK_PUSH = 0.2D;
+
+    /** How long the push is tried before he is simply put down at the nearest free spot. */
+    private static final int STUCK_PATIENCE = 20;
+    /** How far that spot is looked for, nearest first. */
+    private static final double[] STUCK_SEARCH = {0.5D, 1.0D, 1.5D, 2.0D, 3.0D};
+    /** Ticks he has been inside blocks in a row. */
+    private int stuckTicks;
+
+    /**
+     * A body inside blocks — a wall, a tree, a hole a block fell into — gets out instead of standing there and
+     * suffocating (the owner asked for this, 31.10). A dropped item only gets a nudge along one axis, which leaves a
+     * tall body's feet stuck, so here the way out is looked for over the whole box, and upwards he jumps.
+     */
+    private void pushOutOfBlocks() {
+        if (isPassenger() || !stuckInBlocks()) {
+            stuckTicks = 0;
+            return;
+        }
+        // The push works for most cases; when it does not, a few seconds of suffocating is enough to put him down elsewhere.
+        if (++stuckTicks > STUCK_PATIENCE) {
+            placeAtFreeSpot();
+            return;
+        }
+        var box = getBoundingBox();
+        var move = getDeltaMovement();
+        if (freeAt(box.move(0.0D, 1.0D, 0.0D))) {
+            // One jump, not a fresh boost every tick: the upward speed is only replaced while he is not already rising.
+            if (move.y <= 0.01D) setDeltaMovement(move.x * 0.75D, jumpPower(), move.z * 0.75D);
+            return;
+        }
+        // Half his width plus half a block: a smaller step would leave the box inside the block he is in.
+        double step = getBbWidth() / 2.0D + 0.5D;
+        if (freeAt(box.move(step, 0.0D, 0.0D))) setDeltaMovement(STUCK_PUSH, move.y, move.z * 0.75D);
+        else if (freeAt(box.move(-step, 0.0D, 0.0D))) setDeltaMovement(-STUCK_PUSH, move.y, move.z * 0.75D);
+        else if (freeAt(box.move(0.0D, 0.0D, step))) setDeltaMovement(move.x * 0.75D, move.y, STUCK_PUSH);
+        else if (freeAt(box.move(0.0D, 0.0D, -step))) setDeltaMovement(move.x * 0.75D, move.y, -STUCK_PUSH);
+        // Nowhere free on any side: the dropped-item nudge, which still works its way out over a few ticks.
+        else moveTowardsClosestSpace(getX(), (box.minY + box.maxY) / 2.0D, getZ());
+    }
+
+    /**
+     * The nearest place he fits, nearest first, three blocks at most (the owner allowed this short step, 01.11; no farther: stuck
+     * in a mine he does not land beside the player). A last resort for the walls a push cannot get him out of.
+     */
+    private void placeAtFreeSpot() {
+        var box = getBoundingBox();
+        for (double distance : STUCK_SEARCH) {
+            for (var offset : new Vec3[]{new Vec3(distance, 0.0D, 0.0D), new Vec3(-distance, 0.0D, 0.0D),
+                    new Vec3(0.0D, 0.0D, distance), new Vec3(0.0D, 0.0D, -distance)}) {
+                var target = box.move(offset);
+                if (!freeAt(target)) continue;
+                putAt(target);
+                return;
+            }
+        }
+        // Upwards only onto something solid, or gravity drops him back into the same block.
+        for (double height : new double[]{0.5D, 1.0D, 2.0D}) {
+            var target = box.move(0.0D, height, 0.0D);
+            if (!freeAt(target) || !supported(target)) continue;
+            putAt(target);
+            return;
+        }
+    }
+
+    private void putAt(AABB target) {
+        teleportTo(target.minX + getBbWidth() / 2.0D, target.minY, target.minZ + getBbWidth() / 2.0D);
+        stuckTicks = 0;
+    }
+
+    /** Solid ground under the spot, so he stays there instead of falling back into the block. */
+    private boolean supported(AABB box) {
+        var below = BlockPos.containing(box.getCenter().x, box.minY - 0.1D, box.getCenter().z);
+        return !level().getBlockState(below).getCollisionShape(level(), below).isEmpty();
+    }
+
+    /** Inside blocks, his own walk would fight the way out, so travel drops it until he is free. */
+    private boolean stuckInBlocks() {
+        return !level().noCollision(this, getBoundingBox().deflate(1.0E-7));
+    }
+
+    /** A place he can be: no block in the way, and not standing over lava. */
+    private boolean freeAt(AABB box) {
+        if (!level().noCollision(this, box)) return false;
+        var below = BlockPos.containing(box.getCenter().x, box.minY - 0.1D, box.getCenter().z);
+        return !level().getFluidState(below).is(FluidTags.LAVA);
+    }
+
     /**
      * In the water a mob's stroke is its walking speed (0.3), a player's the whole push of the key (0.98): in water to the knee,
      * where no bobbing helps, he waded a block in two seconds and fell behind the player swimming to the island (marathon
      * 23.10, «берег»). Like a player: the push of the key, as far as he means to go at a walk.
      */
     @Override public void travel(Vec3 input) {
+        if (stuckInBlocks()) input = new Vec3(0.0D, input.y, 0.0D);
         if (isInWater() && !isInLava() && (input.x != 0 || input.z != 0)) {
             double scale = .98 / getAttributeBaseValue(Attributes.MOVEMENT_SPEED), horizontal = Math.hypot(input.x, input.z) * scale;
             if (horizontal > .98) scale *= .98 / horizontal;
@@ -663,6 +802,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         swimming.stroke();
         swimming.climbOutOfWater();
+        pushOutOfBlocks();
         meals.tickEating();
         loot.tickNearby();
         recovery.observe();
@@ -670,7 +810,36 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         social.updateExpression();
         social.tick();
         lighting.tick();
+        if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
         goals.tick();
+        // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
+        // (CompanionGaze, owner 29.10). Work and hunting keep the eyes entirely: he does not turn even to talk (owner 31.10).
+        if (gazeTalkTicks > 0) {
+            gazeTalkTicks--;
+            var spokenTo = getOwnerPlayer();
+            // A body that touches him is answered even while he works; a fight keeps its target (owner 31.10).
+            boolean touched = spokenTo != null && getTarget() == null && distanceToSqr(spokenTo) < GAZE_TOUCH_RANGE_SQR;
+            if (spokenTo != null && (touched || !gazeBusy()) && distanceToSqr(spokenTo) <= GAZE_SEEN_RANGE_SQR) {
+                if (gazeMeetsEyes()) getLookControl().setLookAt(spokenTo, GAZE_TURN_YAW, GAZE_TURN_PITCH);
+                else {
+                    var ground = CompanionGaze.groundAhead(this);
+                    getLookControl().setLookAt(ground.x, ground.y, ground.z);
+                }
+            }
+        }
+        // The player looks at him or touches him: he looks back while those eyes are on him, but never while he works
+        // (CompanionGaze, owner 29.10).
+        var lookingAtMe = getOwnerPlayer();
+        if (lookingAtMe != null && !level().isClientSide && gazeMeetsEyes()) {
+            // A body that touches his own counts as being addressed even in the middle of work (the owner asked for this, 31.10).
+            if (distanceToSqr(lookingAtMe) < GAZE_TOUCH_RANGE_SQR) gazeTalk();
+            // The gaze of the player only counts while his own work does not hold his eyes.
+            else if (!gazeBusy() && distanceToSqr(lookingAtMe) < GAZE_SEEN_RANGE_SQR && lookingAtMe.hasLineOfSight(this)) {
+                var sight = lookingAtMe.getViewVector(1.0F);
+                var toMe = new Vec3(getX() - lookingAtMe.getX(), getEyeY() - lookingAtMe.getEyeY(), getZ() - lookingAtMe.getZ()).normalize();
+                if (sight.dot(toMe) > GAZE_SEEN_COS) gazeTalk();
+            }
+        }
         autonomy.tick();
         diagnostics.tick();
         if (tickCount % 100 == 0) refreshPlaces();
@@ -680,13 +849,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
         // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.isHunting() && getTarget() instanceof Monster ? getOwnerPlayer() : null;
+        var guardedOwner = protecting || !work.isHunting() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && distanceToSqr(guardedOwner) > 16 * 16
                 && getTarget().distanceToSqr(guardedOwner) > 14 * 14) setTarget(null);
+        if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
         if (inventoryViewers == 0 && getOffhandItem().canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK)) {
             var enemy = getTarget();
-            boolean defend = enemy != null && enemy.isAlive() && hasLineOfSight(enemy)
+            boolean defend = enemy != null && enemy.isAlive() && !archery.aiming() && hasLineOfSight(enemy)
                     && (distanceToSqr(enemy) < 9 || enemy instanceof net.minecraft.world.entity.monster.AbstractSkeleton && distanceToSqr(enemy) < 144);
             if (defend && !isUsingItem()) startUsingItem(InteractionHand.OFF_HAND);
             else if (!defend && isUsingItem() && getUsedItemHand() == InteractionHand.OFF_HAND) stopUsingItem();
@@ -724,6 +894,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (hurt) {
             lastHurtTick = tickCount;
             CompanionHappeningEvents.playerHit(this, source);
+            // A touch from the player turns his eyes to him (CompanionGaze, owner 29.10).
+            if (!level().isClientSide && source.getEntity() instanceof ServerPlayer player && player.getUUID().equals(ownerId)) gazeTalk();
             if (!level().isClientSide && amount >= 4) expressions.react(dev.aicompanion.CompanionExpression.WORRIED, level().getGameTime(), 100);
         }
         return hurt;
@@ -752,6 +924,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void startGatheringLogs(int count) { gathering.startGatheringLogs(count); }
     void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count); }
     void startGatheringDirtForWork(int count) { gathering.startGatheringDirtForWork(count); }
+    void startGatheringDirtForWork(int count, CompanionGround ground) { gathering.startGatheringDirtForWork(count, ground); }
     public void stopGathering() { gathering.stopGathering(); }
 
     ServerPlayer getOwnerPlayer() {
@@ -769,6 +942,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void refreshInventorySummary() { bag.refreshInventorySummary(); }
     boolean fairTarget(LivingEntity entity, boolean provoked) { return combat.fairTarget(entity, provoked); }
     boolean provokes(LivingEntity entity) { return combat.provokes(entity); }
+
+    /** The game tells every mob to leave a ghast alone; who may be fought is decided in fairTarget, and a ghast is for the bow. */
+    @Override public boolean canAttackType(net.minecraft.world.entity.EntityType<?> type) { return true; }
 
     /** A last guard: whatever goal picked them, the player and his pets are never a target. */
     @Override public void setTarget(LivingEntity target) {

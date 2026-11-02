@@ -67,7 +67,7 @@ public final class CompanionEvents {
                         companion.goals().playerOrder("follow"); companion.autonomy().playerOrder("follow");
                         CompanionAgenda.playerOrder(player, companion, "follow"); companion.setFollowing(true);
                         companion.teleportTo(player.serverLevel(), at.x, at.y, at.z, Set.of(), companion.getYRot(), companion.getXRot());
-                    } else if (at != null) companion.teleportTo(at.x, at.y, at.z);
+                    } else if (at != null) { companion.portals.stop(); companion.teleportTo(at.x, at.y, at.z); }
                     context.getSource().sendSuccess(() -> Component.literal(companion == null
                             ? "Компаньон сейчас выгружен из мира; он не создан повторно."
                             : at == null ? "Рядом с тобой ему негде встать: нужен твёрдый пол без воды и лавы." : "Компаньон рядом."), false);
@@ -307,12 +307,12 @@ public final class CompanionEvents {
             case "craft_item" -> {
                 CompanionActionResult repeat = count == 1 && !goalDispatch ? companion.alreadyMade(item) : null;
                 if (repeat != null) yield repeat;
-                if (CompanionWork.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
+                if (CompanionCraftCosts.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
                 if (companion.benchWalkNeeded(item, count)) yield companion.startWork("bench_craft", item, count);
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -328,10 +328,15 @@ public final class CompanionEvents {
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
+            case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
             case "stop" -> { companion.stopGathering(); yield CompanionActionResult.ok("Ладно, остановился."); }
             case "come" -> {
                 companion.setFollowing(false);
                 yield companion.startWork("come", "", 1);
+            }
+            case "walk_heading" -> {
+                companion.setFollowing(false);
+                yield companion.startWork("walk_heading", item, count);
             }
             case "protect", "stop_protect" -> {
                 companion.setProtecting("protect".equals(action));

@@ -5,7 +5,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -13,6 +15,9 @@ import java.util.List;
 
 final class CompanionGathering {
     final CompanionEntity c;
+
+    /** What the digging goal gathers now; soil unless an order says otherwise (also in saves that never knew loose ground). */
+    CompanionGround ground = CompanionGround.SOIL;
 
     CompanionGathering(CompanionEntity c) { this.c = c; }
 
@@ -42,7 +47,10 @@ final class CompanionGathering {
         c.getNavigation().stop();
     }
 
-    void startGatheringDirtForWork(int count) {
+    void startGatheringDirtForWork(int count) { startGatheringDirtForWork(count, CompanionGround.SOIL); }
+
+    void startGatheringDirtForWork(int count, CompanionGround ground) {
+        this.ground = ground;
         c.loot.beginCollection();
         c.dirtTaskVersion++;
         c.temporaryPillar.requestCleanup();
@@ -59,13 +67,15 @@ final class CompanionGathering {
         c.requestedLogs = c.logsRemaining;
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, true);
         c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
-        c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Ищу землю, нужно добыть " + c.requestedLogs + " блоков.");
+        c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, ground == CompanionGround.SOIL ? "Ищу землю, нужно добыть " + c.requestedLogs + " блоков."
+                : ground == CompanionGround.FLINT ? "Ищу гравий, нужно добыть " + c.requestedLogs + " кремня."
+                : "Ищу " + ground.accusative() + ", нужно добыть " + c.requestedLogs + " блоков.");
         c.getNavigation().stop();
     }
 
     void stopGathering() {
         if (c.gatheringLogs && !c.work.isActive()) c.noteDeed("Прервал рубку дерева: брёвен было нужно ещё " + c.logsRemaining + ".", false);
-        if (c.gatheringDirt && !c.work.isActive()) c.noteDeed("Прервал добычу земли: было нужно ещё " + c.logsRemaining + ".", false);
+        if (c.gatheringDirt && !c.work.isActive()) c.noteDeed("Прервал добычу " + ground.genitive() + ": было нужно ещё " + c.logsRemaining + ".", false);
         c.lastTaskSucceeded = false;
         c.gatheringLogs = false;
         c.gatheringDirt = false;
@@ -103,9 +113,9 @@ final class CompanionGathering {
     boolean mineDirt(BlockPos pos) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return false;
         BlockState state = serverLevel.getBlockState(pos);
-        if (!isDirtBlock(state) || CompanionMiningNavigation.supportsLivingEntity(c, pos) || !CompanionQuarry.safeCell(serverLevel, pos)) return false;
+        if (!ground.matches(state) || !ground.safeCell(serverLevel, pos, c)) return false;
         if (!CompanionMiningNavigation.preservesAutonomousReturn(c, pos)) return false;
-        c.selectToolForBlock(state);
+        if (ground != CompanionGround.FLINT) c.selectToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
         var drops = Block.getDrops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
         if (!canStoreDrops(drops)) return false;
@@ -114,6 +124,16 @@ final class CompanionGathering {
         c.swing(InteractionHand.MAIN_HAND);
         c.dropHarvest(pos, drops);
         return true;
+    }
+
+    /** No room for what the next dug block gives, drops on their way to the bag counted; flint mode returns its gravel to the room it left. */
+    boolean bagFull(CompanionGround ground) {
+        if (!hasRoomFor(ground.item())) return true;
+        return ground == CompanionGround.FLINT && CompanionGround.GRAVEL.count(c) == 0 && !hasRoomFor(Items.GRAVEL);
+    }
+
+    private boolean hasRoomFor(Item item) {
+        return canStoreDrops(List.of(new ItemStack(item, 1 + c.loot.incoming(stack -> stack.is(item)))));
     }
 
     boolean canStoreDrops(List<ItemStack> drops) {

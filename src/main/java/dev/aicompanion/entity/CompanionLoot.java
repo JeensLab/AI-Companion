@@ -5,9 +5,13 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.tags.ItemTags;
 import java.util.HashMap;
@@ -32,6 +36,7 @@ final class CompanionLoot {
     private int collectedLogs;
     private int collectedStone;
     private int collectedSoil;
+    private final int[] collectedLoose = new int[CompanionGround.values().length];
     private long rescanUntil;
     private boolean collecting;
     private long lastScan = Long.MIN_VALUE;
@@ -116,6 +121,7 @@ final class CompanionLoot {
             if (item.getItem().is(ItemTags.LOGS)) collectedLogs += moved;
             if (item.getItem().is(ItemTags.STONE_TOOL_MATERIALS)) collectedStone += moved;
             if (CompanionTools.soilItem(item.getItem())) collectedSoil += moved;
+            for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose() && ground == owner.gathering.ground && ground.counts(item.getItem())) collectedLoose[ground.ordinal()] += moved;
             owner.take(item, moved);
             level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
             if (offered.isEmpty()) { item.discard(); pending.remove(id); } else item.setItem(offered);
@@ -189,6 +195,9 @@ final class CompanionLoot {
             dropLeaf();
         }
         if (target == null) return;
+        // The column of loose blocks above a dug cell is still coming down: whoever walks in for the drop is buried in it,
+        // and so is whoever cuts across that cell on his way to a drop pushed out beside it. He waits where he stands.
+        if (holdForFall(level)) { owner.work.route.stop(); lastProgress = level.getGameTime(); return; }
         owner.movementIntent(target.blockPosition());
         if (leaf != null) { clearLeaf(level); return; }
         owner.workStatus("Подбираю добытые вещи.");
@@ -220,7 +229,9 @@ final class CompanionLoot {
             // From two below (a drop on a ledge at head height) to one above (a drop in a dip).
             for (int dy = -2; dy <= 1; dy++) for (int ox = -1; ox <= 1; ox++) for (int oz = -1; oz <= 1; oz++) {
                 BlockPos spot = center.offset(ox, dy, oz);
-                if (!CompanionMiningNavigation.standable(owner, spot)) continue;
+                // The drop pushed out of a landed block lies clear, while the cell it came from still has the rest of the
+                // column in the air over it: no stand there.
+                if (!CompanionMiningNavigation.standable(owner, spot) || fallingInto(level, new AABB(spot), spot)) continue;
                 var standing = Vec3.atBottomCenterOf(spot);
                 var toward = target.position().subtract(standing).multiply(1, 0, 1).normalize().scale(.3);
                 // A reachable adjacent cell can still be outside pickup range. Route to a point
@@ -365,12 +376,51 @@ final class CompanionLoot {
     int collectedSoil() { return collectedSoil; }
     int incomingLogs() { return incoming(stack -> stack.is(ItemTags.LOGS)); }
     int incomingSoil() { return incoming(CompanionTools::soilItem); }
-    private int incoming(java.util.function.Predicate<ItemStack> matches) {
+    /** Picked up of one ground, loose or soil. */
+    int collected(CompanionGround ground) { return ground == CompanionGround.SOIL ? collectedSoil : collectedLoose[ground.ordinal()]; }
+    int collectedLoose() { int total = 0; for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose()) total += collectedLoose[ground.ordinal()]; return total; }
+    int incoming(CompanionGround ground) { return incoming(ground::counts); }
+    int incoming(java.util.function.Predicate<ItemStack> matches) {
         if (!(owner.level() instanceof ServerLevel level)) return 0;
         int amount = 0;
         for (UUID id : pending) if (!unreachable.contains(id) && level.getEntity(id) instanceof ItemEntity item && item.isAlive() && matches.test(item.getItem())) amount += item.getItem().getCount();
         return amount;
     }
+    private static final int FALL_SCAN = 8;
+
+    /** A tall column comes down block by block, a few seconds for a desert one; past this the wait is a false alarm and the stuck detector takes over. */
+    private static final int FALL_HOLD_LIMIT = 200;
+    private UUID heldTarget;
+    private int heldTicks;
+
+    /** The wait for a falling column, bounded per drop: it never holds one forever. */
+    private boolean holdForFall(ServerLevel level) {
+        if (!fallingOver(level, target) && !fallingNearby(level)) return false;
+        if (!target.getUUID().equals(heldTarget)) { heldTarget = target.getUUID(); heldTicks = 0; }
+        return ++heldTicks <= FALL_HOLD_LIMIT;
+    }
+
+    private static boolean fallingOver(ServerLevel level, ItemEntity item) {
+        return fallingInto(level, item.getBoundingBox().inflate(.5, 0, .5), item.blockPosition());
+    }
+
+    private boolean fallingNearby(ServerLevel level) {
+        return !level.getEntitiesOfClass(FallingBlockEntity.class, owner.getBoundingBox().inflate(1.5, 0, 1.5).expandTowards(0, FALL_SCAN, 0)).isEmpty();
+    }
+
+    /**
+     * A block in the air over the box, or one about to drop: the first block over the cell is loose and has its fall already
+     * scheduled. Sand and gravel that merely hang over the cell (worldgen overhangs, a ceiling) have no scheduled fall and are not waited for.
+     */
+    private static boolean fallingInto(ServerLevel level, AABB box, BlockPos cell) {
+        if (!level.getEntitiesOfClass(FallingBlockEntity.class, box.expandTowards(0, FALL_SCAN, 0)).isEmpty()) return true;
+        for (BlockPos above = cell.above(); above.getY() <= cell.getY() + FALL_SCAN; above = above.above()) {
+            BlockState state = level.getBlockState(above);
+            if (!state.isAir()) return state.getBlock() instanceof FallingBlock && level.getBlockTicks().hasScheduledTick(above, state.getBlock());
+        }
+        return false;
+    }
+
     private boolean chaseable(ServerLevel level, UUID id) {
         if (unreachable.contains(id)) {
             // Given up from one spot only: four blocks away the drop is tried again.

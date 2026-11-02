@@ -36,7 +36,7 @@ public final class CompanionAgendaBoardTests {
 
     @AfterBatch(batch = "agenda_board") public static void afterBoard(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
-    /** Diamond gear is done, so the tree shows all marks but the obstacle; then the goal stops and the obstacle replaces the current one. */
+    /** Diamond gear is done, so the tree shows done, current and later marks but no obstacle and nothing he cannot do; then the goal stops and the obstacle replaces the current one. */
     @GameTest(template = "tall_tree", batch = "agenda_board", timeoutTicks = 400)
     public static void goalLinesInSnapshot(GameTestHelper h) {
         var f = fixture(h);
@@ -47,12 +47,12 @@ public final class CompanionAgendaBoardTests {
 
         String line = CompanionAgendaView.line(f.c);
         h.assertTrue(line.startsWith("Долгая цель: «подготовка к Незеру»; сейчас: запас готовой еды: 16; сделано: ")
-                && line.contains("; дальше: 64 булыжника для мостов и столбов; не умею: огниво") && !line.contains("помеха") && !line.contains("отложена"),
+                && line.contains("; дальше: 64 булыжника для мостов и столбов, огниво") && !line.contains("не умею") && !line.contains("помеха") && !line.contains("отложена"),
                 "Goal line of the model: " + line);
         var tree = CompanionTaskBoard.read(f.p).agenda();
         h.assertTrue(tree != null && tree.goal().equals(f.goal().id()) && tree.state() == CompanionAgenda.State.ACTIVE, "No goal in the snapshot");
-        h.assertTrue(marks(tree, Mark.DONE) == 8 && marks(tree, Mark.CURRENT) == 1 && marks(tree, Mark.LATER) == 1
-                && marks(tree, Mark.CANNOT) == 1 && marks(tree, Mark.OBSTACLE) == 0, "Milestone tree: " + tree.lines());
+        h.assertTrue(marks(tree, Mark.DONE) == 8 && marks(tree, Mark.CURRENT) == 1 && marks(tree, Mark.LATER) == 2
+                && marks(tree, Mark.CANNOT) == 0 && marks(tree, Mark.OBSTACLE) == 0, "Milestone tree: " + tree.lines());
         h.assertTrue(tree.lines().stream().filter(l -> l.mark() == Mark.CURRENT).allMatch(l -> l.label().equals("запас готовой еды: 16")), "Wrong current milestone: " + tree.lines());
 
         // The engine meets the spent milestone at its first second; the line the client reads is the synced one, set once a second.
