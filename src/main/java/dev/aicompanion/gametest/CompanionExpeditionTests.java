@@ -127,7 +127,7 @@ public final class CompanionExpeditionTests {
         h.succeedWhen(() -> {
             ended(h, c, id);
             int crafted = 4 * (2 - count(c, Items.COAL)), total = torches(h) + count(c, Items.TORCH) + ground(h, Items.TORCH);
-            h.assertTrue(torches(h) >= 1, "No torch laid: " + report(c));
+            h.assertTrue(torches(h) >= 1, "No torch laid: bag torches " + count(c, Items.TORCH) + ", coal " + count(c, Items.COAL) + ", sticks " + count(c, Items.STICK) + ", on the ground " + ground(h, Items.TORCH) + " | " + report(c));
             h.assertTrue(total <= crafted && 2 - count(c, Items.STICK) == 2 - count(c, Items.COAL), "Torches " + total + " from " + crafted + " crafted; sticks left " + count(c, Items.STICK));
         });
     }
