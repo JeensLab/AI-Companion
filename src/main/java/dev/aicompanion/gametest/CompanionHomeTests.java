@@ -208,6 +208,60 @@ public final class CompanionHomeTests {
         h.succeed();
     }
 
+    /** A chest left in a mine is a stash, not a home. */
+    @GameTest(template = "large_search", timeoutTicks = 100)
+    public static void chestInAMineIsNoHome(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        c.setNoAi(true);
+        BlockPos chest = cell(60);
+        under(h, chest, Blocks.STONE);
+        h.setBlock(chest, Blocks.CHEST); placedByPlayer(h, c, chest);
+        h.assertTrue(!c.getPlacesForAi().contains("дом на"), "A chest in a mine became a home: " + c.getPlacesForAi());
+        h.succeed();
+    }
+
+    /** Being no home takes nothing from the chest itself: he still walks to it with the things. */
+    @GameTest(template = "large_search", timeoutTicks = 1600)
+    public static void storeStillGoesToAChestInAMine(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        BlockPos chest = cell(STAND + 40);
+        under(h, chest, Blocks.STONE);
+        h.setBlock(chest, Blocks.CHEST); placedByPlayer(h, c, chest);
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 7));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, c), "store_items", "stone", 1).success(), "Store order not accepted");
+        h.succeedWhen(() -> {
+            done(h, c);
+            h.assertTrue(c.didLastTaskSucceed() && count((Container)h.getBlockEntity(chest), Items.COBBLESTONE) == 7, c.getLastTaskResult());
+        });
+    }
+
+    /** Only ground overhead makes a chest a stash: the player's own roof over it changes nothing. */
+    @GameTest(template = "large_search", timeoutTicks = 100)
+    public static void chestUnderABuiltRoofIsHome(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        c.setNoAi(true);
+        BlockPos chest = cell(60);
+        under(h, chest, Blocks.OAK_PLANKS);
+        h.setBlock(chest, Blocks.CHEST); placedByPlayer(h, c, chest);
+        h.assertTrue(c.getPlacesForAi().contains("дом на " + h.absolutePos(chest).toShortString()), "A roof took the home away: " + c.getPlacesForAi());
+        h.succeed();
+    }
+
+    /** A real base dug into the ground is still a home once it is built up, and home is at its chest. */
+    @GameTest(template = "large_search", timeoutTicks = 100)
+    public static void builtUpBaseUndergroundIsHome(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        c.setNoAi(true);
+        BlockPos chest = cell(60);
+        under(h, chest, Blocks.STONE);
+        h.setBlock(chest, Blocks.CHEST); placedByPlayer(h, c, chest);
+        for (int i = 0; i < 31; i++) placedByPlayer(h, c, new BlockPos(62 + i % 8, 1 + i % 4, Z + 2 + i % 3), Blocks.COBBLESTONE);
+        h.assertTrue(!c.getPlacesForAi().contains("дом на"), "Too little for a home: " + c.getPlacesForAi());
+        placedByPlayer(h, c, new BlockPos(62, 2, Z + 3), Blocks.COBBLESTONE);
+        h.assertTrue(c.getPlacesForAi().contains("дом на " + h.absolutePos(chest).toShortString()), "The built-up base is no home: " + c.getPlacesForAi());
+        h.succeed();
+    }
+
     /** What the player says outranks what he builds. */
     @GameTest(template = "large_search", timeoutTicks = 100)
     public static void namedHomeOutranksThePlayersBuilding(GameTestHelper h) {
@@ -329,6 +383,8 @@ public final class CompanionHomeTests {
         BlockPos at = h.absolutePos(pos);
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), at), Blocks.BEDROCK.defaultBlockState(), owner(h, c)));
     }
+    /** Three blocks of cover over a spot, with room left for a chest lid to open. */
+    private static void under(GameTestHelper h, BlockPos pos, Block cover) { for (int y = 2; y <= 4; y++) h.setBlock(pos.above(y), cover); }
     private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos pos, Block block) { h.setBlock(pos, block); placedByPlayer(h, c, pos); }
 
     /** The house of a save from before homes: its blocks, and a blueprint with every step placed. */

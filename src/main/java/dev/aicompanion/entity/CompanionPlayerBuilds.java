@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.ArrayList;
@@ -32,8 +33,10 @@ public final class CompanionPlayerBuilds extends SavedData {
     private static final Factory<CompanionPlayerBuilds> FACTORY = new Factory<>(CompanionPlayerBuilds::new, CompanionPlayerBuilds::load, null);
     /** What is set down this close to the middle of a site belongs to it. */
     private static final int SITE_RADIUS = 16;
-    /** One chest reaches it alone; plain blocks need a real small building, a bridge or a shaft of cobble stays below it. */
+    /** One chest on the surface reaches it alone; plain blocks need a real small building, a bridge or a shaft of cobble stays below it. */
     static final int HOME_SCORE = 40;
+    /** This much natural ground over a chest makes it a stash in a mine, not a home; a player's roof is not ground, and a dug-in base has its own blocks to count. */
+    private static final int GROUND_COVER = 3;
     private static final int STATION_POINTS = 8;
     private static final int MAX_POINTS = 4096;
     private static final int MAX_OWNERS = 64;
@@ -46,10 +49,11 @@ public final class CompanionPlayerBuilds extends SavedData {
         int blocks, points;
         long lastBuilt;
         final List<BlockPos> chests = new ArrayList<>();
+        final List<BlockPos> stashes = new ArrayList<>();
 
         Site(String dimension) { this.dimension = dimension; }
 
-        int score() { return points + chests.size() * HOME_SCORE; }
+        int score() { return points + chests.size() * HOME_SCORE + stashes.size() * STATION_POINTS; }
         BlockPos middle() {
             int n = Math.max(1, blocks);
             return new BlockPos((int)(sumX / n), (int)(sumY / n), (int)(sumZ / n));
@@ -59,10 +63,11 @@ public final class CompanionPlayerBuilds extends SavedData {
             return Math.abs(pos.getY() - middle.getY()) <= SITE_RADIUS
                     && Math.hypot(pos.getX() - middle.getX(), pos.getZ() - middle.getZ()) <= SITE_RADIUS;
         }
-        void add(BlockPos pos, boolean chest, int worth, long now) {
+        void add(BlockPos pos, boolean chest, boolean buried, int worth, long now) {
             sumX += pos.getX(); sumY += pos.getY(); sumZ += pos.getZ(); blocks++;
             lastBuilt = now;
-            if (chest) { if (chests.size() < MAX_CHESTS && !chests.contains(pos)) chests.add(pos.immutable()); }
+            List<BlockPos> kept = buried ? stashes : chests;
+            if (chest) { if (kept.size() < MAX_CHESTS && !kept.contains(pos)) kept.add(pos.immutable()); }
             else points = Math.min(MAX_POINTS, points + worth);
         }
         CompoundTag save() {
@@ -71,6 +76,7 @@ public final class CompanionPlayerBuilds extends SavedData {
             tag.putLong("SumX", sumX); tag.putLong("SumY", sumY); tag.putLong("SumZ", sumZ);
             tag.putInt("Blocks", blocks); tag.putInt("Points", points); tag.putLong("LastBuilt", lastBuilt);
             tag.put("Chests", new LongArrayTag(chests.stream().mapToLong(BlockPos::asLong).toArray()));
+            tag.put("Stashes", new LongArrayTag(stashes.stream().mapToLong(BlockPos::asLong).toArray()));
             return tag;
         }
         static Site load(CompoundTag tag) {
@@ -81,6 +87,8 @@ public final class CompanionPlayerBuilds extends SavedData {
             site.lastBuilt = tag.getLong("LastBuilt");
             long[] chests = tag.getLongArray("Chests");
             for (int i = 0; i < Math.min(MAX_CHESTS, chests.length); i++) site.chests.add(BlockPos.of(chests[i]));
+            long[] stashes = tag.getLongArray("Stashes");
+            for (int i = 0; i < Math.min(MAX_CHESTS, stashes.length); i++) site.stashes.add(BlockPos.of(stashes[i]));
             return site;
         }
     }
@@ -105,11 +113,19 @@ public final class CompanionPlayerBuilds extends SavedData {
             site = new Site(dimension);
             sites.add(site);
         }
-        site.add(pos, chest, station(state) ? STATION_POINTS : 1, level.getGameTime());
+        site.add(pos, chest, chest && buried(level, pos), station(state) ? STATION_POINTS : 1, level.getGameTime());
         Site kept = site;
         while (sites.size() > MAX_SITES) sites.stream().filter(other -> other != kept).min(Comparator.comparingInt(Site::score)).ifPresent(sites::remove);
         while (owners.size() > MAX_OWNERS) owners.remove(owners.keySet().iterator().next());
         setDirty();
+    }
+
+    private static boolean buried(ServerLevel level, BlockPos pos) {
+        int top = level.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ());
+        int cover = 0;
+        for (BlockPos.MutableBlockPos at = pos.mutable(); at.move(0, 1, 0).getY() < top && cover < GROUND_COVER; )
+            if (level.getBlockState(at).is(BlockTags.OVERWORLD_CARVER_REPLACEABLES)) cover++;
+        return cover >= GROUND_COVER;
     }
 
     private static boolean filler(BlockState state) {
@@ -125,19 +141,20 @@ public final class CompanionPlayerBuilds extends SavedData {
     BlockPos home(UUID player, ServerLevel level) {
         Site best = here(player, level).stream().filter(site -> site.score() >= HOME_SCORE)
                 .max(Comparator.comparingInt(Site::score).thenComparingLong(site -> site.lastBuilt)).orElse(null);
-        return best == null ? null : best.chests.isEmpty() ? best.middle() : best.chests.getFirst();
+        if (best == null) return null;
+        return !best.chests.isEmpty() ? best.chests.getFirst() : !best.stashes.isEmpty() ? best.stashes.getFirst() : best.middle();
     }
 
     /** The chests he set down in this dimension, as far as the loaded world still shows them. */
     List<BlockPos> chests(UUID player, ServerLevel level) {
-        return here(player, level).stream().flatMap(site -> site.chests.stream()).toList();
+        return here(player, level).stream().flatMap(site -> java.util.stream.Stream.concat(site.chests.stream(), site.stashes.stream())).toList();
     }
 
     private List<Site> here(UUID player, ServerLevel level) {
         List<Site> sites = owners.get(player);
         if (sites == null) return List.of();
         String dimension = level.dimension().location().toString();
-        for (Site site : sites) if (site.dimension.equals(dimension) && site.chests.removeIf(pos -> gone(level, pos))) setDirty();
+        for (Site site : sites) if (site.dimension.equals(dimension) && (site.chests.removeIf(pos -> gone(level, pos)) | site.stashes.removeIf(pos -> gone(level, pos)))) setDirty();
         return sites.stream().filter(site -> site.dimension.equals(dimension)).toList();
     }
 
