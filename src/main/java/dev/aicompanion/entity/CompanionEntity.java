@@ -203,7 +203,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean placedByMe(BlockPos pos) { return places.placedByCompanion(pos); }
     /** Blocks of this kind he set down himself, as remembered. */
     List<BlockPos> placedByMe(String block) { return places.placed(block); }
-    /** While a deed of his own runs: only his own chests and furnaces, never the player's. */
+    /** While a deed of his own runs: only his own chests and furnaces, of the player's only an idle empty furnace. */
     boolean ownPlacesOnly() { return autonomy.running(); }
     /** Autonomous targets stay within the remembered work area. */
     boolean leashAllows(BlockPos pos) {

@@ -109,11 +109,13 @@ final class CompanionFurnaces {
     private BlockPos findFurnace(ServerLevel level) {
         BlockPos center = w.owner.blockPosition();
         BlockPos group = w.lots.isEmpty() ? null : w.lots.getFirst().pos;
+        // On a deed of his own the player's furnace is taken only standing idle, with nothing of the player's in it to burn or
+        // mix with: a new furnace beside it is waste (issue 62, stream 01.11).
         return w.chests.blockEntitiesNear(level).stream().filter(pos -> !w.triedFurnaces.contains(pos)
-                        && (!w.owner.ownPlacesOnly() || w.owner.placedByMe(pos) && w.owner.leashAllows(pos))
                         && w.lots.stream().noneMatch(lot -> lot.pos.equals(pos)) && !w.owner.batches().reserved(level, pos)
                         && (group == null || pos.distSqr(group) <= CompanionWork.FURNACE_GROUP * CompanionWork.FURNACE_GROUP)
-                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven))
+                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven)
+                        && (!w.owner.ownPlacesOnly() || w.owner.leashAllows(pos) && (w.owner.placedByMe(pos) || oven.isEmpty())))
                 .min(Comparator.comparingDouble(pos -> pos.distSqr(center))).map(BlockPos::immutable).orElse(null);
     }
 
