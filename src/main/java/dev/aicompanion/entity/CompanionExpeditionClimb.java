@@ -160,7 +160,7 @@ final class CompanionExpeditionClimb {
 
     private Result openWay(BlockPos beyond) {
         ServerLevel level = (ServerLevel) w.owner.level();
-        BlockPos here = CompanionExpeditionRecord.standingCell(level, w.owner.blockPosition());
+        BlockPos here = CompanionExpeditionRecord.standingCell(level, w.owner);
         plug = plugs >= MAX_PLUGS ? null : CompanionExpeditionPlugs.way(level, w.mine, here, beyond);
         boolean bridging = plug == null && plugs < MAX_PLUGS;
         if (bridging) plug = CompanionExpeditionPlugs.bridge(level, w.mine, here, beyond);

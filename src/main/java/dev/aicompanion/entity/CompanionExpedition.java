@@ -415,7 +415,7 @@ final class CompanionExpedition {
     /** The stairs are lost: the mine starts again where he stands, if the ground there allows and the restarts are not used up. */
     private void restartHere(String why) {
         ServerLevel level = (ServerLevel) owner.level();
-        BlockPos here = CompanionExpeditionRecord.standingCell(level, owner.blockPosition());
+        BlockPos here = CompanionExpeditionRecord.standingCell(level, owner);
         Direction side = CompanionExpeditionRecord.restartSide(level, w.mine, here);
         if (side == null) {
             CompanionExpeditionRecord.Shore shore = CompanionExpeditionRecord.shore(level, w.mine, here);

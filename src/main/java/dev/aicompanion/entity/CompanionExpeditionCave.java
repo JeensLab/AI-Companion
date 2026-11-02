@@ -308,13 +308,19 @@ final class CompanionExpeditionCave {
             case WALKING -> { }
             case NEAR -> {
                 // The legs end within two blocks of home, which can still be the first cell of the cave: the last steps are his own.
-                if (!cave.air().contains(owner.blockPosition())) sealing();
+                if (!onCaveSide((ServerLevel) owner.level())) sealing();
                 else if (dig.walkTo(home)) sealing();
                 else if (dig.walkStuck()) failure = "Не смог вернуться из пещеры в свой тоннель.";
             }
             case FAILED -> failure = "Не смог вернуться из пещеры в свой тоннель.";
         }
         return true;
+    }
+
+    /** A shut cell (a fence post of a shaft the cave opened into) is no cell of the mine: he stands beside it, on the cave side of his stairs. */
+    private boolean onCaveSide(ServerLevel level) {
+        BlockPos here = owner.blockPosition();
+        return cave.air().contains(here) || !CompanionShaftPlan.open(level, here);
     }
 
     private void sealing() {
@@ -329,7 +335,7 @@ final class CompanionExpeditionCave {
         List<BlockPos> open = openTouching(level);
         if (open.isEmpty()) return finish("Пролом заделал.");
         if (++idle > SEAL_PATIENCE) return finish("Пролом заделать до конца не вышло.");
-        if (cave.air().contains(owner.blockPosition())) return stepBack(level, open.get(0));
+        if (onCaveSide(level)) return stepBack(level, open.get(0));
         boolean occupied = false;
         for (BlockPos cell : open) {
             if (!CompanionSeal.replaceable(level, cell)) { level.destroyBlock(cell, true, owner); return true; }

@@ -9,7 +9,7 @@ import java.util.Set;
 
 /**
  * The last restart of a fruitless chain, one past the cap: where he stands if a side is free (the cap alone stopped him), else, walled in
- * by his own cave plugs, after he breaks the floor under him, a real break per cell, until the ring of plugs is above him and a side is free.
+ * by his own cave plugs or by refusals, after he breaks the floor under him, a real break per cell, until the ring is above him and a side is free.
  */
 final class CompanionExpeditionDigOut {
     enum Result { WORKING, DONE, STUCK }
@@ -34,12 +34,13 @@ final class CompanionExpeditionDigOut {
 
     Direction side() { return side; }
 
-    /** True when the last restart is still his and a side is free here or he is plugged in: then {@link #tick} goes on to it. */
+    /**
+     * True when the last restart is still his: then {@link #tick} goes on to it, and digs the floor until a side is free, as many cells as it may.
+     * A pit refused on every side, with no plug of his own beside him, needs it as much as a plugged one.
+     */
     boolean begin(ServerLevel level) {
         reset();
-        BlockPos here = CompanionExpeditionRecord.standingCell(level, owner.blockPosition());
-        return CompanionExpeditionRecord.mayDigOut(w.mine)
-                && (CompanionExpeditionRecord.pluggedIn(w.mine, here) || CompanionExpeditionRecord.digOutSide(level, w.mine, here) != null);
+        return CompanionExpeditionRecord.mayDigOut(w.mine);
     }
 
     Result tick(ServerLevel level) {

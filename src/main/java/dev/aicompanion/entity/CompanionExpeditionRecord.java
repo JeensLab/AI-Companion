@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -134,15 +135,6 @@ final class CompanionExpeditionRecord {
         return sideOf(level, mine, here, MAX_RESTARTS);
     }
 
-    /**
-     * Walled in by his own plugs: a cell beside him is one a cave plug closed for good, so no stairs go on from here and no refusal is to blame.
-     * Pure refusals are not this: such a pit ends the order at once.
-     */
-    static boolean pluggedIn(CompanionMineSite mine, BlockPos here) {
-        for (Direction d : Direction.Plane.HORIZONTAL) if (mine.forbidden(here.relative(d))) return true;
-        return false;
-    }
-
     /** The side of the last restart, one past the cap, where he stands or after he dug out of a plugged pocket: a fruitless chain stays bounded by it. */
     static Direction digOutSide(ServerLevel level, CompanionMineSite mine, BlockPos here) {
         return sideOf(level, mine, here, MAX_RESTARTS + 1);
@@ -186,12 +178,30 @@ final class CompanionExpeditionRecord {
         return best;
     }
 
-    /** The cell he really stands in: his own, or the first one below it (at most {@code MAX_DROP}) with a firm floor, as mid-jump his feet are in the air above it. */
-    static BlockPos standingCell(ServerLevel level, BlockPos here) {
+    /**
+     * The cell he really stands in: his own, or the first one below it (at most {@code MAX_DROP}) with a firm floor, as mid-jump his feet are in the air above it.
+     * A cell that is shut (a fence post of a shaft he broke into stands beside him in it) is no place to stand: the open cell beside it that he is nearest to.
+     */
+    static BlockPos standingCell(ServerLevel level, Entity who) {
+        BlockPos here = beside(level, who);
         for (int drop = 0; drop <= MAX_DROP; drop++) {
             BlockPos cell = here.below(drop), floor = cell.below();
             if (level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return cell;
         }
         return here;
+    }
+
+    private static BlockPos beside(ServerLevel level, Entity who) {
+        BlockPos here = who.blockPosition();
+        if (CompanionShaftPlan.open(level, here)) return here;
+        BlockPos best = here;
+        double bestDistance = Double.MAX_VALUE;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos cell = here.relative(d), floor = cell.below();
+            if (!CompanionShaftPlan.open(level, cell) || !CompanionShaftPlan.open(level, cell.above()) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) continue;
+            double distance = Math.pow(cell.getX() + .5 - who.getX(), 2) + Math.pow(cell.getZ() + .5 - who.getZ(), 2);
+            if (distance < bestDistance) { best = cell; bestDistance = distance; }
+        }
+        return best;
     }
 }
