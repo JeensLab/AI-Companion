@@ -34,7 +34,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineReviewTests {
     private static final int GAP_AT = 12, WALL_AT = 5, IRON_LEFT = 60;
-    private static final int TRENCH_LENGTH = 8, TRENCH_CREEPER = 3, FUSE_SETTLED = 100;
+    private static final int TRENCH_LENGTH = 8, TRENCH_CREEPER = 3, FUSE_SETTLED = 100, FIRE_TICKS = 200, FIRE_REACTION = 60;
 
     /**
      * The stairs are shut at feet and head by blocks he did not put there, the record knows of none and he has only the worn iron pickaxe.
@@ -113,5 +113,28 @@ public final class CompanionMineReviewTests {
             }
         });
         h.runAfterDelay(FUSE_SETTLED, h::succeed);
+    }
+
+    /**
+     * On fire on the stairs, with no cave anywhere near (the cave sense is the only part that reads a fire): the step turns back at once,
+     * as it did when the goal stopped the step for a fire. The fire is short, so the health never gets low enough to be the reason.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void turnsBackWhenHeBurnsOnTheStairsOutsideACave(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        carveMine(h, c, 0);
+        long id = start(h, c, 1);
+        long[] ignited = {-1};
+        h.onEachTick(() -> {
+            String stage = c.expeditionStage();
+            if (ignited[0] < 0) {
+                if (stage.equals("WALK_DOWN") || stage.equals("DESCEND")) { c.setRemainingFireTicks(FIRE_TICKS); ignited[0] = h.getTick(); }
+                return;
+            }
+            if (stage.equals("RETREAT") || stage.equals("CLIMB") || c.workResult(id) != null) { h.succeed(); return; }
+            h.assertTrue(h.getTick() - ignited[0] < FIRE_REACTION, "He burns and goes on in stage " + stage + ", health " + c.getHealth() + " | " + report(c));
+        });
     }
 }

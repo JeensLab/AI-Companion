@@ -228,6 +228,8 @@ final class CompanionExpedition {
     /** Why he must go up now (a very dangerous cave dealt with, or health at the cave limit), or null. */
     private String dangerNow() {
         if (!cave.busy() && cave.takeRetreat()) return CAVE_DANGER;
+        // The cave sense reads a fire only inside a cave episode, and the goal no longer stops a step that owns the expedition for one.
+        if (owner.isOnFire() || owner.isInLava()) return "горю";
         float health = owner.getHealth();
         if (health > CompanionCaveSense.HEALTH_VERY) return null;
         // Just out of a fight with food in the bag, he eats on the spot; climbing at once would give up the order for a meal.
