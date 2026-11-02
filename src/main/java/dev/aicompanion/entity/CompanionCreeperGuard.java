@@ -131,6 +131,8 @@ final class CompanionCreeperGuard {
         nextPlan = now + PLAN_EVERY;
         tries = 0;
         owner.getNavigation().stop();
+        // The work does not tick while the guard holds the turn, so the fight's hold cannot bring the sword out for it.
+        if (fighting || dashing) { owner.work.expedition.fightBegan(); owner.selectWeaponForCombat(); }
         if (fighting) {
             retreats++;
             lastRetreat = now;
