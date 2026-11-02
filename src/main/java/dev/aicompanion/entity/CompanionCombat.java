@@ -31,11 +31,11 @@ final class CompanionCombat {
         /** A foe already in reach is met this tick, not at vanilla's next once-a-second check: every tick of delay is a blow taken. At range the bow has him, when he has one (CompanionArchery). */
         @Override public boolean canUse() {
             LivingEntity target = c.getTarget();
-            if (c.archery.wants(target) || target == null || !target.isAlive() || c.work.expedition.shuns(target)) return false;
+            if (c.archery.wants(target) || target == null || !target.isAlive() || c.work.expedition.shuns(target) || c.combat.unarmedOnTask()) return false;
             return c.isWithinMeleeAttackRange(target) || c.work.expedition.engages(target) || super.canUse();
         }
         @Override public boolean canContinueToUse() {
-            return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget());
+            return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget()) && !c.combat.unarmedOnTask();
         }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
         @Override public void start() { c.work.expedition.fightBegan(); c.combat.footwork.begin(); super.start(); c.selectWeaponForCombat(); }
@@ -62,6 +62,40 @@ final class CompanionCombat {
         }
     }
 
+    /**
+     * With no sword or axe a fist is no fight: a zombie has the better of it (one health a blow, half of them missing, against three). On an expedition
+     * or a long goal, where there is work to go on with, he leaves a monster alone and walks off from one that is on him (see {@link StepOffGoal}).
+     * Near the player, and with no goal, nothing changes. An ordered hunt is still fought.
+     */
+    boolean unarmedOnTask() {
+        if (c.work.isHunting() || !(c.work.expedition.active() || c.level() instanceof ServerLevel level && CompanionAgenda.goal(level.getServer(), c.ownerId) != null)) return false;
+        return !c.equipment.hasMeleeWeapon();
+    }
+
+    /** Unarmed on a task, with a monster on him: he walks away from it, the faster of the two, until it is left behind, and the work goes on from there. */
+    static final class StepOffGoal extends Goal {
+        private static final int GIVE_UP_TICKS = 40;
+        final CompanionEntity c;
+        private boolean cornered;
+        private int retryAt;
+        StepOffGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE)); }
+        @Override public boolean canUse() {
+            return c.tickCount >= retryAt && c.level() instanceof ServerLevel level && c.combat.footwork.onHim(level) && c.combat.unarmedOnTask();
+        }
+        @Override public boolean canContinueToUse() {
+            return !cornered && c.level() instanceof ServerLevel level && c.combat.footwork.near(level, CompanionFootwork.SAFE) && c.combat.unarmedOnTask();
+        }
+        @Override public boolean requiresUpdateEveryTick() { return true; }
+        @Override public void start() { cornered = false; c.combat.footwork.begin(); }
+        @Override public void tick() {
+            if (c.level() instanceof ServerLevel level && !c.combat.footwork.withdraw(level)) {
+                // Nowhere to step to: the work goes on for a while instead of this goal taking its turn every tick.
+                cornered = true;
+                retryAt = c.tickCount + GIVE_UP_TICKS;
+            }
+        }
+    }
+
     int weaponCooldownTicks() { return Math.max(6, Math.min(40, (int) Math.ceil(20 / Math.max(.5, attackSpeed(c.getMainHandItem()))))); }
 
     static double attackSpeed(net.minecraft.world.item.ItemStack stack) {
@@ -84,7 +118,7 @@ final class CompanionCombat {
             if (player == null || c.inventoryViewers != 0) return false;
             timestamp = player.getLastHurtByMobTimestamp();
             attacker = player.getLastHurtByMob();
-            return timestamp != handledTimestamp && player.tickCount - timestamp < 100
+            return timestamp != handledTimestamp && player.tickCount - timestamp < 100 && !c.combat.unarmedOnTask()
                     && attacker instanceof Monster && c.combat.fairTarget(attacker, true) && c.distanceToSqr(attacker) <= 18 * 18 && c.hasLineOfSight(attacker);
         }
         @Override public void start() {
@@ -126,7 +160,7 @@ final class CompanionCombat {
      */
     boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
-                || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights()) return false;
+                || !(target instanceof Monster monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights() || unarmedOnTask()) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
         if (c.work.expedition.engages(monster)) return true;
         // Deep in his own mine, the player far above: a monster that has chosen him is met before its first blow, not after it;

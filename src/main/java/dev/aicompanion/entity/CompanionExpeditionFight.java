@@ -68,7 +68,7 @@ final class CompanionExpeditionFight {
     private boolean pressed(ServerLevel level) {
         for (Monster monster : level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(FUSE_NEAR), mob -> mob.isAlive() && !mob.isNoAi())) {
             if (monster instanceof Creeper creeper && CompanionCreeperGuard.lit(creeper) && owner.distanceTo(creeper) < FUSE_NEAR) return true;
-            if (!letGo(monster) && inContact(monster) && owner.hasLineOfSight(monster)) return true;
+            if (!letGo(monster) && inContact(monster) && owner.hasLineOfSight(monster) && !owner.combat.unarmedOnTask()) return true;
         }
         return false;
     }
@@ -126,7 +126,7 @@ final class CompanionExpeditionFight {
 
     /** A mob he fights: hostile, one that may be fought, awake, in sight (not behind rock, where it can do nothing), and either come for him or near; not one he is leaving or may not follow. */
     boolean isFoe(LivingEntity entity) {
-        if (!(entity instanceof Monster monster) || !monster.isAlive() || monster.isNoAi() || letGo(monster)) return false;
+        if (!(entity instanceof Monster monster) || !monster.isAlive() || monster.isNoAi() || letGo(monster) || owner.combat.unarmedOnTask()) return false;
         if (!owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return false;
         if (monster instanceof Creeper && !owner.creeperGuard.fights()) return false;
         if (w.expedition.shuns(monster) || below(monster)) return false;
