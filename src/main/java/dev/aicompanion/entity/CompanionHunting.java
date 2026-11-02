@@ -15,13 +15,13 @@ final class CompanionHunting {
     CompanionHunting(CompanionWork w) { this.w = w; }
 
     void fightNearby(ServerLevel level) {
-        java.util.List<net.minecraft.world.entity.monster.Monster> remaining = new ArrayList<>();
+        java.util.List<net.minecraft.world.entity.Mob> remaining = new ArrayList<>();
         boolean unavailable = false;
         for (java.util.UUID id : w.huntTargets) {
             if (w.huntDead.contains(id)) continue;
             var entity = level.getEntity(id);
             if (entity == null) { unavailable = true; continue; }
-            if (entity instanceof net.minecraft.world.entity.monster.Monster monster && monster.isAlive()) remaining.add(monster);
+            if (entity instanceof net.minecraft.world.entity.Mob monster && monster.isAlive()) remaining.add(monster);
             else w.huntDead.add(id);
         }
         if (remaining.isEmpty()) {
@@ -46,7 +46,7 @@ final class CompanionHunting {
         if (w.gameKills >= w.gameWanted) { w.finish(true, gameReport(true)); return; }
         var current = level.getEntity(w.gameTarget == null ? CompanionWork.NO_ID : w.gameTarget) instanceof net.minecraft.world.entity.animal.Animal animal && animal.isAlive() ? animal : null;
         if (current == null) {
-            if (w.owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal) w.owner.setTarget(null);
+            if (w.owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal animal && !CompanionCombat.hostile(animal)) w.owner.setTarget(null);
             // Vanilla builds no route at all while he is in the air: that is no evidence against any animal.
             if (!w.owner.onGround() && !w.owner.isInWater()) return;
             if (w.gameTravel != null && travelToGame(level)) return;
