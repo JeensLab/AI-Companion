@@ -180,9 +180,11 @@ public final class CompanionMineBacktrackTests {
 
     /** Every side of the pit is refused and it is no mine of the surface: the order ends at once, without three empty restarts. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void endsAtOnceWhenEverySideIsRefused(GameTestHelper h) {
+    public static void endsAtOnceWhenEverySideIsRefusedOverBedrock(GameTestHelper h) {
         mountain(h, true);
         digPit(h);
+        // Rock under him would be dug out of: only a floor he cannot dig leaves the stop.
+        for (int x = PIT - 1; x <= PIT + 1; x++) for (int z = PIT - 1; z <= PIT + 1; z++) h.setBlock(new BlockPos(x, DEEPSLATE_TOP - 1, z), Blocks.BEDROCK);
         CompanionEntity c = rig(h, PIT, DEEPSLATE_TOP, PIT);
         BlockPos here = h.absolutePos(new BlockPos(PIT, DEEPSLATE_TOP, PIT));
         c.mineSite().start(here, Direction.NORTH);
