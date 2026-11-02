@@ -6,6 +6,7 @@ import dev.aicompanion.entity.CompanionNavigation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -72,6 +73,23 @@ public final class CompanionLootFallTests {
         BlockPos bottom = pit(h);
         ledges(h, 23);
         left(h, companion(h, bottom));
+    }
+
+    /** His own things at the bottom (the pickup after a death) are no different: the ledges are no way, so he stays above and lets them go. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    public static void belongingsBelowLedgesAreLeftAndNotFallenFor(GameTestHelper h) throws Exception {
+        BlockPos bottom = pit(h);
+        ledges(h, 23);
+        CompanionEntity c = CompanionSingleRouteTests.spawn(h, 8, 14, 21);
+        c.setHealth(c.getMaxHealth());
+        BlockPos at = h.absolutePos(bottom);
+        ItemEntity item = new ItemEntity(h.getLevel(), at.getX() + .5, at.getY(), at.getZ() + .5, new ItemStack(Items.IRON_INGOT, 3));
+        item.getPersistentData().putUUID("aicompanion:belongings", c.getUUID());
+        h.getLevel().addFreshEntity(item);
+        Object loot = CompanionSingleRouteTests.field(c, "loot");
+        var claim = loot.getClass().getDeclaredMethod("claim", java.util.Collection.class); claim.setAccessible(true);
+        claim.invoke(loot, List.of(item));
+        left(h, c);
     }
 
     /** Steps down the wall: he goes by them, takes the drop and is unhurt. */
