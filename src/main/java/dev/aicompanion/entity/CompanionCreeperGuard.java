@@ -50,6 +50,12 @@ final class CompanionCreeperGuard {
     /** The way out of a lit fuse: the fuse goes out only beyond 7 blocks (a little more for a margin); the speed of that dash. */
     static final double SAFE_GAP = 7.4;
     private static final double FIGHT_FLEE_SPEED = 1.6;
+    /**
+     * A fuse burns out in 30 ticks. A creeper that has kept lighting one for this long, never out for more than the gap, without blowing is not burning down: it loses sight of
+     * him and gets it back, as when he bobs in water behind a block. Such a fuse is no reason to stand and wait, until it has burned this share of its length.
+     */
+    private static final int STALE_FUSE_TICKS = 60, FUSE_LOOK_GAP = 30;
+    private static final float BURNING = .35F;
     /** A run along a heading (see {@link #runTo}) takes a rise or a drop of one block as a step. */
     private static final double TURN_AT = 30;
     private static final double[] RISES = {0, 1, -1};
@@ -65,11 +71,11 @@ final class CompanionCreeperGuard {
 
     private final CompanionEntity owner;
     private boolean active, finished, noBlock, fighting, shielded, dashing;
-    private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing, lastFlee;
+    private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing, lastFlee, fuseSince, fuseLook;
     private int tries, retreats, flees;
     private List<BlockPos> cells = List.of();
     private Vec3 flee;
-    private Creeper watched;
+    private Creeper watched, fuseOf;
     private String shown = "";
     private final CompanionShieldGuard shield;
     private final CompanionFuseEscape escape;
@@ -94,7 +100,8 @@ final class CompanionCreeperGuard {
         Creeper creeper = seen(level);
         watched = creeper;
         noBlock = false;
-        shielded = creeper != null && shield.covers(level, creeper);
+        lookAtFuse(creeper, now);
+        shielded = creeper != null && burns(creeper) && shield.covers(level, creeper);
         return creeper != null && (shielded || !(!lit(creeper) && engaged()) && plan(level, creeper));
     }
 
@@ -116,6 +123,18 @@ final class CompanionCreeperGuard {
 
     /** Vanilla sets the swell direction only on its next tick after {@code ignite()}, so the flag counts as a lit fuse too. */
     static boolean lit(Creeper creeper) { return creeper.getSwellDir() > 0 || creeper.isIgnited(); }
+
+    /** The creeper whose fuse he has seen lit, and since when it has kept lighting. */
+    private void lookAtFuse(Creeper creeper, long now) {
+        if (creeper == null || !lit(creeper)) return;
+        if (creeper != fuseOf || now - fuseLook > FUSE_LOOK_GAP) { fuseOf = creeper; fuseSince = now; }
+        fuseLook = now;
+    }
+
+    /** A lit fuse that is a reason to leave everything else: not one that has stayed lit past its time without burning down (see {@link #STALE_FUSE_TICKS}). */
+    boolean burns(Creeper creeper) {
+        return lit(creeper) && (creeper != fuseOf || owner.level().getGameTime() - fuseSince < STALE_FUSE_TICKS || creeper.getSwelling(0) >= BURNING);
+    }
 
     boolean canContinue() { return active && !finished && owner.isAlive() && owner.level().getGameTime() - begun < EPISODE_TICKS; }
 
@@ -160,8 +179,9 @@ final class CompanionCreeperGuard {
         if (!(owner.level() instanceof ServerLevel level)) return;
         long now = level.getGameTime();
         Creeper creeper = seen(level);
+        lookAtFuse(creeper, now);
         if (shielded) {
-            shielded = creeper != null && shield.hold(level, creeper);
+            shielded = creeper != null && burns(creeper) && shield.hold(level, creeper);
             if (shielded) lastSeen = now; else finished = true;
             return;
         }
@@ -171,10 +191,11 @@ final class CompanionCreeperGuard {
         }
         lastSeen = now;
         owner.getLookControl().setLookAt(creeper, 30, 30);
-        if ((fighting || engaged()) && !lit(creeper)) { finished = true; return; }
+        if (lit(creeper) && !burns(creeper) && (fighting || dashing)) event("stale_fuse", creeper, -1);
+        if ((fighting || engaged()) && !burns(creeper)) { finished = true; return; }
         if (fighting) { retreat(level, creeper); return; }
-        if (dashing && lit(creeper)) { retreat(level, creeper); return; }
-        if (now >= nextPlan || cells.isEmpty() && flee == null || cells.isEmpty() && dashing != lit(creeper)) {
+        if (dashing && burns(creeper)) { retreat(level, creeper); return; }
+        if (now >= nextPlan || cells.isEmpty() && flee == null || cells.isEmpty() && dashing != burns(creeper)) {
             nextPlan = now + PLAN_EVERY;
             if (!plan(level, creeper)) { finished = true; return; }
         }
@@ -232,6 +253,7 @@ final class CompanionCreeperGuard {
         cells = List.of();
         flee = null;
         dashing = false;
+        if (lit(creeper) && !burns(creeper)) return false;
         CompanionMineSite mine = owner.work.mine;
         List<BlockPos> way = mine.exists() && level.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionExpeditionClimb.wayUp(mine) : List.of();
         int at = indexOf(way, owner.blockPosition(), ON_ROUTE_SQR);

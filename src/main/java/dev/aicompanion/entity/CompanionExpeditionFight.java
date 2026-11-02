@@ -72,7 +72,7 @@ final class CompanionExpeditionFight {
      */
     private Monster pressing(ServerLevel level) {
         for (Monster monster : level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(FUSE_NEAR), mob -> mob.isAlive() && !mob.isNoAi())) {
-            if (monster instanceof Creeper creeper && CompanionCreeperGuard.lit(creeper) && owner.distanceTo(creeper) < FUSE_NEAR) return monster;
+            if (monster instanceof Creeper creeper && owner.creeperGuard.burns(creeper) && owner.distanceTo(creeper) < FUSE_NEAR) return monster;
             if (!letGo(monster) && inContact(monster) && owner.hasLineOfSight(monster) && !owner.combat.unarmedOnTask()
                     && owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return monster;
         }

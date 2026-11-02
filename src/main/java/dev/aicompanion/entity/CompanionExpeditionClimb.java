@@ -202,9 +202,9 @@ final class CompanionExpeditionClimb {
         return Result.WORKING;
     }
 
-    /** No walk and no block of his own joins the two ends. A pickaxe that may be spent on rock cuts the way up: without one the rock stays, and so does he. */
+    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore): without one the rock stays, and so does he. */
     private Result cutOut() {
-        if (cuts >= MAX_CUTS || w.items.countCarried(Items.STONE_PICKAXE) == 0 && !dig.spareIron()) return finish(CLOSED);
+        if (cuts >= MAX_CUTS || w.items.countCarried(Items.STONE_PICKAXE) == 0 && !dig.ironLeft(0)) return finish(CLOSED);
         cuts++;
         cutWait = 0;
         rescuesBefore = w.owner.recovery.begun();

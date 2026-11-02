@@ -61,7 +61,7 @@ public final class CompanionMineClimbOutTests {
         });
     }
 
-    private static void climb(GameTestHelper h, CompanionEntity c, BlockPos stand, java.util.function.Consumer<CompanionActionResult> check) {
+    static void climb(GameTestHelper h, CompanionEntity c, BlockPos stand, java.util.function.Consumer<CompanionActionResult> check) {
         long[] id = {0};
         h.onEachTick(() -> {
             if (id[0] == 0) {
@@ -80,7 +80,7 @@ public final class CompanionMineClimbOutTests {
     }
 
     /** A pit of three by three under the soil of the surface, shut in {@code bedrock} on every side if asked; he stands in it with the record of the run. */
-    private static CompanionEntity roofedPit(GameTestHelper h, boolean bedrock) {
+    static CompanionEntity roofedPit(GameTestHelper h, boolean bedrock) {
         mountain(h, true);
         BlockPos entrance = new BlockPos(CENTER + EAST, GROUND + 1 - BELOW, CENTER + SOUTH), stand = entrance.north().below();
         for (int x = entrance.getX() - 2; x <= entrance.getX() + 2; x++) for (int z = stand.getZ() - 2; z <= stand.getZ() + 2; z++) for (int y = stand.getY() - 1; y <= PIT_TOP + 1; y++) {
