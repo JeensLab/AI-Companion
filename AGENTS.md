@@ -126,7 +126,7 @@
 
 - Сборка: Windows `.\gradlew.bat build`; Linux/macOS `./gradlew build`.
 - Игровые тесты: повседневно `.\scripts\verify-fast.ps1` (все тесты без трёх длинных
-  сценариев `endurance`, 4 процесса); перед PR один раз полный `.\gradlew.bat runGameTestServer`
+  сценариев `endurance`, в нескольких процессах); перед PR один раз полный `.\gradlew.bat runGameTestServer`
   или `./gradlew runGameTestServer`.
   **`build` не запускает GameTest.** Для выбора сценария используйте таблицу в руководстве.
 - Быстрая проверка в живом мире — главный ускоритель для разработки с агентом: правка видна

@@ -1,4 +1,4 @@
-param([ValidateRange(1,20)][int]$Repetitions=1,[ValidateRange(1,8)][int]$Shards=4)
+param([ValidateRange(1,20)][int]$Repetitions=1,[ValidatePattern('^(auto|[1-8])$')][string]$Shards='auto')
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'GameTestRun.ps1')
 
@@ -14,11 +14,21 @@ function Read-Shard([int]$Shard) {
     [ordered]@{shard=$Shard;passed=if($match.Success){[int]$match.Groups[1].Value}else{0};expected=if($selection.Success){[int]$selection.Groups[2].Value}else{0};pool=if($selection.Success){[int]$selection.Groups[1].Value}else{0};failed=$failed}
 }
 
+# One server holds about 1.5 GB; 2 GB each keeps the system out of swap. Six and eight shards were no faster than four, and eight left 1.4 GB free.
+function Get-AutoShards {
+    $freeGb=(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB
+    $byMemory=[math]::Floor($freeGb/2)
+    $count=[math]::Max(1,[math]::Min(4,[math]::Min([Environment]::ProcessorCount-1,$byMemory)))
+    Write-Host "Shards: $count (cores $([Environment]::ProcessorCount), free $([math]::Round($freeGb,1)) GB, limit 4)"
+    [int]$count
+}
+
+$shardCount=if($Shards -eq 'auto'){Get-AutoShards}else{[int]$Shards}
 $runs=@()
 for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     # Four kept worlds grow four times as fast as run/world, which reached 12.6 GB and slowed runs into random failures.
-    0..($Shards-1) | ForEach-Object {
-        $shardDir=Join-Path $gameTestRoot "run\shard-$_"
+    Get-ChildItem -LiteralPath (Join-Path $gameTestRoot 'run') -Directory -Filter 'shard-*' -ErrorAction SilentlyContinue | ForEach-Object {
+        $shardDir=$_.FullName
         $stale=Join-Path $shardDir 'logs\latest.log'
         if(Test-Path -LiteralPath $stale){Remove-Item -LiteralPath $stale -Force}
         $world=Join-Path $shardDir 'world'
@@ -28,9 +38,9 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     $started=Get-Date
     Push-Location $gameTestRoot
     $ErrorActionPreference='Continue'
-    try { & ./gradlew.bat --offline --continue "-PgameTestShards=$Shards" runFastGameTests *> $log; $testExit=$LASTEXITCODE }
+    try { & ./gradlew.bat --offline --continue "-PgameTestShards=$shardCount" runFastGameTests *> $log; $testExit=$LASTEXITCODE }
     finally { $ErrorActionPreference='Stop'; Pop-Location }
-    $results=@(0..($Shards-1) | ForEach-Object {Read-Shard $_})
+    $results=@(0..($shardCount-1) | ForEach-Object {Read-Shard $_})
     $passed=($results | ForEach-Object {$_.passed} | Measure-Object -Sum).Sum
     $expected=($results | ForEach-Object {$_.expected} | Measure-Object -Sum).Sum
     $pool=($results | ForEach-Object {$_.pool} | Sort-Object -Unique)
