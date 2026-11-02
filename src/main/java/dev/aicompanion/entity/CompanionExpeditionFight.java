@@ -47,9 +47,11 @@ final class CompanionExpeditionFight {
         long now = level.getGameTime();
         Monster foe = nearest(level);
         if (foe == null) {
-            if (!pressed(level)) { settle(now); return false; }
+            Monster near = pressing(level);
+            if (near == null) { settle(now); return false; }
             // No foe is chosen, yet nothing is dug or sealed and the pickaxe does not come back: the guard moves him, the sword stays.
             began();
+            if (!worthFighting(near, now)) { settle(now); return false; }
             lastBusy = now;
             owner.selectWeaponForCombat();
             return true;
@@ -64,13 +66,17 @@ final class CompanionExpeditionFight {
         return true;
     }
 
-    /** A fuse is lit near him, or a hostile mob he has not let go is on him: the work waits and the sword stays in his hand, whoever is a foe. */
-    private boolean pressed(ServerLevel level) {
+    /**
+     * The mob for which the work waits with the sword in his hand, whoever is a foe: a lit fuse near him, or a hostile mob he has not let go
+     * on him. A neutral spider or a warden is no such mob: he may not strike it, so nothing would ever end the wait.
+     */
+    private Monster pressing(ServerLevel level) {
         for (Monster monster : level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(FUSE_NEAR), mob -> mob.isAlive() && !mob.isNoAi())) {
-            if (monster instanceof Creeper creeper && CompanionCreeperGuard.lit(creeper) && owner.distanceTo(creeper) < FUSE_NEAR) return true;
-            if (!letGo(monster) && inContact(monster) && owner.hasLineOfSight(monster) && !owner.combat.unarmedOnTask()) return true;
+            if (monster instanceof Creeper creeper && CompanionCreeperGuard.lit(creeper) && owner.distanceTo(creeper) < FUSE_NEAR) return monster;
+            if (!letGo(monster) && inContact(monster) && owner.hasLineOfSight(monster) && !owner.combat.unarmedOnTask()
+                    && owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return monster;
         }
-        return false;
+        return null;
     }
 
     /** The melee goal has taken the turn: from here on the fight is under way (called before the weapon is picked, so the tool in hand is still the work's). */
