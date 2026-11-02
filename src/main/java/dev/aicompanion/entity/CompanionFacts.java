@@ -48,7 +48,8 @@ public final class CompanionFacts {
         var end = c.getServer() == null ? null : c.getServer().getLevel(Level.END);
         boolean dragonDead = end != null && end.getDragonFight() != null && end.getDragonFight().hasPreviouslyKilledDragon();
         // The record of the mine keeps no dimension, and a mine is dug in the Overworld only.
-        boolean belowMine = c.level().dimension() == Level.OVERWORLD && c.mineSite().exists() && (c.getY() < c.mineSite().entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH || c.mineSite().buried() && !CompanionExpeditionRecord.underSky(c.level(), c.blockPosition().above()));
+        boolean belowMine = c.level().dimension() == Level.OVERWORLD && c.mineSite().exists() && !CompanionExpeditionRecord.underSky(c.level(), c.blockPosition().above())
+                && (c.getY() < c.mineSite().entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH || c.mineSite().buried());
         return new CompanionFacts(carried, worn, dragonDead, c.mineSite().openedTotal(), belowMine, ironInSight(c), false);
     }
 
