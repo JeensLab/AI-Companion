@@ -59,7 +59,8 @@ final class CompanionExpeditionPlugs {
         for (int i = 0; i < walk.size(); i++) {
             BlockPos at = walk.get(i);
             BlockPos head = i == 0 ? null : headroom(walk.get(i - 1), at);
-            for (BlockPos cell : new BlockPos[]{at, at.above(), head}) {
+            // The upper plug is the one in sight on a step down: it hides the lower one from where he stands, and is taken out first.
+            for (BlockPos cell : new BlockPos[]{head, at.above(), at}) {
                 if (cell != null && mine.seals().contains(cell) && !CompanionShaftPlan.open(level, cell)) {
                     List<BlockPos> toStand = List.copyOf(walk.subList(0, Math.max(1, i)));
                     return new Way(toStand, cell);

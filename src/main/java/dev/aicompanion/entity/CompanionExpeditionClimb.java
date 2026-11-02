@@ -243,7 +243,12 @@ final class CompanionExpeditionClimb {
                 phase = Phase.TRAVEL;
                 return Result.WORKING;
             }
-            default -> { return finish(" Подняться не вышло: свою пробку на пути наверх убрать нечем, остался где стою."); }
+            case FULL -> { return finish(" Подняться не вышло: свою пробку на пути наверх убрать некуда, сумка полна, остался где стою."); }
+            default -> {
+                dig.diagnoseDig(plug.cell());
+                dig.forget();
+                return cutOut();
+            }
         }
     }
 
