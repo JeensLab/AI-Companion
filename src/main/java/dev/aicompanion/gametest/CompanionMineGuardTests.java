@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionSeal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -125,13 +126,15 @@ public final class CompanionMineGuardTests {
         watchRun(h, c, creeper, true);
     }
 
-    /** He is at the dead end of a one-block corridor and the lit creeper is in its mouth: there is no way off, so he strikes it (its health falls) and lives or not by that, but never stands. */
+    /** He is at the dead end of a one-block corridor and the lit creeper is in its mouth: there is no way off and no block in the bag to wall it out with, so he strikes it (its health falls) and lives or not by that, but never stands. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aLitFuseWithNoWayOffIsAnsweredWithTheSword(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
-        BlockPos foot = chamber(h, carveMine(h, c, 0));
-        for (int dx = ROOM_FROM; dx <= ROOM_FROM + DEAD_END_LENGTH; dx++) for (int dy = 0; dy < 2; dy++) {
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (CompanionSeal.seals(c.getItem(slot))) c.setItem(slot, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = 1; dx <= ROOM_FROM + DEAD_END_LENGTH; dx++) for (int dy = 0; dy < 2; dy++) {
             h.getLevel().setBlock(foot.offset(dx, dy, 0), Blocks.AIR.defaultBlockState(), 2 | 16);
         }
         place(c, foot.offset(ROOM_FROM + DEAD_END_LENGTH, 0, 0));
