@@ -4,11 +4,13 @@ import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
@@ -22,39 +24,47 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.chamber;
 import static dev.aicompanion.gametest.CompanionMineFightTests.place;
 import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 
-/** A mine fight at low health is left, not fought to the death (acceptance w1e: two deaths on zombies at 2-6 health); at full health the sword still kills. */
+/** A mine fight at low health is left up the stairs, not fought to the death (acceptance w1e: two deaths on zombies at 2-6 health); at full health the sword still kills. */
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineK19Tests {
-    private static final int SURVIVE_TICKS = 700, KILL_TICKS = 1200, HORDE = 5, HORDE_TOTAL = 10, DIG_TICKS = 600;
+    private static final int KILL_TICKS = 1200, FROM_STEP = 10, CLIMB = 8, CLIMB_TICKS = 300;
+    private static final float LOW = 4;
 
     private CompanionMineK19Tests() { }
 
     /**
-     * Digging, a horde of zombies comes at him, as in the mine of the acceptance (a fallen zombie is replaced by the next, so the
-     * fight has no end to win). With the sword, bread and blocks in the bag he does not fight to the last health points: at low health he
-     * goes up his stairs and lives.
+     * On his own stairs at four health with two zombies right below him on the same stairs and the way up free, the mine record real and the sword
+     * in his hand: he climbs away at least {@link #CLIMB} steps and lands no blow while his health is that low (the old rule refused to leave a
+     * foe within three blocks, so he stood and fought). A property of what he does, not a count of who lives.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aHordeOnHimAtLowHealthIsLeftOnTheStairsAndHeLives(GameTestHelper h) {
+    public static void atFourHealthWithZombiesRightBelowHimOnTheStairsHeClimbsAwayAndStrikesNoBlow(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
-        BlockPos foot = chamber(h, carveMine(h, c, 0));
-        place(c, foot);
-        List<Zombie> foes = new ArrayList<>();
-        long[] hordeAt = {-1};
-        float[] lowest = {c.getMaxHealth()};
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        place(c, stairs.get(FROM_STEP));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+        c.setHealth(LOW);
+        List<Zombie> foes = List.of(zombie(h, stairs.get(FROM_STEP + 2)), zombie(h, stairs.get(FROM_STEP + 3)));
+        float[] seen = {foes.get(0).getMaxHealth(), foes.get(1).getMaxHealth()};
+        int startY = rel(h, stairs.get(FROM_STEP)).getY();
+        long begun = h.getTick();
         start(h, c, 1);
         h.onEachTick(() -> {
-            lowest[0] = Math.min(lowest[0], c.getHealth());
-            if (hordeAt[0] < 0 && (c.expeditionStage().equals("DESCEND") || c.expeditionStage().equals("BRANCH"))) hordeAt[0] = h.getTick();
-            if (hordeAt[0] >= 0 && foes.stream().filter(Zombie::isAlive).count() < HORDE && foes.size() < HORDE_TOTAL) foes.add(zombie(h, foot.offset(3, 0, foes.size() % 4)));
-            for (Zombie foe : foes) if (foe.isAlive() && foe.getTarget() == null) foe.setTarget(c);
-            String trace = " | stage " + c.expeditionStage() + ", foes alive " + foes.stream().filter(Zombie::isAlive).count() + "/" + foes.size() + ", lowest health " + lowest[0]
-                    + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            int rise = rel(h, c.blockPosition()).getY() - startY;
+            String trace = " | climbed " + rise + " steps, zombie health " + foes.get(0).getHealth() + "/" + foes.get(1).getHealth() + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + ", stage " + c.expeditionStage() + " | " + report(c);
+            for (int i = 0; i < foes.size(); i++) {
+                Zombie foe = foes.get(i);
+                if (foe.isAlive() && foe.getTarget() == null) foe.setTarget(c);
+                boolean struck = !foe.isAlive() || foe.getHealth() < seen[i];
+                h.assertTrue(!struck || c.getHealth() > LOW, "He struck a zombie at " + LOW + " health or less" + trace);
+                seen[i] = foe.isAlive() ? foe.getHealth() : seen[i];
+            }
             h.assertTrue(c.isAlive(), "Died" + trace);
-            if (hordeAt[0] < 0) { h.assertTrue(h.getTick() < DIG_TICKS, "He did not come to the digging" + trace); return; }
-            if (h.getTick() - hordeAt[0] >= SURVIVE_TICKS) h.succeed();
+            if (rise >= CLIMB) h.succeed();
+            h.assertTrue(h.getTick() - begun < CLIMB_TICKS, "He did not climb away in time" + trace);
         });
     }
 
