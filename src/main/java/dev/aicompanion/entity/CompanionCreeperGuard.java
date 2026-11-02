@@ -233,7 +233,7 @@ final class CompanionCreeperGuard {
         flee = null;
         dashing = false;
         CompanionMineSite mine = owner.work.mine;
-        List<BlockPos> way = mine.exists() ? CompanionExpeditionClimb.wayUp(mine) : List.of();
+        List<BlockPos> way = mine.exists() && level.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionExpeditionClimb.wayUp(mine) : List.of();
         int at = indexOf(way, owner.blockPosition(), ON_ROUTE_SQR);
         boolean underground = at >= 0 && !level.canSeeSky(owner.blockPosition());
         List<Creeper> threats = threats(level);

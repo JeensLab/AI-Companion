@@ -1,5 +1,6 @@
 package dev.aicompanion.gametest;
 
+import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionFacts;
 import dev.aicompanion.entity.CompanionShaftPlan;
@@ -12,6 +13,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -35,7 +37,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineReviewTests {
     private static final int GAP_AT = 12, WALL_AT = 5, IRON_LEFT = 60;
-    private static final int TRENCH_LENGTH = 8, TRENCH_CREEPER = 3, FUSE_SETTLED = 100, FIRE_TICKS = 200, FIRE_REACTION = 60, LOW_HEALTH = 6;
+    private static final int TRENCH_LENGTH = 8, TRENCH_CREEPER = 3, FUSE_SETTLED = 100, FIRE_TICKS = 200, FIRE_REACTION = 60, LOW_HEALTH = 6, NETHER_Y = 40, SURFACE_Y = 100;
 
     /**
      * The stairs are shut at feet and head by blocks he did not put there, the record knows of none and he has only the worn iron pickaxe.
@@ -180,5 +182,27 @@ public final class CompanionMineReviewTests {
             h.assertTrue(!c.mineSite().stopWayLeft(), "The stop of an earlier order stands after the retreat: " + report(c));
             h.succeed();
         });
+    }
+
+    /**
+     * The record of the mine keeps no dimension, and the mine is only ever dug in the Overworld: in the Nether, with Y far below the entrance,
+     * he is not «below the mine» (that sends a goal up stairs that are not there, and picks the steps for a man underground).
+     */
+    @GameTest(template = "marathon_cave")
+    public static void isNotBelowTheMineInTheNether(GameTestHelper h) {
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No second dimension to test with");
+        BlockPos at = new BlockPos(0, NETHER_Y, 0);
+        nether.getChunk(at);
+        CompanionEntity c = AICompanionMod.COMPANION.get().create(nether);
+        c.moveTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        nether.addFreshEntity(c);
+        try {
+            c.mineSite().start(new BlockPos(0, SURFACE_Y, 0), Direction.NORTH);
+            h.assertTrue(!CompanionFacts.of(c).belowMine(), "In the Nether at Y " + NETHER_Y + " he is below a mine entered at Y " + SURFACE_Y);
+        } finally {
+            c.discard();
+        }
+        h.succeed();
     }
 }
