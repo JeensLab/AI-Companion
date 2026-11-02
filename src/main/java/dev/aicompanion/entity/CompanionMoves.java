@@ -199,23 +199,22 @@ final class CompanionMoves {
     /**
      * A drop straight after a drop is no new fall: he is still in the air over the first landing when he turns to the second (a drop of
      * three takes nine ticks, the next column four and a half), so the falls add up (marathon m15: down a slope of ledges three blocks
-     * each, 6 and 26 blocks in one fall). The chain may not come to more than he may fall, unless every drop of it is one block: a stair is
-     * walked step by step. Into water and onto a ladder or vine nothing is added.
+     * each, 6 and 26 blocks in one fall). The chain may not come to more than he may fall. A drop of one block lands within the time he
+     * takes for a column (4 ticks in the air against 4.6), so a stair is walked step by step and breaks the chain, before and after it.
+     * Into water and onto a ladder or vine nothing is added.
      */
     private static boolean fallsFar(Node from, Node to) {
         int fall = from.y - to.y;
-        if (fall <= 0 || to.type == PathType.WATER || to.type == PathType.OPEN) return false;
-        boolean stair = fall == 1;
+        if (fall <= 1 || to.type == PathType.WATER || to.type == PathType.OPEN) return false;
         Node at = from;
         for (int link = 0; link < CHAIN_LINKS && at.cameFrom != null && at.type != PathType.WATER; link++) {
             Node before = at.cameFrom;
             int drop = before.y - at.y;
-            if (drop <= 0 || before.x == at.x && before.z == at.z) break;
+            if (drop <= 1 || before.x == at.x && before.z == at.z) break;
             fall += drop;
-            stair &= drop == 1;
             at = before;
         }
-        return !stair && fall > LAND_DROP;
+        return fall > LAND_DROP;
     }
 
     /** Down through air to the first cell with a floor: no deeper than he may fall, unless it is water. */

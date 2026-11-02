@@ -109,7 +109,7 @@ public final class CompanionLootFallTests {
         fetched(h, companion(h, bottom));
     }
 
-    /** The route search itself: no way down the ledges is found, and the way down by the steps has no fall of more than three in a row. */
+    /** The route search itself: no way down the ledges is found, and the way down by the steps has no run of drops past three blocks. */
     @GameTest(template = "tall_tree", timeoutTicks = 200)
     public static void routeDownNeverAddsUpDropsPastWhatHeMayFall(GameTestHelper h) {
         BlockPos bottom = pit(h);
@@ -124,13 +124,12 @@ public final class CompanionLootFallTests {
             path = nav.searchNow(java.util.Set.of(h.absolutePos(bottom)), 1);
             h.assertTrue(path != null && path.canReach(), "No way down by the steps");
             int fall = 0;
-            boolean stair = true;
             for (int i = 1; i < path.getNodeCount(); i++) {
                 int drop = path.getNode(i - 1).y - path.getNode(i).y;
-                if (drop <= 0) { fall = 0; stair = true; continue; }
+                // A drop of one block lands within a column's time: a stair, not a fall that goes on.
+                if (drop <= 1) { fall = 0; continue; }
                 fall += drop;
-                stair &= drop == 1;
-                h.assertTrue(stair || fall <= 3, "A fall of " + fall + " blocks in a row on the way, at node " + i);
+                h.assertTrue(fall <= 3, "A fall of " + fall + " blocks in a row on the way, at node " + i);
             }
             h.succeed();
         });
