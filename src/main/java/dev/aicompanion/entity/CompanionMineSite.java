@@ -31,7 +31,7 @@ public final class CompanionMineSite {
     public static final int RESTARTS_CARRIED = 20 * 120;
     /** The ways of getting on from a stop that came again: the stairs anew from the spot, then the way up. Past them the stop is final until he stands elsewhere. */
     public static final int STOP_WAYS = 2;
-    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, MAX_ABOVE = 1024, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
+    private static final int MAX_STANDS = 512, MAX_TUNNELS = 16, MAX_SEALS = 1024, MAX_TEMPORARY = 16, MAX_REFUSED = 128, MAX_FORBIDDEN = 256, MAX_HELD = 64, MAX_CAVE_CELLS = 2048, MAX_ABOVE = 1024, MAX_DUG = 4096, CAVE_FORGOTTEN = 8, MAX_TUNNEL_LENGTH = CompanionShaftPlan.MAX_TUNNEL_CELLS;
 
     /** Squared distance within which he counts as standing at a stand; the expedition's own measure of "the same spot". */
     private static final int NEAR_STAND = 12;
@@ -72,6 +72,8 @@ public final class CompanionMineSite {
      * above those), from the deepest to the entrance on the surface. The new record knows only the pit; this is how he gets out of it.
      */
     private final List<BlockPos> above = new ArrayList<>();
+    /** The cells of the records a restart replaced: air he dug himself, which the new record does not know and which is no cave; oldest dropped first. */
+    private final Set<BlockPos> dug = new LinkedHashSet<>();
     /** Where the last order stopped short under the ground, how it ended, and how often the same stop came again since; a save without it has none. */
     private BlockPos stopAt;
     private int stopEnding, stopRepeats;
@@ -140,6 +142,8 @@ public final class CompanionMineSite {
         // Under the ground the entrance is no way to the surface: the surface one is kept. A restart on open ground makes that spot the surface entrance.
         BlockPos surface = buried || origin == null ? origin : entrance;
         List<BlockPos> up = wayAbove(here);
+        Set<BlockPos> ownAir = new LinkedHashSet<>(dug);
+        ownAir.addAll(CompanionCaveSense.mineCells(this));
         Set<Direction> sides = EnumSet.noneOf(Direction.class);
         if (buried || entrance.equals(origin)) sides.addAll(originSides); else sides.add(stairDirection);
         int openedBefore = opened, stepBefore = openedAtStep;
@@ -158,6 +162,7 @@ public final class CompanionMineSite {
         originSides.addAll(sides);
         if (here.equals(surface)) originSides.add(stair);
         above.addAll(up);
+        for (BlockPos cell : ownAir) remember(dug, cell, MAX_DUG);
         caves.addAll(kept);
         seals.addAll(laid);
         temporary.addAll(standing);
@@ -182,9 +187,13 @@ public final class CompanionMineSite {
     /** The way up that the restarts under the ground left behind, deepest cell first, the entrance on the surface last; empty for a mine not started again there. */
     public List<BlockPos> above() { return Collections.unmodifiableList(above); }
 
+    /** The air of the records the restarts replaced; empty in a save from before it was kept. */
+    public Set<BlockPos> dug() { return Collections.unmodifiableSet(dug); }
+
     public void clear() {
         entrance = null;
         above.clear();
+        dug.clear();
         origin = null;
         originSides.clear();
         opened = openedAtStep = 0;
@@ -507,6 +516,7 @@ public final class CompanionMineSite {
             mine.putInt("StopRepeats", stopRepeats);
         }
         if (!above.isEmpty()) mine.putLongArray("Above", above.stream().mapToLong(BlockPos::asLong).toArray());
+        if (!dug.isEmpty()) mine.putLongArray("Dug", dug.stream().mapToLong(BlockPos::asLong).toArray());
         if (origin != null && !origin.equals(entrance)) {
             mine.putLong("Origin", origin.asLong());
             int mask = 0;
@@ -597,6 +607,7 @@ public final class CompanionMineSite {
             stopRepeats = Math.max(0, Math.min(STOP_WAYS + 1, mine.getInt("StopRepeats")));
         }
         for (long packed : mine.getLongArray("Above")) if (above.size() < MAX_ABOVE) above.add(BlockPos.of(packed));
+        for (long packed : mine.getLongArray("Dug")) if (dug.size() < MAX_DUG) dug.add(BlockPos.of(packed));
         origin = mine.contains("Origin", Tag.TAG_LONG) ? BlockPos.of(mine.getLong("Origin")) : entrance;
         if (mine.contains("OriginSides", Tag.TAG_BYTE)) {
             for (Direction side : Direction.Plane.HORIZONTAL) if ((mine.getByte("OriginSides") & 1 << side.get2DDataValue()) != 0) originSides.add(side);

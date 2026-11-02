@@ -142,10 +142,17 @@ final class CompanionCaveSense {
     }
 
     static Danger judge(Cave cave, Facts f) {
-        if (f.health() <= HEALTH_VERY || f.burning() || f.seals() == 0 || !f.fit() && (f.hostiles() >= CROWD || f.creeper() < CREEPER_CLOSE)) return Danger.VERY_DANGEROUS;
+        if (f.seals() == 0 || threatened(f)) return Danger.VERY_DANGEROUS;
         if (f.hostiles() > 0 || cave.lava() || cave.drop() > DROP_DANGEROUS || f.health() <= HEALTH_WARY || f.torches() < TORCHES_MIN) return Danger.DANGEROUS;
         return Danger.SAFE;
     }
+
+    private static boolean threatened(Facts f) {
+        return f.health() <= HEALTH_VERY || f.burning() || !f.fit() && (f.hostiles() >= CROWD || f.creeper() < CREEPER_CLOSE);
+    }
+
+    /** The bag without a sealing block is all that makes the cave very dangerous. */
+    static boolean onlyBlocksLack(Facts f) { return f.seals() == 0 && !threatened(f); }
 
     /** Which of the very-dangerous conditions of {@link #judge} hold, for the diagnostics. */
     static String veryReasons(Facts f) {

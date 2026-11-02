@@ -240,7 +240,8 @@ final class CompanionExpedition {
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */
     private void startRetreat(ServerLevel level, String why) {
         // A repeat danger from a cave with health to spare is not climbed away from again: he backs up the stairs and turns off.
-        boolean again = why.equals(CAVE_DANGER) && w.mine.retreats() >= 1 && owner.getHealth() > CompanionCaveSense.HEALTH_WARY;
+        boolean bareHanded = cave.bareHanded();
+        boolean again = why.equals(CAVE_DANGER) && (w.mine.retreats() >= 1 || bareHanded) && owner.getHealth() > CompanionCaveSense.HEALTH_WARY;
         CompanionExpeditionRecord.rememberMove(w.mine, stage == Stage.BRANCH ? tunnel : null, plan, stand, dir);
         plan = null;
         cave.close();
@@ -248,10 +249,13 @@ final class CompanionExpedition {
         backtrack.reset();
         dig.reset();
         if (again && backtrack.begin(level)) {
+            // A bag without blocks says nothing of the cave: the next danger is no repeat of it.
+            if (!bareHanded) w.mine.retreated();
             stage = Stage.BACKTRACK;
-            owner.workStatus("Пещера снова опасна, поднимаюсь по лестнице и сверну в сторону.");
+            owner.workStatus(bareHanded ? "Заделать пещеру нечем, поднимаюсь по лестнице и сверну в сторону." : "Пещера снова опасна, поднимаюсь по лестнице и сверну в сторону.");
             return;
         }
+        w.mine.retreated();
         stepEnd = Math.max(stepEnd, level.getGameTime() + CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
         w.deadline = Math.max(w.deadline, stepEnd + 40);
         retreat.begin(why);
@@ -640,8 +644,8 @@ final class CompanionExpedition {
                 plan = null;
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
                 // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground with no cells of the way up in the record there is no way up,
-                // and a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use.
-                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() && w.mine.above().isEmpty() || !hadStone) && dig.spareIron()) { dig.ironForRock = true; return; }
+                // a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use; and from a tunnel at the foot the climb costs more than the wear.
+                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() && w.mine.above().isEmpty() || !hadStone || stage == Stage.BRANCH) && dig.spareIron()) { dig.ironForRock = true; return; }
                 // A diamond in sight is worth the last wear of the iron pickaxe: the wear kept for ore is for this very ore, and the way up needs none.
                 if (!dig.lackedOre && !dig.ironForRock && dig.ironLeft(DIAMOND_IRON) && dig.diamondInSight((ServerLevel) owner.level(), DIAMOND_SIGHT)) { dig.ironForRock(DIAMOND_IRON); return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.

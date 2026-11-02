@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -46,6 +47,8 @@ final class CompanionExpeditionCave {
     private boolean hostile;
     /** A cave judged very dangerous has been dealt with: the expedition goes up his stairs. */
     private boolean retreat;
+    /** That cave is very dangerous only for want of a block to plug it with: nothing in it drives him out of the mine. */
+    private boolean bareHanded;
     /** The cell of the advance under way that a plug went into, until the expedition has taken it. */
     private BlockPos plugged;
     /** Stone was cut from the wall for this cave once already, and whether the cutting is for the plugs yet to lay (else for the judgement). */
@@ -75,12 +78,15 @@ final class CompanionExpeditionCave {
         return now;
     }
 
+    boolean bareHanded() { return bareHanded; }
+
     /** A very dangerous cave sends him up and is remembered, so no later step of the mine is dug back into it. */
     private void markRetreat(CompanionCaveSense.Danger danger, CompanionCaveSense.Facts facts, String where) {
         if (danger != CompanionCaveSense.Danger.VERY_DANGEROUS) return;
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "cave_very_dangerous", "entity", owner.getUUID(), "where", where,
                 "reasons", CompanionCaveSense.veryReasons(facts), "breach", cave.breach(), "position", owner.blockPosition());
         retreat = true;
+        bareHanded = CompanionCaveSense.onlyBlocksLack(facts);
         w.mine.shun(cave.air());
     }
 
@@ -126,7 +132,7 @@ final class CompanionExpeditionCave {
         ore.limit(pos -> true);
         seenBroken = dig.broken;
         idle = settle = taken = work = tries = 0;
-        hostile = retreat = stocked = resealing = false;
+        hostile = retreat = stocked = resealing = bareHanded = false;
         plugged = null;
         scanned = null;
         scanFrom = 0;
@@ -172,13 +178,16 @@ final class CompanionExpeditionCave {
         mine.addAll(planCells);
         mine.addAll(dig.minedOre);
         mine.add(at);
+        // The stairs a restart forgot are his own air, no cave; the plugs still go only where the mine of the record touches the cave.
+        Set<BlockPos> own = new HashSet<>(mine);
+        own.addAll(w.mine.dug());
         List<BlockPos> mouth = new ArrayList<>();
         for (Direction side : Direction.values()) {
             BlockPos next = at.relative(side);
-            if (!mine.contains(next) && level.isLoaded(next) && CompanionShaftPlan.open(level, next)) mouth.add(next);
+            if (!own.contains(next) && level.isLoaded(next) && CompanionShaftPlan.open(level, next)) mouth.add(next);
         }
         if (mouth.isEmpty()) return false;
-        CompanionCaveSense.Cave found = CompanionCaveSense.fill(level, at, mouth, mine);
+        CompanionCaveSense.Cave found = CompanionCaveSense.fill(level, at, mouth, own);
         if (found.surface()) return false;
         cave = found;
         touch = mine;
@@ -249,11 +258,28 @@ final class CompanionExpeditionCave {
             if (waypoint == null) return leave("");
         }
         switch (w.route.legs(waypoint, ARRIVED)) {
-            case WALKING -> { }
+            case WALKING -> {
+                if (goesRound()) {
+                    w.route.legsEnd(false);
+                    w.route.stop();
+                    visited.add(waypoint);
+                    waypoint = null;
+                }
+            }
             case NEAR -> { visited.add(waypoint); waypoint = null; work++; }
             case FAILED -> { unreachable.add(waypoint); waypoint = null; }
         }
         return true;
+    }
+
+    /** The way to the place leaves the cave: seen through a slit, it is reached round by his stairs and the surface, which is no look about the cave. */
+    private boolean goesRound() {
+        Path path = owner.getNavigation().getPath();
+        if (path == null) return false;
+        for (int i = path.getNextNodeIndex(); i < path.getNodeCount(); i++) {
+            if (path.getNodePos(i).distSqr(cave.breach()) > CompanionCaveSense.RADIUS * CompanionCaveSense.RADIUS) return true;
+        }
+        return false;
     }
 
     /** The hole an ore left is filled at once, so that no pit is left in the cave floor; if it cannot be, it stays. */

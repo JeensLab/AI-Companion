@@ -43,9 +43,8 @@ final class CompanionExpeditionRecord {
         return true;
     }
 
-    /** A retreat counts, and the move under way is refused so that the next order takes another one instead of walking into the same trouble. */
+    /** The move under way is refused so that the next order takes another one instead of walking into the same trouble. */
     static void rememberMove(CompanionMineSite mine, Direction tunnel, CompanionExpeditionStep plan, BlockPos stand, Direction dir) {
-        mine.retreated();
         if (tunnel != null) mine.refuse(mine.foot(), tunnel);
         else if (plan != null) mine.refuse(plan.from, plan.turn);
         else if (stand != null && dir != null) mine.refuse(stand, dir);
