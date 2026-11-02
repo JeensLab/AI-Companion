@@ -413,10 +413,10 @@ public final class CompanionMineSite {
         return new CompanionShaftPlan.Avoid(Collections.unmodifiableSet(shut), (at, d) -> refused(at, d) || own.contains(at.relative(d)), this::shunned);
     }
 
-    /** The cell is the floor of a stand of his own stairs (or of the entrance): breaking it would open a hole under the step. */
+    /** The cell is the floor of a stand of his own stairs (or of the entrance), also of the stairs above a restart: breaking it would open a hole under the step. */
     public boolean carriesStand(BlockPos floor) {
         BlockPos above = floor.above();
-        return above.equals(entrance) || stands.contains(above);
+        return above.equals(entrance) || stands.contains(above) || this.above.contains(above);
     }
 
     private static <T> void remember(Set<T> set, T entry, int cap) {
