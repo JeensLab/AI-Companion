@@ -203,7 +203,7 @@ public final class CompanionPlanRunner {
             CompanionDiagnostics.event(port.trace(), "step_result", "step", number, "action", action, "success", result.success(),
                     "continuePlan", verdict.decision() == Decision.CONTINUE, "decision", verdict.decision(), "reason", verdict.reason(),
                     "status", result.status(), "message", result.message(), "progressBefore", before.progress(), "progressAfter", now.progress(),
-                    "completionCheck", List.of("follow", "protect", "wander").contains(action.type()) ? "mode_acknowledgement_only" : "engine_result");
+                    "completionCheck", List.of("follow", "protect", "wander", "enter_portal").contains(action.type()) ? "mode_acknowledgement_only" : "engine_result");
             // A craft refused at once for lack of materials becomes «get it»: "craft N" is N new ones, "get" counts all in the bag.
             if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "craft_item".equals(action.type())) {
                 return port.carried(action.item()).thenCompose(have -> {

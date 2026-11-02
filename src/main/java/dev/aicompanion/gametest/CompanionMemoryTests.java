@@ -772,6 +772,23 @@ public final class CompanionMemoryTests {
     }
 
     @GameTest(template="empty")
+    public static void systemPromptKeepsWorkProgressOutOfSmallTalk(GameTestHelper h) {
+        String prompt = OpenRouterClient.buildSystemPrompt(OpenRouterClient.buildPersona("Весёлый напарник.", "Гоша", Map.of()), true, "лучший друг");
+        h.assertTrue(prompt.contains("справка для тебя, а не тема разговора") && prompt.contains("только если товарищ сам спросил"),
+                "Nothing stops him reporting his work unasked");
+        h.assertTrue(prompt.contains("не говори, что продолжаешь рубить"), "The rule against stale work claims is lost");
+        h.succeed();
+    }
+
+    /** Issue #70: he called a hoglin peaceful, and hoglins are no monsters in the snapshot of threats. */
+    @GameTest(template="empty")
+    public static void systemPromptDoesNotCallHoglinsPeaceful(GameTestHelper h) {
+        String prompt = OpenRouterClient.buildSystemPrompt(OpenRouterClient.buildPersona("Весёлый напарник.", "Гоша", Map.of()), true, "лучший друг");
+        h.assertTrue(prompt.contains("хоглины (кабаны в Незере) нападают сами"), "Nothing tells him hoglins are enemies");
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
     public static void recallReadsCleanlyWithoutAddressRepeat(GameTestHelper h) {
         var memory = new CompanionMemory();
         for (String fact : List.of("Любит железо.", "Просит звать его Роб.", "Боится пауков!", "Роб строит базу у реки")) {

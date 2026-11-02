@@ -328,7 +328,20 @@ public final class CompanionChatScreen extends Screen {
         boolean note = spoken.contains(CompanionDialogue.BAG_NOTE);
         spoken = CompanionDialogue.heard(actions, spoken, local, now - bagNoteAt < 30_000);
         if (note) bagNoteAt = now;
+        if (error == null && actions.stream().anyMatch(action -> "walk_heading".equals(action.type())) && !spoken.isBlank()) { courseSummary(raw, spoken, trace); return; }
         if (!spoken.isBlank()) addVoiceReply(spoken, trace, "engine_summary");
+    }
+
+    /**
+     * The end of a walk he led (arrived, found, water ahead with a way round, lava, the player left behind) is said by the model
+     * in his own words, like his other remarks; without an answer the plain summary is said instead.
+     */
+    private static void courseSummary(String report, String plain, String trace) {
+        var speaker = CompanionVoiceAudio.speaker();
+        String snapshot = speaker == null ? "" : GameContext.ambientSnapshot(speaker);
+        OpenRouterClient.react("Чем кончился путь, которым я вёл товарища по его просьбе: " + report, snapshot, trace, true, true)
+                .whenComplete((text, error) -> Minecraft.getInstance().execute(() ->
+                        addVoiceReply(error == null && text != null && !text.isBlank() ? text : plain, trace, "engine_summary")));
     }
 
     /** When the chat last said the bag note of a stopped sorting. */
