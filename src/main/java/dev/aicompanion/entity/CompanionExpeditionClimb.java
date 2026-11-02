@@ -155,6 +155,7 @@ final class CompanionExpeditionClimb {
 
     /** Across a gap of the record: his own steps once near the cell beyond it, a route search until then, and a plug of his that shuts it, near or far, out of the way. */
     private Result travel() {
+        if (onSurface()) return finish(" Копать нечем, поднялся за припасами.");
         BlockPos beyond = cells.get(stretchEnd);
         if (w.owner.blockPosition().distManhattan(beyond) <= OWN_STEPS) {
             if (dig.reach(beyond)) return crossed();
@@ -168,6 +169,14 @@ final class CompanionExpeditionClimb {
             }
             default -> { return Result.WORKING; }
         }
+    }
+
+    /** Out under the open sky at the height of the entrance on the surface: the climb has done its work, whatever cell of the record lies beyond the gap. */
+    private boolean onSurface() {
+        ServerLevel level = (ServerLevel) w.owner.level();
+        BlockPos top = w.mine.origin() != null ? w.mine.origin() : w.mine.entrance();
+        BlockPos here = CompanionExpeditionRecord.standingCell(level, w.owner);
+        return here.getY() >= top.getY() - CompanionExpedition.UNDERGROUND_DEPTH && CompanionExpeditionRecord.underSky(level, here.above());
     }
 
     private Result crossed() {
