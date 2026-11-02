@@ -46,6 +46,7 @@ public final class CompanionDiamondGoalTests {
     static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
     private static final int STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25;
     private static final int TIMEOUT = 24000, SAVE_TIMEOUT = 100, FIGHT_DEADLINE = 600, RETARGET_EVERY = 20, FORCED_RETREATS = 3, NEW_CELLS = 3;
+    private static final int ROOF_HEIGHT = 3, ROOF_REACH = 2;
     private static final float LOW = 7;
 
     @AfterBatch(batch = "diamond_goal_ends") public static void afterEnds(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -286,14 +287,26 @@ public final class CompanionDiamondGoalTests {
         c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
         c.setItem(1, new ItemStack(Items.BREAD, 3));
         c.setItem(2, new ItemStack(Items.STONE_SWORD));
-        c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
-        List<CompanionMilestones.Step> down = mineSteps(c);
-        h.assertTrue(down.size() == 1 && down.getFirst().type().equals("dig_for_diamonds"), "Underground with three bread the plan was " + down);
-        c.mineSite().clear();
-        List<String> kit = mineSteps(c).stream().map(CompanionMilestones.Step::item).toList();
-        for (String needed : List.of("minecraft:torch", "minecraft:stone_pickaxe", "minecraft:crafting_table", "minecraft:stick", "minecraft:cobblestone"))
-            h.assertTrue(kit.contains(needed), "On the surface the kit lacks " + needed + ": " + kit);
-        h.succeed();
+        underRoof(h, c, () -> {
+            c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
+            List<CompanionMilestones.Step> down = mineSteps(c);
+            h.assertTrue(down.size() == 1 && down.getFirst().type().equals("dig_for_diamonds"), "Underground with three bread the plan was " + down);
+            c.mineSite().clear();
+            List<String> kit = mineSteps(c).stream().map(CompanionMilestones.Step::item).toList();
+            for (String needed : List.of("minecraft:torch", "minecraft:stone_pickaxe", "minecraft:crafting_table", "minecraft:stick", "minecraft:cobblestone"))
+                h.assertTrue(kit.contains(needed), "On the surface the kit lacks " + needed + ": " + kit);
+        });
+    }
+
+    /** Runs the checks once rock hides the sky from him: height alone is no mine, and the sky light follows a new block a few ticks late. */
+    static void underRoof(GameTestHelper h, CompanionEntity c, Runnable checks) {
+        BlockPos top = c.blockPosition().above(ROOF_HEIGHT);
+        for (BlockPos cell : BlockPos.betweenClosed(top.offset(-ROOF_REACH, 0, -ROOF_REACH), top.offset(ROOF_REACH, 0, ROOF_REACH)))
+            c.level().setBlockAndUpdate(cell, Blocks.STONE.defaultBlockState());
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.level().canSeeSky(c.blockPosition().above()), "The sky is still open above him");
+            checks.run();
+        });
     }
 
     private static List<CompanionMilestones.Step> mineSteps(CompanionEntity c) {

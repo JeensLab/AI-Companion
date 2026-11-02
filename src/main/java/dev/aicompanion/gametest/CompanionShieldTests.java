@@ -302,9 +302,10 @@ public final class CompanionShieldTests {
         for (net.minecraft.core.Direction side : net.minecraft.core.Direction.values()) if (side != net.minecraft.core.Direction.DOWN) h.setBlock(buried.relative(side), Blocks.STONE);
         h.assertTrue(trekSteps(c, false).isEmpty(), "Ore inside the rock is not seen: " + trekSteps(c, false));
         h.setBlock(ore, Blocks.IRON_ORE);
-        c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
-        h.assertTrue(trekSteps(c, false).isEmpty(), "Down in the mine nothing is fetched: " + trekSteps(c, false));
-        h.succeed();
+        CompanionDiamondGoalTests.underRoof(h, c, () -> {
+            c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
+            h.assertTrue(trekSteps(c, false).isEmpty(), "Down in the mine nothing is fetched: " + trekSteps(c, false));
+        });
     }
 
     /** What the mine step plans for a bag, as the agenda reads it: the shield is made from what is carried, never fetched, and only put on when it is there. */
@@ -337,16 +338,17 @@ public final class CompanionShieldTests {
         c.setItem(4, ItemStack.EMPTY);
         c.setItem(5, new ItemStack(Items.SHIELD));
         h.assertTrue(shieldSteps(c).equals(List.of("equip_item minecraft:shield offhand")), "A shield in the bag is only put on: " + shieldSteps(c));
-        c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
-        h.assertTrue(shieldSteps(c).equals(List.of("equip_item minecraft:shield offhand")), "Down in the mine after a death the shield is put on again: " + shieldSteps(c));
-        c.setItem(6, new ItemStack(Items.IRON_INGOT, 3));
-        c.setItem(7, new ItemStack(Items.OAK_PLANKS, 16));
-        c.setItem(5, ItemStack.EMPTY);
-        h.assertTrue(shieldSteps(c).isEmpty(), "Down in the mine nothing is made: " + shieldSteps(c));
-        c.mineSite().clear();
-        c.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
-        h.assertTrue(shieldSteps(c).isEmpty(), "A shield in the left hand needs nothing: " + shieldSteps(c));
-        h.succeed();
+        CompanionDiamondGoalTests.underRoof(h, c, () -> {
+            c.mineSite().start(c.blockPosition().above(20), net.minecraft.core.Direction.NORTH);
+            h.assertTrue(shieldSteps(c).equals(List.of("equip_item minecraft:shield offhand")), "Down in the mine after a death the shield is put on again: " + shieldSteps(c));
+            c.setItem(6, new ItemStack(Items.IRON_INGOT, 3));
+            c.setItem(7, new ItemStack(Items.OAK_PLANKS, 16));
+            c.setItem(5, ItemStack.EMPTY);
+            h.assertTrue(shieldSteps(c).isEmpty(), "Down in the mine nothing is made: " + shieldSteps(c));
+            c.mineSite().clear();
+            c.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+            h.assertTrue(shieldSteps(c).isEmpty(), "A shield in the left hand needs nothing: " + shieldSteps(c));
+        });
     }
 
     private static void goesDownWith(GameTestHelper h, ItemStack offhand, ItemStack... extra) {
