@@ -197,14 +197,25 @@ final class CompanionExpeditionRecord {
     /**
      * The cell he really stands in: his own, or the first one below it (at most {@code MAX_DROP}) with a firm floor, as mid-jump his feet are in the air above it.
      * A cell that is shut (a fence post of a shaft he broke into stands beside him in it) is no place to stand: the open cell beside it that he is nearest to.
+     * On the edge of a ledge, his centre over air and only the body on the block, the cell is the one above the block that holds him.
      */
     static BlockPos standingCell(ServerLevel level, Entity who) {
         BlockPos here = beside(level, who);
+        BlockPos ledge = ledgeUnder(level, who, here);
+        if (ledge != null) return ledge;
         for (int drop = 0; drop <= MAX_DROP; drop++) {
             BlockPos cell = here.below(drop), floor = cell.below();
             if (level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return cell;
         }
         return here;
+    }
+
+    private static BlockPos ledgeUnder(ServerLevel level, Entity who, BlockPos here) {
+        BlockPos floor = here.below();
+        if (!who.onGround() || level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) return null;
+        BlockPos on = who.getOnPos(), cell = on.above();
+        boolean firm = level.getBlockState(on).isFaceSturdy(level, on, Direction.UP);
+        return firm && CompanionShaftPlan.open(level, cell) && CompanionShaftPlan.open(level, cell.above()) ? cell : null;
     }
 
     private static BlockPos beside(ServerLevel level, Entity who) {
