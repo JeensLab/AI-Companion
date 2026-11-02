@@ -152,7 +152,7 @@ final class CompanionExpeditionFight {
         if (foe == null) return false;
         if (letGo(foe)) return true;
         if (below(foe)) return true;
-        if (retreating) return !owner.isWithinMeleeAttackRange(foe) || w.expedition.fleeing() && (wounded() || owner.getHealth() < CompanionExpeditionRetreat.FIT) && outrun(foe);
+        if (retreating) return !owner.isWithinMeleeAttackRange(foe) || w.expedition.fleeing() && wounded() && outrun(foe);
         return fleeable();
     }
 
