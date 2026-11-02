@@ -79,9 +79,9 @@ final class CompanionCreeperGuard {
     /** The shield is up against a lit fuse: the idle lowering of it (CompanionEntity) waits. */
     boolean shielding() { return shield.holding(); }
 
-    /** True when a creeper is met with the sword: on an expedition, armed, healthy, and not after a run of retreats from it. */
+    /** True when a creeper is met with the sword: on an expedition or a long goal, armed, healthy, and not after a run of retreats from it. */
     boolean fights() {
-        if (!owner.work.expedition.active() || owner.getHealth() <= FIGHT_HEALTH || !owner.equipment.hasMeleeWeapon()) return false;
+        if (!(owner.work.expedition.active() || CompanionAgenda.suppressesDeeds(owner)) || owner.getHealth() <= FIGHT_HEALTH || !owner.equipment.hasMeleeWeapon()) return false;
         if (retreats > 0 && owner.level().getGameTime() - lastRetreat > FORGET_TICKS) retreats = 0;
         return retreats < GIVE_UP;
     }

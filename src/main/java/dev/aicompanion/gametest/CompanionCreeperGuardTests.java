@@ -1,24 +1,34 @@
 package dev.aicompanion.gametest;
 
+import com.mojang.authlib.GameProfile;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionMineSite;
+import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.function.BooleanSupplier;
 
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.GROUND;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.count;
@@ -37,7 +47,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionCreeperGuardTests {
     private static final int STEP_CHECK_TICKS = 2400, OPEN_CAVE_TICKS = 600, CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3;
-    private static final int TUNNEL_Y = 10, BEND_LEG = 3, BEND_LENGTH = 12, DEAD_END_LENGTH = 8, DEAD_END_CREEPER = 3, BLAST_TICKS = 200;
+    private static final int TUNNEL_Y = 10, BEND_LEG = 3, BEND_LENGTH = 12, DEAD_END_LENGTH = 8, DEAD_END_CREEPER = 3, BLAST_TICKS = 200, SURFACE_GAP = 5, SURFACE_TICKS = 400;
     private static final float UNHURT = 10;
 
     private CompanionCreeperGuardTests() { }
@@ -164,12 +174,48 @@ public final class CompanionCreeperGuardTests {
         });
     }
 
+    /** Armed, on a long goal and out of the mine: a creeper that has not lit its fuse is struck, not run from (m15d: twelve flights in a row). */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void anArmedGoalWorkerStrikesAnUnlitCreeperAboveGround(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = CompanionMineFightTests.armed(h);
+        ServerPlayer player = survivor(h, c);
+        Creeper creeper = creeper(h, h.absolutePos(new BlockPos(CENTER + SURFACE_GAP, GROUND + 1, CENTER)));
+        CompanionActionResult started = CompanionEvents.executeAction(player, "pursue_goal", "gear_up", 1);
+        h.assertTrue(started.status() == CompanionActionResult.Status.ACCEPTED, "Goal not accepted: " + started.message());
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isDeadOrDying() ? "killed" : creeper.isAlive() ? "alive, fuse " + creeper.getSwellDir() : "gone") + ", he at "
+                    + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (creeper.isDeadOrDying()) { h.succeed(); return; }
+            h.assertTrue(creeper.isAlive(), "The creeper blew up, it was not struck" + trace);
+            h.assertTrue(h.getTick() - begun < SURFACE_TICKS, "The creeper was not struck in time" + trace);
+        });
+    }
+
     private static BlockPos cell(GameTestHelper h, int x, int z) { return cell(h, x, 0, z); }
 
     private static BlockPos cell(GameTestHelper h, int x, int up, int z) { return h.absolutePos(new BlockPos(CENTER + x, TUNNEL_Y + up, CENTER + z)); }
 
     private static void bore(GameTestHelper h, int x, int z) {
         for (int up = 0; up < 2; up++) h.getLevel().setBlock(cell(h, x, up, z), Blocks.AIR.defaultBlockState(), 2 | 16);
+    }
+
+    /** The owner of the long goal: a survival player, as the goal's own tests make one. */
+    private static ServerPlayer survivor(GameTestHelper h, CompanionEntity c) {
+        var cookie = CommonListenerCookie.createInitial(new GameProfile(UUID.randomUUID(), "test-mock-player"), false);
+        ServerPlayer player = new ServerPlayer(h.getLevel().getServer(), h.getLevel(), cookie.gameProfile(), cookie.clientInformation());
+        var connection = new Connection(PacketFlow.SERVERBOUND);
+        new EmbeddedChannel(connection);
+        h.getLevel().getServer().getPlayerList().placeNewPlayer(connection, player, cookie);
+        player.setGameMode(GameType.SURVIVAL);
+        player.setInvulnerable(true);
+        player.teleportTo(c.getX() - 3, c.getY(), c.getZ() - 3);
+        c.setOwnerId(player.getUUID());
+        player.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        CompanionEvents.getOwnedCompanion(player);
+        return player;
     }
 
     /** Alive and not much hurt all along; once the creeper is gone (it blew or was killed) and {@code when} has held, the test is over. */
