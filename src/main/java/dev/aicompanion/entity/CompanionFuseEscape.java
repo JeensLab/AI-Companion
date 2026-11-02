@@ -158,11 +158,14 @@ final class CompanionFuseEscape {
         holding = way.isEmpty() && !bestScore.exposed();
     }
 
-    /** The cell one step to the side that he can stand on: level, a block up, or a drop of up to three with room for the fall. */
+    /**
+     * The cell one step to the side that he can stand on: level, a block up, or a drop of up to three with room for the fall. Not one with lava
+     * round it: the way ends at a rush, and a rush that stops at a lava edge or slips on it is a death (a mine death, a way through a big cave).
+     */
     private BlockPos move(ServerLevel level, BlockPos cell, Direction side) {
         for (int rise : LEVELS) {
             BlockPos to = cell.relative(side).above(rise);
-            if (!CompanionExpeditionLedge.stands(owner, level, to.getX() + .5, to.getY(), to.getZ() + .5)) continue;
+            if (!CompanionExpeditionLedge.stands(owner, level, to.getX() + .5, to.getY(), to.getZ() + .5) || CompanionLavaExit.beside(level, to)) continue;
             if (rise > 0 && !CompanionShaftPlan.open(level, cell.above(2))) continue;
             boolean room = true;
             for (int y = to.getY() + 2; y <= cell.getY() + 1 && room; y++) room = CompanionShaftPlan.open(level, new BlockPos(to.getX(), y, to.getZ()));

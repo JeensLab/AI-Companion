@@ -65,7 +65,7 @@ public final class CompanionMineK14Tests {
         h.succeed();
     }
 
-    /** In the middle of a step down the stairs he is put into a 3 by 3 pool of lava far from the entrance: a minute on, he is alive and out of it. */
+    /** In the middle of a step down the stairs he is put onto the edge of a 3 by 3 pool of lava far from the entrance, a step from the bank: a minute on, he is alive and out of it. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void getsOutOfLavaInTheMiddleOfAMineStep(GameTestHelper h) {
         mountain(h);
@@ -81,7 +81,7 @@ public final class CompanionMineK14Tests {
         for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
         h.assertTrue(c.startWork("dig_for_diamonds", "", 1).success(), "Diamond mine not accepted: " + c.getLastTaskResult());
 
-        BlockPos pool = h.absolutePos(new BlockPos(5, GROUND, 5));
+        BlockPos pool = h.absolutePos(new BlockPos(4, GROUND, 5));
         long[] placedAt = {-1};
         h.onEachTick(() -> {
             long now = h.getTick();

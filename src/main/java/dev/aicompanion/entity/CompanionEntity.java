@@ -325,6 +325,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // game's price of water, and the part of it that came out led him off into the sea).
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 2.0F);
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
+        // Before the float and the guard (0): a goal of an equal priority does not push a running one out, and the guard may hold the turn in lava.
+        this.goalSelector.addGoal(-1, new CompanionLavaExit(this));
         this.goalSelector.addGoal(0, new FloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
