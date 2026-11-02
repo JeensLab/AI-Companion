@@ -283,8 +283,8 @@ public final class CompanionWork {
         if (isActive() && phase == Phase.MINE && !quarrySupports.isEmpty() && !returnRouteBlocked) return false;
         // The own ore tunnel is the same: its walls are not a trap, and the way back is the tunnel itself.
         if (isActive() && phase == Phase.ORE && oreExit != null) return false;
-        // The mine expedition walks and digs its own cells: its walls are the plan, not a trap.
-        if (isActive() && job == Job.EXPEDITION) return false;
+        // The mine expedition walks and digs its own cells: its walls are the plan, not a trap, unless rock shuts the climb.
+        if (isActive() && job == Job.EXPEDITION) return expedition.cuttingOut();
         // Roofs and crowns are interaction targets, not movement destinations.
         return !isActive() || job != Job.HOUSE && job != Job.PEN && phase != Phase.WOOD
                 || workOrigin != null && owner.getY() < workOrigin.getY() - 1.25;

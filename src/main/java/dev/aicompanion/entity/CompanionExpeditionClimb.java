@@ -2,6 +2,7 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,19 +10,22 @@ import java.util.List;
 /**
  * The way up when the supplies are gone: back along the last tunnel and the stairs he dug to the entrance, one cell at a time.
  * Where the record has a gap (the stairs below a restart are forgotten, the cells above it begin far off) the gap is walked by a
- * route search, and a plug of his own that shuts it comes out with the pickaxe he has; a step that cannot be done ends the climb
- * where he stands, said as it is.
+ * route search, and a plug of his own that shuts it comes out with the pickaxe he has. Rock that shuts it is cut through by the
+ * self-rescue, which is let work for that alone; a step that cannot be done ends the climb where he stands, said as it is.
  */
 final class CompanionExpeditionClimb {
     enum Result { WORKING, DONE }
 
-    private enum Phase { WALK, TRAVEL, UNPLUG }
+    private enum Phase { WALK, TRAVEL, UNPLUG, CUT_OUT }
 
     private static final double SAME_SPOT = 12;
     /** Two cells of the way further apart than this (squared) are not neighbours: the record has a gap between them. */
     private static final double GAP = 9;
     private static final int OWN_STEPS = 4, MAX_PLUGS = 8, IRON_FOR_PLUGS = 8;
     private static final double TRAVEL_NEAR = 1.0;
+    /** Rescues to try for one climb, and the ticks given to one to start: it waits a standstill of three seconds and an answer of the route search. */
+    private static final int MAX_CUTS = 3, CUT_PATIENCE = 200;
+    private static final String CLOSED = " Подняться не вышло: путь наверх закрыт, остался где стою.";
 
     private final CompanionWork w;
     private final CompanionExpeditionDig dig;
@@ -35,6 +39,7 @@ final class CompanionExpeditionClimb {
     private Phase phase = Phase.WALK;
     private CompanionExpeditionPlugs.Way plug;
     private int plugs;
+    private int cuts, cutWait, rescuesBefore;
 
     CompanionExpeditionClimb(CompanionWork w, CompanionExpeditionDig dig) {
         this.w = w;
@@ -117,6 +122,7 @@ final class CompanionExpeditionClimb {
             case WALK -> walked();
             case TRAVEL -> travel();
             case UNPLUG -> unplug();
+            case CUT_OUT -> cutting();
         };
     }
 
@@ -164,13 +170,39 @@ final class CompanionExpeditionClimb {
         plug = plugs >= MAX_PLUGS ? null : CompanionExpeditionPlugs.way(level, w.mine, here, beyond);
         boolean bridging = plug == null && plugs < MAX_PLUGS;
         if (bridging) plug = CompanionExpeditionPlugs.bridge(level, w.mine, here, beyond);
-        if (plug == null) return finish(" Подняться не вышло: путь наверх закрыт, остался где стою.");
+        if (plug == null) return cutOut();
         toPlug.bridging(bridging);
         toPlug.set(plug.walk(), 0);
         if (plug.cell() != null) dig.ironForRock(IRON_FOR_PLUGS);
         phase = Phase.UNPLUG;
         return Result.WORKING;
     }
+
+    /** No walk and no block of his own joins the two ends. A pickaxe that may be spent on rock cuts the way up: without one the rock stays, and so does he. */
+    private Result cutOut() {
+        if (cuts >= MAX_CUTS || w.items.countCarried(Items.STONE_PICKAXE) == 0 && !dig.spareIron()) return finish(CLOSED);
+        cuts++;
+        cutWait = 0;
+        rescuesBefore = w.owner.recovery.begun();
+        w.owner.getNavigation().stop();
+        w.expedition.climbTime();
+        phase = Phase.CUT_OUT;
+        return Result.WORKING;
+    }
+
+    /** Stands still with the cell beyond the gap as his destination until the rescue takes over; it stops the work while it runs, and this goes on when it is over. */
+    private Result cutting() {
+        if (w.owner.recovery.begun() != rescuesBefore) {
+            phase = Phase.TRAVEL;
+            return Result.WORKING;
+        }
+        if (++cutWait > CUT_PATIENCE) return finish(CLOSED);
+        w.owner.movementIntent(cells.get(stretchEnd));
+        return Result.WORKING;
+    }
+
+    /** The one time the expedition lets the self-rescue work: its walls are the plan at any other. */
+    boolean cuttingOut() { return phase == Phase.CUT_OUT && outcome.isEmpty(); }
 
     private Result unplug() {
         ServerLevel level = (ServerLevel) w.owner.level();
@@ -214,7 +246,7 @@ final class CompanionExpeditionClimb {
         toPlug.clear();
         why = outcome = "";
         cells = List.of();
-        stretchEnd = plugs = 0;
+        stretchEnd = plugs = cuts = cutWait = rescuesBefore = 0;
         phase = Phase.WALK;
         plug = null;
     }

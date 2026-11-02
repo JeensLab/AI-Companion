@@ -27,6 +27,7 @@ final class CompanionRecovery {
     private BlockPos digTarget;
     private Vec3 start;
     private int stalled;
+    private int begun;
     private int elapsed;
     private int placed;
     private int dug;
@@ -46,6 +47,8 @@ final class CompanionRecovery {
     private final java.util.Set<Long> blockedStairs = new java.util.HashSet<>();
     CompanionRecovery(CompanionEntity owner) { this.owner = owner; breaking = new CompanionBlockBreaking(owner); }
     boolean active() { return active; }
+    /** How many rescues have started: a work paused by one reads the change once it runs again. */
+    int begun() { return begun; }
 
     void observe() {
         if (active) return;
@@ -91,7 +94,7 @@ final class CompanionRecovery {
     }
     void begin() {
         previousHand = owner.getMainHandItem().isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(owner.getMainHandItem().getItem()).toString();
-        active = true; elapsed = placed = dug = jumpTicks = 0; climbing = false; stairDirection = null; stepUp = null; blockedStairs.clear();
+        active = true; begun++; elapsed = placed = dug = jumpTicks = 0; climbing = false; stairDirection = null; stepUp = null; blockedStairs.clear();
         destination = owner.recoveryDestination(); start = owner.position();
         var player = owner.getOwnerPlayer();
         exitingToPlayer = player != null && destination != null && destination.equals(player.blockPosition());

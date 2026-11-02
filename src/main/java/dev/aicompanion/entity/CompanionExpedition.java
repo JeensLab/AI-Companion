@@ -94,6 +94,15 @@ final class CompanionExpedition {
 
     long stepEnd() { return stepEnd; }
 
+    /** The climb is cutting its way out of rock: the self-rescue may work. */
+    boolean cuttingOut() { return active && stage == Stage.CLIMB && climb.cuttingOut(); }
+
+    /** The whole time of a climb from now on: a cut out of a pit can start with that time nearly gone. */
+    void climbTime() {
+        stepEnd = Math.max(stepEnd, owner.level().getGameTime() + CLIMB_TICKS);
+        w.deadline = Math.max(w.deadline, stepEnd + 40);
+    }
+
     /** The time the creeper guard took from the work is given back to the step, its order and the cave's explore time, up to a reserve. */
     void credit(long ticks) {
         long given = Math.min(ticks, GUARD_RESERVE - credited);
