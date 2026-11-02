@@ -44,7 +44,12 @@ final class CompanionExpeditionStock {
     int progress() { return ticks; }
 
     /** True while this tick goes to getting stone from the walls of {@code stand}; false when the bag has enough or there is nothing to take here. */
-    boolean tick(ServerLevel level, BlockPos stand, Direction dir) {
+    boolean tick(ServerLevel level, BlockPos stand, Direction dir) { return tick(level, stand, List.of(dir.getClockWise(), dir.getCounterClockWise())); }
+
+    /** As {@link #tick} for a stand with no stairs to run along (the way up, a corridor): the rock on every side of it. */
+    boolean tickAround(ServerLevel level, BlockPos stand) { return tick(level, stand, List.of(Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST)); }
+
+    private boolean tick(ServerLevel level, BlockPos stand, List<Direction> sides) {
         if (stand.equals(spentAt) || ticks >= PATIENCE) return false;
         if (level.getGameTime() < pickupUntil) {
             if (owner.hasPendingLoot()) return true;
@@ -53,7 +58,7 @@ final class CompanionExpeditionStock {
         int have = CompanionSeal.available(owner);
         if (have >= (gathering ? WANTED : LOW)) { gathering = false; return false; }
         gathering = true;
-        BlockPos cell = nextCell(level, stand, dir);
+        BlockPos cell = nextCell(level, stand, sides);
         if (cell == null) return spend(stand);
         ticks++;
         if (!owner.blockPosition().equals(stand)) {
@@ -79,8 +84,8 @@ final class CompanionExpeditionStock {
     }
 
     /** The next cell of a niche beside the stand: feet then head, the nearer side first, deeper along the same side. */
-    private BlockPos nextCell(ServerLevel level, BlockPos stand, Direction dir) {
-        for (Direction side : List.of(dir.getClockWise(), dir.getCounterClockWise())) {
+    private BlockPos nextCell(ServerLevel level, BlockPos stand, List<Direction> sides) {
+        for (Direction side : sides) {
             for (int depth = 1; depth <= NICHE_DEPTH; depth++) {
                 BlockPos feet = stand.relative(side, depth);
                 for (BlockPos cell : List.of(feet, feet.above())) {

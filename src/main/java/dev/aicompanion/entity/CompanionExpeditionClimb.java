@@ -32,6 +32,8 @@ final class CompanionExpeditionClimb {
     private final CompanionExpeditionWalk walk;
     /** The walk up the stairs to the plug that shuts the way, cell by cell: a plug far off is not reached by pushing at it in a straight line. */
     private final CompanionExpeditionWalk toPlug;
+    /** Stone from the walls where he stands, for the floor of the way up when the bag has none. */
+    private final CompanionExpeditionStock stone;
     private String why = "", outcome = "";
     private List<BlockPos> cells = List.of();
     /** The end (exclusive) of the stretch being walked: the cell there, if any, lies across a gap. */
@@ -46,6 +48,7 @@ final class CompanionExpeditionClimb {
         this.dig = dig;
         this.walk = new CompanionExpeditionWalk(dig);
         this.toPlug = new CompanionExpeditionWalk(dig);
+        this.stone = new CompanionExpeditionStock(w, dig);
     }
 
     /** What ran out, for the report. */
@@ -233,7 +236,10 @@ final class CompanionExpeditionClimb {
         switch (toPlug.tick()) {
             case WORKING -> { return Result.WORKING; }
             case STUCK -> { return cutOut(); }
-            case NO_BLOCK -> { return finish(" Подняться не вышло: в пути наверх нет пола, а блоков, чтобы его настелить, нет, остался где стою."); }
+            case NO_BLOCK -> {
+                if (stone.tickAround(level, w.owner.blockPosition()) || CompanionSeal.available(w.owner) > 0) return Result.WORKING;
+                return finish(" Подняться не вышло: в пути наверх нет пола, а блоков, чтобы его настелить, нет, остался где стою.");
+            }
             default -> { }
         }
         if (plug.cell() == null) {
@@ -273,6 +279,7 @@ final class CompanionExpeditionClimb {
     void reset() {
         walk.clear();
         toPlug.clear();
+        stone.reset();
         why = outcome = "";
         cells = List.of();
         stretchEnd = plugs = cuts = cutWait = rescuesBefore = 0;
