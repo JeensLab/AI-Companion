@@ -17,6 +17,7 @@ final class CompanionExpeditionRetreat {
 
     /** The fit health he rests up to, the longest rest and the ticks a plug may take. */
     static final float FIT = 18;
+    static final double FLEE_REACH = 24;
     static final int REST_TICKS = 20 * 240, PLUG_TRIES = 60;
     /** Why a rest does not heal him, as the report says it: the goal reads it to wait for food rather than count the retreat against its stops. */
     static final String NO_FOOD = "нет еды, а без сытости рана сама не заживает";
@@ -37,21 +38,35 @@ final class CompanionExpeditionRetreat {
         this.walk = new CompanionExpeditionWalk(dig);
     }
 
-    /** Plans the way up from where he stands; with no way (not on his stairs, or already at the entrance) he rests where he is. */
-    void begin(String why) {
+    /**
+     * Plans the way up from where he stands; with no way (not on his stairs, or already at the entrance) he rests where he is. With a mob on him
+     * ({@code hounded}) a few steps off his stairs is no reason to stay and fight: he walks back to them.
+     */
+    void begin(String why, boolean hounded) {
         reset();
         reason = why;
         owner.getNavigation().stop();
         CompanionMineSite mine = w.mine;
         if (!mine.exists()) return;
         List<BlockPos> way = CompanionExpeditionClimb.wayUp(mine);
-        int at = CompanionExpeditionClimb.nearest(way, owner.blockPosition());
+        int at = hounded ? closest(way, owner.blockPosition()) : CompanionExpeditionClimb.nearest(way, owner.blockPosition());
         plugCell = mine.stands().size() >= 2 ? mine.stands().get(1) : null;
         int hold = plugCell == null ? way.size() - 1 : way.size() - 2;
         if (at < 0 || at > hold) { plugCell = null; return; }
         climbed = at < way.size() - 1;
         walk.set(way.subList(0, hold + 1), at);
         phase = Phase.CLIMB;
+    }
+
+    /** The index of the cell of his way up nearest to {@code here} within {@link #FLEE_REACH} blocks, or -1. */
+    static int closest(List<BlockPos> way, BlockPos here) {
+        int closest = -1;
+        double best = FLEE_REACH * FLEE_REACH;
+        for (int i = 0; i < way.size(); i++) {
+            double distance = way.get(i).distSqr(here);
+            if (distance < best) { closest = i; best = distance; }
+        }
+        return closest;
     }
 
     Result tick(ServerLevel level) {
@@ -103,6 +118,9 @@ final class CompanionExpeditionRetreat {
     private boolean cannotMend() {
         return owner.satiety <= 0 && owner.eatTicks <= 0 && !CompanionEating.hasFood(owner);
     }
+
+    /** Still on the move up (the climb, the plug, the last stretch): a slower foe is left behind. At rest, or stuck, there is nowhere further to go. */
+    boolean leaving() { return phase != Phase.REST; }
 
     /** What he did and how it ended, for the report. */
     String text() {

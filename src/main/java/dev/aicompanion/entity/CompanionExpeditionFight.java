@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.RangedAttackMob;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
@@ -19,14 +20,15 @@ import java.util.UUID;
  * A hostile mob near him during an expedition is fought to the end with the sword in his hand, and the work goes on after it: while one is
  * about, the expedition does not dig, step or craft (the melee goal at its priority takes the turn, and this hold covers the ticks between
  * two kills, when no goal has a target yet). He leaves a fight only at low health, and only when leaving is possible: his own way up
- * is under him and nothing is at his back already. The time of the fight is given back to the step, and the tool he held comes back to
- * his hand. A foe that is still alive after {@link #LONGEST} (one he sees and cannot get at, across a chasm or on a ledge) is let go for
+ * is under him and no foe at his back is as fast as he is (a slower one, a zombie even on him, is left behind on the stairs: the retreat takes
+ * the turn; a fight to the last health points is only for what he cannot get away from). The time of the fight is given back to the step, and
+ * the tool he held comes back to his hand. A foe that is still alive after {@link #LONGEST} (one he sees and cannot get at, across a chasm or on a ledge) is let go for
  * the rest of the step, until it hurts him: the melee goal would otherwise hold the work for good, as the work does not tick while it runs.
  * A foe far below him is no foe: it cannot climb to him, and the chase to it is a step off his stairs or his bridge into its cave.
  */
 final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
-    private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3, FUSE_NEAR = 12;
+    private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3, FUSE_NEAR = 12, OUTRUN = .8, LONE_FOE = 5, PER_EXTRA_FOE = 3;
     private static final int LONGEST = 20 * 45, MEAL_WINDOW = 20 * 10, HURT_MEMORY = 100;
 
     private final CompanionWork w;
@@ -45,6 +47,8 @@ final class CompanionExpeditionFight {
     boolean hold(ServerLevel level, boolean retreating) {
         if (retreating) return false;
         long now = level.getGameTime();
+        // At low health with his way up under him and a mob on him that he can leave behind, the fight is over, whatever else is about: the climb takes the turn.
+        if (fleeable()) { settle(now); return false; }
         Monster foe = nearest(level);
         if (foe == null) {
             Monster near = pressing(level);
@@ -148,8 +152,43 @@ final class CompanionExpeditionFight {
         if (foe == null) return false;
         if (letGo(foe)) return true;
         if (below(foe)) return true;
-        if (retreating) return !owner.isWithinMeleeAttackRange(foe);
-        return owner.getHealth() <= CompanionCaveSense.HEALTH_VERY && canEscape(foe);
+        if (retreating) return !owner.isWithinMeleeAttackRange(foe) || w.expedition.fleeing() && wounded() && outrun(foe);
+        return fleeable();
+    }
+
+    /** Low health, his way up under him, and a mob about that he can leave behind: whatever mob is on him, the work takes the turn to climb away (the melee goal would hold it). */
+    private boolean fleeable() { return wounded() && owner.level() instanceof ServerLevel level && hounded(level); }
+
+    /** True when a mob is on him or on its way at low health and he can leave it: see {@link #canEscape}. */
+    boolean hounded(ServerLevel level) {
+        for (Monster monster : level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(ENGAGE), mob -> mob.isAlive() && !mob.isNoAi())) {
+            if (!letGo(monster) && !below(monster) && owner.hasLineOfSight(monster) && owner.combat.fairTarget(monster, owner.combat.provokes(monster)) && leavable(monster)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Health at which he leaves a fight. With nothing on him yet it is the very low level (the cave limit); one foe on him is fought lower, down to
+     * {@link #LONE_FOE}; each foe more costs {@link #PER_EXTRA_FOE} health more, up to the wary level: a crowd gives no time to eat.
+     */
+    boolean wounded() {
+        int near = onHim();
+        double limit = near == 0 ? CompanionCaveSense.HEALTH_VERY : Math.min(LONE_FOE + PER_EXTRA_FOE * (near - 1), CompanionCaveSense.HEALTH_WARY);
+        return owner.getHealth() <= limit;
+    }
+
+    /** How many mobs he may fight are within a blow of him. */
+    private int onHim() {
+        if (!(owner.level() instanceof ServerLevel level)) return 0;
+        return level.getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(Math.sqrt(CONTACT_SQR)), mob -> mob.isAlive() && !mob.isNoAi() && !(mob instanceof Creeper) && !letGo(mob)
+                && owner.hasLineOfSight(mob) && owner.combat.fairTarget(mob, owner.combat.provokes(mob))).size();
+    }
+
+    private boolean leavable(LivingEntity foe) { return wounded() && canEscape(foe); }
+
+    /** A foe that cannot keep up with him on the way up: the blow it lands at the start is the last one. */
+    private boolean outrun(LivingEntity foe) {
+        return !(foe instanceof RangedAttackMob) && foe.getAttributeValue(Attributes.MOVEMENT_SPEED) <= owner.getAttributeValue(Attributes.MOVEMENT_SPEED) * OUTRUN;
     }
 
     /** The foe is on him already: it is struck before one that is still on its way, or shooting from afar. */
@@ -158,11 +197,11 @@ final class CompanionExpeditionFight {
     /** The foe stands deeper under his feet than a fall he would take on purpose. */
     private boolean below(LivingEntity foe) { return foe.getY() < owner.getY() - FALL_LIMIT; }
 
-    /** His own way up under him, not at the entrance already, the foe not in contact and not one that shoots. */
+    /** His own way up under him, not at the entrance already, the foe not one that shoots, and one that is on him slower than he is. */
     private boolean canEscape(LivingEntity foe) {
-        if (foe instanceof RangedAttackMob || owner.distanceToSqr(foe) < CONTACT_SQR || !w.mine.exists()) return false;
+        if (foe instanceof RangedAttackMob || inContact(foe) && !outrun(foe) || !w.mine.exists()) return false;
         List<BlockPos> way = CompanionExpeditionClimb.wayUp(w.mine);
-        int at = CompanionExpeditionClimb.nearest(way, owner.blockPosition());
+        int at = CompanionExpeditionRetreat.closest(way, owner.blockPosition());
         return at >= 0 && at < way.size() - 1;
     }
 

@@ -85,6 +85,9 @@ final class CompanionExpedition {
     /** The retreat is under way: the climb and the rest at the entrance, where health is got back. */
     boolean retreating() { return active && stage == Stage.RETREAT; }
 
+    /** The retreat is still on the move up: a foe slower than he is left behind, not fought. */
+    boolean fleeing() { return retreating() && retreat.leaving(); }
+
     /** For the diagnostics: where the expedition is while it runs, else empty. */
     String stageName() { return active ? stage.name() : ""; }
 
@@ -231,9 +234,9 @@ final class CompanionExpedition {
         // The cave sense reads a fire only inside a cave episode, and the goal no longer stops a step that owns the expedition for one.
         if (owner.isOnFire() || owner.isInLava()) return "горю";
         float health = owner.getHealth();
-        if (health > CompanionCaveSense.HEALTH_VERY) return null;
+        if (health > CompanionCaveSense.HEALTH_VERY && !fight.wounded()) return null;
         // Just out of a fight with food in the bag, he eats on the spot; climbing at once would give up the order for a meal.
-        if (fight.justEnded(owner.level().getGameTime()) && CompanionEating.hasFood(owner)) return null;
+        if (fight.justEnded(owner.level().getGameTime()) && CompanionEating.hasFood(owner) && !fight.hounded((ServerLevel) owner.level())) return null;
         return "мало здоровья (" + (int) Math.ceil(health) + ")";
     }
 
@@ -258,7 +261,7 @@ final class CompanionExpedition {
         w.mine.retreated();
         stepEnd = Math.max(stepEnd, level.getGameTime() + CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
         w.deadline = Math.max(w.deadline, stepEnd + 40);
-        retreat.begin(why);
+        retreat.begin(why, fight.hounded(level));
         stage = Stage.RETREAT;
     }
 
