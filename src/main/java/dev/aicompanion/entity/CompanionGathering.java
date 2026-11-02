@@ -89,6 +89,28 @@ final class CompanionGathering {
         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, "Предыдущую задачу остановил. В сумке: " + c.getStoredItemsSummary() + ".");
     }
 
+    /**
+     * The work's deadline and its guard against a stand-still; true when one of them ended the work.
+     * The work's own tick runs them, but a gathering goal holds that tick off: {@link #watchWork()} runs them then.
+     */
+    boolean workEnded(ServerLevel level) {
+        if (level.getGameTime() > c.work.deadline) {
+            c.work.finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня."));
+            return true;
+        }
+        return c.work.stalled();
+    }
+
+    /** An order gathering wood or soil that goes nowhere ends like any other work: the goals only know their own limits. */
+    void watchWork() {
+        if (!c.work.isActive() || !(c.gatheringLogs || c.gatheringDirt) || !c.canWorkNow() || !(c.level() instanceof ServerLevel level)) return;
+        if (!workEnded(level) || !c.work.isActive()) return;
+        // A field bench left to pick up keeps the work alive: the gathering must not keep the pick-up off.
+        c.supportSoilTask = false; c.gatheringLogs = false; c.gatheringDirt = false;
+        c.temporaryPillar.requestCleanup();
+        c.getNavigation().stop();
+    }
+
     /** Room for one more log: an empty slot, or a stack of logs not yet full. */
     boolean hasRoomForLogs() {
         for (ItemStack stack : c.companionInventory) if (stack.isEmpty() || stack.is(ItemTags.LOGS) && stack.getCount() < stack.getMaxStackSize()) return true;

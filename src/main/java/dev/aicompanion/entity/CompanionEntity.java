@@ -819,6 +819,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         loot.tickNearby();
         recovery.observe();
         work.watchChase();
+        gathering.watchWork();
         social.updateExpression();
         social.tick();
         lighting.tick();

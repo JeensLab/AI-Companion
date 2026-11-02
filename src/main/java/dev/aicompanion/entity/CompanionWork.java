@@ -564,8 +564,7 @@ public final class CompanionWork {
 
     public void tick() {
         if (!(owner.level() instanceof ServerLevel level) || job == null) return;
-        if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
-        if (stalled()) return;
+        if (owner.gathering.workEnded(level)) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
         if (job != Job.COME && job != Job.HUNT && owner.hasPendingLoot()) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
@@ -618,7 +617,7 @@ public final class CompanionWork {
      * True when the work was stopped: a minute and a half on the same spot (within two blocks), with the same bag and
      * counters and no new status. Waiting at a loaded furnace is checked by its product instead.
      */
-    private boolean stalled() {
+    boolean stalled() {
         if (phase == Phase.COOK) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());
