@@ -48,6 +48,8 @@ public final class CompanionShieldTests {
     private static final int STAND = 3, GAP = 2, FUSE_TICKS = 200, PREPARE_TICKS = 2400, DESCENT_TICKS = 4800, RAISE_TICKS = 8, LONG_FUSE = 30000, IGNITE_AFTER = 10, SHIELD_BOARDS = 6;
     /** The whole preparation from a bag without the iron pickaxe: ore, furnace, bench, trees, then the shield; and the iron outcrop's place on the grass. */
     private static final int FETCH_TICKS = 14000, ORE_X = CompanionDiamondGoalTests.CENTER + 3, ORE_Z = CompanionDiamondGoalTests.CENTER + 3, TREE_SPAN = 6, TRUNK = 5;
+    /** The rig's radius of 16 makes ore "in sight" only within 8 blocks, and the trees he fells first stand up to 15 from the outcrop; the default of 64 sees 24. */
+    private static final int WIDE_SEARCH = 48;
     private static final double STAYED = 1.5, FACING = 45, BEHIND = 90;
 
     private CompanionShieldTests() { }
@@ -367,6 +369,7 @@ public final class CompanionShieldTests {
         bag.removeIf(stack -> stack.is(Items.IRON_PICKAXE));
         bag.add(new ItemStack(Items.COAL, 4));
         CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, bag.toArray(new ItemStack[0]));
+        r.c().setSearchRadius(WIDE_SEARCH);
         for (int i = 0; i < ores; i++) h.setBlock(new BlockPos(ORE_X + i, CompanionDiamondGoalTests.GROUND + 1, ORE_Z), Blocks.IRON_ORE);
         int[][] trunks = {{CompanionDiamondGoalTests.CENTER - TREE_SPAN, CompanionDiamondGoalTests.CENTER - TREE_SPAN}, {CompanionDiamondGoalTests.CENTER - TREE_SPAN, CompanionDiamondGoalTests.CENTER + TREE_SPAN}};
         for (int[] trunk : trunks) for (int y = 1; y <= TRUNK; y++) h.setBlock(new BlockPos(trunk[0], CompanionDiamondGoalTests.GROUND + y, trunk[1]), Blocks.OAK_LOG);
