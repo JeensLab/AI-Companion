@@ -241,12 +241,24 @@ final class CompanionExpeditionDig {
      * A temporary block of his own (a creeper block) shutting the column of the cell he is to walk into comes out by hand first, up or
      * down the stairs alike. True while that goes on: with a creeper still near the block he waits, he does not open it onto the creeper.
      */
-    private boolean takingUpTemporary(BlockPos to) {
+    private boolean takingUpTemporary(BlockPos to) { return takingUp(to, false); }
+
+    /**
+     * The cells of his own way (the record's stairs and tunnels) are open by construction, so a block at the feet or the head of the next one is a
+     * block of his, whether the record still remembers it (it keeps sixteen temporary ones) or not. It comes out with what he has: any pickaxe,
+     * the iron one however worn, a shovel, the bare hand last.
+     */
+    boolean takingUpOnHisWay(BlockPos to) { return takingUp(to, true); }
+
+    private boolean takingUp(BlockPos to, boolean onHisWay) {
         CompanionMineSite mine = w.mine;
-        if (mine.temporary().isEmpty() || !(owner.level() instanceof ServerLevel level)) return false;
+        if (mine.temporary().isEmpty() && !onHisWay || !(owner.level() instanceof ServerLevel level)) return false;
         BlockPos shut = null;
-        for (BlockPos cell : CompanionShaftPlan.column(to)) if (mine.temporary().contains(cell) && !CompanionShaftPlan.open(level, cell)) { shut = cell; break; }
+        for (BlockPos cell : CompanionShaftPlan.column(to)) {
+            if (!CompanionShaftPlan.open(level, cell) && (mine.temporary().contains(cell) || onHisWay && blocksHisWay(level, cell, to))) { shut = cell; break; }
+        }
         if (shut == null || owner.getEyePosition().distanceTo(shut.getCenter()) > CompanionSeal.REACH) return false;
+        if (!mine.temporary().contains(shut) && !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), shut)) return false;
         if (!level.getEntitiesOfClass(net.minecraft.world.entity.monster.Creeper.class, new net.minecraft.world.phys.AABB(shut).inflate(CREEPER_CLEAR),
                 creeper -> creeper.isAlive() && !creeper.isNoAi()).isEmpty()) {
             owner.workStatus("Жду, пока крипер за моим блоком отойдёт.");
@@ -255,9 +267,35 @@ final class CompanionExpeditionDig {
         }
         switch (w.handOver.takeUp(level, shut, "Убираю свой блок с лестницы.")) {
             case WORKING -> { return true; }
-            case DONE -> { mine.taken(shut); return true; }
+            case DONE -> { mine.taken(shut); mine.unsealed(shut); return true; }
             default -> { return false; }
         }
+    }
+
+    /** A solid, breakable block at the feet or the head of the cell he is to walk into. */
+    private static boolean blocksHisWay(ServerLevel level, BlockPos cell, BlockPos to) {
+        BlockState state = level.getBlockState(cell);
+        return cell.getY() <= to.getY() + 1 && state.getFluidState().isEmpty() && !state.getCollisionShape(level, cell).isEmpty() && state.getDestroySpeed(level, cell) >= 0;
+    }
+
+    /** Distance (squared) from his feet to the cell, for the walk to see how far it has been led off its way. */
+    double distSqr(BlockPos cell) { return owner.blockPosition().distSqr(cell); }
+
+    /** A block of his own that shuts his way, out with whatever he has, the bare hand last: DONE once it is open, FULL when the bag has no room for the drop, STUCK when it is out of reach or out of sight. */
+    Status takeOut(ServerLevel level, BlockPos pos) {
+        if (CompanionShaftPlan.open(level, pos)) return done();
+        if (level.getBlockState(pos).getDestroySpeed(level, pos) < 0) return stuck("unbreakable");
+        if (!pos.equals(cell)) { cell = pos.immutable(); unseen = 0; }
+        owner.getLookControl().setLookAt(pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5);
+        if (owner.getEyePosition().distanceTo(pos.getCenter()) > CompanionSeal.REACH || !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), pos)) {
+            w.breaking.reset();
+            return ++unseen > UNSEEN_PATIENCE ? stuck("reach") : Status.WORKING;
+        }
+        return switch (w.handOver.takeUp(level, pos, "Убираю свой блок с дороги.")) {
+            case WORKING -> Status.WORKING;
+            case FULL -> Status.FULL;
+            case DONE -> done();
+        };
     }
 
     /**

@@ -185,7 +185,9 @@ final class CompanionExpeditionClimb {
             phase = Phase.TRAVEL;
             return Result.WORKING;
         }
-        switch (dig.dig(level, plug.cell())) {
+        // No pickaxe that may be spent on rock is no reason to leave a plug of his own where it is: it comes out by hand.
+        CompanionExpeditionDig.Status taken = dig.hasTool(level.getBlockState(plug.cell())) ? dig.dig(level, plug.cell()) : dig.takeOut(level, plug.cell());
+        switch (taken) {
             case WORKING -> { return Result.WORKING; }
             case DONE -> {
                 dig.flush();

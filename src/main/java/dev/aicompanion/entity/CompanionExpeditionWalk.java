@@ -13,6 +13,9 @@ import java.util.List;
 final class CompanionExpeditionWalk {
     enum Result { WORKING, DONE, STUCK, NO_BLOCK }
 
+    /** How far (squared) from the cell he is to reach he counts as led off the walk. */
+    private static final double LOST = 16;
+
     private final CompanionExpeditionDig dig;
     private List<BlockPos> cells = List.of();
     private int index;
@@ -45,17 +48,25 @@ final class CompanionExpeditionWalk {
 
     Result tick() {
         if (done()) return Result.DONE;
+        ledBack();
         // A cell with nothing firm under it cannot be entered, and his record can hold one whose floor is gone: the walk goes on past it, never leaving out the last.
         if (bridging) {
             Result floor = lay(cells.get(index));
             if (floor != null) return floor;
         } else while (index < cells.size() - 1 && !dig.floored(cells.get(index))) index++;
+        if (dig.takingUpOnHisWay(cells.get(index))) return Result.WORKING;
         if (dig.reach(cells.get(index))) index++;
         else if (dig.walkStuck()) {
             dig.diagnoseStuck(cells.get(index), index, cells.size());
             return Result.STUCK;
         }
         return done() ? Result.DONE : Result.WORKING;
+    }
+
+    /** A creeper or a fight may have led him off the cells: the walk goes on from the one nearest to him, not from the one it left, which can be a long push away. */
+    private void ledBack() {
+        if (dig.distSqr(cells.get(index)) <= LOST) return;
+        for (int i = 0; i < cells.size(); i++) if (dig.distSqr(cells.get(i)) < dig.distSqr(cells.get(index))) index = i;
     }
 
     /** Null once the cell has a floor; the floor goes down a block at a time. */

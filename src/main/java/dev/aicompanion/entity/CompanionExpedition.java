@@ -358,7 +358,11 @@ final class CompanionExpedition {
                 // The plug is rock like any other: a stone pickaxe made on the spot, else the iron one while it has wear to spare.
                 if (supply.craftStonePickaxe()) return;
                 if (!dig.ironForRock && dig.spareIron()) { dig.ironForRock = true; return; }
-                end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, hadStone) + " Свою пробку на лестнице убрать нечем.");
+                switch (dig.takeOut(level, plug)) {
+                    case WORKING -> { }
+                    case DONE -> { dig.flush(); w.mine.plugged(null); }
+                    default -> end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, hadStone) + " Свою пробку на лестнице убрать нечем.");
+                }
             }
             default -> end(Ending.BLOCKED, "Свою пробку на лестнице убрать не смог (" + switch (status) {
                 case NO_HAND -> "не взял кирку в руку";

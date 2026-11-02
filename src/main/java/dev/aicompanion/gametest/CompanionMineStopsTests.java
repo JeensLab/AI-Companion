@@ -52,7 +52,7 @@ public final class CompanionMineStopsTests {
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2, CREEPER_AT = 8;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
-    private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, DIAMOND_AT = 6;
+    private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, WALL_AT = 5, DIAMOND_AT = 6;
     private static final int LAKE_REACH = 7, LEDGE_LENGTH = 4;
     private static final int CANOPY_AT = 12, CANOPY_REACH = 2;
     private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
@@ -634,6 +634,53 @@ public final class CompanionMineStopsTests {
     @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
     public static void climbsUpTheStairsToAPlugOfHisOwnThatIsFarFromHim(GameTestHelper h) {
         climbPastAPlug(h, FAR_PLUG_AT);
+    }
+
+    /**
+     * Run p1d/lava and p1d/void-2 (seed 20261031/20261102): a wall of his own blocks in the tunnel at feet and head, set while a creeper stood near and
+     * forgotten by the record since (it keeps sixteen), no stone pickaxe, the iron one at its reserve. The walk pushed at the wall and said
+     * «застрял на ходу» five times, as the goal stopped five times with the same words. He takes the wall out with the iron pickaxe and goes up.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsThroughAWallOfHisOwnBlocksWithTheIronPickaxeAtItsReserve(GameTestHelper h) {
+        climbThroughAWall(h, wornIron(IRON_LEFT));
+    }
+
+    /** The same wall with no pickaxe at all: cobblestone comes out by hand, slowly, as a real block, and he goes up. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void climbsThroughAWallOfHisOwnBlocksByHandWhenHeHasNoPickaxe(GameTestHelper h) {
+        climbThroughAWall(h, ItemStack.EMPTY);
+    }
+
+    private static void climbThroughAWall(GameTestHelper h, ItemStack pickaxe) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(0, ItemStack.EMPTY);
+        c.setItem(1, pickaxe);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(GAP_AT);
+        for (BlockPos stand : stairs.subList(GAP_AT + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
+        List<BlockPos> wall = List.of(stairs.get(WALL_AT), stairs.get(WALL_AT).above());
+        for (BlockPos cell : wall) h.getLevel().setBlock(cell, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        spendRestartsOnTheStairs(h, c, here);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY() - SURFACE_MARGIN;
+        long[] id = {0};
+        int[] heightWhenEnded = {Integer.MIN_VALUE};
+        h.onEachTick(() -> {
+            if (id[0] != 0 && heightWhenEnded[0] == Integer.MIN_VALUE && c.workResult(id[0]) != null) heightWhenEnded[0] = c.getBlockY();
+        });
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            CompanionActionResult result = ended(h, c, id[0]);
+            h.assertTrue(heightWhenEnded[0] >= surface, "He said «" + result.message() + "» at height " + heightWhenEnded[0] + ", below the surface at " + surface + " | " + report(c));
+            for (BlockPos cell : wall) h.assertTrue(!h.getLevel().getBlockState(cell).is(Blocks.COBBLESTONE), "His wall on the stairs is still there | " + report(c));
+        });
     }
 
     private static void climbPastAPlug(GameTestHelper h, int plugAt) {
