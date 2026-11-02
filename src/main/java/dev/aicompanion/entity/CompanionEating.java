@@ -27,7 +27,9 @@ final class CompanionEating {
         // Fed, out of a fight for ten seconds: slowly better, as a player with a full stomach.
         if (missing >= 1 && c.satiety > 0 && c.tickCount - c.lastHurtTick > 200 && c.tickCount % 80 == 0) { c.heal(1); c.satiety--; }
         boolean expedition = c.work.expedition.active();
-        if (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2 && !(expedition && c.getHealth() <= EXPEDITION_EATS_BELOW)) return;
+        // An empty stomach does not heal the wound by itself: the retreat's rest eats up to the fit health, however small the wound.
+        boolean mends = c.work.expedition.retreating() && c.satiety <= 0 && c.getHealth() < CompanionExpeditionRetreat.FIT;
+        if (c.tickCount % 20 != 0 || missing < 4 && c.getHealth() > c.getMaxHealth() / 2 && !(expedition && c.getHealth() <= EXPEDITION_EATS_BELOW) && !mends) return;
         if (c.getTarget() != null && c.getTarget().isAlive() && inReach(c.distanceToSqr(c.getTarget()), expedition)) return;
         ItemStack food = bestFood(missing);
         if (food.isEmpty()) return;

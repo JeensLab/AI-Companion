@@ -18,7 +18,6 @@ final class CompanionExpeditionRetreat {
     /** The fit health he rests up to, the longest rest and the ticks a plug may take. */
     static final float FIT = 18;
     static final int REST_TICKS = 20 * 240, PLUG_TRIES = 60;
-    private static final float HUNGRY = 4;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -100,9 +99,7 @@ final class CompanionExpeditionRetreat {
 
     /** Nothing left to heal him: no food to eat, and a stomach too empty to heal on its own. */
     private boolean cannotMend() {
-        boolean eating = owner.eatTicks > 0;
-        boolean wouldEat = owner.getMaxHealth() - owner.getHealth() >= HUNGRY && CompanionEating.hasFood(owner);
-        return owner.satiety <= 0 && !eating && !wouldEat;
+        return owner.satiety <= 0 && owner.eatTicks <= 0 && !CompanionEating.hasFood(owner);
     }
 
     /** What he did and how it ended, for the report. */

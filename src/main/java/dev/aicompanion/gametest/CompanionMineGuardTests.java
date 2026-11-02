@@ -38,7 +38,7 @@ import static dev.aicompanion.gametest.CompanionMineFightTests.zombie;
 public final class CompanionMineGuardTests {
     private static final int FUSE_TICKS = 200, STAND = 6, LIT_AT = 8, FRESH_AT = 1;
     private static final double SLACK = .25;
-    private static final float KEPT = 10, WEAK = 5, SPENT = 7;
+    private static final float KEPT = 10, WEAK = 5, SPENT = 7, NEARLY_FIT = 17, FIT = 18;
     private static final int PIT_FROM = 8, PIT_TO = 10, PIT_DEPTH = 4, DROP_AT = 12, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, GRACE_TICKS = 6, MAX_CHANGES = 2, HOLD_TICKS = 80, RELEASED_TICKS = 400;
     private static final double CLOSER = 1.5;
     private static final int ROOM_FROM = 4, ROOM_TO = 16, ROOM_SIDE = 6, RUN_TICKS = 20, CLIFF_DEPTH = 6, DEAD_END_LENGTH = 3;
@@ -253,6 +253,38 @@ public final class CompanionMineGuardTests {
             if (c.isWorking() || c.isGatheringTask()) return;
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.message().contains("нет еды"), "The rest that could not mend him did not say why: " + result.message());
+            h.succeed();
+        });
+    }
+
+    /**
+     * The rest at the entrance with bread in the bag, an empty stomach and a wound one meal short of fit (seventeen of eighteen): he eats
+     * and is fit, and the report never says there is no food (seed 7741901, lava: sixteen bread in the bag and «нет еды»).
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aRestEatsFromTheBagWhenTheWoundIsTooSmallForTheUsualMeal(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        carveMine(h, c, 0);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.BREAD)) c.setItem(slot, ItemStack.EMPTY);
+        long id = start(h, c, 1);
+        boolean[] stage = {false, false};
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died | " + report(c));
+            String now = c.expeditionStage();
+            if (!stage[0]) {
+                if (!now.isEmpty() && !now.equals("LOCATE")) { c.setHealth(SPENT); stage[0] = true; }
+                return;
+            }
+            if (!stage[1]) {
+                if (!now.equals("RETREAT")) return;
+                c.setHealth(NEARLY_FIT);
+                for (int slot = 0; slot < c.getContainerSize() && !stage[1]; slot++) if (c.getItem(slot).isEmpty()) { c.setItem(slot, new ItemStack(Items.BREAD, 8)); stage[1] = true; }
+                return;
+            }
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.message().contains("нет еды") && c.getHealth() >= FIT, "The rest did not eat the bread he had, health " + c.getHealth() + ": " + result.message());
             h.succeed();
         });
     }

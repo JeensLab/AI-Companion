@@ -82,6 +82,9 @@ final class CompanionExpedition {
 
     boolean active() { return active; }
 
+    /** The retreat is under way: the climb and the rest at the entrance, where health is got back. */
+    boolean retreating() { return active && stage == Stage.RETREAT; }
+
     /** For the diagnostics: where the expedition is while it runs, else empty. */
     String stageName() { return active ? stage.name() : ""; }
 
