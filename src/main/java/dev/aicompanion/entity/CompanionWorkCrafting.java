@@ -143,7 +143,7 @@ final class CompanionWorkCrafting {
         }
         if (w.craftingStation == null) {
             if (w.owner.hasKnownCraftingTableWithin(CompanionWork.BENCH_TRIP)) {
-                if (canMakeBench()) return useOwnBench("к известному верстаку сейчас нет пути");
+                if (woodForBench()) return useOwnBench("к известному верстаку сейчас нет пути");
                 w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый у меня нет."); return true;
             }
             return false;
@@ -167,7 +167,11 @@ final class CompanionWorkCrafting {
     /** Like a player far down a slope from his bench: one log buys a new bench here instead of giving up the order. */
     boolean canMakeBench() {
         // A bench a few steps away is never replaced: it is walked to, or the order honestly stops.
-        if (w.owner.hasKnownCraftingTableWithin(CompanionWork.NEAR_BENCH)) return false;
+        return !w.owner.hasKnownCraftingTableWithin(CompanionWork.NEAR_BENCH) && woodForBench();
+    }
+
+    /** Logs or planks in the bag for a bench. With no walk to the remembered one even a near bench is no bench. */
+    private boolean woodForBench() {
         return CompanionTools.count(w.owner, ItemTags.LOGS) * 4 + CompanionTools.count(w.owner, ItemTags.PLANKS) >= 4;
     }
 
