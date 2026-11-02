@@ -12,8 +12,9 @@ if($Seed -notmatch '^-?[0-9]+$'){throw 'Seed must be a number'}
 $taskRun=Join-Path $taskRoot "run/$RunName"
 if(Test-Path -LiteralPath $taskRun){throw 'Test directory already exists; never overwrite an existing world'}
 if(-not $env:JAVA_HOME){
-    $taskJdk='C:\Users\Admin\.gradle\jdks\eclipse_adoptium-21-amd64-windows.2'
-    if(Test-Path -LiteralPath $taskJdk){$env:JAVA_HOME=$taskJdk}
+    $taskGradleHome=if($env:GRADLE_USER_HOME){$env:GRADLE_USER_HOME}else{Join-Path $HOME '.gradle'}
+    $taskJdk=Get-ChildItem -LiteralPath (Join-Path $taskGradleHome 'jdks') -Directory -Filter '*-21-*' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if($taskJdk){$env:JAVA_HOME=$taskJdk.FullName}
 }
 $taskProps="online-mode=false`nserver-port=0`nlevel-type=minecraft:normal`nlevel-seed=$Seed`nspawn-protection=0`nmax-tick-time=-1`nview-distance=4`nsimulation-distance=4`nspawn-monsters=true`nspawn-animals=false`nspawn-npcs=false`ngenerate-structures=true`n"
 $taskDiagnostics=Join-Path $taskRoot 'build/diagnostics'
