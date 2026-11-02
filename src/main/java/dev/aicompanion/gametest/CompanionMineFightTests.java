@@ -439,7 +439,7 @@ public final class CompanionMineFightTests {
         return zombie;
     }
 
-    private static Skeleton skeleton(GameTestHelper h, BlockPos at) {
+    static Skeleton skeleton(GameTestHelper h, BlockPos at) {
         Skeleton skeleton = h.spawn(EntityType.SKELETON, rel(h, at));
         skeleton.setPersistenceRequired();
         skeleton.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
