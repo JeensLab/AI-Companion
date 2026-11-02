@@ -63,6 +63,28 @@ public final class CompanionRavineTests {
     }
 
     /**
+     * Issues 65 and 69 (stream 01.11, 1:05:17 and 1:27:43): with no pickaxe he broke stone by hand and cobblestone fell out, then
+     * he stacked it under his feet to climb. Stone broken by hand gives nothing, as for a player: he still cuts the steps.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1400)
+    public static void stoneCutByHandUpTheRavineWallDropsNothing(GameTestHelper h) {
+        ravine(h);
+        CompanionEntity companion = spawn(h, 16, 3, 16);
+        companion.setFollowing(true);
+        h.onEachTick(() -> {
+            h.assertTrue(count(companion, Items.COBBLESTONE) == 0, "Cobblestone in the bag from stone broken by hand");
+            h.assertTrue(h.getEntities(net.minecraft.world.entity.EntityType.ITEM).stream().noneMatch(item -> item.getItem().is(Items.COBBLESTONE)),
+                    "Cobblestone fell out of stone broken by hand");
+        });
+        h.runAtTickTime(1200, () -> {
+            int cut = 0;
+            for (int x : new int[]{14, 18}) for (int y = 2; y < TOP - 3; y++) for (int z = 8; z <= 28; z++) if (h.getBlockState(new BlockPos(x, y, z)).isAir()) cut++;
+            h.assertTrue(cut > 0, "No stone of the wall was cut: the hand path was not exercised");
+            h.succeed();
+        });
+    }
+
+    /**
      * Stone below, soil above it, grass on top (y=TOP), bedrock border. A ravine three wide along x 15..17, z 8..28, its floor
      * at y=2: from the north end ledges three blocks apart lead down (one way: a mob jumps one block), its walls are sheer.
      * The player stands on the east edge.

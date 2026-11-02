@@ -328,7 +328,7 @@ final class CompanionRecovery {
         owner.workStatus(digTarget.equals(owner.blockPosition().below()) ? "Спускаюсь: раскапываю блок под ногами." : "Расчищаю небольшой проход, чтобы выбраться.");
         if (!breaking.tick(level, digTarget)) return;
         var tool = owner.getMainHandItem();
-        var drops = net.minecraft.world.level.block.Block.getDrops(state, level, digTarget, null, owner, tool);
+        var drops = CompanionTools.drops(state, level, digTarget, null, owner, tool);
         if (!owner.canStoreDrops(drops)) { stop(false); return; }
         if (safeTarget(level, digTarget) && level.destroyBlock(digTarget, false, owner, 512)) {
             tool.getItem().mineBlock(tool, level, state, digTarget, owner); owner.dropHarvest(digTarget, drops); dug++;

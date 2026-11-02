@@ -8,7 +8,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -170,7 +169,7 @@ final class CompanionHandOver {
         w.owner.workStatus("Забираю свой походный верстак.");
         if (!w.breaking.tick(level, w.packTarget)) return;
         ItemStack tool = w.owner.getMainHandItem();
-        var drops = Block.getDrops(state, level, w.packTarget, level.getBlockEntity(w.packTarget), w.owner, tool);
+        var drops = CompanionTools.drops(state, level, w.packTarget, level.getBlockEntity(w.packTarget), w.owner, tool);
         if (!w.items.canStore(drops)) { w.packTarget = null;
             w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + left + " В сумке нет места.", w.packResult.status(), w.packResult.evidence())); return; }
         if (!level.destroyBlock(w.packTarget, false, w.owner, 512)) return;
