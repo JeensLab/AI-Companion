@@ -58,6 +58,18 @@ final class CompanionEntityGoals {
         @Override public void stop() { c.recovery.cancel(); c.getNavigation().stop(); }
     }
 
+    /** Low on air under water: the work waits while he swims to air and breathes (CompanionBreath). The float goal beside it holds no flag (WadingFloatGoal). */
+    static final class BreatheGoal extends Goal {
+        final CompanionEntity c;
+        BreatheGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
+        @Override public boolean canUse() { return c.breath.canUse(); }
+        @Override public boolean canContinueToUse() { return c.breath.canContinue(); }
+        @Override public boolean requiresUpdateEveryTick() { return true; }
+        @Override public void start() { c.breath.begin(); }
+        @Override public void tick() { c.breath.tick(); }
+        @Override public void stop() { c.breath.end(); }
+    }
+
     static final class RoamGoal extends Goal {
         final CompanionEntity c;
         private int nextAttempt;

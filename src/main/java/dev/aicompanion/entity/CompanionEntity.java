@@ -20,7 +20,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
@@ -134,6 +133,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
+    final CompanionBreath breath = new CompanionBreath(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     BlockPos movementIntent;
@@ -316,10 +316,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // game's price of water, and the part of it that came out led him off into the sea).
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 2.0F);
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
-        this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
+        this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));

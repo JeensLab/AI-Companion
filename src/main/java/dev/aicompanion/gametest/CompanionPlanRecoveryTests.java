@@ -419,12 +419,107 @@ public final class CompanionPlanRecoveryTests {
             plan.add(new PlannedAction("obtain_item", 0, 2, parts.get(i)));
             report.append("\n").append(CompanionDialogue.PARTIAL_PREFIX).append("«").append(CompanionDialogue.itemName(parts.get(i))).append("»: ")
                     .append("Добыл 0 из ").append(ore[i]).append(" блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет. ")
-                    .append("У 3 блока рядом вода или лава — их не трогал. К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка и жидкостей рядом.").append(bag);
+                    .append("К 83 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка, лавы и открытой воды рядом.").append(bag);
         }
         report.append("\nНадел: Железный шлем.\nОтдал тебе 1 «Железный шлем».");
         String said = CompanionDialogue.summarize(plan, report.toString());
         h.assertTrue(said.equals("Остальное сделал. Не вышло: «" + CompanionDialogue.itemName(parts.get(0)) + "», «" + CompanionDialogue.itemName(parts.get(1))
                 + "», «" + CompanionDialogue.itemName(parts.get(2)) + "» — до оставшейся руды безопасно не добраться."), said);
+        h.succeed();
+    }
+
+    /**
+     * The two lava reasons of ore digging, in the words the engine writes (CompanionOreMining.finishOre), reach the player as lava in
+     * every place that speaks of a failed part: a plan of several parts, the plain failure message (autonomy, goals), and the rest.
+     */
+    @GameTest(template = "empty")
+    public static void theLavaReasonsOfOreAreSaidAsLavaInPlansAndFailureMessages(GameTestHelper h) {
+        String noPlug = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 3 блока рядом лава, заткнуть нечем — нужен булыжник или земля. К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка, лавы и открытой воды рядом.";
+        String overLava = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " 2 блока руды над лавой — не трогал, добыча сгорит.";
+        String fall = "Добыл 0 из 8 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 2 блока рядом лавопад — пробкой его не остановить, не трогал.";
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String helmet = CompanionDialogue.itemName("minecraft:iron_helmet"), boots = CompanionDialogue.itemName("minecraft:iron_boots");
+        for (String why : List.of(noPlug, overLava, fall)) {
+            String report = CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: " + why + "\n" + CompanionDialogue.PARTIAL_PREFIX + "«" + boots + "»: " + why;
+            String said = CompanionDialogue.summarize(plan, report);
+            h.assertTrue(said.contains("лав") && !said.contains("больше доступной руды") && !said.contains("безопасно не добраться"), "Plan parts do not say lava: " + said);
+            String spoken = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", why);
+            h.assertTrue(spoken.contains("лав") && !spoken.contains("Больше доступной руды"), "Failure message does not say lava: " + spoken);
+        }
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + helmet + "»: " + noPlug);
+        h.assertTrue(said.contains("булыжник") || said.contains("земл"), "Does not say what to bring: " + said);
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", fall).equals("Рядом лавопад, пробкой его не остановить. Руду не трогал."),
+                "The fall is not said: " + dev.aicompanion.CompanionFailureMessages.explain("mine_ore", fall));
+        h.succeed();
+    }
+
+    /** A lava reason and «Наверх пока не выбрался» in one report: the player hears that he is still down there, not only the lava. */
+    @GameTest(template = "empty")
+    public static void stuckBelowIsSaidBeforeTheLavaReason(GameTestHelper h) {
+        String report = "Добыл 0 из 4 блоков «железная руда»: в сумке прибавилось 0 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 1 блок рядом лава, заткнуть нечем — нужен булыжник или земля. Наверх пока не выбрался: стою на 10, 20, 30. В сумке: 1 Каменная кирка.";
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String parts = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_boots") + "»: " + report);
+        String spoken = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", report);
+        h.assertTrue(spoken.contains("внизу") && parts.contains("внизу"), "Stuck below not said: " + spoken + " | " + parts);
+        h.succeed();
+    }
+
+    /** A spring with nothing to plug it (CompanionOreMining.finishOre) is said as a spring, not as lava or as «no safe way», in the failure message and the partial report. */
+    @GameTest(template = "empty")
+    public static void aSpringWithNothingToPlugItIsSaidAsSuchInFailureMessagesAndPartialReports(GameTestHelper h) {
+        String flooded = "Добыл 1 из 2 блока «железная руда»: в сумке прибавилось 1 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 1 блок рядом родник, заткнуть нечем — нужен булыжник или земля. В сумке: 5 Песок.";
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind(flooded) == dev.aicompanion.CompanionFailureMessages.Kind.WATER, "Not WATER: " + dev.aicompanion.CompanionFailureMessages.kind(flooded));
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded).equals("Рядом родник, а заткнуть его нечем. Нужен булыжник или земля."),
+                dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded));
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: " + flooded);
+        h.assertTrue(said.contains("рядом родник") && !said.contains("лав"), "Partial report does not say spring: " + said);
+        h.succeed();
+    }
+
+    /**
+     * Review 3: the engine puts «К N не нашёл безопасного хода … без гравия, песка, лавы и открытой воды рядом» beside any other reason, and its «лавы» is no lava
+     * reason: the spring stays a spring in every way it is said (kind, explain, a single order, a part of a plan). Lava's own phrases still win.
+     */
+    @GameTest(template = "empty")
+    public static void aSpringNextToTheNoSafeWaySentenceIsStillASpring(GameTestHelper h) {
+        String route = " К 2 не нашёл безопасного хода: не глубже 8 блоков, без гравия, песка, лавы и открытой воды рядом.";
+        String flooded = "Добыл 1 из 3 блоков «железная руда»: в сумке прибавилось 1 «Рудное железо». Больше доступной руды «железная руда» рядом нет."
+                + " У 1 блок рядом родник, заткнуть нечем — нужен булыжник или земля." + route + " В сумке: 5 Песок.";
+        String none = flooded.replace("Добыл 1 из 3", "Добыл 0 из 3").replace("прибавилось 1", "прибавилось 0");
+        var single = List.of(new PlannedAction("mine_ore", 0, 3, "minecraft:iron_ore"));
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind(flooded) == dev.aicompanion.CompanionFailureMessages.Kind.WATER, "Not WATER: " + dev.aicompanion.CompanionFailureMessages.kind(flooded));
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded).startsWith("Рядом родник"), dev.aicompanion.CompanionFailureMessages.explain("mine_ore", flooded));
+        String one = CompanionDialogue.summarize(single, "План остановлен: " + flooded), zero = CompanionDialogue.summarize(single, "План остановлен: " + none);
+        h.assertTrue(one.contains("рядом родник") && !one.contains("лав") && !one.contains("залило") && one.indexOf('—') == one.lastIndexOf('—'), "Single order: " + one);
+        h.assertTrue(zero.startsWith("Руду нашёл, но рядом родник, а заткнуть нечем.") && zero.indexOf('—') == zero.lastIndexOf('—'), "Single order, nothing got: " + zero);
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: " + flooded);
+        h.assertTrue(said.contains("рядом родник") && !said.contains("лав"), "Part of a plan: " + said);
+        // Lava beside water: the lava reason is the one said.
+        String both = flooded.replace("Больше доступной руды «железная руда» рядом нет.", "Больше доступной руды «железная руда» рядом нет. У 1 блок рядом лава, заткнуть нечем — нужен булыжник или земля.");
+        h.assertTrue(dev.aicompanion.CompanionFailureMessages.kind(both) == dev.aicompanion.CompanionFailureMessages.Kind.LAVA, "Not LAVA: " + dev.aicompanion.CompanionFailureMessages.kind(both));
+        h.assertTrue(CompanionDialogue.summarize(single, "План остановлен: " + both).contains("лава"), CompanionDialogue.summarize(single, "План остановлен: " + both));
+        h.succeed();
+    }
+
+    /** Review 3: an ore broken whose drop never reached the bag is said as such everywhere, not as done and not as ore out of reach. */
+    @GameTest(template = "empty")
+    public static void aBrokenOreWhoseDropIsLostIsSaidAsSuch(GameTestHelper h) {
+        String lost = "Добыл 1 блок «железная руда»: в сумке прибавилось 0 «Рудное железо». Выпавшее не достал: оно осталось там, где мне его не взять."
+                + " В сумке: 16 Булыжник.";
+        String explained = dev.aicompanion.CompanionFailureMessages.explain("mine_ore", lost);
+        h.assertTrue(explained.equals("Руду сломал, но выпавшее не достал."), "Explained: " + explained);
+        String one = CompanionDialogue.summarize(List.of(new PlannedAction("mine_ore", 0, 1, "minecraft:iron_ore")), "План остановлен: " + lost);
+        h.assertTrue(one.equals("Руду сломал, но выпавшее не достал."), "Single order: " + one);
+        var plan = List.of(new PlannedAction("obtain_item", 0, 2, "minecraft:iron_helmet"), new PlannedAction("obtain_item", 0, 2, "minecraft:iron_boots"));
+        String said = CompanionDialogue.summarize(plan, CompanionDialogue.PARTIAL_PREFIX + "«" + CompanionDialogue.itemName("minecraft:iron_helmet") + "»: " + lost);
+        h.assertTrue(said.contains("выпавшее не достал") && !said.contains("не добраться"), "Part of a plan: " + said);
         h.succeed();
     }
 
