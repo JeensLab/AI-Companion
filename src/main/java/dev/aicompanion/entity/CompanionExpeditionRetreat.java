@@ -18,6 +18,8 @@ final class CompanionExpeditionRetreat {
     /** The fit health he rests up to, the longest rest and the ticks a plug may take. */
     static final float FIT = 18;
     static final int REST_TICKS = 20 * 240, PLUG_TRIES = 60;
+    /** Why a rest does not heal him, as the report says it: the goal reads it to wait for food rather than count the retreat against its stops. */
+    static final String NO_FOOD = "нет еды, а без сытости рана сама не заживает";
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -110,7 +112,7 @@ final class CompanionExpeditionRetreat {
         if (stuck) text.append(" Подняться по своей лестнице до конца не вышло, остался где стою.");
         int health = (int) owner.getHealth();
         if (owner.getHealth() >= FIT) text.append(" Отдохнул, здоровье ").append(health).append('.');
-        else text.append(" Отдохнуть до ").append((int) FIT).append(unmendable ? " здоровья не вышло: нет еды, а без сытости рана сама не заживает, сейчас " : " здоровья не вышло, сейчас ").append(health).append('.');
+        else text.append(" Отдохнуть до ").append((int) FIT).append(unmendable ? " здоровья не вышло: " + NO_FOOD + ", сейчас " : " здоровья не вышло, сейчас ").append(health).append('.');
         return text.toString();
     }
 

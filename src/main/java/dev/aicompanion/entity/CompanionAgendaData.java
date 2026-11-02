@@ -62,6 +62,9 @@ public final class CompanionAgendaData extends SavedData {
         boolean shieldTrek;
         /** The step wanted wood and he is under the ground, where there is none: the next step is the way up his stairs, then the step again. Not saved: a reload finds out again. */
         boolean ascendForWood;
+        /** Waits for food that a hurt goal has made, and the game time they last to. Not saved: a reload tries the step again. */
+        int hungryWaits;
+        long waitUntil;
 
         Goal(UUID id, String playbook, int tier) { this.id = id; this.playbook = playbook; this.tier = tier; }
 

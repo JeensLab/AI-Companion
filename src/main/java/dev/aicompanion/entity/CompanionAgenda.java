@@ -50,6 +50,8 @@ public final class CompanionAgenda {
 
     static final int MAX_ATTEMPTS = 12, MAX_FAILURES = 3, MAX_DEATHS = 2, FALLBACK_FAILURES = 2;
     private static final int SAFE_TICKS = 100, LEASE_TICKS = 100;
+    /** A retreat that ends in a rest he cannot take (hurt, nothing to eat) is waited out this many times, a minute each, before it counts as a failure of the mine step. */
+    private static final int HUNGRY_WAITS = 6, HUNGRY_WAIT_TICKS = 20 * 60;
     /** A fight or a fire that does not let go for this long stops the goal: waiting longer would not change anything. */
     private static final int PAUSE_LIMIT_TICKS = 20 * 60;
     /** Working time without a single milestone met: the goal stops and says so rather than going round in circles. */
@@ -388,6 +390,7 @@ public final class CompanionAgenda {
         if (leased(server, owner)) return;
         if (!free(c)) { waiting(data, owner, goal, c, "занят другим делом"); return; }
         if (c.batches().readyForQueue()) { waiting(data, owner, goal, c, "жду готовую партию из печи по твоей просьбе"); return; }
+        if (c.level().getGameTime() < goal.waitUntil) return;
         if (goal.state == State.INTERRUPTED) {
             goal.state = State.ACTIVE;
             data.setDirty();
@@ -532,6 +535,8 @@ public final class CompanionAgenda {
             data.setDirty();
             return;
         }
+        if (waitsForFood(data, goal, milestone, c, outcome, error)) return;
+        goal.hungryWaits = 0;
         int[] counter = goal.counter(milestone.key());
         counter[0]++;
         CompanionFacts facts = CompanionFacts.of(c);
@@ -576,6 +581,19 @@ public final class CompanionAgenda {
         }
         boolean spent = milestone.kind() == Kind.EXPEDITION && c.mineSite().stopFinal();
         if (counter[1] >= MAX_FAILURES || spent) block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
+    }
+
+    /**
+     * A mine step that ended in a rest he could not take (hurt, no food, a stomach too empty to mend) is no failure of the mine: a stop spent on it
+     * is gone for a wound that only food heals. The goal waits a minute and tries again, a few times, and says why once.
+     */
+    private static boolean waitsForFood(CompanionAgendaData data, Goal goal, Milestone milestone, CompanionEntity c, CompanionPlanRunner.Outcome outcome, Throwable error) {
+        if (milestone.kind() != Kind.EXPEDITION || error != null || outcome == null || goal.hungryWaits >= HUNGRY_WAITS || !outcome.report().contains(CompanionExpeditionRetreat.NO_FOOD)) return false;
+        if (goal.hungryWaits++ == 0) c.autonomySay("Еды нет, а рана сама не заживает: подожду и поищу еду снова.");
+        goal.waitUntil = c.level().getGameTime() + HUNGRY_WAIT_TICKS;
+        goal.reason = reason(outcome.report());
+        data.setDirty();
+        return true;
     }
 
     /** The ore search came back empty for iron: none seen within its depth, or seen but not safely reachable from here. */
