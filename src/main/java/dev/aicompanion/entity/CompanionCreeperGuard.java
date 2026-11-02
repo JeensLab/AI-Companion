@@ -12,6 +12,7 @@ import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -52,14 +53,11 @@ final class CompanionCreeperGuard {
      * The way out of a lit fuse: the fuse goes out only beyond 7 blocks (a little more for a margin), at his pace in blocks a tick, after the
      * ticks it takes the goal to take the turn and the path to start; the speed of that dash.
      */
-    private static final double SAFE_GAP = 7.4, FLEE_PACE = .4, FIGHT_FLEE_SPEED = 1.6;
+    static final double SAFE_GAP = 7.4;
+    private static final double FLEE_PACE = .4, FIGHT_FLEE_SPEED = 1.6;
     private static final int LATENCY = 4;
-    /**
-     * The dash itself is no path: each tick he takes the heading, of this many round the compass, that holds floor for this many blocks (sampled
-     * every step) and takes him farthest from the creepers, by at least this much more than he is now; a rise or a drop of one block is a step.
-     */
-    private static final int HEADINGS = 16, RUN_SAMPLES = 8;
-    private static final double RUN_STEP = .5, MIN_GAIN = .5, TURN_AT = 30;
+    /** A run along a heading (see {@link #runTo}) takes a rise or a drop of one block as a step. */
+    private static final double TURN_AT = 30;
     private static final double[] RISES = {0, 1, -1};
     /** A creeper with a lit fuse is looked at before any other: this much nearer in the sort. */
     private static final double LIT_FIRST = 10_000;
@@ -77,9 +75,12 @@ final class CompanionCreeperGuard {
     private int tries, retreats, flees;
     private List<BlockPos> cells = List.of();
     private Vec3 flee;
+    private Creeper watched;
+    private String shown = "";
     private final CompanionShieldGuard shield;
+    private final CompanionFuseEscape escape;
 
-    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; shield = new CompanionShieldGuard(owner); }
+    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; shield = new CompanionShieldGuard(owner); escape = new CompanionFuseEscape(owner); }
 
     /** The shield is up against a lit fuse: the idle lowering of it (CompanionEntity) waits. */
     boolean shielding() { return shield.holding(); }
@@ -97,6 +98,7 @@ final class CompanionCreeperGuard {
         if (now < nextLook) return false;
         nextLook = now + (fights() ? FIGHT_LOOK_EVERY : LOOK_EVERY);
         Creeper creeper = seen(level);
+        watched = creeper;
         noBlock = false;
         shielded = creeper != null && shield.covers(level, creeper);
         return creeper != null && (shielded || !(!lit(creeper) && engaged()) && plan(level, creeper, false));
@@ -131,15 +133,21 @@ final class CompanionCreeperGuard {
         nextPlan = now + PLAN_EVERY;
         tries = 0;
         owner.getNavigation().stop();
+        escape.reset();
+        shown = "";
+        int path = -1;
         // The work does not tick while the guard holds the turn, so the fight's hold cannot bring the sword out for it.
-        if (fighting || dashing) { owner.work.expedition.fightBegan(); owner.selectWeaponForCombat(); }
+        if (fighting || dashing) {
+            owner.work.expedition.fightBegan();
+            owner.selectWeaponForCombat();
+            path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()));
+        }
         if (fighting) {
             retreats++;
             lastRetreat = now;
         }
         owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, " + (cells.isEmpty() ? "ухожу от него." : "закрываю проход блоком."));
-        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "creeper_guard", "entity", owner.getUUID(),
-                "action", shielded ? "shield" : fighting ? "retreat" : dashing ? "dash" : cells.isEmpty() ? "flee" : "block", "cells", cells);
+        event(shielded ? "shield" : fighting ? "retreat" : dashing ? "dash" : cells.isEmpty() ? "flee" : "block", watched, path, "cells", cells);
         if (!shielded && !fighting && cells.isEmpty()) leaveLootAfterFlees(now);
     }
 
@@ -184,6 +192,7 @@ final class CompanionCreeperGuard {
         if (!active) return;
         active = fighting = shielded = dashing = false;
         shield.release();
+        escape.reset();
         flee = null;
         cells = List.of();
         owner.getNavigation().stop();
@@ -222,8 +231,8 @@ final class CompanionCreeperGuard {
 
     /**
      * What to do about this creeper. Fighting it: whether to step back now ({@link #retreat}). Otherwise: blocks to set on his route
-     * underground; with its fuse lit and no blocks to set, the same dash as in the fight (a path has a start to wait for and may lead past
-     * the creeper or nowhere, and the fuse is 30 ticks); else a place to walk to. False when there is nothing to do.
+     * underground; with its fuse lit and no blocks to set, the same way out as in the fight (the navigation has a start to wait for and may
+     * lead past the creeper or nowhere, and the fuse is 30 ticks); else a place to walk to. False when there is nothing to do.
      */
     private boolean plan(ServerLevel level, Creeper creeper, boolean going) {
         cells = List.of();
@@ -251,24 +260,37 @@ final class CompanionCreeperGuard {
     }
 
     /**
-     * The fuse is lit and he is to be out of its range before it blows: no path to wait for, a push straight along the heading that gets him
-     * farthest from every creeper over floor that holds. With every heading shut or no better than where he stands, a blow at the creeper:
-     * it throws it back, which is more than standing.
+     * The fuse is lit and he is to be out of its sight before it blows: along the way {@link CompanionFuseEscape} finds over the floor as it
+     * is, a push at a time to the next cell. Where there is none, a wall of blocks between him and the creeper; with no blocks either, a blow
+     * at it: it throws it back, which is more than standing.
      */
     private void retreat(ServerLevel level, Creeper creeper) {
-        List<Creeper> threats = threats(level);
-        Vec3 best = null;
-        double bestGap = gap(owner.position(), threats) + MIN_GAIN;
-        for (int heading = 0; heading < HEADINGS; heading++) {
-            double angle = heading * 2 * Math.PI / HEADINGS;
-            Vec3 end = runTo(owner, level, Math.cos(angle), Math.sin(angle), RUN_SAMPLES, RUN_STEP);
-            if (end == null || !clear(end, threats, 0)) continue;
-            double gap = gap(end, threats);
-            if (gap > bestGap) { best = end; bestGap = gap; }
+        Vec3 step = escape.step(level, threats(level));
+        if (step != null) {
+            mention(escape.holding() ? "hold" : "path", creeper, escape.goal());
+            owner.getNavigation().stop();
+            faceTowards(owner, step);
+            owner.getMoveControl().setWantedPosition(step.x, step.y, step.z, FIGHT_FLEE_SPEED);
+            return;
         }
-        if (best == null) { strike(creeper); return; }
-        faceTowards(owner, best);
-        owner.getMoveControl().setWantedPosition(best.x, best.y, best.z, FIGHT_FLEE_SPEED);
+        if (escape.shut(level, creeper)) { mention("wall", creeper, null); return; }
+        mention("strike", creeper, null);
+        strike(creeper);
+    }
+
+    /** A retreat event when the way or the mode changes, not every tick. */
+    private void mention(String mode, Creeper creeper, BlockPos goal) {
+        String key = mode + goal;
+        if (key.equals(shown)) return;
+        shown = key;
+        event("retreat_" + mode, creeper, escape.length(), "goal", String.valueOf(goal));
+    }
+
+    private void event(String action, Creeper creeper, int path, Object... more) {
+        List<Object> fields = new ArrayList<>(List.of("entity", owner.getUUID(), "action", action, "tick", owner.level().getGameTime(), "health", owner.getHealth(), "path", path));
+        if (creeper != null) fields.addAll(List.of("distance", Math.round(owner.distanceTo(creeper) * 10) / 10.0, "swell", Math.round(creeper.getSwelling(0) * 100) / 100.0));
+        fields.addAll(Arrays.asList(more));
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "creeper_guard", fields.toArray());
     }
 
     /** The move control turns him 90 degrees a tick and walks as he faces meanwhile: from facing the creeper that first step would go sideways, so he is turned to the heading at once. */

@@ -16,7 +16,9 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.count;
@@ -35,6 +37,8 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionCreeperGuardTests {
     private static final int STEP_CHECK_TICKS = 2400, OPEN_CAVE_TICKS = 600, CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3;
+    private static final int TUNNEL_Y = 10, BEND_LEG = 3, BEND_LENGTH = 12, DEAD_END_LENGTH = 8, DEAD_END_CREEPER = 3, BLAST_TICKS = 200;
+    private static final float UNHURT = 10;
 
     private CompanionCreeperGuardTests() { }
 
@@ -129,6 +133,59 @@ public final class CompanionCreeperGuardTests {
             if (c.expeditionStepEnd() > first[0]) h.succeed();
         });
         h.runAtTickTime(STEP_CHECK_TICKS - 5, () -> h.fail("The step kept its end " + first[0] + " after the creeper: " + c.expeditionStepEnd() + " | " + report(c)));
+    }
+
+    /** Stone all round him: a tunnel one block wide with a bend two blocks off and a lit fuse at his back. Straight on there is no floor to run along; round the corner the blast cannot reach. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseAtHisBackInATunnelWithABendIsLeftAroundTheCorner(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = CompanionMineFightTests.armed(h);
+        for (int x = 0; x <= BEND_LEG; x++) bore(h, x, 0);
+        for (int z = 1; z <= BEND_LENGTH; z++) bore(h, BEND_LEG, -z);
+        place(h, c, cell(h, 1, 0));
+        Creeper creeper = creeper(h, cell(h, 0, 0));
+        creeper.ignite();
+        survivesTheBlast(h, c, creeper, () -> true);
+    }
+
+    /** A dead end: nowhere to go and the creeper three blocks off with its fuse lit. He shuts the way with blocks from the bag, and the blast does not reach him. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLitFuseInADeadEndIsShutOutWithBlocks(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = CompanionMineFightTests.armed(h);
+        for (int x = 0; x <= DEAD_END_LENGTH; x++) bore(h, x, 0);
+        place(h, c, cell(h, 0, 0));
+        Creeper creeper = creeper(h, cell(h, DEAD_END_CREEPER, 0));
+        creeper.ignite();
+        boolean[] shut = {false};
+        survivesTheBlast(h, c, creeper, () -> {
+            for (int x = 1; x < DEAD_END_CREEPER; x++) shut[0] |= !h.getLevel().getBlockState(cell(h, x, 0)).isAir() || !h.getLevel().getBlockState(cell(h, x, 0).above()).isAir();
+            return shut[0];
+        });
+    }
+
+    private static BlockPos cell(GameTestHelper h, int x, int z) { return cell(h, x, 0, z); }
+
+    private static BlockPos cell(GameTestHelper h, int x, int up, int z) { return h.absolutePos(new BlockPos(CENTER + x, TUNNEL_Y + up, CENTER + z)); }
+
+    private static void bore(GameTestHelper h, int x, int z) {
+        for (int up = 0; up < 2; up++) h.getLevel().setBlock(cell(h, x, up, z), Blocks.AIR.defaultBlockState(), 2 | 16);
+    }
+
+    /** Alive and not much hurt all along; once the creeper is gone (it blew or was killed) and {@code when} has held, the test is over. */
+    private static void survivesTheBlast(GameTestHelper h, CompanionEntity c, Creeper creeper, BooleanSupplier when) {
+        long begun = h.getTick();
+        boolean[] held = {false};
+        h.onEachTick(() -> {
+            held[0] |= when.getAsBoolean();
+            String trace = " | creeper " + (creeper.isAlive() ? "alive, fuse " + creeper.getSwellDir() : "gone") + ", he at " + rel(h, c.blockPosition()).toShortString()
+                    + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(c.getHealth() >= UNHURT, "Hurt by the blast" + trace);
+            if (creeper.isAlive()) { h.assertTrue(h.getTick() - begun < BLAST_TICKS, "The creeper never blew" + trace); return; }
+            h.assertTrue(held[0], "The way was not shut" + trace);
+            h.succeed();
+        });
     }
 
     private static void place(GameTestHelper h, CompanionEntity c, BlockPos stand) {
