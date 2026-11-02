@@ -244,9 +244,10 @@ final class CompanionExpeditionDig {
     private boolean takingUpTemporary(BlockPos to) { return takingUp(to, false); }
 
     /**
-     * The cells of his own way (the record's stairs and tunnels) are open by construction, so a block at the feet or the head of the next one is a
-     * block of his, whether the record still remembers it (it keeps sixteen temporary ones) or not. It comes out with what he has: any pickaxe,
-     * the iron one however worn, a shovel, the bare hand last.
+     * The cells of his own way (the record's stairs and tunnels) are open by construction, so a block of a kind he plugs with at the feet or the
+     * head of the next one is a block of his, whether the record still remembers it (it keeps sixteen temporary ones) or not; any other block
+     * there is not his and stays (see {@link #blocksHisWay}). It comes out with what he has: any pickaxe, the iron one however worn, a shovel,
+     * the bare hand last.
      */
     boolean takingUpOnHisWay(BlockPos to) { return takingUp(to, true); }
 
