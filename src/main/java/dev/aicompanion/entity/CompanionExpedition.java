@@ -750,7 +750,7 @@ final class CompanionExpedition {
 
     /** Keeps the stop for the next order, and says so when every way from it was tried. */
     private String rememberStop(Ending ending) {
-        if (surfaceOnly || ending == Ending.RETREAT) return "";
+        if (surfaceOnly || ending == Ending.RETREAT) { w.mine.stopForgotten(); return ""; }
         BlockPos here = owner.blockPosition();
         if (ending == Ending.FOUND || gained() > 0 || !CompanionExpeditionRecord.deep((ServerLevel) owner.level(), w.mine, here)) { w.mine.stopForgotten(); return ""; }
         w.mine.stopped(here, ending.ordinal());

@@ -35,7 +35,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineReviewTests {
     private static final int GAP_AT = 12, WALL_AT = 5, IRON_LEFT = 60;
-    private static final int TRENCH_LENGTH = 8, TRENCH_CREEPER = 3, FUSE_SETTLED = 100, FIRE_TICKS = 200, FIRE_REACTION = 60;
+    private static final int TRENCH_LENGTH = 8, TRENCH_CREEPER = 3, FUSE_SETTLED = 100, FIRE_TICKS = 200, FIRE_REACTION = 60, LOW_HEALTH = 6;
 
     /**
      * The stairs are shut at feet and head by blocks he did not put there, the record knows of none and he has only the worn iron pickaxe.
@@ -156,5 +156,29 @@ public final class CompanionMineReviewTests {
         c.mineSite().reached(stairs.get(3).offset(0, -1, -1));
         h.assertTrue(CompanionFacts.of(c).mineOpened() == dug + 1, "A stand dug after it shows none: " + CompanionFacts.of(c).mineOpened());
         h.succeed();
+    }
+
+    /**
+     * An old stop of an earlier order is still on the record when this one ends in a retreat to the surface: it is not this order's stop, and
+     * the goal must not take it for a way left to try (it would not count the failure).
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aRetreatLeavesNoStopOfAnEarlierOrderOnTheRecord(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        c.mineSite().stopped(stairs.get(GAP_AT), 1);
+        h.assertTrue(c.mineSite().stopWayLeft(), "The earlier stop is not on the record");
+        long id = start(h, c, 1);
+        boolean[] hurt = {false};
+        h.onEachTick(() -> {
+            String stage = c.expeditionStage();
+            if (!hurt[0] && (stage.equals("WALK_DOWN") || stage.equals("DESCEND"))) { c.setHealth(LOW_HEALTH); hurt[0] = true; }
+            if (c.workResult(id) == null) return;
+            h.assertTrue(hurt[0], "The order ended before he was hurt: " + report(c));
+            h.assertTrue(!c.mineSite().stopWayLeft(), "The stop of an earlier order stands after the retreat: " + report(c));
+            h.succeed();
+        });
     }
 }
