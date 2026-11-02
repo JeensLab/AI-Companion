@@ -188,6 +188,8 @@ public final class CompanionSwimTests {
         if (sprint) owner.setPose(Pose.SWIMMING);
         oleg.setFollowing(true);
         long[] since = {-1}, shortest = {Long.MAX_VALUE};
+        int[] measured = {0}, lying = {0};
+        double[] farthest = {0};
         Pose[] pose = {null};
         StringBuilder log = new StringBuilder();
         h.onEachTick(() -> {
@@ -203,10 +205,16 @@ public final class CompanionSwimTests {
                 log.append(String.format(" %s at t=%d x=%.1f gap=%.1f;", oleg.getPose(), t, x, oleg.distanceTo(owner)));
             }
             pose[0] = oleg.getPose();
+            measured[0]++;
+            if (oleg.getPose() == Pose.SWIMMING) lying[0]++;
+            farthest[0] = Math.max(farthest[0], oleg.distanceTo(owner));
         });
         h.runAfterDelay(1100, () -> {
             h.assertTrue(pose[0] != null, "Never out in the lake: " + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
             h.assertTrue(shortest[0] >= 40, "Stood up and lay down again within " + shortest[0] + " ticks after the swimming player:" + log);
+            // After the sprinting player flat all the way; after the slow one he still keeps up (he catches up from 12 blocks).
+            if (sprint) h.assertTrue(lying[0] * 10 >= measured[0] * 9, "Lay flat only " + lying[0] + " of " + measured[0] + " ticks");
+            else h.assertTrue(farthest[0] <= 14, "Fell " + String.format("%.1f", farthest[0]) + " blocks behind the slow swimmer");
             h.succeed();
         });
     }
