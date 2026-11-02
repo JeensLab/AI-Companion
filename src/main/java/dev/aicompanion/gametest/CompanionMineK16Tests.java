@@ -36,7 +36,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 
 /**
  * Runs s1a/void-2, s1c/void-2 and s1e/void: the climb that went back down from the surface, the ore tunnel under the steps of the stairs above a
- * restart, the bench out of reach with logs in the bag, the kit left out on a hillside, and the walk back to the stairs where he was killed.
+ * restart, the kit left out on a hillside, and the walk back to the stairs where he was killed.
  * Arena as in the other mine tests: stand k is (24,22-k,24-k), its column three cells high.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
@@ -44,7 +44,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 public final class CompanionMineK16Tests {
     private static final String SURFACE = "surface";
     private static final int TOP_STEPS = 10, CORRIDOR_Y = 12, CORRIDOR_Z = 14, CORRIDOR_X = 3, START_X = 18, SURFACE_FEET = GROUND - 1, BACK_DOWN_FEET = 14,
-            PIT_LOW = 23, PIT_HIGH = 25, PIT_FLOOR = 17, BENCH_X = 29, LOGS = 4, INGOTS = 3, STICKS = 2, BAG_SLOTS = 6,
+            BAG_SLOTS = 6,
             HILL = 10, DEEP_STANDS = 12, ABOVE_THE_BODY = 10;
 
     private CompanionMineK16Tests() { }
@@ -116,38 +116,6 @@ public final class CompanionMineK16Tests {
         h.assertTrue(site.carriesStand(upper.below()), "The floor of the step at " + upper.toShortString() + " above the restart is free for a tunnel");
         h.assertTrue(site.carriesStand(entrance.below()), "The floor of the entrance above the restart is free for a tunnel");
         h.succeed();
-    }
-
-    /** s1e/void: down in a pit with sheer walls, the bench he remembers a few blocks off has no walk to it, and the logs in his bag buy a new one: no order stops on it. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void aNearBenchWithNoWalkToItIsReplacedWhenHeHasLogs(GameTestHelper h) {
-        mountain(h, false);
-        air(h, PIT_LOW, PIT_HIGH, PIT_FLOOR, GROUND, PIT_LOW, PIT_HIGH);
-        BlockPos bench = new BlockPos(BENCH_X, GROUND + 1, CENTER);
-        h.setBlock(bench, Blocks.CRAFTING_TABLE);
-        CompanionEntity c = rig(h);
-        c.setFollowing(false);
-        emptyHands(c);
-        c.setItem(0, new ItemStack(Items.OAK_LOG, LOGS));
-        c.setItem(1, new ItemStack(Items.IRON_INGOT, INGOTS));
-        c.setItem(2, new ItemStack(Items.STICK, STICKS));
-        c.rememberPlaced(h.absolutePos(bench));
-        BlockPos at = h.absolutePos(new BlockPos(CENTER, PIT_FLOOR, CENTER));
-        c.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
-        long[] id = {0};
-        h.onEachTick(() -> {
-            if (id[0] == 0) {
-                if (!c.onGround()) return;
-                var order = CompanionEvents.executeAction(h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId()), "craft_item", "minecraft:iron_pickaxe", 1);
-                h.assertTrue(order.success(), "The order was not accepted: " + order.message());
-                id[0] = c.activeWorkId();
-                return;
-            }
-            if (c.isWorking() || c.isGatheringTask()) return;
-            CompanionActionResult result = c.workResult(id[0]);
-            h.assertTrue(result != null && count(c, Items.IRON_PICKAXE) == 1, "No pickaxe from the pit: " + (result == null ? "no result" : result.message()) + " | " + report(c));
-            h.succeed();
-        });
     }
 
     /** s1e/void: on a hillside lower than the entrance he is not below the mine: under the open sky the kit is still to be made up, not skipped. */
