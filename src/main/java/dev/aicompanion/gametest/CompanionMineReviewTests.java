@@ -1,6 +1,7 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionFacts;
 import dev.aicompanion.entity.CompanionShaftPlan;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -136,5 +137,24 @@ public final class CompanionMineReviewTests {
             if (stage.equals("RETREAT") || stage.equals("CLIMB") || c.workResult(id) != null) { h.succeed(); return; }
             h.assertTrue(h.getTick() - ignited[0] < FIRE_REACTION, "He burns and goes on in stage " + stage + ", health " + c.getHealth() + " | " + report(c));
         });
+    }
+
+    /**
+     * The mark of a mine step that moved the goal is the number of cells the mine opened. A step that cut the record back (a backtrack) or began
+     * it again (a restart) opened nothing, and must not look like one that did: it would give back the steps and the time the goal is allowed.
+     */
+    @GameTest(template = "marathon_cave")
+    public static void aMineThatIsCutBackOrBegunAgainShowsNoProgress(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        int dug = CompanionFacts.of(c).mineOpened();
+        c.mineSite().truncate(3);
+        h.assertTrue(CompanionFacts.of(c).mineOpened() == dug, "A record cut back to three stands shows progress: " + dug + " -> " + CompanionFacts.of(c).mineOpened());
+        c.mineSite().restart(stairs.get(3), Direction.NORTH);
+        h.assertTrue(CompanionFacts.of(c).mineOpened() == dug, "A mine begun again shows progress: " + dug + " -> " + CompanionFacts.of(c).mineOpened());
+        c.mineSite().reached(stairs.get(3).offset(0, -1, -1));
+        h.assertTrue(CompanionFacts.of(c).mineOpened() == dug + 1, "A stand dug after it shows none: " + CompanionFacts.of(c).mineOpened());
+        h.succeed();
     }
 }

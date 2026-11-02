@@ -261,7 +261,10 @@ public final class CompanionMineSite {
         return true;
     }
 
-    /** What the mine has opened so far: steps of the staircase and advances of tunnels; a measure of progress. */
+    /** Stands and tunnel advances recorded since the mine began, a restart or a cut-back of the record included: it never goes down, so it can tell a step that dug from one that did not. */
+    public int openedTotal() { return opened; }
+
+    /** The cells the record holds now: steps of the staircase and advances of tunnels. */
     public int opened() {
         int total = stands.size();
         for (Tunnel tunnel : tunnels) total += tunnel.length();

@@ -48,7 +48,7 @@ public final class CompanionFacts {
         var end = c.getServer() == null ? null : c.getServer().getLevel(Level.END);
         boolean dragonDead = end != null && end.getDragonFight() != null && end.getDragonFight().hasPreviouslyKilledDragon();
         boolean belowMine = c.mineSite().exists() && (c.getY() < c.mineSite().entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH || c.mineSite().buried() && !CompanionExpeditionRecord.underSky(c.level(), c.blockPosition().above()));
-        return new CompanionFacts(carried, worn, dragonDead, c.mineSite().opened(), belowMine, ironInSight(c), false);
+        return new CompanionFacts(carried, worn, dragonDead, c.mineSite().openedTotal(), belowMine, ironInSight(c), false);
     }
 
     /** Looked up once, and only if a plan asks: the world is scanned around where he stands now. */
@@ -87,7 +87,7 @@ public final class CompanionFacts {
 
     public boolean dragonDead() { return dragonDead; }
 
-    /** Cells his diamond mine has opened (stairs and tunnels): what a step of the expedition leaves behind even without a diamond. */
+    /** Cells his diamond mine has opened since it began (stairs and tunnels, none counted twice for a cut-back): what a step of the expedition leaves behind even without a diamond. */
     public int mineOpened() { return mineOpened; }
 
     private static void add(Map<Item, Integer> carried, ItemStack stack) {
