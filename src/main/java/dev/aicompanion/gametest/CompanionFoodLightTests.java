@@ -256,6 +256,29 @@ public final class CompanionFoodLightTests {
         });
     }
 
+    /** An idle auto-smelter of the player: the hopper under it would carry his meat off into the player's chest. */
+    @GameTest(template="tall_tree",timeoutTicks=2400)
+    public static void aDeedOfHisOwnLeavesThePlayersHopperFurnaceAlone(GameTestHelper h) {
+        var f=fixture(h,false,12,16);
+        f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
+        f.oleg.setItem(0,new ItemStack(Items.OAK_LOG,16)); f.oleg.setItem(1,new ItemStack(Items.COBBLESTONE,32));
+        f.oleg.setItem(2,new ItemStack(Items.COAL,8)); f.oleg.setItem(3,new ItemStack(Items.BEEF,6));
+        BlockPos players=new BlockPos(14,1,19);
+        h.setBlock(players,Blocks.FURNACE); h.setBlock(players.below(),Blocks.HOPPER);
+        var oven=(net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity)h.getBlockEntity(players);
+        var hopper=(net.minecraft.world.level.block.entity.HopperBlockEntity)h.getBlockEntity(players.below());
+        f.oleg.autonomy().setEnabled(true);
+        h.succeedWhen(()->{
+            int cooked=count(f,Items.COOKED_BEEF);
+            for(int x=0;x<32;x++) for(int z=0;z<32;z++) for(int y=1;y<=7;y++)
+                if(h.getBlockState(new BlockPos(x,y,z)).is(Blocks.FURNACE) && h.getBlockEntity(new BlockPos(x,y,z)) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity any
+                        && any.getItem(2).is(Items.COOKED_BEEF)) cooked+=any.getItem(2).getCount();
+            h.assertTrue(cooked==6,"Meat not cooked: "+cooked+" "+f.oleg.getLastTaskResult()+" "+f.oleg.getStoredItemsSummary());
+            h.assertTrue(oven.isEmpty() && hopper.isEmpty(),"The player's auto-smelter was used: "+oven.getItem(0)+" / "+oven.getItem(1)+" / "+oven.getItem(2)+", hopper "+hopper.getItem(0));
+            f.oleg.autonomy().setEnabled(false); f.oleg.setFollowing(false);
+        });
+    }
+
     @GameTest(template="tall_tree",timeoutTicks=1200)
     public static void workingLogsComeFromHisOwnChest(GameTestHelper h) {
         var f=fixture(h,false,12,16);
