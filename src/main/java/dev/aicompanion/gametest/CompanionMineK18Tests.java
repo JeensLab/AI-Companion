@@ -29,8 +29,9 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineK18Tests {
-    private static final int CORRIDOR_Y = 12, CORRIDOR_Z = 14, ENTRANCE_X = 5, PREVIOUS_X = 6, START_X = 18, CHASM_FROM = 9, CHASM_TO = 11, CHASM_DEPTH = 3, EDGE_X = 12, PIT_DEPTH = 6;
+    private static final int CORRIDOR_Y = 12, CORRIDOR_Z = 14, ENTRANCE_X = 5, PREVIOUS_X = 6, START_X = 18, CHASM_FROM = 9, CHASM_TO = 11, CHASM_DEPTH = 3, EDGE_X = 12, PIT_DEPTH = 6, HOLE_AT = 4, HOLE_DEPTH = 9, CHASE_WATCH = 30;
     /** How far from the middle of his cell his centre stands when the hitbox, 0.6 wide, reaches 0.04 into the neighbour. */
+    private static final String PICKUP = "Подбираю добытые вещи";
     private static final double BODY_OVER_EDGE = 0.34;
 
     private CompanionMineK18Tests() { }
@@ -87,6 +88,28 @@ public final class CompanionMineK18Tests {
             }
             if (c.mineSite().restarts() == 0) return;
             h.assertTrue(c.mineSite().entrance().distManhattan(ledge) <= 1, "He began the stairs at " + rel(h, c.mineSite().entrance()) + ", not from his ledge at " + rel(h, ledge) + " | " + report(c));
+            h.succeed();
+        });
+    }
+
+    /**
+     * Runs w1a/void: a cobblestone he cut from the wall fell into a hole nine blocks below him, and the walk to it was the stairs up to the surface and round: the third
+     * climb of the run. In the mine such a stone is left where it lies.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void leavesAStoneThatFellFarBelowHimInTheMine(GameTestHelper h) {
+        mountain(h, false);
+        BlockPos hole = h.absolutePos(new BlockPos(CENTER + HOLE_AT, GROUND - HOLE_DEPTH, CENTER));
+        h.getLevel().setBlock(hole, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        h.assertTrue(c.startWork("dig_for_diamonds", "", 1).success(), "Diamond mine not accepted: " + c.getLastTaskResult());
+        net.minecraft.world.entity.item.ItemEntity stone = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), hole.getX() + .5, hole.getY(), hole.getZ() + .5, new ItemStack(Items.COBBLESTONE));
+        stone.setDeltaMovement(0, 0, 0);
+        h.getLevel().addFreshEntity(stone);
+        c.claimDrops(java.util.List.of(stone));
+        h.runAfterDelay(CHASE_WATCH, () -> {
+            h.assertTrue(!report(c).contains(PICKUP), "He goes for a stone " + HOLE_DEPTH + " blocks below him | " + report(c));
             h.succeed();
         });
     }

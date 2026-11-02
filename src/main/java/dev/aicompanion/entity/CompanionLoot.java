@@ -452,8 +452,15 @@ final class CompanionLoot {
         // Floating in the water is taken like one on the ground: he swims to it, as a player does.
         return level.getEntity(id) instanceof ItemEntity item && item.isAlive() && !item.hasPickUpDelay()
                 && (item.onGround() || item.isInWater() || Math.abs(item.getY() - owner.getY()) < 2.3)
+                && !rubbleFarBelow(item)
                 && owner.canStoreDrops(List.of(item.getItem().copyWithCount(1)));
     }
+    /** In the mine, a cobblestone or a lump of soil that fell into a hole far below him is left: the way to it was once the stairs up and round (run w1a/void). */
+    private boolean rubbleFarBelow(ItemEntity item) {
+        ItemStack stack = item.getItem();
+        return owner.work.expedition.active() && item.getY() < owner.getY() - RUBBLE_DEPTH && (CompanionTools.soilItem(stack) || stack.is(ItemTags.STONE_TOOL_MATERIALS));
+    }
+    private static final int RUBBLE_DEPTH = 3;
     /**
      * His own harvest lying near a spot (tagged as his) that is not on the pickup list: put back on it, each item at most once in
      * five minutes (one out of reach does not keep him busy forever). Returns how many were taken up again.
