@@ -35,6 +35,8 @@ final class CompanionArchery {
     /** A full draw's arrow, as BowItem shoots it; the game's gravity on arrows. */
     private static final float ARROW_SPEED = 3F, SPREAD = 1F;
     private static final double ARROW_GRAVITY = .05;
+    /** Blocks of water over a foe's eyes an arrow still gets through to it. */
+    private static final int ARROW_WATER_REACH = 4;
     /** Someone stays on the line for this long: he goes in with the blade for the next ticks instead of standing there with a drawn bow. */
     private static final int HOLD_FIRE_TICKS = 30, BLADE_AFTER_HOLD_TICKS = 60;
 
@@ -70,6 +72,10 @@ final class CompanionArchery {
         if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed()) return false;
         double distance = c.distanceTo(target);
         if (distance > FARTHEST || !c.getSensing().hasLineOfSight(target)) return false;
+        // In water an arrow loses two fifths of its speed a tick and is spent after four blocks or so: a foe deeper than that is left
+        // alone (he does not dive with a bow either, CompanionSwimming.WadingFloatGoal); one under him within it is shot at any distance.
+        if (target.isInWater() && CompanionSwimming.waterOverhead(target) > ARROW_WATER_REACH) return false;
+        if (target.isInWater() && c.isInWater() && target.getY() < c.getY() - .5) return true;
         return target instanceof FlyingMob || distance >= (aiming ? BLADE_RANGE : BOW_RANGE);
     }
 
