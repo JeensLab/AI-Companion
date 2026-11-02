@@ -21,7 +21,7 @@ import java.util.function.BooleanSupplier;
  * not entered. Either way the cave air that touches his mine is plugged with real blocks before the dig goes on.
  */
 final class CompanionExpeditionCave {
-    private enum Phase { IDLE, WAIT, EXPLORE, BACK, SEAL }
+    private enum Phase { IDLE, WAIT, EXPLORE, BACK, SEAL, STOCK }
 
     private static final int EXPLORE_RANGE = 16, EXPLORE_TICKS = 20 * 120, SPACING = 5, SETTLE = 30, PIT_TRIES = 60, SEAL_PATIENCE = 200, WATCH_EVERY = 10, LOOK_EVERY = 5, NOTES = 6;
     private static final double ARRIVED = 2.5, CONTACT_SQR = 9;
@@ -30,7 +30,7 @@ final class CompanionExpeditionCave {
     private final CompanionEntity owner;
     private final CompanionExpeditionDig dig;
     private final CompanionExpeditionOre ore;
-    private final BooleanSupplier enough;
+    private final BooleanSupplier enough, stone;
     private final Set<BlockPos> sealed = new HashSet<>(), visited = new HashSet<>(), unreachable = new HashSet<>();
     private final List<String> notes = new ArrayList<>();
     private Phase phase = Phase.IDLE;
@@ -48,13 +48,17 @@ final class CompanionExpeditionCave {
     private boolean retreat;
     /** The cell of the advance under way that a plug went into, until the expedition has taken it. */
     private BlockPos plugged;
+    /** Stone was cut from the wall for this cave once already, and whether the cutting is for the plugs yet to lay (else for the judgement). */
+    private boolean stocked, resealing;
 
-    CompanionExpeditionCave(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionOre ore, BooleanSupplier enough) {
+    /** {@code stone}: cuts stone from the rock beside him for this tick, false once it has got what it can. */
+    CompanionExpeditionCave(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionOre ore, BooleanSupplier enough, BooleanSupplier stone) {
         this.w = w;
         this.owner = w.owner;
         this.dig = dig;
         this.ore = ore;
         this.enough = enough;
+        this.stone = stone;
     }
 
     boolean busy() { return phase != Phase.IDLE; }
@@ -122,7 +126,7 @@ final class CompanionExpeditionCave {
         ore.limit(pos -> true);
         seenBroken = dig.broken;
         idle = settle = taken = work = tries = 0;
-        hostile = retreat = false;
+        hostile = retreat = stocked = resealing = false;
         plugged = null;
         scanned = null;
         scanFrom = 0;
@@ -145,6 +149,7 @@ final class CompanionExpeditionCave {
             case WAIT -> waiting(level, planCells);
             case EXPLORE -> explore(level);
             case BACK -> back();
+            case STOCK -> stocking(level);
             default -> seal(level, planCells);
         };
     }
@@ -177,13 +182,28 @@ final class CompanionExpeditionCave {
         if (found.surface()) return false;
         cave = found;
         touch = mine;
+        stocked = resealing = false;
         CompanionCaveSense.Facts facts = CompanionCaveSense.sense(w, level, cave, false);
+        // With no block to plug with every cave is very dangerous: stone is cut from the wall first, and the cave judged with it in the bag.
+        if (facts.seals() == 0) { stocked = true; phase = Phase.STOCK; return true; }
+        judged(facts);
+        return true;
+    }
+
+    private void judged(CompanionCaveSense.Facts facts) {
         CompanionCaveSense.Danger danger = CompanionCaveSense.judge(cave, facts);
         hostile = facts.hostiles() > 0;
         note("Наткнулся на пещеру (" + CompanionCaveSense.describe(cave, facts) + ").");
         markRetreat(danger, facts, "found");
         phase = danger == CompanionCaveSense.Danger.SAFE ? Phase.WAIT : Phase.SEAL;
         idle = 0;
+    }
+
+    /** Stone from the rock beside him, while there is any to cut; then the judgement, or the plugs, go on with what he has. */
+    private boolean stocking(ServerLevel level) {
+        if (stone.getAsBoolean()) return true;
+        if (resealing) { phase = Phase.SEAL; idle = 0; }
+        else judged(CompanionCaveSense.sense(w, level, cave, false));
         return true;
     }
 
@@ -315,7 +335,12 @@ final class CompanionExpeditionCave {
             if (!CompanionSeal.replaceable(level, cell)) { level.destroyBlock(cell, true, owner); return true; }
             switch (CompanionSeal.place(owner, cell)) {
                 case PLACED -> { w.mine.sealed(cell); sealed.add(cell); work++; idle = 0; return true; }
-                case NO_BLOCK -> { return finish("Пролом заделать нечем."); }
+                case NO_BLOCK -> {
+                    if (stocked) return finish("Пролом заделать нечем.");
+                    stocked = resealing = true;
+                    phase = Phase.STOCK;
+                    return true;
+                }
                 case OCCUPIED -> occupied |= !owner.getBoundingBox().intersects(new AABB(cell)) && hostileIn(level, cell);
                 default -> { }
             }
@@ -371,6 +396,7 @@ final class CompanionExpeditionCave {
         phase = Phase.IDLE;
         cave = null;
         waypoint = null;
+        stocked = resealing = false;
         seenBroken = dig.broken;
         return false;
     }

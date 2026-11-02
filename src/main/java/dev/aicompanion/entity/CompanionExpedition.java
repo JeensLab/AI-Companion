@@ -67,7 +67,7 @@ final class CompanionExpedition {
         this.climb = new CompanionExpeditionClimb(w, dig);
         this.lead = new CompanionExpeditionWalk(dig);
         this.ore = new CompanionExpeditionOre(w, dig);
-        this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount);
+        this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount, this::cutStone);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.digOut = new CompanionExpeditionDigOut(w, dig);
@@ -188,6 +188,12 @@ final class CompanionExpedition {
             case CLIMB -> { if (climb.tick() == CompanionExpeditionClimb.Result.DONE) climbed(level); }
             case RETREAT -> { if (retreat.tick(level) == CompanionExpeditionRetreat.Result.DONE) end(Ending.RETREAT, retreat.text()); }
         }
+    }
+
+    /** Stone from the walls where he stands, for the plugs of a cave: true while it is being cut. */
+    private boolean cutStone() {
+        Direction along = stage == Stage.BRANCH && tunnel != null ? tunnel : dir;
+        return stand != null && along != null && stock.tick((ServerLevel) owner.level(), owner.blockPosition(), along);
     }
 
     /** Why he must go up now (a very dangerous cave dealt with, or health at the cave limit), or null. */

@@ -3,6 +3,7 @@ package dev.aicompanion.gametest;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionSeal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -103,6 +104,31 @@ public final class CompanionCaveTests {
         h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
             if (count(c, Items.DIAMOND) < 1) problems.add("no diamond: he did not dig on");
             if (w.insideTicks > 0) problems.add("stood in the cave for " + w.insideTicks + " ticks, first at " + w.firstInside.toShortString());
+        }));
+    }
+
+    /**
+     * The bag holds no block to plug with when the tunnel breaks into a dark cave (seed 7741901, lava: the blocks went into the
+     * stairs and the plugs above): he cuts stone from the wall beside him with his own pickaxe, closes the breach and digs on to the
+     * diamond, instead of judging the cave very dangerous for want of blocks and standing down with the breach open.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void cutsStoneFromTheWallWhenTheBagHasNoBlocksToSealABreach(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, true, false, false);
+        CompanionEntity c = rig(h);
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            if (!w.breached && rel(h, c.blockPosition()).getY() <= DIAMOND_FEET) emptyOfBlocks(c);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
+            if (count(c, Items.DIAMOND) < 1) problems.add("no diamond: he did not dig on");
+            String said = String.valueOf(c.workResult(id));
+            if (said.contains("заделать нечем") || said.contains("заделывать нечем")) problems.add("stood down for want of blocks: " + said);
         }));
     }
 
@@ -289,6 +315,11 @@ public final class CompanionCaveTests {
         ItemStack[] bag = {new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 16)};
         for (int slot = 0; slot < bag.length; slot++) companion.setItem(slot, bag[slot]);
         return companion;
+    }
+
+    /** Every block he could plug with leaves the bag: what the stairs and the plugs above have used up. */
+    private static void emptyOfBlocks(CompanionEntity companion) {
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (CompanionSeal.seals(companion.getItem(slot))) companion.setItem(slot, ItemStack.EMPTY);
     }
 
     private static long start(GameTestHelper h, CompanionEntity c, int count) {
