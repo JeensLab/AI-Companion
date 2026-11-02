@@ -16,6 +16,8 @@ import net.minecraft.world.phys.Vec3;
 
 final class CompanionPlacement {
     final CompanionEntity c;
+    /** The bench the last craft set down, for a caller that takes it again at once; null when none was. */
+    BlockPos benchSetDown;
 
     CompanionPlacement(CompanionEntity c) { this.c = c; }
 
@@ -51,7 +53,7 @@ final class CompanionPlacement {
                 || !serverLevel.setBlock(tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState(), 3))) {
             return recordActionResult(CompanionActionResult.failed("Не нашёл свободное безопасное место для верстака. Материалы сохранены."));
         }
-        if (tablePosition != null) c.rememberPlaced(tablePosition);
+        if (tablePosition != null) { c.rememberPlaced(tablePosition); benchSetDown = tablePosition.immutable(); }
         if (tablePosition != null && fieldBench) c.fieldBenches.add(tablePosition.immutable());
         for (int slot = 0; slot < c.companionInventory.size(); slot++) c.companionInventory.set(slot, plan.inventory().get(slot).copy());
         if (tablePosition != null) dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed",
@@ -150,7 +152,7 @@ final class CompanionPlacement {
         return null;
     }
 
-    private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
+    BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
         BlockState state = block.defaultBlockState();
         int returnHeight = CompanionMiningNavigation.provenReturnHeight(c);
         // Where he stands and a block up or down first; only then as high or as low as a player reaches (marathon 23.10, «долина»:

@@ -25,6 +25,8 @@ final class CompanionRecovery {
     private BlockPos destination;
     private BlockPos jumpCell;
     private BlockPos digTarget;
+    /** The stone a pickaxe was last thought of for, and the bench set down to make it, taken again before the next stone. */
+    private BlockPos pickaxeCheckedFor, bench;
     private Vec3 start;
     private int stalled;
     private int elapsed;
@@ -95,7 +97,7 @@ final class CompanionRecovery {
         destination = owner.recoveryDestination(); start = owner.position();
         var player = owner.getOwnerPlayer();
         exitingToPlayer = player != null && destination != null && destination.equals(player.blockPosition());
-        jumpCell = digTarget = null; breaking.reset(); owner.getNavigation().stop(); owner.syncWorkState();
+        jumpCell = digTarget = pickaxeCheckedFor = bench = null; breaking.reset(); owner.getNavigation().stop(); owner.syncWorkState();
     }
     void cancel() {
         restoreHand();
@@ -109,6 +111,7 @@ final class CompanionRecovery {
         if (jumpCell != null) { jump(level); return; }
         if (stepUp != null) { stepUp(); return; }
         if (!owner.onGround()) return;
+        if (bench != null) { packBench(level); return; }
         int busy = owner.work.route.busyAnswers();
         Path exit = owner.work.route.toCells(java.util.Set.of(destination), 1);
         // This tick's cells went elsewhere: no way is not known yet, he does not dig or climb for it.
@@ -322,7 +325,7 @@ final class CompanionRecovery {
             CompanionTools.equip(owner, ItemTags.SHOVELS, state);
             if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(ItemTags.SHOVELS)) owner.unequipForSupport("mainhand");
         } else if (CompanionWork.isStone(state)) {
-            CompanionTools.equip(owner, ItemTags.PICKAXES, state);
+            if (!CompanionTools.equip(owner, ItemTags.PICKAXES, state) && makePickaxe(level, state)) return;
         }
         owner.getLookControl().setLookAt(digTarget.getX() + .5, digTarget.getY() + .5, digTarget.getZ() + .5);
         owner.workStatus(digTarget.equals(owner.blockPosition().below()) ? "Спускаюсь: раскапываю блок под ногами." : "Расчищаю небольшой проход, чтобы выбраться.");
@@ -334,6 +337,46 @@ final class CompanionRecovery {
             tool.getItem().mineBlock(tool, level, state, digTarget, owner); owner.dropHarvest(digTarget, drops); dug++;
         }
         breaking.reset(); digTarget = null;
+    }
+    /**
+     * No pickaxe for the stone: one is made of the wood in the bag, even wood kept for the work — a log against some 7.5 s a stone by
+     * hand. Only when the craft will go through (a failed one would be a deed and a worried face each stone), not of the player's
+     * things. True when a bench was set down for it: taken again first.
+     */
+    private boolean makePickaxe(ServerLevel level, BlockState state) {
+        if (digTarget.equals(pickaxeCheckedFor)) return false;
+        pickaxeCheckedFor = digTarget;
+        // «Сложи в сундук»: the logs are on their way to the player's chest.
+        if (owner.work.job == CompanionWork.Job.STORE) return false;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) {
+            ItemStack stack = owner.getItem(slot);
+            if ((stack.is(ItemTags.LOGS) || stack.is(ItemTags.PLANKS)) && owner.carriedForPlayer(stack)) return false;
+        }
+        boolean benchHere = owner.hasCraftingTableNearby();
+        if (!CompanionCrafting.plan(level, owner.companionInventory, "minecraft:wooden_pickaxe", 1, benchHere).success()) return false;
+        if (!benchHere && owner.placement.findPlacementPosition(level, Blocks.CRAFTING_TABLE, owner.blockPosition(), pos -> true) == null) return false;
+        // Stuck down here, the bench he remembers up there is no walk: a new one is set down as for a work that cannot reach it.
+        boolean newBench = owner.newBenchAllowed;
+        owner.allowNewBench(true); owner.placement.benchSetDown = null;
+        boolean made = CompanionTools.craft(owner, "pickaxe", state, ItemTags.PICKAXES);
+        owner.allowNewBench(newBench);
+        bench = made ? owner.placement.benchSetDown : null;
+        if (bench != null) breaking.reset();
+        return bench != null;
+    }
+    private void packBench(ServerLevel level) {
+        BlockState state = level.getBlockState(bench);
+        if (!state.is(Blocks.CRAFTING_TABLE) || owner.distanceToSqr(bench.getCenter()) > 16) { bench = null; return; }
+        owner.selectToolForBlock(state);
+        owner.getLookControl().setLookAt(bench.getX() + .5, bench.getY() + .5, bench.getZ() + .5);
+        owner.workStatus("Забираю верстак, с киркой выбираюсь дальше.");
+        if (!breaking.tick(level, bench)) return;
+        var tool = owner.getMainHandItem();
+        var drops = CompanionTools.drops(state, level, bench, level.getBlockEntity(bench), owner, tool);
+        if (owner.canStoreDrops(drops) && level.destroyBlock(bench, false, owner, 512)) {
+            tool.getItem().mineBlock(tool, level, state, bench, owner); owner.dropHarvest(bench, drops);
+        }
+        breaking.reset(); bench = null;
     }
     private void stop(boolean success) {
         restoreHand();
