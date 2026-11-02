@@ -14,9 +14,13 @@ function Read-Shard([int]$Shard) {
 
 $runs=@()
 for($iteration=1;$iteration -le $Repetitions;$iteration++) {
+    # Four kept worlds grow four times as fast as run/world, which reached 12.6 GB and slowed runs into random failures.
     0..($Shards-1) | ForEach-Object {
-        $stale=Join-Path $gameTestRoot "run\shard-$_\logs\latest.log"
+        $shardDir=Join-Path $gameTestRoot "run\shard-$_"
+        $stale=Join-Path $shardDir 'logs\latest.log'
         if(Test-Path -LiteralPath $stale){Remove-Item -LiteralPath $stale -Force}
+        $world=Join-Path $shardDir 'world'
+        if(Test-Path -LiteralPath $world){Remove-Item -LiteralPath $world -Recurse -Force}
     }
     $log=Join-Path $gameTestReports "fast-$iteration.txt"
     $started=Get-Date
