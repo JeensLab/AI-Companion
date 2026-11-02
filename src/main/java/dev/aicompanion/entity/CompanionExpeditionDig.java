@@ -255,7 +255,9 @@ final class CompanionExpeditionDig {
         if (mine.temporary().isEmpty() && !onHisWay || !(owner.level() instanceof ServerLevel level)) return false;
         BlockPos shut = null;
         for (BlockPos cell : CompanionShaftPlan.column(to)) {
-            if (!CompanionShaftPlan.open(level, cell) && (mine.temporary().contains(cell) || onHisWay && blocksHisWay(level, cell, to))) { shut = cell; break; }
+            if (CompanionShaftPlan.open(level, cell)) continue;
+            if (mine.temporary().contains(cell) || onHisWay && blocksHisWay(level, cell, to)) shut = cell;
+            if (shut != null || onHisWay) break;
         }
         if (shut == null || owner.getEyePosition().distanceTo(shut.getCenter()) > CompanionSeal.REACH) return false;
         if (!mine.temporary().contains(shut) && !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), shut)) return false;
@@ -272,10 +274,15 @@ final class CompanionExpeditionDig {
         }
     }
 
-    /** A solid, breakable block at the feet or the head of the cell he is to walk into. */
+    /**
+     * A solid block of the kind he plugs with at the feet or the head of the cell he is to walk into, with no liquid beside it (that is what
+     * a plug may be holding back). A chest, a door or a block of any other kind is somebody else's and stays.
+     */
     private static boolean blocksHisWay(ServerLevel level, BlockPos cell, BlockPos to) {
         BlockState state = level.getBlockState(cell);
-        return cell.getY() <= to.getY() + 1 && state.getFluidState().isEmpty() && !state.getCollisionShape(level, cell).isEmpty() && state.getDestroySpeed(level, cell) >= 0;
+        if (cell.getY() > to.getY() + 1 || !CompanionSeal.kind(state) || state.hasBlockEntity() || state.getCollisionShape(level, cell).isEmpty()) return false;
+        for (Direction side : Direction.values()) if (!level.getFluidState(cell.relative(side)).isEmpty()) return false;
+        return true;
     }
 
     /** Distance (squared) from his feet to the cell, for the walk to see how far it has been led off its way. */

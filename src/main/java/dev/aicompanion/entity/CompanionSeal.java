@@ -45,6 +45,9 @@ public final class CompanionSeal {
     /** A kind of block he plugs liquid with. */
     public static boolean seals(ItemStack stack) { return PREFERENCE.contains(stack.getItem()); }
 
+    /** A block of a kind he plugs with. */
+    public static boolean kind(BlockState state) { return PREFERENCE.contains(state.getBlock().asItem()); }
+
     /** The cell takes a block: air, a plant or other replaceable block, or a liquid. */
     public static boolean replaceable(ServerLevel level, BlockPos cell) {
         BlockState state = level.getBlockState(cell);
