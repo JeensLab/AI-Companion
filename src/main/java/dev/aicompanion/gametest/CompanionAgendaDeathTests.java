@@ -33,6 +33,8 @@ public final class CompanionAgendaDeathTests {
     @AfterBatch(batch = "agenda_recover_mend") public static void afterMend(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_recover_cave") public static void afterCave(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_descend") public static void afterDescend(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_recover_foe_bare") public static void afterFoeBare(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda_recover_foe_armed") public static void afterFoeArmed(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** Hurt, with nothing to eat and nothing to heal him: the try for the things is spent at once, with the reason, and he does not set out. */
     @GameTest(template = "tall_tree", batch = "agenda_recover_hurt", timeoutTicks = 600)
@@ -93,6 +95,43 @@ public final class CompanionAgendaDeathTests {
         });
     }
 
+    /** A zombie stands by his things and he has no weapon: going there is a second death, so the try is spent and the reason is said. */
+    @GameTest(template = "tall_tree", batch = "agenda_recover_foe_bare", timeoutTicks = 600)
+    public static void withoutAWeaponHeDoesNotGoForThingsGuardedByAZombie(GameTestHelper h) {
+        var player = survivalPlayer(h);
+        var c = body(h, player);
+        c.setHealth(c.getMaxHealth());
+        BlockPos place = lieAt(h, player);
+        guardWithAZombie(h);
+        start(h, player);
+        CompanionAgenda.died(h.getLevel().getServer(), player.getUUID(), h.getLevel().dimension(), place);
+        h.succeedWhen(() -> {
+            var goal = CompanionAgenda.goal(h.getLevel().getServer(), player.getUUID());
+            h.assertTrue(goal != null && goal.deathPlace() == null, "The try for the things was not made");
+            h.assertTrue(c.autonomy().said().stream().noneMatch(line -> line.contains("Иду за своими вещами")),
+                    "He set out for his things with no weapon: " + c.autonomy().said());
+            h.assertTrue(c.autonomy().said().stream().anyMatch(line -> line.contains("мобы") && line.contains(place.toShortString())), "The reason was not said: " + c.autonomy().said());
+        });
+    }
+
+    /** The same zombie and a sword in the bag: he goes, the sword is what the fight is done with. */
+    @GameTest(template = "tall_tree", batch = "agenda_recover_foe_armed", timeoutTicks = 600)
+    public static void withASwordHeGoesForThingsGuardedByAZombie(GameTestHelper h) {
+        var player = survivalPlayer(h);
+        var c = body(h, player);
+        c.setItem(0, new ItemStack(Items.IRON_SWORD));
+        c.setHealth(c.getMaxHealth());
+        BlockPos place = lieAt(h, player);
+        guardWithAZombie(h);
+        start(h, player);
+        CompanionAgenda.died(h.getLevel().getServer(), player.getUUID(), h.getLevel().dimension(), place);
+        h.succeedWhen(() -> {
+            var goal = CompanionAgenda.goal(h.getLevel().getServer(), player.getUUID());
+            h.assertTrue(goal != null && goal.deathPlace() == null, "The try for the things was not made");
+            h.assertTrue(c.autonomy().said().stream().anyMatch(line -> line.contains("Иду за своими вещами")), "He did not set out: " + c.autonomy().said());
+        });
+    }
+
     /** No bench in the bag and no tree in reach: the mine goal stops at the first search that finds no tree and says so (about 600 ticks here; one more search for each part and each step took about 1700). */
     @GameTest(template = "tall_tree", batch = "agenda_no_wood", timeoutTicks = 1200)
     public static void aGoalWithNoBenchAndNoTreeStopsWithTheReason(GameTestHelper h) {
@@ -150,6 +189,13 @@ public final class CompanionAgendaDeathTests {
         item.getPersistentData().putUUID("aicompanion:belongings", player.getUUID());
         h.getLevel().addFreshEntity(item);
         return place;
+    }
+
+    /** A helmeted zombie beside the place, so the sun does not take it before the try is made. */
+    private static void guardWithAZombie(GameTestHelper h) {
+        var zombie = h.spawn(net.minecraft.world.entity.EntityType.ZOMBIE, 4, 1, 3);
+        zombie.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+        zombie.setPersistenceRequired();
     }
 
     private static CompanionEntity body(GameTestHelper h, ServerPlayer player) {
