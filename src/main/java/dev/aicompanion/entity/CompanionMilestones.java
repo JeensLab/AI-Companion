@@ -46,8 +46,10 @@ public final class CompanionMilestones {
      * they are used up below). Blocks to plug caves with, a bench and sticks for a pickaxe made on the spot belong to the kit.
      */
     static final int TORCHES_STOCK = 32;
-    private static final int TORCHES_MIN = 16, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 4, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
-    private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 4, STICKS_STOCK = 16;
+    private static final int TORCHES_MIN = 16, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 6, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
+    private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 8, STICKS_STOCK = 32;
+    /** Ingots beyond the sword's that buy a second iron pickaxe, so that a broken first one does not send him to smelt iron. */
+    private static final int SPARE_PICKAXE_INGOTS = 3;
     /** A shield is made of what the bag holds already: six boards and an ingot, with the boards a missing bench and sticks would take kept apart. */
     private static final int SHIELD_PLANKS = 6, BENCH_PLANKS = 4, STICK_PLANKS = 4, PLANKS_PER_LOG = 4;
     /** Swords he goes down with; without one he fights the tunnel's monsters with his pickaxes (a wooden or golden one is no better). */
@@ -156,6 +158,8 @@ public final class CompanionMilestones {
             if (facts.carried(Items.TORCH) < TORCHES_MIN) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
             if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
             steps.addAll(swordSteps(facts));
+            int spareIngots = facts.carried(Items.IRON_INGOT) - (facts.carried(MINE_SWORDS::contains) == 0 ? IRON_SWORD_INGOTS : 0);
+            if (facts.carried(Items.IRON_PICKAXE) == 1 && spareIngots >= SPARE_PICKAXE_INGOTS) steps.add(obtain(Items.IRON_PICKAXE, 2));
             if (facts.carried(Items.CRAFTING_TABLE) == 0) steps.add(obtain(Items.CRAFTING_TABLE, 1));
             if (facts.carried(Items.STICK) < STICKS_MIN) steps.add(obtain(Items.STICK, STICKS_STOCK));
             if (facts.carried(held -> CompanionSeal.seals(new ItemStack(held))) < SEALS_MIN) steps.add(obtain(Items.COBBLESTONE, SEALS_STOCK));

@@ -7,7 +7,7 @@ import net.minecraft.world.item.Items;
 
 /** What the expedition makes of its own bag on the spot, so that a missing tool is no reason to climb to the surface. */
 final class CompanionExpeditionSupply {
-    private static final int MAX_PICKAXES = 4, MAX_SWORDS = 2, SWORD_STONE = 2, PICKAXE_STONE = 3, SWORD_STICKS = 1, PICKAXE_STICKS = 2, BENCH_PLANKS = 4;
+    private static final int MAX_PICKAXES = 8, MAX_SWORDS = 2, SWORD_STONE = 2, PICKAXE_STONE = 3, SWORD_STICKS = 1, PICKAXE_STICKS = 2, BENCH_PLANKS = 4;
 
     private final CompanionWork w;
     private final CompanionEntity owner;

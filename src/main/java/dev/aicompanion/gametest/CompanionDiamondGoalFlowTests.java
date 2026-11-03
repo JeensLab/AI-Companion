@@ -37,6 +37,7 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.*;
 public final class CompanionDiamondGoalFlowTests {
     private static final int TIMEOUT = 24000, EMPTY_BAG_TIMEOUT = 36000, WORN_USES_LEFT = 4, BREAD_GIVEN = 3, BENCH_DX = 3, STILL_TICKS = 2400, DARK_TICKS = 14000;
     private static final int TORCHES = 16, STONE_PICKAXES = 2, FAILURES = 3, DIAMONDS = 2;
+    private static final int SPARE_PICKAXES = 6, PICKAXE_STICKS = 2, PICKAXE_STONE = 3, PICKAXES_MADE = 2, SPARE_DURABILITY = 60;
 
     @AfterBatch(batch = "flow_empty_bag") public static void afterEmptyBag(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "flow_second_step") public static void afterSecondStep(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -133,6 +134,38 @@ public final class CompanionDiamondGoalFlowTests {
             if (!worked[0]) return;
             h.assertTrue(y < GROUND, "Climbed to the surface for a stone pickaxe | " + report(h, r));
             if (count(c, Items.STONE_PICKAXE) > 0) h.succeed();
+        });
+    }
+
+    /**
+     * Four worn stone pickaxes do not last the wall, but the bag holds stone and sticks for six more: he makes them on the spot, never climbs
+     * and never wears the iron pickaxe (kept for ore) beyond its spare durability.
+     */
+    @GameTest(template = "marathon_cave", batch = "flow_pickaxe", timeoutTicks = TIMEOUT)
+    public static void aWallLongerThanTheStonePickaxesIsDugWithNewOnesAndTheIronOneStaysWhole(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), worn(), worn(), worn(), worn(), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32),
+                new ItemStack(Items.STONE_SWORD), new ItemStack(Items.STICK, SPARE_PICKAXES * PICKAXE_STICKS), new ItemStack(Items.COBBLESTONE, SPARE_PICKAXES * PICKAXE_STONE),
+                new ItemStack(Items.CRAFTING_TABLE)};
+        for (int slot = 0; slot < bag.length; slot++) c.setItem(slot, bag[slot]);
+        Rig r = bind(h, c, 3);
+        start(h, r, 1);
+        int[] stone = {count(c, Items.STONE_PICKAXE)}, made = {0};
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time, " + made[0] + " pickaxes made | " + report(h, r)));
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(h, r));
+            h.assertTrue(state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(h, r));
+            int now = count(c, Items.STONE_PICKAXE);
+            if (now > stone[0]) made[0] += now - stone[0];
+            stone[0] = now;
+            if (c.mineSite().opened() == 0) return;
+            h.assertTrue(rel(h, c.blockPosition()).getY() < GROUND, "Climbed to the surface for pickaxes | " + report(h, r));
+            for (int slot = 0; slot < c.getContainerSize(); slot++) {
+                ItemStack iron = c.getItem(slot);
+                if (iron.is(Items.IRON_PICKAXE)) h.assertTrue(iron.getDamageValue() <= SPARE_DURABILITY, "The iron pickaxe wore down to " + iron.getDamageValue() + " | " + report(h, r));
+            }
+            if (made[0] >= PICKAXES_MADE) h.succeed();
         });
     }
 
