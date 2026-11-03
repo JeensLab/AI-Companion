@@ -139,6 +139,9 @@ neoForge {
             // "REGISTRIES": For firing of registry events.
             // "REGISTRYDUMP": For getting the contents of all registries.
             systemProperty 'forge.logging.markers', 'REGISTRIES'
+            // Without this the child JVM writes System.out in the console code page and Cyrillic turns into U+FFFD in the logs.
+            systemProperty 'stdout.encoding', 'UTF-8'
+            systemProperty 'stderr.encoding', 'UTF-8'
 
             // Recommended logging level for the console
             // You can set various levels here.

@@ -48,6 +48,8 @@ public final class CompanionTestSelection {
         cleanAfterEveryBatch(selected);
         LOGGER.info("Game test selection: pool={} selected={} pool-required={} selected-required={}",
                 pool.size(), selected.size(), required(pool), required(selected));
+        // Raw System.out is the path ad-hoc diagnostics take; a garbled sentinel means the log encoding is broken, not the data.
+        System.out.println("ENCODING_SENTINEL \u041E\u043B\u0435\u0433");
     }
 
     // Batch order changes with the selection, so no batch may rely on what the previous one happened to leave.
