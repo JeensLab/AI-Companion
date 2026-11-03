@@ -112,7 +112,7 @@ final class CompanionHomeTrip {
         BlockPos to = house != null && house.distSqr(home.pos()) <= HOME_RADIUS * HOME_RADIUS ? house : home.pos();
         intoHouse = to.equals(house);
         if (intoHouse ? w.house.inside(w.owner.blockPosition()) : distance(to) <= NEAR_HOME) { arrive(to); return false; }
-        if (distance(to) > limit()) { note = " До дома " + (int)distance(to) + " блоков, это слишком далеко для похода."; return false; }
+        if (distance(to) > limit()) { note = " До дома " + CompanionWorkItems.blocks((int)distance(to)) + ", это слишком далеко для похода."; return false; }
         return trips < MAX_TRIPS && setOut(to, true, "Иду домой.");
     }
 
