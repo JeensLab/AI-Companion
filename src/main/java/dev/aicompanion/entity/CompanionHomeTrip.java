@@ -32,6 +32,7 @@ final class CompanionHomeTrip {
     private final CompanionWork w;
     private final Set<BlockPos> visited = new HashSet<>();
     private BlockPos goal;
+    private BlockPos setOutFrom;
     private boolean homeward;
     private boolean intoHouse;
     private boolean entering;
@@ -45,7 +46,7 @@ final class CompanionHomeTrip {
 
     void reset() {
         if (goal != null) w.owner.travel().reset();
-        goal = null; homeward = intoHouse = entering = homeTried = atHome = false; trips = 0; note = ""; visited.clear();
+        goal = setOutFrom = null; homeward = intoHouse = entering = homeTried = atHome = false; trips = 0; note = ""; visited.clear();
     }
 
     /** Why the order was done where it was and not at home; empty when nothing got in the way. */
@@ -114,6 +115,13 @@ final class CompanionHomeTrip {
         return trips < MAX_TRIPS && setOut(to, true, "Иду домой.");
     }
 
+    /** The walk broke off where nothing can stand: back to where he set out, there was ground there. Bounded by the trips like any walk. */
+    boolean backToRoom(String block) {
+        if (setOutFrom == null || goal != null || atHome || w.insideHouse || trips >= MAX_TRIPS || w.owner.placement.canPlaceNear(block, w.owner.blockPosition(), pos -> true)) return false;
+        intoHouse = false;
+        return setOut(setOutFrom, true, "Здесь негде поставить, возвращаюсь.");
+    }
+
     /** A new block where he is now: at home inside the house if there is room, else beside it, never in the way of a door. */
     CompanionActionResult place(String block) {
         if (w.insideHouse) return w.owner.placeBlockNearResult(block, w.placementAnchor, w.house::inside);
@@ -130,6 +138,7 @@ final class CompanionHomeTrip {
     private boolean setOut(BlockPos to, boolean home, String status) {
         long now = w.owner.level().getGameTime(), budget = START_TICKS + (long)(distance(to) * TICKS_PER_BLOCK);
         if (now + budget >= w.deadline) { note = " На поход до " + to.toShortString() + " не хватило бы времени."; return false; }
+        if (setOutFrom == null) setOutFrom = w.owner.blockPosition();
         goal = to; homeward = home; giveUpAt = now + budget; trips++;
         w.owner.workStatus(status);
         return true;

@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Where each player builds: sites of the blocks he set down himself, chests above all. Kept in the world's save and not in Oleg:
@@ -53,7 +54,8 @@ public final class CompanionPlayerBuilds extends SavedData {
 
         Site(String dimension) { this.dimension = dimension; }
 
-        int score() { return points + chests.size() * HOME_SCORE + stashes.size() * STATION_POINTS; }
+        /** Chests in a mine weigh as one station however many: a sorting room down there is still no home. */
+        int score() { return points + chests.size() * HOME_SCORE + (stashes.isEmpty() ? 0 : STATION_POINTS); }
         BlockPos middle() {
             int n = Math.max(1, blocks);
             return new BlockPos((int)(sumX / n), (int)(sumY / n), (int)(sumZ / n));
@@ -147,13 +149,14 @@ public final class CompanionPlayerBuilds extends SavedData {
 
     /** The chests he set down in this dimension, as far as the loaded world still shows them. */
     List<BlockPos> chests(UUID player, ServerLevel level) {
-        return here(player, level).stream().flatMap(site -> java.util.stream.Stream.concat(site.chests.stream(), site.stashes.stream())).toList();
+        return here(player, level).stream().flatMap(site -> Stream.concat(site.chests.stream(), site.stashes.stream())).toList();
     }
 
     private List<Site> here(UUID player, ServerLevel level) {
         List<Site> sites = owners.get(player);
         if (sites == null) return List.of();
         String dimension = level.dimension().location().toString();
+        // Not ||: both lists are pruned every time.
         for (Site site : sites) if (site.dimension.equals(dimension) && (site.chests.removeIf(pos -> gone(level, pos)) | site.stashes.removeIf(pos -> gone(level, pos)))) setDirty();
         return sites.stream().filter(site -> site.dimension.equals(dimension)).toList();
     }

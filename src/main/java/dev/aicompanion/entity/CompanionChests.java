@@ -51,7 +51,7 @@ final class CompanionChests {
                     }
                     return; // Let the crafting/table gesture finish before placing the chest.
                 }
-                if (w.trip.toHome()) return;
+                if (w.trip.toHome() || w.trip.backToRoom("minecraft:chest")) return;
                 CompanionActionResult placed = w.trip.place("minecraft:chest");
                 if (!placed.success()) { w.finish(false, placed.message()); return; }
                 w.newChests++;

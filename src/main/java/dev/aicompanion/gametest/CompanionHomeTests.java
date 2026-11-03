@@ -157,6 +157,34 @@ public final class CompanionHomeTests {
         });
     }
 
+    /** The failed walk ends in a dead end with nothing to stand a chest on: he goes back to where he set out and does the order there. */
+    @GameTest(template = "large_search", timeoutTicks = 2400)
+    public static void noRoomWhereTheWalkFailedGoesBack(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        int east = STAND + 4, end = east + 9;
+        for (int x = STAND - 4; x <= STAND + 4; x++) for (int z = Z - 4; z <= Z + 4; z++) for (int y = 1; y <= 6; y++)
+            if ((Math.abs(x - STAND) == 4 || Math.abs(z - Z) == 4) && !(x == east && z == Z && y <= 3)) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
+        for (int x = east; x <= end; x++) {
+            h.setBlock(new BlockPos(x, 1, Z), Blocks.OAK_SLAB);
+            for (int y = 1; y <= 4; y++) {
+                h.setBlock(new BlockPos(x, y, Z - 1), Blocks.BEDROCK); h.setBlock(new BlockPos(x, y, Z + 1), Blocks.BEDROCK);
+                if (x == end) h.setBlock(new BlockPos(x, y, Z), Blocks.BEDROCK);
+            }
+            h.setBlock(new BlockPos(x, 4, Z), Blocks.BEDROCK);
+        }
+        BlockPos home = cell(STAND + 50);
+        owner(h, c).setPos(h.absoluteVec(home.getCenter()));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, c), "set_home", "", 1).success(), "Home not taken");
+        owner(h, c).teleportTo(c.getX() + 1, c.getY(), c.getZ());
+        c.setItem(0, new ItemStack(Items.CHEST)); c.setItem(1, new ItemStack(Items.COBBLESTONE, 4));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, c), "store_items", "stone", 1).success(), "Store order not accepted");
+        h.succeedWhen(() -> {
+            done(h, c);
+            h.assertTrue(c.didLastTaskSucceed() && c.getLastTaskResult().contains("дойти не смог"), c.getLastTaskResult());
+            h.assertTrue(blocks(h, Blocks.CHEST) == 1 && carried(c, Items.COBBLESTONE) == 0, "Stone not stored: " + c.getLastTaskResult());
+        });
+    }
+
     /** A chest the player set down himself is where he lives: a new furnace goes there, past the search round Oleg. */
     @GameTest(template = "large_search", timeoutTicks = 1800)
     public static void furnaceGoesWhereThePlayerSetHisChest(GameTestHelper h) {
@@ -217,6 +245,20 @@ public final class CompanionHomeTests {
         under(h, chest, Blocks.STONE);
         h.setBlock(chest, Blocks.CHEST); placedByPlayer(h, c, chest);
         h.assertTrue(!c.getPlacesForAi().contains("дом на"), "A chest in a mine became a home: " + c.getPlacesForAi());
+        h.succeed();
+    }
+
+    /** A sorting room of chests deep in a mine is still no home. */
+    @GameTest(template = "large_search")
+    public static void chestsInAMineAreNoHome(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        c.setNoAi(true);
+        for (int i = 0; i < 5; i++) {
+            BlockPos chest = cell(60 + 2 * i);
+            under(h, chest, Blocks.STONE);
+            h.setBlock(chest, Blocks.CHEST); placedByPlayer(h, c, chest);
+        }
+        h.assertTrue(!c.getPlacesForAi().contains("дом на"), "Chests in a mine became a home: " + c.getPlacesForAi());
         h.succeed();
     }
 
