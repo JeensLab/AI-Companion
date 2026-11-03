@@ -37,6 +37,7 @@ final class CompanionHomeTrip {
     private boolean intoHouse;
     private boolean entering;
     private boolean homeTried;
+    private boolean wentBack;
     private boolean atHome;
     private int trips;
     private long giveUpAt;
@@ -46,7 +47,7 @@ final class CompanionHomeTrip {
 
     void reset() {
         if (goal != null) w.owner.travel().reset();
-        goal = setOutFrom = null; homeward = intoHouse = entering = homeTried = atHome = false; trips = 0; note = ""; visited.clear();
+        goal = setOutFrom = null; homeward = intoHouse = entering = homeTried = wentBack = atHome = false; trips = 0; note = ""; visited.clear();
     }
 
     /** Why the order was done where it was and not at home; empty when nothing got in the way. */
@@ -115,10 +116,12 @@ final class CompanionHomeTrip {
         return trips < MAX_TRIPS && setOut(to, true, "Иду домой.");
     }
 
-    /** The walk broke off where nothing can stand: back to where he set out, there was ground there. Bounded by the trips like any walk. */
+    /** The walk broke off where nothing can stand: back to where he set out, there was ground there. Once per order, apart from
+     * the trips: two failed walks out must not leave him stuck in the dead end. */
     boolean backToRoom(String block) {
-        if (setOutFrom == null || goal != null || atHome || w.insideHouse || trips >= MAX_TRIPS || w.owner.placement.canPlaceNear(block, w.owner.blockPosition(), pos -> true)) return false;
+        if (setOutFrom == null || goal != null || atHome || w.insideHouse || wentBack || w.owner.placement.canPlaceNear(block, w.owner.blockPosition(), pos -> true)) return false;
         intoHouse = false;
+        wentBack = true;
         return setOut(setOutFrom, true, "Здесь негде поставить, возвращаюсь.");
     }
 
