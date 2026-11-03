@@ -619,6 +619,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void routeRecovered() { work.routeRecovered(); }
     int workStoneReserve() { return work.stoneReserve(); }
     /** In the middle of «разложи» what he carries for the player is not his to eat, wield, place or burn. */
+    /** Tidies his bag: the menu button asks for this on the server thread, in the direction it shows. */
+    public void sortStoredItems(boolean descending) { bag.sortStored(descending); }
+
     boolean carriedForPlayer(ItemStack stack) { return work.sorting.onlyCarried(stack); }
     public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
