@@ -2,7 +2,9 @@ package dev.aicompanion.client;
 
 import dev.aicompanion.CompanionHealth;
 import dev.aicompanion.inventory.CompanionMenu;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
@@ -22,6 +24,46 @@ public final class CompanionInventoryScreen extends AbstractContainerScreen<Comp
     @Override protected void init() {
         super.init();
         CompanionNavigation.tabs(this, "Инвентарь", leftPos + 12, topPos + 56, 172, this::addRenderableWidget);
+        var sort = new SortButton(leftPos + 110, topPos + 77, 12, button -> { if (sortBag(descending)) descending = !descending; });
+        sort.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+                "Отсортировать инвентарь Олега")));
+        addRenderableWidget(sort);
+    }
+
+    /** Three shortening bars: a sort mark drawn by hand, so no font glyph is needed. */
+    private final class SortButton extends Button {
+        private SortButton(int x, int y, int size, OnPress onPress) {
+            super(x, y, size, size, Component.empty(), onPress,
+                    narration -> Component.literal("Отсортировать инвентарь Олега"));
+        }
+
+        @Override protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+            super.renderWidget(graphics, mouseX, mouseY, partialTick);
+            int color = active ? 0xFFF1F5FA : 0xFF8595AC;
+            int left = getX() + 3, top = getY() + 3;
+            // Bars shorten towards the next order: down for the usual one, up for the reversed one.
+            int[] widths = descending ? new int[]{3, 4, 6} : new int[]{6, 4, 3};
+            for (int row = 0; row < widths.length; row++)
+                graphics.fill(left, top + row * 3, left + widths[row], top + row * 3 + 1, color);
+        }
+    }
+
+    /** The direction the next press uses: every press flips it, and the button shows which way it will go. */
+    private boolean descending;
+
+    /** Tidies his bag on the server thread: the screen holds the client copy, which the server would overwrite. */
+    private boolean sortBag(boolean reverse) {
+        var minecraft = Minecraft.getInstance();
+        var server = minecraft.getSingleplayerServer();
+        var player = minecraft.player;
+        if (server == null || player == null) return false;
+        server.execute(() -> {
+            var serverPlayer = server.getPlayerList().getPlayer(player.getUUID());
+            if (serverPlayer == null || !(serverPlayer.containerMenu instanceof CompanionMenu open)) return;
+            var companion = open.getCompanion();
+            if (companion != null) companion.sortStoredItems(reverse);
+        });
+        return true;
     }
 
     @Override protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
