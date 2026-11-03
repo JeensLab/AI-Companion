@@ -130,7 +130,7 @@ final class CompanionExpeditionOre {
             if (!CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
             if (!CompanionMiningNavigation.dropCollectable(level, pos, feet)) return "drop not collectable";
         }
-        if (mode == Mode.SIGHT && !CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
+        if ((mode == Mode.SIGHT || mode == Mode.WALK) && !CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
         return "taken";
     }
 
@@ -156,7 +156,7 @@ final class CompanionExpeditionOre {
             if (distance >= bestDistance || !exposed(level, pos) || CompanionOre.liquidNear(level, pos) || !allowed.test(pos)) continue;
             if (!dig.hasTool(state)) { missedDiamond |= state.is(BlockTags.DIAMOND_ORES); continue; }
             if (mode == Mode.NEAR && !withinHands(level, eye, feet, pos, distance)) continue;
-            if (mode == Mode.SIGHT && !CompanionMiningNavigation.visible(owner, eye, pos)) continue;
+            if (mode != Mode.NEAR && !CompanionMiningNavigation.visible(owner, eye, pos)) continue;
             best = pos.immutable();
             bestDistance = distance;
         }

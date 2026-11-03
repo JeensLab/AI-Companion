@@ -50,7 +50,7 @@ public final class CompanionMineStopsTests {
     /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
     private static final int FAR_TREE_AT = 3;
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2, CREEPER_AT = 8;
-    private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6;
+    private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6, DIAGONAL_AT = 6, CEILING_AT = 9;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, WALL_AT = 5, DIAMOND_AT = 6;
     private static final int LAKE_REACH = 7, LEDGE_LENGTH = 4;
@@ -515,6 +515,31 @@ public final class CompanionMineStopsTests {
     }
 
     /**
+     * The tunnel is two cells high: a diamond in the ceiling over either lane has its open face on a cell of the advance and is taken. One
+     * a cell further out (up and aside) touches no open cell, so it is honestly not seen and stays.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_stops_tunnel", timeoutTicks = TIMEOUT)
+    public static void takesDiamondsInTheCeilingOfBothLanesAndLeavesTheDiagonalOne(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        for (int slot = 6; slot < 6 + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
+        carveMine(h, c, TUNNEL_START);
+        BlockPos foot = c.mineSite().foot();
+        BlockPos diagonal = foot.relative(Direction.WEST, DIAGONAL_AT).north(2).above(2);
+        h.getLevel().setBlock(diagonal, Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
+        h.getLevel().setBlock(foot.relative(Direction.WEST, CEILING_AT).above(2), Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
+        h.getLevel().setBlock(foot.relative(Direction.WEST, CEILING_AT + 3).north().above(2), Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
+        BlockPos end = foot.relative(Direction.WEST, TUNNEL_START);
+        c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
+        long id = start(h, c, 2);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) == 2, "Diamonds in the ceiling of the tunnel: " + count(c, Items.DIAMOND) + " | " + result.message() + " | " + report(c));
+            h.assertTrue(h.getLevel().getBlockState(diagonal).is(Blocks.DEEPSLATE_DIAMOND_ORE), "The diamond with no open face was taken | " + report(c));
+        });
+    }
+
+    /**
      * Run m10a/void (seed 20261031): every one of the twenty-seven slots held something, dirt and gravel and wooden tools among them, and the diamond
      * he had mined out had no slot to fall into: «Сумка полна, добытое некуда класть» five times. He throws the rubble out (real items, in the
      * world) until the diamond fits, and keeps the tools.
@@ -852,9 +877,11 @@ public final class CompanionMineStopsTests {
         c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
         carveMine(h, c, TUNNEL_START);
         BlockPos foot = c.mineSite().foot();
-        BlockPos diamond = foot.relative(Direction.WEST, DIAMOND_AT);
+        BlockPos diamond = foot.relative(Direction.WEST, DIAMOND_AT).above();
         h.getLevel().setBlock(diamond, Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
         for (BlockPos open : List.of(diamond.west(), diamond.west().above(), diamond.west(2), diamond.west(2).above())) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
+        // A slit at eye height: he sees the diamond along it, but the feet-level rock still has to be dug.
+        for (int k = TUNNEL_START + 1; k < DIAMOND_AT; k++) h.getLevel().setBlock(foot.relative(Direction.WEST, k).above(), Blocks.AIR.defaultBlockState(), 2 | 16);
         BlockPos end = foot.relative(Direction.WEST, TUNNEL_START);
         c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
         long id = start(h, c, 1);
