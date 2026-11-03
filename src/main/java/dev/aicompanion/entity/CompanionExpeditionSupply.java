@@ -12,29 +12,25 @@ final class CompanionExpeditionSupply {
     private final CompanionWork w;
     private final CompanionEntity owner;
     private int pickaxes, swords;
-    private boolean pickaxeFailed;
 
     CompanionExpeditionSupply(CompanionWork w) {
         this.w = w;
         this.owner = w.owner;
     }
 
-    void reset() { pickaxes = swords = 0; pickaxeFailed = false; }
+    void reset() { pickaxes = swords = 0; }
 
     /**
-     * A stone pickaxe from the stone he has mined, at a bench he sets down; bounded per step so a bad craft cannot loop. A bench
+     * A stone pickaxe from the stone he has mined, at a bench he sets down; bounded per expedition so a bad craft cannot loop. A bench
      * is allowed even with another one remembered within sixteen blocks (the walk to it is the climb this avoids). The one he
      * sets down goes to the mine's temporary blocks at once, and {@link CompanionExpeditionBench} takes it up again.
      */
     boolean craftStonePickaxe() {
         if (pickaxes >= MAX_PICKAXES) return false;
         pickaxes++;
-        pickaxeFailed = !craft("minecraft:stone_pickaxe");
-        return !pickaxeFailed;
+        return craft("minecraft:stone_pickaxe");
     }
 
-    /** Another stone pickaxe can still be made on the spot: the step's budget is not spent, the last craft did not fail, and the materials are there. */
-    boolean canCraftMore() { return pickaxes < MAX_PICKAXES && !pickaxeFailed && canMakePickaxe(); }
 
     /** Stone, wood for the sticks and a bench (carried, or made of the wood) are in the bag: a stone pickaxe can be made on the spot. */
     boolean canMakePickaxe() {
@@ -62,7 +58,7 @@ final class CompanionExpeditionSupply {
         return sticks > PICKAXE_STICKS;
     }
 
-    /** A stone sword the same way, so that a fight is never met with a pickaxe; bounded per step too. */
+    /** A stone sword the same way, so that a fight is never met with a pickaxe; bounded per expedition too. */
     boolean craftStoneSword() {
         if (swords >= MAX_SWORDS) return false;
         swords++;
