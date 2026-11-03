@@ -50,7 +50,7 @@ public final class CompanionMineStopsTests {
     /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
     private static final int FAR_TREE_AT = 3;
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2, CREEPER_AT = 8;
-    private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6, DIAGONAL_AT = 6, CEILING_AT = 9;
+    private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6, DIAGONAL_AT = 6, CEILING_AT = 9, PRIZE_AT = 3;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, WALL_AT = 5, DIAMOND_AT = 6;
     private static final int LAKE_REACH = 7, LEDGE_LENGTH = 4;
@@ -883,6 +883,8 @@ public final class CompanionMineStopsTests {
         h.getLevel().setBlock(diamond, Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
         for (BlockPos open : List.of(diamond.south(), diamond.south().above(), diamond.south(2), diamond.south(2).above())) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
         for (int k = 1; k < DIAMOND_AT; k++) h.getLevel().setBlock(end.relative(Direction.SOUTH, k).above(), Blocks.AIR.defaultBlockState(), 2 | 16);
+        // The iron wear lasts for some cells of tunnel going west, away from the one in sight: this one, in the ceiling on the way, is what the rock is dug for.
+        h.getLevel().setBlock(end.relative(Direction.WEST, PRIZE_AT).above(2), Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
 
         c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
         long id = start(h, c, 1);
