@@ -88,6 +88,7 @@ for iteration in $(seq 1 "$repetitions"); do
   passed=0
   selected=0
   retried=0
+  retried_list=""
   pools=""
   broken=""
   for shard in $(seq 0 $(( shards - 1 ))); do
@@ -103,6 +104,7 @@ for iteration in $(seq 1 "$repetitions"); do
       retry_rc=$?
       set -e
       retried=$(( retried + 1 ))
+      retried_list="$retried_list $shard"
       if [ "$retry_rc" -ne 0 ]; then broken="$broken shard-$shard:exit-$retry_rc"; fi
       read_shard "$shard_log"
     fi
@@ -123,7 +125,7 @@ for iteration in $(seq 1 "$repetitions"); do
   unique_pools=${unique_pools:-0}
 
   cat > "$reports/fast-summary.json" <<JSON
-{"iteration": $iteration, "shards": $shards, "seconds": $seconds, "passed": $passed, "selected": $selected, "poolRequired": $pool_required, "broken": "$broken"}
+{"iteration": $iteration, "shards": $shards, "seconds": $seconds, "passed": $passed, "selected": $selected, "poolRequired": $pool_required, "broken": "$broken", "retried": "$(echo $retried_list)"}
 JSON
 
   echo "run $iteration: $passed of $selected passed, pool $pool_required, in ${seconds}s (${shards} shards, batch exit $batch_rc, retries $retried)"

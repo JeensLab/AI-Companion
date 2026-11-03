@@ -30,6 +30,45 @@ jobs:
   # The suite is split across separate machines: one shard per runner, each with its own world and disk.
   # `build` does not run GameTests, and a failed start can still exit 0 (a stale world lock did that once), so the
   # success line decides each job. A shard that flakes is retried once, as the single-run gate used to be.
+  # The three long scenarios are left out of the shards: they would dominate one of them, and they catch what only
+  # a long game shows (lost items, hangs after a reload). They run on their own machine, as they did before.
+  endurance:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run the long scenarios
+        timeout-minutes: 40
+        run: |
+          set -uo pipefail
+          log="gametest-endurance.log"
+          run_long() {
+            local from=$(( $( [ -f "$log" ] && wc -l < "$log" || echo 0 ) + 1 ))
+            local rc=0
+            ./gradlew runGameTestServer -PgameTestMethods=twoHoursForestToolsStorageAndReturningPlayer,ninetyMinutesCaveFoodOreLightAndChangingPassage,hundredMinutesFullBagOrdersCancellationAndReloads --console=plain 2>&1 | tee -a "$log" || rc=$?
+            tail -n +"$from" "$log" | grep -Eq "All ([0-9]+ )?required tests passed" && [ "$rc" -eq 0 ]
+          }
+          run_long || { echo "::warning::the long scenarios failed once, retrying"; run_long; }
+      - name: Upload endurance log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gametest-log-endurance
+          path: gametest-endurance.log
+          retention-days: 7
+          if-no-files-found: ignore
+
   gametest:
     needs: build
     runs-on: ubuntu-latest
