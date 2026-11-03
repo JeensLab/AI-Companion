@@ -7,6 +7,8 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 final class CompanionBag {
@@ -17,26 +19,28 @@ final class CompanionBag {
     CompanionBag(CompanionEntity c) { this.c = c; }
 
     /** The order a tidy bag follows: what he fights with, what he eats, then what he builds and carries. */
-    private static final java.util.List<CompanionSortGroups.Group> BAG_ORDER = java.util.List.of(
+    private static final List<CompanionSortGroups.Group> BAG_ORDER = List.of(
             CompanionSortGroups.Group.GEAR, CompanionSortGroups.Group.FOOD, CompanionSortGroups.Group.ORE,
             CompanionSortGroups.Group.STONE, CompanionSortGroups.Group.WOOD, CompanionSortGroups.Group.MOB,
             CompanionSortGroups.Group.OTHER);
 
     /** Reorders his bag in that order and then by item; {@code descending} puts the same order the other way round. */
     void sortStored(boolean descending) {
-        List<ItemStack> stacks = new java.util.ArrayList<>();
+        List<ItemStack> stacks = new ArrayList<>();
         for (int slot = 0; slot < c.getContainerSize(); slot++) {
             ItemStack stack = c.getItem(slot);
             if (!stack.isEmpty()) stacks.add(stack.copy());
         }
-        java.util.Comparator<ItemStack> order = java.util.Comparator.<ItemStack>comparingInt(
+        Comparator<ItemStack> order = Comparator.<ItemStack>comparingInt(
                         stack -> BAG_ORDER.indexOf(CompanionSortGroups.of(stack)))
-                .thenComparing(stack -> net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString())
+                .thenComparing(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString())
                 .thenComparingInt(stack -> -stack.getCount());
         if (descending) order = order.reversed();
         stacks.sort(order);
+        // Written straight into the bag and summarised once: setItem would refresh the entity data 27 times.
         for (int slot = 0; slot < c.getContainerSize(); slot++)
-            c.setItem(slot, slot < stacks.size() ? stacks.get(slot) : ItemStack.EMPTY);
+            c.companionInventory.set(slot, slot < stacks.size() ? stacks.get(slot) : ItemStack.EMPTY);
+        c.setChanged();
     }
 
     public String getStoredItemsSummary() {

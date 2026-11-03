@@ -24,7 +24,7 @@ public final class CompanionInventoryScreen extends AbstractContainerScreen<Comp
     @Override protected void init() {
         super.init();
         CompanionNavigation.tabs(this, "Инвентарь", leftPos + 12, topPos + 56, 172, this::addRenderableWidget);
-        var sort = new SortButton(leftPos + 110, topPos + 77, 12, button -> sortBag(descending));
+        var sort = new SortButton(leftPos + 110, topPos + 77, 12, button -> { if (sortBag(descending)) descending = !descending; });
         sort.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
                 "Отсортировать инвентарь Олега")));
         addRenderableWidget(sort);
@@ -33,7 +33,8 @@ public final class CompanionInventoryScreen extends AbstractContainerScreen<Comp
     /** Three shortening bars: a sort mark drawn by hand, so no font glyph is needed. */
     private final class SortButton extends Button {
         private SortButton(int x, int y, int size, OnPress onPress) {
-            super(x, y, size, size, Component.empty(), onPress, DEFAULT_NARRATION);
+            super(x, y, size, size, Component.empty(), onPress,
+                    narration -> Component.literal("Отсортировать инвентарь Олега"));
         }
 
         @Override protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
@@ -51,18 +52,18 @@ public final class CompanionInventoryScreen extends AbstractContainerScreen<Comp
     private boolean descending;
 
     /** Tidies his bag on the server thread: the screen holds the client copy, which the server would overwrite. */
-    private void sortBag(boolean reverse) {
+    private boolean sortBag(boolean reverse) {
         var minecraft = Minecraft.getInstance();
         var server = minecraft.getSingleplayerServer();
         var player = minecraft.player;
-        if (server == null || player == null) return;
+        if (server == null || player == null) return false;
         server.execute(() -> {
             var serverPlayer = server.getPlayerList().getPlayer(player.getUUID());
             if (serverPlayer == null || !(serverPlayer.containerMenu instanceof CompanionMenu open)) return;
             var companion = open.getCompanion();
             if (companion != null) companion.sortStoredItems(reverse);
         });
-        descending = !descending;
+        return true;
     }
 
     @Override protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {

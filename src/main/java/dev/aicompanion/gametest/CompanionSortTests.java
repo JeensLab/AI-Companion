@@ -72,6 +72,24 @@ public final class CompanionSortTests {
         }).thenSucceed();
     }
 
+    /** The button's path, not just the sort: the menu it looks up must point at this companion and see the tidied bag. */
+    @GameTest(template = "empty")
+    public static void theMenuPathSortsTheSameBag(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setItem(0, new ItemStack(Items.BREAD, 2));
+        companion.setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        // Built the way the server builds it when the player opens the companion (a mock player cannot take a packet).
+        var menu = new dev.aicompanion.inventory.CompanionMenu(1, owner.getInventory(), companion);
+        h.startSequence().thenExecuteAfter(1, () -> {
+            h.assertTrue(menu.getCompanion() == companion, "The menu points at another companion");
+            menu.getCompanion().sortStoredItems(false);
+            h.assertTrue(menu.getSlot(dev.aicompanion.inventory.CompanionMenu.BAG_START).getItem().is(Items.IRON_PICKAXE),
+                    "The bag in the menu was not sorted: " + menu.getSlot(dev.aicompanion.inventory.CompanionMenu.BAG_START).getItem());
+        }).thenSucceed();
+    }
+
     private static int stored(CompanionEntity companion, Item item) {
         int total = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) {
