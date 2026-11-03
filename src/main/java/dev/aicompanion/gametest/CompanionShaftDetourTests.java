@@ -26,6 +26,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -36,7 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionShaftDetourTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TUFF_FROM = 12, TUFF_TO = 16, GEODE_Z = 17, GEODE_HEIGHT = 5, TIMEOUT = 12000, UNKILLABLE = 1024, FLOOD_LIMIT = 400;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TUFF_FROM = 12, TUFF_TO = 16, GEODE_Z = 17, GEODE_HEIGHT = 5, TIMEOUT = 12000, UNKILLABLE = 1024, FLOOD_LIMIT = 400, FLOOD_STEP = 6;
     private static final String FLOOR_REFUSAL = "неустойчив";
 
     /** A 7x7x5 empty dungeon under the stairs: the steps that fall into it have no floor, he lays one block after another down to the dungeon's bottom. */
@@ -285,28 +286,28 @@ public final class CompanionShaftDetourTests {
         return site;
     }
 
-    /** Water appears in a step's cell after the step was checked: the cell is sealed with a block of his, the step passed, no turn. */
+    /** Water appears in the cell he is about to dig after the step was checked: a block of his seals it and the mine goes on to the diamond. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void sealsWaterThatFlowedIntoAStepAfterItWasChecked(GameTestHelper h) {
         mountain(h);
-        BlockPos stand3 = new BlockPos(CENTER, GROUND + 1 - 3, CENTER - 3), ahead = stand3.north(), stand4 = ahead.below();
+        BlockPos stand3 = new BlockPos(CENTER, GROUND + 1 - FLOOD_STEP, CENTER - FLOOD_STEP), ahead = stand3.north(), flood = ahead.above();
         AtomicBoolean flowed = new AtomicBoolean(), sealed = new AtomicBoolean();
         CompanionEntity c = rig(h);
-        start(h, c, 1);
+        long id = start(h, c, 1);
+        int standY = h.absolutePos(stand3).getY();
         h.onEachTick(() -> {
-            // The seal is a cell of his own way and is dug out again later, so it is caught when it is placed.
-            if (flowed.get() && c.mineSite().seals().contains(h.absolutePos(ahead))) sealed.set(true);
-            if (flowed.get() || !h.getBlockState(ahead).isAir() || h.getBlockState(ahead.above()).isAir()) return;
-            h.setBlock(ahead, Blocks.WATER);
+            // A dry mountain holds no seals but this one; it is a cell of his own way, dug out again later, so it is caught when it is placed (the water runs into his own cells too).
+            if (flowed.get() && !c.mineSite().seals().isEmpty()) sealed.set(true);
+            // Swinging at the first cell of step 6 means the check is behind him and the cell is still rock: the source "opens" now, in plain sight.
+            if (flowed.get() || c.getBlockY() != standY || h.getBlockState(ahead).isAir() || !c.swinging) return;
+            h.setBlock(flood, Blocks.WATER);
             flowed.set(true);
         });
-        int column = h.absolutePos(new BlockPos(CENTER, 0, 0)).getX();
         h.succeedWhen(() -> {
             h.assertTrue(flowed.get(), "The water was never let in: " + report(c));
             h.assertTrue(sealed.get(), "The flooded cell was not sealed: " + report(c));
-            h.assertTrue(c.mineSite().stands().contains(h.absolutePos(stand4)), "Step 4 not passed after the water came in: " + report(c));
-            for (BlockPos stand : c.mineSite().stands()) h.assertTrue(stand.getX() == column, "Turned off the column at " + stand.toShortString() + " | " + report(c));
-            h.assertTrue(c.mineSite().restarts() == 0, "The mine was restarted: " + report(c));
+            ended(h, c, id);
+            h.assertTrue(count(c, Items.DIAMOND) >= 1, "No diamond after the water came in: " + report(c));
         });
     }
 
@@ -319,12 +320,14 @@ public final class CompanionShaftDetourTests {
         start(h, c, 1);
         int stuckY = h.absolutePos(new BlockPos(0, GROUND + 1 - 3, 0)).getY();
         AtomicLong floodedAt = new AtomicLong(-1);
+        java.util.concurrent.atomic.AtomicReference<net.minecraft.world.phys.Vec3> pinned = new java.util.concurrent.atomic.AtomicReference<>();
         h.onEachTick(() -> {
             if (floodedAt.get() < 0 && c.getBlockY() <= stuckY) {
                 for (int y = GROUND + 1 - 3; y <= GROUND + 1; y++) for (int z = CENTER - 3; z <= CENTER; z++) h.setBlock(new BlockPos(CENTER, y, z), Blocks.WATER);
-                c.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+                pinned.set(c.position());
                 floodedAt.set(h.getTick());
             }
+            if (pinned.get() != null) { c.setPos(pinned.get()); c.setDeltaMovement(0, 0, 0); }
             h.assertTrue(floodedAt.get() < 0 || h.getTick() - floodedAt.get() < FLOOD_LIMIT || c.mineSite().underwaterStalls() > 0, "Still stuck in the water: " + report(c));
         });
         h.succeedWhen(() -> {

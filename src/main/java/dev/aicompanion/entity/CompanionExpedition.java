@@ -29,7 +29,7 @@ final class CompanionExpedition {
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
     private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120, MAX_FRESH = 2;
     static final int UNDERGROUND_DEPTH = 2;
-    private static final int WET_TICKS = 200;
+    private static final int WET_TICKS = 100;
     /** Wear of the iron pickaxe kept for the diamond itself, and how near a diamond in sight must be to spend the rest on rock. */
     private static final int DIAMOND_IRON = 4, DIAMOND_SIGHT = 8;
     private static final double ENTRANCE_NEAR = 1.0;
@@ -229,7 +229,7 @@ final class CompanionExpedition {
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
         if (plan == null) craftTorches(level);
         if (plan == null) arm(level);
-        if (digging && stuckUnderwater()) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
+        if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && stuckUnderwater()) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
         switch (stage) {
             case LOCATE -> locate(level);
             case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }
