@@ -113,7 +113,7 @@ final class CompanionEntityNbt {
     CompoundTag memory() {
         CompoundTag full = new CompoundTag(), memory = new CompoundTag();
         c.addAdditionalSaveData(full);
-        for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "Deeds",
+        for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "HomePlace", "Deeds",
                 "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
         return memory;
     }

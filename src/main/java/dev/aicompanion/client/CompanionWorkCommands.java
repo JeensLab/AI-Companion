@@ -12,6 +12,9 @@ public final class CompanionWorkCommands {
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
         value = value.replaceAll("[.!]+$", "").trim();
         if (value.matches("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1);
+        // Said of the place the player stands on. A question («это наш дом?») keeps its mark and stays talk for the model.
+        if (value.matches("^(?:(?:это|вот|здесь|тут)(?: и есть| теперь| будет)? (?:наш|мой) дом|наш дом (?:здесь|тут)|(?:здесь|тут) (?:будет|теперь)(?: наш)? дом|запомни(?:,)? (?:где наш дом|(?:здесь|тут) наш дом|(?:это|этот дом|это место) как (?:наш )?дом))$"))
+            return new PlannedAction("set_home", 0, 1);
         // Sorting the chests by group: «разложи сундуки», not «сложи вещи в сундук» (that one is store_items).
         if (value.matches("^(?:разложи|отсортируй|рассортируй)(?: мне| нам)?(?: (?:все )?(?:вещи|предметы))?(?: (?:по|в) сундук(?:ам|ах)| сундуки)$|^наведи порядок в сундук(?:ах|е)$"))
             return new PlannedAction("sort_chests", 0, 1);
