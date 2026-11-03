@@ -145,9 +145,12 @@ final class CompanionExpeditionDig {
                 if (SPARE.get(r).contains(owner.getItem(i).getItem()) || r == 0 && surplusRock(owner.getItem(i))) { slot = i; rank = r; break; }
             }
         }
-        // Ore wins over the seal reserve: with nothing else to throw, the least preferred sealing rock goes.
+        // Ore wins over the seal reserve: with nothing else to throw, the least preferred sealing rock goes, but never the last of the seals.
         for (int k = SEALING_ROCK.size() - 1; slot < 0 && k >= 0; k--) {
-            for (int i = 0; i < owner.getContainerSize(); i++) if (owner.getItem(i).is(SEALING_ROCK.get(k))) { slot = i; break; }
+            for (int i = 0; i < owner.getContainerSize(); i++) {
+                ItemStack stack = owner.getItem(i);
+                if (stack.is(SEALING_ROCK.get(k)) && CompanionSeal.available(owner) - stack.getCount() > 0) { slot = i; break; }
+            }
         }
         if (slot < 0) return false;
         ItemStack thrown = owner.getItem(slot);
