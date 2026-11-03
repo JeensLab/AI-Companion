@@ -229,7 +229,7 @@ final class CompanionExpedition {
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
         if (plan == null) craftTorches(level);
         if (plan == null) arm(level);
-        if (digging && stuckUnderwater()) { restartHere("Застрял в воде на своей лестнице."); return; }
+        if (digging && stuckUnderwater()) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
         switch (stage) {
             case LOCATE -> locate(level);
             case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }

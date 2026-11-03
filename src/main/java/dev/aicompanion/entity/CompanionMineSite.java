@@ -348,6 +348,13 @@ public final class CompanionMineSite {
 
     public int restarts() { return restarts; }
 
+    /** Not saved: how many times the underwater stall restarted this mine, for the tests and the diagnostics only. */
+    private int underwaterStalls;
+
+    public int underwaterStalls() { return underwaterStalls; }
+
+    public void underwaterStalled() { underwaterStalls++; }
+
     /** Each step of a goal gets its own tries: the counters bound one step, and a used-up mine must not stop every later order for good. */
     public void newStep() { backtracks = restarts = 0; }
 
