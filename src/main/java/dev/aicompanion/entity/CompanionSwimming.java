@@ -20,7 +20,42 @@ final class CompanionSwimming {
         private final CompanionEntity c;
         WadingFloatGoal(CompanionEntity c) { super(c); this.c = c; setFlags(java.util.EnumSet.noneOf(Flag.class)); }
         @Override public boolean canUse() { return c.isInLava() || c.isInWater() && c.getFluidHeight(FluidTags.WATER) > 1.0; }
+
+        /**
+         * The float lifted him to the surface whatever he fought, and a drowned or a guardian a few blocks under the player was out of
+         * his reach (issue 59: «Олег не бьёт водных враждебных мобов»). Like a player holding Shift: down to a foe under water, while
+         * more than half his breath is left and enough of it for the way up with three seconds to spare; then up for air, as the
+         * float always took him (CompanionBreath, at a third, comes after). Never under a roof: the float lifts him only straight
+         * up. Only with a blade in hand and more than half his health: in a test sea a drowned with a trident killed him four times
+         * in a minute, and each time he came back empty-handed and dived again. With a bow and arrows he does not dive at all: he
+         * shoots from above (the owner asked so, 03.11), see CompanionArchery.
+         */
+        @Override public void tick() {
+            var target = c.getTarget();
+            var hand = c.getMainHandItem();
+            boolean dives = target != null && target.isAlive() && c.isInWater() && !c.isInLava() && target.isInWater()
+                    && target.getY() < c.getY() - .5 && c.getHealth() > c.getMaxHealth() / 2
+                    && (hand.is(net.minecraft.tags.ItemTags.SWORDS) || hand.is(net.minecraft.tags.ItemTags.AXES)) && !c.archery.armed()
+                    && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
+            // The game's own sinking for a player's Shift in water (LivingEntity.goDownInWater).
+            if (dives) c.setDeltaMovement(c.getDeltaMovement().add(0, -.04, 0));
+            else super.tick();
+        }
     }
+
+    /** The float lifts him about a tenth of a block a tick; a little more for the way. */
+    private static final int TICKS_UP_A_BLOCK = 12;
+
+    /** Blocks of water over the eyes, up to the air; NO_WAY_UP under a roof, or deeper than any breath reaches. */
+    static int waterOverhead(net.minecraft.world.entity.Entity entity) {
+        var pos = BlockPos.containing(entity.getEyePosition()).mutable();
+        for (int blocks = 0; blocks < 32; blocks++, pos.move(0, 1, 0)) {
+            if (entity.level().getFluidState(pos).is(FluidTags.WATER)) continue;
+            return entity.level().getBlockState(pos).isAir() ? blocks : NO_WAY_UP;
+        }
+        return NO_WAY_UP;
+    }
+    static final int NO_WAY_UP = 1000;
 
     /** Nodes of deep water at his level he must still have ahead for the fast stroke; the last of the way is an ordinary one. */
     private static final int FAST_STROKE_AHEAD = 3;
