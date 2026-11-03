@@ -91,14 +91,17 @@ final class CompanionExpeditionStep {
             case OK -> safe = true;
             case FLOOR -> { laying = new CompanionExpeditionFloor(hazard.cell()); safe = true; }
             case BLOCKED -> { return refuse(diagnose(level)); }
-            case SEAL -> {
-                CompanionSeal.Result placed = CompanionSeal.place(w.owner, hazard.cell());
-                if (placed.placed()) { w.mine.sealed(hazard.cell()); tries = 0; seals++; }
-                else if (placed == CompanionSeal.Result.NO_BLOCK) return fail("жидкость надо заделать, а блоков для этого в сумке нет");
-                else if (++tries > SEAL_TRIES) return refuse("не смог заделать жидкость: не дотянулся или клетка занята");
-                if (seals > MAX_SEALS) return refuse("жидкости слишком много: заделок уже больше " + MAX_SEALS);
-            }
+            case SEAL -> { return seal(hazard.cell()); }
         }
+        return Result.WORKING;
+    }
+
+    private Result seal(BlockPos liquid) {
+        CompanionSeal.Result placed = CompanionSeal.place(w.owner, liquid);
+        if (placed.placed()) { w.mine.sealed(liquid); tries = 0; seals++; }
+        else if (placed == CompanionSeal.Result.NO_BLOCK) return fail("жидкость надо заделать, а блоков для этого в сумке нет");
+        else if (++tries > SEAL_TRIES) return refuse("не смог заделать жидкость: не дотянулся или клетка занята");
+        if (seals > MAX_SEALS) return refuse("жидкости слишком много: заделок уже больше " + MAX_SEALS);
         return Result.WORKING;
     }
 
@@ -114,7 +117,11 @@ final class CompanionExpeditionStep {
     }
 
     private Result open(ServerLevel level, int limit) {
-        if (!dig.reach(moved ? to : from)) return dig.walkStuck() ? lose() : Result.WORKING;
+        BlockPos stand = moved ? to : from;
+        if (!dig.reach(stand)) return dig.walkStuck() ? lose() : Result.WORKING;
+        // Digging opens sources the check did not see: liquid that has flowed in since is sealed before the cell is broken.
+        CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, stand, cells.get(index), w.mine.seals(), w.mine.avoid(), null);
+        if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) return seal(flowed.cell());
         switch (dig.dig(level, cells.get(index))) {
             case DONE -> { if (++index == limit) dig.flush(); }
             case NO_TOOL -> { return Result.NO_TOOL; }

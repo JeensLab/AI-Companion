@@ -28,6 +28,7 @@ final class CompanionExpedition {
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200;
     private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, SAME_SPOT = 12, CLIMB_TICKS = 20 * 120, MAX_FRESH = 2;
     static final int UNDERGROUND_DEPTH = 2;
+    private static final int WET_TICKS = 200;
     /** Wear of the iron pickaxe kept for the diamond itself, and how near a diamond in sight must be to spend the rest on rock. */
     private static final int DIAMOND_IRON = 4, DIAMOND_SIGHT = 8;
     private static final double ENTRANCE_NEAR = 1.0;
@@ -177,7 +178,19 @@ final class CompanionExpedition {
         route = List.of();
         stand = head = sealCell = null;
         dir = tunnel = null;
-        progress = stairSteps = turns = routeIndex = softFails = fresh = 0;
+        progress = stairSteps = turns = routeIndex = softFails = fresh = wetTicks = 0;
+    }
+
+    /** Ticks in water with nothing broken and no step walked since {@link #wetProgress}. */
+    private int wetTicks, wetProgress;
+
+    /** Standing in water for {@link #WET_TICKS} ticks with no progress (see {@link #progress()}): the stairs are lost under the water, not a step to wait out. */
+    private boolean stuckUnderwater() {
+        int now = progress();
+        if (!owner.isInWater() || now != wetProgress) { wetTicks = 0; wetProgress = now; return false; }
+        if (++wetTicks <= WET_TICKS) return false;
+        wetTicks = 0;
+        return true;
     }
 
     /** The game time of the next try after a failed walk to the stairs. */
@@ -206,6 +219,7 @@ final class CompanionExpedition {
         // The first tick locates the mine and then takes his hands for a craft: with a mob on him at low health the climb comes first, not ten ticks later.
         String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE && !(w.mine.exists() && fight.hounded(level)) ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
+        if (digging && stuckUnderwater()) { restartHere("Застрял в воде на своей лестнице."); return; }
         if (plan == null && digging && ore.pending() && mineOre(level, stage == Stage.BRANCH ? CompanionExpeditionOre.Mode.TUNNEL : CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
         if (plan == null) craftTorches(level);
@@ -649,7 +663,7 @@ final class CompanionExpedition {
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
                 // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground with no cells of the way up in the record there is no way up,
                 // a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use; and from a tunnel at the foot the climb costs more than the wear.
-                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() && w.mine.above().isEmpty() || !hadStone || stage == Stage.BRANCH) && !supply.canMakePickaxe() && dig.spareIron()) { dig.ironForRock = true; return; }
+                if (!dig.lackedOre && !dig.ironForRock && (w.mine.buried() && w.mine.above().isEmpty() || !hadStone || stage == Stage.BRANCH) && !supply.canCraftMore() && dig.spareIron()) { dig.ironForRock = true; return; }
                 // A diamond in sight is worth the last wear of the iron pickaxe: the wear kept for ore is for this very ore, and the way up needs none.
                 if (!dig.lackedOre && !dig.ironForRock && dig.ironLeft(DIAMOND_IRON) && dig.diamondInSight((ServerLevel) owner.level(), DIAMOND_SIGHT)) { dig.ironForRock(DIAMOND_IRON); return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
