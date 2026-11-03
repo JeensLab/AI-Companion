@@ -1,4 +1,5 @@
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false) # the child JVM writes UTF-8; without this `*>` garbles Cyrillic
 $moodRoot=Split-Path -Parent $PSScriptRoot
 $moodReports=Join-Path $moodRoot 'build/diagnostics'
 $moodClient=Join-Path $moodRoot 'build/mood-client'

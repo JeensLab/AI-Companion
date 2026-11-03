@@ -1,4 +1,5 @@
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false) # the child JVM writes UTF-8; without this `*>` garbles Cyrillic
 $faceRoot=Split-Path -Parent $PSScriptRoot
 $faceReports=Join-Path $faceRoot 'build/diagnostics'
 $faceClient=Join-Path $faceRoot 'build/faces-client'

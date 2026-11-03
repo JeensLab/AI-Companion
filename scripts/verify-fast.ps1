@@ -4,14 +4,14 @@ $ErrorActionPreference='Stop'
 
 function Read-Shard([int]$Shard) {
     $log=Join-Path $gameTestRoot "run\shard-$Shard\logs\latest.log"
-    if(!(Test-Path -LiteralPath $log)){return [ordered]@{shard=$Shard;passed=0;expected=0;pool=0;failed=@("no log: $log")}}
+    if(!(Test-Path -LiteralPath $log)){return [ordered]@{shard=$Shard;passed=0;expected=0;pool=0;failedCount=0;failed=@("no log: $log");encodingBroken=$false}}
     # Another process may still hold the log for a moment after its server exits: a shared read must not turn a green run red.
     $stream=[IO.File]::Open($log,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
     try { $reader=[IO.StreamReader]::new($stream); $output=$reader.ReadToEnd() } finally { $stream.Dispose() }
     $selection=[regex]::Match($output,'Game test selection: pool=\d+ selected=\d+ pool-required=(\d+) selected-required=(\d+)')
-    $match=[regex]::Match($output,'All (\d+) required tests passed')
+    $parsed=ConvertFrom-GameTestLog $output
     $failed=@([regex]::Matches($output,'\]: ([^\r\n]+) failed at [^\r\n]*?! ([^\r\n]{0,200})') | ForEach-Object {"$($_.Groups[1].Value): $($_.Groups[2].Value)"} | Select-Object -Unique)
-    [ordered]@{shard=$Shard;passed=if($match.Success){[int]$match.Groups[1].Value}else{0};expected=if($selection.Success){[int]$selection.Groups[2].Value}else{0};pool=if($selection.Success){[int]$selection.Groups[1].Value}else{0};failed=$failed}
+    [ordered]@{shard=$Shard;passed=$parsed.passed;expected=if($selection.Success){[int]$selection.Groups[2].Value}else{0};pool=if($selection.Success){[int]$selection.Groups[1].Value}else{0};failedCount=$parsed.failedCount;failed=$failed;encodingBroken=$parsed.encodingBroken}
 }
 
 # One server holds about 1.5 GB; 2 GB each keeps the system out of swap. Six and eight shards were no faster than four, and eight left 1.4 GB free.
@@ -46,7 +46,7 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     $retried=@()
     foreach($shard in 0..($shardCount-1)){
         $result=$results[$shard]
-        if($result.expected -le 0 -or $result.passed -ne $result.expected){
+        if($result.expected -le 0 -or $result.passed -ne $result.expected -or $result.failedCount){
             Write-Output "::warning::shard $shard failed, retrying it alone"
             $retried+=$shard
             $shardDir=Join-Path $gameTestRoot "run\shard-$shard"
@@ -62,6 +62,7 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
             if($retryExit -ne 0){ $results[$shard].failed += "exit-$retryExit" }
         }
     }
+    if(@($results | Where-Object {$_.encodingBroken}).Count){Write-Warning "U+FFFD in shard logs: log encoding is broken"}
     $passed=($results | ForEach-Object {$_.passed} | Measure-Object -Sum).Sum
     $expected=($results | ForEach-Object {$_.expected} | Measure-Object -Sum).Sum
     $pool=($results | ForEach-Object {$_.pool} | Sort-Object -Unique)
@@ -71,7 +72,7 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     # A shard that died early or logged nothing must not pass as a smaller suite: each one has to report work,
     # finish all of it, and together they have to add up to the same pool.
     # A retry that printed the success line but still exited nonzero is not a green shard.
-    $broken=@($results | Where-Object {$_.expected -le 0 -or $_.passed -ne $_.expected -or (($_.failed -join ' ') -match 'exit-')})
+    $broken=@($results | Where-Object {$_.expected -le 0 -or $_.passed -ne $_.expected -or $_.failedCount -or (($_.failed -join ' ') -match 'exit-')})
     if((($retried.Count -eq 0) -and $testExit -ne 0) -or $broken.Count -or @($pool).Count -ne 1 -or $expected -ne $pool){
         $results | ForEach-Object {$_.failed} | Where-Object {$_} | ForEach-Object {Write-Output "FAILED $_"}
         throw "Fast verification failed: $passed of $expected passed, pool $($pool -join '/'), exit $testExit. See $log"

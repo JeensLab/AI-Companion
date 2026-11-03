@@ -1,5 +1,6 @@
 param([string]$RunName=('furnace-restart-'+(Get-Date -Format 'yyyyMMdd-HHmmss')))
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false) # the child JVM writes UTF-8; without this `*>` garbles Cyrillic
 $taskRoot=Split-Path -Parent $PSScriptRoot
 if($RunName -notmatch '^furnace-restart-[A-Za-z0-9-]+$'){throw 'Use a new furnace-restart-* test directory name'}
 $taskWorld=Join-Path $taskRoot "run/$RunName"

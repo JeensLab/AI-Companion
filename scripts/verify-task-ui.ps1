@@ -1,4 +1,5 @@
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false) # the child JVM writes UTF-8; without this `*>` garbles Cyrillic
 $taskRoot=Split-Path -Parent $PSScriptRoot
 $taskReports=Join-Path $taskRoot 'build/diagnostics'
 $taskClient=Join-Path $taskRoot 'build/tasks-client'
