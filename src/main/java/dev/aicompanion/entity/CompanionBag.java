@@ -16,6 +16,29 @@ final class CompanionBag {
 
     CompanionBag(CompanionEntity c) { this.c = c; }
 
+    /** The order a tidy bag follows: what he fights with, what he eats, then what he builds and carries. */
+    private static final java.util.List<CompanionSortGroups.Group> BAG_ORDER = java.util.List.of(
+            CompanionSortGroups.Group.GEAR, CompanionSortGroups.Group.FOOD, CompanionSortGroups.Group.ORE,
+            CompanionSortGroups.Group.STONE, CompanionSortGroups.Group.WOOD, CompanionSortGroups.Group.MOB,
+            CompanionSortGroups.Group.OTHER);
+
+    /** Reorders his bag in that order and then by item; {@code descending} puts the same order the other way round. */
+    void sortStored(boolean descending) {
+        List<ItemStack> stacks = new java.util.ArrayList<>();
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            ItemStack stack = c.getItem(slot);
+            if (!stack.isEmpty()) stacks.add(stack.copy());
+        }
+        java.util.Comparator<ItemStack> order = java.util.Comparator.<ItemStack>comparingInt(
+                        stack -> BAG_ORDER.indexOf(CompanionSortGroups.of(stack)))
+                .thenComparing(stack -> net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString())
+                .thenComparingInt(stack -> -stack.getCount());
+        if (descending) order = order.reversed();
+        stacks.sort(order);
+        for (int slot = 0; slot < c.getContainerSize(); slot++)
+            c.setItem(slot, slot < stacks.size() ? stacks.get(slot) : ItemStack.EMPTY);
+    }
+
     public String getStoredItemsSummary() {
         return c.getEntityData().get(CompanionEntity.DATA_INVENTORY_SUMMARY);
     }
