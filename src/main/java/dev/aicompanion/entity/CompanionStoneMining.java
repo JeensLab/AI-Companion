@@ -6,7 +6,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
@@ -252,7 +251,7 @@ final class CompanionStoneMining {
         w.owner.workStatus(stairStone ? "Копаю ступеньку вниз, камень: " + w.gathered + " из " + w.wantedStone + "."
                 : soil ? "Убираю землю для спуска к камню." : "Добываю камень: " + w.gathered + " из " + w.wantedStone + ".");
         if (!w.breaking.tick(level, w.target)) return;
-        var drops = Block.getDrops(state, level, w.target, level.getBlockEntity(w.target), w.owner, pickaxe);
+        var drops = CompanionTools.drops(state, level, w.target, level.getBlockEntity(w.target), w.owner, pickaxe);
         if (drops.isEmpty() || !w.items.canStore(drops)) { w.finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return; }
         w.lastHarvestStand = w.owner.blockPosition();
         if (!autonomousReturnAllows(w.target)) { if (soil) w.finish(CompanionActionResult.blocked("Дальнейшая добыча разрушит обратные ступеньки. Остановился, вещи сохранил.")); else w.rejectTarget(); return; }
@@ -450,12 +449,14 @@ final class CompanionStoneMining {
         if (!withinWorkDepth(pos)) return false;
         if (CompanionLighting.supportsLight(level, pos)) return false;
         if (w.quarrySupports.contains(pos)) return false;
-        if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || !level.getFluidState(pos).isEmpty()) return false;
+        if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || CompanionLava.at(level, pos)) return false;
+        // A stone that holds a pond or a lake back is left, as for ore, unless he stands in water already: there is nothing dry to flood.
+        if (!w.owner.isInWater() && CompanionLava.floods(level, pos, List.of())) return false;
         if (level.getBlockEntity(pos.above()) != null || level.getBlockState(pos.above()).is(Blocks.CRAFTING_TABLE)) return false;
         boolean exposed = false;
         for (Direction direction : Direction.values()) {
             BlockPos neighbor = pos.relative(direction);
-            if (!level.hasChunkAt(neighbor) || !level.getFluidState(neighbor).isEmpty()) return false;
+            if (!level.hasChunkAt(neighbor) || CompanionLava.at(level, neighbor)) return false;
             if (direction != Direction.DOWN && level.getBlockState(neighbor).getCollisionShape(level, neighbor).isEmpty()) exposed = true;
         }
         // Nobody standing on it, and no drop lying on it: mined from under a drop, the drop falls on into the hole below (marathon

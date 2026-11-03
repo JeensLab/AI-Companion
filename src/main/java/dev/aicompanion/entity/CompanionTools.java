@@ -1,10 +1,16 @@
 package dev.aicompanion.entity;
 
+import java.util.List;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 final class CompanionTools {
@@ -31,6 +37,14 @@ final class CompanionTools {
             hash = hash * 31 + BuiltInRegistries.ITEM.getId(stack.getItem()) * 67 + stack.getCount();
         }
         return hash;
+    }
+    /**
+     * What a block he breaks gives, as for a player (issue 65): a block that needs the right tool gives nothing without it, stone by
+     * hand no cobblestone. The loot table does not check that; for a player the game checks it before the drops.
+     */
+    static List<ItemStack> drops(BlockState state, ServerLevel level, BlockPos pos, BlockEntity entity, Entity breaker, ItemStack tool) {
+        if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) return List.of();
+        return Block.getDrops(state, level, pos, entity, breaker, tool);
     }
     static boolean equip(CompanionEntity owner, TagKey<Item> tag, BlockState state) {
         ItemStack best = owner.getMainHandItem().is(tag) ? owner.getMainHandItem() : ItemStack.EMPTY;
