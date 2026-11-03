@@ -115,18 +115,61 @@ final class CompanionLoot {
             int before = offered.getCount(); owner.storeLoot(offered);
             int moved = before - offered.getCount();
             if (moved == 0) continue;
-            dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "item_picked_up", "entity", owner.getUUID(),
-                    "dropEntity", item.getUUID(), "item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getItem().getItem()),
-                    "count", moved, "position", item.position());
             if (item.getItem().is(ItemTags.LOGS)) collectedLogs += moved;
             if (item.getItem().is(ItemTags.STONE_TOOL_MATERIALS)) collectedStone += moved;
             if (CompanionTools.soilItem(item.getItem())) collectedSoil += moved;
             for (CompanionGround ground : CompanionGround.values()) if (ground.isLoose() && ground == owner.gathering.ground && ground.counts(item.getItem())) collectedLoose[ground.ordinal()] += moved;
-            owner.take(item, moved);
-            level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
-            if (offered.isEmpty()) { item.discard(); pending.remove(id); } else item.setItem(offered);
+            takeFrom(item, offered, moved, false);
+            if (offered.isEmpty()) pending.remove(id);
         }
+        collectLoose(level);
         owner.syncWorkState();
+    }
+
+    /**
+     * Anything lying within reach goes into the bag as he passes, like a player's pickup: loot of a kill, what a creeper
+     * blew out of the ground, crops washed away, a stack the player threw to him. Three things stay where they are: an
+     * item aimed at somebody (the game lets only that one take it), a stack he threw himself, and his own harvest.
+     * What fell out of the dead player is taken but marked as his, so Oleg carries it instead of using it.
+     */
+    private void collectLoose(ServerLevel level) {
+        for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, owner.getBoundingBox().inflate(2.0D),
+                found -> !found.hasPickUpDelay() && found.getTarget() == null)) {
+            if (pending.contains(item.getUUID())) continue;
+            // His own throw: kept out of the bag on purpose (the mine leaves excess stone this way, PR #48).
+            if (item.getOwner() == owner) continue;
+            if (item.getPersistentData().hasUUID(HARVESTER)) continue;
+            if (!touches(owner.position(), item)) continue;
+            ItemStack offered = item.getItem().copy();
+            // A drop of the dead player stays his: Oleg carries it, never eats, wears or spends it.
+            if (item.getPersistentData().getBoolean(CompanionEntity.PLAYERS_ITEM)) offered = markedAsPlayers(offered);
+            int before = offered.getCount();
+            owner.storeLoot(offered);
+            int moved = before - offered.getCount();
+            if (moved == 0) continue;
+            // Not counted as harvest progress: this was lying there, not gathered for a task.
+            takeFrom(item, offered, moved, true);
+        }
+    }
+
+    /** A copy of the stack marked as the player's own, keeping any custom data it already had. */
+    static ItemStack markedAsPlayers(ItemStack stack) {
+        ItemStack marked = stack.copy();
+        var existing = marked.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+        CompoundTag tag = existing == null ? new CompoundTag() : existing.copyTag();
+        tag.putBoolean(CompanionEntity.PLAYERS_ITEM, true);
+        marked.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(tag));
+        return marked;
+    }
+
+    /** Hands over what was stored: the pickup sound, the note in the log, and the rest of the stack left on the floor. */
+    private void takeFrom(ItemEntity item, ItemStack offered, int moved, boolean loose) {
+        dev.aicompanion.CompanionDiagnostics.event(owner.diagnosticTrace(), "item_picked_up", "entity", owner.getUUID(),
+                "dropEntity", item.getUUID(), "item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getItem().getItem()),
+                "count", moved, "position", item.position(), "loose", loose);
+        owner.take(item, moved);
+        if (owner.level() instanceof ServerLevel level) level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
+        if (offered.isEmpty()) item.discard(); else item.setItem(offered);
     }
     boolean hasPending() {
         if (!(owner.level() instanceof ServerLevel level)) return false;
