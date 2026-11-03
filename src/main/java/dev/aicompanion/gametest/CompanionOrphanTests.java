@@ -79,6 +79,10 @@ public final class CompanionOrphanTests {
             h.assertTrue(count(companion, Items.COOKED_BEEF) == 4 && container(h, furnace).isEmpty() && companion.batches().summaries().isEmpty(),
                     "Not collected: " + companion.getStoredItemsSummary() + " " + companion.getLastTaskResult());
             h.assertTrue(!companion.autonomy().said().isEmpty(), "No report to the player: " + companion.getLastTaskResult());
+            // Issue 61: the report is said aloud, so it tells what he took, not the furnace's place and the whole bag.
+            String said = companion.autonomyLine();
+            h.assertTrue(said.contains("забрал 4") && !said.contains("сумке") && !said.contains("Печь") && !said.matches("(?s).*\\d+, -?\\d+, -?\\d+.*"),
+                    "Not a short report: " + said);
             link.close();
         });
     }

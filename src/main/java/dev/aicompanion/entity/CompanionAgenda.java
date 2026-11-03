@@ -524,13 +524,14 @@ public final class CompanionAgenda {
         return false;
     }
 
-    /** The last line of the report that says why, without the runner's prefixes. */
+    /** The last line of the report that says why, without the runner's prefixes; he says it aloud, so without places and the bag (issue 61). */
     private static String reason(String report) {
         String why = "";
         for (String line : report.split("\n")) {
             if (line.isBlank() || line.startsWith(CompanionDialogue.SKIPPED_PREFIX)) continue;
             why = line.replace("План остановлен: ", "").replace(CompanionDialogue.PARTIAL_PREFIX, "").strip();
         }
+        why = CompanionDialogue.speakable(why);
         return why.isEmpty() ? "не получилось." : why;
     }
 
@@ -570,7 +571,8 @@ public final class CompanionAgenda {
     /**
      * A boundary of the goal's steps after a death. One try per death place, so neither a reload nor a second death can make the goal
      * wait for them: his things within reach on a safe spot go on his pickup list (he walks to them and takes them up like his own
-     * harvest; nothing is made anew), anything else is said once, with the place. True: the pickup begins and the goal waits for it.
+     * harvest; nothing is made anew), anything else is said once; the place stays in his status and the journal. True: the pickup
+     * begins and the goal waits for it.
      */
     private static boolean recover(CompanionAgendaData data, Goal goal, CompanionEntity c, ServerLevel level) {
         BlockPos place = goal.deathPlace;

@@ -30,14 +30,19 @@ public final class CompanionDialogue {
         return matcher.appendTail(result).toString();
     }
 
+    /** One place or a list of them: «12, 64, -30», «1, 2, 3; -4, 5, 6». */
+    private static final String PLACES = "-?\\d+, -?\\d+, -?\\d+(?:; -?\\d+, -?\\d+, -?\\d+)*";
+
     /**
      * What Oleg says aloud after work: the gist in a sentence or two. Lists of places, the bag, the recipe chain and coordinates
      * stay in the journal (game log 22.10: 465 characters of «minecraft:furnace на 21, 70, -129 … (проверено)» read aloud for a minute).
      */
     public static String speakable(String text) {
         if (text == null) return "";
-        String result = text.split("Известные места:|В сумке:|У меня в сумке:|Цепочка:|Координаты:|Материалы сохранены")[0];
-        result = names(cleanReply(result)).replaceAll("(?:\\s(?:на|в))?\\s*\\(?-?\\d+, -?\\d+, -?\\d+\\)?", "")
+        String result = text.split("Известные места:|В сумке:|У меня в сумке:|Цепочка:|Координаты:|Материалы сохранены", 2)[0];
+        // A smelt names its furnaces in a sentence of their own (issue 61: «Печь.» was left of it).
+        result = names(cleanReply(result)).replaceAll("\\s*Печ(?:ь на|и:) " + PLACES + "\\.", "")
+                .replaceAll("(?:\\s(?:на|в))?\\s*\\(?" + PLACES + "\\)?", "")
                 .replaceAll("\\s+([.,;:!?])", "$1").replaceAll("\\s+", " ").trim();
         if (result.length() <= 200) return result;
         int end = Math.max(result.lastIndexOf(". ", 200), Math.max(result.lastIndexOf("! ", 200), result.lastIndexOf("? ", 200)));
