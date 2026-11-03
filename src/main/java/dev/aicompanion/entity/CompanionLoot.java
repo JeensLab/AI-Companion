@@ -130,7 +130,7 @@ final class CompanionLoot {
      * Anything lying within reach goes into the bag as he passes, like a player's pickup: loot of a kill, what a creeper
      * blew out of the ground, crops washed away, a stack the player threw to him. Three things stay where they are: an
      * item aimed at somebody (the game lets only that one take it), a stack he threw himself, and his own harvest.
-     * What fell out of the dead player is taken but marked as his, so Oleg carries it instead of using it.
+     * What fell out of the dead player is taken apart from the bag and given back to the player (CompanionPlayersThings).
      */
     private void collectLoose(ServerLevel level) {
         for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, owner.getBoundingBox().inflate(2.0D),
@@ -141,25 +141,14 @@ final class CompanionLoot {
             if (item.getPersistentData().hasUUID(HARVESTER)) continue;
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
-            // A drop of the dead player stays his: Oleg carries it, never eats, wears or spends it.
-            if (item.getPersistentData().getBoolean(CompanionEntity.PLAYERS_ITEM)) offered = markedAsPlayers(offered);
             int before = offered.getCount();
-            owner.storeLoot(offered);
+            if (item.getPersistentData().getBoolean(CompanionPlayersThings.MARK)) owner.playersThings.keep(offered);
+            else owner.storeLoot(offered);
             int moved = before - offered.getCount();
             if (moved == 0) continue;
             // Not counted as harvest progress: this was lying there, not gathered for a task.
             takeFrom(item, offered, moved, true);
         }
-    }
-
-    /** A copy of the stack marked as the player's own, keeping any custom data it already had. */
-    static ItemStack markedAsPlayers(ItemStack stack) {
-        ItemStack marked = stack.copy();
-        var existing = marked.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
-        CompoundTag tag = existing == null ? new CompoundTag() : existing.copyTag();
-        tag.putBoolean(CompanionEntity.PLAYERS_ITEM, true);
-        marked.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(tag));
-        return marked;
     }
 
     /** Hands over what was stored: the pickup sound, the note in the log, and the rest of the stack left on the floor. */

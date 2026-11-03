@@ -61,6 +61,7 @@ final class CompanionBag {
             }
         }
         other.companionInventory.clear();
+        c.playersThings.takeFrom(other.playersThings);
         for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) {
             ItemStack equipment = other.getItemBySlot(slot);
             if (equipment.isEmpty()) continue;

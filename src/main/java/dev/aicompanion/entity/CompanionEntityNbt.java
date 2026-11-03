@@ -32,6 +32,7 @@ final class CompanionEntityNbt {
         tag.putString("LastTaskResult", c.getLastTaskResult());
         tag.putInt("Satiety", c.satiety);
         ContainerHelper.saveAllItems(tag, c.companionInventory, c.level().registryAccess());
+        c.playersThings.save(tag);
         c.temporaryPillar.save(tag);
         c.work.save(tag);
         c.batches().save(tag);
@@ -70,6 +71,7 @@ final class CompanionEntityNbt {
         c.requestedLogs = Math.max(0, Math.min(64, tag.getInt("RequestedLogs")));
         c.satiety = Math.max(0, Math.min(40, tag.getInt("Satiety"))); // absent in older saves: 0
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
+        c.playersThings.load(tag);
         c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.refreshPlaces();
         c.social.load(tag);
         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, tag.getString("LastTaskResult"));

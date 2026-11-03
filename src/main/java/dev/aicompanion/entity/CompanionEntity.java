@@ -132,6 +132,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
+    final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionTravel travel = new CompanionTravel(this);
@@ -622,16 +623,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public void sortStoredItems(boolean descending) { bag.sortStored(descending); }
 
     /** In the middle of «разложи» what he carries for the player is not his to eat, wield, place or burn. */
-    /** What fell out of the dead player stays his: Oleg carries it, does not eat, wear or spend it. */
-    public static final String PLAYERS_ITEM = "aicompanion:players";
-
-    boolean carriedForPlayer(ItemStack stack) { return work.sorting.onlyCarried(stack) || isPlayersItem(stack); }
-
-    /** A stack marked as the player's own: picked up so it does not despawn, but never used by Oleg. */
-    public static boolean isPlayersItem(ItemStack stack) {
-        var data = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
-        return data != null && data.copyTag().getBoolean(PLAYERS_ITEM);
-    }
+    boolean carriedForPlayer(ItemStack stack) { return work.sorting.onlyCarried(stack); }
+    /** How much of an item he keeps for the player out of what fell from the dead player (CompanionPlayersThings). */
+    public int keptForPlayer(net.minecraft.world.item.Item item) { return playersThings.count(item); }
     public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
@@ -824,6 +818,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         pushOutOfBlocks();
         meals.tickEating();
         loot.tickNearby();
+        if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
         recovery.observe();
         work.watchChase();
         social.updateExpression();
@@ -893,7 +888,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
-            boolean dropped = bag.dropBelongings();
+            boolean dropped = bag.dropBelongings() | playersThings.drop();
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
             CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
         }

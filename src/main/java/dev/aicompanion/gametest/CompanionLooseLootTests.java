@@ -17,9 +17,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.UUID;
 
 /**
- * The owner's request of 31.10: items thrown at his feet or lying near him go into his bag while he is free, as a player
- * takes them. A gift handed to the player, what fell out of the dead player, another companion's drop and his own
- * leftover drop stay where they are.
+ * The owner's request of 31.10: items thrown at his feet or lying near him go into his bag, as a player takes them.
+ * A gift handed to the player, another companion's drop and his own leftover drop stay where they are; what fell out
+ * of the dead player is kept apart for the player and given back.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -84,29 +84,75 @@ public final class CompanionLooseLootTests {
         });
     }
 
-    /** What falls out of a dead player is taken, but stays his: Oleg carries it and never uses it. */
-    @GameTest(template = "empty", timeoutTicks = 200)
-    public static void whatFallsOutOfTheDeadPlayerIsCarriedForHim(GameTestHelper h) {
+    /** What falls out of the dead player is kept for him apart from the bag: a hungry, hurt Oleg neither eats it nor arms himself with it. */
+    @GameTest(template = "empty", timeoutTicks = 300)
+    public static void whatFallsOutOfTheDeadPlayerIsKeptForHim(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);
         var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
         player.getInventory().add(new ItemStack(Items.IRON_INGOT, 4));
         player.getInventory().add(new ItemStack(Items.BREAD, 3));
+        player.getInventory().add(new ItemStack(Items.IRON_SWORD));
         player.teleportTo(companion.getX() + 0.5D, companion.getY(), companion.getZ());
         player.hurt(h.getLevel().damageSources().genericKill(), 100.0F);
+        companion.setHealth(companion.getMaxHealth() / 3);
         h.startSequence().thenExecuteAfter(2, () -> {
             var drops = h.getLevel().getEntitiesOfClass(ItemEntity.class, companion.getBoundingBox().inflate(8.0D));
             h.assertTrue(!drops.isEmpty(), "The dead player dropped nothing");
-            // The drops scatter over a few blocks; he walks over them, so they are put at his feet.
-            for (ItemEntity drop : drops) drop.setPos(companion.getX(), companion.getY() + 0.2D, companion.getZ());
-        }).thenWaitUntil(() -> {
-            h.assertTrue(stored(companion, Items.IRON_INGOT) >= 4, "What fell out of the dead player did not reach his bag");
-            for (int slot = 0; slot < companion.getContainerSize(); slot++) {
-                ItemStack stack = companion.getItem(slot);
-                if (stack.is(Items.IRON_INGOT) || stack.is(Items.BREAD))
-                    h.assertTrue(CompanionEntity.isPlayersItem(stack), "A dead player's stack is not marked as his: " + stack);
-            }
+            // The drops scatter over a few blocks; he walks over them, so they are put at his feet, without the toss that rolls them away.
+            for (ItemEntity drop : drops) { drop.setPos(companion.getX(), companion.getY() + 0.2D, companion.getZ()); drop.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO); }
+        }).thenWaitUntil(() -> h.assertTrue(companion.keptForPlayer(Items.IRON_INGOT) == 4 && companion.keptForPlayer(Items.BREAD) == 3
+                && companion.keptForPlayer(Items.IRON_SWORD) == 1, "What fell out of the dead player is not kept for him: " + companion.keptForPlayer(Items.IRON_INGOT)
+                + " ingots, " + companion.keptForPlayer(Items.BREAD) + " bread, " + companion.keptForPlayer(Items.IRON_SWORD) + " swords; bag " + companion.getStoredItemsSummary()))
+          .thenIdle(200)
+          .thenExecute(() -> {
+            h.assertTrue(companion.keptForPlayer(Items.BREAD) == 3, "He ate the player's bread");
+            h.assertTrue(stored(companion, Items.IRON_INGOT) == 0 && stored(companion, Items.BREAD) == 0, "The player's things went into his bag");
+            h.assertTrue(!companion.getMainHandItem().is(Items.IRON_SWORD), "He took up the player's sword");
         }).thenSucceed();
+    }
+
+    /** Once the player is beside him again, the kept things are tossed at the player's feet, aimed at the player, and nothing is left with him. */
+    @GameTest(template = "empty", timeoutTicks = 300)
+    public static void thePlayersThingsGoBackWhenHeComes(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        BlockPos far = h.absolutePos(new BlockPos(1, 1, 1));
+        player.teleportTo(far.getX() + .5, far.getY(), far.getZ() + .5);
+        ItemEntity lost = drop(h, companion, Items.IRON_INGOT, 5);
+        lost.getPersistentData().putBoolean("aicompanion:players", true);
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(lost.isRemoved() && companion.keptForPlayer(Items.IRON_INGOT) == 5, "The player's ingots were not kept"))
+          .thenExecute(() -> player.teleportTo(companion.getX() + 1.5D, companion.getY(), companion.getZ()))
+          .thenWaitUntil(() -> {
+            h.assertTrue(companion.keptForPlayer(Items.IRON_INGOT) == 0 && stored(companion, Items.IRON_INGOT) == 0, "The ingots stayed with him");
+            int aimed = 0;
+            for (ItemEntity item : h.getLevel().getEntitiesOfClass(ItemEntity.class, companion.getBoundingBox().inflate(4.0D)))
+                if (item.getItem().is(Items.IRON_INGOT) && player.getUUID().equals(item.getTarget())) aimed += item.getItem().getCount();
+            h.assertTrue(aimed + player.getInventory().countItem(Items.IRON_INGOT) == 5, "The ingots were not given back to the player: " + aimed);
+        }).thenSucceed();
+    }
+
+    /** The kept things are saved with him; a save from before them loads with nothing kept. */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void thePlayersThingsSurviveASave(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        BlockPos far = h.absolutePos(new BlockPos(1, 1, 1));
+        player.teleportTo(far.getX() + .5, far.getY(), far.getZ() + .5);
+        ItemEntity lost = drop(h, companion, Items.IRON_INGOT, 5);
+        lost.getPersistentData().putBoolean("aicompanion:players", true);
+        h.succeedWhen(() -> {
+            h.assertTrue(companion.keptForPlayer(Items.IRON_INGOT) == 5, "The player's ingots were not kept");
+            var saved = new net.minecraft.nbt.CompoundTag();
+            companion.addAdditionalSaveData(saved);
+            var older = saved.copy(); older.remove("PlayersThings");
+            companion.readAdditionalSaveData(older);
+            h.assertTrue(companion.keptForPlayer(Items.IRON_INGOT) == 0, "An older save kept something");
+            companion.readAdditionalSaveData(saved);
+            h.assertTrue(companion.keptForPlayer(Items.IRON_INGOT) == 5, "The kept ingots were lost in the save");
+        });
     }
 
     /** A stack he threw himself stays on the floor: the mine leaves its excess stone that way (PR #48). */

@@ -407,10 +407,7 @@ public final class CompanionEvents {
         if (event.getEntity().level().isClientSide) return;
         // What falls out of a dead player stays his, even when his own arrow killed him: it is not Oleg's harvest.
         if (event.getEntity() instanceof ServerPlayer) {
-            for (net.minecraft.world.entity.item.ItemEntity drop : event.getDrops()) {
-                drop.getPersistentData().putBoolean(CompanionEntity.PLAYERS_ITEM, true);
-                drop.setItem(CompanionLoot.markedAsPlayers(drop.getItem()));
-            }
+            for (net.minecraft.world.entity.item.ItemEntity drop : event.getDrops()) drop.getPersistentData().putBoolean(CompanionPlayersThings.MARK, true);
             return;
         }
         if (event.getSource().getEntity() instanceof CompanionEntity companion) companion.claimDrops(event.getDrops());
