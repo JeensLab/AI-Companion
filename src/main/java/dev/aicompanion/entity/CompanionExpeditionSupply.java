@@ -12,13 +12,14 @@ final class CompanionExpeditionSupply {
     private final CompanionWork w;
     private final CompanionEntity owner;
     private int pickaxes, swords;
+    private boolean pickaxeFailed;
 
     CompanionExpeditionSupply(CompanionWork w) {
         this.w = w;
         this.owner = w.owner;
     }
 
-    void reset() { pickaxes = swords = 0; }
+    void reset() { pickaxes = swords = 0; pickaxeFailed = false; }
 
     /**
      * A stone pickaxe from the stone he has mined, at a bench he sets down; bounded per step so a bad craft cannot loop. A bench
@@ -28,8 +29,12 @@ final class CompanionExpeditionSupply {
     boolean craftStonePickaxe() {
         if (pickaxes >= MAX_PICKAXES) return false;
         pickaxes++;
-        return craft("minecraft:stone_pickaxe");
+        pickaxeFailed = !craft("minecraft:stone_pickaxe");
+        return !pickaxeFailed;
     }
+
+    /** Another stone pickaxe can still be made on the spot: the step's budget is not spent, the last craft did not fail, and the materials are there. */
+    boolean canCraftMore() { return pickaxes < MAX_PICKAXES && !pickaxeFailed && canMakePickaxe(); }
 
     /** Stone, wood for the sticks and a bench (carried, or made of the wood) are in the bag: a stone pickaxe can be made on the spot. */
     boolean canMakePickaxe() {

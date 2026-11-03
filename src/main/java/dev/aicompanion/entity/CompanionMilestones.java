@@ -158,8 +158,7 @@ public final class CompanionMilestones {
             if (facts.carried(Items.TORCH) < TORCHES_MIN) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
             if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
             steps.addAll(swordSteps(facts));
-            int spareIngots = facts.carried(Items.IRON_INGOT) - (facts.carried(MINE_SWORDS::contains) == 0 ? IRON_SWORD_INGOTS : 0);
-            if (facts.carried(Items.IRON_PICKAXE) == 1 && spareIngots >= SPARE_PICKAXE_INGOTS) steps.add(obtain(Items.IRON_PICKAXE, 2));
+            if (sparePickaxe(facts)) steps.add(obtain(Items.IRON_PICKAXE, 2));
             if (facts.carried(Items.CRAFTING_TABLE) == 0) steps.add(obtain(Items.CRAFTING_TABLE, 1));
             if (facts.carried(Items.STICK) < STICKS_MIN) steps.add(obtain(Items.STICK, STICKS_STOCK));
             if (facts.carried(held -> CompanionSeal.seals(new ItemStack(held))) < SEALS_MIN) steps.add(obtain(Items.COBBLESTONE, SEALS_STOCK));
@@ -208,10 +207,19 @@ public final class CompanionMilestones {
             return shieldIron(facts) && wood >= SHIELD_PLANKS + kept;
         }
 
-        private static boolean shieldIron(CompanionFacts facts) {
+        private static int ingotsAfterSword(CompanionFacts facts) {
             int ingots = facts.carried(Items.IRON_INGOT);
-            // The sword he is yet to make takes its ingots first, the pickaxe is made before the mine.
-            if (facts.carried(MINE_SWORDS::contains) == 0 && ingots >= IRON_SWORD_INGOTS) ingots -= IRON_SWORD_INGOTS;
+            return facts.carried(MINE_SWORDS::contains) == 0 && ingots >= IRON_SWORD_INGOTS ? ingots - IRON_SWORD_INGOTS : ingots;
+        }
+
+        /** A second iron pickaxe is made from the ingots left after the sword, ahead of the shield. */
+        private static boolean sparePickaxe(CompanionFacts facts) {
+            return facts.carried(Items.IRON_PICKAXE) == 1 && ingotsAfterSword(facts) >= SPARE_PICKAXE_INGOTS;
+        }
+
+        private static boolean shieldIron(CompanionFacts facts) {
+            // The sword he is yet to make takes its ingots first, then the spare pickaxe; the pickaxe is made before the mine.
+            int ingots = ingotsAfterSword(facts) - (sparePickaxe(facts) ? SPARE_PICKAXE_INGOTS : 0);
             return ingots >= 1 || facts.carried(Items.RAW_IRON) >= 1 && facts.carried(Items.FURNACE) >= 1;
         }
 

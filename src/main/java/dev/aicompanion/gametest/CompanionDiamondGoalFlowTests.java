@@ -37,7 +37,7 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.*;
 public final class CompanionDiamondGoalFlowTests {
     private static final int TIMEOUT = 24000, EMPTY_BAG_TIMEOUT = 36000, WORN_USES_LEFT = 4, BREAD_GIVEN = 3, BENCH_DX = 3, STILL_TICKS = 2400, DARK_TICKS = 14000;
     private static final int TORCHES = 16, STONE_PICKAXES = 2, FAILURES = 3, DIAMONDS = 2;
-    private static final int SPARE_PICKAXES = 6, PICKAXE_STICKS = 2, PICKAXE_STONE = 3, PICKAXES_MADE = 2, SPARE_DURABILITY = 60;
+    private static final int SPARE_PICKAXES = 6, PICKAXE_STICKS = 2, PICKAXE_STONE = 3, PICKAXES_MADE = 5, SPARE_DURABILITY = 60;
 
     @AfterBatch(batch = "flow_empty_bag") public static void afterEmptyBag(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "flow_second_step") public static void afterSecondStep(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -159,6 +159,7 @@ public final class CompanionDiamondGoalFlowTests {
             int now = count(c, Items.STONE_PICKAXE);
             if (now > stone[0]) made[0] += now - stone[0];
             stone[0] = now;
+            wearDown(c);
             if (c.mineSite().opened() == 0) return;
             h.assertTrue(rel(h, c.blockPosition()).getY() < GROUND, "Climbed to the surface for pickaxes | " + report(h, r));
             for (int slot = 0; slot < c.getContainerSize(); slot++) {
@@ -298,6 +299,17 @@ public final class CompanionDiamondGoalFlowTests {
         AABB arena = new AABB(h.absolutePos(BlockPos.ZERO).getCenter(), h.absolutePos(new BlockPos(SIZE, SIZE, SIZE)).getCenter()).inflate(SIZE);
         return h.getLevel().getEntitiesOfClass(ItemEntity.class, arena,
                 item -> item.getPersistentData().hasUUID("aicompanion:belongings") && item.getPersistentData().getUUID("aicompanion:belongings").equals(r.p().getUUID())).size();
+    }
+
+    /** Every stone pickaxe he holds, made on the spot too, is down to a few uses, so the wall outlasts any number of them made in one step. */
+    private static void wearDown(CompanionEntity c) {
+        for (ItemStack stack : c.getAllSlots()) {
+            if (stack.is(Items.STONE_PICKAXE)) stack.setDamageValue(Math.max(stack.getDamageValue(), stack.getMaxDamage() - WORN_USES_LEFT));
+        }
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            ItemStack stack = c.getItem(slot);
+            if (stack.is(Items.STONE_PICKAXE)) stack.setDamageValue(Math.max(stack.getDamageValue(), stack.getMaxDamage() - WORN_USES_LEFT));
+        }
     }
 
     private static ItemStack worn() {

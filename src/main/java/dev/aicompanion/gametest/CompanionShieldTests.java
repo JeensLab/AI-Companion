@@ -308,6 +308,37 @@ public final class CompanionShieldTests {
         });
     }
 
+    /** Three ingots beyond the sword's make a second iron pickaxe on the surface, and the shield takes only what that leaves. */
+    @GameTest(template = "tall_tree", batch = BATCH, timeoutTicks = 100)
+    public static void threeSpareIngotsMakeASecondIronPickaxeAheadOfTheShield(GameTestHelper h) {
+        CompanionEntity c = CompanionDiamondGoalTests.bare(h).c();
+        c.setItem(0, new ItemStack(Items.CRAFTING_TABLE));
+        c.setItem(1, new ItemStack(Items.STICK, 8));
+        c.setItem(2, new ItemStack(Items.STONE_SWORD));
+        c.setItem(3, new ItemStack(Items.OAK_PLANKS, SHIELD_BOARDS));
+        c.setItem(4, new ItemStack(Items.IRON_PICKAXE));
+        c.setItem(5, new ItemStack(Items.IRON_INGOT, 2));
+        h.assertTrue(pickaxeSteps(c).isEmpty(), "Two spare ingots: no second pickaxe: " + pickaxeSteps(c));
+        h.assertTrue(shieldSteps(c).size() == 2, "Two spare ingots: the shield is made: " + shieldSteps(c));
+        c.setItem(5, new ItemStack(Items.IRON_INGOT, 3));
+        h.assertTrue(pickaxeSteps(c).equals(List.of("obtain_item minecraft:iron_pickaxe")), "Three spare ingots: a second pickaxe: " + pickaxeSteps(c));
+        h.assertTrue(shieldSteps(c).isEmpty(), "The pickaxe takes all three ingots, none is left for the shield: " + shieldSteps(c));
+        c.setItem(5, new ItemStack(Items.IRON_INGOT, 4));
+        h.assertTrue(pickaxeSteps(c).size() == 1 && shieldSteps(c).size() == 2, "Four ingots: the pickaxe and the shield: " + pickaxeSteps(c) + " " + shieldSteps(c));
+        c.setItem(2, ItemStack.EMPTY);
+        h.assertTrue(pickaxeSteps(c).isEmpty(), "The sword he lacks takes two of the four: " + pickaxeSteps(c));
+        c.setItem(2, new ItemStack(Items.STONE_SWORD));
+        c.setItem(6, new ItemStack(Items.IRON_PICKAXE));
+        h.assertTrue(pickaxeSteps(c).isEmpty(), "Two iron pickaxes already: " + pickaxeSteps(c));
+        h.succeed();
+    }
+
+    private static List<String> pickaxeSteps(CompanionEntity c) {
+        var book = CompanionPlaybooks.of("find_diamonds", 3);
+        return book.milestones().getLast().method(CompanionFacts.of(c), false, book.milestones()).stream()
+                .filter(step -> step.item().equals("minecraft:iron_pickaxe")).map(step -> step.type() + " " + step.item()).toList();
+    }
+
     /** What the mine step plans for a bag, as the agenda reads it: the shield is made from what is carried, never fetched, and only put on when it is there. */
     @GameTest(template = "tall_tree", batch = BATCH, timeoutTicks = 100)
     public static void theMineStepPlansAShieldOnlyFromWhatIsCarried(GameTestHelper h) {
