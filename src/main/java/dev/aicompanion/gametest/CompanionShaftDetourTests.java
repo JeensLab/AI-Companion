@@ -26,7 +26,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Where the staircase meets a hollow, a liquid pocket or gravel, it goes on instead of refusing: the floor is laid under the next
@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionShaftDetourTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TUFF_FROM = 12, TUFF_TO = 16, GEODE_Z = 17, GEODE_HEIGHT = 5, TIMEOUT = 12000, UNKILLABLE = 1024, FLOOD_LIMIT = 400;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TUFF_FROM = 12, TUFF_TO = 16, GEODE_Z = 17, GEODE_HEIGHT = 5, TIMEOUT = 12000, UNKILLABLE = 1024, FLOOD_LIMIT = 400, WET_TICKS = 200;
     private static final String FLOOR_REFUSAL = "неустойчив";
 
     /** A 7x7x5 empty dungeon under the stairs: the steps that fall into it have no floor, he lays one block after another down to the dungeon's bottom. */
@@ -285,36 +285,38 @@ public final class CompanionShaftDetourTests {
         return site;
     }
 
-    /** Water reaches a step's cells after the step was checked (a source behind the rock opens as the first cell is dug): it is sealed, the step passed, no turn. */
+    /** Water appears in a step's cell after the step was checked: the cell is sealed with a block of his, the step passed, no turn. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void sealsWaterThatFlowedIntoAStepAfterItWasChecked(GameTestHelper h) {
         mountain(h);
-        BlockPos stand3 = new BlockPos(CENTER, GROUND + 1 - 3, CENTER - 3), ahead = stand3.north(), source = ahead.north(), stand4 = ahead.below();
+        BlockPos stand3 = new BlockPos(CENTER, GROUND + 1 - 3, CENTER - 3), ahead = stand3.north(), stand4 = ahead.below();
         AtomicBoolean flowed = new AtomicBoolean();
         CompanionEntity c = rig(h);
         start(h, c, 1);
         h.onEachTick(() -> {
             if (flowed.get() || !h.getBlockState(ahead).isAir() || h.getBlockState(ahead.above()).isAir()) return;
-            h.setBlock(source, Blocks.WATER);
+            h.setBlock(ahead, Blocks.WATER);
             flowed.set(true);
         });
         int column = h.absolutePos(new BlockPos(CENTER, 0, 0)).getX();
         h.succeedWhen(() -> {
             h.assertTrue(flowed.get(), "The water was never let in: " + report(c));
+            h.assertTrue(c.mineSite().seals().contains(h.absolutePos(ahead)), "The flooded cell was not sealed: " + report(c));
             h.assertTrue(c.mineSite().stands().contains(h.absolutePos(stand4)), "Step 4 not passed after the water came in: " + report(c));
             for (BlockPos stand : c.mineSite().stands()) h.assertTrue(stand.getX() == column, "Turned off the column at " + stand.toShortString() + " | " + report(c));
             h.assertTrue(c.mineSite().restarts() == 0, "The mine was restarted: " + report(c));
         });
     }
 
-    /** Chest-deep in still water on his own stairs with no way to move: within seconds the mine restarts, not after the nine minutes of the step. */
+    /** Eyes under still water on his own stairs, no blocks to seal with and no way to move: the mine restarts after the underwater count, not after the nine minutes of the step. */
     @GameTest(template = "marathon_cave", timeoutTicks = 3000)
     public static void restartsTheMineWhenStuckInWaterOnHisOwnStairs(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.COBBLESTONE)) c.setItem(slot, ItemStack.EMPTY);
         start(h, c, 1);
         int stuckY = h.absolutePos(new BlockPos(0, GROUND + 1 - 3, 0)).getY();
-        AtomicInteger floodedAt = new AtomicInteger(-1);
+        AtomicLong floodedAt = new AtomicLong(-1);
         h.onEachTick(() -> {
             if (floodedAt.get() < 0 && c.getBlockY() <= stuckY) {
                 for (int y = GROUND + 1 - 3; y <= GROUND + 1; y++) for (int z = CENTER - 3; z <= CENTER; z++) h.setBlock(new BlockPos(CENTER, y, z), Blocks.WATER);
@@ -323,7 +325,34 @@ public final class CompanionShaftDetourTests {
             }
             h.assertTrue(floodedAt.get() < 0 || h.getTick() - floodedAt.get() < FLOOD_LIMIT || c.mineSite().restarts() > 0, "Still stuck in the water: " + report(c));
         });
-        h.succeedWhen(() -> h.assertTrue(floodedAt.get() >= 0 && c.mineSite().restarts() > 0, "Not restarted: " + report(c)));
+        h.succeedWhen(() -> {
+            h.assertTrue(floodedAt.get() >= 0 && c.mineSite().restarts() > 0, "Not restarted: " + report(c));
+            h.assertTrue(h.getTick() - floodedAt.get() >= WET_TICKS, "Restarted by another path before the underwater count: " + (h.getTick() - floodedAt.get()) + " | " + report(c));
+        });
+    }
+
+    /** A two-cell pool he stands in with his eyes under water while he digs on, sealing as needed: that is work, not a stall, and the mine is never restarted. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotRestartWhileDiggingOnWithHisEyesUnderWater(GameTestHelper h) {
+        mountain(h);
+        BlockPos stand3 = new BlockPos(CENTER, GROUND + 1 - 3, CENTER - 3);
+        AtomicBoolean flooded = new AtomicBoolean();
+        CompanionEntity c = rig(h);
+        long id = start(h, c, 1);
+        int stuckY = h.absolutePos(stand3).getY();
+        h.onEachTick(() -> {
+            if (!flooded.get() && c.getBlockY() <= stuckY) {
+                h.setBlock(stand3, Blocks.WATER);
+                h.setBlock(stand3.above(), Blocks.WATER);
+                flooded.set(true);
+            }
+            h.assertTrue(c.mineSite().restarts() == 0, "Restarted while working in water: " + report(c));
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(flooded.get(), "Never reached the pool: " + report(c));
+            ended(h, c, id);
+            h.assertTrue(count(c, Items.DIAMOND) >= 1, "No diamond: " + report(c));
+        });
     }
 
     private static BlockPos under(int step) { return new BlockPos(CENTER, GROUND - step, CENTER - step); }

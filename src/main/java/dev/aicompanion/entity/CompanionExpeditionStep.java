@@ -16,7 +16,7 @@ final class CompanionExpeditionStep {
 
     enum Result { WORKING, DONE, BLOCKED, NO_TOOL, FULL }
 
-    private static final int MAX_SEALS = 24, SEAL_TRIES = 20;
+    private static final int MAX_SEALS = 24, SEAL_TRIES = 20, BUSY_TICKS = 5;
     private static final String WALK = "застрял на ходу: не смог дойти до нужной клетки";
 
     final Kind kind;
@@ -35,6 +35,8 @@ final class CompanionExpeditionStep {
     /** True when the advance failed because he could not walk to the cell it needed: the stairs may be lost from under him. */
     boolean lost;
     private int index, tries, seals;
+    /** The game time of the last pick swing at a cell or seal placed: the advance is working, not waiting. */
+    private long busyAt = Long.MIN_VALUE;
     private boolean safe, moved;
     /** Set when the new stand has no floor: it is laid after the cells are open and before he walks onto it. */
     private CompanionExpeditionFloor laying;
@@ -64,6 +66,8 @@ final class CompanionExpeditionStep {
 
     /** The cells this advance opens. */
     List<BlockPos> cells() { return cells; }
+
+    boolean busy(long now) { return now - busyAt < BUSY_TICKS; }
 
     /** A plug in this cell strands the advance: he must walk through it (the second lane of a tunnel is beside the walk). */
     boolean needs(BlockPos cell) { return kind != Kind.TUNNEL || cells.indexOf(cell) < 2; }
@@ -98,7 +102,7 @@ final class CompanionExpeditionStep {
 
     private Result seal(BlockPos liquid) {
         CompanionSeal.Result placed = CompanionSeal.place(w.owner, liquid);
-        if (placed.placed()) { w.mine.sealed(liquid); tries = 0; seals++; }
+        if (placed.placed()) { w.mine.sealed(liquid); tries = 0; seals++; busyAt = w.owner.level().getGameTime(); }
         else if (placed == CompanionSeal.Result.NO_BLOCK) return fail("жидкость надо заделать, а блоков для этого в сумке нет");
         else if (++tries > SEAL_TRIES) return refuse("не смог заделать жидкость: не дотянулся или клетка занята");
         if (seals > MAX_SEALS) return refuse("жидкости слишком много: заделок уже больше " + MAX_SEALS);
@@ -131,7 +135,7 @@ final class CompanionExpeditionStep {
                 dig.diagnoseDig(cells.get(index));
                 return fail("клетку не удалось разобрать: не вижу её, не дотягиваюсь или в ней жидкость");
             }
-            case WORKING -> { }
+            case WORKING -> busyAt = level.getGameTime();
         }
         return Result.WORKING;
     }

@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -184,12 +185,17 @@ final class CompanionExpedition {
     /** Ticks in water with nothing broken and no step walked since {@link #wetProgress}. */
     private int wetTicks, wetProgress;
 
-    /** Standing in water for {@link #WET_TICKS} ticks with no progress (see {@link #progress()}): the stairs are lost under the water, not a step to wait out. */
+    /**
+     * His eyes in water for {@link #WET_TICKS} ticks with no progress (see {@link #progress()}), no cell being hit and no seal placed:
+     * the stairs are lost under the water, not a step to wait out. Mining in water is slow, so a cell under the pick is never idle time.
+     */
     private boolean stuckUnderwater() {
         int now = progress();
-        if (!owner.isInWater() || now != wetProgress) { wetTicks = 0; wetProgress = now; return false; }
+        boolean busy = plan != null && plan.busy(owner.level().getGameTime());
+        if (!owner.isEyeInFluid(FluidTags.WATER) || busy || now != wetProgress) { wetTicks = 0; wetProgress = now; return false; }
         if (++wetTicks <= WET_TICKS) return false;
         wetTicks = 0;
+        wetProgress = -1;
         return true;
     }
 
@@ -219,11 +225,11 @@ final class CompanionExpedition {
         // The first tick locates the mine and then takes his hands for a craft: with a mob on him at low health the climb comes first, not ten ticks later.
         String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE && !(w.mine.exists() && fight.hounded(level)) ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
-        if (digging && stuckUnderwater()) { restartHere("Застрял в воде на своей лестнице."); return; }
         if (plan == null && digging && ore.pending() && mineOre(level, stage == Stage.BRANCH ? CompanionExpeditionOre.Mode.TUNNEL : CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
         if (plan == null) craftTorches(level);
         if (plan == null) arm(level);
+        if (digging && stuckUnderwater()) { restartHere("Застрял в воде на своей лестнице."); return; }
         switch (stage) {
             case LOCATE -> locate(level);
             case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }
