@@ -125,7 +125,8 @@
 ## Проверка и передача результата
 
 - Сборка: Windows `.\gradlew.bat build`; Linux/macOS `./gradlew build`.
-- Игровые тесты: повседневно `.\scripts\verify-fast.ps1` (все тесты без трёх длинных
+- Игровые тесты: повседневно `.\scripts\verify-fast.ps1` на Windows и `./scripts/verify-fast.sh` на
+  Linux/macOS (все тесты без трёх длинных
   сценариев `endurance`, в нескольких процессах); перед PR один раз полный `.\gradlew.bat runGameTestServer`
   или `./gradlew runGameTestServer`.
   **`build` не запускает GameTest.** Для выбора сценария используйте таблицу в руководстве.
@@ -140,7 +141,7 @@
   свойства Gradle и `gametest/CompanionTestSelection`. Исключение — платный
   `verify-memory-live.ps1`, он временно создаёт структуры в `src/main/resources`.
   Разные выборочные скрипты со своей игровой папкой можно запускать одновременно.
-  Вместе с собой не запускайте `verify-fast.ps1` и всё, что работает в общей папке `run`:
+  Вместе с собой не запускайте `verify-fast.ps1`/`verify-fast.sh` и всё, что работает в общей папке `run`:
   `verify-endurance.ps1` и полный `runGameTestServer`.
 - До финального ответа проверьте `git diff --check` и перечитайте diff.
   Не запускайте полный игровой набор ради документации; для неё достаточно

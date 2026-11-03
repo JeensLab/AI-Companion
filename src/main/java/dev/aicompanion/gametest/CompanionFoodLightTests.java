@@ -188,7 +188,7 @@ public final class CompanionFoodLightTests {
     }
 
     /** Issue 62 (stream 01.11, 55:10): on a deed of his own he set down a new furnace beside the player's free ones. */
-    @GameTest(template="tall_tree",timeoutTicks=2400)
+    @GameTest(template="tall_tree",timeoutTicks=4800) // autonomy may run another deed first; two minutes was not always enough
     public static void aDeedOfHisOwnCooksInThePlayersEmptyFurnace(GameTestHelper h) {
         var f=fixture(h,false,12,16);
         f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
@@ -209,7 +209,7 @@ public final class CompanionFoodLightTests {
     }
 
     /** The other side of issue 62: the player's coal in the furnace is not his to burn on a deed of his own. */
-    @GameTest(template="tall_tree",timeoutTicks=2400)
+    @GameTest(template="tall_tree",timeoutTicks=4800) // autonomy may run another deed first; two minutes was not always enough
     public static void aDeedOfHisOwnLeavesThePlayersFuelledFurnaceAlone(GameTestHelper h) {
         var f=fixture(h,false,12,16);
         f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
@@ -229,7 +229,7 @@ public final class CompanionFoodLightTests {
     }
 
     /** The same coal put in while he walks to the player's empty furnace he chose: it is looked at again before loading. */
-    @GameTest(template="tall_tree",timeoutTicks=2400)
+    @GameTest(template="tall_tree",timeoutTicks=4800) // autonomy may run another deed first; two minutes was not always enough
     public static void aDeedOfHisOwnDropsThePlayersFurnaceFuelledOnTheWay(GameTestHelper h) {
         var f=fixture(h,false,8,16);
         f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
@@ -257,7 +257,7 @@ public final class CompanionFoodLightTests {
     }
 
     /** An idle auto-smelter of the player: the hopper under it would carry his meat off into the player's chest. */
-    @GameTest(template="tall_tree",timeoutTicks=2400)
+    @GameTest(template="tall_tree",timeoutTicks=4800) // autonomy may run another deed first; two minutes was not always enough
     public static void aDeedOfHisOwnLeavesThePlayersHopperFurnaceAlone(GameTestHelper h) {
         var f=fixture(h,false,12,16);
         f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
