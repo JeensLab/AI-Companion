@@ -877,12 +877,13 @@ public final class CompanionMineStopsTests {
         c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
         carveMine(h, c, TUNNEL_START);
         BlockPos foot = c.mineSite().foot();
-        BlockPos diamond = foot.relative(Direction.WEST, DIAMOND_AT).above();
-        h.getLevel().setBlock(diamond, Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
-        for (BlockPos open : List.of(diamond.west(), diamond.west().above(), diamond.west(2), diamond.west(2).above())) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
-        // A slit at eye height: he sees the diamond along it, but the feet-level rock still has to be dug.
-        for (int k = TUNNEL_START + 1; k < DIAMOND_AT; k++) h.getLevel().setBlock(foot.relative(Direction.WEST, k).above(), Blocks.AIR.defaultBlockState(), 2 | 16);
         BlockPos end = foot.relative(Direction.WEST, TUNNEL_START);
+        // The diamond lies at eye height down a slit going away from the tunnel: he sees it, no step of his own digging opens onto it, and the feet-level rock to it is no way.
+        BlockPos diamond = end.relative(Direction.SOUTH, DIAMOND_AT).above();
+        h.getLevel().setBlock(diamond, Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState(), 2 | 16);
+        for (BlockPos open : List.of(diamond.south(), diamond.south().above(), diamond.south(2), diamond.south(2).above())) h.getLevel().setBlock(open, Blocks.AIR.defaultBlockState(), 2 | 16);
+        for (int k = 1; k < DIAMOND_AT; k++) h.getLevel().setBlock(end.relative(Direction.SOUTH, k).above(), Blocks.AIR.defaultBlockState(), 2 | 16);
+
         c.teleportTo(end.getX() + .5, end.getY(), end.getZ() + .5);
         long id = start(h, c, 1);
         h.succeedWhen(() -> {

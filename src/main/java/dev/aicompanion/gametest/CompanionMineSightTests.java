@@ -42,6 +42,12 @@ public final class CompanionMineSightTests {
         return end;
     }
 
+    /** The order begins once he stands on the floor after the teleport: in the air no route is searched, and a walk to the ore would be given up at once. */
+    private static long started(GameTestHelper h, CompanionEntity c) {
+        h.assertTrue(c.onGround(), "He has not landed yet");
+        return start(h, c, 1);
+    }
+
     /**
      * A diamond nearer than the one in the open passage lies in a closed pocket three blocks aside, with rock between it and his eyes.
      * The look at ore (twelve blocks) must run and pass it over: the one in sight is taken, the one behind rock stays.
@@ -54,8 +60,9 @@ public final class CompanionMineSightTests {
         BlockPos closed = end.relative(Direction.EAST, CLOSED_ASIDE).relative(Direction.SOUTH, CLOSED_AT);
         ore(h, closed);
         for (int k = CAVITY_FROM; k < CLOSED_AT; k++) air(h, end.relative(Direction.EAST, CLOSED_ASIDE).relative(Direction.SOUTH, k));
-        start(h, c, 1);
+        long[] id = {0};
         h.succeedWhen(() -> {
+            id[0] = id[0] == 0 ? started(h, c) : id[0];
             h.assertTrue(count(c, Items.DIAMOND) >= 1, "He took no diamond | " + report(c));
             h.assertTrue(h.getLevel().getBlockState(closed).is(Blocks.DEEPSLATE_DIAMOND_ORE), "He went for the diamond he could not see | " + report(c));
         });
@@ -66,7 +73,10 @@ public final class CompanionMineSightTests {
         mountain(h, false);
         CompanionEntity c = rig(h);
         setUp(h, c);
-        start(h, c, 1);
-        h.succeedWhen(() -> h.assertTrue(count(c, Items.DIAMOND) >= 1, "He did not go to a diamond in plain sight | " + report(c)));
+        long[] id = {0};
+        h.succeedWhen(() -> {
+            id[0] = id[0] == 0 ? started(h, c) : id[0];
+            h.assertTrue(count(c, Items.DIAMOND) >= 1, "He did not go to a diamond in plain sight | " + report(c));
+        });
     }
 }
