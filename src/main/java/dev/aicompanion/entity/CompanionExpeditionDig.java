@@ -124,17 +124,24 @@ final class CompanionExpeditionDig {
         return done();
     }
 
+    private static final Set<Item> SEALING_ROCK = Set.of(Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF);
+
     /** What he can do without when the bag is full, the most useless first: rubble, what mobs leave, raw copper, wooden tools worn out by the stone ones. */
     private static final List<Set<Item>> SPARE = List.of(
-            Set.of(Items.DIRT, Items.COARSE_DIRT, Items.ROOTED_DIRT, Items.GRAVEL, Items.SAND, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF, Items.NETHERRACK),
+            Set.of(Items.DIRT, Items.COARSE_DIRT, Items.ROOTED_DIRT, Items.GRAVEL, Items.SAND, Items.NETHERRACK),
             Set.of(Items.ROTTEN_FLESH, Items.BONE, Items.SPIDER_EYE), Set.of(Items.RAW_COPPER), Set.of(Items.WOODEN_PICKAXE, Items.WOODEN_SHOVEL));
+
+    /** Tuff and the other stones seal like cobblestone, so they are rubble only once the bag holds more than {@link #SEAL_RESERVE} sealing blocks. */
+    private boolean surplusRock(ItemStack stack) {
+        return SEALING_ROCK.contains(stack.getItem()) && CompanionSeal.available(owner) > SEAL_RESERVE;
+    }
 
     /** A slot for a drop that has none (a diamond): the most spare stack is thrown out as a real item in the world. False when nothing in the bag is spare. */
     boolean makeRoom(ServerLevel level) {
         int slot = -1, rank = SPARE.size();
         for (int i = 0; i < owner.getContainerSize(); i++) {
             for (int r = 0; r < rank; r++) {
-                if (SPARE.get(r).contains(owner.getItem(i).getItem())) { slot = i; rank = r; break; }
+                if (SPARE.get(r).contains(owner.getItem(i).getItem()) || r == 0 && surplusRock(owner.getItem(i))) { slot = i; rank = r; break; }
             }
         }
         if (slot < 0) return false;

@@ -81,9 +81,13 @@ public final class CompanionOre {
     static final int MAX_CELLS = 30;
     private CompanionOre() { }
 
-    /** Natural ground a tunnel may go through: stone of the world, soil and any ore. Built blocks are never dug. */
+    /**
+     * Natural ground a tunnel may go through: stone of the world, soil, the calcite and smooth basalt shell of a geode and any ore.
+     * Built blocks are never dug; amethyst is not dug either, so the geode inside stays a wall like any cave.
+     */
     static boolean tunnelable(BlockState state) {
         return state.is(BlockTags.BASE_STONE_OVERWORLD) || CompanionQuarry.soil(state) || state.is(Blocks.DRIPSTONE_BLOCK)
+                || state.is(Blocks.CALCITE) || state.is(Blocks.SMOOTH_BASALT)
                 || state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
     }
 

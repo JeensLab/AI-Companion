@@ -24,8 +24,9 @@ public final class CompanionSeal {
     public static final double REACH = 4.5;
     /** A point just inside a face of the cell: a line that reaches it has entered the cell through an open side. */
     private static final double FACE = .45;
-    /** Cheapest first: what mining makes anyway, then soil, then the plain stone. */
-    private static final List<Item> PREFERENCE = List.of(Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.DIRT, Items.STONE);
+    /** Cheapest first: what mining makes anyway, then soil, then the plain stone, then the rock a tunnel leaves in passing. */
+    private static final List<Item> PREFERENCE = List.of(Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.DIRT, Items.STONE,
+            Items.TUFF, Items.ANDESITE, Items.DIORITE, Items.GRANITE);
 
     private CompanionSeal() { }
 

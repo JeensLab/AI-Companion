@@ -34,7 +34,7 @@ import java.util.Set;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionShaftDetourTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, UNKILLABLE = 1024;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TUFF_FROM = 12, TUFF_TO = 16, TIMEOUT = 12000, UNKILLABLE = 1024;
     private static final String FLOOR_REFUSAL = "неустойчив";
 
     /** A 7x7x5 empty dungeon under the stairs: the steps that fall into it have no floor, he lays one block after another down to the dungeon's bottom. */
@@ -96,6 +96,25 @@ public final class CompanionShaftDetourTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(count(c, Items.DIAMOND) >= 1, "No diamond past the gravel: " + report(c));
             h.assertTrue(result.success(), "Ended without success: " + report(c));
+        });
+    }
+
+    /** A layer of tuff mixed with calcite and smooth basalt (the shell of a geode) lies across the whole stair: he digs through it without a turn and keeps tuff to seal with. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void digsStraightThroughATuffLayerWithCalciteAndBasalt(GameTestHelper h) {
+        mountain(h);
+        Block[] mix = {Blocks.TUFF, Blocks.CALCITE, Blocks.SMOOTH_BASALT};
+        for (int x = 1; x < SIZE - 1; x++) for (int z = 1; z < SIZE - 1; z++) for (int y = TUFF_FROM; y <= TUFF_TO; y++) h.setBlock(new BlockPos(x, y, z), mix[(x + y + z) % mix.length]);
+        CompanionEntity c = rig(h);
+        // No cobblestone to start with: the tuff dug on the way is what the bag can seal with.
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.COBBLESTONE)) c.setItem(slot, ItemStack.EMPTY);
+        long id = start(h, c, 1);
+        int column = h.absolutePos(new BlockPos(CENTER, 0, 0)).getX();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(count(c, Items.DIAMOND) >= 1 && result.success(), "No diamond through the tuff layer: " + report(c));
+            for (BlockPos stand : c.mineSite().stands()) h.assertTrue(stand.getX() == column, "Turned off the column at " + stand.toShortString() + " | " + report(c));
+            h.assertTrue(count(c, Items.TUFF) >= 1, "No tuff kept for sealing: " + report(c));
         });
     }
 
