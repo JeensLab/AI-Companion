@@ -152,6 +152,7 @@ public final class CompanionDiamondGoalFlowTests {
         Rig r = bind(h, c, 3);
         start(h, r, 1);
         int[] stone = {count(c, Items.STONE_PICKAXE)}, made = {0};
+        boolean[] down = {false};
         h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time, " + made[0] + " pickaxes made | " + report(h, r)));
         h.onEachTick(() -> {
             h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(h, r));
@@ -161,7 +162,10 @@ public final class CompanionDiamondGoalFlowTests {
             stone[0] = now;
             wearDown(c);
             if (c.mineSite().opened() == 0) return;
-            h.assertTrue(rel(h, c.blockPosition()).getY() < GROUND, "Climbed to the surface for pickaxes | " + report(h, r));
+            int y = rel(h, c.blockPosition()).getY();
+            // The first cell is dug from the surface: only a return to it after he went below is a climb.
+            if (y < GROUND) down[0] = true;
+            h.assertTrue(!down[0] || y < GROUND, "Climbed to the surface for pickaxes | " + report(h, r));
             for (int slot = 0; slot < c.getContainerSize(); slot++) {
                 ItemStack iron = c.getItem(slot);
                 if (iron.is(Items.IRON_PICKAXE)) h.assertTrue(iron.getDamageValue() <= SPARE_DURABILITY, "The iron pickaxe wore down to " + iron.getDamageValue() + " | " + report(h, r));
