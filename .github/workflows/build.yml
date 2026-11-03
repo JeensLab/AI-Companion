@@ -100,7 +100,7 @@ jobs:
             ./gradlew runGameTestShard${{ matrix.shard }} -PgameTestShards=${{ strategy.job-total }} --console=plain 2>&1 | tee -a "$log" || rc=$?
             tail -n +"$from" "$log" | grep -Eq "All ([0-9]+ )?required tests passed" && [ "$rc" -eq 0 ]
           }
-          run_shard || { echo "::warning::GameTests shard ${{ matrix.shard }} failed once, retrying"; run_shard; }
+          run_shard || { echo "::warning::GameTests shard ${{ matrix.shard }} failed once, retrying"; rm -rf "run/shard-${{ matrix.shard }}/world" "run/shard-${{ matrix.shard }}/logs/latest.log"; run_shard; }
       - name: Upload shard log
         if: always()
         uses: actions/upload-artifact@v4
