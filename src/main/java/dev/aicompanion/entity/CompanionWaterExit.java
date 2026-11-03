@@ -4,16 +4,18 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 
 /**
- * The way out of deep water for an order that waits on it. The game's float (priority 0) holds the jump flag the work goal also
- * needs, so in water above the knee the order neither starts nor goes on, and nothing else takes him sideways: at a column of
- * falling water with air one step away he bobbed until he drowned. This goal moves him to the nearest dry cell, with the move
- * flag only: the float goes on lifting him, and the guard (priority 0) keeps the turn if it has it.
+ * The way out of a column of falling water for an order that waits on it. In still water the order works on (the float holds no
+ * flag, CompanionSwimming.WadingFloatGoal): a flooded tunnel is his way and his work. A fall carries him down and nothing else
+ * takes him sideways: at a waterfall with air one step away he bobbed, with no route, until he drowned. A route through the water
+ * is left to the work. This goal moves him to the nearest dry
+ * cell, with the move flag only: the float goes on lifting him, and the guard (priority 0) keeps the turn if it has it.
  */
 final class CompanionWaterExit extends Goal {
     private static final int RADIUS = 6, STEP_UP = 1, STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60;
@@ -31,7 +33,7 @@ final class CompanionWaterExit extends Goal {
 
     @Override public boolean canUse() {
         return c.inventoryViewers == 0 && c.work.isActive() && !c.gatheringLogs && !c.gatheringDirt && c.canWorkNow()
-                && treadingWater() && (target = nearestDry()) != null;
+                && c.getNavigation().isDone() && treadingWater() && (target = nearestDry()) != null;
     }
 
     /** A swim that gets somewhere is left alone: crossing a river to the player is not a reason to turn back to the nearest bank. */
@@ -63,9 +65,11 @@ final class CompanionWaterExit extends Goal {
         }
     }
 
-    /** The condition of the float itself: it is what keeps the order from the jump flag. */
+    /** Deep enough to float, in water that falls. */
     private boolean deepInWater() {
-        return c.isInWater() && !c.isInLava() && c.getFluidHeight(FluidTags.WATER) > c.getFluidJumpThreshold();
+        if (!c.isInWater() || c.isInLava() || c.getFluidHeight(FluidTags.WATER) <= c.getFluidJumpThreshold()) return false;
+        var fluid = c.level().getFluidState(c.blockPosition());
+        return fluid.is(FluidTags.WATER) && !fluid.isSource() && fluid.getValue(FlowingFluid.FALLING);
     }
 
     private BlockPos nearestDry() {
