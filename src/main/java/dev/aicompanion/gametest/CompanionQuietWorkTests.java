@@ -113,6 +113,26 @@ public final class CompanionQuietWorkTests {
         String smelt=CompanionDialogue.summarize(craft,"План остановлен: Не удалось забрать плавку из печи.\nДобыча земли завершена: добыл 4 блоков.");
         h.assertTrue(smelt.equals("Не удалось забрать плавку из печи."),"A later line was spoken: "+smelt);h.succeed();
     }
+    /** Issue 61 (stream 01.11): his own cooking was told aloud with the furnaces' places and the whole bag. */
+    @GameTest(template="empty")
+    public static void furnacePlacesAreNotSpoken(GameTestHelper h) {
+        String one=CompanionDialogue.speakable("Переплавил 8 «Сырая говядина» и забрал 8 «Стейк». Печь на 300, 70, -176. В сумке ещё 5 «Сырая говядина» — больше стопки за раз не беру. В сумке: 12 Булыжник, 3 Дуб.");
+        h.assertTrue(one.equals("Переплавил 8 «Сырая говядина» и забрал 8 «Стейк». В сумке ещё 5 «Сырая говядина» — больше стопки за раз не беру."),"One furnace: "+one);
+        String two=CompanionDialogue.speakable("Переплавил 16 «Сырая говядина» в 2 печах и забрал 16 «Стейк». Печи: 1, 2, 3; -4, 5, 6. В сумке: 12 Булыжник.");
+        h.assertTrue(two.equals("Переплавил 16 «Сырая говядина» в 2 печах и забрал 16 «Стейк»."),"Two furnaces: "+two);
+        String parked=CompanionDialogue.speakable("Заложил 16 «Сырая говядина» в печи на 1, 2, 3; -4, 5, 6. Жарится дольше 20 секунд, вернусь за продуктом, когда всё будет готово.");
+        h.assertTrue(parked.equals("Заложил 16 «Сырая говядина» в печи. Жарится дольше 20 секунд, вернусь за продуктом, когда всё будет готово."),"Parked: "+parked);
+        h.succeed();
+    }
+    /** Issue 61: a long goal's snag is said aloud and shown in Tasks with the step's own words, without its places and the bag. */
+    @GameTest(template="empty")
+    public static void goalSnagIsToldWithoutPlacesOrTheBag(GameTestHelper h) throws Exception {
+        var reason=CompanionAgenda.class.getDeclaredMethod("reason",String.class);reason.setAccessible(true);
+        String why=(String)reason.invoke(null,"Добыл 3 блока руды.\nПлан остановлен: Не смог добраться до верстака на 12, 64, -30. Вещи сохранил. В сумке: 4 Палка, 2 Рудное железо.");
+        h.assertTrue(why.equals("Не смог добраться до верстака. Вещи сохранил."),"Snag: "+why);
+        h.assertTrue(reason.invoke(null,"План остановлен: В сумке: 4 Палка.").equals("не получилось."),"An empty reason is said");
+        h.succeed();
+    }
     private static CompanionEntity companion(GameTestHelper h) {
         var c=h.spawn(AICompanionMod.COMPANION.get(),2,1,2);c.setNoAi(true);return c;
     }

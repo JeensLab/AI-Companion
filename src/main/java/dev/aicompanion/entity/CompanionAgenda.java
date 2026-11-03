@@ -524,13 +524,14 @@ public final class CompanionAgenda {
         return false;
     }
 
-    /** The last line of the report that says why, without the runner's prefixes. */
+    /** The last line of the report that says why, without the runner's prefixes; he says it aloud, so without places and the bag (issue 61). */
     private static String reason(String report) {
         String why = "";
         for (String line : report.split("\n")) {
             if (line.isBlank() || line.startsWith(CompanionDialogue.SKIPPED_PREFIX)) continue;
             why = line.replace("План остановлен: ", "").replace(CompanionDialogue.PARTIAL_PREFIX, "").strip();
         }
+        why = CompanionDialogue.speakable(why);
         return why.isEmpty() ? "не получилось." : why;
     }
 

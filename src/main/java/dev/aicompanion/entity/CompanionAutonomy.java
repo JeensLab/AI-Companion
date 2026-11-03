@@ -450,6 +450,8 @@ public final class CompanionAutonomy {
 
     /** What he tells on his own account, outside the pause between remarks: the outcome of a batch he went for. */
     void report(String text) {
+        // Said aloud: the gist of a result, not its furnaces' places and the bag (issue 61); the journal keeps the deed's whole result.
+        text = dev.aicompanion.client.CompanionDialogue.speakable(text);
         said.add(text);
         while (said.size() > 16) said.removeFirst();
         event("autonomy_said", "text", text);
