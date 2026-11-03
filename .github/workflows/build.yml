@@ -26,26 +26,86 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Build with Gradle
         run: ./gradlew build
-      # `build` does not run GameTests, and a failed start can still exit 0 (a stale world lock did that once), so the
-      # success line decides the job. Long scenarios are known to flake, so one retry is allowed before failing.
-      - name: Run GameTests
-        timeout-minutes: 45
+
+  # The suite is split across separate machines: one shard per runner, each with its own world and disk.
+  # `build` does not run GameTests, and a failed start can still exit 0 (a stale world lock did that once), so the
+  # success line decides each job. A shard that flakes is retried once, as the single-run gate used to be.
+  # The three long scenarios are left out of the shards: they would dominate one of them, and they catch what only
+  # a long game shows (lost items, hangs after a reload). They run on their own machine, as they did before.
+  endurance:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run the long scenarios
+        timeout-minutes: 40
         run: |
           set -uo pipefail
-          # Each attempt is judged on its own tail and on Gradle's own exit code: a success line from an earlier
-          # attempt must not mask a failing one, and vanilla also prints the unnumbered form of the line.
-          run_tests() {
-            local from=$(( $( [ -f gametest.log ] && wc -l < gametest.log || echo 0 ) + 1 ))
+          log="gametest-endurance.log"
+          run_long() {
+            local from=$(( $( [ -f "$log" ] && wc -l < "$log" || echo 0 ) + 1 ))
             local rc=0
-            ./gradlew runGameTestServer --console=plain 2>&1 | tee -a gametest.log || rc=$?
-            tail -n +"$from" gametest.log | grep -Eq "All ([0-9]+ )?required tests passed" && [ "$rc" -eq 0 ]
+            ./gradlew runGameTestServer -PgameTestMethods=twoHoursForestToolsStorageAndReturningPlayer,ninetyMinutesCaveFoodOreLightAndChangingPassage,hundredMinutesFullBagOrdersCancellationAndReloads --console=plain 2>&1 | tee -a "$log" || rc=$?
+            tail -n +"$from" "$log" | grep -q "All 3 required tests passed" && [ "$rc" -eq 0 ]
           }
-          run_tests || { echo "::warning::GameTests failed once, retrying (long scenarios are known to flake)"; run_tests; }
-      - name: Upload GameTest log
+          run_long || { echo "::warning::the long scenarios failed once, retrying"; rm -rf run/world; run_long; }
+      - name: Upload endurance log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gametest-log
-          path: gametest.log
+          name: gametest-log-endurance
+          path: gametest-endurance.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  gametest:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run GameTests shard ${{ matrix.shard }}
+        timeout-minutes: 25
+        run: |
+          set -uo pipefail
+          log="gametest-shard-${{ matrix.shard }}.log"
+          run_shard() {
+            local from=$(( $( [ -f "$log" ] && wc -l < "$log" || echo 0 ) + 1 ))
+            local rc=0
+            ./gradlew runGameTestShard${{ matrix.shard }} -PgameTestShards=${{ strategy.job-total }} --console=plain 2>&1 | tee -a "$log" || rc=$?
+            tail -n +"$from" "$log" | grep -Eq "All ([0-9]+ )?required tests passed" && [ "$rc" -eq 0 ]
+          }
+          run_shard || { echo "::warning::GameTests shard ${{ matrix.shard }} failed once, retrying"; rm -rf "run/shard-${{ matrix.shard }}/world" "run/shard-${{ matrix.shard }}/logs/latest.log"; run_shard; }
+      - name: Upload shard log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gametest-log-shard-${{ matrix.shard }}
+          path: gametest-shard-${{ matrix.shard }}.log
           retention-days: 7
           if-no-files-found: ignore

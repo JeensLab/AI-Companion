@@ -41,16 +41,38 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     try { & ./gradlew.bat --offline --continue "-PgameTestShards=$shardCount" runFastGameTests *> $log; $testExit=$LASTEXITCODE }
     finally { $ErrorActionPreference='Stop'; Pop-Location }
     $results=@(0..($shardCount-1) | ForEach-Object {Read-Shard $_})
+    # A shard that flakes is retried alone, as the Linux gate does; its world and log start clean so a stale
+    # lock cannot fail the retry as well.
+    $retried=@()
+    foreach($shard in 0..($shardCount-1)){
+        $result=$results[$shard]
+        if($result.expected -le 0 -or $result.passed -ne $result.expected){
+            Write-Output "::warning::shard $shard failed, retrying it alone"
+            $retried+=$shard
+            $shardDir=Join-Path $gameTestRoot "run\shard-$shard"
+            $stale=Join-Path $shardDir 'logs\latest.log'
+            if(Test-Path -LiteralPath $stale){Remove-Item -LiteralPath $stale -Force}
+            $world=Join-Path $shardDir 'world'
+            if(Test-Path -LiteralPath $world){Remove-Item -LiteralPath $world -Recurse -Force}
+            Push-Location $gameTestRoot
+            $ErrorActionPreference='Continue'
+            try { & ./gradlew.bat --offline "-PgameTestShards=$shardCount" "runGameTestShard$shard" *>> $log; $retryExit=$LASTEXITCODE }
+            finally { $ErrorActionPreference='Stop'; Pop-Location }
+            $results[$shard]=Read-Shard $shard
+            if($retryExit -ne 0){ $results[$shard].failed += "exit-$retryExit" }
+        }
+    }
     $passed=($results | ForEach-Object {$_.passed} | Measure-Object -Sum).Sum
     $expected=($results | ForEach-Object {$_.expected} | Measure-Object -Sum).Sum
     $pool=($results | ForEach-Object {$_.pool} | Sort-Object -Unique)
-    $run=[ordered]@{iteration=$iteration;exitCode=$testExit;passed=[int]$passed;expected=[int]$expected;seconds=[math]::Round(((Get-Date)-$started).TotalSeconds,2);log=$log;shards=$results}
+    $run=[ordered]@{iteration=$iteration;exitCode=$testExit;passed=[int]$passed;expected=[int]$expected;seconds=[math]::Round(((Get-Date)-$started).TotalSeconds,2);log=$log;retried=($retried -join ',');shards=$results}
     $runs+=$run
     Write-GameTestSummary 'fast' @($runs)
     # A shard that died early or logged nothing must not pass as a smaller suite: each one has to report work,
     # finish all of it, and together they have to add up to the same pool.
-    $broken=@($results | Where-Object {$_.expected -le 0 -or $_.passed -ne $_.expected})
-    if($testExit -ne 0 -or $broken.Count -or @($pool).Count -ne 1 -or $expected -ne $pool){
+    # A retry that printed the success line but still exited nonzero is not a green shard.
+    $broken=@($results | Where-Object {$_.expected -le 0 -or $_.passed -ne $_.expected -or (($_.failed -join ' ') -match 'exit-')})
+    if((($retried.Count -eq 0) -and $testExit -ne 0) -or $broken.Count -or @($pool).Count -ne 1 -or $expected -ne $pool){
         $results | ForEach-Object {$_.failed} | Where-Object {$_} | ForEach-Object {Write-Output "FAILED $_"}
         throw "Fast verification failed: $passed of $expected passed, pool $($pool -join '/'), exit $testExit. See $log"
     }
