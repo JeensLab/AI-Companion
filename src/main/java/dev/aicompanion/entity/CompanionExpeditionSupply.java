@@ -7,30 +7,31 @@ import net.minecraft.world.item.Items;
 
 /** What the expedition makes of its own bag on the spot, so that a missing tool is no reason to climb to the surface. */
 final class CompanionExpeditionSupply {
-    private static final int MAX_PICKAXES = 8, MAX_SWORDS = 2, SWORD_STONE = 2, PICKAXE_STONE = 3, SWORD_STICKS = 1, PICKAXE_STICKS = 2, BENCH_PLANKS = 4;
+    private static final int MAX_FAILED_PICKAXES = 2, MAX_SWORDS = 2, SWORD_STONE = 2, PICKAXE_STONE = 3, SWORD_STICKS = 1, PICKAXE_STICKS = 2, BENCH_PLANKS = 4;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
-    private int pickaxes, swords;
+    private int failedPickaxes, swords;
 
     CompanionExpeditionSupply(CompanionWork w) {
         this.w = w;
         this.owner = w.owner;
     }
 
-    void reset() { pickaxes = swords = 0; }
+    void reset() { failedPickaxes = swords = 0; }
 
     /**
-     * A stone pickaxe from the stone he has mined, at a bench he sets down; bounded per expedition so a bad craft cannot loop. A bench
+     * A stone pickaxe from the stone he has mined, at a bench he sets down; as many as the bag's stone and sticks allow; a craft that fails costs nothing and would be retried every tick, so after
+     * {@link #MAX_FAILED_PICKAXES} failures in a row it is not tried again until {@link #reset()}. A bench
      * is allowed even with another one remembered within sixteen blocks (the walk to it is the climb this avoids). The one he
      * sets down goes to the mine's temporary blocks at once, and {@link CompanionExpeditionBench} takes it up again.
      */
     boolean craftStonePickaxe() {
-        if (pickaxes >= MAX_PICKAXES) return false;
-        pickaxes++;
-        return craft("minecraft:stone_pickaxe");
+        if (failedPickaxes >= MAX_FAILED_PICKAXES) return false;
+        boolean made = craft("minecraft:stone_pickaxe");
+        failedPickaxes = made ? 0 : failedPickaxes + 1;
+        return made;
     }
-
 
     /** Stone, wood for the sticks and a bench (carried, or made of the wood) are in the bag: a stone pickaxe can be made on the spot. */
     boolean canMakePickaxe() {
