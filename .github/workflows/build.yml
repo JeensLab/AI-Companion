@@ -57,9 +57,9 @@ jobs:
             local from=$(( $( [ -f "$log" ] && wc -l < "$log" || echo 0 ) + 1 ))
             local rc=0
             ./gradlew runGameTestServer -PgameTestMethods=twoHoursForestToolsStorageAndReturningPlayer,ninetyMinutesCaveFoodOreLightAndChangingPassage,hundredMinutesFullBagOrdersCancellationAndReloads --console=plain 2>&1 | tee -a "$log" || rc=$?
-            tail -n +"$from" "$log" | grep -Eq "All ([0-9]+ )?required tests passed" && [ "$rc" -eq 0 ]
+            tail -n +"$from" "$log" | grep -q "All 3 required tests passed" && [ "$rc" -eq 0 ]
           }
-          run_long || { echo "::warning::the long scenarios failed once, retrying"; run_long; }
+          run_long || { echo "::warning::the long scenarios failed once, retrying"; rm -rf run/world; run_long; }
       - name: Upload endurance log
         if: always()
         uses: actions/upload-artifact@v4

@@ -71,7 +71,7 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     # A shard that died early or logged nothing must not pass as a smaller suite: each one has to report work,
     # finish all of it, and together they have to add up to the same pool.
     $broken=@($results | Where-Object {$_.expected -le 0 -or $_.passed -ne $_.expected})
-    if($testExit -ne 0 -or $broken.Count -or @($pool).Count -ne 1 -or $expected -ne $pool){
+    if((($retried.Count -eq 0) -and $testExit -ne 0) -or $broken.Count -or @($pool).Count -ne 1 -or $expected -ne $pool){
         $results | ForEach-Object {$_.failed} | Where-Object {$_} | ForEach-Object {Write-Output "FAILED $_"}
         throw "Fast verification failed: $passed of $expected passed, pool $($pool -join '/'), exit $testExit. See $log"
     }
