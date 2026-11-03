@@ -122,6 +122,16 @@ public final class CompanionQuietWorkTests {
         h.assertTrue(two.equals("Переплавил 16 «Сырая говядина» в 2 печах и забрал 16 «Стейк»."),"Two furnaces: "+two);
         String parked=CompanionDialogue.speakable("Заложил 16 «Сырая говядина» в печи на 1, 2, 3; -4, 5, 6. Жарится дольше 20 секунд, вернусь за продуктом, когда всё будет готово.");
         h.assertTrue(parked.equals("Заложил 16 «Сырая говядина» в печи. Жарится дольше 20 секунд, вернусь за продуктом, когда всё будет готово."),"Parked: "+parked);
+        h.assertTrue(CompanionDialogue.speakable("В сумке:").isEmpty(),"A marker alone");
+        h.succeed();
+    }
+    /** Issue 61, review: a collect that failed says where the product stays only to the model (his status), not aloud. */
+    @GameTest(template="empty")
+    public static void theFurnaceLeftBehindIsKnownButNotSpoken(GameTestHelper h) throws Exception {
+        var c=companion(h);
+        finish(c,"COLLECT",CompanionActionResult.failed("Переплавил 0 из 8 «Сырая говядина», забрал из печи 0 «Стейк». Печь пропала или недоступна: что в ней было, не забрать. Сырьё и топливо остались в печи на 600, 141, -174 — переплавленное можно забрать оттуда."));
+        h.assertTrue(c.autonomyLine().endsWith("Сырьё и топливо остались в печи — переплавленное можно забрать оттуда.") && !c.autonomyLine().contains("600"),"Said: "+c.autonomyLine());
+        h.assertTrue(c.getLastTaskResult().contains("в печи на 600, 141, -174"),"The place is lost for the model: "+c.getLastTaskResult());
         h.succeed();
     }
     /** Issue 61: a long goal's snag is said aloud and shown in Tasks with the step's own words, without its places and the bag. */

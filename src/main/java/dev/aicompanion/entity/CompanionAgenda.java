@@ -571,7 +571,8 @@ public final class CompanionAgenda {
     /**
      * A boundary of the goal's steps after a death. One try per death place, so neither a reload nor a second death can make the goal
      * wait for them: his things within reach on a safe spot go on his pickup list (he walks to them and takes them up like his own
-     * harvest; nothing is made anew), anything else is said once, with the place. True: the pickup begins and the goal waits for it.
+     * harvest; nothing is made anew), anything else is said once; the place stays in his status and the journal. True: the pickup
+     * begins and the goal waits for it.
      */
     private static boolean recover(CompanionAgendaData data, Goal goal, CompanionEntity c, ServerLevel level) {
         BlockPos place = goal.deathPlace;

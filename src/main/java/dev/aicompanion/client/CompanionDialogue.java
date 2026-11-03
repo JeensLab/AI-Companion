@@ -39,7 +39,7 @@ public final class CompanionDialogue {
      */
     public static String speakable(String text) {
         if (text == null) return "";
-        String result = text.split("Известные места:|В сумке:|У меня в сумке:|Цепочка:|Координаты:|Материалы сохранены")[0];
+        String result = text.split("Известные места:|В сумке:|У меня в сумке:|Цепочка:|Координаты:|Материалы сохранены", 2)[0];
         // A smelt names its furnaces in a sentence of their own (issue 61: «Печь.» was left of it).
         result = names(cleanReply(result)).replaceAll("\\s*Печ(?:ь на|и:) " + PLACES + "\\.", "")
                 .replaceAll("(?:\\s(?:на|в))?\\s*\\(?" + PLACES + "\\)?", "")
