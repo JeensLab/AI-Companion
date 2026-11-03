@@ -130,7 +130,7 @@ final class CompanionExpeditionOre {
             if (!CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
             if (!CompanionMiningNavigation.dropCollectable(level, pos, feet)) return "drop not collectable";
         }
-        if ((mode == Mode.SIGHT || mode == Mode.WALK) && !CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
+        if (mode != Mode.NEAR && !CompanionMiningNavigation.visible(owner, eye, pos)) return "not visible";
         return "taken";
     }
 

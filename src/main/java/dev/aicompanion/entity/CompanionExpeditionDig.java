@@ -213,7 +213,10 @@ final class CompanionExpeditionDig {
         for (BlockPos pos : BlockPos.betweenClosed(feet.offset(-radius, -radius, -radius), feet.offset(radius, radius, radius))) {
             if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(BlockTags.DIAMOND_ORES)) continue;
             for (Direction side : Direction.values()) {
-                if (CompanionShaftPlan.open(level, pos.relative(side)) && CompanionMiningNavigation.visible(owner, eye, pos)) return true;
+                if (CompanionShaftPlan.open(level, pos.relative(side))) {
+                    if (CompanionMiningNavigation.visible(owner, eye, pos)) return true;
+                    break;
+                }
             }
         }
         return false;
