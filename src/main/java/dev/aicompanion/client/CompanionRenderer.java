@@ -40,13 +40,7 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
                 if (entity.isUsingItem() && entity.getUsedItemHand() == net.minecraft.world.InteractionHand.MAIN_HAND && entity.getMainHandItem().getItem() instanceof net.minecraft.world.item.BowItem) rightArmPose = ArmPose.BOW_AND_ARROW;
                 super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
                 skin.animate(entity.expression(), CompanionVoiceAudio.mouthOpen(entity), ageInTicks + entity.getId() * 17);
-                if (entity.isMiningAnimation()) {
-                    float stroke = net.minecraft.util.Mth.sin(ageInTicks * (float)Math.PI / 4);
-                    rightArm.xRot = -1.1F + stroke * .85F - headPitch * .006F;
-                    rightArm.yRot = -.18F; rightArm.zRot = .12F;
-                    leftArm.xRot = -.25F; body.yRot = stroke * .06F;
-                    rightSleeve.copyFrom(rightArm); leftSleeve.copyFrom(leftArm); jacket.copyFrom(body);
-                } else if (entity.actionAnimation() != 0) {
+                if (entity.actionAnimation() != 0) {
                     float stroke = net.minecraft.util.Mth.sin(ageInTicks * .8F);
                     rightArm.xRot = -1.15F + stroke * .25F - headPitch * .006F;
                     rightArm.yRot = -.25F; rightArm.zRot = .1F;

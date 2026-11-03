@@ -792,6 +792,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         super.travel(input);
     }
 
+    /** The game advances the stroke the renderer draws only for players and monsters; a pathfinder mob is neither,
+     * so without this his arm stayed still through every hit (Monster.aiStep does the same for the same reason). */
+    @Override public void aiStep() {
+        updateSwingTime();
+        super.aiStep();
+    }
+
     @Override protected void customServerAiStep() {
         super.customServerAiStep();
         // In a boat or minecart vanilla switches off every walking goal: the order would hang without even a timeout.
@@ -903,6 +910,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     @Override public boolean doHurtTarget(Entity target) {
         boolean hit = super.doHurtTarget(target);
+        // Every hit swings the arm he strikes with, whoever dealt it: the goal starts its own stroke first, and a
+        // stroke already running is left alone, so one hit is one packet. Without this a hit dealt outside the goal
+        // would land with him standing still.
+        if (hit && !swinging) swing(InteractionHand.MAIN_HAND);
         if (hit && target instanceof LivingEntity living) work.hitEnemy(living);
         ItemStack weapon = getMainHandItem();
         if (hit && target instanceof LivingEntity living && !weapon.isEmpty() && weapon.getItem().hurtEnemy(weapon, living, this)) {
