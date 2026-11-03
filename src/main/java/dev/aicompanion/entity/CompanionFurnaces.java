@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
@@ -8,6 +9,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 
@@ -110,11 +112,24 @@ final class CompanionFurnaces {
         BlockPos center = w.owner.blockPosition();
         BlockPos group = w.lots.isEmpty() ? null : w.lots.getFirst().pos;
         return w.chests.blockEntitiesNear(level).stream().filter(pos -> !w.triedFurnaces.contains(pos)
-                        && (!w.owner.ownPlacesOnly() || w.owner.placedByMe(pos) && w.owner.leashAllows(pos))
                         && w.lots.stream().noneMatch(lot -> lot.pos.equals(pos)) && !w.owner.batches().reserved(level, pos)
                         && (group == null || pos.distSqr(group) <= CompanionWork.FURNACE_GROUP * CompanionWork.FURNACE_GROUP)
-                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven))
+                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven) && allowed(level, pos, oven))
                 .min(Comparator.comparingDouble(pos -> pos.distSqr(center))).map(BlockPos::immutable).orElse(null);
+    }
+
+    /**
+     * On a deed of his own the player's furnace is taken only standing idle, with nothing of the player's in it to burn or mix
+     * with: a new furnace beside it is waste (issue 62, stream 01.11). Looked at again at loading: the player may fill it meanwhile.
+     * Not one with a hopper at it: an auto-smelter of the player carries the product off into the player's chest.
+     */
+    private boolean allowed(ServerLevel level, BlockPos pos, AbstractFurnaceBlockEntity oven) {
+        if (!w.owner.ownPlacesOnly()) return true;
+        if (!w.owner.leashAllows(pos)) return false;
+        if (w.owner.placedByMe(pos)) return true;
+        if (!oven.isEmpty()) return false;
+        for (Direction side : Direction.values()) if (level.getBlockState(pos.relative(side)).is(Blocks.HOPPER)) return false;
+        return true;
     }
 
     /** Someone else's furnace at work stays theirs: only an empty input slot, and an output our product can join. */
@@ -184,7 +199,7 @@ final class CompanionFurnaces {
 
     /** Raw material into the top slot, fuel under it: the same two slots a player fills. */
     private void loadLot(ServerLevel level, CompanionWork.Lot lot, AbstractFurnaceBlockEntity oven, int remaining) {
-        if (!freeFor(oven)) { dropLot(lot); return; }
+        if (!freeFor(oven) || !lot.placed && !allowed(level, lot.pos, oven)) { dropLot(lot); return; }
         int carried = CompanionSmelting.count(w.items.carriedItems(), w.smelt.input());
         if (carried <= 0) {
             w.smeltCount = loadedTotal();

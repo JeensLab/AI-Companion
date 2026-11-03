@@ -4,12 +4,17 @@ import java.util.Locale;
 
 /** Spoken problems describe what matters to the player; engine receipts stay in the task journal. */
 public final class CompanionFailureMessages {
-    public enum Kind { BAG, WOOD, MATERIALS, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, OTHER }
+    public enum Kind { BAG, WOOD, MATERIALS, LAVA, WATER, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, OTHER }
     private CompanionFailureMessages() { }
     public static String primary(String report) {
         int stopped = report.lastIndexOf("План остановлен:");
         String text = stopped < 0 ? report : report.substring(stopped + "План остановлен:".length());
         return text.split("В сумке:|У меня в сумке:|Известные места:|Цепочка:|Координаты:|Не выполнено:", 2)[0].strip();
+    }
+    /** Lava's own reasons in a report («рядом лава», «над лавой», «лавопад»), not the «лавы рядом» of the no-safe-way sentence. */
+    public static boolean mentionsLava(String report) {
+        String text = report.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        return text.contains("рядом лава") || text.contains("над лавой") || text.contains("лавопад");
     }
     public static Kind kind(String report) {
         String text = primary(report).toLowerCase(Locale.ROOT).replace('ё','е');
@@ -17,6 +22,13 @@ public final class CompanionFailureMessages {
         if (text.contains("к тебе подойти") || text.contains("отдать не могу") || text.contains("несу тебе вещи") || text.contains("к тебе пройти, вещи")) return Kind.HANDOVER;
         if (text.contains("доступного дерева") || text.contains("доступное дерево") || text.contains("доступных деревьев") || text.contains("бревна не удалось")
                 || text.contains("не хватает дерева") || text.contains("не хватает бревен")) return Kind.WOOD;
+        // Not yet up from his own tunnel: said before any ore reason, the player should know he is still down there.
+        if (text.contains("выбрался")) return Kind.ROUTE;
+        // A spring and nothing to plug it with (before the lava line: both reports end in «заткнуть нечем»). Lava beats it
+        // only by its own phrases: the no-safe-way sentence always says «лавы рядом».
+        if (text.contains("родник") && !mentionsLava(text)) return Kind.WATER;
+        // Ahead of the route: the engine puts the lava reason beside «не нашёл безопасного хода», and lava is the one to name.
+        if (text.contains("заткнуть нечем") || text.contains("над лавой") || text.contains("лавопад")) return Kind.LAVA;
         if (text.contains("безопасного хода") || text.contains("безопасно") || text.contains("не нашел пути")
                 || text.contains("не добраться") || text.contains("подъем") || text.contains("выбрался") || text.contains("к тебе пройти")) return Kind.ROUTE;
         if (text.contains("не хватает") || text.contains("недостаточно")) return Kind.MATERIALS;
@@ -32,6 +44,11 @@ public final class CompanionFailureMessages {
             case BAG -> "У меня сумка забита. Нужно освободить немного места.";
             case WOOD -> "Доступного дерева здесь больше не нашёл.";
             case MATERIALS -> "Пока не хватает материалов, чтобы закончить.";
+            case LAVA -> primary(report).contains("заткнуть нечем")
+                    ? "Рядом лава, а заткнуть её нечем. Нужен булыжник или земля." + (primary(report).contains("над лавой") ? " И руда лежит над лавой, добыча сгорит." : "")
+                    : primary(report).contains("лавопад") ? "Рядом лавопад, пробкой его не остановить. Руду не трогал."
+                    : "Руда лежит над лавой, добыча сгорит. Не трогал.";
+            case WATER -> "Рядом родник, а заткнуть его нечем. Нужен булыжник или земля.";
             // No way at all to the player, as the wide search proved it: said as such, not as a lost way.
             case ROUTE -> primary(report).contains("выбрался") ? "Я пока внизу, ищу безопасный выход."
                     : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти."
@@ -44,7 +61,8 @@ public final class CompanionFailureMessages {
             case TIMEOUT -> "С этим затянулось. Пока отложу.";
             case HANDOVER -> primary(report).toLowerCase(Locale.ROOT).contains("не вижу") ? "Не вижу тебя рядом, вещи остались у меня."
                     : primary(report).contains("к тебе пройти") ? "Не могу к тебе пройти, вещи остались у меня." : "Не дошёл до тебя, вещи остались у меня.";
-            case OTHER -> "С этим пока не справился.";
+            // The ore broken but its drop left where he cannot get at it (CompanionOreMining.finishOre).
+            case OTHER -> primary(report).contains("Выпавшее не достал") ? "Руду сломал, но выпавшее не достал." : "С этим пока не справился.";
         };
     }
 }

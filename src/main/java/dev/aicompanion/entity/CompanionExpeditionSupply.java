@@ -67,7 +67,7 @@ final class CompanionExpeditionSupply {
     private boolean craft(String item) {
         boolean allowed = owner.newBenchAllowed;
         owner.allowNewBench(true);
-        owner.placement.lastTable = null;
+        owner.placement.benchSetDown = null;
         owner.placement.takenUpAtOnce = true;
         boolean made;
         try {
@@ -76,7 +76,7 @@ final class CompanionExpeditionSupply {
             owner.allowNewBench(allowed);
             owner.placement.takenUpAtOnce = false;
         }
-        BlockPos bench = owner.placement.lastTable;
+        BlockPos bench = owner.placement.benchSetDown;
         if (bench != null) w.mine.temporary(bench);
         return made;
     }

@@ -17,8 +17,8 @@ import net.minecraft.world.phys.Vec3;
 
 final class CompanionPlacement {
     final CompanionEntity c;
-    /** The bench set down by the last craft that needed one, null when it set none; the mine expedition reads it to take the bench up again. */
-    BlockPos lastTable;
+    /** The bench the last craft set down, for a caller that takes it again at once; null when none was. */
+    BlockPos benchSetDown;
     /** The bench is taken up again at once: a cell that shuts the way back for that while is a last resort, not a refusal. */
     boolean takenUpAtOnce;
 
@@ -57,8 +57,7 @@ final class CompanionPlacement {
                 || !serverLevel.setBlock(tablePosition, Blocks.CRAFTING_TABLE.defaultBlockState(), 3))) {
             return recordActionResult(CompanionActionResult.failed("Не нашёл свободное безопасное место для верстака. Материалы сохранены."));
         }
-        lastTable = tablePosition == null ? null : tablePosition.immutable();
-        if (tablePosition != null) c.rememberPlaced(tablePosition);
+        if (tablePosition != null) { c.rememberPlaced(tablePosition); benchSetDown = tablePosition.immutable(); }
         if (tablePosition != null && fieldBench) c.fieldBenches.add(tablePosition.immutable());
         for (int slot = 0; slot < c.companionInventory.size(); slot++) c.companionInventory.set(slot, plan.inventory().get(slot).copy());
         if (tablePosition != null) dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed",
@@ -166,7 +165,7 @@ final class CompanionPlacement {
         return null;
     }
 
-    private BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
+    BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
         BlockState state = block.defaultBlockState();
         int returnHeight = CompanionMiningNavigation.provenReturnHeight(c);
         BlockPos shutting = null;

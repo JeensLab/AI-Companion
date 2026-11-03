@@ -31,7 +31,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private static final int DIG_RETREAT_SECONDS = 360;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds");
+            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "walk_heading");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
@@ -273,6 +273,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         if ("dig_for_diamonds".equals(action.type())) return WORK_LIMIT_SECONDS + DIG_RETREAT_SECONDS;
         // A safety net over the server's own deadline of a collection (CompanionFurnaceBatches.collectDeadline): the cooking left, a refuel, the walk.
         if ("collect_smelt".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * 64 + 120 + 180;
+        // A walk until «стоп» ends on the server by its own bound (CompanionCourse.LIMIT_SECONDS).
+        if ("walk_heading".equals(action.type())) return dev.aicompanion.entity.CompanionCourse.LIMIT_SECONDS + 120;
         // Iron tools and gold or diamonds without an iron pickaxe: ore, furnace and bench in one order, each stage with its
         // own time on the server (review 22.10, М5); the client waits for all of them.
         var kind = "mine_ore".equals(action.type()) ? dev.aicompanion.entity.CompanionOre.Kind.of(action.item()) : null;

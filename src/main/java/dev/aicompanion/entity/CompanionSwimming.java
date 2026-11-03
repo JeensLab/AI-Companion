@@ -10,10 +10,25 @@ final class CompanionSwimming {
 
     CompanionSwimming(CompanionEntity c) { this.c = c; }
 
+    /**
+     * The game's float lifts a mob that has more than half a block of water on him, so in water to the knee he bobbed, out of reach
+     * and sight of the block he was mining (a stone or ore at the water took a thousand ticks of restarted cracks). Like a player he
+     * wades one block of water standing on the floor, and floats from the second on. It holds no flag: with JUMP it took the goals
+     * of the work from him in deep water, and an order there (a flooded tunnel, ore beyond it) stood and never ticked.
+     */
+    static final class WadingFloatGoal extends net.minecraft.world.entity.ai.goal.FloatGoal {
+        private final CompanionEntity c;
+        WadingFloatGoal(CompanionEntity c) { super(c); this.c = c; setFlags(java.util.EnumSet.noneOf(Flag.class)); }
+        @Override public boolean canUse() { return c.isInLava() || c.isInWater() && c.getFluidHeight(FluidTags.WATER) > 1.0; }
+    }
+
     /** Nodes of deep water at his level he must still have ahead for the fast stroke; the last of the way is an ordinary one. */
     private static final int FAST_STROKE_AHEAD = 3;
     /** The fast stroke is held a few ticks more, as a player keeps Ctrl held: see stroke(). */
     private int fastStrokeUntil;
+    /** Fallen behind a player swimming at the ordinary stroke, he catches up with the fast one to this many blocks. */
+    private static final int CAUGHT_UP = 6;
+    private boolean catchingUp;
 
     /**
      * A long way through deep water like a player holding Ctrl: sprinting, lying flat. The water then holds him back less (0.9
@@ -22,7 +37,15 @@ final class CompanionSwimming {
      */
     void stroke() {
         var path = c.getNavigation().getPath();
-        boolean ahead = c.isInWater() && swimAhead(path);
+        // After a player swimming at the ordinary stroke, the ordinary stroke too, unless fallen far behind (as on foot: CompanionTravel
+        // runs only after a sprinting player or a far one). The fast one caught him up in seconds, he stood up at the player's heels
+        // and lay down again as the player swam on (issue 58). Once catching up, he keeps on until close: his ordinary stroke is a
+        // little slower than the player's, and at the edge of «far» he lay down and stood up again every second.
+        var player = c.getOwnerPlayer();
+        BlockPos followed = player != null && c.travel().follows(player.blockPosition()) ? player.blockPosition() : null;
+        catchingUp = followed != null && (c.travel().running() || catchingUp && c.distanceToSqr(player) > CAUGHT_UP * CAUGHT_UP);
+        boolean paced = followed != null && c.level().getFluidState(followed).is(FluidTags.WATER) && !player.isSprinting() && !catchingUp;
+        boolean ahead = c.isInWater() && !paced && swimAhead(path, followed);
         if (ahead) fastStrokeUntil = c.tickCount + 5;
         // Between two routes (one ends, the next comes a tick later), or bobbed out of the water by the float for a tick: still the
         // same swim, not a stop (28.10: else he stood up and lay down again there). A route taken away («стой», the player
@@ -40,12 +63,16 @@ final class CompanionSwimming {
         if (fast && c.isInWater()) c.setDeltaMovement(c.getDeltaMovement().add(0, -c.getGravity() / 16 / .8, 0));
     }
 
-    private boolean swimAhead(Path path) {
+    /** {@code followed}: where the player he follows is now, or null. */
+    private boolean swimAhead(Path path, BlockPos followed) {
         if (path == null || path.isDone()) return false;
         int ahead = Math.min(path.getNodeCount(), path.getNextNodeIndex() + FAST_STROKE_AHEAD);
         // A route the search cut short goes on from its end (water costs the search more, and its steps ran out after fourteen
         // blocks of the pool in the tests): only the real end of the way slows him down.
-        if (ahead - path.getNextNodeIndex() < FAST_STROKE_AHEAD && path.canReach()) return false;
+        // A route to where the player was is not the end either while he swims on past it (issue 58: else Oleg stood up at every
+        // old route's end and lay down on the next, over and over).
+        if (ahead - path.getNextNodeIndex() < FAST_STROKE_AHEAD && path.canReach()
+                && (followed == null || followed.distSqr(path.getTarget()) <= FAST_STROKE_AHEAD * FAST_STROKE_AHEAD)) return false;
         for (int index = path.getNextNodeIndex(); index < ahead; index++) {
             BlockPos node = path.getNodePos(index);
             // Two blocks deep at least: in water to the knees a player stands, and his eyes over it never start the swim.

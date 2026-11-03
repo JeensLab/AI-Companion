@@ -144,7 +144,7 @@ final class CompanionMoves {
     private Node cell(int x, int y, int z, int up, double floor, Direction d) {
         if (eval.floorAt(x, y, z) - floor > Math.max(1.125, mob.maxUpStep())) return null;
         PathType type = eval.typeAt(x, y, z);
-        float malus = mob.getPathfindingMalus(type);
+        float malus = eval.malusAt(type, x, y, z);
         // The game calls a cell with a block of partial shape open (an azalea's leaves are a plate over a stem); a cell his body does not fit in is a wall.
         boolean filled = type == PathType.WALKABLE && filled(x, y, z);
         Node node = malus >= 0 && !filled ? eval.mark(x, y, z, type, malus) : null;
@@ -225,7 +225,7 @@ final class CompanionMoves {
             // A fall onto a ladder or vine is held there: he takes hold, and a climber's fall distance is reset.
             if (type == PathType.OPEN && eval.climbableAt(x, i, z) && y - i <= LAND_DROP) return eval.mark(x, i, z, PathType.OPEN, 0);
             if (type == PathType.OPEN) continue;
-            float malus = mob.getPathfindingMalus(type);
+            float malus = eval.malusAt(type, x, i, z);
             return malus < 0 || (y - i > LAND_DROP && type != PathType.WATER) || type == PathType.WALKABLE && filled(x, i, z) ? null : eval.mark(x, i, z, type, malus);
         }
         return null;

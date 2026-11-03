@@ -8,7 +8,6 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.List;
@@ -122,7 +121,7 @@ final class CompanionGathering {
         BlockState state = serverLevel.getBlockState(pos);
         if (!state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)) return false;
         ItemStack tool = c.getMainHandItem();
-        var drops = Block.getDrops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
+        var drops = CompanionTools.drops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
         if (!canStoreDrops(drops)) return false;
         if (!serverLevel.destroyBlock(pos, false, c, 512)) return false;
         tool.getItem().mineBlock(tool, serverLevel, state, pos, c);
@@ -139,7 +138,7 @@ final class CompanionGathering {
         if (!CompanionMiningNavigation.preservesAutonomousReturn(c, pos)) return false;
         if (ground != CompanionGround.FLINT) c.selectToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
-        var drops = Block.getDrops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
+        var drops = CompanionTools.drops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
         if (!canStoreDrops(drops)) return false;
         if (!serverLevel.destroyBlock(pos, false, c, 512)) return false;
         tool.getItem().mineBlock(tool, serverLevel, state, pos, c);

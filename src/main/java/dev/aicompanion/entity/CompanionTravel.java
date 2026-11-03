@@ -81,6 +81,11 @@ final class CompanionTravel {
     BlockPos goal() { return goal; }
     /** He is to sprint now (the swimming stroke applies it every tick, together with the fast swim). */
     boolean running() { return owner.tickCount < runUntil; }
+    /**
+     * The walk follows the player there (not a mob being hunted, a portal, a place of work); the goal is where the player was
+     * at the last step, a tick ago.
+     */
+    boolean follows(BlockPos player) { return following && goal != null && goal.distSqr(player) <= 4; }
     /** The last step was only waiting for a search: he stands and the order's stall time goes on. */
     boolean searchOnly() { return searchOnly; }
     /** The walk ended where its caller needed it (the goal's level, not its distance): told as arrived, then over. */

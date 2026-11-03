@@ -429,7 +429,7 @@ final class CompanionFarming {
 
     /** Breaks a plant with the hand: the drops fall into the world to be picked up. False when the bag could not take them. */
     private boolean pluck(ServerLevel level, BlockPos cell, BlockState state) {
-        var drops = Block.getDrops(state, level, cell, null, w.owner, w.owner.getMainHandItem());
+        var drops = CompanionTools.drops(state, level, cell, null, w.owner, w.owner.getMainHandItem());
         if (!drops.isEmpty() && !w.items.canStore(drops)) { bagFull = true; return false; }
         w.clearCracks();
         level.destroyBlock(cell, false, w.owner, 512);

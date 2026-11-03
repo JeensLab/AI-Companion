@@ -31,7 +31,7 @@ final class CompanionQuarry {
             if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
             for (int dy : new int[]{0, -1, 1, -2, 2}) {
                 BlockPos start = origin.offset(dx, dy, dz);
-                if (!CompanionMiningNavigation.standable(owner, start) || !diggable(level.getBlockState(start.below()))) continue;
+                if (!CompanionMiningNavigation.standable(owner, start) || !level.getFluidState(start).isEmpty() || !diggable(level.getBlockState(start.below()))) continue;
                 if (owner.autonomy().running() && !CompanionMiningNavigation.canWalkBackUp(owner, start, owner.autonomy().center().getY())) continue;
                 for (Direction direction : Direction.Plane.HORIZONTAL) {
                     List<BlockPos> cells = new ArrayList<>();
@@ -76,6 +76,7 @@ final class CompanionQuarry {
 
     static boolean diggable(BlockState state) { return soil(state) || CompanionWork.isStone(state); }
     static boolean soil(BlockState state) { return state.is(Blocks.DIRT) || state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.COARSE_DIRT) || state.is(Blocks.ROOTED_DIRT); }
+    /** Not next to any liquid: the stairs he digs would flood, and a player does not dig them there (water he walks through is another matter, see CompanionOre). */
     static boolean safeCell(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || level.isOutsideBuildHeight(pos)) return false;
         if (CompanionLighting.supportsLight(level, pos)) return false;

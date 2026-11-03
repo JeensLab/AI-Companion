@@ -8,7 +8,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -187,7 +186,7 @@ final class CompanionHandOver {
         w.owner.workStatus(status);
         if (!w.breaking.tick(level, pos)) return Taking.WORKING;
         ItemStack tool = w.owner.getMainHandItem();
-        var drops = Block.getDrops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);
+        var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), w.owner, tool);
         if (!w.items.canStore(drops)) return Taking.FULL;
         if (!level.destroyBlock(pos, false, w.owner, 512)) return Taking.WORKING;
         tool.getItem().mineBlock(tool, level, state, pos, w.owner);

@@ -20,13 +20,11 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -137,6 +135,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionCreeperGuard creeperGuard = new CompanionCreeperGuard(this);
+    final CompanionBreath breath = new CompanionBreath(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     BlockPos movementIntent;
@@ -206,7 +205,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean placedByMe(BlockPos pos) { return places.placedByCompanion(pos); }
     /** Blocks of this kind he set down himself, as remembered. */
     List<BlockPos> placedByMe(String block) { return places.placed(block); }
-    /** While a deed of his own runs: only his own chests and furnaces, never the player's. */
+    /** While a deed of his own runs: only his own chests and furnaces, of the player's only an idle empty furnace. */
     boolean ownPlacesOnly() { return autonomy.running(); }
     /** Autonomous targets stay within the remembered work area. */
     boolean leashAllows(BlockPos pos) {
@@ -327,11 +326,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
         // Before the float and the guard (0): a goal of an equal priority does not push a running one out, and the guard may hold the turn in lava.
         this.goalSelector.addGoal(-1, new CompanionLavaExit(this));
-        this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
+        this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(1, new CompanionWaterExit(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
@@ -363,7 +363,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true) && !combat.unarmedOnTask(); }
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
-        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Monster.class, 10,
+        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
                 true, false, target -> protecting ? combat.isThreateningOwner(target) : combat.comesForOwner(target)));
         // Who flies is out of the blade's reach: only with a bow (ghasts, phantoms).
         this.targetSelector.addGoal(2, new CompanionArchery.FlierTargetGoal(this));
@@ -865,7 +865,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
         // A fight for the player does not lead away from him: guard order, or any monster outside a hunt and outside his mine.
-        var guardedOwner = (protecting || !work.isHunting() && getTarget() instanceof Monster) && !work.expedition.underground() ? getOwnerPlayer() : null;
+        var guardedOwner = (protecting || !work.isHunting() && CompanionCombat.hostile(getTarget())) && !work.expedition.underground() ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && distanceToSqr(guardedOwner) > 16 * 16
                 && getTarget().distanceToSqr(guardedOwner) > 14 * 14) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);

@@ -63,6 +63,61 @@ public final class CompanionRavineTests {
     }
 
     /**
+     * Issues 65 and 69 (stream 01.11, 1:05:17 and 1:27:43): with no pickaxe he broke stone by hand and cobblestone fell out, then
+     * he stacked it under his feet to climb. Stone broken by hand gives nothing, as for a player: he still cuts the steps.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1400)
+    public static void stoneCutByHandUpTheRavineWallDropsNothing(GameTestHelper h) {
+        ravine(h);
+        CompanionEntity companion = spawn(h, 16, 3, 16);
+        companion.setFollowing(true);
+        h.onEachTick(() -> {
+            h.assertTrue(count(companion, Items.COBBLESTONE) == 0, "Cobblestone in the bag from stone broken by hand");
+            h.assertTrue(h.getEntities(net.minecraft.world.entity.EntityType.ITEM).stream().noneMatch(item -> item.getItem().is(Items.COBBLESTONE)),
+                    "Cobblestone fell out of stone broken by hand");
+        });
+        h.runAtTickTime(1200, () -> {
+            int cut = 0;
+            for (int x : new int[]{14, 18}) for (int y = 2; y < TOP - 3; y++) for (int z = 8; z <= 28; z++) if (h.getBlockState(new BlockPos(x, y, z)).isAir()) cut++;
+            h.assertTrue(cut > 0, "No stone of the wall was cut: the hand path was not exercised");
+            h.succeed();
+        });
+    }
+
+    /**
+     * After issue 65: down the ravine with no pickaxe he cut the steps by hand, some 7.5 s a stone, with logs in the bag. A player
+     * makes a wooden pickaxe first, setting a bench down for it and taking it again: two logs of planks, the bench in the bag.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void withLogsButNoPickaxeHeMakesOneToCutTheSteps(GameTestHelper h) {
+        pickaxeMadeInTheRavine(h, false);
+    }
+
+    /** Cobblestone in the bag too: still a wooden pickaxe (the stone may be the work's), and no failed craft among his deeds. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void withCobblestoneTooThePickaxeIsAWoodenOne(GameTestHelper h) {
+        pickaxeMadeInTheRavine(h, true);
+    }
+
+    private static void pickaxeMadeInTheRavine(GameTestHelper h, boolean cobblestone) {
+        ravine(h);
+        CompanionEntity companion = spawn(h, 16, 3, 16);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 4));
+        if (cobblestone) companion.setItem(1, new ItemStack(Items.COBBLESTONE, 3));
+        companion.setFollowing(true);
+        h.succeedWhen(() -> {
+            h.assertTrue(count(companion, Items.STONE_PICKAXE) == 0 && !companion.getDeedsForAi().contains("Не могу сделать"),
+                    "Stone pickaxe or a failed craft: " + companion.getStoredItemsSummary() + " / " + companion.getDeedsForAi());
+            h.assertTrue(companion.getY() >= h.absolutePos(new BlockPos(0, TOP + 1, 0)).getY() - .01, "Still down in the ravine at "
+                    + h.relativePos(companion.blockPosition()) + ": " + companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.WOODEN_PICKAXE) == 1, "No pickaxe made: " + companion.getStoredItemsSummary());
+            h.assertTrue(count(companion, Items.CRAFTING_TABLE) == 1, "The bench was not taken again: " + companion.getStoredItemsSummary());
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(30, TOP, 30)))
+                h.assertTrue(!h.getBlockState(pos).is(Blocks.CRAFTING_TABLE), "A bench left at " + pos);
+        });
+    }
+
+    /**
      * Stone below, soil above it, grass on top (y=TOP), bedrock border. A ravine three wide along x 15..17, z 8..28, its floor
      * at y=2: from the north end ledges three blocks apart lead down (one way: a mob jumps one block), its walls are sheer.
      * The player stands on the east edge.

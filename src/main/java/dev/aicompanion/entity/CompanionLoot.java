@@ -373,7 +373,7 @@ final class CompanionLoot {
         lastProgress = level.getGameTime();
         if (!leafBreaking.tick(level, leaf)) return;
         var tool = owner.getMainHandItem();
-        var drops = net.minecraft.world.level.block.Block.getDrops(state, level, leaf, null, owner, tool);
+        var drops = CompanionTools.drops(state, level, leaf, null, owner, tool);
         if (owner.canStoreDrops(drops) && level.destroyBlock(leaf, false, owner, 512)) owner.dropHarvest(leaf, drops);
         leafBreaking.reset(); leaf = null; path = null; nextRoute = 0;
     }
