@@ -450,10 +450,14 @@ public final class CompanionAutonomy {
 
     /** What he tells on his own account, outside the pause between remarks: the outcome of a batch he went for. */
     void report(String text) {
-        said.add(text);
+        // Said aloud: the gist, not the places and the bag (issue 61). The status the model reads and the journal keep the whole text,
+        // so «где?» still has an answer: where his things or the product were left.
+        String spoken = dev.aicompanion.client.CompanionDialogue.speakable(text);
+        said.add(spoken);
         while (said.size() > 16) said.removeFirst();
-        event("autonomy_said", "text", text);
-        owner.autonomySay(text);
+        event("autonomy_said", "text", spoken, "full", text);
+        owner.autonomySay(spoken, false);
+        owner.workStatus(text);
     }
 
     private void event(String name, Object... fields) {
