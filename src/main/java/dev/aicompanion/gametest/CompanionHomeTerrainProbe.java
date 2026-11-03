@@ -40,7 +40,7 @@ import net.neoforged.neoforge.event.level.BlockEvent;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
 /**
  * Trips of Oleg over generated terrain in a disposable normal world: a real player on the integrated server, real chunks loading and
@@ -50,7 +50,8 @@ import java.util.function.Supplier;
 public final class CompanionHomeTerrainProbe {
     private static final int SCENE_SPACING = 700, SETTLE_TICKS = 100, TIMEOUT_TICKS = 20 * 240, CLIENT_STEP = 20, MAX_UNLOADED = 30, SITE_TRIES = 3, MAX_RISE = 12;
 
-    private record Plan(Runnable order, Supplier<String> verdict) { }
+    /** The verdict is handed the Oleg there is now: a reload of his chunk makes a new entity, and the one set up for the scene is left behind. */
+    private record Plan(Runnable order, Function<CompanionEntity, String> verdict) { }
     private static final class NoGround extends IllegalStateException { NoGround(String message) { super(message); } }
     private interface Scene { Plan prepare(ServerLevel level, ServerPlayer player, CompanionEntity oleg, BlockPos base); }
     private record Named(String name, Scene scene) { }
@@ -157,7 +158,7 @@ public final class CompanionHomeTerrainProbe {
                 boolean busy = oleg.isWorking() || oleg.isGatheringTask();
                 boolean timedOut = now - orderedAt > TIMEOUT_TICKS;
                 if ((busy || now - orderedAt < 40) && !timedOut) return;
-                String verdict = timedOut ? "timed out at " + oleg.blockPosition() : plan.verdict.get();
+                String verdict = timedOut ? "timed out at " + oleg.blockPosition() : plan.verdict.apply(oleg);
                 AICompanionMod.LOGGER.info("HOME_TERRAIN_SCENE: {} {} ticks={} from={} walked={} oleg={} said=[{}]{}", current.name, verdict == null ? "PASS" : "FAIL", now - orderedAt,
                         start.toShortString(), (int)Math.sqrt(start.distSqr(oleg.blockPosition())), oleg.blockPosition().toShortString(), oleg.getLastTaskResult(), verdict == null ? "" : " why=" + verdict);
                 if (verdict != null) failed.add(current.name);
@@ -180,16 +181,16 @@ public final class CompanionHomeTerrainProbe {
     private static Plan mineChest(ServerLevel level, ServerPlayer player, CompanionEntity oleg, BlockPos base) {
         BlockPos chest = base.below(14);
         place(level, player, chest, Blocks.CHEST);
-        return new Plan(() -> { }, () -> oleg.getPlacesForAi().contains("дом на") ? "mine chest became a home: " + oleg.getPlacesForAi() : null);
+        return new Plan(() -> { }, now -> now.getPlacesForAi().contains("дом на") ? "mine chest became a home: " + now.getPlacesForAi() : null);
     }
 
     private static Plan walkToChest(ServerLevel level, ServerPlayer player, CompanionEntity oleg, BlockPos base, int from, int to) {
         BlockPos chest = spot(level, base, from, to);
         place(level, player, chest, Blocks.CHEST);
         oleg.setItem(0, new ItemStack(Items.COBBLESTONE, 7));
-        return new Plan(() -> order(player, "store_items", "stone", 1), () -> {
+        return new Plan(() -> order(player, "store_items", "stone", 1), now -> {
             int stored = level.getBlockEntity(chest) instanceof Container box ? count(box, Items.COBBLESTONE) : -1;
-            return oleg.didLastTaskSucceed() && stored == 7 ? null : "stored " + stored + " of 7 at " + chest.toShortString();
+            return now.didLastTaskSucceed() && stored == 7 ? null : "stored " + stored + " of 7 at " + chest.toShortString();
         });
     }
 
@@ -199,10 +200,10 @@ public final class CompanionHomeTerrainProbe {
         oleg.rememberPlaced(furnace);
         oleg.setItem(0, new ItemStack(Items.RAW_IRON, 2));
         oleg.setItem(1, new ItemStack(Items.COAL, 2));
-        return new Plan(() -> order(player, "smelt_items", "minecraft:raw_iron", 2), () -> {
+        return new Plan(() -> order(player, "smelt_items", "minecraft:raw_iron", 2), now -> {
             int ingots = 0;
-            for (int i = 0; i < oleg.getContainerSize(); i++) if (oleg.getItem(i).is(Items.IRON_INGOT)) ingots += oleg.getItem(i).getCount();
-            return oleg.didLastTaskSucceed() && ingots == 2 ? null : "ingots " + ingots + " of 2 from " + furnace.toShortString();
+            for (int i = 0; i < now.getContainerSize(); i++) if (now.getItem(i).is(Items.IRON_INGOT)) ingots += now.getItem(i).getCount();
+            return now.didLastTaskSucceed() && ingots == 2 ? null : "ingots " + ingots + " of 2 from " + furnace.toShortString();
         });
     }
 
@@ -216,7 +217,7 @@ public final class CompanionHomeTerrainProbe {
         order(player, "set_home", "", 1);
         oleg.setItem(0, new ItemStack(Items.CHEST));
         oleg.setItem(1, new ItemStack(Items.COBBLESTONE, 12));
-        return new Plan(() -> order(player, "store_items", "stone", 1), () -> {
+        return new Plan(() -> order(player, "store_items", "stone", 1), now -> {
             BlockPos at = null;
             for (BlockPos pos : BlockPos.betweenClosed(floor.offset(1, 1, 1), floor.offset(3, 1, 3))) if (level.getBlockState(pos).is(Blocks.CHEST)) at = pos.immutable();
             if (at == null) return "no chest inside the house at " + floor.toShortString();
@@ -234,9 +235,9 @@ public final class CompanionHomeTerrainProbe {
         order(player, "set_home", "", 1);
         oleg.setItem(0, new ItemStack(Items.CHEST));
         oleg.setItem(1, new ItemStack(Items.COBBLESTONE, 4));
-        return new Plan(() -> order(player, "store_items", "stone", 1), () -> {
-            if (!oleg.getLastTaskResult().contains("дойти не смог")) return "no reason named";
-            return around(level, oleg.blockPosition(), 8, Blocks.CHEST) == 1 ? null : "not one chest beside him";
+        return new Plan(() -> order(player, "store_items", "stone", 1), now -> {
+            if (!now.getLastTaskResult().contains("дойти не смог")) return "no reason named";
+            return around(level, now.blockPosition(), 8, Blocks.CHEST) == 1 ? null : "not one chest beside him";
         });
     }
 
@@ -247,9 +248,9 @@ public final class CompanionHomeTerrainProbe {
         order(player, "set_home", "", 1);
         oleg.setItem(0, new ItemStack(Items.CHEST));
         oleg.setItem(1, new ItemStack(Items.COBBLESTONE, 4));
-        return new Plan(() -> order(player, "store_items", "stone", 1), () -> {
-            if (!oleg.getLastTaskResult().contains("слишком далеко")) return "no reason named";
-            if (oleg.blockPosition().distManhattan(base) > 24) return "he left for the far home";
+        return new Plan(() -> order(player, "store_items", "stone", 1), now -> {
+            if (!now.getLastTaskResult().contains("слишком далеко")) return "no reason named";
+            if (now.blockPosition().distManhattan(base) > 24) return "he left for the far home";
             return around(level, base, 12, Blocks.CHEST) == 1 ? null : "not one chest on the spot";
         });
     }
