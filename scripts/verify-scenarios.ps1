@@ -1,5 +1,6 @@
 param([ValidateRange(1, 20)][int]$Repetitions = 1)
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false) # the child JVM writes UTF-8; without this `*>` garbles Cyrillic
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $reportDirectory = Join-Path $projectRoot 'build/diagnostics'
 New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null

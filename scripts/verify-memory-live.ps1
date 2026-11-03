@@ -1,5 +1,6 @@
 param([string]$ConfigPath,[switch]$AllowPaidRequests)
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false) # the child JVM writes UTF-8; without this `*>` garbles Cyrillic
 if(!$AllowPaidRequests){
     Write-Output 'SKIP: memory-live makes paid OpenRouter requests; pass -AllowPaidRequests explicitly to run it'
     exit 0

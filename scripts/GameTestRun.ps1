@@ -2,9 +2,23 @@
 $gameTestRoot=Split-Path -Parent $PSScriptRoot
 $gameTestReports=Join-Path $gameTestRoot 'build\diagnostics'
 New-Item -ItemType Directory -Path $gameTestReports -Force | Out-Null
+# `*>` decodes the child's output with the console code page; the scripts run as a child pwsh, so the setting does not outlive them.
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 
 function Write-GameTestSummary([string]$Name,$Value) {
     [IO.File]::WriteAllText((Join-Path $gameTestReports "$Name-summary.json"),(ConvertTo-Json -InputObject $Value -Depth 5),[Text.UTF8Encoding]::new($false))
+}
+
+function ConvertFrom-GameTestLog([string]$Output) {
+    $all=[regex]::Match($Output,'All (\d+) required tests passed')
+    $completeMatch=[regex]::Match($Output,'(\d+) GAME TESTS COMPLETE')
+    $failedMatch=[regex]::Match($Output,'(\d+) required tests failed')
+    $complete=if($completeMatch.Success){[int]$completeMatch.Groups[1].Value}else{0}
+    $failedCount=if($failedMatch.Success){[int]$failedMatch.Groups[1].Value}else{0}
+    $failed=@([regex]::Matches($Output,'LogTestReporter[^\r\n]*?\]: ([^\r\n]+) failed at') | ForEach-Object {$_.Groups[1].Value} | Select-Object -Unique)
+    # One failed test used to zero the whole run: without the All-line, passed is complete minus failed.
+    $passed=if($all.Success){[int]$all.Groups[1].Value}elseif($complete -gt 0 -and $failedCount -gt 0){$complete-$failedCount}else{0}
+    [ordered]@{ok=$all.Success;passed=$passed;complete=$complete;failedCount=$failedCount;failed=$failed;encodingBroken=$Output.Contains([string][char]0xFFFD)}
 }
 
 function Invoke-GameTestRun {
@@ -20,10 +34,9 @@ function Invoke-GameTestRun {
     $ErrorActionPreference='Continue'
     try { & ./gradlew.bat @gradleArgs *> $Log; $testExit=$LASTEXITCODE }
     finally { $ErrorActionPreference='Stop'; Pop-Location }
-    $output=[IO.File]::ReadAllText($Log)
-    $match=[regex]::Match($output,'All (\d+) required tests passed')
-    $failed=@([regex]::Matches($output,'LogTestReporter[^\r\n]*?\]: ([^\r\n]+) failed at') | ForEach-Object {$_.Groups[1].Value} | Select-Object -Unique)
-    [ordered]@{exitCode=$testExit;passed=if($match.Success){[int]$match.Groups[1].Value}else{0};failed=$failed;seconds=[math]::Round(((Get-Date)-$started).TotalSeconds,2);log=$Log}
+    $parsed=ConvertFrom-GameTestLog ([IO.File]::ReadAllText($Log))
+    if($parsed.encodingBroken){Write-Warning "U+FFFD in ${Log}: log encoding is broken"}
+    [ordered]@{exitCode=$testExit;ok=$parsed.ok;passed=$parsed.passed;complete=$parsed.complete;failedCount=$parsed.failedCount;failed=$parsed.failed;encodingBroken=$parsed.encodingBroken;seconds=[math]::Round(((Get-Date)-$started).TotalSeconds,2);log=$Log}
 }
 
 function Invoke-GameTestSeries {
@@ -34,7 +47,13 @@ function Invoke-GameTestSeries {
         $run.Insert(0,'iteration',$iteration)
         $runs+=$run
         Write-GameTestSummary "$Name-targeted" @($runs)
-        if($run.exitCode -ne 0 -or !$run.passed){Get-Content -LiteralPath $run.log -Tail 45;throw "$Label verification failed: $($run.log)"}
+        if($run.exitCode -ne 0 -or -not $run.ok){
+            foreach($name in $run.failed){Write-Output "FAILED $name"}
+            if($run.failedCount -gt 0){Write-Output "$($run.failedCount) required tests failed"}
+            # The tail only helps when the server died before reporting; with a reported failure the cause is the test name.
+            if(@($run.failed).Count -eq 0){Get-Content -LiteralPath $run.log -Tail 45}
+            throw "$Label verification failed: $($run.log)"
+        }
         Write-Output "$Label run $iteration passed: $($run.passed)"
     }
 }
