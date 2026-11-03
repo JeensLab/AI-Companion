@@ -124,16 +124,17 @@ final class CompanionExpeditionDig {
         return done();
     }
 
-    private static final Set<Item> SEALING_ROCK = Set.of(Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF);
+    /** In the order of {@link CompanionSeal}'s preference, the best first. */
+    private static final List<Item> SEALING_ROCK = List.of(Items.TUFF, Items.ANDESITE, Items.DIORITE, Items.GRANITE);
 
     /** What he can do without when the bag is full, the most useless first: rubble, what mobs leave, raw copper, wooden tools worn out by the stone ones. */
     private static final List<Set<Item>> SPARE = List.of(
             Set.of(Items.DIRT, Items.COARSE_DIRT, Items.ROOTED_DIRT, Items.GRAVEL, Items.SAND, Items.NETHERRACK),
             Set.of(Items.ROTTEN_FLESH, Items.BONE, Items.SPIDER_EYE), Set.of(Items.RAW_COPPER), Set.of(Items.WOODEN_PICKAXE, Items.WOODEN_SHOVEL));
 
-    /** Tuff and the other stones seal like cobblestone, so they are rubble only once the bag holds more than {@link #SEAL_RESERVE} sealing blocks. */
+    /** Tuff and the other stones seal like cobblestone, so a stack is rubble only when the bag keeps {@link #SEAL_RESERVE} sealing blocks without it. */
     private boolean surplusRock(ItemStack stack) {
-        return SEALING_ROCK.contains(stack.getItem()) && CompanionSeal.available(owner) > SEAL_RESERVE;
+        return SEALING_ROCK.contains(stack.getItem()) && CompanionSeal.available(owner) - stack.getCount() >= SEAL_RESERVE;
     }
 
     /** A slot for a drop that has none (a diamond): the most spare stack is thrown out as a real item in the world. False when nothing in the bag is spare. */
@@ -143,6 +144,10 @@ final class CompanionExpeditionDig {
             for (int r = 0; r < rank; r++) {
                 if (SPARE.get(r).contains(owner.getItem(i).getItem()) || r == 0 && surplusRock(owner.getItem(i))) { slot = i; rank = r; break; }
             }
+        }
+        // Ore wins over the seal reserve: with nothing else to throw, the least preferred sealing rock goes.
+        for (int k = SEALING_ROCK.size() - 1; slot < 0 && k >= 0; k--) {
+            for (int i = 0; i < owner.getContainerSize(); i++) if (owner.getItem(i).is(SEALING_ROCK.get(k))) { slot = i; break; }
         }
         if (slot < 0) return false;
         ItemStack thrown = owner.getItem(slot);
@@ -204,9 +209,12 @@ final class CompanionExpeditionDig {
     /** A diamond ore with an open face within {@code radius} of his feet: one he has seen, as the ore search sees it, not through the rock. */
     boolean diamondInSight(ServerLevel level, int radius) {
         BlockPos feet = owner.blockPosition();
+        net.minecraft.world.phys.Vec3 eye = owner.getEyePosition();
         for (BlockPos pos : BlockPos.betweenClosed(feet.offset(-radius, -radius, -radius), feet.offset(radius, radius, radius))) {
             if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(BlockTags.DIAMOND_ORES)) continue;
-            for (Direction side : Direction.values()) if (CompanionShaftPlan.open(level, pos.relative(side))) return true;
+            for (Direction side : Direction.values()) {
+                if (CompanionShaftPlan.open(level, pos.relative(side)) && CompanionMiningNavigation.visible(owner, eye, pos)) return true;
+            }
         }
         return false;
     }

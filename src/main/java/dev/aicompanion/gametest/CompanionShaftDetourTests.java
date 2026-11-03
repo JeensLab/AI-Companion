@@ -34,7 +34,7 @@ import java.util.Set;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionShaftDetourTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TUFF_FROM = 12, TUFF_TO = 16, TIMEOUT = 12000, UNKILLABLE = 1024;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TUFF_FROM = 12, TUFF_TO = 16, GEODE_Z = 17, GEODE_HEIGHT = 5, TIMEOUT = 12000, UNKILLABLE = 1024;
     private static final String FLOOR_REFUSAL = "неустойчив";
 
     /** A 7x7x5 empty dungeon under the stairs: the steps that fall into it have no floor, he lays one block after another down to the dungeon's bottom. */
@@ -105,6 +105,17 @@ public final class CompanionShaftDetourTests {
         mountain(h);
         Block[] mix = {Blocks.TUFF, Blocks.CALCITE, Blocks.SMOOTH_BASALT};
         for (int x = 1; x < SIZE - 1; x++) for (int z = 1; z < SIZE - 1; z++) for (int y = TUFF_FROM; y <= TUFF_TO; y++) h.setBlock(new BlockPos(x, y, z), mix[(x + y + z) % mix.length]);
+        // A geode on each side of the column: hollow inside, amethyst around it. Amethyst is never dug and the hollows are avoided like caves.
+        BlockPos[] amethyst = new BlockPos[GEODE_HEIGHT * 2];
+        for (int y = 0; y < GEODE_HEIGHT; y++) {
+            int at = TUFF_FROM + y;
+            h.setBlock(new BlockPos(CENTER - 1, at, GEODE_Z), Blocks.BUDDING_AMETHYST);
+            h.setBlock(new BlockPos(CENTER + 1, at, GEODE_Z), Blocks.AMETHYST_BLOCK);
+            h.setBlock(new BlockPos(CENTER - 2, at, GEODE_Z), Blocks.AIR);
+            h.setBlock(new BlockPos(CENTER + 2, at, GEODE_Z), Blocks.AIR);
+            amethyst[y] = new BlockPos(CENTER - 1, at, GEODE_Z);
+            amethyst[GEODE_HEIGHT + y] = new BlockPos(CENTER + 1, at, GEODE_Z);
+        }
         CompanionEntity c = rig(h);
         // No cobblestone to start with: the tuff dug on the way is what the bag can seal with.
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.COBBLESTONE)) c.setItem(slot, ItemStack.EMPTY);
@@ -115,6 +126,10 @@ public final class CompanionShaftDetourTests {
             h.assertTrue(count(c, Items.DIAMOND) >= 1 && result.success(), "No diamond through the tuff layer: " + report(c));
             for (BlockPos stand : c.mineSite().stands()) h.assertTrue(stand.getX() == column, "Turned off the column at " + stand.toShortString() + " | " + report(c));
             h.assertTrue(count(c, Items.TUFF) >= 1, "No tuff kept for sealing: " + report(c));
+            for (BlockPos pos : amethyst) {
+                var state = h.getBlockState(pos);
+                h.assertTrue(state.is(Blocks.BUDDING_AMETHYST) || state.is(Blocks.AMETHYST_BLOCK), "Amethyst dug at " + pos.toShortString() + " | " + report(c));
+            }
         });
     }
 
