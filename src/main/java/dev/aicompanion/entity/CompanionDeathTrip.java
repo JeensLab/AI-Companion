@@ -104,7 +104,8 @@ public final class CompanionDeathTrip {
                 // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
                 var entered = c.portals.enter(level);
                 if (!entered.success()) continue;
-                data.attempted(c.getOwnerId(), level.dimension(), place.pos());
+                // Charged against the place's own dimension, or the record is never found and the try is lost.
+                data.attempted(c.getOwnerId(), place.dimension(), place.pos());
                 spot = place;
                 crossing = true;
                 waited = 0;
