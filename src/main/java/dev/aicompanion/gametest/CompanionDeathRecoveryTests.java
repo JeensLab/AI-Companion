@@ -189,6 +189,112 @@ public final class CompanionDeathRecoveryTests {
         }).thenSucceed();
     }
 
+    /** Two falls with things worth having: the dearer first, then the next one without going back to the player. */
+    @GameTest(template = "empty")
+    public static void bothPlacesAreFetchedOneAfterAnother(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos dear = companion.blockPosition().offset(-2, 0, 0);
+        BlockPos cheap = companion.blockPosition().offset(2, 0, 0);
+        var dearItems = belonging(h, dear, new ItemStack(Items.DIAMOND, 6), companion.getOwnerId());
+        var cheapItems = belonging(h, cheap, new ItemStack(Items.IRON_INGOT, 6), companion.getOwnerId());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), dear, 60, 0);
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), cheap, 18, 1);
+        h.startSequence().thenExecute(() -> {
+            StringBuilder trace = new StringBuilder();
+            for (int tick = 0; tick < 1200 && !CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(); tick++) {
+                if (!companion.deathTrip.active() && companion.deathTrip.begin())
+                    trace.append("set out: ").append(companion.deathTrip.describe()).append("; ");
+                companion.tick();
+            }
+            h.assertTrue(dearItems.isRemoved() || dearItems.getItem().isEmpty(),
+                    "The dearer place was not fetched: " + dearItems.getItem() + " | " + trace + " | at " + companion.blockPosition());
+            h.assertTrue(cheapItems.isRemoved() || cheapItems.getItem().isEmpty(), "The cheaper place was left behind: " + cheapItems.getItem());
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
+                    "A place is still remembered after both walks");
+        }).thenSucceed();
+    }
+
+    /** A new fall while he walks to an old one is taken up after the walk he is on, not forgotten. */
+    @GameTest(template = "empty")
+    public static void aNewFallDuringTheWalkIsTakenUpAfterwards(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos first = companion.blockPosition().offset(3, 0, 0);
+        BlockPos second = companion.blockPosition().offset(-3, 0, 0);
+        var firstItems = belonging(h, first, new ItemStack(Items.DIAMOND, 4), companion.getOwnerId());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), first, 40, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out");
+            var secondItems = belonging(h, second, new ItemStack(Items.IRON_INGOT, 8), companion.getOwnerId());
+            CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), second, 24, 1);
+            for (int tick = 0; tick < 1200 && !CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(); tick++) {
+                if (!companion.deathTrip.active()) companion.deathTrip.begin();
+                companion.tick();
+            }
+            h.assertTrue(firstItems.isRemoved() || firstItems.getItem().isEmpty(), "The first place was not fetched");
+            h.assertTrue(secondItems.isRemoved() || secondItems.getItem().isEmpty(), "The new fall was forgotten: " + secondItems.getItem());
+        }).thenSucceed();
+    }
+
+    /** Dying on the way back with things on him: the walk stops and the new place is remembered for later. */
+    @GameTest(template = "empty")
+    public static void dyingOnTheWalkRemembersTheNewPlace(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(30, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        companion.setItem(0, new ItemStack(Items.DIAMOND, 3));
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out");
+            for (int tick = 0; tick < 40; tick++) companion.tick();
+            companion.hurt(h.getLevel().damageSources().generic(), 1000);
+            h.assertTrue(!companion.deathTrip.active(), "The walk survived his own death");
+            var spots = CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId());
+            h.assertTrue(spots.size() >= 2, "The new fall was not remembered: " + spots.size());
+        }).thenSucceed();
+    }
+
+    /** Only what survived counts: a pile that burned down to dirt is not worth a walk, however dear it was. */
+    @GameTest(template = "empty")
+    public static void onlyWhatSurvivedCounts(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(8, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIRT, 12), companion.getOwnerId());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 40, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(!companion.deathTrip.begin(), "He walked for what burned down to dirt");
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
+                    "A place worth nothing now is still remembered");
+        }).thenSucceed();
+    }
+
+    /** A little of it left is still not a walk: the price is what lies there now, not what fell. */
+    @GameTest(template = "empty")
+    public static void aLittleSurvivedIsNotWalkedTo(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(8, 0, 0);
+        belonging(h, place, new ItemStack(Items.IRON_INGOT, 1), companion.getOwnerId());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 40, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(!companion.deathTrip.begin(), "He walked for a single ingot out of a dear pile");
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
+                    "A place worth too little now is still remembered");
+        }).thenSucceed();
+    }
+
+    /** Another dimension is crossed only for a place that is really dear, and only when there is a portal to cross by. */
+    @GameTest(template = "empty")
+    public static void anotherDimensionNeedsAPortalAndAWorthwhilePlace(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition();
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), Level.NETHER, place, 40, 0);
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), Level.NETHER, place.offset(0, 0, 2), 8, 1);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(!companion.deathTrip.begin(), "He set out across dimensions with no portal");
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
+                    "A crossing that could not be made is still remembered");
+        }).thenSucceed();
+    }
+
     /** A place he cannot walk to at all — another dimension, the void — is dropped without a walk. */
     @GameTest(template = "empty")
     public static void unreachablePlacesAreDropped(GameTestHelper h) {

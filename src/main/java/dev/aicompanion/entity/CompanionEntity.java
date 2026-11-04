@@ -892,7 +892,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (!dead && !isRemoved() && level() instanceof ServerLevel) {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
-            work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel(); deathTrip.cancel(null);
+            work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel(); deathTrip.stop();
             double worth = CompanionBelongings.worth(this);
             boolean dropped = bag.dropBelongings() | playersThings.drop();
             // Every fall is remembered with its price; the walk back is decided when he is back on his feet.

@@ -28,6 +28,8 @@ public final class CompanionDeathTrip {
     private static final int WAIT_ON_ONE = 40;
     /** A second order inside this window means the player insists, and his own walk gives way. */
     private static final long INSIST_WINDOW = 20 * 20;
+    /** A place in another dimension is worth a crossing only for things that are really dear: a portal costs more. */
+    private static final double CROSS_WORTH = 20;
 
     private final CompanionEntity c;
     private CompanionDeathSpots.Spot spot;
@@ -37,6 +39,7 @@ public final class CompanionDeathTrip {
     private final Set<UUID> givenUpOn = new HashSet<>();
     private long refusedAt;
     private boolean refused;
+    private boolean crossing;
     private String lastLine = "";
 
     CompanionDeathTrip(CompanionEntity c) { this.c = c; }
@@ -60,11 +63,26 @@ public final class CompanionDeathTrip {
         List<CompanionDeathSpots.Spot> places = new ArrayList<>(data.all(c.getOwnerId()));
         places.sort(Comparator.comparingDouble(CompanionDeathSpots.Spot::worth).reversed());
         for (CompanionDeathSpots.Spot place : places) {
-            if (!place.dimension().equals(level.dimension())) { data.taken(c.getOwnerId(), place); continue; }
+            // Only what survived counts: burned, blown up or taken by a mob, the rest is priced as it lies now.
+            double left = survivingWorth(level, place);
+            if (left < CompanionBelongings.WORTH_GOING) { data.taken(c.getOwnerId(), place); continue; }
+            if (!place.dimension().equals(level.dimension())) {
+                if (left < CROSS_WORTH) { data.taken(c.getOwnerId(), place); continue; }
+                var entered = c.portals.enter(level);
+                if (!entered.success()) { data.taken(c.getOwnerId(), place); continue; }
+                spot = place;
+                crossing = true;
+                waited = 0;
+                standingOn = null;
+                givenUpOn.clear();
+                refused = false;
+                giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
+                say("Иду за своими вещами через портал: " + place.pos().toShortString() + ".");
+                return true;
+            }
             if (!reachable(level, place.pos())) { data.taken(c.getOwnerId(), place); continue; }
-            // Burned, blown up or picked up by a mob: nothing of his is left there, so the walk is not made.
-            if (his(level, place.pos()).isEmpty()) { data.taken(c.getOwnerId(), place); continue; }
             spot = place;
+            crossing = false;
             waited = 0;
             standingOn = null;
             givenUpOn.clear();
@@ -79,7 +97,13 @@ public final class CompanionDeathTrip {
     /** One tick of the walk: true while it goes on. */
     boolean tick() {
         if (spot == null) return false;
-        if (!(c.level() instanceof ServerLevel level)) { cancel("Место смерти в другом измерении."); return false; }
+        if (!(c.level() instanceof ServerLevel level)) return false;
+        if (crossing) {
+            if (level.dimension().equals(spot.dimension())) { crossing = false; say("Перешёл, иду к вещам."); return true; }
+            if (!c.portals.walking()) { cancel("Не смог перейти в другое измерение."); return false; }
+            if (level.getGameTime() > giveUpAt) { cancel("Портал не пустил."); return false; }
+            return true;
+        }
         if (level.getGameTime() > giveUpAt) { finish(level, "Не дошёл до всех своих вещей: дорога не пустила."); return false; }
         ItemEntity next = nearest(level);
         if (next == null) { finish(level, "Забрал свои вещи."); return false; }
@@ -126,6 +150,12 @@ public final class CompanionDeathTrip {
 
     public String refusalLine() { return "Сейчас только вещи заберу свои после смерти."; }
 
+    /** Stops the walk but keeps the place: he died on the way, and his things are still there. */
+    void stop() {
+        spot = null;
+        c.travel().reset();
+    }
+
     void cancel(String why) {
         if (spot != null && c.level().getServer() != null) CompanionDeathSpots.get(c.level().getServer()).taken(c.getOwnerId(), spot);
         spot = null;
@@ -143,6 +173,16 @@ public final class CompanionDeathTrip {
             if (distance < bestDistance) { bestDistance = distance; best = item; }
         }
         return best;
+    }
+
+    /** The price of what is still lying there now: a partly burned or stolen pile is worth what remains, not what fell. */
+    private double survivingWorth(ServerLevel level, CompanionDeathSpots.Spot place) {
+        ServerLevel there = place.dimension().equals(level.dimension()) ? level : level.getServer().getLevel(place.dimension());
+        // A place in a chunk nobody has loaded cannot be looked at: the record is trusted then.
+        if (there == null || !there.hasChunkAt(place.pos())) return place.worth();
+        double total = 0;
+        for (ItemEntity item : his(there, place.pos())) total += CompanionBelongings.worth(item.getItem());
+        return total;
     }
 
     /** What he dropped: the game tags every stack that falls off him with its owner, and nothing else counts. */
