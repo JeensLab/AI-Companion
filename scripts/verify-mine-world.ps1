@@ -1,7 +1,7 @@
 param(
     [string]$RunName=('mine-world-'+(Get-Date -Format 'yyyyMMdd-HHmmss')),
     [string]$Seed='20261031',
-    [string[]]$Scenarios=@('descent','void','void-2','void-3','void-4','void-5','lava','water','retreat','come','restart','deepdark')
+    [string[]]$Scenarios=@('descent','void','void-2','void-3','void-4','void-5','lava','mobs','water','retreat','come','restart','deepdark')
 )
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)

@@ -18,6 +18,7 @@ import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -26,8 +27,15 @@ import java.util.Arrays;
 import java.util.List;
 
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.mountain;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rel;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.report;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
+import static dev.aicompanion.gametest.CompanionMineFightTests.armed;
+import static dev.aicompanion.gametest.CompanionMineFightTests.chamber;
+import static dev.aicompanion.gametest.CompanionMineFightTests.creeper;
+import static dev.aicompanion.gametest.CompanionMineFightTests.place;
 
 /**
  * The shield against a creeper's blast: made in the preparation of the mine out of what the bag already holds (real ingot, real boards),
@@ -37,15 +45,151 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionShieldTests {
     private static final String BATCH = "shield";
-    private static final int PREPARE_TICKS = 2400, DESCENT_TICKS = 4800, SHIELD_BOARDS = 6;
+    private static final int STAND = 3, GAP = 2, FUSE_TICKS = 200, PREPARE_TICKS = 2400, DESCENT_TICKS = 4800, RAISE_TICKS = 8, LONG_FUSE = 30000, IGNITE_AFTER = 10, SHIELD_BOARDS = 6;
     /** The whole preparation from a bag without the iron pickaxe: ore, furnace, bench, trees, then the shield; and the iron outcrop's place on the grass. */
     private static final int FETCH_TICKS = 14000, ORE_X = CompanionDiamondGoalTests.CENTER + 3, ORE_Z = CompanionDiamondGoalTests.CENTER + 3, TREE_SPAN = 6, TRUNK = 5;
     /** The rig's radius of 16 makes ore "in sight" only within 8 blocks, and the trees he fells first stand up to 15 from the outcrop; the default of 64 sees 24. */
     private static final int WIDE_SEARCH = 48;
+    private static final double STAYED = 1.5, FACING = 45, BEHIND = 90;
 
     private CompanionShieldTests() { }
 
     @AfterBatch(batch = BATCH) public static void afterShield(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+
+    /** The fuse is lit two blocks off, the shield is in the left hand: he does not run, the blast does not hurt him and the shield pays for it. */
+    @GameTest(template = "marathon_cave", batch = BATCH, timeoutTicks = TIMEOUT)
+    public static void aShieldTakesTheBlastOfALitCreeper(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        c.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        place(c, foot.offset(STAND, 0, 0));
+        Creeper creeper = creeper(h, foot.offset(STAND + GAP, 0, 0));
+        creeper.ignite();
+        start(h, c, 1);
+        Vec3 stand = c.position();
+        long begun = h.getTick();
+        double[] drift = {0};
+        boolean[] raised = {false};
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "alive" : "gone") + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth()
+                    + ", shield " + c.getOffhandItem() + " wear " + c.getOffhandItem().getDamageValue() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (creeper.isAlive() && h.getTick() - begun < FUSE_TICKS) {
+                drift[0] = Math.max(drift[0], c.position().distanceTo(stand));
+                raised[0] |= c.isBlocking();
+                return;
+            }
+            h.assertTrue(!creeper.isAlive(), "The creeper never blew" + trace);
+            h.assertTrue(raised[0], "The shield was never up before the blast" + trace);
+            h.assertTrue(drift[0] < STAYED, "He ran " + drift[0] + " blocks instead of holding the shield" + trace);
+            h.assertTrue(c.getHealth() >= c.getMaxHealth(), "He was hurt by the blast" + trace);
+            h.assertTrue(c.getOffhandItem().is(Items.SHIELD) && c.getOffhandItem().getDamageValue() > 0, "The shield took no wear" + trace);
+            h.succeed();
+        });
+    }
+
+    /** The creeper is behind his back when its fuse is lit: head and body turn to it, the shield is up before the blast and holds. */
+    @GameTest(template = "marathon_cave", batch = BATCH, timeoutTicks = TIMEOUT)
+    public static void aCreeperLitBehindHimIsFacedAndHeld(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        c.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        place(c, foot.offset(STAND, 0, 0));
+        Creeper creeper = creeper(h, foot.offset(STAND + GAP, 0, 0));
+        creeper.setNoAi(true);
+        float away = yawTo(c, creeper) + 180;
+        c.setYRot(away); c.setYHeadRot(away); c.setYBodyRot(away);
+        long[] lit = {-1};
+        boolean[] facedAndUp = {false};
+        h.runAfterDelay(IGNITE_AFTER, () -> {
+            h.assertTrue(angle(c, creeper) > BEHIND, "He was not turned away from the creeper to begin with: " + angle(c, creeper));
+            creeper.setNoAi(false);
+            creeper.ignite();
+            lit[0] = h.getTick();
+        });
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "alive" : "gone") + ", fuse " + creeper.getSwellDir() + ", health " + c.getHealth() + ", turned off by "
+                    + angle(c, creeper) + ", shield wear " + c.getOffhandItem().getDamageValue() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            if (lit[0] < 0) return;
+            if (creeper.isAlive() && h.getTick() - lit[0] < FUSE_TICKS) {
+                facedAndUp[0] |= c.isBlocking() && angle(c, creeper) < FACING;
+                return;
+            }
+            h.assertTrue(!creeper.isAlive(), "The creeper never blew" + trace);
+            h.assertTrue(facedAndUp[0], "He never stood facing the creeper with the shield up" + trace);
+            h.assertTrue(c.getHealth() >= c.getMaxHealth(), "He was hurt by the blast" + trace);
+            h.assertTrue(c.getOffhandItem().getDamageValue() > 0, "The shield took no wear" + trace);
+            h.succeed();
+        });
+    }
+
+    /** Without a shield nothing changes: a lit fuse sends him back as before, and he never stands up a shield he does not have. */
+    @GameTest(template = "marathon_cave", batch = BATCH, timeoutTicks = TIMEOUT)
+    public static void withoutAShieldALitFuseStillSendsHimBack(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(STAND, 0, 0));
+        Creeper creeper = creeper(h, foot.offset(STAND + GAP, 0, 0));
+        creeper.ignite();
+        start(h, c, 1);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "alive" : "gone") + ", he at " + rel(h, c.blockPosition()).toShortString() + ", health " + c.getHealth() + " | " + report(c);
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(!c.isBlocking(), "He blocks with nothing in the left hand" + trace);
+            if (creeper.isAlive() && h.getTick() - begun < FUSE_TICKS) return;
+            h.assertTrue(!creeper.isAlive(), "The creeper never blew" + trace);
+            h.assertTrue(c.getHealth() >= c.getMaxHealth() - 1, "He was hurt by the blast" + trace);
+            h.succeed();
+        });
+    }
+
+    /** Wear is a player's: a blow of under 3 costs nothing, one of 3 or more costs 1 plus its damage, and a shield worn to nothing is gone, with the blow absorbed. */
+    @GameTest(template = "marathon_cave", batch = BATCH, timeoutTicks = TIMEOUT)
+    public static void theShieldWearsAndBreaksLikeAPlayers(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        c.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        place(c, foot.offset(STAND, 0, 0));
+        Creeper creeper = creeper(h, foot.offset(STAND + GAP, 0, 0));
+        CompoundTag fuse = new CompoundTag();
+        creeper.addAdditionalSaveData(fuse);
+        fuse.putShort("Fuse", (short) LONG_FUSE);
+        fuse.putBoolean("ignited", true);
+        creeper.readAdditionalSaveData(fuse);
+        int[] stage = {0};
+        h.runAtTickTime(RAISE_TICKS * 10, () -> h.assertTrue(stage[0] > 0, "The shield was never up against the lit fuse"));
+        h.onEachTick(() -> {
+            if (!c.isBlocking()) return;
+            ItemStack shield = c.getOffhandItem();
+            float health = c.getHealth();
+            int worn = shield.getDamageValue();
+            c.invulnerableTime = 0;
+            switch (stage[0]++) {
+                case 0 -> {
+                    c.hurt(h.getLevel().damageSources().explosion(creeper, creeper), 2);
+                    h.assertTrue(c.getHealth() >= health && shield.getDamageValue() == worn, "A blow under 3 hurt him or wore the shield: health " + c.getHealth() + ", wear " + shield.getDamageValue());
+                }
+                case 1 -> {
+                    c.hurt(h.getLevel().damageSources().explosion(creeper, creeper), 10);
+                    h.assertTrue(c.getHealth() >= health, "The blow of 10 got through: health " + health + " to " + c.getHealth());
+                    h.assertTrue(shield.getDamageValue() == worn + 11, "A blow of 10 cost " + (shield.getDamageValue() - worn) + " of wear, not 11");
+                    shield.setDamageValue(shield.getMaxDamage() - 5);
+                }
+                default -> {
+                    c.hurt(h.getLevel().damageSources().explosion(creeper, creeper), 10);
+                    h.assertTrue(c.getHealth() >= health, "The blow that broke the shield got through: health " + health + " to " + c.getHealth());
+                    h.assertTrue(c.getOffhandItem().isEmpty() && !c.isBlocking(), "The shield worn to nothing is still in the hand: " + c.getOffhandItem());
+                    h.succeed();
+                }
+            }
+        });
+    }
 
     /** Spare iron and boards in the bag: the preparation makes a real shield (the ingot and the boards are spent) and puts it in the left hand. */
     @GameTest(template = "marathon_cave", batch = BATCH, timeoutTicks = TIMEOUT)

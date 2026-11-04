@@ -10,8 +10,14 @@ import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -28,6 +34,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.count;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.ended;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.mountain;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rel;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.report;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
@@ -39,10 +46,10 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineStopsTests {
-    private static final int OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2, PIT_STEP = 8, POCKET_TIMEOUT = 24000;
+    private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 9, PILLAR_AT = 6, PILLAR_HEIGHT = 5, OWN_STAND = 3, PIT = 11, FAR_ENTRANCE = 200, POCKET_AT = 8, NEAR_CELLS = 2, PIT_STEP = 8, POCKET_TIMEOUT = 24000;
     /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
     private static final int FAR_TREE_AT = 3;
-    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2;
+    private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2, CREEPER_AT = 8;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6, DIAGONAL_AT = 6, CEILING_AT = 9;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, WALL_AT = 5, DIAMOND_AT = 2;
@@ -51,6 +58,34 @@ public final class CompanionMineStopsTests {
     private static final int HALL_FROM = 6, HALL_TO = 18, HALL_TOP = 19, HALL_MID = 12, SHELF_AT = 8, SHELF_Y = 17, GAP = 4, LEDGE_DROP = 2, LEDGE_WATCH = 160;
 
     private CompanionMineStopsTests() { }
+
+    /**
+     * A zombie on a pillar in a chamber at the foot of the stairs: in sight, near, and out of his reach. He does not stand facing it for
+     * the rest of the order; the foe he cannot get at is let go and the order goes on to the diamond.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void doesNotStandForeverFacingAFoeHeCannotReach(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        c.setItem(6, new ItemStack(Items.STONE_SWORD));
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos foot = stairs.get(stairs.size() - 1);
+        for (int dx = 0; dx <= CHAMBER_REACH; dx++) for (int dz = -CHAMBER_REACH / 2; dz <= CHAMBER_REACH / 2; dz++) for (int dy = 0; dy < CHAMBER_HEIGHT; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        BlockPos pillar = foot.offset(PILLAR_AT, 0, 0);
+        for (int dy = 0; dy < PILLAR_HEIGHT; dy++) h.getLevel().setBlock(pillar.above(dy), Blocks.STONE.defaultBlockState(), 2 | 16);
+        c.teleportTo(foot.getX() + OWN_STAND + .5, foot.getY(), foot.getZ() + .5);
+        Zombie zombie = h.spawn(EntityType.ZOMBIE, rel(h, pillar.above(PILLAR_HEIGHT)));
+        zombie.setPersistenceRequired();
+        zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
+        zombie.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He did not get past the foe he cannot reach: " + result.message() + " | zombie " + (zombie.isAlive() ? "alive" : "gone") + " | " + report(c));
+        });
+    }
 
     /**
      * The mine was started again in a pit on his own stairs (the record's entrance is the pit), and there is no stone pickaxe and no iron one
@@ -278,6 +313,37 @@ public final class CompanionMineStopsTests {
             h.assertTrue(CompanionDiamondGoalTests.state(h, r) == CompanionAgenda.State.COMPLETED, "Goal incomplete | " + CompanionDiamondGoalTests.report(h, r));
             h.assertTrue(CompanionDiamondGoalTests.givenToPlayer(h, r) >= 1, "No diamond for the player | " + CompanionDiamondGoalTests.report(h, r));
         });
+    }
+
+    /**
+     * Run m12a/void (seed 20261031): he died with everything on him and came back to the surface with empty hands, and a creeper stood by
+     * the things he went for. Without a sword he cannot meet it, so he stepped away, the pickup brought him back, and so on, 979 times in
+     * 57 000 ticks, with the goal waiting for the pickup. The creeper does not leave: after a few steps away he lets the things lie
+     * and the goal goes on.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = GOAL_TIMEOUT)
+    public static void letsADropLieWhenACreeperWillNotLeaveItAndTheGoalGoesOn(GameTestHelper h) {
+        ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 32), new ItemStack(Items.COBBLESTONE, 32),
+                new ItemStack(Items.STICK, 8), new ItemStack(Items.CRAFTING_TABLE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE)};
+        CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, bag);
+        r.c().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        BlockPos dropAt = h.absolutePos(new BlockPos(CENTER - CREEPER_AT - 2, GROUND + 1, CENTER));
+        Creeper creeper = h.spawn(EntityType.CREEPER, new BlockPos(CENTER - CREEPER_AT, GROUND + 1, CENTER));
+        creeper.setPersistenceRequired();
+        creeper.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        ItemEntity drop = new ItemEntity(h.getLevel(), dropAt.getX() + .5, dropAt.getY(), dropAt.getZ() + .5, new ItemStack(Items.COBBLESTONE));
+        drop.setDeltaMovement(0, 0, 0);
+        drop.setNoPickUpDelay();
+        drop.setUnlimitedLifetime();
+        h.getLevel().addFreshEntity(drop);
+        r.c().claimDrops(List.of(drop));
+        CompanionDiamondGoalTests.start(h, r, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
+            h.assertTrue(creeper.isAlive() && drop.isAlive(), "SETUP: the creeper or the drop is gone | " + CompanionDiamondGoalTests.report(h, r));
+        });
+        h.succeedWhen(() -> h.assertTrue(!r.c().expeditionStage().isEmpty() || r.c().mineSite().exists(),
+                "The goal still waits for the drop beside the creeper | " + CompanionDiamondGoalTests.report(h, r)));
     }
 
     /**

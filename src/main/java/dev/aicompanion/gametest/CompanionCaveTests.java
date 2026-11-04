@@ -13,6 +13,8 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -41,7 +43,7 @@ import java.util.function.Consumer;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionCaveTests {
-    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, TIMEOUT = 12000;
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, TIMEOUT = 12000, EXPIRE_AFTER_BREACH = 1;
     private static final int CHAMBER_X0 = 26, CHAMBER_X1 = 30, CHAMBER_Z0 = 3, CHAMBER_Z1 = 7, CORRIDOR_END = 44, CORRIDOR_Z = 7;
     private static final int STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25, EXPLORE_RANGE = 16;
     private static final BlockPos BREACH_FEET = new BlockPos(25, DIAMOND_FEET, 3), BREACH_HEAD = BREACH_FEET.above();
@@ -81,6 +83,31 @@ public final class CompanionCaveTests {
     }
 
     /**
+     * A dark cave with two zombies that come for him, no diamond in it, diamonds ahead in the tunnel: the breach is closed, he
+     * never sets foot in the cave, digs on and ends with the diamond.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void sealsACaveWithTwoZombiesAndKeepsDigging(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, true, false, false);
+        CompanionEntity c = rig(h);
+        List<Zombie> zombies = List.of(hostile(h, EntityType.ZOMBIE, 28, 5), hostile(h, EntityType.ZOMBIE, 29, 6));
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % 20 == 0) zombie.setTarget(c);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            enteredThe(h, c, cave, w);
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
+            if (count(c, Items.DIAMOND) < 1) problems.add("no diamond: he did not dig on");
+            if (w.insideTicks > 0) problems.add("stood in the cave for " + w.insideTicks + " ticks, first at " + w.firstInside.toShortString());
+        }));
+    }
+
+    /**
      * The bag holds no block to plug with when the tunnel breaks into a dark cave (seed 7741901, lava: the blocks went into the
      * stairs and the plugs above): he cuts stone from the wall beside him with his own pickaxe, closes the breach and digs on to the
      * diamond, instead of judging the cave very dangerous for want of blocks and standing down with the breach open.
@@ -103,6 +130,81 @@ public final class CompanionCaveTests {
             String said = String.valueOf(c.workResult(id));
             if (said.contains("заделать нечем") || said.contains("заделывать нечем")) problems.add("stood down for want of blocks: " + said);
         }));
+    }
+
+    /**
+     * The step's time runs out two ticks after the breach is opened, with two zombies in the dark cave: the step waits for the
+     * cave episode and does not end with the breach open.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void closesTheBreachWhenTheStepTimeRunsOutInTheCave(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, true, false, false);
+        CompanionEntity c = rig(h);
+        List<Zombie> zombies = List.of(hostile(h, EntityType.ZOMBIE, 28, 5), hostile(h, EntityType.ZOMBIE, 29, 6));
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            if (w.breached && !w.expired && h.getTick() >= w.breachTick + EXPIRE_AFTER_BREACH) {
+                w.expired = true;
+                c.expireExpeditionStep();
+            }
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % 20 == 0) zombie.setTarget(c);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
+            if (!w.expired) problems.add("SETUP: the step time never ran out in the cave");
+        }));
+    }
+
+    /**
+     * A creeper stands in a dark cave a few blocks from the breach. It is switched off (NoAI), so it can neither swell nor walk:
+     * a live one would explode at the breach and kill or maim him before any judgement could be made, which tests luck, not
+     * the decision. What is checked is what he does about it: he never touches it, never enters, and closes the breach.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void backsOffFromACreeperAndSealsWithoutHittingIt(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, true, false, false);
+        CompanionEntity c = rig(h);
+        Creeper creeper = hostile(h, EntityType.CREEPER, 28, 5);
+        creeper.setNoAi(true);
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            h.assertTrue(creeper.isAlive() && creeper.getHealth() >= creeper.getMaxHealth(), "He hurt the creeper: health " + creeper.getHealth() + "/" + creeper.getMaxHealth()
+                    + ", alive " + creeper.isAlive() + " | " + summary(h, c, w, cave) + " | " + report(c));
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            enteredThe(h, c, cave, w);
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> {
+            if (w.insideTicks > 0) problems.add("stood in the cave for " + w.insideTicks + " ticks, first at " + w.firstInside.toShortString());
+        }));
+    }
+
+    /**
+     * The same cave with a live creeper that cannot walk (speed 0) but swells when he comes within three blocks: whatever he does about
+     * it (the sword, the dance, a block between them) he lives, the breach is closed in the end and the order has ended.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aLiveCreeperAtTheBreachCostsHimNothingAndTheBreachIsClosed(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, true, false, false);
+        CompanionEntity c = rig(h);
+        Creeper creeper = hostile(h, EntityType.CREEPER, 28, 5);
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + ", creeper " + creeper.isAlive() + " | " + report(c));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> settle(h, c, id, w, cave, problems -> { }));
     }
 
     /** Once the order has ended: the breach was reached at all (otherwise the test proves nothing), no air path joins the cave and his mine, plus the test's own checks. */
@@ -132,6 +234,13 @@ public final class CompanionCaveTests {
         w.breached = true;
         w.breachTick = h.getTick();
         AICompanionMod.LOGGER.info("Cave test: breach {} / {} opened at tick {}, he stands at {}", BREACH_FEET.toShortString(), BREACH_HEAD.toShortString(), w.breachTick, rel(h, c.blockPosition()).toShortString());
+    }
+
+    private static void enteredThe(GameTestHelper h, CompanionEntity c, Set<BlockPos> cave, Watch w) {
+        BlockPos feet = rel(h, c.blockPosition());
+        if (!cave.contains(feet)) return;
+        if (w.firstInside == null) w.firstInside = feet;
+        w.insideTicks++;
     }
 
     /** The first open cell outside the cave reachable from the cave through open cells, or null when the cave is closed off. */

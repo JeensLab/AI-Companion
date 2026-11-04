@@ -21,6 +21,7 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -44,7 +45,7 @@ public final class CompanionDiamondGoalTests {
     private static final String GOAL = "find_diamonds", RETREATED = "отступил";
     static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
     private static final int STRIP_Z = 1, STRIP_X0 = 22, STRIP_X1 = 25;
-    private static final int TIMEOUT = 24000, SAVE_TIMEOUT = 100, RETARGET_EVERY = 20, FORCED_RETREATS = 3, NEW_CELLS = 3;
+    private static final int TIMEOUT = 24000, SAVE_TIMEOUT = 100, FIGHT_DEADLINE = 600, RETARGET_EVERY = 20, FORCED_RETREATS = 3, NEW_CELLS = 3;
     private static final int ROOF_HEIGHT = 3, ROOF_REACH = 2;
     private static final float LOW = 7;
 
@@ -208,6 +209,43 @@ public final class CompanionDiamondGoalTests {
         h.succeed();
     }
 
+    /** A zombie comes at him in the tunnel far from the player: the agenda does not cancel the step, he fights it off, and the goal goes on to the diamonds. */
+    @GameTest(template = "marathon_cave", batch = "diamond_goal_fight", timeoutTicks = TIMEOUT)
+    public static void aFightInHisOwnExpeditionDoesNotCancelTheGoalStep(GameTestHelper h) {
+        Rig r = rig(h, true, supplies(32, 4));
+        start(h, r, 2);
+        Zombie[] zombie = {null};
+        long[] spawnedAt = {-1}, step = {0};
+        int[] hits = {0};
+        float[] zombieHp = {0};
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time | zombie " + (zombie[0] == null ? "never spawned" : "hp " + zombie[0].getHealth()) + " | " + report(h, r)));
+        h.onEachTick(() -> {
+            CompanionEntity c = r.c();
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(h, r));
+            if (zombie[0] == null) {
+                if (rel(h, c.blockPosition()).getY() != DIAMOND_FEET || advanced(c) < 1) return;
+                BlockPos behind = rel(h, c.mineSite().foot());
+                zombie[0] = h.spawn(EntityType.ZOMBIE, behind.getX(), DIAMOND_FEET, behind.getZ());
+                zombie[0].setPersistenceRequired();
+                spawnedAt[0] = h.getTick(); step[0] = c.activeWorkId(); zombieHp[0] = zombie[0].getHealth();
+                return;
+            }
+            if (zombie[0].getHealth() < zombieHp[0]) hits[0]++;
+            zombieHp[0] = zombie[0].getHealth();
+            if (!zombie[0].isAlive()) return;
+            if (zombie[0].getTarget() == null && h.getTick() % RETARGET_EVERY == 0) zombie[0].setTarget(c);
+            h.assertTrue(c.workResult(step[0]) == null && c.activeWorkId() == step[0], "The step " + step[0] + " ended during the fight, now work " + c.activeWorkId() + " | " + report(h, r));
+            h.assertTrue(state(h, r) != CompanionAgenda.State.PAUSED_DANGER, "The agenda paused the goal for the fight | " + report(h, r));
+            h.assertTrue(h.getTick() - spawnedAt[0] <= FIGHT_DEADLINE, "The zombie was not dead in " + FIGHT_DEADLINE + " ticks (hp " + zombie[0].getHealth() + ") | " + report(h, r));
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(zombie[0] != null && !zombie[0].isAlive(), "No fight yet");
+            CompanionEntity c = CompanionEvents.getOwnedCompanion(r.p());
+            h.assertTrue(hits[0] > 0 && swordWear(c) == hits[0], "The sword struck " + swordWear(c) + " of " + hits[0] + " blows, the rest went with a pickaxe | " + report(h, r));
+            h.assertTrue(state(h, r) == CompanionAgenda.State.COMPLETED && givenToPlayer(h, r) >= 2, "The goal did not go on after the fight | " + report(h, r));
+        });
+    }
+
     /** Without a sword he makes one before the step: iron when two ingots are at hand, else stone; a wooden one does not count. */
     @GameTest(template = "tall_tree", batch = "diamond_goal_sword", timeoutTicks = SAVE_TIMEOUT)
     public static void theMineStepMakesASwordWhenHeHasNone(GameTestHelper h) {
@@ -289,6 +327,13 @@ public final class CompanionDiamondGoalTests {
         int n = c.getMainHandItem().is(ItemTags.SWORDS) ? 1 : 0;
         for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(ItemTags.SWORDS)) n++;
         return n;
+    }
+
+    /** Blows the stone sword has struck: its wear, wherever it is now. */
+    private static int swordWear(CompanionEntity c) {
+        if (c.getMainHandItem().is(Items.STONE_SWORD)) return c.getMainHandItem().getDamageValue();
+        for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(Items.STONE_SWORD)) return c.getItem(i).getDamageValue();
+        return -1;
     }
 
     static void start(GameTestHelper h, Rig r, int count) {
