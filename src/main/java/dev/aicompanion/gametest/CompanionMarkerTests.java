@@ -44,9 +44,20 @@ public final class CompanionMarkerTests {
         var west = CompanionFarMarker.place(projection, view, -200, 0, -20, width, height);
         h.assertTrue(west.x() <= 10 && west.y() == 135, "West he is not at the left edge: " + west);
         var behind = CompanionFarMarker.place(projection, view, 0, 0, 200, width, height);
-        h.assertTrue(behind.x() == 240 && behind.y() > 135 && behind.y() < height - 30, "Behind he is not at the bottom, above the hotbar: " + behind);
+        // The label (9 px under the mark, 9 high) stays above «думает…» (height − 84) and all below it: action bar, hearts, hotbar.
+        h.assertTrue(behind.x() == 240 && behind.y() > 135 && behind.y() + 15 < height - 84, "Behind he is not at the bottom, above the HUD: " + behind);
         var high = CompanionFarMarker.place(projection, view, 0, 300, -200, width, height);
         h.assertTrue(high.x() == 240 && high.y() <= 10, "High above he is not at the top edge: " + high);
+        // Facing east (yaw −90): east is ahead, north on the left.
+        Matrix4f facingEast = new Matrix4f().rotation(new Quaternionf().rotationYXZ((float) Math.PI + 90 * Mth.DEG_TO_RAD, 0, 0).conjugate());
+        var ahead2 = CompanionFarMarker.place(projection, facingEast, 200, 0, 0, width, height);
+        h.assertTrue(ahead2.x() == 240 && ahead2.y() == 135, "Facing east, east is not in the middle: " + ahead2);
+        var north = CompanionFarMarker.place(projection, facingEast, 0, 0, -200, width, height);
+        h.assertTrue(north.x() <= 10 && north.y() == 135, "Facing east, north is not at the left edge: " + north);
+        // Looking 30° down: the horizon ahead is tan 30° / tan 35° of the half height above the middle, at 24.
+        Matrix4f lookingDown = new Matrix4f().rotation(new Quaternionf().rotationYXZ(0, -30 * Mth.DEG_TO_RAD, 0).conjugate());
+        var horizon = CompanionFarMarker.place(projection, lookingDown, 0, 0, -2000, width, height);
+        h.assertTrue(horizon.x() == 240 && Math.abs(horizon.y() - 24) <= 1, "Looking down, the horizon ahead is not near the top: " + horizon);
         h.succeed();
     }
 

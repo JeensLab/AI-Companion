@@ -21,8 +21,8 @@ import java.util.UUID;
  * Where Oleg is, at a glance: a golden outline through walls and ground once he is out of sight or farther than a few steps.
  * Only for his owner, only on this client. the player 23.10: «стрелка где он не нужна, оставь только контур, и сделай возможность
  * включить и отключать его по кнопке» — the key G (changeable in the controls), also in «Поведение».
- * Issue #64: once he is too far for the client to have him at all, the outline is gone too — then a golden mark on the screen
- * (CompanionFarMarker) shows where the integrated server says he is. Nearer, even behind the player, the outline is enough.
+ * Issue #64: once he is too far for the game to draw him, the outline is gone too — then a golden mark on the screen
+ * (CompanionFarMarker) shows where he is. While he is drawn, even behind the player, the outline is enough.
  */
 final class CompanionMarker {
     private CompanionMarker() { }
@@ -33,12 +33,14 @@ final class CompanionMarker {
     /** The outline's gold. */
     private static final int GOLD = 0xFFFFD54A;
     private static final Set<UUID> outlined = new HashSet<>();
-    /** Whether this client has him at all (then the outline is his marker). */
+    /** Whether the game draws him now (then the outline is his marker). */
     private static boolean present;
-    /** His place as the server last said, the world it was asked in, and the world of a question still unanswered. */
+    /** His place for the mark, the world it holds for, and the world of a question to the server still unanswered. */
     private static CompanionFarMarker.Spot far;
     private static Object farWorld, askedIn;
     private static int askTicks;
+    /** The server's last answer was that he is nowhere: dead, unloaded or gone. */
+    private static boolean nowhere;
     /** The camera of the last rendered frame, to put him on the screen. */
     private static final Matrix4f projection = new Matrix4f(), view = new Matrix4f();
     private static Vec3 camera = Vec3.ZERO;
@@ -55,31 +57,46 @@ final class CompanionMarker {
         Minecraft.getInstance().gui.setOverlayMessage(Component.literal("Индикатор Олега: " + (on ? "вкл." : "выкл.")), false);
     }
 
-    /** Once a tick: who is outlined (a sight check per frame would be wasted work), and where he is when the client lacks him. */
+    /**
+     * Once a tick: who is outlined (a sight check per frame would be wasted work), and where he is while the game does not draw
+     * him. Review: the client keeps him up to the tracking range (about 160 blocks), but draws him, and so his outline, only
+     * within the entity distance (96 blocks at render distance 12, 64 at 8) — in between nothing showed him.
+     */
     static void tick() {
         outlined.clear(); present = false;
         Minecraft minecraft = Minecraft.getInstance();
         var player = minecraft.player;
         var level = minecraft.level;
-        if (player == null || level == null || !OpenRouterConfig.COMPANION_MARKER.get()) return;
+        if (player == null || level == null || !OpenRouterConfig.COMPANION_MARKER.get()) {
+            far = null; farWorld = null; askedIn = null; nowhere = false; return;
+        }
+        Vec3 eye = minecraft.gameRenderer.getMainCamera().getPosition();
+        CompanionEntity undrawn = null;
         for (var entity : level.entitiesForRendering()) {
             if (!(entity instanceof CompanionEntity companion) || !companion.isAlive() || !player.getUUID().equals(companion.getOwnerId())) continue;
+            // The same distance check the world renderer makes before drawing him and his outline.
+            if (!companion.shouldRender(eye.x, eye.y, eye.z)) { undrawn = companion; continue; }
             present = true;
             if (player.distanceTo(companion) > NEAR || !player.hasLineOfSight(companion)) outlined.add(companion.getUUID());
         }
-        // Single player only: the integrated server knows where he is even far off, no packets needed. Twice a second.
         if (present) { far = null; return; }
+        if (undrawn != null) {
+            far = new CompanionFarMarker.Spot(level.dimension(), undrawn.getX(), undrawn.getY(), undrawn.getZ()); farWorld = level;
+            return;
+        }
+        // Gone from the client: in single player the integrated server knows where he is, no packets needed. Twice a second;
+        // every two seconds while it says he is nowhere (finding that out walks all entities); asked again if an answer is lost.
         var server = minecraft.getSingleplayerServer();
-        if (server == null || askedIn == level || ++askTicks < 10) return;
+        if (server == null || ++askTicks < (askedIn == level ? 100 : nowhere ? 40 : 10)) return;
         askTicks = 0; askedIn = level;
         UUID id = player.getUUID();
         server.execute(() -> {
             var owner = server.getPlayerList().getPlayer(id);
             var spot = owner == null ? null : CompanionFarMarker.where(owner);
             minecraft.execute(() -> {
-                // An answer for a world the player has left is dropped; a new question is asked there.
+                // An answer for a world the player has left, or from before the key turned the mark off, is dropped.
                 if (askedIn != level) return;
-                askedIn = null; far = spot; farWorld = level;
+                askedIn = null; far = spot; farWorld = level; nowhere = spot == null;
             });
         });
     }
@@ -95,7 +112,7 @@ final class CompanionMarker {
         var spot = far;
         var player = minecraft.player;
         if (spot == null || present || player == null || minecraft.level == null || farWorld != minecraft.level
-                || minecraft.options.hideGui || !OpenRouterConfig.COMPANION_MARKER.get()) return;
+                || minecraft.options.hideGui || minecraft.getDebugOverlay().showDebugScreen() || !OpenRouterConfig.COMPANION_MARKER.get()) return;
         String name = CompanionChatScreen.companionName();
         var font = minecraft.font;
         if (!spot.dimension().equals(minecraft.level.dimension())) {

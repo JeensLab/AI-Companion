@@ -8,23 +8,26 @@ import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 /**
- * Issue #64 (stream VOD 2916726627, 58:57): Oleg went past where the client still has him, the outline went with him, and
- * nothing showed where he was. Past that reach a small golden diamond stands where he is on the screen, or at the edge on
- * his side, with «Олег · 140 ↓30»; in another world a line says which. The place and the words are worked out here, with no
- * client classes, so the game tests can check them; CompanionMarker asks the server and draws.
+ * Issue #64 (stream VOD 2916726627, 58:57): Oleg went farther than the game draws him, his outline went with him, and
+ * nothing showed where he was. Past that a small golden diamond stands where he is on the screen, or at the edge on his
+ * side, with «Олег · 140 ↓30»; in another world a line says which. The place and the words are worked out here, with no
+ * client classes, so the game tests can check them; CompanionMarker finds him and draws.
  */
 public final class CompanionFarMarker {
     private CompanionFarMarker() { }
 
-    /** Gaps from the screen edges; the bottom one keeps the label above the hotbar, hearts, armour and food. */
-    static final int EDGE = 6, BOTTOM = 66;
+    /**
+     * Gaps from the screen edges. The bottom one keeps the label above the HUD stack in the middle: «думает…» at −84, the
+     * action bar at −72, the held item's name at −59, then hearts (even in two rows), armour, food and the hotbar.
+     */
+    static final int EDGE = 6, BOTTOM = 100;
     /** A smaller difference in height gets no arrow. */
     private static final double HIGH = 10;
 
     /** A point of the screen, in GUI pixels. */
     public record Mark(int x, int y) { }
 
-    /** Where he is: read on the server thread, handed to the client. */
+    /** Where he is: from the client while it still has him, else read on the server thread and handed over. */
     record Spot(ResourceKey<Level> dimension, double x, double y, double z) { }
 
     /** His place for his owner, or nothing while he is dead, unloaded or gone. Server thread. */
