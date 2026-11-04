@@ -88,6 +88,8 @@ final class CompanionCombat {
         if (entity == null || !entity.isAlive() || entity == c || entity instanceof Player || entity instanceof CompanionEntity) return false;
         if (c.ownerId != null && entity instanceof net.minecraft.world.entity.OwnableEntity pet && c.ownerId.equals(pet.getOwnerUUID())) return false;
         if (entity instanceof net.minecraft.world.entity.monster.warden.Warden) return false;
+        // Nobody but a player hurts the dragon (EnderDragon.hurt): a blade or an arrow of his is spent for nothing; its crystals are his part.
+        if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon) return false;
         boolean neutral = entity instanceof net.minecraft.world.entity.NeutralMob || entity instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin
                 || entity instanceof net.minecraft.world.entity.monster.Spider;
         return !neutral || provoked;
