@@ -13,7 +13,7 @@ OpenRouter отвечает за свободный диалог и предло
 цель в `CompanionGoals` поддерживает конкретный сценарий каменных кирок
 для компаньона и игрока. Долгие цели ведёт `CompanionAgenda`, но только из
 закрытого каталога `CompanionPlaybooks` (`gear_up`, `prepare_nether`,
-`defeat_ender_dragon`); это не универсальный планировщик: модель выбирает id
+`defeat_ender_dragon`, `find_diamonds`); это не универсальный планировщик: модель выбирает id
 из каталога и не сочиняет этапы, а умения, которых у Олега ещё нет, он называет честно.
 
 Закреплённый стек указан в `gradle.properties` и `build.gradle`:
@@ -73,6 +73,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Лук в бою: натяжение, стрелы из сумки, линия огня | `entity/CompanionArchery.java`; тесты `gametest/CompanionBowTests.java` |
 | Долговременная цель и подтверждение выдачи | `entity/CompanionGoals.java`, `CompanionActionResult.java` |
 | Долгая цель (броня, Незер, дракон): каталог, этапы, состояние, экран | `entity/CompanionAgenda.java` (движок, раз в секунду), `CompanionPlaybooks.java` (каталог), `CompanionMilestones.java` и `CompanionFacts.java` (этапы по фактам), `CompanionAgendaData.java` (сохранение `aicompanion_agenda`), `CompanionAgendaView.java` (экран и строка «Долгая цель» для модели); действие `pursue_goal` — `client/CompanionPlanCodec.java`; фразы «отмени цель», «отложи цель» — `client/CompanionLocalCommands.java`; экран — `client/CompanionTasksScreen.java`, `entity/CompanionTaskBoard.java`; тесты `gametest/CompanionAgendaTests.java`, `CompanionAgendaModelTests.java`, `CompanionAgendaBoardTests.java` |
+| Алмазная шахта (`find_diamonds`, шаг `dig_for_diamonds`): лестница, тоннель 2×2, пещеры, отступление, свои чанки | `entity/CompanionExpedition.java` (стадии шага) и `CompanionExpedition*.java` (копание, ходьба, подъём, руда, пещера, отступление), `CompanionShaftPlan.java` (клетки лестницы и тоннеля), `CompanionMineSite.java` (запись шахты в NBT), `CompanionCaveSense.java` (оценка опасности), `CompanionSeal.java` (заделка), `CompanionChunkTicket.java` (загрузка своих чанков); этап `EXPEDITION` — `CompanionMilestones.java`; фразы — `client/CompanionWorkCommands.java`; тесты `gametest/CompanionDiamond*Tests.java`, `CompanionExpedition*Tests.java`, `CompanionCave*Tests.java`, `CompanionRetreatTests.java`, `CompanionMineFoundationTests.java` |
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
 | Портал пешком: за игроком (Незер, Край) и по поручению `enter_portal` | `entity/CompanionPortals.java`; тесты `gametest/CompanionPortalTests.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
@@ -114,6 +115,9 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Сыпучие блоки, кремень, стекло, огниво | `.\scripts\verify-loose.ps1` (всегда `CompanionLooseTests`; `-Classes CompanionObtainTests,...` добавляет другие классы, `-Repetitions N` повторы) |
 | Долгая цель: движок, этапы, фразы, строка для модели, доска задач | `.\scripts\verify-agenda.ps1 -Repetitions 1` (`CompanionAgendaTests`, `CompanionAgendaModelTests`, `CompanionAgendaBoardTests`; по умолчанию 3 повтора; нужны загруженные зависимости: Gradle идёт с `--offline`) |
 | Долгая цель при настоящем перезапуске сервера | `.\scripts\verify-agenda-restart.ps1`: этапы prepare, resume, verify; каталог `build/diagnostics/` скрипт создаёт сам |
+| Алмазная шахта и цель `find_diamonds` | `.\scripts\verify-diamond-mine.ps1` (всегда `CompanionDiamondMineTests`; `-Classes CompanionCaveTests,...` добавляет классы, `-Repetitions N` повторы, останавливается на первом красном; временно переписывает эти файлы, запускать последовательно; журналы `build/diagnostics/diamond-targeted-N.txt` в UTF-16) |
+| Шахта при настоящем перезапуске сервера | `.\scripts\verify-mine-restart.ps1`: этапы prepare (шаг прерван под землёй), resume (та же шахта, алмаз, без дублей), verify |
+| Шахта в обычном мире: вход, пустота, лава, вода, отступление, перезапуск | `.\scripts\verify-mine-world.ps1` (около 6 минут, итог в `build/diagnostics/mine-world-*-summary.json`; сценарии `-Scenarios a,b`; мир меняется от запуска к запуску, один зелёный или красный прогон ничего не доказывает; сервер, не завершившийся через 60 с после записи итога, снимается, строка получает `[server hung on stop, killed]`, а такой `restart/prepare` считается ERROR) |
 | Партия плавки при настоящем перезапуске сервера | `.\scripts\verify-furnace-restart.ps1` после создания `build/diagnostics/` |
 | Самостоятельные реплики, свои темы Олега и соответствующая обработка команд | `.\scripts\verify-banter-tools.ps1 -Repetitions 1` |
 | Тихая работа, речь и восстановление поручений | `.\scripts\verify-quiet-work.ps1` |
@@ -175,6 +179,9 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 и удаляет их в `finally`; после принудительного прерывания проверьте `git status`.
 Сервер GameTest не ждёт тиков, поэтому повышение тикрейта прогон не ускоряет:
 время определяет загрузка CPU.
+Свет считается отдельным потоком, а тики идут без пауз, поэтому `gametest/CompanionTestLight`
+в конце каждого тика ждёт этот поток: иначе камень, только что поставленный фикстурой, сотни
+тиков «видит небо» (`canSeeSky`, `dark()`), и исход теста зависит от загрузки пакета.
 
 Символ U+FFFD («�») в журнале GameTest — дефект кодировки, не данных: дочерняя JVM
 получает `-Dstdout.encoding=UTF-8` из `configureEach` в `build.gradle`, а скрипты
