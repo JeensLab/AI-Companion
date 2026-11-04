@@ -29,7 +29,7 @@ public final class CompanionDeathTrip {
     private static final int PATIENCE_TICKS = 20 * 120;
     private static final int TICKS_PER_BLOCK = 4;
     /** Standing on one thing this long: the pickup did not take it, try the next. */
-    private static final int WAIT_ON_ONE = 40;
+    private static final int WAIT_ON_ONE = 80;
     /** A second order inside this window means the player insists, and his own walk gives way. */
     private static final long INSIST_WINDOW = 20 * 20;
     /** A place that keeps something behind is not tried again for this long (his bag may be full). */
@@ -240,7 +240,8 @@ public final class CompanionDeathTrip {
             waited = 0;
             return true;
         }
-        c.getNavigation().stop();
+        // Standing beside a stack is not standing on it: keep pushing onto its own block, a step at a time.
+        if (waited % 10 == 0) c.getNavigation().moveTo(next.getX(), next.getY(), next.getZ(), 1.0D);
         if (!next.getUUID().equals(standingOn)) {
             standingOn = next.getUUID();
             waited = 0;
