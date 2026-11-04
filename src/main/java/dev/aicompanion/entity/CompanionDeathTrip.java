@@ -327,7 +327,9 @@ public final class CompanionDeathTrip {
         // Exactly the stacks of this death: another pile at the same spot is not this walk's business.
         if (data.hasUUID(CompanionBag.BELONGINGS_SPOT)) return spot != null && spot.id().equals(data.getUUID(CompanionBag.BELONGINGS_SPOT));
         if (data.hasUUID(CompanionBag.BELONGINGS) && owner.equals(data.getUUID(CompanionBag.BELONGINGS))) return true;
-        return data.getBoolean(CompanionPlayersThings.MARK);
+        if (data.getBoolean(CompanionPlayersThings.MARK)) return true;
+        // Taken up by the player and thrown back: no mark at all, but it lies where his things fell.
+        return !data.hasUUID(CompanionBag.BELONGINGS) && item.getTarget() == null;
     }
 
     /** Done: the place is forgotten, and what happened there is said plainly. */
@@ -394,5 +396,6 @@ public final class CompanionDeathTrip {
     private void say(String line) {
         lastLine = line;
         c.autonomySay(line);
+        dev.aicompanion.AICompanionMod.LOGGER.info("[death] says: {}", line);
     }
 }
