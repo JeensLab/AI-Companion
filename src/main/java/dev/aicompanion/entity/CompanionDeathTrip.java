@@ -22,7 +22,7 @@ import java.util.UUID;
  */
 public final class CompanionDeathTrip {
     /** Close enough to stand on a thing and let the pickup take it. */
-    private static final double NEAR = 1.0;
+    private static final double NEAR = 1.2;
     /** What fell belongs to the place if it lies this close to it: a stack that slid downhill or drifted in water still counts. */
     private static final double SEARCH = 32;
     /** A walk longer than this, with a block's worth of time for every block of the way, is a walk that got stuck. */
@@ -191,11 +191,12 @@ public final class CompanionDeathTrip {
             waited = 0;
         }
         ItemEntity next = nearest(level);
-        if (next == null) { finish(level, taken > 0 ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
-        if (c.blockPosition().distSqr(next.blockPosition()) > NEAR * NEAR) {
+        if (next == null) { finish(level, carried() > bagBefore ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
+        // The thing itself, not the corner of its block: standing a block away leaves the pickup nothing to take.
+        if (c.position().distanceToSqr(next.position()) > NEAR * NEAR) {
             standingOn = null;
             waited = 0;
-            CompanionTravel.Step step = c.travel().toward(next.blockPosition(), NEAR);
+            CompanionTravel.Step step = c.travel().toward(net.minecraft.core.BlockPos.containing(next.position()), NEAR);
             if (step == CompanionTravel.Step.FAILED) {
                 givenUpOn.add(next.getUUID());
                 c.travel().reset();
