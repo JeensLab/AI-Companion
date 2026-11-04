@@ -904,7 +904,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             String cause = source.getLocalizedDeathMessage(this).getString();
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
             if (deathTrip.active() && getOwnerId() != null)
-                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), level().dimension(), deathTrip.place());
+                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.dimension(), deathTrip.place());
             deathTrip.stop();
             double worth = CompanionBelongings.worth(this);
             boolean dropped = bag.dropBelongings() | playersThings.drop();

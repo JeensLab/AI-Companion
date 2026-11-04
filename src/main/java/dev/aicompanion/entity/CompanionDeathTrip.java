@@ -63,6 +63,11 @@ public final class CompanionDeathTrip {
     /** Where he is walking to, for the death hook. */
     public BlockPos place() { return spot == null ? null : spot.pos(); }
 
+    /** The dimension of the place he is walking to, for the death hook. */
+    public net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension() {
+        return spot == null ? null : spot.dimension();
+    }
+
     /** The last thing he said about the walk, for the tests that check he does not claim what he did not take. */
     public String lastLine() { return lastLine; }
 
@@ -81,7 +86,7 @@ public final class CompanionDeathTrip {
         places.sort(Comparator.comparingDouble(CompanionDeathSpots.Spot::worth).reversed());
         for (CompanionDeathSpots.Spot place : places) {
             if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
-                data.taken(c.getOwnerId(), place);
+                data.taken(c.getOwnerId(), place.dimension(), place.pos());
                 say("Ну и подавитесь своим лутом.");
                 continue;
             }
@@ -89,11 +94,11 @@ public final class CompanionDeathTrip {
             if (tried != null && c.tickCount - tried < RETRY_TICKS) continue;
             // Only what survived counts: burned, blown up or taken by a mob, the rest is priced as it lies now.
             double left = survivingWorth(level, place);
-            if (left < CompanionBelongings.WORTH_GOING) { data.taken(c.getOwnerId(), place); continue; }
+            if (left < CompanionBelongings.WORTH_GOING) { data.taken(c.getOwnerId(), place.dimension(), place.pos()); continue; }
             if (!place.dimension().equals(level.dimension())) {
                 // Only the Nether can be crossed on foot: the End needs its own portal, so a place there is left.
                 if (left < CROSS_WORTH || !place.dimension().equals(net.minecraft.world.level.Level.NETHER)) {
-                    data.taken(c.getOwnerId(), place);
+                    data.taken(c.getOwnerId(), place.dimension(), place.pos());
                     continue;
                 }
                 // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
@@ -111,8 +116,9 @@ public final class CompanionDeathTrip {
                 say("Иду за своими вещами через портал: " + place.pos().toShortString() + ".");
                 return true;
             }
-            if (!reachable(level, place.pos())) { data.taken(c.getOwnerId(), place); continue; }
+            if (!reachable(level, place.pos())) { data.taken(c.getOwnerId(), place.dimension(), place.pos()); continue; }
             makeRoom();
+            data.attempted(c.getOwnerId(), level.dimension(), place.pos());
             spot = place;
             crossing = false;
             waited = 0;
@@ -134,18 +140,18 @@ public final class CompanionDeathTrip {
         if (spot == null) return false;
         if (!(c.level() instanceof ServerLevel level)) return false;
         // The player turned the feature off: the walk ends here, as he asked.
-        if (!c.deathRecovery()) { cancel("Ладно, вещи подождут."); return false; }
+        if (!c.deathRecovery()) { stop(); say("Ладно, вещи подождут."); return false; }
         if (crossing) {
             if (level.dimension().equals(spot.dimension())) { crossing = false; say("Перешёл, иду к вещам."); return true; }
-            if (!c.portals.walking()) { cancel("Не смог перейти в другое измерение."); return false; }
-            if (level.getGameTime() > giveUpAt) { cancel("Портал не пустил."); return false; }
+            if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return false; }
+            if (level.getGameTime() > giveUpAt) { stop(); say("Портал не пустил."); return false; }
             return true;
         }
         // Moved out of the dimension by something else: back through a portal, or the place is left.
         if (!level.dimension().equals(spot.dimension())) {
             if (!c.portals.walking()) {
                 var entered = c.portals.enter(level);
-                if (!entered.success()) { cancel("Оказался в другом измерении, портала рядом нет."); return false; }
+                if (!entered.success()) { stop(); say("Оказался в другом измерении, портала рядом нет."); return false; }
                 crossing = true;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
                 say("Возвращаюсь к своим вещам через портал.");
@@ -191,11 +197,6 @@ public final class CompanionDeathTrip {
             waited = 0;
         }
         waited++;
-        // The attempt is spent when he stands at a thing, not when he sets out: a walk that never got there is no try.
-        if (waited == 1 && !attempted) {
-            attempted = true;
-            CompanionDeathSpots.get(level.getServer()).attempted(c.getOwnerId(), level.dimension(), spot.pos());
-        }
         // A full bag is made room in here too: three diamonds at the pile are not worth taking one of them.
         if (waited == 1 && room() == 0) makeRoom();
         // The pickup runs by itself while he stands there; a thing it cannot take is left for the next walk.
@@ -231,7 +232,7 @@ public final class CompanionDeathTrip {
     }
 
     void cancel(String why) {
-        if (spot != null && c.level().getServer() != null) CompanionDeathSpots.get(c.level().getServer()).taken(c.getOwnerId(), spot);
+        if (spot != null && c.level().getServer() != null) CompanionDeathSpots.get(c.level().getServer()).taken(c.getOwnerId(), spot.dimension(), spot.pos());
         spot = null;
         c.travel().reset();
         if (why != null && !why.isEmpty()) say(why);
@@ -283,7 +284,7 @@ public final class CompanionDeathTrip {
             say("Часть моих вещей осталась на месте.");
             return;
         }
-        CompanionDeathSpots.get(level.getServer()).taken(c.getOwnerId(), spot);
+        CompanionDeathSpots.get(level.getServer()).taken(c.getOwnerId(), level.dimension(), spot.pos());
         spot = null;
         c.travel().reset();
         say(line);
@@ -307,13 +308,10 @@ public final class CompanionDeathTrip {
         }
     }
 
-    /** Empty slots plus stacks that can still take something: a half stack is room too. */
+    /** An empty slot: a new stack needs one, a half stack of dirt will not take a diamond. */
     private int room() {
         int free = 0;
-        for (int slot = 0; slot < c.getContainerSize(); slot++) {
-            var stack = c.getItem(slot);
-            if (stack.isEmpty() || stack.getCount() < stack.getMaxStackSize()) free++;
-        }
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).isEmpty()) free++;
         return free;
     }
 

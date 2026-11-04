@@ -499,6 +499,8 @@ public final class CompanionDeathRecoveryTests {
             companion.setDeathRecovery(false);
             companion.tick();
             h.assertTrue(!companion.deathTrip.active(), "The walk went on after the feature was turned off");
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).size() == 1,
+                    "Turning the feature off forgot the place");
         }).thenSucceed();
     }
 
@@ -662,6 +664,22 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(third.deathRecoveryAttempts() == 5 && third.deathRecoveryDeaths() == 10,
                 "An old save loaded with a strange budget: " + third.deathRecoveryAttempts() + "/" + third.deathRecoveryDeaths());
         h.succeed();
+    }
+
+    /** Setting out spends a try: a pile he never reaches cannot be retried for ever. */
+    @GameTest(template = "empty")
+    public static void settingOutSpendsATry(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out");
+            var spots = store.all(companion.getOwnerId());
+            h.assertTrue(spots.size() == 1 && spots.get(0).attempts() == 1,
+                    "Setting out did not spend a try: " + spots);
+        }).thenSucceed();
     }
 
     /** A place he cannot walk to at all — another dimension, the void — is dropped without a walk. */

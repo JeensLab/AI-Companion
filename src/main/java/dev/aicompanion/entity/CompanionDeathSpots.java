@@ -76,9 +76,12 @@ public final class CompanionDeathSpots extends SavedData {
 
     public List<Spot> all(UUID owner) { return List.copyOf(spots.getOrDefault(owner, List.of())); }
 
-    public void taken(UUID owner, Spot spot) {
+    /** Forgetting a place: by its dimension and position, so a record read before it was charged still matches. */
+    public void taken(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
         List<Spot> list = spots.get(owner);
-        if (list != null && list.remove(spot)) {
+        if (list == null) return;
+        boolean removed = list.removeIf(spot -> spot.pos().equals(pos) && spot.dimension().equals(dimension));
+        if (removed) {
             if (list.isEmpty()) spots.remove(owner);
             setDirty();
         }
