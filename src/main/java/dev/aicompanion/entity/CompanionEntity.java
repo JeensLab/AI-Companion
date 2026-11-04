@@ -910,9 +910,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             java.util.UUID spotId = java.util.UUID.randomUUID();
             boolean dropped = bag.dropBelongings(spotId) | playersThings.drop();
             // Every fall is remembered with its price; the walk back is decided when he is back on his feet.
-            if (dropped && worth >= CompanionBelongings.WORTH_GOING && getOwnerId() != null)
+            if (dropped && worth >= CompanionBelongings.WORTH_GOING && getOwnerId() != null) {
                 CompanionDeathSpots.get(((ServerLevel) level()).getServer()).died(getOwnerId(), spotId,
                         level().dimension(), blockPosition(), worth, level().getGameTime());
+                deathTrip.freshPlace(blockPosition());
+            } else if (dropped) autonomySay("За мелочью не пойду: пусть лежит.");
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
             CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
         }

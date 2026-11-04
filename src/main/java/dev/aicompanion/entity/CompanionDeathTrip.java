@@ -272,6 +272,9 @@ public final class CompanionDeathTrip {
 
     public String refusalLine() { return "Сейчас только вещи заберу свои после смерти."; }
 
+    /** A new fall at a place clears the wait that a previous walk there left behind. */
+    public void freshPlace(net.minecraft.core.BlockPos pos) { triedAt.remove(pos); }
+
     /** Stops the walk but keeps the place: he died on the way, and his things are still there. */
     void stop() {
         spot = null;
