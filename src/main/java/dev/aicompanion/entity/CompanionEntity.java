@@ -875,7 +875,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             boolean defend = enemy != null && enemy.isAlive() && !archery.aiming() && hasLineOfSight(enemy)
                     && (distanceToSqr(enemy) < 9 || enemy instanceof net.minecraft.world.entity.monster.AbstractSkeleton && distanceToSqr(enemy) < 144);
             if (defend && !isUsingItem()) startUsingItem(InteractionHand.OFF_HAND);
-            else if (!defend && isUsingItem() && getUsedItemHand() == InteractionHand.OFF_HAND) stopUsingItem();
+            else if (!defend && !creeperGuard.shielding() && isUsingItem() && getUsedItemHand() == InteractionHand.OFF_HAND) stopUsingItem();
         }
         if (inventoryViewers == 0 && !hasActiveWorkOrder() && !recovery.active() && !preferredWeapon.isEmpty() && tickCount % 20 == 0)
             selectWeaponForCombat();
@@ -904,6 +904,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     ItemStack eating = ItemStack.EMPTY;
     int lastHurtTick = -1000;
     static final int EAT_TICKS = 32;
+
+    @Override protected void hurtCurrentlyUsedShield(float damage) { equipment.wearShield(damage); }
 
     @Override public boolean hurt(net.minecraft.world.damagesource.DamageSource source, float amount) {
         boolean hurt = super.hurt(source, amount);

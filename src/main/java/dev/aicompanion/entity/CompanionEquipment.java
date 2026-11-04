@@ -3,8 +3,13 @@ package dev.aicompanion.entity;
 import dev.aicompanion.inventory.CompanionEquipmentContainer;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
@@ -12,6 +17,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import java.util.List;
 
 final class CompanionEquipment {
+    /** A player's shield takes no wear from a blow weaker than this. */
+    private static final float SHIELD_WEARS_FROM = 3;
     final CompanionEntity c;
 
     CompanionEquipment(CompanionEntity c) { this.c = c; }
@@ -204,6 +211,25 @@ final class CompanionEquipment {
         for (ItemStack stack : c.companionInventory)
             if (kind.test(stack) && !c.carriedForPlayer(stack) && (choice.isEmpty() || meleeScore(stack) > meleeScore(choice))) choice = stack;
         return choice;
+    }
+
+    /** The blow the raised shield took, as a player's shield takes it: 1 + the whole damage from 3 up; a worn-out shield is gone, and the journal keeps it. */
+    void wearShield(float damage) {
+        ItemStack shield = c.getUseItem();
+        if (damage < SHIELD_WEARS_FROM || !shield.canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK) || !(c.level() instanceof ServerLevel level)) return;
+        InteractionHand hand = c.getUsedItemHand();
+        int wear = 1 + Mth.floor(damage);
+        shield.hurtAndBreak(wear, level, c, item -> {
+            c.onEquippedItemBroken(item, LivingEntity.getSlotForHand(hand));
+            c.stopUsingItem();
+        });
+        boolean broken = shield.isEmpty();
+        if (broken) {
+            c.setItemSlot(LivingEntity.getSlotForHand(hand), ItemStack.EMPTY);
+            c.playSound(SoundEvents.SHIELD_BREAK, 0.8F, 0.8F + c.getRandom().nextFloat() * 0.4F);
+        }
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), broken ? "shield_broken" : "shield_wear", "entity", c.getUUID(), "damage", damage, "wear", wear,
+                "left", broken ? 0 : shield.getMaxDamage() - shield.getDamageValue());
     }
 
     private void preferCurrentWeapon() {

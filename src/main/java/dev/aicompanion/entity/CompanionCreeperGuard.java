@@ -63,15 +63,19 @@ final class CompanionCreeperGuard {
     private static final int[] RING_RADII = {5, 9};
 
     private final CompanionEntity owner;
-    private boolean active, finished, fighting, dashing;
+    private boolean active, finished, fighting, shielded, dashing;
     private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing, lastFlee, fuseSince, fuseLook;
     private int retreats, flees;
     private Vec3 flee;
     private Creeper watched, fuseOf;
     private String shown = "";
+    private final CompanionShieldGuard shield;
     private final CompanionFuseEscape escape;
 
-    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; escape = new CompanionFuseEscape(owner); }
+    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; shield = new CompanionShieldGuard(owner); escape = new CompanionFuseEscape(owner); }
+
+    /** The shield is up against a lit fuse: the idle lowering of it (CompanionEntity) waits. */
+    boolean shielding() { return shield.holding(); }
 
     /** True when a creeper is met with the sword: on a long goal, armed, healthy, and not after a run of retreats from it. */
     boolean fights() {
@@ -88,7 +92,8 @@ final class CompanionCreeperGuard {
         Creeper creeper = seen(level);
         watched = creeper;
         lookAtFuse(creeper, now);
-        return creeper != null && plan(level, creeper);
+        shielded = creeper != null && burns(creeper) && shield.covers(level, creeper);
+        return creeper != null && (shielded || plan(level, creeper));
     }
 
     /** A creeper that can hurt him stands in sight within this many blocks, foe or not: a pickup or a torch must not take his turn then. */
@@ -133,9 +138,9 @@ final class CompanionCreeperGuard {
             retreats++;
             lastRetreat = now;
         }
-        owner.workStatus(fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, ухожу от него.");
-        event(fighting ? "retreat" : dashing ? "dash" : "flee", watched, path);
-        if (!fighting) leaveLootAfterFlees(now);
+        owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, ухожу от него.");
+        event(shielded ? "shield" : fighting ? "retreat" : dashing ? "dash" : "flee", watched, path);
+        if (!shielded && !fighting) leaveLootAfterFlees(now);
     }
 
     /** A creeper that stays by the things he goes for, with nothing to meet it, would have him step away and come back for ever: the things are let lie. */
@@ -154,6 +159,11 @@ final class CompanionCreeperGuard {
         long now = level.getGameTime();
         Creeper creeper = seen(level);
         lookAtFuse(creeper, now);
+        if (shielded) {
+            shielded = creeper != null && burns(creeper) && shield.hold(level, creeper);
+            if (shielded) lastSeen = now; else finished = true;
+            return;
+        }
         if (creeper == null) {
             if (now - lastSeen >= CALM_TICKS) finished = true;
             return;
@@ -173,7 +183,8 @@ final class CompanionCreeperGuard {
 
     void stop() {
         if (!active) return;
-        active = fighting = dashing = false;
+        active = fighting = shielded = dashing = false;
+        shield.release();
         escape.reset();
         flee = null;
         owner.getNavigation().stop();
