@@ -22,7 +22,7 @@ public final class CompanionBelongings {
     private static final int FOOD_WORTH_GOING = 20;
     private static final double FOOD_POINTS = 6;
     /** Anything not named here and not junk is worth a little, so a pile of one thing still adds up. */
-    private static final double UNNAMED = .5;
+    private static final double UNNAMED = .1;
 
     private static final Set<Item> JUNK = Set.of(
             Items.DIRT, Items.GRASS_BLOCK, Items.COARSE_DIRT, Items.ROOTED_DIRT, Items.PODZOL, Items.MYCELIUM,
@@ -83,6 +83,10 @@ public final class CompanionBelongings {
         if (item == Items.EMERALD) return 8;
         if (item == Items.EMERALD_BLOCK) return 72;
         if (item == Items.IRON_INGOT) return 3;
+        if (item == Items.NETHERITE_BLOCK) return 108;
+        if (item == Items.IRON_NUGGET) return .3;
+        if (item == Items.GOLD_NUGGET) return .2;
+        if (item == Items.IRON_DOOR || item == Items.IRON_TRAPDOOR || item == Items.IRON_BARS) return 1;
         if (item == Items.IRON_BLOCK) return 27;
         if (item == Items.GOLD_INGOT) return 2;
         if (item == Items.GOLD_BLOCK) return 18;

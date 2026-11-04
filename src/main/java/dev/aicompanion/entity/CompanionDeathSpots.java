@@ -82,7 +82,7 @@ public final class CompanionDeathSpots extends SavedData {
         return tag;
     }
 
-    static CompanionDeathSpots load(CompoundTag tag, HolderLookup.Provider registries) {
+    public static CompanionDeathSpots load(CompoundTag tag, HolderLookup.Provider registries) {
         CompanionDeathSpots data = new CompanionDeathSpots();
         CompoundTag owners = tag.getCompound("owners");
         for (String key : owners.getAllKeys()) {

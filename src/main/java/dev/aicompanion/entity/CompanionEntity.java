@@ -811,7 +811,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         super.customServerAiStep();
         // Back on his feet and with nothing ordered: his own things are the first work (death recovery).
         if (!deathTrip.active() && tickCount % 20 == 0 && !work.isActive() && !gatheringLogs && !gatheringDirt
-                && getTarget() == null && inventoryViewers == 0) deathTrip.begin();
+                && getTarget() == null && inventoryViewers == 0 && !isPassenger() && !hasPendingLoot()
+                && !temporaryPillar.isActive() && !temporaryPillar.isRecovering()
+                && !CompanionAgenda.suppressesDeeds(this)) deathTrip.begin();
         // In a boat or minecart vanilla switches off every walking goal: the order would hang without even a timeout.
         // Like a player, step out to work; just riding along stays allowed.
         if (isPassenger() && (work.isActive() || gatheringLogs || gatheringDirt)) {

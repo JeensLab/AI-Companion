@@ -267,7 +267,9 @@ public final class CompanionEvents {
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
         // His own things after a death come first, once: the player asking again takes the walk away (CompanionDeathTrip).
-        if (companion.deathTrip.active() && companion.deathTrip.refuseOrder()) {
+        // An order of his own (a goal step, a deed) and naming the home are not the player insisting.
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")
+                && companion.deathTrip.active() && companion.deathTrip.refuseOrder()) {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "death_recovery");
             return CompanionActionResult.blocked(companion.deathTrip.refusalLine());
         }
