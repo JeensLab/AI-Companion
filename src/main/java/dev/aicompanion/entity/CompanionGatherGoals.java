@@ -155,7 +155,7 @@ final class CompanionGatherGoals {
                             + accessNote + " У меня в сумке: " + c.getStoredItemsSummary() + ".");
                 } else if (++noLogsTicks >= 100) finish(gathered == 0
                         ? c.autonomy.running() ? "В " + CompanionAutonomy.LEASH + " блоках от рабочего места не нашёл доступных деревьев."
-                        : "Сбор завершён: в пределах " + c.searchRadius + " блоков не нашёл доступных деревьев."
+                        : "Сбор завершён: в пределах " + CompanionLogSearch.radius(c) + " блоков не нашёл доступных деревьев."
                         : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен; "
                         + (unreachableLogs.isEmpty() ? "рядом больше нет доступных брёвен. "
                         : "оставшиеся брёвна не удалось достать по пути. ")
@@ -318,7 +318,7 @@ final class CompanionGatherGoals {
 
         private BlockPos findNearestLog() {
             if (!(c.level() instanceof ServerLevel serverLevel)) return null;
-            if (searchCandidates == null) searchCandidates = CompanionLogSearch.find(serverLevel, searchOrigin, c.searchRadius);
+            if (searchCandidates == null) searchCandidates = CompanionLogSearch.find(serverLevel, searchOrigin, CompanionLogSearch.radius(c));
             List<BlockPos> nearest = searchCandidates.stream().filter(candidate -> !unreachableLogs.contains(candidate) && !builtLogs.contains(candidate)
                     && c.leashAllows(candidate) && c.level().hasChunkAt(candidate) && c.level().getBlockState(candidate).is(BlockTags.LOGS))
                     .sorted(Comparator.comparingDouble(candidate -> candidate.distSqr(c.blockPosition()) + Math.max(0, candidate.getY() - c.getY()) * 4))
@@ -329,7 +329,7 @@ final class CompanionGatherGoals {
                 // What was seen from the first place stays on the list; what is seen from here is added.
                 searchOrigin = c.blockPosition();
                 Set<BlockPos> merged = new java.util.LinkedHashSet<>(searchCandidates);
-                merged.addAll(CompanionLogSearch.find(serverLevel, searchOrigin, c.searchRadius));
+                merged.addAll(CompanionLogSearch.find(serverLevel, searchOrigin, CompanionLogSearch.radius(c)));
                 searchCandidates = new java.util.ArrayList<>(merged);
                 return findNearestLog();
             }
@@ -339,7 +339,7 @@ final class CompanionGatherGoals {
             if (nearest.isEmpty() && !searchedByPlayer && !c.autonomy.running() && player != null && player.level() == c.level() && player.blockPosition().distSqr(c.blockPosition()) > 4 * 4) {
                 searchedByPlayer = true;
                 Set<BlockPos> merged = new java.util.LinkedHashSet<>(searchCandidates);
-                merged.addAll(CompanionLogSearch.find(serverLevel, player.blockPosition(), c.searchRadius));
+                merged.addAll(CompanionLogSearch.find(serverLevel, player.blockPosition(), CompanionLogSearch.radius(c)));
                 searchCandidates = new java.util.ArrayList<>(merged);
                 return findNearestLog();
             }

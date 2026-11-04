@@ -10,6 +10,7 @@ import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionFurnaceBatches;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -28,9 +29,10 @@ import java.util.stream.Collectors;
 /** Executes plan steps on the server thread and waits for the result of their own workId. Shared by the client and GameTests. */
 public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
+    private static final int DIG_RETREAT_SECONDS = 360;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "walk_heading");
+            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "walk_heading");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
@@ -41,6 +43,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private final CompanionTaskQueue.Task task;
     private final CompanionParkLink link;
     private long ownedWorkId;
+    /** The work of a goal's collection that stands by its furnace to the end instead of parking again. Server thread only. */
+    private long standByWork;
     /** Server tick at which the companion was first missing in a row; -1 while he is there. Written by the queue's tick only. */
     private long missingSince = -1;
     /** Server tick at which the companion was first seen halted in a row; -1 while he is not. Written by the queue's tick only. */
@@ -175,7 +179,23 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         });
     }
 
-    @Override public CompletableFuture<Attempt> run(PlannedAction action) {
+    /**
+     * A goal's smelt of what his own furnace is already cooking does not set down another furnace: the parked batch cancelled the step,
+     * the stage started again, and the new smelt would only duplicate it. He goes to that furnace and stands by it until it is done.
+     */
+    @Override public CompletableFuture<Attempt> run(PlannedAction planned) {
+        if (!goal || !"smelt_items".equals(planned.type())) return dispatchStep(planned, false);
+        return onServer(player -> {
+            CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            return companion != null && companion.level() instanceof ServerLevel level ? companion.batches().cookingFor(level, planned.item()) : -1L;
+        }).thenCompose(batch -> {
+            if (batch < 0) return dispatchStep(planned, false);
+            CompanionDiagnostics.event(trace, "own_batch_awaited", "batch", batch, "item", planned.item());
+            return dispatchStep(new PlannedAction("collect_smelt", 0, 1, String.valueOf(batch)), true);
+        });
+    }
+
+    private CompletableFuture<Attempt> dispatchStep(PlannedAction action, boolean standBy) {
         return onServer(player -> {
             if (cancelled()) return new Dispatch(CompanionActionResult.cancelled("План отменён."), 0, 0);
             CompanionEntity before = CompanionEvents.getOwnedCompanion(player);
@@ -195,7 +215,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             dispatched = true;
             long work = companion == null ? 0 : companion.activeWorkId();
             if (result.success() && work != previousWork) ownedWorkId = work;
-            if (parkable() && work > 0 && result.success() && work != previousWork && PARKABLE_WORK.contains(action.type())) markParkable(companion, work);
+            if (standBy && result.success() && work != previousWork) standByWork = work;
+            else if (parkable() && work > 0 && result.success() && work != previousWork && PARKABLE_WORK.contains(action.type())) markParkable(companion, work);
             return new Dispatch(result, result.success() && work != previousWork ? work : 0, player.level().getGameTime());
         }).thenCompose(dispatch -> {
             CompanionActionResult result = dispatch.result();
@@ -268,6 +289,8 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static int limitSeconds(PlannedAction action) {
         int items = action.count() == PlannedAction.ALL_CARRIED ? 64 : action.count();
         if ("smelt_items".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * items + 120;
+        // A retreat may start as the step ends: its climb and rest grow the server's deadline, and the client must not cut them short.
+        if ("dig_for_diamonds".equals(action.type())) return WORK_LIMIT_SECONDS + DIG_RETREAT_SECONDS;
         // A safety net over the server's own deadline of a collection (CompanionFurnaceBatches.collectDeadline): the cooking left, a refuel, the walk.
         if ("collect_smelt".equals(action.type())) return WORK_LIMIT_SECONDS + 10 * 64 + 120 + 180;
         // A walk until «стоп» ends on the server by its own bound (CompanionCourse.LIMIT_SECONDS).
@@ -293,7 +316,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         return onServer(player -> {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (companion == null) return CompanionActionResult.failed("Компаньон выгружен из мира.");
-            if (parkable() && companion.activeWorkId() == workId) markParkable(companion, workId);
+            if (parkable() && workId != standByWork && companion.activeWorkId() == workId) markParkable(companion, workId);
             CompanionActionResult result = companion.workResult(workId);
             if (result != null) {
                 if (result.status() == CompanionActionResult.Status.PARKED) parkedSeen(result);

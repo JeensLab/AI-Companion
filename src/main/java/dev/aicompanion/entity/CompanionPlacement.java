@@ -12,12 +12,15 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.Vec3;
 
 final class CompanionPlacement {
     final CompanionEntity c;
     /** The bench the last craft set down, for a caller that takes it again at once; null when none was. */
     BlockPos benchSetDown;
+    /** The bench is taken up again at once: a cell that shuts the way back for that while is a last resort, not a refusal. */
+    boolean takenUpAtOnce;
 
     CompanionPlacement(CompanionEntity c) { this.c = c; }
 
@@ -41,7 +44,8 @@ final class CompanionPlacement {
         CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId,
                 requestedCount, hasCraftingTableNearby());
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "craft_decision", "entity", c.getUUID(),
-                "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(), "message", plan.message());
+                "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(),
+                "message", plan.placeTable() ? plan.message().replaceFirst("^Скрафтил", "План: скрафтить после постановки верстака") : plan.message());
         if (!plan.success()) return recordActionResult(plan.shortage() ? CompanionActionResult.shortage(plan.message()) : CompanionActionResult.failed(plan.message()));
         // A remembered bench far away is not worth the walk: a player would set down another one from own wood.
         if (plan.placeTable() && !c.newBenchAllowed && c.hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK))
@@ -132,6 +136,15 @@ final class CompanionPlacement {
         }
         return false;
     }
+    /** A bench in plain sight within the walk is remembered like one stood next to: the plan walks to it instead of hunting a tree for a new one. */
+    boolean seesCraftingTableWithin(int blocks) {
+        BlockPos origin = c.blockPosition();
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-blocks, -3, -blocks), origin.offset(blocks, 3, blocks))) {
+            if (pos.distSqr(origin) > (double) blocks * blocks || !c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(Blocks.CRAFTING_TABLE)) continue;
+            if (seesBlock(c.getEyePosition(), pos)) { c.rememberObserved(pos.immutable()); return true; }
+        }
+        return false;
+    }
     private boolean seesBlock(Vec3 eye, BlockPos pos) { return seesBlock(c, eye, pos); }
 
     /** Like a player: a bench or chest is usable when any face turned to the eye can be looked at, not only its exact centre. */
@@ -160,6 +173,7 @@ final class CompanionPlacement {
     BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
         BlockState state = block.defaultBlockState();
         int returnHeight = CompanionMiningNavigation.provenReturnHeight(c);
+        BlockPos shutting = null;
         // Where he stands and a block up or down first; only then as high or as low as a player reaches (marathon 23.10, «долина»:
         // in a crack of the ravine the bench took the one cell beside him, the furnace found no room, though the top of the bench
         // was right in front of his face).
@@ -185,12 +199,15 @@ final class CompanionPlacement {
                     for (Direction direction : Direction.Plane.HORIZONTAL) if (serverLevel.getBlockState(pos.relative(direction)).getBlock() instanceof net.minecraft.world.level.block.ChestBlock) adjacentChest = true;
                     if (adjacentChest) continue;
                 }
-                AABB collision = new AABB(pos);
-                if (c.getBoundingBox().intersects(collision) || !serverLevel.getEntities(c, collision).isEmpty()) continue;
-                if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) continue;
+                // Only what blocks building counts: a mob or the player, not an item lying in the cell (a stone on every step of his stairs).
+                if (c.getBoundingBox().intersects(new AABB(pos)) || !serverLevel.isUnobstructed(state, pos, CollisionContext.empty())) continue;
+                if (!CompanionMiningNavigation.preservesReturnOnPlacement(c, pos, returnHeight)) {
+                    if (takenUpAtOnce && shutting == null) shutting = pos.immutable();
+                    continue;
+                }
                 return pos.immutable();
             }
         }
-        return null;
+        return shutting;
     }
 }
