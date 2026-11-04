@@ -60,7 +60,7 @@ public final class CompanionEndCrystals {
     private BlockPos stand;
     private CompanionArrowFlight.Flight flight;
     private int flightAt, scannedAt, fightCheckedAt = -FIGHT_CHECK_EVERY, worked, spent;
-    private boolean fight, shooting, toldStart, toldDone, toldCaged, toldLeft, toldNoBow;
+    private boolean fight, shooting, chosenTold, toldStart, toldDone, toldCaged, toldLeft, toldNoBow;
     /** Crystals that went while he was shooting at them: only then are the crystals «his» to report as shot down. */
     private int broke;
     /** Crystals no arrow of his got to from any stand, or that cost too much: the player's now. */
@@ -84,8 +84,9 @@ public final class CompanionEndCrystals {
      */
     boolean wanted() {
         if (!(c.level() instanceof ServerLevel level) || c.inventoryViewers != 0 || !fightOn(level) || c.hasActiveWorkOrder()) return false;
-        // The crystals are looked over with the flight, not every tick: the box is some four hundred chunks wide.
-        if (crystal != null && crystal.isAlive() && c.tickCount - scannedAt < FLIGHT_EVERY) return c.following || flight != null;
+        // The crystals are looked over with the flight, not every tick: the box is some four hundred chunks wide, and a flight that
+        // fails flies all its pitches. So also with no crystal at hand (guarding a walking player, none to be hit from here).
+        if (c.tickCount - scannedAt < FLIGHT_EVERY) return crystal != null && crystal.isAlive() && (c.following || flight != null);
         scannedAt = c.tickCount;
         if (crystal != null && !crystal.isAlive()) { if (spent > 0) broke++; crystal = null; }
         if (c.following || !c.blockPosition().equals(tried)) { notFromHere.clear(); tried = c.blockPosition(); }
@@ -108,7 +109,7 @@ public final class CompanionEndCrystals {
         }
         if (next != crystal) {
             crystal = next; standIndex = 0; stand = null; flight = null; flightAt = c.tickCount - FLIGHT_EVERY; worked = spent = 0;
-            event("end_crystal_chosen", "");
+            chosenTold = false;
         }
         if (c.tickCount - flightAt >= FLIGHT_EVERY) {
             flight = CompanionArrowFlight.toward(level, new Vec3(c.getX(), c.getEyeY() - .1, c.getZ()), crystal.getBoundingBox());
@@ -162,6 +163,7 @@ public final class CompanionEndCrystals {
     void tick() {
         if (crystal == null || !crystal.isAlive()) return;
         shooting = true;
+        if (!chosenTold) { chosenTold = true; event("end_crystal_chosen", ""); }
         if (!toldStart) { toldStart = true; say("Сбиваю кристаллы."); }
         // Counted here, not by the clock: a fight with an enderman or an order of the player in between costs this crystal nothing.
         if (spent >= ARROWS_PER_CRYSTAL) { giveUp("arrows"); return; }
