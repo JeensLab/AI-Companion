@@ -263,6 +263,9 @@ final class CompanionExpedition {
         }
     }
 
+    /** The fight alone, for a tick in which the work waits for a drop: true when a foe is fought. */
+    boolean holdFight(ServerLevel level) { return active && level.getGameTime() < stepEnd && fight.hold(level, stage == Stage.RETREAT); }
+
     /** Stone from the walls where he stands, for the plugs of a cave: true while it is being cut. */
     private boolean cutStone() {
         Direction along = stage == Stage.BRANCH && tunnel != null ? tunnel : dir;
