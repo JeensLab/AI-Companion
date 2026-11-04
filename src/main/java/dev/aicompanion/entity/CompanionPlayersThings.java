@@ -18,7 +18,7 @@ import java.util.List;
  * spent or stored, and nothing is marked on the items: once the player is beside him again it is tossed at the player's feet
  * as a gift only the player can take. Saved with him and dropped where he dies, like his own things.
  */
-final class CompanionPlayersThings {
+public final class CompanionPlayersThings {
     /** On a drop of the dead player (LivingDropsEvent): his to keep for the player, not loot of Oleg's. */
     static final String MARK = "aicompanion:players";
     /** A player's inventory and armour, with room for stacks the merge left split. */
@@ -27,11 +27,13 @@ final class CompanionPlayersThings {
 
     private final CompanionEntity c;
     private final List<ItemStack> held = new ArrayList<>();
+    /** What of the player's he is carrying, for the price of a walk back to it. */
+    List<ItemStack> held() { return List.copyOf(held); }
 
     CompanionPlayersThings(CompanionEntity c) { this.c = c; }
 
     /** Takes what fits of the stack; the rest stays in it, on the floor. */
-    void keep(ItemStack stack) {
+    public void keep(ItemStack stack) {
         if (held.isEmpty()) c.autonomySay("Подобрал твои вещи, отдам, когда подойдёшь.", false);
         for (ItemStack kept : held) {
             if (!ItemStack.isSameItemSameComponents(kept, stack)) continue;

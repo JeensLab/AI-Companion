@@ -56,6 +56,16 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.personality")
             .define("personality", "Ты мой товарищ по выживанию в Minecraft: язвительный, разговорчивый и надёжный. Помни наш разговор, интересуйся происходящим, шути и матерись естественно, без постоянных комплиментов.");
 
+    /** How many times he arrives at one place before letting it lie, and how many deaths going for it are too many. */
+    public static final ModConfigSpec.IntValue DEATH_RECOVERY_ATTEMPTS = BUILDER
+            .comment("Tries at one death place before he lets it lie (1-20).")
+            .translation("config.aicompanion.death_recovery_attempts")
+            .defineInRange("deathRecoveryAttempts", 5, 1, 20);
+    public static final ModConfigSpec.IntValue DEATH_RECOVERY_DEATHS = BUILDER
+            .comment("Deaths going for one death place, on the way or at it, after which he lets it lie (1-50).")
+            .translation("config.aicompanion.death_recovery_deaths")
+            .defineInRange("deathRecoveryDeaths", 10, 1, 50);
+
     /** Whether he goes back for his own things after a death. On unless the player turns it off. */
     public static final ModConfigSpec.BooleanValue DEATH_RECOVERY = BUILDER
             .comment("Go back for his own belongings after a death: the dearest place first, junk left alone.")

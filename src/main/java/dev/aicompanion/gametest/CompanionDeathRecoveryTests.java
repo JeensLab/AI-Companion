@@ -293,8 +293,8 @@ public final class CompanionDeathRecoveryTests {
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), Level.NETHER, place.offset(0, 0, 2), 8, 1);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(!companion.deathTrip.begin(), "He set out across dimensions with no portal");
-            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
-                    "A crossing that could not be made is still remembered");
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).size() == 1,
+                    "A dear place across dimensions was forgotten without a portal");
         }).thenSucceed();
     }
 
@@ -551,6 +551,62 @@ public final class CompanionDeathRecoveryTests {
         }).thenSucceed();
     }
 
+    /** The budget is the one in the settings, not a number in the code. */
+    @GameTest(template = "empty")
+    public static void theBudgetIsWhatTheSettingsSay(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        companion.setDeathRecoveryLimits(2, 3);
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        store.attempted(companion.getOwnerId(), place);
+        store.attempted(companion.getOwnerId(), place);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(!companion.deathTrip.begin(), "He set out past the attempt budget");
+            h.assertTrue(store.all(companion.getOwnerId()).isEmpty(), "The place past its budget is still remembered");
+        }).thenSucceed();
+    }
+
+    /** The player's things he was carrying are priced and fetched too: they fell with the rest. */
+    @GameTest(template = "empty")
+    public static void thePlayersThingsHeCarriedCountToo(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        companion.playersThings.keep(new ItemStack(Items.DIAMOND, 4));
+        h.assertTrue(CompanionBelongings.worth(companion) >= CompanionBelongings.WORTH_GOING,
+                "The player's diamonds were worth nothing: " + CompanionBelongings.worth(companion));
+        BlockPos place = companion.blockPosition().offset(4, 0, 0);
+        var kept = new ItemEntity(h.getLevel(), place.getX() + .5, place.getY() + .2, place.getZ() + .5,
+                new ItemStack(Items.DIAMOND, 4));
+        kept.getPersistentData().putBoolean("aicompanion:players", true);
+        h.getLevel().addFreshEntity(kept);
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 40, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out for the player's things");
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            h.assertTrue(kept.isRemoved() || kept.getItem().isEmpty(), "The player's things were left lying");
+        }).thenSucceed();
+    }
+
+    /** A foreign drop beside him does not make him claim his own: only his stacks count. */
+    @GameTest(template = "empty")
+    public static void aForeignDropIsNotHis(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition();
+        var mine = belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        mine.setPickUpDelay(200);
+        var foreign = new ItemEntity(h.getLevel(), place.getX() + .5, place.getY() + .2, place.getZ() + .5,
+                new ItemStack(Items.IRON_INGOT, 8));
+        h.getLevel().addFreshEntity(foreign);
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out");
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            h.assertTrue(companion.deathTrip.lastLine().contains("осталась"),
+                    "A foreign drop made him claim his own: " + companion.deathTrip.lastLine());
+        }).thenSucceed();
+    }
+
     /** A place he cannot walk to at all — another dimension, the void — is dropped without a walk. */
     @GameTest(template = "empty")
     public static void unreachablePlacesAreDropped(GameTestHelper h) {
@@ -562,8 +618,9 @@ public final class CompanionDeathRecoveryTests {
                 new BlockPos(place.getX(), h.getLevel().getMinBuildHeight(), place.getZ()), 20, 0);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(!companion.deathTrip.begin(), "He set out for a place he cannot reach");
-            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
-                    "An unreachable place is still remembered");
+            // The void place is dropped at once; the dear Nether place waits for a portal.
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).size() == 1,
+                    "The unreachable places were not sorted out: " + CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()));
         }).thenSucceed();
     }
 
@@ -586,6 +643,8 @@ public final class CompanionDeathRecoveryTests {
             h.assertTrue(second.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
                     "The second order was refused too: " + second.status());
             h.assertTrue(!companion.deathTrip.active(), "The walk survived the second ask");
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).size() == 1,
+                    "The place was forgotten when the player insisted");
         }).thenSucceed();
     }
 

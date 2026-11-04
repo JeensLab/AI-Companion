@@ -32,8 +32,6 @@ public final class CompanionDeathTrip {
     private static final int WAIT_ON_ONE = 40;
     /** A second order inside this window means the player insists, and his own walk gives way. */
     private static final long INSIST_WINDOW = 20 * 20;
-    /** Tries at one place, and deaths on the way to it, after which he lets it lie. */
-    private static final int MOST_ATTEMPTS = 5, MOST_DEATHS = 10;
     /** A place that keeps something behind is not tried again for this long (his bag may be full). */
     private static final int RETRY_TICKS = 20 * 300;
     /** A place in another dimension is worth a crossing only for things that are really dear: a portal costs more. */
@@ -51,6 +49,9 @@ public final class CompanionDeathTrip {
     private boolean attempted;
     /** How many things he carried when the place could first be seen: the bag is the proof of what he took. */
     private int bagBefore = -1;
+    /** How many of his stacks disappeared beside him: the proof he took them, not just that the bag grew. */
+    private int taken;
+    private final java.util.Map<UUID, BlockPos> seen = new java.util.HashMap<>();
     /** When this place was last tried, so a place that keeps refusing is not tried again at once. */
     private final java.util.Map<BlockPos, Integer> triedAt = new java.util.HashMap<>();
     private String lastLine = "";
@@ -79,7 +80,7 @@ public final class CompanionDeathTrip {
         List<CompanionDeathSpots.Spot> places = new ArrayList<>(data.all(c.getOwnerId()));
         places.sort(Comparator.comparingDouble(CompanionDeathSpots.Spot::worth).reversed());
         for (CompanionDeathSpots.Spot place : places) {
-            if (place.attempts() >= MOST_ATTEMPTS || place.deaths() >= MOST_DEATHS) {
+            if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
                 data.taken(c.getOwnerId(), place);
                 say("Ну и подавитесь своим лутом.");
                 continue;
@@ -95,8 +96,9 @@ public final class CompanionDeathTrip {
                     data.taken(c.getOwnerId(), place);
                     continue;
                 }
+                // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
                 var entered = c.portals.enter(level);
-                if (!entered.success()) { data.taken(c.getOwnerId(), place); continue; }
+                if (!entered.success()) continue;
                 spot = place;
                 crossing = true;
                 waited = 0;
@@ -158,12 +160,19 @@ public final class CompanionDeathTrip {
             return true;
         }
         if (bagBefore < 0) bagBefore = carried();
+        java.util.Map<UUID, BlockPos> now = new java.util.HashMap<>();
+        for (ItemEntity item : his(level, spot.pos())) now.put(item.getUUID(), item.blockPosition().immutable());
+        // A stack of his that vanished beside him was picked up by him; one that vanished elsewhere was lost.
+        for (var entry : seen.entrySet())
+            if (!now.containsKey(entry.getKey()) && entry.getValue().distToCenterSqr(c.position()) < 16) taken++;
+        seen.clear();
+        seen.putAll(now);
         if (standingOn != null && his(level, spot.pos()).stream().noneMatch(item -> item.getUUID().equals(standingOn))) {
             standingOn = null;
             waited = 0;
         }
         ItemEntity next = nearest(level);
-        if (next == null) { finish(level, carried() > bagBefore ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
+        if (next == null) { finish(level, taken > 0 ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
         if (waited == 0 && !attempted) {
             attempted = true;
             CompanionDeathSpots.get(level.getServer()).attempted(c.getOwnerId(), spot.pos());
@@ -199,8 +208,9 @@ public final class CompanionDeathTrip {
         if (spot == null) return false;
         long now = c.level().getGameTime();
         if (refused && now - refusedAt <= INSIST_WINDOW) {
-            CompanionDeathSpots.get(c.level().getServer()).taken(c.getOwnerId(), spot);
+            // The walk gives way, but the place stays: his things are still lying there.
             spot = null;
+            c.travel().reset();
             say("Ладно, твоё дело важнее.");
             return false;
         }
@@ -246,13 +256,17 @@ public final class CompanionDeathTrip {
         return total;
     }
 
-    /** What he dropped: the game tags every stack that falls off him with its owner, and nothing else counts. */
+    /** What he dropped: his own stacks and the player's things he was carrying, and nothing else counts. */
     private java.util.List<ItemEntity> his(ServerLevel level, BlockPos place) {
         UUID owner = c.getOwnerId();
         return level.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(place).inflate(SEARCH),
-                item -> item.isAlive() && !item.getItem().isEmpty()
-                        && item.getPersistentData().hasUUID(CompanionBag.BELONGINGS)
-                        && owner.equals(item.getPersistentData().getUUID(CompanionBag.BELONGINGS)));
+                item -> item.isAlive() && !item.getItem().isEmpty() && mine(item, owner));
+    }
+
+    private static boolean mine(ItemEntity item, UUID owner) {
+        var data = item.getPersistentData();
+        if (data.hasUUID(CompanionBag.BELONGINGS) && owner.equals(data.getUUID(CompanionBag.BELONGINGS))) return true;
+        return data.getBoolean(CompanionPlayersThings.MARK);
     }
 
     /** Done: the place is forgotten, and what happened there is said plainly. */

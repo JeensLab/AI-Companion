@@ -47,12 +47,10 @@ public final class CompanionSettingsScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Поведение"), b -> {
             saveAndClose(); minecraft.setScreen(new CompanionBehaviorScreen(this));
         }).bounds(width - 94, 8, 88, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Вещи после смерти: " + (OpenRouterConfig.DEATH_RECOVERY.get() ? "вкл." : "выкл.")), b -> {
-            OpenRouterConfig.DEATH_RECOVERY.set(!OpenRouterConfig.DEATH_RECOVERY.get()); OpenRouterConfig.DEATH_RECOVERY.save();
-            b.setMessage(Component.literal("Вещи после смерти: " + (OpenRouterConfig.DEATH_RECOVERY.get() ? "вкл." : "выкл.")));
-            CompanionPreferences.sync();
+        addRenderableWidget(Button.builder(Component.literal("Вещи после смерти"), b -> {
+            saveAndClose(); minecraft.setScreen(new CompanionDeathRecoveryScreen(this));
         }).bounds(100, 8, 150, 20).tooltip(Tooltip.create(Component.literal(
-                "Олег сам возвращается к месту смерти за своими вещами: сначала за самым дорогим, мусор оставляет лежать. Выключи, если это мешает."))).build());
+                "Возвращаться за своими вещами после смерти: выключатель и сколько попыток он делает."))).build());
         addRenderableWidget(Button.builder(memoryLabel(), b -> {
             OpenRouterConfig.LONG_TERM_MEMORY.set(!OpenRouterConfig.LONG_TERM_MEMORY.get()); OpenRouterConfig.LONG_TERM_MEMORY.save();
             b.setMessage(memoryLabel()); CompanionPreferences.sync();

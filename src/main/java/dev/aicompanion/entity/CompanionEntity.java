@@ -134,7 +134,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
-    final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
+    private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
+    public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionTravel travel = new CompanionTravel(this);
@@ -589,6 +590,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he goes back for his own things after a death (the player can turn it off in the settings). */
     public boolean deathRecovery() { return deathRecovery; }
     public void setDeathRecovery(boolean on) { deathRecovery = on; }
+    public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
+    public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
+    public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
     public String socialObservation() { return social.socialObservation(); }
     public int socialSequence() { return social.socialSequence(); }
     public long socialTime() { return social.socialTime(); }

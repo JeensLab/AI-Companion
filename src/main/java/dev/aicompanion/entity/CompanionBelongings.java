@@ -62,6 +62,10 @@ public final class CompanionBelongings {
             total += worth(stack);
             if (stack.has(DataComponents.FOOD)) food += stack.getCount();
         }
+        for (ItemStack kept : companion.playersThings.held()) {
+            total += worth(kept);
+            if (kept.has(DataComponents.FOOD)) food += kept.getCount();
+        }
         if (food > FOOD_WORTH_GOING) total += FOOD_POINTS;
         return total;
     }
