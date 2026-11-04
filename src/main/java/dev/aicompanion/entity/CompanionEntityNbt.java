@@ -35,6 +35,7 @@ final class CompanionEntityNbt {
         c.playersThings.save(tag);
         c.temporaryPillar.save(tag);
         c.work.save(tag);
+        c.work.mine.save(tag);
         c.batches().save(tag);
         c.places.save(tag);
         c.deeds.save(tag);
@@ -49,9 +50,11 @@ final class CompanionEntityNbt {
         c.preferredWeapon = tag.getString("PreferredWeapon");
         if (tag.contains("CompanionName")) c.setCompanionName(tag.getString("CompanionName"));
         c.setSearchRadius(tag.contains("SearchRadius") ? tag.getInt("SearchRadius") : 64);
-        // The game loads an attribute's base from the save: a world saved before the pace became a player's (0.30) kept him slower.
-        var speed = c.getAttribute(Attributes.MOVEMENT_SPEED);
-        if (speed != null) speed.setBaseValue(DefaultAttributes.getSupplier(dev.aicompanion.AICompanionMod.COMPANION.get()).getBaseValue(Attributes.MOVEMENT_SPEED));
+        // The game loads an attribute's base from the save: a world saved before the pace became a player's (0.30) kept him slower, before the blow threw a foe back kept it from doing so.
+        for (var attribute : java.util.List.of(Attributes.MOVEMENT_SPEED, Attributes.ATTACK_KNOCKBACK)) {
+            var instance = c.getAttribute(attribute);
+            if (instance != null) instance.setBaseValue(DefaultAttributes.getSupplier(dev.aicompanion.AICompanionMod.COMPANION.get()).getBaseValue(attribute));
+        }
         c.roaming = tag.getBoolean("Roaming");
         c.roamOrigin = tag.contains("RoamOrigin") ? BlockPos.of(tag.getLong("RoamOrigin")) : c.blockPosition();
         c.getEntityData().set(CompanionEntity.DATA_ROAMING, c.roaming);
@@ -109,6 +112,8 @@ final class CompanionEntityNbt {
             c.goals.restorePlayerBehavior();
         }
         if (!c.level().isClientSide) c.social.updateExpression();
+        // Last: setFollowing above cancels the work, and a cancel lets the held blocks fall, which must wait for the first tick.
+        c.work.mine.load(tag);
     }
 
     /** What the companion who comes back remembers: name, settings, journal of deeds, places, the house and the chest. */
@@ -116,7 +121,7 @@ final class CompanionEntityNbt {
         CompoundTag full = new CompoundTag(), memory = new CompoundTag();
         c.addAdditionalSaveData(full);
         for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "HomePlace", "Deeds",
-                "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
+                "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY, CompanionMineSite.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
         return memory;
     }
 
@@ -127,6 +132,8 @@ final class CompanionEntityNbt {
         c.autonomousSpeech = !memory.contains("AutonomousSpeech") || memory.getBoolean("AutonomousSpeech");
         c.deeds.load(memory); c.places.load(memory); c.work.load(memory); c.batches().load(memory); c.autonomy.load(memory); c.refreshPlaces();
         c.goals.load(memory);
+        // Only the record: the blocks the dead body held (HELD_KEY) were dropped by it, and are not part of the memory.
+        c.work.mine.load(memory);
         c.noteDeed("Вернулся к тебе после гибели. Вещи, что были при мне, остались там, где я погиб.", true);
     }
 }

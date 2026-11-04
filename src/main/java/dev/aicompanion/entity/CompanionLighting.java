@@ -35,7 +35,7 @@ public final class CompanionLighting {
         if (owner.tickCount % 20 != 0 || !(owner.level() instanceof ServerLevel level)
                 || !owner.canCollectItems() || !owner.onGround() || owner.isSelfRescuing() || owner.getTarget() != null
                 || !(owner.isFollowing() || owner.isRoaming() || owner.hasActiveWorkOrder() || owner.autonomy().staysAtWork())
-                || owner.getOwnerPlayer() == null || level.getGameTime() < nextPlacement || !dark(level)) return;
+                || owner.getOwnerPlayer() == null || level.getGameTime() < nextPlacement || !dark(level) || owner.creeperGuard.nearby(CompanionLoot.CREEPER_NEAR)) return;
         BlockPos place = place(level);
         if (place == null) return;
         int slot = torchSlot();

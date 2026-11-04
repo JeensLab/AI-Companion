@@ -10,7 +10,15 @@ import java.util.List;
 
 /** Scans only loaded chunk sections whose palette contains logs; does not load or generate chunks. */
 public final class CompanionLogSearch {
+    /** A long goal's wood (the sticks and bench of a pickaxe) is looked for at least this far, whatever the player's own search range. */
+    static final int GOAL_RADIUS = 64;
+
     private CompanionLogSearch() { }
+
+    /** The range of the log search: the player's, and for a step of a goal at least {@link #GOAL_RADIUS}; his own orders keep their setting. */
+    static int radius(CompanionEntity c) {
+        return c.getOwnerId() != null && CompanionAgenda.running(c.getOwnerId()) ? Math.max(c.getSearchRadius(), GOAL_RADIUS) : c.getSearchRadius();
+    }
 
     public static List<BlockPos> find(ServerLevel level, BlockPos origin, int radius) {
         List<BlockPos> found = new ArrayList<>();

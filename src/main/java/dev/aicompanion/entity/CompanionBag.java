@@ -140,7 +140,7 @@ final class CompanionBag {
     /** obtain_item: the chain of his own skills that gets the item, planned from what he carries now (CompanionObtain). */
     public CompanionObtain.Plan obtainPlan(String item, int count) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
-        return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count);
+        return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16) || c.placement.seesCraftingTableWithin(16), item, count);
     }
     /** The end of obtain_item: success only by the bag, never by the plan. */
     public CompanionActionResult carriedCheck(String item, int count) {

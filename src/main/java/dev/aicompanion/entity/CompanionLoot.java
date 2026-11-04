@@ -5,8 +5,10 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,6 +26,10 @@ import java.util.UUID;
 /** Harvested items are normal world entities. Transfer to the bag requires physical proximity. */
 final class CompanionLoot {
     private static final String HARVESTER = "aicompanion:harvester";
+    /** How near a hostile he is fighting must be for the pickup to wait. */
+    private static final double FOE_NEAR = 7;
+    /** How near a creeper in sight must be for the pickup to wait, whether or not he fights it: the drop may lie beside it. */
+    static final double CREEPER_NEAR = 7;
     private final CompanionEntity owner;
     private final Set<UUID> pending = new HashSet<>();
     private final Set<UUID> unreachable = new HashSet<>();
@@ -175,10 +181,17 @@ final class CompanionLoot {
                 && (chaseable(level, id) || !unreachable.contains(id) && settling(level, id, item)));
     }
     private boolean settling(ServerLevel level, UUID id, ItemEntity item) {
-        return item.hasPickUpDelay() || level.getGameTime() - born.getOrDefault(id, 0L) < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
+        long age = level.getGameTime() - born.getOrDefault(id, 0L);
+        return item.hasPickUpDelay() && age < DELAY_LIMIT || age < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
     }
     /** A drop has this long to come to rest before «no way to it» is believed. */
     private static final int SETTLE = 40;
+    /**
+     * The longest wait for a pickup delay to run out (it is ten ticks for a harvest drop, forty for a thrown one). A drop flushed into a
+     * chunk nobody ticks hangs with its delay for ever (run m4b/lava: the work and the goal stood behind it for good); a drop let go here
+     * is chased again as soon as the delay does run out.
+     */
+    private static final int DELAY_LIMIT = 200;
     /** Where he stood when a drop was found out of reach: from four blocks away it gets another try. */
     private final Map<UUID, BlockPos> unreachableFrom = new HashMap<>();
     private void giveUpFromHere(ServerLevel level, UUID id) {
@@ -214,9 +227,15 @@ final class CompanionLoot {
     }
     boolean canChase() {
         if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.getTemporarySupportCount() > 0
-                || owner.isSwingingAtBlock()) return false;
+                || owner.isSwingingAtBlock() || foeOnHim() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
+    }
+    /** The pickup shares the melee goal's priority: once it runs it keeps him walking after a drop while the foe he is fighting strikes. */
+    private boolean foeOnHim() {
+        LivingEntity foe = owner.getTarget();
+        if (foe instanceof Monster && foe.isAlive() && owner.distanceToSqr(foe) < FOE_NEAR * FOE_NEAR && !owner.work.expedition.shuns(foe)) return true;
+        return owner.level() instanceof ServerLevel level && owner.combat.footwork.onHim(level);
     }
     void tickChase() {
         if (!(owner.level() instanceof ServerLevel level)) return;
@@ -454,6 +473,7 @@ final class CompanionLoot {
     }
 
     private boolean chaseable(ServerLevel level, UUID id) {
+        if (shunned.getOrDefault(id, 0L) > level.getGameTime()) return false;
         if (unreachable.contains(id)) {
             // Given up from one spot only: four blocks away the drop is tried again.
             BlockPos from = unreachableFrom.get(id);
@@ -464,8 +484,15 @@ final class CompanionLoot {
         // Floating in the water is taken like one on the ground: he swims to it, as a player does.
         return level.getEntity(id) instanceof ItemEntity item && item.isAlive() && !item.hasPickUpDelay()
                 && (item.onGround() || item.isInWater() || Math.abs(item.getY() - owner.getY()) < 2.3)
+                && !rubbleFarBelow(item)
                 && owner.canStoreDrops(List.of(item.getItem().copyWithCount(1)));
     }
+    /** In the mine, a cobblestone or a lump of soil that fell into a hole far below him is left: the way to it was once the stairs up and round (run w1a/void). */
+    private boolean rubbleFarBelow(ItemEntity item) {
+        ItemStack stack = item.getItem();
+        return owner.work.expedition.active() && item.getY() < owner.getY() - RUBBLE_DEPTH && (CompanionTools.soilItem(stack) || stack.is(ItemTags.STONE_TOOL_MATERIALS));
+    }
+    private static final int RUBBLE_DEPTH = 3;
     /**
      * His own harvest lying near a spot (tagged as his) that is not on the pickup list: put back on it, each item at most once in
      * five minutes (one out of reach does not keep him busy forever). Returns how many were taken up again.
@@ -488,7 +515,10 @@ final class CompanionLoot {
         return found;
     }
     private final Map<UUID, Long> reclaimedAt = new HashMap<>();
-    void beginCollection() { collecting = true; leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
+    /** Drops left lying until the given game time (a creeper that will not leave them): not chased, and the work does not wait for them. */
+    private final Map<UUID, Long> shunned = new HashMap<>();
+    void shun(long until) { for (UUID id : pending) shunned.put(id, until); pause(); }
+    void beginCollection() { collecting = true; shunned.clear(); leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
     void resumeCollection() { collecting = true; }
-    void cancel() { collecting = false; leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }
+    void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }
 }

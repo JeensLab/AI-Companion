@@ -3,8 +3,13 @@ package dev.aicompanion.entity;
 import dev.aicompanion.inventory.CompanionEquipmentContainer;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
@@ -12,6 +17,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import java.util.List;
 
 final class CompanionEquipment {
+    /** A player's shield takes no wear from a blow weaker than this. */
+    private static final float SHIELD_WEARS_FROM = 3;
     final CompanionEntity c;
 
     CompanionEquipment(CompanionEntity c) { this.c = c; }
@@ -182,14 +189,52 @@ final class CompanionEquipment {
             if (matchesEquipment(c.getMainHandItem(), c.preferredWeapon)) return;
             if (equipItemInternal(c.preferredWeapon, "mainhand").success()) return;
         }
-        double best = equipmentScore(c.getMainHandItem(), EquipmentSlot.MAINHAND);
+        ItemStack choice = bestWeapon(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
+        // No sword or axe in the bag or the hand: the hardest-hitting pickaxe, as a player would; a stone pickaxe against a zombie in his
+        // tunnel is an even trade he can lose by one blow while an iron one lies in the bag. The hand is not in the bag: a held sword stays.
+        ItemStack hand = c.getMainHandItem();
+        if (choice.isEmpty() && !hand.is(ItemTags.SWORDS) && !hand.is(ItemTags.AXES)) choice = bestWeapon(stack -> stack.is(ItemTags.PICKAXES));
+        if (!choice.isEmpty() && meleeScore(choice) > meleeScore(c.getMainHandItem()))
+            equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+    }
+
+    /** Damage over time, not per blow: a wooden axe hits harder than a stone sword but twice as rarely, and loses a fight the sword wins. */
+    private double meleeScore(ItemStack stack) { return equipmentScore(stack, EquipmentSlot.MAINHAND) * CompanionCombat.attackSpeed(stack); }
+
+    static boolean isMelee(ItemStack stack) { return stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES); }
+
+    /** A sword or an axe in the hand or the bag (a pickaxe is a last resort, not a weapon he goes at a creeper with). */
+    boolean hasMeleeWeapon() { return isMelee(c.getMainHandItem()) || !bestWeapon(CompanionEquipment::isMelee).isEmpty(); }
+
+    /** The stone pickaxe is in the hand or the bag: the stone he carries is then not what it is still to be made of. */
+    boolean hasStonePickaxe() {
+        return c.getMainHandItem().is(net.minecraft.world.item.Items.STONE_PICKAXE) || c.companionInventory.stream().anyMatch(stack -> stack.is(net.minecraft.world.item.Items.STONE_PICKAXE));
+    }
+
+    private ItemStack bestWeapon(java.util.function.Predicate<ItemStack> kind) {
         ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : c.companionInventory) if ((stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES)) && !c.carriedForPlayer(stack)
-                && equipmentScore(stack, EquipmentSlot.MAINHAND) > best) {
-            best = equipmentScore(stack, EquipmentSlot.MAINHAND);
-            choice = stack;
+        for (ItemStack stack : c.companionInventory)
+            if (kind.test(stack) && !c.carriedForPlayer(stack) && (choice.isEmpty() || meleeScore(stack) > meleeScore(choice))) choice = stack;
+        return choice;
+    }
+
+    /** The blow the raised shield took, as a player's shield takes it: 1 + the whole damage from 3 up; a worn-out shield is gone, and the journal keeps it. */
+    void wearShield(float damage) {
+        ItemStack shield = c.getUseItem();
+        if (damage < SHIELD_WEARS_FROM || !shield.canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK) || !(c.level() instanceof ServerLevel level)) return;
+        InteractionHand hand = c.getUsedItemHand();
+        int wear = 1 + Mth.floor(damage);
+        shield.hurtAndBreak(wear, level, c, item -> {
+            c.onEquippedItemBroken(item, LivingEntity.getSlotForHand(hand));
+            c.stopUsingItem();
+        });
+        boolean broken = shield.isEmpty();
+        if (broken) {
+            c.setItemSlot(LivingEntity.getSlotForHand(hand), ItemStack.EMPTY);
+            c.playSound(SoundEvents.SHIELD_BREAK, 0.8F, 0.8F + c.getRandom().nextFloat() * 0.4F);
         }
-        if (!choice.isEmpty()) equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), broken ? "shield_broken" : "shield_wear", "entity", c.getUUID(), "damage", damage, "wear", wear,
+                "left", broken ? 0 : shield.getMaxDamage() - shield.getDamageValue());
     }
 
     private void preferCurrentWeapon() {
