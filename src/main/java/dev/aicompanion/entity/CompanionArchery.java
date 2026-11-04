@@ -72,6 +72,8 @@ final class CompanionArchery {
 
     private boolean aiming(LivingEntity target) {
         if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed()) return false;
+        // An enderman teleports away from every arrow and takes none of it (EnderMan.hurt): the sword, however far off it is.
+        if (target instanceof net.minecraft.world.entity.monster.EnderMan) return false;
         double distance = c.distanceTo(target);
         if (distance > FARTHEST || !c.getSensing().hasLineOfSight(target)) return false;
         // In water an arrow loses two fifths of its speed a tick and is spent after four blocks or so: a foe deeper than that is left

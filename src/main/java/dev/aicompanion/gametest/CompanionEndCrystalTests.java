@@ -50,11 +50,13 @@ public final class CompanionEndCrystalTests {
     @AfterBatch(batch = "crystal_flight") public static void afterFlight(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_follow") public static void afterFollow(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_guard") public static void afterGuard(ServerLevel level) { clean(level); }
+    @AfterBatch(batch = "crystal_hers") public static void afterHers(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_nobow") public static void afterNobow(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_own") public static void afterOwn(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_quiet") public static void afterQuiet(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_shot") public static void afterShot(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_stay") public static void afterStay(ServerLevel level) { clean(level); }
+    @AfterBatch(batch = "crystal_stay_next") public static void afterStayNext(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_sword") public static void afterSword(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_unreachable") public static void afterUnreachable(ServerLevel level) { clean(level); }
 
@@ -174,6 +176,45 @@ public final class CompanionEndCrystalTests {
         h.succeedWhen(() -> {
             h.assertTrue(said(companion, "Один кристалл стрелой не достать — он на тебе.") == 1, "Said " + CompanionEndCrystals.said(companion));
             h.assertTrue(said(companion, "Кристаллы на колоннах сбил.") == 0 && crystal.isAlive(), "Claimed the crystals down");
+        });
+    }
+
+    /** He left it to the player, and she broke it: that was her crystal, not his, so he does not say he shot them down after all. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900, batch = "crystal_hers")
+    public static void aCrystalThePlayerBrokeAfterHeLeftItIsNotClaimedAsHis(GameTestHelper h) {
+        arena(h);
+        EndCrystal crystal = onPillar(h, 1);
+        for (int x = 14; x <= 18; x++) for (int z = 24; z <= 28; z++) for (int y = TOP + 1; y <= TOP + 4; y++)
+            if (x == 14 || x == 18 || z == 24 || z == 28 || y == TOP + 4) h.setBlock(new BlockPos(x, y, z), Blocks.OBSIDIAN);
+        dragon(h);
+        CompanionEntity companion = archer(h, 16, 4);
+        long[] brokeAt = {0};
+        h.onEachTick(() -> {
+            if (brokeAt[0] == 0 && said(companion, "Один кристалл стрелой не достать — он на тебе.") == 1) { crystal.discard(); brokeAt[0] = h.getTick(); }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(brokeAt[0] > 0 && h.getTick() > brokeAt[0] + 60, "Not left to the player yet");
+            h.assertTrue(said(companion, "Кристаллы на колоннах сбил.") == 0, "Claimed the player's crystal: " + CompanionEndCrystals.said(companion));
+        });
+    }
+
+    /** «Стой» by a crystal no arrow gets to from there: he tries the next one, which he can hit from where he stands, and shoots it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "crystal_stay_next")
+    public static void toldToStayHePassesOverACrystalHeCannotHitForOneHeCan(GameTestHelper h) {
+        arena(h);
+        EndCrystal far = onPillar(h, 1);
+        h.setBlock(new BlockPos(6, GROUND + 1, 8), Blocks.BEDROCK);
+        Vec3 at = h.absoluteVec(new Vec3(6.5, GROUND + 2, 8.5));
+        EndCrystal hidden = new EndCrystal(h.getLevel(), at.x, at.y, at.z);
+        h.getLevel().addFreshEntity(hidden);
+        for (int x = 4; x <= 8; x++) for (int z = 6; z <= 10; z++) for (int y = GROUND + 1; y <= GROUND + 4; y++)
+            if (x == 4 || x == 8 || z == 6 || z == 10 || y == GROUND + 4) h.setBlock(new BlockPos(x, y, z), Blocks.OBSIDIAN);
+        dragon(h);
+        CompanionEntity companion = archer(h, 16, 4);
+        companion.setFollowing(false);
+        h.succeedWhen(() -> {
+            h.assertTrue(far.isRemoved(), "Stuck on the hidden crystal; arrows left " + count(companion, Items.ARROW));
+            h.assertTrue(hidden.isAlive(), "The hidden one broke");
         });
     }
 

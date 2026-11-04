@@ -38,9 +38,10 @@ public final class CompanionEndCrystals {
     private static final int FLIGHT_EVERY = 10;
     /**
      * A crystal blows up with power 6, which hurts out to twice that (ExplosionDamageCalculator): at eight blocks some 20 health. So
-     * nobody is to be nearer than this when one is shot, a player, Oleg, the player's pets; a block of it for the arrow's flight.
+     * nobody is to be nearer than this when one is shot, a player, Oleg, the player's pets; four blocks of it for what a player climbing
+     * beside a pillar covers while a lob is in the air (one to four seconds).
      */
-    private static final double BLAST = 13;
+    private static final double BLAST = 16;
     /**
      * Where he shoots a crystal from when not from where he stands: this far from its pillar's middle on his side, one after the other.
      * Too near a tall wide pillar no lob gets over its edge (the pitch stops at 85°), too far the arrow does not reach.
@@ -59,9 +60,14 @@ public final class CompanionEndCrystals {
     private BlockPos stand;
     private CompanionArrowFlight.Flight flight;
     private int flightAt, scannedAt, fightCheckedAt = -FIGHT_CHECK_EVERY, worked, spent;
-    private boolean fight, shooting, started, toldDone, toldCaged, toldLeft, toldNoBow;
+    private boolean fight, shooting, toldStart, toldDone, toldCaged, toldLeft, toldNoBow;
+    /** Crystals that went while he was shooting at them: only then are the crystals «his» to report as shot down. */
+    private int broke;
     /** Crystals no arrow of his got to from any stand, or that cost too much: the player's now. */
     private final Set<UUID> left = new HashSet<>();
+    /** Not following, the crystals no arrow gets to from where he stands, tried again once he is somewhere else. */
+    private final Set<UUID> notFromHere = new HashSet<>();
+    private BlockPos tried;
     private final List<String> said = new ArrayList<>();
 
     CompanionEndCrystals(CompanionEntity c) { this.c = c; }
@@ -81,13 +87,17 @@ public final class CompanionEndCrystals {
         // The crystals are looked over with the flight, not every tick: the box is some four hundred chunks wide.
         if (crystal != null && crystal.isAlive() && c.tickCount - scannedAt < FLIGHT_EVERY) return c.following || flight != null;
         scannedAt = c.tickCount;
+        if (crystal != null && !crystal.isAlive()) { if (spent > 0) broke++; crystal = null; }
+        if (c.following || !c.blockPosition().equals(tried)) { notFromHere.clear(); tried = c.blockPosition(); }
         List<EndCrystal> standing = level.getEntitiesOfClass(EndCrystal.class, c.getBoundingBox().inflate(SEEK), CompanionEndCrystals::pillars);
         List<EndCrystal> caged = standing.stream().filter(one -> caged(level, one)).toList();
-        EndCrystal next = standing.stream().filter(one -> !caged.contains(one) && !left.contains(one.getUUID()))
+        EndCrystal next = standing.stream().filter(one -> !caged.contains(one) && !left.contains(one.getUUID()) && !notFromHere.contains(one.getUUID()))
                 .min(Comparator.comparingDouble(c::distanceToSqr)).orElse(null);
         if (next == null) {
+            // Some only out of reach from where he was told to stay: nothing to report yet.
+            if (standing.stream().anyMatch(one -> notFromHere.contains(one.getUUID()))) return false;
             long unreached = standing.stream().filter(one -> left.contains(one.getUUID())).count();
-            if (started && unreached == 0 && !toldDone) { toldDone = true; say("Кристаллы на колоннах сбил."); }
+            if (broke > 0 && unreached == 0 && !toldLeft && !toldDone) { toldDone = true; say("Кристаллы на колоннах сбил."); }
             if (unreached > 0 && !toldLeft) { toldLeft = true; say(count((int) unreached) + " стрелой не достать — " + (unreached == 1 ? "он" : "они") + " на тебе."); }
             if (!caged.isEmpty() && !toldCaged) { toldCaged = true; say(cagedLine(caged.size())); }
             return false;
@@ -96,12 +106,19 @@ public final class CompanionEndCrystals {
             if (!toldNoBow) { toldNoBow = true; say("Нечем сбивать кристаллы: нужны лук и стрелы."); }
             return false;
         }
-        if (next != crystal) { crystal = next; standIndex = 0; stand = null; flight = null; flightAt = c.tickCount - FLIGHT_EVERY; worked = spent = 0; }
+        if (next != crystal) {
+            crystal = next; standIndex = 0; stand = null; flight = null; flightAt = c.tickCount - FLIGHT_EVERY; worked = spent = 0;
+            event("end_crystal_chosen", "");
+        }
         if (c.tickCount - flightAt >= FLIGHT_EVERY) {
             flight = CompanionArrowFlight.toward(level, new Vec3(c.getX(), c.getEyeY() - .1, c.getZ()), crystal.getBoundingBox());
             flightAt = c.tickCount;
         }
-        return c.following || flight != null;
+        if (c.following || flight != null) return true;
+        // Told to stay or to guard: this one is out of reach from here, the next scan tries the next.
+        notFromHere.add(crystal.getUUID());
+        crystal = null;
+        return false;
     }
 
     private boolean fightOn(ServerLevel level) {
@@ -110,7 +127,7 @@ public final class CompanionEndCrystals {
         boolean on = false;
         for (EnderDragon dragon : level.getDragons()) on |= dragon.distanceToSqr(c) <= FIGHT_RANGE * FIGHT_RANGE;
         // A fight over: the next one is told about again from the start.
-        if (!on) { started = toldDone = toldCaged = toldLeft = toldNoBow = false; left.clear(); crystal = null; }
+        if (!on) { toldStart = toldDone = toldCaged = toldLeft = toldNoBow = false; broke = 0; left.clear(); notFromHere.clear(); crystal = null; }
         return fight = on;
     }
 
@@ -145,14 +162,15 @@ public final class CompanionEndCrystals {
     void tick() {
         if (crystal == null || !crystal.isAlive()) return;
         shooting = true;
-        if (!started) { started = true; say("Сбиваю кристаллы."); }
+        if (!toldStart) { toldStart = true; say("Сбиваю кристаллы."); }
         // Counted here, not by the clock: a fight with an enderman or an order of the player in between costs this crystal nothing.
-        if (spent >= ARROWS_PER_CRYSTAL || ++worked > TICKS_PER_CRYSTAL) { giveUp(); return; }
+        if (spent >= ARROWS_PER_CRYSTAL) { giveUp("arrows"); return; }
+        if (++worked > TICKS_PER_CRYSTAL) { giveUp("time"); return; }
         if (flight == null) { if (c.following) walkToStand(); return; }
         c.travel().reset();
         c.getNavigation().stop();
         if (nearBlast()) return;
-        if (c.archery.shootStill(crystal, flight)) spent++;
+        if (c.archery.shootStill(crystal, flight)) { spent++; event("end_crystal_shot", ""); }
     }
 
     /**
@@ -161,7 +179,7 @@ public final class CompanionEndCrystals {
      */
     private void walkToStand() {
         if (stand == null) {
-            if (standIndex >= STANDS.length) { giveUp(); return; }
+            if (standIndex >= STANDS.length) { giveUp("stands"); return; }
             Vec3 middle = crystal.position(), from = c.position();
             double dx = from.x - middle.x, dz = from.z - middle.z, flat = Math.max(Math.sqrt(dx * dx + dz * dz), 1e-6);
             int x = (int) Math.floor(middle.x + dx / flat * STANDS[standIndex]), z = (int) Math.floor(middle.z + dz / flat * STANDS[standIndex]);
@@ -181,7 +199,8 @@ public final class CompanionEndCrystals {
                 && c.ownerId.equals(pet.getOwnerUUID())) && one.distanceTo(crystal) < BLAST).isEmpty();
     }
 
-    private void giveUp() {
+    private void giveUp(String why) {
+        event("end_crystal_left", why);
         left.add(crystal.getUUID());
         crystal = null;
         stand = null;
@@ -190,6 +209,12 @@ public final class CompanionEndCrystals {
         c.archery.lowerBow();
         c.travel().reset();
         c.getNavigation().stop();
+    }
+
+    /** The journal's line on the crystal at hand: where it is and what it cost so far, for a report of a fight gone wrong. */
+    private void event(String name, String why) {
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), name, "crystal", crystal.blockPosition().toShortString(), "from",
+                c.blockPosition().toShortString(), "arrows", spent, "ticks", worked, "stand", standIndex, "reason", why);
     }
 
     private void say(String line) {
