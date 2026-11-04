@@ -20,7 +20,8 @@ public final class CompanionBelongings {
     public static final double WORTH_GOING = 10;
     /** This much food in the bag is worth the walk on its own. */
     private static final int FOOD_WORTH_GOING = 20;
-    private static final double FOOD_POINTS = 6;
+    /** A bag of food above twenty is worth a walk on its own: the bonus alone reaches the threshold. */
+    private static final double FOOD_POINTS = 10;
     /** Anything not named here and not junk is worth a little, so a pile of one thing still adds up. */
     private static final double UNNAMED = .1;
 

@@ -32,6 +32,8 @@ public final class CompanionDeathTrip {
     private static final int WAIT_ON_ONE = 40;
     /** A second order inside this window means the player insists, and his own walk gives way. */
     private static final long INSIST_WINDOW = 20 * 20;
+    /** A place that keeps something behind is not tried again for this long (his bag may be full). */
+    private static final int RETRY_TICKS = 20 * 300;
     /** A place in another dimension is worth a crossing only for things that are really dear: a portal costs more. */
     private static final double CROSS_WORTH = 20;
 
@@ -44,11 +46,10 @@ public final class CompanionDeathTrip {
     private long refusedAt;
     private boolean refused;
     private boolean crossing;
-    /** How many of his stacks he found when the place could first be seen; -1 until then. */
-    private int startedWith = -1;
-    /** How many of them he picked up: stacks that disappeared while he was among them, not ones lost elsewhere. */
-    private int taken;
-    private final java.util.Map<UUID, BlockPos> seen = new java.util.HashMap<>();
+    /** How many things he carried when the place could first be seen: the bag is the proof of what he took. */
+    private int bagBefore = -1;
+    /** When this place was last tried, so a place that keeps refusing is not tried again at once. */
+    private final java.util.Map<BlockPos, Integer> triedAt = new java.util.HashMap<>();
     private String lastLine = "";
 
     CompanionDeathTrip(CompanionEntity c) { this.c = c; }
@@ -72,11 +73,17 @@ public final class CompanionDeathTrip {
         List<CompanionDeathSpots.Spot> places = new ArrayList<>(data.all(c.getOwnerId()));
         places.sort(Comparator.comparingDouble(CompanionDeathSpots.Spot::worth).reversed());
         for (CompanionDeathSpots.Spot place : places) {
+            Integer tried = triedAt.get(place.pos());
+            if (tried != null && c.tickCount - tried < RETRY_TICKS) continue;
             // Only what survived counts: burned, blown up or taken by a mob, the rest is priced as it lies now.
             double left = survivingWorth(level, place);
             if (left < CompanionBelongings.WORTH_GOING) { data.taken(c.getOwnerId(), place); continue; }
             if (!place.dimension().equals(level.dimension())) {
-                if (left < CROSS_WORTH) { data.taken(c.getOwnerId(), place); continue; }
+                // Only the Nether can be crossed on foot: the End needs its own portal, so a place there is left.
+                if (left < CROSS_WORTH || !place.dimension().equals(net.minecraft.world.level.Level.NETHER)) {
+                    data.taken(c.getOwnerId(), place);
+                    continue;
+                }
                 var entered = c.portals.enter(level);
                 if (!entered.success()) { data.taken(c.getOwnerId(), place); continue; }
                 spot = place;
@@ -85,7 +92,7 @@ public final class CompanionDeathTrip {
                 standingOn = null;
                 givenUpOn.clear();
                 refused = false;
-                startedWith = -1;
+                bagBefore = -1;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
                 say("Иду за своими вещами через портал: " + place.pos().toShortString() + ".");
                 return true;
@@ -97,7 +104,7 @@ public final class CompanionDeathTrip {
             standingOn = null;
             givenUpOn.clear();
             refused = false;
-            startedWith = -1;
+            bagBefore = -1;
             giveUpAt = level.getGameTime() + PATIENCE_TICKS
                     + (int) (Math.sqrt(c.blockPosition().distSqr(place.pos())) * TICKS_PER_BLOCK);
             say("Иду за своими вещами: " + place.pos().toShortString() + ".");
@@ -134,21 +141,13 @@ public final class CompanionDeathTrip {
             c.travel().toward(spot.pos(), NEAR);
             return true;
         }
-        java.util.List<ItemEntity> here = his(level, spot.pos());
-        if (startedWith < 0) startedWith = here.size();
-        java.util.Map<UUID, BlockPos> now = new java.util.HashMap<>();
-        for (ItemEntity item : here) now.put(item.getUUID(), item.blockPosition().immutable());
-        // A stack that disappeared beside him was picked up by him; one that vanished elsewhere was lost, not taken.
-        for (var entry : seen.entrySet())
-            if (!now.containsKey(entry.getKey()) && entry.getValue().distToCenterSqr(c.position()) < 25) taken++;
-        seen.clear();
-        seen.putAll(now);
+        if (bagBefore < 0) bagBefore = carried();
         if (standingOn != null && his(level, spot.pos()).stream().noneMatch(item -> item.getUUID().equals(standingOn))) {
             standingOn = null;
             waited = 0;
         }
         ItemEntity next = nearest(level);
-        if (next == null) { finish(level, taken > 0 ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
+        if (next == null) { finish(level, carried() > bagBefore ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
         if (c.blockPosition().distSqr(next.blockPosition()) > NEAR * NEAR) {
             standingOn = null;
             waited = 0;
@@ -238,11 +237,25 @@ public final class CompanionDeathTrip {
     /** Done: the place is forgotten, and what happened there is said plainly. */
     private void finish(ServerLevel level, String line) {
         boolean left = !his(level, spot.pos()).isEmpty();
+        if (left) {
+            // Something of his is still there (a full bag, a stack the pickup will not take): the place waits for next time.
+            triedAt.put(spot.pos(), c.tickCount);
+            spot = null;
+            c.travel().reset();
+            say("Часть моих вещей осталась на месте.");
+            return;
+        }
         CompanionDeathSpots.get(level.getServer()).taken(c.getOwnerId(), spot);
         spot = null;
         c.travel().reset();
-        if (left) say("Часть моих вещей осталась на месте.");
-        else say(line);
+        say(line);
+    }
+
+    /** How many things he carries: the bag, not the ground, is the proof of what he took. */
+    private int carried() {
+        int total = 0;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) total += c.getItem(slot).getCount();
+        return total;
     }
 
     /** Lava or fire takes what falls; the void leaves nothing to walk to. */
