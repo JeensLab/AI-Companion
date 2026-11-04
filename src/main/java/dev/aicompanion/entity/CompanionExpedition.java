@@ -55,6 +55,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionSupply supply;
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
+    private final CompanionExpeditionFight fight;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
@@ -84,6 +85,7 @@ final class CompanionExpedition {
         this.supply = new CompanionExpeditionSupply(w);
         this.bench = new CompanionExpeditionBench(w);
         this.stock = new CompanionExpeditionStock(w, dig);
+        this.fight = new CompanionExpeditionFight(w);
     }
 
     /** What the stall watchdog sees move: blocks broken, steps finished, plugs placed in a cave, health regained while resting. */
@@ -93,6 +95,9 @@ final class CompanionExpedition {
 
     /** The retreat is under way: the climb and the rest at the entrance, where health is got back. */
     boolean retreating() { return active && stage == Stage.RETREAT; }
+
+    /** The retreat is still on the move up: a foe slower than he is left behind, not fought. */
+    boolean fleeing() { return retreating() && retreat.leaving(); }
 
     String stageName() { return active ? stage.name() : ""; }
 
@@ -176,6 +181,7 @@ final class CompanionExpedition {
         supply.reset();
         bench.reset();
         stock.reset();
+        fight.reset();
         tunnelWhy = digOutWhy = "";
         resurfaceWhy = null;
         stage = Stage.LOCATE;
@@ -213,6 +219,8 @@ final class CompanionExpedition {
         CompanionChunkTicket.follow(owner);
         boolean expired = level.getGameTime() >= stepEnd;
         boolean digging = stage == Stage.DESCEND || stage == Stage.BRANCH;
+        // A foe is fought before anything else is done; the time it takes is given back to the step.
+        if (!expired && fight.hold(level, stage == Stage.RETREAT)) return;
         // The cave looks at a breach a tick after it opens, so it must look before the timeout may end the step.
         boolean caveTurn = cave.tick(level, plan == null ? List.of() : plan.cells(), digging);
         if (expired && (!cave.busy() || level.getGameTime() >= stepEnd + CAVE_RESERVE)) { end(Ending.TIMEOUT, "Время вылазки вышло, остановился на месте."); return; }
@@ -227,7 +235,7 @@ final class CompanionExpedition {
         // A bench he set down on a step shuts the stairs: it comes up before anything else, a retreat apart.
         if (stage != Stage.LOCATE && stage != Stage.RETREAT && bench.tick(level)) return;
         // The first tick locates the mine and then takes his hands for a craft: with a mob on him at low health the climb comes first, not ten ticks later.
-        String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE ? null : dangerNow();
+        String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE && !(w.mine.exists() && fight.hounded(level)) ? null : dangerNow();
         if (danger != null) { startRetreat(level, danger); return; }
         if (plan == null && digging && ore.pending() && mineOre(level, stage == Stage.BRANCH ? CompanionExpeditionOre.Mode.TUNNEL : CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
@@ -267,10 +275,10 @@ final class CompanionExpedition {
         // The cave sense reads a fire only inside a cave episode, and the goal no longer stops a step that owns the expedition for one.
         if (owner.isOnFire() || owner.isInLava()) return "горю";
         float health = owner.getHealth();
-        if (health > CompanionCaveSense.HEALTH_VERY) { mealStart = -1; return null; }
+        if (health > CompanionCaveSense.HEALTH_VERY && !fight.wounded()) { mealStart = -1; return null; }
         // With food in the bag and no mob on him he eats on the spot (a fall, a blast, /damage); climbing at once would give up the order for a meal.
         // A living attacker that struck lately (a skeleton out of the fight's sight) or a harmful effect means a wound a meal does not end, and so does a meal that does not mend.
-        if (CompanionEating.hasFood(owner) && !hurtByMobLately() && !hasHarmfulEffect() && mealMends(health)) return null;
+        if (CompanionEating.hasFood(owner) && !fight.hounded((ServerLevel) owner.level()) && !hurtByMobLately() && !hasHarmfulEffect() && mealMends(health)) return null;
         return "мало здоровья (" + (int) Math.ceil(health) + ")";
     }
 
@@ -309,7 +317,7 @@ final class CompanionExpedition {
         }
         w.mine.retreated();
         holdStep(CLIMB_TICKS + CompanionExpeditionRetreat.REST_TICKS);
-        retreat.begin(why, false);
+        retreat.begin(why, fight.hounded(level));
         stage = Stage.RETREAT;
     }
 
@@ -317,6 +325,23 @@ final class CompanionExpedition {
         CompanionExpeditionOre.Result result = ore.step(level, mode);
         if (result == CompanionExpeditionOre.Result.FULL) end(Ending.BLOCKED, "Сумка полна, добытое некуда класть.");
         return result != CompanionExpeditionOre.Result.NONE;
+    }
+
+    /** True when a fight would draw him into a cave the mine has opened: see {@link CompanionExpeditionCave#shuns}. */
+    boolean shuns(net.minecraft.world.entity.LivingEntity target) {
+        return active && (cave.shuns(target) || fight.avoids(target, stage == Stage.RETREAT)
+                || target instanceof net.minecraft.world.entity.monster.Creeper && !owner.creeperGuard.fights());
+    }
+
+    /** A mob the expedition fights now, wherever it stands within sight: the melee goal goes for it even from afar. */
+    boolean engages(net.minecraft.world.entity.LivingEntity target) { return active && fight.isFoe(target); }
+
+    void fightBegan() { if (active) fight.began(); }
+
+    void fightGoing() {
+        if (!active) return;
+        fight.going();
+        CompanionChunkTicket.follow(owner);
     }
 
     private int gained() { return w.items.countCarried(Items.DIAMOND) - startDiamonds; }

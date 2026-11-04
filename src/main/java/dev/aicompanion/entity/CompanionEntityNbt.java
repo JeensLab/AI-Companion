@@ -50,9 +50,11 @@ final class CompanionEntityNbt {
         c.preferredWeapon = tag.getString("PreferredWeapon");
         if (tag.contains("CompanionName")) c.setCompanionName(tag.getString("CompanionName"));
         c.setSearchRadius(tag.contains("SearchRadius") ? tag.getInt("SearchRadius") : 64);
-        // The game loads an attribute's base from the save: a world saved before the pace became a player's (0.30) kept him slower.
-        var speed = c.getAttribute(Attributes.MOVEMENT_SPEED);
-        if (speed != null) speed.setBaseValue(DefaultAttributes.getSupplier(dev.aicompanion.AICompanionMod.COMPANION.get()).getBaseValue(Attributes.MOVEMENT_SPEED));
+        // The game loads an attribute's base from the save: a world saved before the pace became a player's (0.30) kept him slower, before the blow threw a foe back kept it from doing so.
+        for (var attribute : java.util.List.of(Attributes.MOVEMENT_SPEED, Attributes.ATTACK_KNOCKBACK)) {
+            var instance = c.getAttribute(attribute);
+            if (instance != null) instance.setBaseValue(DefaultAttributes.getSupplier(dev.aicompanion.AICompanionMod.COMPANION.get()).getBaseValue(attribute));
+        }
         c.roaming = tag.getBoolean("Roaming");
         c.roamOrigin = tag.contains("RoamOrigin") ? BlockPos.of(tag.getLong("RoamOrigin")) : c.blockPosition();
         c.getEntityData().set(CompanionEntity.DATA_ROAMING, c.roaming);

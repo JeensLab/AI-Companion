@@ -3,11 +3,8 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.FluidTags;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -23,7 +20,8 @@ import java.util.Map;
  * The way out of a lit fuse, over the floor as it is: a breadth-first walk over the cells he can stand on (four neighbours, a rise of one
  * block, a drop of up to three, which hurts nothing) to a dozen steps, that never goes towards a creeper. The cell it ends at is the one the
  * fuse cannot see (a fuse goes out without a line of sight, and a blast does not reach round a corner), then the farthest from the nearest
- * creeper up to the gap beyond which the fuse goes out anyway, then the nearest to walk to.
+ * creeper up to the gap beyond which the fuse goes out anyway, then the nearest to walk to. With no such way, the cells of a wall between
+ * him and the creeper.
  */
 final class CompanionFuseEscape {
     private static final int DEPTH = 12, REPLAN_TICKS = 5, MAX_DROP = 3;
@@ -32,8 +30,6 @@ final class CompanionFuseEscape {
     private static final double TOLERANCE = 1, MIN_CLEAR = 1, REACHED = .6, DERAILED = 2.5;
     private static final Direction[] SIDES = {Direction.EAST, Direction.WEST, Direction.SOUTH, Direction.NORTH};
     private static final int[] LEVELS = {0, 1, -1, -2, -MAX_DROP};
-    /** How far inside the edge of the floor his footprint is counted, and how far above the floor a point still stands on it. */
-    private static final double EDGE = .02, SETTLED = .001;
 
     private final CompanionEntity owner;
     private List<BlockPos> path = List.of();
@@ -75,6 +71,33 @@ final class CompanionFuseEscape {
         if (path.isEmpty()) return null;
         while (index < path.size() - 1 && reached(path.get(index))) index++;
         return Vec3.atBottomCenterOf(path.get(index));
+    }
+
+    /**
+     * Sets the wall: blocks from the bag at his feet and head on the next step towards the creeper, which stands while its fuse burns. True while
+     * the wall goes up or stands; false where there is no block, or the creeper, a wall or the reach stand in the way of it, or he is in the open
+     * (nobody takes a wall out there).
+     */
+    boolean shut(ServerLevel level, Creeper creeper) {
+        if (CompanionSeal.available(owner) <= 0 || level.canSeeSky(owner.blockPosition())) return false;
+        boolean shut = false;
+        for (BlockPos cell : wall(level, creeper)) {
+            CompanionSeal.Result result = CompanionSeal.place(owner, cell);
+            if (result == CompanionSeal.Result.PLACED) { owner.work.mine.temporary(cell); shut = true; }
+            else if (result == CompanionSeal.Result.NO_BLOCK) return false;
+            else if (!CompanionSeal.replaceable(level, cell)) shut = true;
+        }
+        return shut;
+    }
+
+    private List<BlockPos> wall(ServerLevel level, Creeper creeper) {
+        Vec3 towards = creeper.position().subtract(owner.position());
+        Direction side = Math.abs(towards.x) > Math.abs(towards.z) ? (towards.x > 0 ? Direction.EAST : Direction.WEST) : (towards.z > 0 ? Direction.SOUTH : Direction.NORTH);
+        for (int rise : new int[]{0, 1, -1}) {
+            BlockPos feet = owner.blockPosition().relative(side).above(rise);
+            if (CompanionSeal.replaceable(level, feet) && CompanionSeal.replaceable(level, feet.above())) return List.of(feet, feet.above());
+        }
+        return List.of();
     }
 
     private boolean reached(BlockPos cell) {
@@ -139,45 +162,13 @@ final class CompanionFuseEscape {
     private BlockPos move(ServerLevel level, BlockPos cell, Direction side) {
         for (int rise : LEVELS) {
             BlockPos to = cell.relative(side).above(rise);
-            if (!stands(level, to.getX() + .5, to.getY(), to.getZ() + .5) || lavaBeside(level, to)) continue;
-            if (rise > 0 && !open(level, cell.above(2))) continue;
+            if (!CompanionExpeditionLedge.stands(owner, level, to.getX() + .5, to.getY(), to.getZ() + .5) || CompanionLavaExit.beside(level, to)) continue;
+            if (rise > 0 && !CompanionShaftPlan.open(level, cell.above(2))) continue;
             boolean room = true;
-            for (int y = to.getY() + 2; y <= cell.getY() + 1 && room; y++) room = open(level, new BlockPos(to.getX(), y, to.getZ()));
+            for (int y = to.getY() + 2; y <= cell.getY() + 1 && room; y++) room = CompanionShaftPlan.open(level, new BlockPos(to.getX(), y, to.getZ()));
             if (room) return to;
         }
         return null;
-    }
-
-    /** He can stand with his feet at this point: his body fits there, no fluid is in it and some part of his footprint rests on a solid floor. */
-    private boolean stands(ServerLevel level, double x, double y, double z) {
-        BlockPos feet = BlockPos.containing(x, y + SETTLED, z);
-        if (!level.hasChunkAt(feet) || !level.getFluidState(feet).isEmpty() || !level.getFluidState(feet.above()).isEmpty()) return false;
-        if (level.getBlockCollisions(owner, owner.getBoundingBox().move(x - owner.getX(), y - owner.getY(), z - owner.getZ()).deflate(SETTLED)).iterator().hasNext()) return false;
-        return footing(level, x, z, owner.getBbWidth() / 2 - EDGE, feet.getY() - 1);
-    }
-
-    private static boolean footing(ServerLevel level, double x, double z, double half, int floor) {
-        for (int sx = -1; sx <= 1; sx += 2) {
-            for (int sz = -1; sz <= 1; sz += 2) {
-                BlockPos pos = new BlockPos(Mth.floor(x + sx * half), floor, Mth.floor(z + sz * half));
-                if (!level.hasChunkAt(pos) || level.getBlockState(pos).isFaceSturdy(level, pos, Direction.UP)) return true;
-            }
-        }
-        return false;
-    }
-
-    /** Lava in the cube of a cell and the cells around it: a cell he must not end a walk in, since a step to the side is a step into it. */
-    private static boolean lavaBeside(ServerLevel level, BlockPos cell) {
-        for (BlockPos near : BlockPos.betweenClosed(cell.offset(-1, -1, -1), cell.offset(1, 1, 1))) {
-            if (level.hasChunkAt(near) && level.getFluidState(near).is(FluidTags.LAVA)) return true;
-        }
-        return false;
-    }
-
-    /** Nothing to break and nobody to burn: an open cell has no collision shape and no fluid. */
-    private static boolean open(ServerLevel level, BlockPos pos) {
-        BlockState state = level.getBlockState(pos);
-        return state.getCollisionShape(level, pos).isEmpty() && state.getFluidState().isEmpty();
     }
 
     private static boolean keepsOff(Vec3 point, List<Creeper> threats, double[] floors) {
