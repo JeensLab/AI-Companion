@@ -256,31 +256,31 @@ public final class CompanionDeathRecoveryTests {
         }).thenSucceed();
     }
 
-    /** Only what survived counts: a pile that burned down to dirt is not worth a walk, however dear it was. */
+    /** A marked stack left behind is fetched even when it is junk: the mark is the truth, not the price. */
     @GameTest(template = "empty")
-    public static void onlyWhatSurvivedCounts(GameTestHelper h) {
+    public static void markedLeftoversAreFetchedEvenIfCheap(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
-        BlockPos place = companion.blockPosition().offset(8, 0, 0);
-        belonging(h, place, new ItemStack(Items.DIRT, 12), companion.getOwnerId());
+        BlockPos place = companion.blockPosition().offset(4, 0, 0);
+        var dirt = belonging(h, place, new ItemStack(Items.DIRT, 12), companion.getOwnerId());
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 40, 0);
         h.startSequence().thenExecute(() -> {
-            h.assertTrue(!companion.deathTrip.begin(), "He walked for what burned down to dirt");
-            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
-                    "A place worth nothing now is still remembered");
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out for his marked dirt");
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            h.assertTrue(dirt.isRemoved() || dirt.getItem().isEmpty(), "The marked dirt was left lying");
         }).thenSucceed();
     }
 
-    /** A little of it left is still not a walk: the price is what lies there now, not what fell. */
+    /** One ingot out of a dear pile is still his: he fetches it. */
     @GameTest(template = "empty")
-    public static void aLittleSurvivedIsNotWalkedTo(GameTestHelper h) {
+    public static void oneLeftIngotIsFetched(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
-        BlockPos place = companion.blockPosition().offset(8, 0, 0);
-        belonging(h, place, new ItemStack(Items.IRON_INGOT, 1), companion.getOwnerId());
+        BlockPos place = companion.blockPosition().offset(4, 0, 0);
+        var ingot = belonging(h, place, new ItemStack(Items.IRON_INGOT, 1), companion.getOwnerId());
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 40, 0);
         h.startSequence().thenExecute(() -> {
-            h.assertTrue(!companion.deathTrip.begin(), "He walked for a single ingot out of a dear pile");
-            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).isEmpty(),
-                    "A place worth too little now is still remembered");
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out for the ingot");
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            h.assertTrue(ingot.isRemoved() || ingot.getItem().isEmpty(), "The ingot was left lying");
         }).thenSucceed();
     }
 
@@ -679,6 +679,26 @@ public final class CompanionDeathRecoveryTests {
             var spots = store.all(companion.getOwnerId());
             h.assertTrue(spots.size() == 1 && spots.get(0).attempts() == 1,
                     "Setting out did not spend a try: " + spots);
+        }).thenSucceed();
+    }
+
+    /** Even a marked stack of junk left behind means part of it stayed: the mark is the truth, not the price. */
+    @GameTest(template = "empty")
+    public static void aMarkedJunkStackLeftIsStillSaid(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        var other = h.makeMockServerPlayerInLevel();
+        BlockPos place = companion.blockPosition();
+        var junk = belonging(h, place, new ItemStack(Items.DIRT, 12), companion.getOwnerId());
+        junk.setTarget(other.getUUID());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out");
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            h.assertTrue(!junk.isRemoved() && !junk.getItem().isEmpty(), "The junk was taken after all");
+            h.assertTrue(companion.deathTrip.lastLine().contains("осталась"),
+                    "He claimed everything while a marked stack was left: " + companion.deathTrip.lastLine());
+            h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(companion.getOwnerId()).size() == 1,
+                    "A place with a marked stack left was forgotten");
         }).thenSucceed();
     }
 

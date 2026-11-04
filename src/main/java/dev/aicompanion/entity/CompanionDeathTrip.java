@@ -24,7 +24,7 @@ public final class CompanionDeathTrip {
     /** Close enough to stand on a thing and let the pickup take it. */
     private static final double NEAR = 1.2;
     /** What fell belongs to the place if it lies this close to it: a stack that slid downhill or drifted in water still counts. */
-    private static final double SEARCH = 32;
+    private static final double SEARCH = 64;
     /** A walk longer than this, with a block's worth of time for every block of the way, is a walk that got stuck. */
     private static final int PATIENCE_TICKS = 20 * 120;
     private static final int TICKS_PER_BLOCK = 4;
@@ -49,6 +49,9 @@ public final class CompanionDeathTrip {
     private boolean attempted;
     /** How many things he carried when the place could first be seen: the bag is the proof of what he took. */
     private int bagBefore = -1;
+    /** Passes over the same place in one trip: a stack that could not be taken once is tried again. */
+    private static final int ROUNDS = 3;
+    private int rounds;
     /** How many of his stacks disappeared beside him: the proof he took them, not just that the bag grew. */
     private int taken;
     private final java.util.Map<UUID, BlockPos> seen = new java.util.HashMap<>();
@@ -92,9 +95,13 @@ public final class CompanionDeathTrip {
             }
             Integer tried = triedAt.get(place.pos());
             if (tried != null && c.tickCount - tried < RETRY_TICKS) continue;
-            // Only what survived counts: burned, blown up or taken by a mob, the rest is priced as it lies now.
+            // What survived counts: burned, blown up or taken by a mob, nothing is left and the place goes. Whatever is
+            // still marked as his is fetched, junk too, because he was there for it and the mark is the truth.
             double left = survivingWorth(level, place);
-            if (left < CompanionBelongings.WORTH_GOING) { data.taken(c.getOwnerId(), place.dimension(), place.pos()); continue; }
+            if (left < CompanionBelongings.WORTH_GOING && !(level.hasChunkAt(place.pos()) && !his(level, place.pos()).isEmpty())) {
+                data.taken(c.getOwnerId(), place.dimension(), place.pos());
+                continue;
+            }
             if (!place.dimension().equals(level.dimension())) {
                 // Only the Nether can be crossed on foot: the End needs its own portal, so a place there is left.
                 if (left < CROSS_WORTH || !place.dimension().equals(net.minecraft.world.level.Level.NETHER)) {
@@ -114,6 +121,7 @@ public final class CompanionDeathTrip {
                 refused = false;
                 bagBefore = -1;
                 attempted = false;
+                rounds = 0;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
                 say("Иду за своими вещами через портал.");
                 return true;
@@ -129,6 +137,7 @@ public final class CompanionDeathTrip {
             refused = false;
             bagBefore = -1;
             attempted = false;
+            rounds = 0;
             giveUpAt = level.getGameTime() + PATIENCE_TICKS
                     + (int) (Math.sqrt(c.blockPosition().distSqr(place.pos())) * TICKS_PER_BLOCK);
             say("Иду за своими вещами.");
@@ -191,7 +200,19 @@ public final class CompanionDeathTrip {
             waited = 0;
         }
         ItemEntity next = nearest(level);
-        if (next == null) { finish(level, carried() > bagBefore ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
+        if (next == null) {
+            // Everything left was given up on: one more pass over it, a few times, before he walks home with a word.
+            if (rounds < ROUNDS) {
+                rounds++;
+                givenUpOn.clear();
+                standingOn = null;
+                waited = 0;
+                c.travel().reset();
+                return true;
+            }
+            finish(level, carried() > bagBefore ? "Забрал свои вещи." : "Вещей на месте уже нет.");
+            return false;
+        }
         // The thing itself, not the corner of its block: standing a block away leaves the pickup nothing to take.
         if (c.position().distanceToSqr(next.position()) > NEAR * NEAR) {
             standingOn = null;
@@ -289,8 +310,8 @@ public final class CompanionDeathTrip {
 
     /** Done: the place is forgotten, and what happened there is said plainly. */
     private void finish(ServerLevel level, String line) {
-        // Only what is worth another walk counts as left: seeds and sticks are not a reason to come back.
-        boolean left = leftWorth(level) >= CompanionBelongings.WORTH_GOING;
+        // Any marked stack still lying there means part of it stayed: the mark is the truth, whatever it is worth.
+        boolean left = !his(level, spot.pos()).isEmpty();
         if (left) {
             // Something of his is still there (a full bag, a stack the pickup will not take): the place waits for next time.
             triedAt.put(spot.pos(), c.tickCount);
