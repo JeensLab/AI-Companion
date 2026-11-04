@@ -104,6 +104,7 @@ public final class CompanionDeathTrip {
                 // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
                 var entered = c.portals.enter(level);
                 if (!entered.success()) continue;
+                data.attempted(c.getOwnerId(), level.dimension(), place.pos());
                 spot = place;
                 crossing = true;
                 waited = 0;
@@ -158,7 +159,18 @@ public final class CompanionDeathTrip {
             }
             return true;
         }
-        if (level.getGameTime() > giveUpAt) { finish(level, "Не дошёл до всех своих вещей: дорога не пустила."); return false; }
+        if (level.getGameTime() > giveUpAt) {
+            // A place nobody could look at is not judged by an empty look: it waits for next time.
+            if (!level.hasChunkAt(spot.pos())) {
+                triedAt.put(spot.pos(), c.tickCount);
+                spot = null;
+                c.travel().reset();
+                say("Не дошёл до своих вещей: дорога не пустила.");
+                return false;
+            }
+            finish(level, "Не дошёл до всех своих вещей: дорога не пустила.");
+            return false;
+        }
         // Not loaded yet: the walk goes to the coordinates and the chunk loads on the way; nothing can be seen before that.
         if (!level.hasChunkAt(spot.pos())) {
             // No path can be found to a chunk that is not loaded yet: the walk goes on and the patience decides.
