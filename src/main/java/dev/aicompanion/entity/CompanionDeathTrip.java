@@ -32,6 +32,8 @@ public final class CompanionDeathTrip {
     private static final int WAIT_ON_ONE = 40;
     /** A second order inside this window means the player insists, and his own walk gives way. */
     private static final long INSIST_WINDOW = 20 * 20;
+    /** Tries at one place, and deaths on the way to it, after which he lets it lie. */
+    private static final int MOST_ATTEMPTS = 5, MOST_DEATHS = 10;
     /** A place that keeps something behind is not tried again for this long (his bag may be full). */
     private static final int RETRY_TICKS = 20 * 300;
     /** A place in another dimension is worth a crossing only for things that are really dear: a portal costs more. */
@@ -46,6 +48,7 @@ public final class CompanionDeathTrip {
     private long refusedAt;
     private boolean refused;
     private boolean crossing;
+    private boolean attempted;
     /** How many things he carried when the place could first be seen: the bag is the proof of what he took. */
     private int bagBefore = -1;
     /** When this place was last tried, so a place that keeps refusing is not tried again at once. */
@@ -55,6 +58,9 @@ public final class CompanionDeathTrip {
     CompanionDeathTrip(CompanionEntity c) { this.c = c; }
 
     public boolean active() { return spot != null; }
+
+    /** Where he is walking to, for the death hook. */
+    public BlockPos place() { return spot == null ? null : spot.pos(); }
 
     /** The last thing he said about the walk, for the tests that check he does not claim what he did not take. */
     public String lastLine() { return lastLine; }
@@ -66,13 +72,18 @@ public final class CompanionDeathTrip {
 
     /** Sets out for the dearest place worth the walk; false when there is nothing worth or possible to walk to. */
     public boolean begin() {
-        if (spot != null || !(c.level() instanceof ServerLevel level) || c.getOwnerId() == null) return false;
+        if (spot != null || !c.deathRecovery() || !(c.level() instanceof ServerLevel level) || c.getOwnerId() == null) return false;
         var server = level.getServer();
         if (server == null) return false;
         CompanionDeathSpots data = CompanionDeathSpots.get(server);
         List<CompanionDeathSpots.Spot> places = new ArrayList<>(data.all(c.getOwnerId()));
         places.sort(Comparator.comparingDouble(CompanionDeathSpots.Spot::worth).reversed());
         for (CompanionDeathSpots.Spot place : places) {
+            if (place.attempts() >= MOST_ATTEMPTS || place.deaths() >= MOST_DEATHS) {
+                data.taken(c.getOwnerId(), place);
+                say("Ну и подавитесь своим лутом.");
+                continue;
+            }
             Integer tried = triedAt.get(place.pos());
             if (tried != null && c.tickCount - tried < RETRY_TICKS) continue;
             // Only what survived counts: burned, blown up or taken by a mob, the rest is priced as it lies now.
@@ -93,11 +104,13 @@ public final class CompanionDeathTrip {
                 givenUpOn.clear();
                 refused = false;
                 bagBefore = -1;
+                attempted = false;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
                 say("Иду за своими вещами через портал: " + place.pos().toShortString() + ".");
                 return true;
             }
             if (!reachable(level, place.pos())) { data.taken(c.getOwnerId(), place); continue; }
+            makeRoom();
             spot = place;
             crossing = false;
             waited = 0;
@@ -105,6 +118,7 @@ public final class CompanionDeathTrip {
             givenUpOn.clear();
             refused = false;
             bagBefore = -1;
+            attempted = false;
             giveUpAt = level.getGameTime() + PATIENCE_TICKS
                     + (int) (Math.sqrt(c.blockPosition().distSqr(place.pos())) * TICKS_PER_BLOCK);
             say("Иду за своими вещами: " + place.pos().toShortString() + ".");
@@ -117,6 +131,8 @@ public final class CompanionDeathTrip {
     boolean tick() {
         if (spot == null) return false;
         if (!(c.level() instanceof ServerLevel level)) return false;
+        // The player turned the feature off: the walk ends here, as he asked.
+        if (!c.deathRecovery()) { cancel("Ладно, вещи подождут."); return false; }
         if (crossing) {
             if (level.dimension().equals(spot.dimension())) { crossing = false; say("Перешёл, иду к вещам."); return true; }
             if (!c.portals.walking()) { cancel("Не смог перейти в другое измерение."); return false; }
@@ -148,6 +164,10 @@ public final class CompanionDeathTrip {
         }
         ItemEntity next = nearest(level);
         if (next == null) { finish(level, carried() > bagBefore ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
+        if (waited == 0 && !attempted) {
+            attempted = true;
+            CompanionDeathSpots.get(level.getServer()).attempted(c.getOwnerId(), spot.pos());
+        }
         if (c.blockPosition().distSqr(next.blockPosition()) > NEAR * NEAR) {
             standingOn = null;
             waited = 0;
@@ -231,6 +251,7 @@ public final class CompanionDeathTrip {
         UUID owner = c.getOwnerId();
         return level.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(place).inflate(SEARCH),
                 item -> item.isAlive() && !item.getItem().isEmpty()
+                        && item.getPersistentData().hasUUID(CompanionBag.BELONGINGS)
                         && owner.equals(item.getPersistentData().getUUID(CompanionBag.BELONGINGS)));
     }
 
@@ -249,6 +270,30 @@ public final class CompanionDeathTrip {
         spot = null;
         c.travel().reset();
         say(line);
+    }
+
+    /** A full bag is made room in by letting the cheapest junk go, not by leaving a diamond behind. */
+    private void makeRoom() {
+        while (freeSlots() == 0) {
+            int worst = -1;
+            double worstWorth = Double.MAX_VALUE;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) {
+                var stack = c.getItem(slot);
+                if (stack.isEmpty()) continue;
+                double worth = CompanionBelongings.worth(stack);
+                if (worth < worstWorth) { worstWorth = worth; worst = slot; }
+            }
+            if (worst < 0 || worstWorth >= CompanionBelongings.WORTH_GOING) return;
+            var stack = c.getItem(worst);
+            c.setItem(worst, net.minecraft.world.item.ItemStack.EMPTY);
+            c.spawnAtLocation(stack, .5F);
+        }
+    }
+
+    private int freeSlots() {
+        int free = 0;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).isEmpty()) free++;
+        return free;
     }
 
     /** How many things he carries: the bag, not the ground, is the proof of what he took. */

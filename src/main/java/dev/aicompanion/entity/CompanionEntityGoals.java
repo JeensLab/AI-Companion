@@ -62,9 +62,9 @@ final class CompanionEntityGoals {
     static final class RecoverBelongingsGoal extends Goal {
         final CompanionEntity c;
         RecoverBelongingsGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
-        /** A monster on him is the fight's: the walk waits while he deals with it. */
-        @Override public boolean canUse() { return c.deathTrip.active() && c.canCollectItems() && c.getTarget() == null; }
-        @Override public boolean canContinueToUse() { return c.deathTrip.active() && c.canCollectItems() && c.getTarget() == null; }
+        /** He grabs and runs: a monster on him does not stop the walk, as the owner asked. */
+        @Override public boolean canUse() { return c.deathTrip.active() && c.canCollectItems(); }
+        @Override public boolean canContinueToUse() { return c.deathTrip.active() && c.canCollectItems(); }
         @Override public boolean requiresUpdateEveryTick() { return true; }
         @Override public void tick() { c.deathTrip.tick(); }
         @Override public void stop() { c.getNavigation().stop(); c.travel().reset(); }

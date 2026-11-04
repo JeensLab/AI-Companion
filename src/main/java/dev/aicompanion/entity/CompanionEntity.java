@@ -133,6 +133,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
+    private boolean deathRecovery = true;
     final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionBreath breath = new CompanionBreath(this);
@@ -585,6 +586,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean fighting() { return entityData.get(DATA_FIGHTING); }
     public void reactToSpeech(String text) { social.reactToSpeech(text); }
     public void setLifestyle(boolean chunks, boolean speech) { chunkLoading = chunks; autonomousSpeech = speech; }
+    /** Whether he goes back for his own things after a death (the player can turn it off in the settings). */
+    public boolean deathRecovery() { return deathRecovery; }
+    public void setDeathRecovery(boolean on) { deathRecovery = on; }
     public String socialObservation() { return social.socialObservation(); }
     public int socialSequence() { return social.socialSequence(); }
     public long socialTime() { return social.socialTime(); }
@@ -894,7 +898,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (!dead && !isRemoved() && level() instanceof ServerLevel) {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
-            work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel(); deathTrip.stop();
+            work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
+            if (deathTrip.active() && getOwnerId() != null)
+                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.place());
+            deathTrip.stop();
             double worth = CompanionBelongings.worth(this);
             boolean dropped = bag.dropBelongings() | playersThings.drop();
             // Every fall is remembered with its price; the walk back is decided when he is back on his feet.

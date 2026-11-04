@@ -39,6 +39,7 @@ final class CompanionEntityNbt {
         c.places.save(tag);
         c.deeds.save(tag);
         c.autonomy.save(tag);
+        tag.putBoolean("DeathRecovery", c.deathRecovery());
         c.goals.save(tag);
         c.social.save(tag);
     }
@@ -72,7 +73,7 @@ final class CompanionEntityNbt {
         c.satiety = Math.max(0, Math.min(40, tag.getInt("Satiety"))); // absent in older saves: 0
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.load(tag);
-        c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.refreshPlaces();
+        c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.setDeathRecovery(tag.getBoolean("DeathRecovery")); c.refreshPlaces();
         c.social.load(tag);
         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, tag.getString("LastTaskResult"));
         c.refreshInventorySummary();

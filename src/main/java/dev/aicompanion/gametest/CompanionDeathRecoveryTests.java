@@ -484,6 +484,73 @@ public final class CompanionDeathRecoveryTests {
         }).thenSucceed();
     }
 
+    /** The player can turn the feature off: no walk starts, and one under way ends. */
+    @GameTest(template = "empty")
+    public static void theFeatureCanBeTurnedOff(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        h.startSequence().thenExecute(() -> {
+            companion.setDeathRecovery(false);
+            h.assertTrue(!companion.deathTrip.begin(), "He set out with the feature turned off");
+            companion.setDeathRecovery(true);
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out with the feature on");
+            companion.setDeathRecovery(false);
+            companion.tick();
+            h.assertTrue(!companion.deathTrip.active(), "The walk went on after the feature was turned off");
+        }).thenSucceed();
+    }
+
+    /** Five tries at one place and he lets it lie, with a word about it. */
+    @GameTest(template = "empty")
+    public static void fiveAttemptsAndThePlaceIsLeft(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        for (int i = 0; i < 5; i++) store.attempted(companion.getOwnerId(), place);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(!companion.deathTrip.begin(), "He set out a sixth time");
+            h.assertTrue(companion.deathTrip.lastLine().contains("подавитесь"),
+                    "He did not say why he let it lie: " + companion.deathTrip.lastLine());
+            h.assertTrue(store.all(companion.getOwnerId()).isEmpty(), "The given-up place is still remembered");
+        }).thenSucceed();
+    }
+
+    /** Ten deaths on the way to one place: it is not worth his life any more. */
+    @GameTest(template = "empty")
+    public static void tenDeathsOnTheWayAndThePlaceIsLeft(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        for (int i = 0; i < 10; i++) store.deathOnTheWay(companion.getOwnerId(), place);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(!companion.deathTrip.begin(), "He set out an eleventh time");
+            h.assertTrue(store.all(companion.getOwnerId()).isEmpty(), "The place that cost ten lives is still remembered");
+        }).thenSucceed();
+    }
+
+    /** A full bag is made room in by letting junk go, not by walking away from a diamond. */
+    @GameTest(template = "empty")
+    public static void aFullBagMakesRoom(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        for (int slot = 0; slot < companion.getContainerSize(); slot++)
+            companion.setItem(slot, new ItemStack(Items.DIRT, 64));
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
+        belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out with a full bag");
+            int free = 0;
+            for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).isEmpty()) free++;
+            h.assertTrue(free > 0, "No room was made in a bag of dirt");
+        }).thenSucceed();
+    }
+
     /** A place he cannot walk to at all — another dimension, the void — is dropped without a walk. */
     @GameTest(template = "empty")
     public static void unreachablePlacesAreDropped(GameTestHelper h) {

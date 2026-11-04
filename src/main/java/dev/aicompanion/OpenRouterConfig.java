@@ -56,6 +56,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.personality")
             .define("personality", "Ты мой товарищ по выживанию в Minecraft: язвительный, разговорчивый и надёжный. Помни наш разговор, интересуйся происходящим, шути и матерись естественно, без постоянных комплиментов.");
 
+    /** Whether he goes back for his own things after a death. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue DEATH_RECOVERY = BUILDER
+            .comment("Go back for his own belongings after a death: the dearest place first, junk left alone.")
+            .translation("config.aicompanion.death_recovery")
+            .define("deathRecovery", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")

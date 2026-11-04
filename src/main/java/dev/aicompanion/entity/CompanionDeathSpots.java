@@ -27,7 +27,7 @@ public final class CompanionDeathSpots extends SavedData {
             new Factory<>(CompanionDeathSpots::new, CompanionDeathSpots::load, null);
 
     /** A place where he fell, its price and when it happened. */
-    public record Spot(ResourceKey<Level> dimension, BlockPos pos, double worth, long tick) { }
+    public record Spot(ResourceKey<Level> dimension, BlockPos pos, double worth, long tick, int attempts, int deaths) { }
 
     private final Map<UUID, List<Spot>> spots = new HashMap<>();
 
@@ -37,7 +37,7 @@ public final class CompanionDeathSpots extends SavedData {
 
     public void died(UUID owner, ResourceKey<Level> dimension, BlockPos pos, double worth, long tick) {
         List<Spot> list = spots.computeIfAbsent(owner, key -> new ArrayList<>());
-        list.add(new Spot(dimension, pos.immutable(), worth, tick));
+        list.add(new Spot(dimension, pos.immutable(), worth, tick, 0, 0));
         while (list.size() > MOST) list.remove(0);
         setDirty();
     }
@@ -50,6 +50,28 @@ public final class CompanionDeathSpots extends SavedData {
             if (best == null || spot.worth() > best.worth()) best = spot;
         }
         return best;
+    }
+
+    /** He arrived at the place: one more attempt spent on it. */
+    public void attempted(UUID owner, BlockPos pos) {
+        replace(owner, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
+                spot.attempts() + 1, spot.deaths()));
+    }
+
+    /** He died on the way to it: the place remembers how many times it cost him his life. */
+    public void deathOnTheWay(UUID owner, BlockPos pos) {
+        replace(owner, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
+                spot.attempts(), spot.deaths() + 1));
+    }
+
+    private void replace(UUID owner, BlockPos pos, java.util.function.UnaryOperator<Spot> change) {
+        List<Spot> list = spots.get(owner);
+        if (list == null) return;
+        for (int i = 0; i < list.size(); i++) if (list.get(i).pos().equals(pos)) {
+            list.set(i, change.apply(list.get(i)));
+            setDirty();
+            return;
+        }
     }
 
     public List<Spot> all(UUID owner) { return List.copyOf(spots.getOrDefault(owner, List.of())); }
@@ -74,6 +96,8 @@ public final class CompanionDeathSpots extends SavedData {
                 one.putInt("z", spot.pos().getZ());
                 one.putDouble("worth", spot.worth());
                 one.putLong("tick", spot.tick());
+                one.putInt("attempts", spot.attempts());
+                one.putInt("deaths", spot.deaths());
                 list.add(one);
             }
             owners.put(entry.getKey().toString(), list);
@@ -92,7 +116,7 @@ public final class CompanionDeathSpots extends SavedData {
                 ResourceKey<Level> dimension = ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
                         net.minecraft.resources.ResourceLocation.parse(one.getString("dimension")));
                 list.add(new Spot(dimension, new BlockPos(one.getInt("x"), one.getInt("y"), one.getInt("z")),
-                        one.getDouble("worth"), one.getLong("tick")));
+                        one.getDouble("worth"), one.getLong("tick"), one.getInt("attempts"), one.getInt("deaths")));
             }
             data.spots.put(UUID.fromString(key), list);
         }
