@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * What fell out of the dead player, picked up so it does not despawn. Kept apart from his bag, so nothing of it is eaten, worn,
@@ -71,17 +72,18 @@ public final class CompanionPlayersThings {
     }
 
     /** He died: the player's things fall with his own, still marked as the player's, so he takes them up for the player again. */
-    boolean drop() {
-        boolean any = false;
+    java.util.List<ItemEntity> drop(UUID spot) {
+        java.util.List<ItemEntity> fallen = new java.util.ArrayList<>();
         for (ItemStack stack : held) {
             var item = c.spawnAtLocation(stack.copy(), 0.5F);
             if (item == null) continue;
             item.setUnlimitedLifetime();
             item.getPersistentData().putBoolean(MARK, true);
-            any = true;
+            if (spot != null) item.getPersistentData().putUUID(CompanionBag.BELONGINGS_SPOT, spot);
+            fallen.add(item);
         }
         held.clear();
-        return any;
+        return fallen;
     }
 
     /** A duplicate companion merged into this one hands its kept things over too. */

@@ -17,6 +17,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -904,15 +905,19 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             String cause = source.getLocalizedDeathMessage(this).getString();
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
             if (deathTrip.active() && getOwnerId() != null)
-                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.dimension(), deathTrip.place());
+                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.spotId());
             deathTrip.stop();
             double worth = CompanionBelongings.worth(this);
             java.util.UUID spotId = java.util.UUID.randomUUID();
-            boolean dropped = bag.dropBelongings(spotId) | playersThings.drop();
+            // What falls is the manifest of the place: the entity, the exact point and the count of every stack, so the walk
+            // fetches exactly these and judges each of them by its own existence.
+            java.util.List<ItemEntity> fallen = new java.util.ArrayList<>(bag.dropBelongings(spotId));
+            fallen.addAll(playersThings.drop(spotId));
+            boolean dropped = !fallen.isEmpty();
             // Every fall is remembered with its price; the walk back is decided when he is back on his feet.
             if (dropped && worth >= CompanionBelongings.WORTH_GOING && getOwnerId() != null) {
                 CompanionDeathSpots.get(((ServerLevel) level()).getServer()).died(getOwnerId(), spotId,
-                        level().dimension(), blockPosition(), worth, level().getGameTime());
+                        level().dimension(), blockPosition(), worth, level().getGameTime(), CompanionDeathSpots.manifestOf(fallen));
                 deathTrip.freshPlace(blockPosition());
             } else if (dropped) autonomySay("За мелочью не пойду: пусть лежит.");
             dev.aicompanion.AICompanionMod.LOGGER.info("[death] dropped={} worth={} spot={} recorded={}",
@@ -982,6 +987,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final String FULL_BAG_FOR_LOGS = "В сумке нет места для брёвен: все ячейки заняты. Освободи место или попроси сложить вещи в сундук.";
     boolean hasRoomForLogs() { return gathering.hasRoomForLogs(); }
     boolean canStoreDrops(List<ItemStack> drops) { return gathering.canStoreDrops(drops); }
+    /** Whether a stack lies within the pickup's own reach from where he stands (the arrival test of the death walk). */
+    public boolean reachesItem(net.minecraft.world.entity.item.ItemEntity item) { return loot.touches(position(), item); }
+    /** Whether this stack would fit in his bag as it is now. */
+    public boolean canStore(ItemStack stack) { return canStoreDrops(List.of(stack)); }
 
 
     boolean storeInCompanionInventory(ItemStack stack) { return bag.storeInCompanionInventory(stack); }

@@ -4,6 +4,7 @@ import dev.aicompanion.inventory.CompanionEquipmentContainer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 
@@ -16,6 +17,8 @@ final class CompanionBag {
     static final String BELONGINGS = "aicompanion:belongings";
     /** The death these things fell from, so a walk fetches exactly them and never somebody else's pile. */
     static final String BELONGINGS_SPOT = "aicompanion:belongings_spot";
+    /** On junk he let go to make room for his own things: never counted as part of a death place again. */
+    static final String JUNK = "aicompanion:junk";
     final CompanionEntity c;
 
     CompanionBag(CompanionEntity c) { this.c = c; }
@@ -122,8 +125,9 @@ final class CompanionBag {
                 .map(entry -> entry.getValue() + "x " + entry.getKey()).collect(java.util.stream.Collectors.joining(", ")));
     }
 
-    boolean dropBelongings(java.util.UUID spot) {
-        boolean any = false;
+    /** Everything he carries falls where he died, marked with the fall it belongs to; the stacks themselves are the manifest. */
+    java.util.List<ItemEntity> dropBelongings(java.util.UUID spot) {
+        java.util.List<ItemEntity> fallen = new java.util.ArrayList<>();
         java.util.List<ItemStack> belongings = new java.util.ArrayList<>();
         for (int slot = 0; slot < c.companionInventory.size(); slot++) { belongings.add(c.companionInventory.get(slot)); c.companionInventory.set(slot, ItemStack.EMPTY); }
         for (EquipmentSlot slot : CompanionEquipmentContainer.SLOTS) { belongings.add(c.getItemBySlot(slot)); c.setItemSlot(slot, ItemStack.EMPTY); }
@@ -133,11 +137,11 @@ final class CompanionBag {
                 item.setUnlimitedLifetime();
                 if (c.getOwnerId() != null) item.getPersistentData().putUUID(BELONGINGS, c.getOwnerId());
                 if (spot != null) item.getPersistentData().putUUID(BELONGINGS_SPOT, spot);
-                any = true;
+                fallen.add(item);
             }
         }
         refreshInventorySummary();
-        return any;
+        return fallen;
     }
 
     /** obtain_item: the chain of his own skills that gets the item, planned from what he carries now (CompanionObtain). */
