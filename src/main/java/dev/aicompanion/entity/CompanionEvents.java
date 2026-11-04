@@ -266,6 +266,11 @@ public final class CompanionEvents {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
+        // His own things after a death come first, once: the player asking again takes the walk away (CompanionDeathTrip).
+        if (companion.deathTrip.active() && companion.deathTrip.refuseOrder()) {
+            dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "death_recovery");
+            return CompanionActionResult.blocked(companion.deathTrip.refusalLine());
+        }
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         // Naming the home is a word, not an order: whatever he is busy with goes on.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {

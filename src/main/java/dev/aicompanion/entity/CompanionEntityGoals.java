@@ -58,6 +58,17 @@ final class CompanionEntityGoals {
         @Override public void stop() { c.recovery.cancel(); c.getNavigation().stop(); }
     }
 
+    /** His own things after a death: the walk to the place he fell, until the pickup has them or the road gives up. */
+    static final class RecoverBelongingsGoal extends Goal {
+        final CompanionEntity c;
+        RecoverBelongingsGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
+        @Override public boolean canUse() { return c.deathTrip.active() && c.canCollectItems(); }
+        @Override public boolean canContinueToUse() { return canUse(); }
+        @Override public boolean requiresUpdateEveryTick() { return true; }
+        @Override public void tick() { c.deathTrip.tick(); }
+        @Override public void stop() { c.getNavigation().stop(); c.travel().reset(); }
+    }
+
     /** Low on air under water: the work waits while he swims to air and breathes (CompanionBreath). The float goal beside it holds no flag (WadingFloatGoal). */
     static final class BreatheGoal extends Goal {
         final CompanionEntity c;

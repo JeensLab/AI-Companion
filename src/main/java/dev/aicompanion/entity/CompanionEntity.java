@@ -132,6 +132,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
+    public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionBreath breath = new CompanionBreath(this);
@@ -321,6 +322,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
+        this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
@@ -807,6 +809,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     @Override protected void customServerAiStep() {
         super.customServerAiStep();
+        // Back on his feet and with nothing ordered: his own things are the first work (death recovery).
+        if (!deathTrip.active() && tickCount % 20 == 0 && !work.isActive() && !gatheringLogs && !gatheringDirt
+                && getTarget() == null && inventoryViewers == 0) deathTrip.begin();
         // In a boat or minecart vanilla switches off every walking goal: the order would hang without even a timeout.
         // Like a player, step out to work; just riding along stays allowed.
         if (isPassenger() && (work.isActive() || gatheringLogs || gatheringDirt)) {
@@ -887,8 +892,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (!dead && !isRemoved() && level() instanceof ServerLevel) {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
-            work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
+            work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel(); deathTrip.cancel(null);
+            double worth = CompanionBelongings.worth(this);
             boolean dropped = bag.dropBelongings() | playersThings.drop();
+            // Every fall is remembered with its price; the walk back is decided when he is back on his feet.
+            if (dropped && worth >= CompanionBelongings.WORTH_GOING && getOwnerId() != null)
+                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).died(getOwnerId(),
+                        level().dimension(), blockPosition(), worth, level().getGameTime());
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
             CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
         }
