@@ -46,15 +46,16 @@ public final class CompanionDeathRecoveryScreen extends Screen {
                 .bounds(left, top + 78, 120, 20).build());
     }
 
-    private void saveAndClose() {
+    private void save() {
         OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.set(clamp(attempts.getValue(), 5, 1, 20));
         OpenRouterConfig.DEATH_RECOVERY_DEATHS.set(clamp(deaths.getValue(), 10, 1, 50));
         OpenRouterConfig.DEATH_RECOVERY.save();
         OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.save();
         OpenRouterConfig.DEATH_RECOVERY_DEATHS.save();
         CompanionPreferences.sync();
-        onClose();
     }
+
+    private void saveAndClose() { save(); onClose(); }
 
     private static int clamp(String text, int fallback, int low, int high) {
         try { return Math.max(low, Math.min(high, Integer.parseInt(text.trim()))); }
@@ -68,5 +69,5 @@ public final class CompanionDeathRecoveryScreen extends Screen {
         graphics.drawString(this.font, "Смертей на точку", this.width / 2 - 28, 44 + 34, 0xA0A0A0);
     }
 
-    @Override public void onClose() { this.minecraft.setScreen(parent); }
+    @Override public void onClose() { save(); this.minecraft.setScreen(parent); }
 }

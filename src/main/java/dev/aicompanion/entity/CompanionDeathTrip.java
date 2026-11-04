@@ -173,10 +173,6 @@ public final class CompanionDeathTrip {
         }
         ItemEntity next = nearest(level);
         if (next == null) { finish(level, taken > 0 ? "Забрал свои вещи." : "Вещей на месте уже нет."); return false; }
-        if (waited == 0 && !attempted) {
-            attempted = true;
-            CompanionDeathSpots.get(level.getServer()).attempted(c.getOwnerId(), spot.pos());
-        }
         if (c.blockPosition().distSqr(next.blockPosition()) > NEAR * NEAR) {
             standingOn = null;
             waited = 0;
@@ -195,6 +191,13 @@ public final class CompanionDeathTrip {
             waited = 0;
         }
         waited++;
+        // The attempt is spent when he stands at a thing, not when he sets out: a walk that never got there is no try.
+        if (waited == 1 && !attempted) {
+            attempted = true;
+            CompanionDeathSpots.get(level.getServer()).attempted(c.getOwnerId(), level.dimension(), spot.pos());
+        }
+        // A full bag is made room in here too: three diamonds at the pile are not worth taking one of them.
+        if (waited == 1 && room() == 0) makeRoom();
         // The pickup runs by itself while he stands there; a thing it cannot take is left for the next walk.
         if (waited >= WAIT_ON_ONE) { givenUpOn.add(next.getUUID()); standingOn = null; waited = 0; }
         return true;
@@ -288,7 +291,7 @@ public final class CompanionDeathTrip {
 
     /** A full bag is made room in by letting the cheapest junk go, not by leaving a diamond behind. */
     private void makeRoom() {
-        while (freeSlots() == 0) {
+        while (room() == 0) {
             int worst = -1;
             double worstWorth = Double.MAX_VALUE;
             for (int slot = 0; slot < c.getContainerSize(); slot++) {
@@ -304,9 +307,13 @@ public final class CompanionDeathTrip {
         }
     }
 
-    private int freeSlots() {
+    /** Empty slots plus stacks that can still take something: a half stack is room too. */
+    private int room() {
         int free = 0;
-        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).isEmpty()) free++;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            var stack = c.getItem(slot);
+            if (stack.isEmpty() || stack.getCount() < stack.getMaxStackSize()) free++;
+        }
         return free;
     }
 

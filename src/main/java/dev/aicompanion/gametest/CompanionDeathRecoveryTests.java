@@ -388,7 +388,7 @@ public final class CompanionDeathRecoveryTests {
     public static void cancellingClearsThePlace(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
         var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
-        BlockPos place = companion.blockPosition().offset(40, 0, 0);
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
         belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
         h.startSequence().thenExecute(() -> {
@@ -510,7 +510,7 @@ public final class CompanionDeathRecoveryTests {
         belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
         var store = CompanionDeathSpots.get(h.getLevel().getServer());
         store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
-        for (int i = 0; i < 5; i++) store.attempted(companion.getOwnerId(), place);
+        for (int i = 0; i < 5; i++) store.attempted(companion.getOwnerId(), h.getLevel().dimension(), place);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(!companion.deathTrip.begin(), "He set out a sixth time");
             h.assertTrue(companion.deathTrip.lastLine().contains("подавитесь"),
@@ -527,7 +527,7 @@ public final class CompanionDeathRecoveryTests {
         belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
         var store = CompanionDeathSpots.get(h.getLevel().getServer());
         store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
-        for (int i = 0; i < 10; i++) store.deathOnTheWay(companion.getOwnerId(), place);
+        for (int i = 0; i < 10; i++) store.deathOnTheWay(companion.getOwnerId(), h.getLevel().dimension(), place);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(!companion.deathTrip.begin(), "He set out an eleventh time");
             h.assertTrue(store.all(companion.getOwnerId()).isEmpty(), "The place that cost ten lives is still remembered");
@@ -560,8 +560,8 @@ public final class CompanionDeathRecoveryTests {
         belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
         var store = CompanionDeathSpots.get(h.getLevel().getServer());
         store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
-        store.attempted(companion.getOwnerId(), place);
-        store.attempted(companion.getOwnerId(), place);
+        store.attempted(companion.getOwnerId(), h.getLevel().dimension(), place);
+        store.attempted(companion.getOwnerId(), h.getLevel().dimension(), place);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(!companion.deathTrip.begin(), "He set out past the attempt budget");
             h.assertTrue(store.all(companion.getOwnerId()).isEmpty(), "The place past its budget is still remembered");
@@ -605,6 +605,63 @@ public final class CompanionDeathRecoveryTests {
             h.assertTrue(companion.deathTrip.lastLine().contains("осталась"),
                     "A foreign drop made him claim his own: " + companion.deathTrip.lastLine());
         }).thenSucceed();
+    }
+
+    /** A monster on him: he grabs his things and never swings at it. */
+    @GameTest(template = "empty")
+    public static void aMonsterOnHimIsNotFought(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition();
+        var item = belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
+        Zombie foe = h.spawn(EntityType.ZOMBIE, 17, 2, 16);
+        CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        h.startSequence().thenExecute(() -> {
+            h.assertTrue(companion.deathTrip.begin(), "He did not set out");
+            companion.setTarget(foe);
+            for (int tick = 0; tick < 60 && companion.deathTrip.active(); tick++) companion.tick();
+            h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The pile was not taken with a monster on him");
+            h.assertTrue(!companion.swinging, "He stopped to swing at the monster");
+        }).thenSucceed();
+    }
+
+    /** The tries and the deaths are counted against the place, as the budget needs. */
+    @GameTest(template = "empty")
+    public static void triesAndDeathsAreCounted(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        BlockPos place = companion.blockPosition().offset(4, 0, 0);
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        store.died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
+        store.attempted(companion.getOwnerId(), h.getLevel().dimension(), place);
+        store.attempted(companion.getOwnerId(), h.getLevel().dimension(), place);
+        store.deathOnTheWay(companion.getOwnerId(), h.getLevel().dimension(), place);
+        h.startSequence().thenExecute(() -> {
+            var spots = store.all(companion.getOwnerId());
+            h.assertTrue(spots.size() == 1, "The place went missing: " + spots);
+            h.assertTrue(spots.get(0).attempts() == 2, "The tries were not counted: " + spots.get(0).attempts());
+            h.assertTrue(spots.get(0).deaths() == 1, "The deaths were not counted: " + spots.get(0).deaths());
+        }).thenSucceed();
+    }
+
+    /** The switch and the budget live in the save with him, and an old save has the walk on. */
+    @GameTest(template = "empty")
+    public static void theSwitchAndBudgetAreSaved(GameTestHelper h) {
+        CompanionEntity companion = spawn(h);
+        companion.setDeathRecovery(false);
+        companion.setDeathRecoveryLimits(3, 7);
+        var tag = companion.saveWithoutId(new net.minecraft.nbt.CompoundTag());
+        CompanionEntity other = h.spawn(AICompanionMod.COMPANION.get(), 20, 2, 20);
+        other.load(tag);
+        h.assertTrue(!other.deathRecovery(), "The switch was not saved");
+        h.assertTrue(other.deathRecoveryAttempts() == 3, "The tries were not saved: " + other.deathRecoveryAttempts());
+        h.assertTrue(other.deathRecoveryDeaths() == 7, "The deaths were not saved: " + other.deathRecoveryDeaths());
+        var old = new net.minecraft.nbt.CompoundTag();
+        CompanionEntity third = h.spawn(AICompanionMod.COMPANION.get(), 24, 2, 24);
+        third.setDeathRecovery(false);
+        third.load(old);
+        h.assertTrue(third.deathRecovery(), "An old save loaded with the walk off");
+        h.assertTrue(third.deathRecoveryAttempts() == 5 && third.deathRecoveryDeaths() == 10,
+                "An old save loaded with a strange budget: " + third.deathRecoveryAttempts() + "/" + third.deathRecoveryDeaths());
+        h.succeed();
     }
 
     /** A place he cannot walk to at all — another dimension, the void — is dropped without a walk. */
@@ -653,7 +710,7 @@ public final class CompanionDeathRecoveryTests {
     public static void theWalkIsShownAndCanBeCancelled(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
         var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
-        BlockPos place = companion.blockPosition().offset(40, 0, 0);
+        BlockPos place = companion.blockPosition().offset(6, 0, 0);
         belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
         h.startSequence().thenExecute(() -> {

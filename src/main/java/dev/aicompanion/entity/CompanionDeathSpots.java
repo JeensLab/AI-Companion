@@ -53,21 +53,21 @@ public final class CompanionDeathSpots extends SavedData {
     }
 
     /** He arrived at the place: one more attempt spent on it. */
-    public void attempted(UUID owner, BlockPos pos) {
-        replace(owner, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
+    public void attempted(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
+        replace(owner, dimension, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
                 spot.attempts() + 1, spot.deaths()));
     }
 
     /** He died on the way to it: the place remembers how many times it cost him his life. */
-    public void deathOnTheWay(UUID owner, BlockPos pos) {
-        replace(owner, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
+    public void deathOnTheWay(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
+        replace(owner, dimension, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
                 spot.attempts(), spot.deaths() + 1));
     }
 
-    private void replace(UUID owner, BlockPos pos, java.util.function.UnaryOperator<Spot> change) {
+    private void replace(UUID owner, ResourceKey<Level> dimension, BlockPos pos, java.util.function.UnaryOperator<Spot> change) {
         List<Spot> list = spots.get(owner);
         if (list == null) return;
-        for (int i = 0; i < list.size(); i++) if (list.get(i).pos().equals(pos)) {
+        for (int i = 0; i < list.size(); i++) if (list.get(i).pos().equals(pos) && list.get(i).dimension().equals(dimension)) {
             list.set(i, change.apply(list.get(i)));
             setDirty();
             return;
