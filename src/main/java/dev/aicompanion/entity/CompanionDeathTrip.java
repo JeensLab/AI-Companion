@@ -33,7 +33,7 @@ public final class CompanionDeathTrip {
     /** A second order inside this window means the player insists, and his own walk gives way. */
     private static final long INSIST_WINDOW = 20 * 20;
     /** A place that keeps something behind is not tried again for this long (his bag may be full). */
-    private static final int RETRY_TICKS = 20 * 300;
+    private static final int RETRY_TICKS = 20 * 30;
     /** A place in another dimension is worth a crossing only for things that are really dear: a portal costs more. */
     private static final double CROSS_WORTH = 20;
 
@@ -115,7 +115,7 @@ public final class CompanionDeathTrip {
                 bagBefore = -1;
                 attempted = false;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
-                say("Иду за своими вещами через портал: " + place.pos().toShortString() + ".");
+                say("Иду за своими вещами через портал.");
                 return true;
             }
             if (!reachable(level, place.pos())) { data.taken(c.getOwnerId(), place.dimension(), place.pos()); continue; }
@@ -131,7 +131,7 @@ public final class CompanionDeathTrip {
             attempted = false;
             giveUpAt = level.getGameTime() + PATIENCE_TICKS
                     + (int) (Math.sqrt(c.blockPosition().distSqr(place.pos())) * TICKS_PER_BLOCK);
-            say("Иду за своими вещами: " + place.pos().toShortString() + ".");
+            say("Иду за своими вещами.");
             return true;
         }
         return false;
@@ -288,7 +288,8 @@ public final class CompanionDeathTrip {
 
     /** Done: the place is forgotten, and what happened there is said plainly. */
     private void finish(ServerLevel level, String line) {
-        boolean left = !his(level, spot.pos()).isEmpty();
+        // Only what is worth another walk counts as left: seeds and sticks are not a reason to come back.
+        boolean left = leftWorth(level) >= CompanionBelongings.WORTH_GOING;
         if (left) {
             // Something of his is still there (a full bag, a stack the pickup will not take): the place waits for next time.
             triedAt.put(spot.pos(), c.tickCount);
@@ -328,6 +329,13 @@ public final class CompanionDeathTrip {
         return free;
     }
 
+    /** What still lies there, priced: the reason to come back or not. */
+    private double leftWorth(ServerLevel level) {
+        double total = 0;
+        for (ItemEntity item : his(level, spot.pos())) total += CompanionBelongings.worth(item.getItem());
+        return total;
+    }
+
     /** How many things he carries: the bag, not the ground, is the proof of what he took. */
     private int carried() {
         int total = 0;
@@ -345,7 +353,6 @@ public final class CompanionDeathTrip {
 
     private void say(String line) {
         lastLine = line;
-        var owner = c.getOwnerPlayer();
-        if (owner != null) owner.sendSystemMessage(net.minecraft.network.chat.Component.literal(line));
+        c.autonomySay(line);
     }
 }
