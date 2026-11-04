@@ -50,7 +50,7 @@ final class CompanionBehaviorScreen extends Screen {
     }
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
-    private Component markerLabel() { return Component.literal("Контур Олега сквозь стены (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
+    private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
     private Component distanceLabel() { return Component.literal("Слышимость голоса: " + OpenRouterConfig.VOICE_DISTANCE.get() + " блоков"); }
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
