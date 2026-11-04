@@ -158,7 +158,10 @@ public final class CompanionDiamondGoalTests {
      */
     @GameTest(template = "marathon_cave", batch = "diamond_goal_progress", timeoutTicks = TIMEOUT)
     public static void aStepWithNewCellsButNoDiamondsIsProgress(GameTestHelper h) {
-        Rig r = rig(h, false, supplies(32, 4));
+        ItemStack[] bag = supplies(32, 4);
+        // Three forced retreats eat six loaves: with fewer than FOOD_MIN left the next step would hinge on game near the test, which a long run does not have.
+        for (ItemStack stack : bag) if (stack.is(Items.BREAD)) stack.setCount(12);
+        Rig r = rig(h, false, bag);
         start(h, r, 16);
         long[] step = {0};
         int[] base = {0}, retreats = {0};
