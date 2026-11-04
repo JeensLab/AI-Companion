@@ -20,8 +20,8 @@ import java.util.UUID;
 public final class CompanionDeathTrip {
     /** Close enough to stand on a thing and let the pickup take it. */
     private static final double NEAR = 1.0;
-    /** What fell belongs to the place if it lies this close to it; a stack that slid downhill still counts. */
-    private static final double SEARCH = 16;
+    /** What fell belongs to the place if it lies this close to it: a stack that slid downhill or drifted in water still counts. */
+    private static final double SEARCH = 32;
     /** A walk longer than this is a walk that got stuck. */
     private static final int PATIENCE_TICKS = 20 * 120;
     /** Standing on one thing this long: the pickup did not take it, try the next. */
@@ -37,10 +37,14 @@ public final class CompanionDeathTrip {
     private final Set<UUID> givenUpOn = new HashSet<>();
     private long refusedAt;
     private boolean refused;
+    private String lastLine = "";
 
     CompanionDeathTrip(CompanionEntity c) { this.c = c; }
 
     public boolean active() { return spot != null; }
+
+    /** The last thing he said about the walk, for the tests that check he does not claim what he did not take. */
+    public String lastLine() { return lastLine; }
 
     /** What he is about, for the task screen. */
     public String describe() {
@@ -58,6 +62,8 @@ public final class CompanionDeathTrip {
         for (CompanionDeathSpots.Spot place : places) {
             if (!place.dimension().equals(level.dimension())) { data.taken(c.getOwnerId(), place); continue; }
             if (!reachable(level, place.pos())) { data.taken(c.getOwnerId(), place); continue; }
+            // Burned, blown up or picked up by a mob: nothing of his is left there, so the walk is not made.
+            if (his(level, place.pos()).isEmpty()) { data.taken(c.getOwnerId(), place); continue; }
             spot = place;
             waited = 0;
             standingOn = null;
@@ -131,21 +137,29 @@ public final class CompanionDeathTrip {
     private ItemEntity nearest(ServerLevel level) {
         ItemEntity best = null;
         double bestDistance = Double.MAX_VALUE;
-        for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class,
-                new net.minecraft.world.phys.AABB(spot.pos()).inflate(SEARCH),
-                found -> found.isAlive() && !found.getItem().isEmpty() && !givenUpOn.contains(found.getUUID()))) {
+        for (ItemEntity item : his(level, spot.pos())) {
+            if (givenUpOn.contains(item.getUUID())) continue;
             double distance = item.distanceToSqr(c);
             if (distance < bestDistance) { bestDistance = distance; best = item; }
         }
         return best;
     }
 
+    /** What he dropped: the game tags every stack that falls off him with its owner, and nothing else counts. */
+    private java.util.List<ItemEntity> his(ServerLevel level, BlockPos place) {
+        UUID owner = c.getOwnerId();
+        return level.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(place).inflate(SEARCH),
+                item -> item.isAlive() && !item.getItem().isEmpty()
+                        && owner.equals(item.getPersistentData().getUUID(CompanionBag.BELONGINGS)));
+    }
+
     /** Done: the place is forgotten; what is left there is named, so a half-finished walk is not a quiet lie. */
     private void finish(ServerLevel level, String line) {
+        boolean left = !his(level, spot.pos()).isEmpty();
         CompanionDeathSpots.get(level.getServer()).taken(c.getOwnerId(), spot);
         spot = null;
         c.travel().reset();
-        say(line);
+        say(left ? "Часть моих вещей осталась на месте: " + line : line);
     }
 
     /** Lava or fire takes what falls; the void leaves nothing to walk to. */
@@ -157,6 +171,7 @@ public final class CompanionDeathTrip {
     }
 
     private void say(String line) {
+        lastLine = line;
         var owner = c.getOwnerPlayer();
         if (owner != null) owner.sendSystemMessage(net.minecraft.network.chat.Component.literal(line));
     }
