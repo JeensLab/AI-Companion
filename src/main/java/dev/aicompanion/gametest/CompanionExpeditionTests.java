@@ -206,7 +206,9 @@ public final class CompanionExpeditionTests {
         h.onEachTick(() -> {
             CompanionActionResult result = c.workResult(id);
             if (result != null && result.message().contains(OUT_OF_TORCHES)) h.fail("Ended for supplies with no way up: " + result + " | " + report(c));
-            if (goneAt[0] < 0 && depth(h, c) >= DOWN_STAIRS) { goneAt[0] = depth(h, c); dropTorches(c); c.mineSite().truncate(0); }
+            if (goneAt[0] < 0 && depth(h, c) >= DOWN_STAIRS) { goneAt[0] = depth(h, c); dropTorches(c); }
+            // Every step he digs on is recorded again, and a record that reaches him is a way up the route search walks: the stairs stay lost only cut back on every tick.
+            if (goneAt[0] >= 0) c.mineSite().truncate(0);
         });
         h.succeedWhen(() -> h.assertTrue(goneAt[0] >= 0 && depth(h, c) >= goneAt[0] + AFTER_BREAK, "Not digging on with no way up: depth " + depth(h, c) + " | " + report(c)));
     }
