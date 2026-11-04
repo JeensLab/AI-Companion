@@ -88,7 +88,11 @@ public final class CompanionDeathTrip {
 
     /** Sets out for the dearest place worth the walk; false when there is nothing worth or possible to walk to. */
     public boolean begin() {
-        if (spot != null || !c.deathRecovery() || !(c.level() instanceof ServerLevel level) || c.getOwnerId() == null) return false;
+        if (spot != null || !c.deathRecovery() || !(c.level() instanceof ServerLevel level) || c.getOwnerId() == null) {
+            dev.aicompanion.AICompanionMod.LOGGER.info("[death] begin skipped: active={} on={} level={} owner={}",
+                    spot != null, c.deathRecovery(), c.level() instanceof ServerLevel, c.getOwnerId() != null);
+            return false;
+        }
         var server = level.getServer();
         if (server == null) return false;
         CompanionDeathSpots data = CompanionDeathSpots.get(server);
@@ -151,6 +155,7 @@ public final class CompanionDeathTrip {
             say("Иду за своими вещами.");
             return true;
         }
+        dev.aicompanion.AICompanionMod.LOGGER.info("[death] nothing to walk for: places={}", places.size());
         return false;
     }
 

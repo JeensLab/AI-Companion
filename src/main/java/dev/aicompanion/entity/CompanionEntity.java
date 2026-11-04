@@ -915,6 +915,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                         level().dimension(), blockPosition(), worth, level().getGameTime());
                 deathTrip.freshPlace(blockPosition());
             } else if (dropped) autonomySay("За мелочью не пойду: пусть лежит.");
+            dev.aicompanion.AICompanionMod.LOGGER.info("[death] dropped={} worth={} spot={} recorded={}",
+                    dropped, worth, spotId, dropped && worth >= CompanionBelongings.WORTH_GOING);
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
             CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
         }
