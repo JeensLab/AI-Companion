@@ -134,6 +134,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
+    final CompanionCreeperGuard creeperGuard = new CompanionCreeperGuard(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -319,6 +320,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
+        this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));

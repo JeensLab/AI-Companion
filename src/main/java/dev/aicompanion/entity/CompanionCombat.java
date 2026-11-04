@@ -106,11 +106,12 @@ final class CompanionCombat {
     /**
      * Without a guard order, like a friend (the player 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня
      * напал»): a monster at the player's side, or one going for the player or for Oleg, is met first. Only while Oleg is near the
-     * player; never a creeper (a hit beside the player may end in its blast — wolves leave them alone too), never his own hunt.
+     * player; never his own hunt, and never a creeper unless he fights it with the sword on a long goal (a hit beside the player may end
+     * in its blast — wolves leave them alone too).
      */
     boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
-                || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
+                || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights()) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
         if (owner == null || owner.level() != c.level() || owner.isSpectator() || c.distanceToSqr(owner) > GUARD_RANGE * GUARD_RANGE) return false;
