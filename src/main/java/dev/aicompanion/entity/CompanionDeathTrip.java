@@ -48,9 +48,16 @@ public final class CompanionDeathTrip {
     private boolean crossing;
     private boolean attempted;
     /** How many things he carried when the place could first be seen: the bag is the proof of what he took. */
-    private int bagBefore = -1;
+    private int takenBefore = -1;
+    /** Walking at one stack this long without getting into its reach: stand beside it and let the pickup try. */
+    private static final int APPROACH_PATIENCE = 60;
+    private int approach;
+    private UUID approachTarget;
+    private int startedAt;
     /** Passes over the same place in one trip: a stack that could not be taken once is tried again. */
-    private static final int ROUNDS = 3;
+    private static final int ROUNDS = 1;
+    /** A walk that has been at it this long ends, whatever the game clock says. */
+    private static final int MOST_TICKS = 20 * 60;
     private int rounds;
     /** How many of his stacks disappeared beside him: the proof he took them, not just that the bag grew. */
     private int taken;
@@ -119,7 +126,7 @@ public final class CompanionDeathTrip {
                 standingOn = null;
                 givenUpOn.clear();
                 refused = false;
-                bagBefore = -1;
+                takenBefore = -1;
                 attempted = false;
                 rounds = 0;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
@@ -130,12 +137,13 @@ public final class CompanionDeathTrip {
             makeRoom();
             data.attempted(c.getOwnerId(), level.dimension(), place.pos());
             spot = place;
+            startedAt = c.tickCount;
             crossing = false;
             waited = 0;
             standingOn = null;
             givenUpOn.clear();
             refused = false;
-            bagBefore = -1;
+            takenBefore = -1;
             attempted = false;
             rounds = 0;
             giveUpAt = level.getGameTime() + PATIENCE_TICKS
@@ -147,7 +155,7 @@ public final class CompanionDeathTrip {
     }
 
     /** One tick of the walk: true while it goes on. */
-    boolean tick() {
+    public boolean tick() {
         if (spot == null) return false;
         if (!(c.level() instanceof ServerLevel level)) return false;
         // The player turned the feature off: the walk ends here, as he asked.
@@ -155,7 +163,7 @@ public final class CompanionDeathTrip {
         if (crossing) {
             if (level.dimension().equals(spot.dimension())) { crossing = false; say("Перешёл, иду к вещам."); return true; }
             if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return false; }
-            if (level.getGameTime() > giveUpAt) { stop(); say("Портал не пустил."); return false; }
+            if (c.tickCount - startedAt > MOST_TICKS || level.getGameTime() > giveUpAt) { stop(); say("Портал не пустил."); return false; }
             return true;
         }
         // Moved out of the dimension by something else: back through a portal, or the place is left.
@@ -169,7 +177,7 @@ public final class CompanionDeathTrip {
             }
             return true;
         }
-        if (level.getGameTime() > giveUpAt) {
+        if (c.tickCount - startedAt > MOST_TICKS || level.getGameTime() > giveUpAt) {
             // A place nobody could look at is not judged by an empty look: it waits for next time.
             if (!level.hasChunkAt(spot.pos())) {
                 triedAt.put(spot.pos(), c.tickCount);
@@ -187,7 +195,7 @@ public final class CompanionDeathTrip {
             c.travel().toward(spot.pos(), NEAR);
             return true;
         }
-        if (bagBefore < 0) bagBefore = carried();
+        if (takenBefore < 0) takenBefore = taken();
         java.util.Map<UUID, BlockPos> now = new java.util.HashMap<>();
         for (ItemEntity item : his(level, spot.pos())) now.put(item.getUUID(), item.blockPosition().immutable());
         // A stack of his that vanished beside him was picked up by him; one that vanished elsewhere was lost.
@@ -210,33 +218,37 @@ public final class CompanionDeathTrip {
                 c.travel().reset();
                 return true;
             }
-            finish(level, carried() > bagBefore ? "Забрал свои вещи." : "Вещей на месте уже нет.");
+            finish(level, taken() > takenBefore ? "Забрал свои вещи." : "Вещей на месте уже нет.");
             return false;
         }
-        // The thing itself, not the corner of its block: standing a block away leaves the pickup nothing to take.
-        if (c.position().distanceToSqr(next.position()) > NEAR * NEAR) {
+        // Straight at the stack itself: the game's own navigation knows water, steps and ladders, and two blocks is
+        // close enough for the pickup to reach it.
+        double gap = c.position().distanceToSqr(next.position());
+        // The patience of an approach belongs to the stack it is walking at, not to the walking itself.
+        if (!next.getUUID().equals(approachTarget)) { approachTarget = next.getUUID(); approach = 0; }
+        if (gap > 4.0) {
+            approach++;
+            if (approach > 200) { givenUpOn.add(next.getUUID()); approach = 0; return true; }
+            if (approach % 10 == 1 || c.getNavigation().isDone())
+                c.getNavigation().moveTo(next.getX(), next.getY(), next.getZ(), 1.2D);
             standingOn = null;
             waited = 0;
-            CompanionTravel.Step step = c.travel().toward(net.minecraft.core.BlockPos.containing(next.position()), NEAR);
-            if (step == CompanionTravel.Step.FAILED) {
-                givenUpOn.add(next.getUUID());
-                c.travel().reset();
-                return true;
-            }
             return true;
         }
         c.getNavigation().stop();
-        c.travel().reset();
         if (!next.getUUID().equals(standingOn)) {
             standingOn = next.getUUID();
             waited = 0;
         }
         waited++;
-        // A full bag is made room in here too: three diamonds at the pile are not worth taking one of them.
         if (waited == 1 && room() == 0) makeRoom();
         // The pickup runs by itself while he stands there; a thing it cannot take is left for the next walk.
-        if (waited >= WAIT_ON_ONE) { givenUpOn.add(next.getUUID()); standingOn = null; waited = 0; }
+        if (waited >= WAIT_ON_ONE) { givenUpOn.add(next.getUUID()); standingOn = null; waited = 0; approach = 0; }
         return true;
+    }
+
+    /**
+     * An order arrived        return true;
     }
 
     /**
@@ -302,8 +314,10 @@ public final class CompanionDeathTrip {
                 item -> item.isAlive() && !item.getItem().isEmpty() && mine(item, owner));
     }
 
-    private static boolean mine(ItemEntity item, UUID owner) {
+    private boolean mine(ItemEntity item, UUID owner) {
         var data = item.getPersistentData();
+        // Exactly the stacks of this death: another pile at the same spot is not this walk's business.
+        if (data.hasUUID(CompanionBag.BELONGINGS_SPOT)) return spot != null && spot.id().equals(data.getUUID(CompanionBag.BELONGINGS_SPOT));
         if (data.hasUUID(CompanionBag.BELONGINGS) && owner.equals(data.getUUID(CompanionBag.BELONGINGS))) return true;
         return data.getBoolean(CompanionPlayersThings.MARK);
     }
@@ -358,12 +372,8 @@ public final class CompanionDeathTrip {
         return total;
     }
 
-    /** How many things he carries: the bag, not the ground, is the proof of what he took. */
-    private int carried() {
-        int total = 0;
-        for (int slot = 0; slot < c.getContainerSize(); slot++) total += c.getItem(slot).getCount();
-        return total;
-    }
+    /** How many marked belongings the pickup itself took: the exact proof, not a guess from the bag. */
+    private int taken() { return c.loot.belongingsTaken(); }
 
     /** Lava or fire takes what falls; the void leaves nothing to walk to. */
     private boolean reachable(ServerLevel level, BlockPos pos) {

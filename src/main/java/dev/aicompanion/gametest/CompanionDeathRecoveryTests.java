@@ -155,15 +155,14 @@ public final class CompanionDeathRecoveryTests {
     @GameTest(template = "empty")
     public static void aThingHeCannotTakeIsLeftAndSaid(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
-        var other = h.makeMockServerPlayerInLevel();
         BlockPos place = companion.blockPosition();
         var stuck = belonging(h, place, new ItemStack(Items.DIAMOND, 2), companion.getOwnerId());
-        stuck.setTarget(other.getUUID());
+        stuck.setTarget(companion.getOwnerId());
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(companion.deathTrip.begin(), "He did not set out");
-            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
-            h.assertTrue(!companion.deathTrip.active(), "The walk never ended");
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) { companion.tick(); companion.deathTrip.tick(); }
+            h.assertTrue(!companion.deathTrip.active(), "The walk never ended: " + companion.deathTrip.describe());
             h.assertTrue(!stuck.isRemoved() && !stuck.getItem().isEmpty(), "The thing aimed at another was taken anyway");
             h.assertTrue(companion.deathTrip.lastLine().contains("осталась"),
                     "He claimed more than he took: " + companion.deathTrip.lastLine());
@@ -439,15 +438,14 @@ public final class CompanionDeathRecoveryTests {
     @GameTest(template = "empty")
     public static void aPartlyTakenPileIsSaidHonestly(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
-        var other = h.makeMockServerPlayerInLevel();
         BlockPos place = companion.blockPosition();
         var taken = belonging(h, place, new ItemStack(Items.DIAMOND, 4), companion.getOwnerId());
         var left = belonging(h, place.offset(1, 0, 0), new ItemStack(Items.DIAMOND, 4), companion.getOwnerId());
-        left.setTarget(other.getUUID());
+        left.setTarget(companion.getOwnerId());
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(companion.deathTrip.begin(), "He did not set out");
-            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) { companion.tick(); companion.deathTrip.tick(); }
             h.assertTrue(taken.isRemoved() || taken.getItem().isEmpty(), "The reachable stack was not taken");
             h.assertTrue(!left.isRemoved() && !left.getItem().isEmpty(), "The stack aimed at another was taken");
             h.assertTrue(companion.deathTrip.lastLine().contains("осталась"),
@@ -603,7 +601,7 @@ public final class CompanionDeathRecoveryTests {
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(companion.deathTrip.begin(), "He did not set out");
-            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) { companion.tick(); companion.deathTrip.tick(); }
             h.assertTrue(companion.deathTrip.lastLine().contains("осталась"),
                     "A foreign drop made him claim his own: " + companion.deathTrip.lastLine());
         }).thenSucceed();
@@ -686,14 +684,13 @@ public final class CompanionDeathRecoveryTests {
     @GameTest(template = "empty")
     public static void aMarkedJunkStackLeftIsStillSaid(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
-        var other = h.makeMockServerPlayerInLevel();
         BlockPos place = companion.blockPosition();
         var junk = belonging(h, place, new ItemStack(Items.DIRT, 12), companion.getOwnerId());
-        junk.setTarget(other.getUUID());
+        junk.setTarget(companion.getOwnerId());
         CompanionDeathSpots.get(h.getLevel().getServer()).died(companion.getOwnerId(), h.getLevel().dimension(), place, 20, 0);
         h.startSequence().thenExecute(() -> {
             h.assertTrue(companion.deathTrip.begin(), "He did not set out");
-            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) companion.tick();
+            for (int tick = 0; tick < 400 && companion.deathTrip.active(); tick++) { companion.tick(); companion.deathTrip.tick(); }
             h.assertTrue(!junk.isRemoved() && !junk.getItem().isEmpty(), "The junk was taken after all");
             h.assertTrue(companion.deathTrip.lastLine().contains("осталась"),
                     "He claimed everything while a marked stack was left: " + companion.deathTrip.lastLine());
@@ -777,6 +774,9 @@ public final class CompanionDeathRecoveryTests {
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
         CompanionEvents.getOwnedCompanion(owner);
         companion.setSearchRadius(16);
+        // The world and its store outlive a test: this owner starts with no places of his own.
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        for (var spot : store.all(owner.getUUID())) store.taken(owner.getUUID(), spot.dimension(), spot.pos());
         return companion;
     }
 }

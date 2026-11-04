@@ -27,7 +27,7 @@ public final class CompanionDeathSpots extends SavedData {
             new Factory<>(CompanionDeathSpots::new, CompanionDeathSpots::load, null);
 
     /** A place where he fell, its price and when it happened. */
-    public record Spot(ResourceKey<Level> dimension, BlockPos pos, double worth, long tick, int attempts, int deaths) { }
+    public record Spot(UUID id, ResourceKey<Level> dimension, BlockPos pos, double worth, long tick, int attempts, int deaths) { }
 
     private final Map<UUID, List<Spot>> spots = new HashMap<>();
 
@@ -35,9 +35,14 @@ public final class CompanionDeathSpots extends SavedData {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, "aicompanion_death_spots");
     }
 
+    /** A place without its own id: the stacks that carry no spot tag are fetched by their owner's mark. */
     public void died(UUID owner, ResourceKey<Level> dimension, BlockPos pos, double worth, long tick) {
+        died(owner, UUID.randomUUID(), dimension, pos, worth, tick);
+    }
+
+    public void died(UUID owner, UUID id, ResourceKey<Level> dimension, BlockPos pos, double worth, long tick) {
         List<Spot> list = spots.computeIfAbsent(owner, key -> new ArrayList<>());
-        list.add(new Spot(dimension, pos.immutable(), worth, tick, 0, 0));
+        list.add(new Spot(id, dimension, pos.immutable(), worth, tick, 0, 0));
         while (list.size() > MOST) list.remove(0);
         setDirty();
     }
@@ -54,13 +59,13 @@ public final class CompanionDeathSpots extends SavedData {
 
     /** He arrived at the place: one more attempt spent on it. */
     public void attempted(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
-        replace(owner, dimension, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
+        replace(owner, dimension, pos, spot -> new Spot(spot.id(), spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
                 spot.attempts() + 1, spot.deaths()));
     }
 
     /** He died on the way to it: the place remembers how many times it cost him his life. */
     public void deathOnTheWay(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
-        replace(owner, dimension, pos, spot -> new Spot(spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
+        replace(owner, dimension, pos, spot -> new Spot(spot.id(), spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
                 spot.attempts(), spot.deaths() + 1));
     }
 
@@ -93,6 +98,7 @@ public final class CompanionDeathSpots extends SavedData {
             ListTag list = new ListTag();
             for (Spot spot : entry.getValue()) {
                 CompoundTag one = new CompoundTag();
+                one.putUUID("id", spot.id());
                 one.putString("dimension", spot.dimension().location().toString());
                 one.putInt("x", spot.pos().getX());
                 one.putInt("y", spot.pos().getY());
@@ -118,7 +124,7 @@ public final class CompanionDeathSpots extends SavedData {
                 CompoundTag one = (CompoundTag) element;
                 ResourceKey<Level> dimension = ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
                         net.minecraft.resources.ResourceLocation.parse(one.getString("dimension")));
-                list.add(new Spot(dimension, new BlockPos(one.getInt("x"), one.getInt("y"), one.getInt("z")),
+                list.add(new Spot(one.getUUID("id"), dimension, new BlockPos(one.getInt("x"), one.getInt("y"), one.getInt("z")),
                         one.getDouble("worth"), one.getLong("tick"), one.getInt("attempts"), one.getInt("deaths")));
             }
             data.spots.put(UUID.fromString(key), list);

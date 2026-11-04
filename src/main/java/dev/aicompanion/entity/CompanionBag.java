@@ -14,6 +14,8 @@ import java.util.List;
 final class CompanionBag {
     /** On every item that fell from him at death: the owner's UUID, so the goal that outlives him can fetch its own things (CompanionAgenda.died). */
     static final String BELONGINGS = "aicompanion:belongings";
+    /** The death these things fell from, so a walk fetches exactly them and never somebody else's pile. */
+    static final String BELONGINGS_SPOT = "aicompanion:belongings_spot";
     final CompanionEntity c;
 
     CompanionBag(CompanionEntity c) { this.c = c; }
@@ -120,7 +122,7 @@ final class CompanionBag {
                 .map(entry -> entry.getValue() + "x " + entry.getKey()).collect(java.util.stream.Collectors.joining(", ")));
     }
 
-    boolean dropBelongings() {
+    boolean dropBelongings(java.util.UUID spot) {
         boolean any = false;
         java.util.List<ItemStack> belongings = new java.util.ArrayList<>();
         for (int slot = 0; slot < c.companionInventory.size(); slot++) { belongings.add(c.companionInventory.get(slot)); c.companionInventory.set(slot, ItemStack.EMPTY); }
@@ -130,6 +132,7 @@ final class CompanionBag {
             if (item != null) {
                 item.setUnlimitedLifetime();
                 if (c.getOwnerId() != null) item.getPersistentData().putUUID(BELONGINGS, c.getOwnerId());
+                if (spot != null) item.getPersistentData().putUUID(BELONGINGS_SPOT, spot);
                 any = true;
             }
         }

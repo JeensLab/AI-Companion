@@ -36,6 +36,10 @@ final class CompanionLoot {
     private int collectedLogs;
     private int collectedStone;
     private int collectedSoil;
+    /** Marked belongings of a death taken up: the proof a walk back actually fetched them. */
+    private int belongingsTaken;
+    int belongingsTaken() { return belongingsTaken; }
+
     private final int[] collectedLoose = new int[CompanionGround.values().length];
     private long rescanUntil;
     private boolean collecting;
@@ -146,6 +150,9 @@ final class CompanionLoot {
             else owner.storeLoot(offered);
             int moved = before - offered.getCount();
             if (moved == 0) continue;
+            if (item.getPersistentData().hasUUID(CompanionBag.BELONGINGS)
+                    || item.getPersistentData().hasUUID(CompanionBag.BELONGINGS_SPOT)
+                    || item.getPersistentData().getBoolean(CompanionPlayersThings.MARK)) belongingsTaken++;
             // Not counted as harvest progress: this was lying there, not gathered for a task.
             takeFrom(item, offered, moved, true);
         }
