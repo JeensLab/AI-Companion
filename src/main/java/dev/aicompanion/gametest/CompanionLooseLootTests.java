@@ -84,8 +84,12 @@ public final class CompanionLooseLootTests {
         });
     }
 
-    /** What falls out of the dead player is kept for him apart from the bag: a hungry, hurt Oleg neither eats it nor arms himself with it. */
-    @GameTest(template = "empty", timeoutTicks = 300)
+    /**
+     * What falls out of the dead player is kept for him apart from the bag: a hungry, hurt Oleg neither eats it nor arms himself with it.
+     * The pickup waits out the drop's 40-tick delay (tick 41 in 33 of 34 runs), but in a loaded shard it once came at tick 104, past the
+     * 98 ticks that 300 left beside the 200-tick idle; 400 gives it twice the worst seen.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
     public static void whatFallsOutOfTheDeadPlayerIsKeptForHim(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);
