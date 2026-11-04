@@ -1,0 +1,535 @@
+package dev.aicompanion.gametest;
+
+import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.entity.CompanionActionResult;
+import dev.aicompanion.entity.CompanionChunkTicket;
+import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionMineSite;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
+import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * The expedition of the diamond mine under hazards and bookkeeping: lava and water beside the way, the last pickaxe, torches,
+ * a bag under load, the chunk ticket on every end, and the ore against the diamonds. Arena as in the acceptance test: origin at
+ * Y -60, Oleg picks NORTH at (24,22,24), stand k is (24,22-k,24-k), the tunnel feet at relative height 2.
+ */
+@GameTestHolder(AICompanionMod.MOD_ID)
+@PrefixGameTestTemplate(false)
+public final class CompanionExpeditionTests {
+    private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
+    private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6, FIRST_ORE_STAND = 6, AFTER_BREAK = 3, DOWN_STAIRS = 4, SURFACE_DEPTH = 2, GIVEN_TORCHES = 16;
+    private static final BlockPos WATER = new BlockPos(25, 4, 3);
+    private static final String NO_PICKAXES = "кирок не осталось", OUT_OF_TORCHES = "Факелы кончились", STALL = "Полторы минуты";
+
+    private record Rig(CompanionEntity c, ServerPlayer owner) { }
+
+    /** A lava source open only from above, beside the column he opens next and in sight from his stand: it is plugged before that column is opened. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void sealsSeenLavaBesideTheStairsBeforeOpeningTheNextColumn(GameTestHelper h) {
+        Rig r = rig(h, RING_FROM, standard(16));
+        CompanionEntity c = r.c();
+        BlockPos stand = stand(LAVA_STEP), lava = stand.offset(-1, -1, -1);
+        for (BlockPos air : List.of(stand.west(), stand.north(), stand.offset(-1, 0, -1))) h.setBlock(air, Blocks.AIR);
+        h.setBlock(lava, Blocks.LAVA);
+        List<BlockPos> guarded = List.of(stand(LAVA_STEP + 1), stand(LAVA_STEP + 1).above(2));
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(!c.isOnFire() && c.getRemainingFireTicks() <= 0 && !c.isInLava(), "Burning at " + c.blockPosition().toShortString() + " | " + report(c));
+            if (h.getBlockState(lava).is(Blocks.LAVA))
+                for (BlockPos cell : guarded) h.assertTrue(!h.getBlockState(cell).isAir(), "Opened " + cell.toShortString() + " beside unsealed lava at " + lava.toShortString());
+        });
+        h.succeedWhen(() -> {
+            ended(h, c, id);
+            var state = h.getBlockState(lava);
+            h.assertTrue(!state.is(Blocks.LAVA) && !state.isAir() && state.getFluidState().isEmpty(), "Lava source not replaced by a block: " + state + " | " + report(c));
+        });
+    }
+
+    /** Water inside the rock above a tunnel cell: the cell is never opened under it, or the water is plugged first; no water in the mine. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void keepsWaterAboveTheTunnelOutOfTheMine(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(16));
+        CompanionEntity c = r.c();
+        for (int[] ore : new int[][]{{22, 4}, {22, 3}, {26, 4}, {26, 5}}) h.setBlock(new BlockPos(ore[0], DIAMOND_FEET - 1, ore[1]), Blocks.DEEPSLATE_DIAMOND_ORE);
+        h.setBlock(WATER, Blocks.WATER);
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            ended(h, c, id);
+            for (BlockPos pos : blocks(h, Blocks.WATER)) h.assertTrue(pos.equals(WATER), "Water in the mine at " + pos.toShortString() + " | " + report(c));
+            if (h.getBlockState(WATER).is(Blocks.WATER))
+                for (var side : Direction.values())
+                    h.assertTrue(!h.getBlockState(WATER.relative(side)).isAir(), "Water source opened to the air at " + WATER.relative(side).toShortString());
+        });
+    }
+
+    /** One stone pickaxe with three uses left: when it breaks the step ends saying he is out of pickaxes; the iron one never digs stone. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void endsOutOfPickaxesAndKeepsTheIronOneForOre(GameTestHelper h) {
+        Rig r = lastPickaxe(h);
+        CompanionEntity c = r.c();
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.message().contains(NO_PICKAXES), "Result does not say the pickaxes are gone: " + result);
+            h.assertTrue(count(c, Items.STONE_PICKAXE) == 0, "A stone pickaxe is left: " + report(c));
+            h.assertTrue(count(c, Items.IRON_PICKAXE) == 1 && damage(c, Items.IRON_PICKAXE) <= 2, "Iron pickaxe used on stone, damage " + damage(c, Items.IRON_PICKAXE));
+        });
+    }
+
+    /**
+     * A step that begins with no stone pickaxe, no sticks and no wood (the fetch above ground found none): going up again would
+     * bring nothing back, so the iron pickaxe digs the rock while it has wear to spare, instead of the climb of a mine that ends at once.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void digsRockWithSpareIronWhenAStepBeginsWithoutAStonePickaxe(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8), new ItemStack(Items.TORCH, 16));
+        CompanionEntity c = r.c();
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            CompanionActionResult result = c.workResult(id);
+            if (result != null) h.fail("Ended instead of digging with the iron pickaxe: " + result + " | " + report(c));
+        });
+        h.succeedWhen(() -> {
+            int depth = GROUND + 1 - h.relativePos(c.blockPosition()).getY();
+            h.assertTrue(depth >= DOWN_STAIRS, "Not down the stairs yet, depth " + depth + " | " + report(c));
+            h.assertTrue(damage(c, Items.IRON_PICKAXE) > 2, "The iron pickaxe has not dug the rock, damage " + damage(c, Items.IRON_PICKAXE));
+        });
+    }
+
+    /** No torches, but coal and sticks: he crafts some and lays them; the ones in the world and in the bag come from the coal he used. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void craftsTorchesFromCoalAndSticksAndLaysThem(GameTestHelper h) {
+        Rig r = rig(h, RING_FROM, standard(0, new ItemStack(Items.COAL, 2), new ItemStack(Items.STICK, 3)));
+        CompanionEntity c = r.c();
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            ended(h, c, id);
+            int crafted = 4 * (2 - count(c, Items.COAL)), total = torches(h) + count(c, Items.TORCH) + ground(h, Items.TORCH);
+            h.assertTrue(torches(h) >= 1, "No torch laid: bag torches " + count(c, Items.TORCH) + ", coal " + count(c, Items.COAL) + ", sticks " + count(c, Items.STICK) + ", on the ground " + ground(h, Items.TORCH) + " | " + report(c));
+            h.assertTrue(total <= crafted && 3 - count(c, Items.STICK) == 2 - count(c, Items.COAL), "Torches " + total + " from " + crafted + " crafted; sticks left " + count(c, Items.STICK));
+        });
+    }
+
+    /** The last torch is gone deep in the mine, coal and spare sticks are in the bag: he makes more and keeps digging, no climb for supplies. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void makesTorchesWhenTheLastOneIsGoneAndKeepsDigging(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(1, new ItemStack(Items.COAL, 8), new ItemStack(Items.STICK, 12)));
+        CompanionEntity c = r.c();
+        long id = start(h, c, 1);
+        int[] goneAt = {-1};
+        h.onEachTick(() -> {
+            CompanionActionResult result = c.workResult(id);
+            if (result != null && result.message().contains(OUT_OF_TORCHES)) h.fail("Went up for supplies with the means to make torches: " + result + " | " + report(c));
+            if (goneAt[0] < 0 && depth(h, c) >= DOWN_STAIRS) { goneAt[0] = depth(h, c); dropTorches(c); }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(goneAt[0] >= 0 && depth(h, c) >= goneAt[0] + AFTER_BREAK, "Not digging on after the torches were gone: depth " + depth(h, c) + " | " + report(c));
+            h.assertTrue(count(c, Items.TORCH) > 0 || torches(h) > 1, "No torches made: " + report(c));
+        });
+    }
+
+    /** The last torch is gone deep in the mine and nothing in the bag makes more: he goes up for supplies instead of digging on in the dark. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void climbsForSuppliesWhenTheTorchesAreGoneAndCannotBeMade(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(1));
+        CompanionEntity c = r.c();
+        long id = start(h, c, 1);
+        int[] goneAt = {-1}, deepest = {0};
+        h.onEachTick(() -> {
+            deepest[0] = Math.max(deepest[0], depth(h, c));
+            if (goneAt[0] < 0 && depth(h, c) >= DOWN_STAIRS) { goneAt[0] = depth(h, c); dropTorches(c); }
+            h.assertTrue(goneAt[0] < 0 || deepest[0] <= goneAt[0] + AFTER_BREAK, "Dug on in the dark to depth " + deepest[0] + " | " + report(c));
+        });
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(depth(h, c) <= SURFACE_DEPTH, "Ended below the entrance instead of climbing: " + result + " | " + report(c));
+        });
+    }
+
+    /** A step that begins deep in the mine with no torch and nothing to make one of: he climbs for supplies instead of digging on unlit. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void aStepBeginningUndergroundWithoutTorchesClimbs(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(1));
+        CompanionEntity c = r.c();
+        start(h, c, 1);
+        long[] second = {-1};
+        int[] goneAt = {-1}, deepest = {0};
+        h.onEachTick(() -> {
+            if (goneAt[0] < 0) {
+                if (depth(h, c) < DOWN_STAIRS) return;
+                goneAt[0] = depth(h, c);
+                dropTorches(c);
+                CompanionEvents.executeAction(r.owner(), "stop", "", 1);
+                second[0] = start(h, c, 1);
+                return;
+            }
+            deepest[0] = Math.max(deepest[0], depth(h, c));
+            h.assertTrue(deepest[0] <= goneAt[0] + AFTER_BREAK, "Dug on in the dark to depth " + deepest[0] + " | " + report(c));
+            if (c.workResult(second[0]) != null) h.assertTrue(depth(h, c) <= SURFACE_DEPTH, "Ended below the entrance: " + report(c));
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(second[0] >= 0, "The second step has not begun");
+            ended(h, c, second[0]);
+            h.assertTrue(depth(h, c) <= SURFACE_DEPTH, "Ended below the entrance instead of climbing | " + report(c));
+        });
+    }
+
+    /** The last torch is gone, nothing makes more and his stairs up are lost: with no way up he digs on at once, no shortage ending, no loop of climbs. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void withNoWayUpAndNoTorchesHeDigsOnInsteadOfEndingForSupplies(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(1));
+        CompanionEntity c = r.c();
+        long id = start(h, c, 1);
+        int[] goneAt = {-1};
+        h.onEachTick(() -> {
+            CompanionActionResult result = c.workResult(id);
+            if (result != null && result.message().contains(OUT_OF_TORCHES)) h.fail("Ended for supplies with no way up: " + result + " | " + report(c));
+            if (goneAt[0] < 0 && depth(h, c) >= DOWN_STAIRS) { goneAt[0] = depth(h, c); dropTorches(c); c.mineSite().truncate(0); }
+        });
+        h.succeedWhen(() -> h.assertTrue(goneAt[0] >= 0 && depth(h, c) >= goneAt[0] + AFTER_BREAK, "Not digging on with no way up: depth " + depth(h, c) + " | " + report(c)));
+    }
+
+    private static int depth(GameTestHelper h, CompanionEntity c) { return GROUND + 1 - h.relativePos(c.blockPosition()).getY(); }
+
+    private static void dropTorches(CompanionEntity c) {
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.TORCH)) c.setItem(slot, ItemStack.EMPTY);
+    }
+
+    /** A full-depth dig through lots of rock with a nearly full bag: never the stall watchdog, never an overfull stack, the valuables stay. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void longDigWithFullBagNeverStallsAndKeepsValuables(GameTestHelper h) {
+        Item[] junk = {Items.POPPY, Items.DANDELION, Items.BLUE_ORCHID, Items.ALLIUM, Items.AZURE_BLUET, Items.RED_TULIP, Items.ORANGE_TULIP, Items.WHITE_TULIP,
+                Items.PINK_TULIP, Items.OXEYE_DAISY, Items.CORNFLOWER, Items.LILY_OF_THE_VALLEY, Items.APPLE, Items.CARROT, Items.POTATO, Items.BEETROOT, Items.SUGAR, Items.PAPER};
+        Rig r = rig(h, RING_FROM, standard(16, new ItemStack(Items.DIAMOND, 3), new ItemStack(Items.IRON_INGOT, 8)));
+        CompanionEntity c = r.c();
+        for (int i = 0; i < JUNK_SLOTS; i++) c.setItem(FIRST_JUNK + i, new ItemStack(junk[i]));
+        long id = start(h, c, 1);
+        h.onEachTick(() -> {
+            for (int slot = 0; slot < c.getContainerSize(); slot++)
+                h.assertTrue(c.getItem(slot).getCount() <= c.getItem(slot).getMaxStackSize(), "Overfull stack in slot " + slot + ": " + c.getItem(slot));
+            h.assertTrue(count(c, Items.DIAMOND) >= 3 && count(c, Items.IRON_INGOT) >= 8, "Valuables lost: " + report(c));
+        });
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(!result.message().contains(STALL), "Ended by the stall watchdog: " + result);
+        });
+    }
+
+    /** Andesite, granite and diorite all the way through the stone, four free slots: only sealing rock is kept, so the diamond still fits. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void keepsOnlySealingRockSoANearlyFullBagStillTakesTheDiamond(GameTestHelper h) {
+        Rig r = rig(h, RING_FROM, standard(16));
+        CompanionEntity c = r.c();
+        Block[] rock = {Blocks.ANDESITE, Blocks.GRANITE, Blocks.DIORITE};
+        for (int x = 1; x < SIZE - 1; x++) for (int z = 1; z < SIZE - 1; z++) for (int y = DEEPSLATE_TOP + 1; y < GROUND - 2; y++)
+            h.getLevel().setBlock(h.absolutePos(new BlockPos(x, y, z)), rock[y % 3].defaultBlockState(), 2 | 16);
+        Item[] junk = {Items.POPPY, Items.DANDELION, Items.BLUE_ORCHID, Items.ALLIUM, Items.AZURE_BLUET, Items.RED_TULIP, Items.ORANGE_TULIP, Items.WHITE_TULIP, Items.PINK_TULIP, Items.OXEYE_DAISY,
+                Items.CORNFLOWER, Items.LILY_OF_THE_VALLEY, Items.APPLE, Items.CARROT, Items.POTATO, Items.BEETROOT, Items.SUGAR, Items.PAPER, Items.FEATHER};
+        for (int i = 0; i < junk.length; i++) c.setItem(4 + i, new ItemStack(junk[i]));
+        long id = start(h, c, 1);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(count(c, Items.DIAMOND) >= 1 && !result.message().contains("Сумка полна"), "Bag filled with rock instead of the diamond: " + result + " | " + report(c));
+        });
+    }
+
+    /** The chunk is held while the step runs and let go of when it ends by its own result. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void holdsTheChunkWhileRunningAndReleasesItAtTheResult(GameTestHelper h) {
+        CompanionEntity c = lastPickaxe(h).c();
+        long id = start(h, c, 1);
+        h.assertTrue(CompanionChunkTicket.held(c.getUUID()), "No chunk ticket right after the order was accepted");
+        h.onEachTick(() -> h.assertTrue(c.isWorking() == CompanionChunkTicket.held(c.getUUID()), "Working " + c.isWorking() + " but ticket " + CompanionChunkTicket.held(c.getUUID())));
+        h.succeedWhen(() -> {
+            ended(h, c, id);
+            h.assertTrue(!CompanionChunkTicket.held(c.getUUID()), "Chunk ticket still held after the result");
+        });
+    }
+
+    /** «Стой» in the middle of the dig lets the chunk go. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    public static void releasesTheChunkWhenToldToStop(GameTestHelper h) {
+        Rig r = rig(h, RING_FROM, standard(16));
+        CompanionEntity c = r.c();
+        start(h, c, 1);
+        h.runAfterDelay(100, () -> {
+            h.assertTrue(c.isWorking() && CompanionChunkTicket.held(c.getUUID()), "Not digging with a ticket after 100 ticks: " + report(c));
+            CompanionEvents.executeAction(r.owner(), "stop", "", 1);
+        });
+        h.runAfterDelay(110, () -> {
+            h.assertTrue(!c.isWorking(), "Still working after stop: " + report(c));
+            h.assertTrue(!CompanionChunkTicket.held(c.getUUID()), "Chunk ticket kept after stop");
+            h.succeed();
+        });
+    }
+
+    /** Death in the middle of the dig lets the chunk go. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    public static void releasesTheChunkWhenHeDies(GameTestHelper h) {
+        CompanionEntity c = rig(h, RING_FROM, standard(16)).c();
+        start(h, c, 1);
+        h.runAfterDelay(100, () -> {
+            h.assertTrue(c.isWorking() && CompanionChunkTicket.held(c.getUUID()), "Not digging with a ticket after 100 ticks: " + report(c));
+            c.kill();
+        });
+        h.runAfterDelay(110, () -> {
+            h.assertTrue(!CompanionChunkTicket.held(c.getUUID()), "Chunk ticket kept after death");
+            h.succeed();
+        });
+    }
+
+    /** The diamonds are the ore he removed, and the torches come only from the coal he used: nothing appears from nothing. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 9000)
+    public static void diamondsEqualRemovedOreAndNothingAppearsFromNothing(GameTestHelper h) {
+        Rig r = rig(h, RING_FROM, standard(GIVEN_TORCHES, new ItemStack(Items.COAL, 1), new ItemStack(Items.STICK, 1)));
+        CompanionEntity c = r.c();
+        int oreBefore = blocks(h, Blocks.DEEPSLATE_DIAMOND_ORE).size();
+        long id = start(h, c, 2);
+        h.succeedWhen(() -> {
+            ended(h, c, id);
+            int removed = oreBefore - blocks(h, Blocks.DEEPSLATE_DIAMOND_ORE).size(), diamonds = count(c, Items.DIAMOND) + ground(h, Items.DIAMOND);
+            h.assertTrue(removed >= 1 && diamonds == removed, "Diamonds " + diamonds + " but ore removed " + removed + " | " + report(c));
+            int torches = torches(h) + count(c, Items.TORCH) + ground(h, Items.TORCH), allowed = GIVEN_TORCHES + 4 * (1 - count(c, Items.COAL));
+            h.assertTrue(torches <= allowed, "Torches " + torches + " from " + GIVEN_TORCHES + " given and " + (allowed - GIVEN_TORCHES) + " crafted");
+            h.assertTrue(count(c, Items.IRON_PICKAXE) == 1, "Iron pickaxes: " + count(c, Items.IRON_PICKAXE));
+        });
+    }
+
+    /** A dimension change or a chunk unload removes him with setRemoved, not remove(): his nine chunks must still be let go. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 600)
+    public static void releasesHisChunksWhenRemovedWithoutDiscard(GameTestHelper h) {
+        CompanionEntity c = rig(h, RING_FROM, standard(16)).c();
+        UUID id = c.getUUID();
+        start(h, c, 1);
+        h.runAfterDelay(100, () -> {
+            h.assertTrue(c.isWorking() && CompanionChunkTicket.held(id), "Not digging with a ticket after 100 ticks: " + report(c));
+            c.setRemoved(Entity.RemovalReason.CHANGED_DIMENSION);
+        });
+        h.runAfterDelay(105, () -> {
+            boolean kept = CompanionChunkTicket.held(id);
+            CompanionChunkTicket.release(id);
+            h.assertTrue(!kept, "Chunk ticket kept after he was removed by a dimension change");
+            h.succeed();
+        });
+    }
+
+    /**
+     * Diamond ore in the second cell of a stair step: the cell is not open to the stand, so it is broken as part of the column
+     * while the column is still going. A server stop at that moment must not lose the diamond: it is in the world or in the bag.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void aMinedDiamondIsNotOnlyInMemory(GameTestHelper h) {
+        CompanionEntity c = rig(h, NO_RING, standard(16)).c();
+        BlockPos ore = stand(FIRST_ORE_STAND);
+        h.setBlock(ore, Blocks.DEEPSLATE_DIAMOND_ORE);
+        start(h, c, 1);
+        long[] brokenAt = {-1};
+        h.onEachTick(() -> {
+            if (brokenAt[0] < 0 && !h.getBlockState(ore).is(Blocks.DEEPSLATE_DIAMOND_ORE)) brokenAt[0] = h.getTick();
+            if (brokenAt[0] < 0 || h.getTick() < brokenAt[0] + AFTER_BREAK) return;
+            h.assertTrue(count(c, Items.DIAMOND) + ground(h, Items.DIAMOND) >= 1,
+                    "The ore at " + ore.toShortString() + " was broken " + AFTER_BREAK + " ticks ago, but the diamond is neither in the world nor in the bag | " + report(c));
+            h.succeed();
+        });
+    }
+
+    /**
+     * A save in the middle of a column carries the sealing blocks held back for it; the companion loaded from it lets them fall on
+     * its first tick, so the quit loses nothing and a second save of the same state holds nothing twice.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void sealingBlocksHeldMidColumnSurviveASaveAndLoad(GameTestHelper h) {
+        CompanionEntity c = rig(h, NO_RING, standard(16)).c();
+        start(h, c, 1);
+        boolean[] saved = {false};
+        h.onEachTick(() -> {
+            if (saved[0] || c.mineSite().heldCount() == 0) return;
+            saved[0] = true;
+            int held = c.mineSite().heldCount();
+            Item kind = c.mineSite().peekHeld().get(0).drops().get(0).getItem();
+            int before = ground(h, kind) + count(c, kind);
+            CompoundTag tag = new CompoundTag();
+            c.saveWithoutId(tag);
+            h.assertTrue(tag.contains(CompanionMineSite.HELD_KEY), "The save in the middle of the column does not carry the " + held + " held blocks");
+            c.discard();
+            CompanionEntity fresh = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+            fresh.load(tag);
+            h.assertTrue(fresh.mineSite().heldCount() == held, "Loaded " + fresh.mineSite().heldCount() + " held blocks of " + held);
+            h.runAfterDelay(2, () -> {
+                h.assertTrue(fresh.mineSite().loadedHeld() == false && ground(h, kind) + count(fresh, kind) == before + held,
+                        "The held blocks did not fall once on the first tick: ground " + ground(h, kind) + ", held " + held + ", before " + before);
+                h.succeed();
+            });
+        });
+    }
+
+    /** Holding is saved apart from the mine: repeated saves repeat it, a load replaces it, an emptied hold and an old save carry none, and a loaded one falls once. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    public static void heldBlocksAreSavedOnceLoadedOnceAndDroppedOnce(GameTestHelper h) {
+        BlockPos at = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        CompanionMineSite site = new CompanionMineSite();
+        site.hold(at, List.of(new ItemStack(Items.COBBLESTONE, 5)));
+        CompoundTag first = new CompoundTag(), second = new CompoundTag();
+        site.save(first);
+        site.save(second);
+        h.assertTrue(first.contains(CompanionMineSite.HELD_KEY) && first.get(CompanionMineSite.HELD_KEY).equals(second.get(CompanionMineSite.HELD_KEY)), "Two saves of the same hold differ");
+        CompanionMineSite loaded = new CompanionMineSite();
+        loaded.load(first);
+        loaded.load(first);
+        h.assertTrue(loaded.heldCount() == 5 && loaded.loadedHeld(), "Two loads without a tick hold " + loaded.heldCount() + " blocks");
+        loaded.takeHeld();
+        CompoundTag empty = new CompoundTag();
+        loaded.save(empty);
+        h.assertTrue(!empty.contains(CompanionMineSite.HELD_KEY) && !loaded.loadedHeld(), "A dropped hold is still saved");
+        loaded.load(first);
+        loaded.load(empty);
+        h.assertTrue(loaded.heldCount() == 0 && !loaded.loadedHeld(), "A save without a hold loads one");
+        CompanionEntity c = rig(h, NO_RING, standard(16)).c();
+        c.mineSite().hold(at, List.of(new ItemStack(Items.COBBLESTONE, 5)));
+        CompoundTag whole = new CompoundTag();
+        c.saveWithoutId(whole);
+        c.mineSite().takeHeld();
+        c.load(whole);
+        h.assertTrue(c.mineSite().heldCount() == 5, "The companion did not load the hold: " + c.mineSite().heldCount());
+        h.runAfterDelay(2, () -> {
+            h.assertTrue(ground(h, Items.COBBLESTONE) == 5 && c.mineSite().heldCount() == 0, "Dropped " + ground(h, Items.COBBLESTONE) + " of 5, still held " + c.mineSite().heldCount());
+            h.succeed();
+        });
+    }
+
+    /** Told to stop in the middle of a column, he lets the held blocks fall: they are not kept for a mine nobody will dig. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 3000)
+    public static void stoppingMidColumnDropsTheHeldBlocks(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(16));
+        CompanionEntity c = r.c();
+        start(h, c, 1);
+        boolean[] stopped = {false};
+        h.onEachTick(() -> {
+            if (!stopped[0]) {
+                if (c.mineSite().heldCount() == 0) return;
+                stopped[0] = true;
+                CompanionEvents.executeAction(r.owner(), "stop", "", 1);
+                return;
+            }
+            h.assertTrue(c.mineSite().heldCount() == 0 && !c.mineSite().loadedHeld(), "Held blocks outlived the stop: " + c.mineSite().heldCount());
+            h.succeed();
+        });
+    }
+
+    private static Rig lastPickaxe(GameTestHelper h) {
+        Rig r = rig(h, RING_FROM, standard(16));
+        ItemStack worn = new ItemStack(Items.STONE_PICKAXE);
+        worn.setDamageValue(worn.getMaxDamage() - 3);
+        r.c().setItemSlot(EquipmentSlot.MAINHAND, worn);
+        r.c().setItem(0, ItemStack.EMPTY);
+        return r;
+    }
+
+    /** Stone pickaxe in hand and in the bag, iron pickaxe, the given torches and bread, then the extras. */
+    private static ItemStack[] standard(int torches, ItemStack... extra) {
+        List<ItemStack> bag = new ArrayList<>(List.of(new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.BREAD, 8)));
+        if (torches > 0) bag.add(new ItemStack(Items.TORCH, torches));
+        bag.addAll(List.of(extra));
+        return bag.toArray(new ItemStack[0]);
+    }
+
+    private static Rig rig(GameTestHelper h, int ringFrom, ItemStack... bag) {
+        mountain(h, ringFrom);
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        ServerPlayer owner = bind(h, companion);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        for (int slot = 0; slot < bag.length; slot++) companion.setItem(slot, bag[slot]);
+        return new Rig(companion, owner);
+    }
+
+    private static long start(GameTestHelper h, CompanionEntity c, int count) {
+        h.assertTrue(c.startWork("dig_for_diamonds", "", count).success(), "Diamond mine not accepted: " + c.getLastTaskResult());
+        return c.activeWorkId();
+    }
+
+    private static CompanionActionResult ended(GameTestHelper h, CompanionEntity c, long id) {
+        h.assertTrue(!c.isGatheringTask() && !c.isWorking(), "Work still active: " + c.getLastTaskResult());
+        CompanionActionResult result = c.workResult(id);
+        h.assertTrue(result != null, "No result for the order: " + report(c));
+        return result;
+    }
+
+    private static BlockPos stand(int k) { return new BlockPos(CENTER, GROUND + 1 - k, CENTER - k); }
+
+    private static void mountain(GameTestHelper h, int ringFrom) {
+        var level = h.getLevel();
+        for (int x = 0; x < SIZE; x++) for (int z = 0; z < SIZE; z++) for (int y = 0; y <= GROUND; y++) {
+            boolean edge = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;
+            int ring = Math.max(Math.abs(x - CENTER), Math.abs(z - CENTER));
+            var block = y == 0 || edge ? Blocks.BEDROCK
+                    : y == DIAMOND_FEET - 1 && ring >= ringFrom ? Blocks.DEEPSLATE_DIAMOND_ORE
+                    : y <= DEEPSLATE_TOP ? Blocks.DEEPSLATE : y < GROUND - 2 ? Blocks.STONE : y < GROUND ? Blocks.DIRT : Blocks.GRASS_BLOCK;
+            level.setBlock(h.absolutePos(new BlockPos(x, y, z)), block.defaultBlockState(), 2 | 16);
+        }
+    }
+
+    /** Relative positions of every block of the kind in the arena (water and lava count with their flowing states). */
+    private static List<BlockPos> blocks(GameTestHelper h, Block block) {
+        List<BlockPos> found = new ArrayList<>();
+        for (int x = 1; x < SIZE - 1; x++) for (int z = 1; z < SIZE - 1; z++) for (int y = 1; y <= GROUND; y++) {
+            BlockPos pos = new BlockPos(x, y, z);
+            var state = h.getBlockState(pos);
+            if (state.is(block) || block == Blocks.WATER && state.getFluidState().is(FluidTags.WATER)) found.add(pos);
+        }
+        return found;
+    }
+
+    private static int torches(GameTestHelper h) { return blocks(h, Blocks.TORCH).size() + blocks(h, Blocks.WALL_TORCH).size(); }
+
+    private static int ground(GameTestHelper h, Item item) {
+        int total = 0;
+        for (ItemEntity entity : h.getLevel().getEntitiesOfClass(ItemEntity.class, AABB.encapsulatingFullBlocks(h.absolutePos(BlockPos.ZERO), h.absolutePos(new BlockPos(SIZE, GROUND + 15, SIZE)))))
+            if (entity.getItem().is(item)) total += entity.getItem().getCount();
+        return total;
+    }
+
+    private static ServerPlayer bind(GameTestHelper h, CompanionEntity companion) {
+        var owner = h.makeMockServerPlayerInLevel();
+        owner.teleportTo(companion.getX() - 3, companion.getY(), companion.getZ() - 3);
+        companion.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        return owner;
+    }
+
+    private static String report(CompanionEntity companion) { return companion.getDeedsForAi() + " | " + companion.getLastTaskResult() + " | bag: " + companion.getStoredItemsSummary(); }
+
+    private static int count(CompanionEntity companion, Item item) {
+        int count = 0;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
+        return count;
+    }
+
+    private static int damage(CompanionEntity companion, Item item) {
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) return companion.getItem(slot).getDamageValue();
+        return companion.getMainHandItem().is(item) ? companion.getMainHandItem().getDamageValue() : -1;
+    }
+}
