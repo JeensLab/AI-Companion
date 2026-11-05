@@ -545,7 +545,8 @@ public final class CompanionDeathTrip {
             switch (verdict.fate()) {
                 case TAKEN -> taken++;
                 case GONE -> gone++;
-                case PARTIAL -> left.add(name(entry) + " — осталось " + verdict.left() + " из " + entry.count() + ", " + verdict.reason());
+                // Nothing of it left is taken, whatever the merges did to its count.
+                case PARTIAL -> { if (verdict.left() <= 0) taken++; else left.add(name(entry) + " — осталось " + verdict.left() + " из " + entry.count() + ", " + verdict.reason()); }
                 case UNREACHABLE -> left.add(name(entry) + " — " + verdict.reason());
                 case PENDING -> left.add(name(entry) + " — не дошёл");
             }

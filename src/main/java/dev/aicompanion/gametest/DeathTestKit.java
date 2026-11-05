@@ -81,7 +81,8 @@ final class DeathTestKit {
     static boolean setOut(GameTestHelper h, CompanionEntity c) {
         for (int attempt = 0; attempt < 3 && !c.deathTrip.active(); attempt++) {
             if (c.deathTrip.begin()) return true;
-            c.tick();
+            // The game looks for a place once a second: the test asks again the same way, not tick after tick.
+            for (int wait = 0; wait < 20; wait++) c.tick();
         }
         return c.deathTrip.active();
     }
