@@ -164,15 +164,20 @@ public final class CompanionDeathTrip {
         return false;
     }
 
-    /** The stacks of a place that still lie there, judged only where the chunk is loaded: an unloaded chunk is not empty. */
+    /** The stacks of a place that still lie there, judged only where they can be seen. */
     private List<CompanionDeathSpots.Entry> liveEntries(ServerLevel level, CompanionDeathSpots.Spot place) {
         ServerLevel there = place.dimension().equals(level.dimension()) ? level : level.getServer().getLevel(place.dimension());
         List<CompanionDeathSpots.Entry> live = new ArrayList<>();
         for (CompanionDeathSpots.Entry entry : place.manifest()) {
-            if (there == null || !there.hasChunkAt(entry.blockPos()) || alive(there, entry) != null) live.add(entry);
+            if (!visible(there, entry) || alive(there, entry) != null) live.add(entry);
             else CompanionDeathSpots.get(level.getServer()).pruneEntry(c.getOwnerId(), place.id(), entry.id());
         }
         return live;
+    }
+
+    /** Whether a stack can be judged here: its chunk is loaded, so it is either there or gone. */
+    private boolean visible(ServerLevel level, CompanionDeathSpots.Entry entry) {
+        return level != null && level.hasChunkAt(entry.blockPos());
     }
 
     private void start(CompanionDeathSpots.Spot place, List<CompanionDeathSpots.Entry> live, ServerLevel level, boolean cross) {
@@ -282,7 +287,7 @@ public final class CompanionDeathTrip {
         for (CompanionDeathSpots.Entry entry : original) {
             Verdict known = ledger.get(entry.id());
             if (known != null && known.fate() != Fate.PENDING) continue;
-            if (!level.hasChunkAt(entry.blockPos())) continue;
+            if (!visible(level, entry)) continue;
             ItemEntity item = alive(level, entry);
             int mine = c.loot.takenByMe(entry.id());
             if (item != null) {
@@ -319,7 +324,7 @@ public final class CompanionDeathTrip {
         for (CompanionDeathSpots.Entry entry : original) {
             Verdict verdict = ledger.get(entry.id());
             if (verdict != null && verdict.fate() != Fate.PENDING) continue;
-            if (!level.hasChunkAt(entry.blockPos())) return true;
+            if (!visible(level, entry)) return true;
         }
         return false;
     }
@@ -327,7 +332,12 @@ public final class CompanionDeathTrip {
     private ItemEntity alive(ServerLevel level, CompanionDeathSpots.Entry entry) {
         Entity entity = level.getEntity(entry.id());
         if (entity instanceof ItemEntity item && item.isAlive() && !item.getItem().isEmpty()) return item;
-        return null;
+        if (entity != null) return null;
+        // A chunk loaded but not ticking keeps its entities in the sections without handing them out by id (getEntity asks
+        // only the ticking ones): the stack is still there, and the walk is not fooled into calling it gone.
+        var found = level.getEntitiesOfClass(ItemEntity.class, new AABB(entry.pos().add(-1, -1, -1), entry.pos().add(1, 1, 1)),
+                item -> item.getUUID().equals(entry.id()) && item.isAlive() && !item.getItem().isEmpty());
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** Why a stack that is no longer there is gone, in the game's own terms. */

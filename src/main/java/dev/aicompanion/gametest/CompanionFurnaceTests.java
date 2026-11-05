@@ -294,7 +294,7 @@ public final class CompanionFurnaceTests {
     }
 
     /** Two iron take 400 ticks; in the full run the furnace's chunk can load its block entities late (see parkedBatchIsCollectedWithTheSameReport). */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
     public static void twoItemSmeltDoesNotPark(GameTestHelper h) {
         CompanionEntity companion = setup(h);
         BlockPos furnace = new BlockPos(20, 1, 16); h.setBlock(furnace, Blocks.FURNACE);
