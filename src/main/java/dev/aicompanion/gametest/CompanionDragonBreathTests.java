@@ -112,15 +112,17 @@ public final class CompanionDragonBreathTests {
         double[] nearest = {Double.MAX_VALUE};
         java.util.List<String> said = new java.util.ArrayList<>();
         int[] serial = {c.autonomyLineSerial()};
+        boolean[] rescued = {false};
         h.onEachTick(() -> {
             double dx = c.getX() - cloud.getX(), dz = c.getZ() - cloud.getZ();
             nearest[0] = Math.min(nearest[0], Math.sqrt(dx * dx + dz * dz) - cloud.getRadius());
             if (c.autonomyLineSerial() != serial[0]) { serial[0] = c.autonomyLineSerial(); said.add(c.autonomyLine()); }
+            rescued[0] |= c.isSelfRescuing();
         });
         String line = "В драконье дыхание не полезу — подожду тут.";
         h.runAfterDelay(160, () -> {
             h.assertTrue(c.distanceToSqr(player) > 16, "Went into the breath to the player: " + where(h, c, cloud));
-            h.assertTrue(c.getX() > h.absolutePos(new BlockPos(4, 2, 15)).getX(), "Did not come up to its edge: " + where(h, c, cloud));
+            h.assertTrue(gap(cloud, c) <= 7, "Did not come up to its edge: " + where(h, c, cloud));
             h.assertTrue(said.equals(java.util.List.of(line)), "Not told once why he waits: " + said);
             BlockPos out = h.absolutePos(new BlockPos(15, 2, 28));
             player.teleportTo(out.getX() + .5, out.getY(), out.getZ() + .5);
@@ -133,7 +135,8 @@ public final class CompanionDragonBreathTests {
         h.runAfterDelay(500, () -> {
             h.assertTrue(c.distanceToSqr(player) > 16, "Went into the breath to the player the second time: " + where(h, c, cloud));
             h.assertTrue(said.equals(java.util.List.of(line)), "Told it again in the same fight: " + said);
-            h.assertTrue(nearest[0] > 1, "Came within " + Math.round(nearest[0] * 10) / 10.0 + " blocks of the breath");
+            h.assertTrue(nearest[0] > 1.5, "Came within " + Math.round(nearest[0] * 10) / 10.0 + " blocks of the breath");
+            h.assertTrue(!rescued[0], "Took the breath's edge for a trap: dug or pillared there");
             h.succeed();
         });
     }
@@ -155,6 +158,60 @@ public final class CompanionDragonBreathTests {
             h.runAfterDelay(120, () -> {
                 h.assertTrue(c.position().distanceTo(start) < .5, "Walked off over the breath: " + where(h, c, cloud));
                 h.assertTrue(c.getHealth() >= c.getMaxHealth(), "Hurt by the breath below him");
+                h.succeed();
+            });
+        });
+    }
+
+    /**
+     * «Come to me» with the player standing in the breath, for longer than an order may stand still (12 s): he goes to its edge and
+     * the order waits there; the player out of it, the order ends by the player.
+     */
+    @GameTest(template = "tall_tree", batch = "breath_come_player", timeoutTicks = 700)
+    public static void comeToThePlayerInTheBreathWaitsAtItsEdge(GameTestHelper h) {
+        floor(h);
+        CompanionEntity c = companion(h, 1, 15, 15, 15);
+        c.setFollowing(false);
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        AreaEffectCloud cloud = sittingFlame(h, h.absolutePos(new BlockPos(15, 2, 15)), 600);
+        double[] nearest = {Double.MAX_VALUE};
+        boolean[] rescued = {false};
+        h.onEachTick(() -> {
+            double dx = c.getX() - cloud.getX(), dz = c.getZ() - cloud.getZ();
+            nearest[0] = Math.min(nearest[0], Math.sqrt(dx * dx + dz * dz) - cloud.getRadius());
+            rescued[0] |= c.isSelfRescuing();
+        });
+        h.runAfterDelay(10, () -> h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted"));
+        h.runAfterDelay(330, () -> {
+            h.assertTrue(c.isWorking(), "Gave the order up: " + c.getLastTaskResult());
+            h.assertTrue(c.distanceToSqr(player) > 16, "Went into the breath to the player: " + where(h, c, cloud));
+            h.assertTrue(gap(cloud, c) <= 7, "Did not come up to its edge: " + where(h, c, cloud));
+            BlockPos out = h.absolutePos(new BlockPos(15, 2, 28));
+            player.teleportTo(out.getX() + .5, out.getY(), out.getZ() + .5);
+        });
+        h.runAfterDelay(600, () -> {
+            h.assertTrue(!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, "Not with the player once out: " + c.getLastTaskResult() + ", " + where(h, c, cloud));
+            h.assertTrue(nearest[0] > 1.5, "Came within " + Math.round(nearest[0] * 10) / 10.0 + " blocks of the breath");
+            h.assertTrue(!rescued[0], "Took the breath's edge for a trap: dug or pillared there");
+            h.succeed();
+        });
+    }
+
+    /** A cloud that is not the dragon's breath (a lingering potion's: whether it hurts or heals does not show) is left alone. */
+    @GameTest(template = "tall_tree", batch = "breath_potion", timeoutTicks = 300)
+    public static void aCloudThatIsNotTheDragonsBreathIsLeftAlone(GameTestHelper h) {
+        floor(h);
+        CompanionEntity c = companion(h, 15, 15, 9, 22);
+        c.setFollowing(false);
+        h.runAfterDelay(20, () -> {
+            var start = c.position();
+            AreaEffectCloud cloud = new AreaEffectCloud(h.getLevel(), start.x, start.y, start.z);
+            cloud.setRadius(3.0F);
+            cloud.setDuration(600);
+            cloud.setPotionContents(new net.minecraft.world.item.alchemy.PotionContents(net.minecraft.world.item.alchemy.Potions.HEALING));
+            h.getLevel().addFreshEntity(cloud);
+            h.runAfterDelay(100, () -> {
+                h.assertTrue(c.position().distanceTo(start) < .5, "Walked out of a potion's cloud: " + where(h, c, cloud));
                 h.succeed();
             });
         });
@@ -217,7 +274,7 @@ public final class CompanionDragonBreathTests {
             h.assertTrue(h.getTick() > 10 && !c.isWorking(), "Still on the way: " + where(h, c, cloud));
             h.assertTrue(c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, "Gave the order up: " + c.getLastTaskResult());
             h.assertTrue(cloud.isAlive() == whileThere, whileThere ? "Waited for the breath to go instead of going round it" : "Got through while the breath filled the way");
-            h.assertTrue(nearest[0] > 1, "Came within " + Math.round(nearest[0] * 10) / 10.0 + " blocks of the breath");
+            h.assertTrue(nearest[0] > 1.5, "Came within " + Math.round(nearest[0] * 10) / 10.0 + " blocks of the breath");
             h.assertTrue(c.isAlive() && lowest[0] >= c.getMaxHealth(), "Hurt by the breath: lowest health " + lowest[0]);
         });
     }
@@ -251,6 +308,11 @@ public final class CompanionDragonBreathTests {
     private static boolean outOf(AreaEffectCloud cloud, CompanionEntity c) {
         double dx = c.getX() - cloud.getX(), dz = c.getZ() - cloud.getZ();
         return Math.sqrt(dx * dx + dz * dz) > cloud.getRadius() + 2;
+    }
+
+    /** How far he is from the cloud's edge across (negative: in it). He starts some 9 blocks off; at the edge he waits within 3 of a cell clear of its margin. */
+    private static double gap(AreaEffectCloud cloud, CompanionEntity c) {
+        return Math.hypot(c.getX() - cloud.getX(), c.getZ() - cloud.getZ()) - cloud.getRadius();
     }
 
     /** Where the cloud reaches him: what the game hurts. */

@@ -650,9 +650,10 @@ public final class CompanionWork {
             finish(true, "Я рядом."); return;
         }
         // The player in the dragon's breath: to its edge, and the order waits there; no way while it lasts is no stall.
-        BlockPos meet = owner.dragonBreath.meetingPoint(player);
-        if (owner.dragonBreath.about()) orderProgressPosition = null;
-        if (meet == null || !meet.equals(player.blockPosition())) { if (meet != null && route.follow(meet, 1) != CompanionTravel.Step.WALKING) owner.travel().reset(); return; }
+        BlockPos meet = owner.dragonBreath.meetingPoint(player, true);
+        if (meet == null || !meet.equals(player.blockPosition()) || owner.dragonBreath.onTheWay(player.blockPosition())) orderProgressPosition = null;
+        if (meet == null) { owner.getNavigation().stop(); return; }
+        if (!meet.equals(player.blockPosition())) { if (route.follow(meet, 3) != CompanionTravel.Step.WALKING) owner.travel().reset(); return; }
         owner.workStatus("Пытаюсь добраться до игрока.");
         // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
         // far by the way. Legs that came to nothing are not started again from the same spot at once: the self-rescue takes him over

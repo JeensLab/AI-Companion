@@ -24,16 +24,17 @@ import java.util.UUID;
 final class CompanionDragonBreath {
     /** How far clear of a cloud's edge he keeps: a fireball's cloud grows by a block in some eight seconds. */
     static final double MARGIN = 2;
-    /** A cell this near a cloud is a wall to his ways: half a block more than the margin, for his width. */
-    static final double WALL = MARGIN + .5;
+    /**
+     * A cell this near a cloud is a wall to his ways: a block more than the margin, so that wherever in a cell next to the wall
+     * he stands (its middle may be some 0.7 blocks off), he is not within the margin.
+     */
+    static final double WALL = MARGIN + 1;
     /** Caught, he walks out until this far clear: past the margin, so its edge is not stepped over back and forth. */
     private static final double CLEAR = MARGIN + 1.5;
     /** How far out a way out is looked for, along each of the rays round him. */
     private static final int OUT = 14, RAYS = 16;
     /** The widest a cloud gets from its middle: a fireball's at the end of its 30 seconds. */
     private static final double WIDEST = 7;
-    /** How far about him the breath counts as walling off his ways (a search goes this far and more). */
-    private static final double ABOUT = 64;
     /** How far from a player in the breath its edge is looked for, on his side. */
     private static final int EDGE = 24;
     /** The cells to walk out to are looked for again this often (ticks): the cloud grows. */
@@ -85,7 +86,7 @@ final class CompanionDragonBreath {
     boolean canUse() { return caught(MARGIN); }
     boolean canContinue() { return caught(CLEAR); }
 
-    void begin() { c.getNavigation().stop(); out = Set.of(); lookedAt = Long.MIN_VALUE; caughtAt = c.level().getGameTime(); event("dragon_breath_caught"); }
+    void begin() { c.getNavigation().stop(); out = Set.of(); lookedAt = Long.MIN_VALUE / 2; caughtAt = c.level().getGameTime(); event("dragon_breath_caught"); }
     void end() { c.getNavigation().stop(); out = Set.of(); event("dragon_breath_out"); }
 
     /** The journal's line: where he is, how far the nearest breath's edge is (negative: in it), his health, the ticks since caught. */
@@ -101,32 +102,42 @@ final class CompanionDragonBreath {
     void tick() {
         if (!c.getNavigation().isDone() && !c.getNavigation().isStuck()) return;
         long now = c.level().getGameTime();
-        if (out.isEmpty() || now - lookedAt >= AGAIN) { out = cellsOut(); lookedAt = now; }
+        if (now - lookedAt >= AGAIN) { out = cellsOut(); lookedAt = now; }
         if (out.isEmpty()) return;
         Path path = c.work.route.toCells(out);
         if (path != null) c.work.route.walk(path);
     }
 
     /**
-     * Whether the dragon's breath is about him, or was a moment ago: a way it walls off may be there once it is gone, and the
-     * searches made while it was there are kept a while (CompanionNavigation.KEEP).
+     * Whether the dragon's breath lies on the way to {@code target}, or did a moment ago: a cloud whose walls reach the straight line
+     * from him to it. A way it walls off may be there once it is gone, and the searches made while it was there are kept a while
+     * (CompanionNavigation.KEEP). A winding way is not judged by this line: there «no way» is told as without the breath.
      */
-    boolean about() {
+    boolean onTheWay(BlockPos target) {
         long now = c.level().getGameTime();
-        if (!around(c.getX(), c.getY(), c.getZ(), ABOUT, 16).isEmpty()) seenAt = now;
+        double ax = c.getX(), az = c.getZ(), bx = target.getX() + .5, bz = target.getZ() + .5;
+        double reach = WIDEST + WALL + 1;
+        AABB box = new AABB(Math.min(ax, bx) - reach, Math.min(c.getY(), target.getY()) - 4, Math.min(az, bz) - reach,
+                Math.max(ax, bx) + reach, Math.max(c.getY(), target.getY()) + 4, Math.max(az, bz) + reach);
+        double vx = bx - ax, vz = bz - az, length = vx * vx + vz * vz;
+        for (AreaEffectCloud cloud : clouds(c.level(), box)) {
+            double t = length == 0 ? 0 : Math.clamp(((cloud.getX() - ax) * vx + (cloud.getZ() - az) * vz) / length, 0, 1);
+            if (Math.hypot(ax + t * vx - cloud.getX(), az + t * vz - cloud.getZ()) <= cloud.getRadius() + WALL + 1) seenAt = now;
+        }
         return now - seenAt <= SEEN;
     }
 
     /**
-     * Where he goes to the player: the player's cell, or with the player in the breath the nearest cell clear of it on his side,
-     * where he waits, saying why once in the fight; null with no such cell, and he waits where he is.
+     * Where he goes to the player: the player's cell, or with the player in the breath (or by it, within the margin) the nearest
+     * cell clear of it on his side, where he waits; null with no such cell, and he waits where he is. {@code speak}: with the player
+     * in the cloud itself, he says why, once in the fight.
      */
-    BlockPos meetingPoint(Player player) {
+    BlockPos meetingPoint(Player player, boolean speak) {
         double x = player.getX(), y = player.getY(), z = player.getZ();
         List<AreaEffectCloud> clouds = around(x, y, z, WIDEST + CLEAR + EDGE, 3);
         AreaEffectCloud in = clouds.stream().filter(cloud -> near(cloud, x, y, z, MARGIN)).findFirst().orElse(null);
         if (in == null) return player.blockPosition();
-        tell(in);
+        if (speak && near(in, x, y, z, 0)) tell(in);
         double dx = c.getX() - x, dz = c.getZ() - z, length = Math.sqrt(dx * dx + dz * dz);
         if (length < .01) { dx = 1; dz = 0; length = 1; }
         for (int step = 1; step <= EDGE; step++) {

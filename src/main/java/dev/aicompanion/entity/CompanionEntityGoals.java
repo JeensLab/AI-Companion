@@ -202,10 +202,10 @@ final class CompanionEntityGoals {
             if (companion.level().getGameTime() < retryAt) return;
             if (!companion.onGround() && !companion.isInWater()) return;
             // The player in the dragon's breath: no farther than its edge (CompanionDragonBreath).
-            BlockPos meet = companion.dragonBreath.meetingPoint(owner);
+            BlockPos meet = companion.dragonBreath.meetingPoint(owner, true);
             if (meet == null) { companion.getNavigation().stop(); return; }
             boolean edge = !meet.equals(owner.blockPosition());
-            var step = companion.work.route.follow(meet, edge ? 1 : FOLLOW_NEAR, owner.isSprinting());
+            var step = companion.work.route.follow(meet, FOLLOW_NEAR, owner.isSprinting());
             if (step == CompanionTravel.Step.WALKING) {
                 travelling = true;
                 // A whole route to him exists again: the next time there is none is a new occasion to say so.
@@ -216,8 +216,8 @@ final class CompanionEntityGoals {
             companion.travel().reset();
             if (step == CompanionTravel.Step.FAILED) {
                 companion.getNavigation().stop();
-                // The breath walls the way off only while it lasts: tried again in a second, without a word.
-                if (edge || companion.dragonBreath.about()) { retryAt = companion.level().getGameTime() + 20; return; }
+                // The breath walls the way off only while it lasts: tried again in two seconds, without a word.
+                if (edge || companion.dragonBreath.onTheWay(owner.blockPosition())) { retryAt = companion.level().getGameTime() + 40; return; }
                 waitingFor = owner.blockPosition();
                 // Told only where the route search sees there is no way, once per place of the player; a stuck walk is the
                 // self-rescue's, silently (not «no way»), and is tried anew in a few seconds.

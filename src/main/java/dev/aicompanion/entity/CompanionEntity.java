@@ -323,7 +323,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
-        this.goalSelector.addGoal(1, new CompanionEntityGoals.DragonBreathGoal(this));
+        this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
@@ -632,7 +632,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
         var player = getOwnerPlayer();
-        if (!autonomy.staysAtWork() && (following || protecting) && player != null && (distanceToSqr(player) > 16 || player.getY() - getY() > 1.25)) return player.blockPosition();
+        // The player in the dragon's breath: its edge, not the player, or the breath's walls would look like a trap.
+        if (!autonomy.staysAtWork() && (following || protecting) && player != null && (distanceToSqr(player) > 16 || player.getY() - getY() > 1.25)) return dragonBreath.meetingPoint(player, false);
         if (movementIntent != null && (gatheringLogs || gatheringDirt || work.isActive() || loot.hasPending())) return movementIntent;
         var path = getNavigation().getPath();
         return path == null || getNavigation().isDone() ? null : path.getTarget();

@@ -7,9 +7,9 @@ import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 final class CompanionNodeEvaluator extends WalkNodeEvaluator {
     /** The dragon's breath in the region searched, as walls: never stepped into, waited out where there is no way round. */
     private java.util.List<net.minecraft.world.entity.AreaEffectCloud> breath = java.util.List.of();
-    /** But for a cloud he is in or by already: a way out of it, through it, is a way (CompanionDragonBreath walks him out). */
+    /** But for a cloud he is caught by already: a way out of it, through it, is a way (CompanionDragonBreath walks him out). */
     void keepOffBreath(java.util.List<net.minecraft.world.entity.AreaEffectCloud> clouds) {
-        breath = clouds.stream().filter(cloud -> !CompanionDragonBreath.near(cloud, mob.getX(), mob.getY(), mob.getZ(), CompanionDragonBreath.WALL + 1)).toList();
+        breath = clouds.stream().filter(cloud -> !CompanionDragonBreath.near(cloud, mob.getX(), mob.getY(), mob.getZ(), CompanionDragonBreath.MARGIN)).toList();
     }
     // What the companion's own search (CompanionSearch) asks of the game's judgement of cells; a cell is one Node for the search.
     net.minecraft.world.level.pathfinder.PathType typeAt(int x, int y, int z) { return getCachedPathType(x, y, z); }
