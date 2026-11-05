@@ -173,8 +173,9 @@ final class CompanionWaterBucket {
 
     /**
      * The health the landing would cost him, as the game counts it: what the block he lands on makes of the fall (BedBlock, HayBlock,
-     * HoneyBlock, SlimeBlock, PowderSnowBlock, PointedDripstoneBlock.fallOn), then Resistance, the protection of his enchantments (Feather Falling) and
-     * his absorption (LivingEntity.getDamageAfterMagicAbsorb and actuallyHurt; NeoForge's version of the first may only run in a hit).
+     * HoneyBlock, SlimeBlock, PowderSnowBlock, PointedDripstoneBlock.fallOn), then Resistance, the protection of his enchantments
+     * (Feather Falling) and his absorption (LivingEntity.getDamageAfterMagicAbsorb and actuallyHurt; NeoForge's version of the first
+     * may only run in a hit).
      */
     private float loss(ServerLevel level, Landing landing) {
         BlockState on = level.getBlockState(landing.on);
