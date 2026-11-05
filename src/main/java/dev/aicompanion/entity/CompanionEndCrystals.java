@@ -80,7 +80,10 @@ public final class CompanionEndCrystals {
     /** He is at a crystal now: the bow is his weapon, whatever blade the player chose (CompanionEquipment.selectWeaponForCombat). */
     boolean shooting() { return shooting; }
 
-    /** An order of the player (CompanionAutonomy.playerOrder): «стоп» leaves the crystals alone, any other sets him at them again. */
+    /**
+     * The player's order as CompanionAutonomy.playerOrder takes it (a word about his goal, his home or his own deeds is none): «стоп»
+     * leaves the crystals alone, any other sets him at them again.
+     */
     void playerOrder(String action) { stopped = "stop".equals(action); }
 
     /**

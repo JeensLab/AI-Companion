@@ -221,8 +221,9 @@ public final class CompanionEndCrystalTests {
     }
 
     /**
-     * «Стоп» as the chat sends it, the moment he takes up the crystal: not one arrow at it after, though the stop sets him following
-     * the player again; the next order of the player («иди за мной») sets him at the crystals again.
+     * «Стоп» as the command /companion stop, the moment he takes up the crystal: not one arrow at it after, though the stop sets him
+     * following the player again; the next order of the player («иди за мной») sets him at the crystals again. The chat's «стоп», a step
+     * of a plan, goes through executeAction (theStopHoldsForThisFightOnly): both end in CompanionAutonomy.playerOrder.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 900, batch = "crystal_stop")
     public static void toldToStopHeLeavesTheCrystalsUntilTheNextOrder(GameTestHelper h) {
