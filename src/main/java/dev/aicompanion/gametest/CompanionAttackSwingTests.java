@@ -38,13 +38,10 @@ public final class CompanionAttackSwingTests {
     @GameTest(template = "empty")
     public static void theGoalsOwnStrokeIsNotRestarted(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
-        // Out of his reach, so the attack goal cannot hit it in the same tick and leave it invulnerable to the hit below.
-        Zombie zombie = h.spawn(EntityType.ZOMBIE, 26, 2, 16);
+        Zombie zombie = h.spawn(EntityType.ZOMBIE, 18, 2, 16);
         zombie.setNoAi(true);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
         h.startSequence().thenExecute(() -> {
-            companion.setTarget(null);
-            zombie.invulnerableTime = 0;
             companion.swing(InteractionHand.MAIN_HAND);
             h.assertTrue(companion.swinging, "The goal's swing did not start");
             // The test area does not tick him, so his own ticks are run here: the stroke must advance, or the renderer draws a still arm.
