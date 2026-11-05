@@ -335,7 +335,7 @@ public final class CompanionDeathTrip {
                 if (nav.lastSearchExhausted()) { CompanionMiningNavigation.walk(c, path); return true; }
                 double range = c.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
                 if (item.distanceToSqr(c) <= range * range) {
-                    dev.aicompanion.AICompanionMod.LOGGER.info("[death] no route from {} to {} ({} cells)",
+                    dev.aicompanion.AICompanionMod.LOGGER.debug("[death] no route from {} to {} ({} cells)",
                             c.blockPosition(), item.blockPosition(), cells.size());
                     giveUpEntry(entry, item, "нет пути");
                     return true;
@@ -531,7 +531,7 @@ public final class CompanionDeathTrip {
         closest = Double.MAX_VALUE;
         c.getNavigation().stop();
         c.work.route.stop();
-        dev.aicompanion.AICompanionMod.LOGGER.info("[death] stack {}: {} ({})", entry.id(), fate, reason);
+        dev.aicompanion.AICompanionMod.LOGGER.debug("[death] stack {}: {} ({})", entry.id(), fate, reason);
     }
 
     /**
@@ -658,6 +658,6 @@ public final class CompanionDeathTrip {
     private void say(String line) {
         lastLine = line;
         c.autonomySay(line);
-        dev.aicompanion.AICompanionMod.LOGGER.info("[death] says: {}", line);
+        dev.aicompanion.AICompanionMod.LOGGER.debug("[death] says: {}", line);
     }
 }

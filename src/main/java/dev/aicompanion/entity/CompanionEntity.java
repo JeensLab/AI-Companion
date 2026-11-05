@@ -921,7 +921,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 deathTrip.freshPlace(blockPosition());
             }
             // A death not worth a walk is simply not spoken of.
-            dev.aicompanion.AICompanionMod.LOGGER.info("[death] dropped={} worth={} spot={} recorded={}",
+            dev.aicompanion.AICompanionMod.LOGGER.debug("[death] dropped={} worth={} spot={} recorded={}",
                     dropped, worth, spotId, dropped && worth >= CompanionBelongings.WORTH_GOING);
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
             CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
