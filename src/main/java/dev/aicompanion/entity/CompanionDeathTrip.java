@@ -94,6 +94,8 @@ public final class CompanionDeathTrip {
     private long refusedAt;
     /** The place's number in the settings list, as he said it when he set out. */
     private int placeNumber;
+    /** The number of the last place dropped in this pass, said once at the end. */
+    private int lastDropped = -1;
     /** When this place was last tried (the game clock), so a place that keeps refusing is not tried again at once. */
     private final Map<BlockPos, Long> triedAt = new HashMap<>();
     private String lastLine = "";
@@ -122,6 +124,14 @@ public final class CompanionDeathTrip {
     /** What became of one stack of this walk, or null when it is not part of it. */
     public Verdict verdict(UUID stack) { return ledger.get(stack); }
 
+    /** Where this place stands in the list he would walk right now, not where it stood when the walk began. */
+    private int number() {
+        if (spot == null || c.level().getServer() == null) return placeNumber;
+        var ranked = CompanionDeathSpots.get(c.level().getServer()).ranked(c.getOwnerId());
+        for (int i = 0; i < ranked.size(); i++) if (ranked.get(i).id().equals(spot.id())) return i + 1;
+        return placeNumber;
+    }
+
     /** What he is about, for the task screen. */
     public String describe() {
         if (spot == null) return "";
@@ -130,7 +140,7 @@ public final class CompanionDeathTrip {
             Verdict verdict = ledger.get(entry.id());
             if (verdict == null || verdict.fate() == Fate.PENDING) left++;
         }
-        return "Иду за вещами №" + placeNumber + (left > 0 ? ", осталось " + left + "." : ".");
+        return "Иду за вещами №" + number() + (left > 0 ? ", осталось " + left + "." : ".");
     }
 
     /** Sets out for the dearest place with a stack still lying there; false when there is nothing worth or possible to walk to. */
@@ -149,7 +159,7 @@ public final class CompanionDeathTrip {
             int number = index + 1;
             if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
                 data.taken(c.getOwnerId(), place.id());
-                say("№" + number + " — бросил.");
+                lastDropped = number;
                 places = data.ranked(c.getOwnerId());
                 continue;
             }
@@ -187,6 +197,8 @@ public final class CompanionDeathTrip {
             say("Иду за вещами №" + number + ".");
             return true;
         }
+        // A drop is said once, at the end of the pass, whether or not another place was found.
+        if (lastDropped >= 0) { say("№" + lastDropped + " — бросил."); lastDropped = -1; }
         return false;
     }
 
@@ -240,6 +252,7 @@ public final class CompanionDeathTrip {
     private void start(CompanionDeathSpots.Spot place, List<CompanionDeathSpots.Entry> live, ServerLevel level, boolean cross, int number) {
         spot = place;
         placeNumber = number;
+        if (lastDropped >= 0) { say("№" + lastDropped + " — бросил."); lastDropped = -1; }
         original = List.copyOf(live);
         ledger.clear();
         takenAtStart.clear();
@@ -284,7 +297,7 @@ public final class CompanionDeathTrip {
                 if (!entered.success()) { stop(); say("Не смог перейти в другое измерение."); return false; }
                 crossing = true;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
-                say("Иду за вещами №" + placeNumber + " через портал.");
+                say("Иду за вещами №" + number() + " через портал.");
             }
             return true;
         }
@@ -642,7 +655,7 @@ public final class CompanionDeathTrip {
     }
 
     /** The refusal of a first order: the same notice he set out with, so the player knows what keeps him. */
-    public String refusalLine() { return "Иду за вещами №" + placeNumber + "."; }
+    public String refusalLine() { return "Иду за вещами №" + number() + "."; }
 
     /** A new fall at a place clears the wait that a previous walk there left behind. */
     public void freshPlace(net.minecraft.core.BlockPos pos) { triedAt.remove(pos); }
