@@ -38,6 +38,13 @@ final class CompanionLoot {
     private int collectedLogs;
     private int collectedStone;
     private int collectedSoil;
+    /** Marked belongings of a death taken up: the proof a walk back actually fetched them. */
+    private int belongingsTaken;
+    int belongingsTaken() { return belongingsTaken; }
+    /** How many of each stack this companion itself moved into the bag: the ledger of a death walk, by entity. */
+    private final Map<UUID, Integer> takenByMe = new HashMap<>();
+    int takenByMe(UUID id) { return takenByMe.getOrDefault(id, 0); }
+
     private final int[] collectedLoose = new int[CompanionGround.values().length];
     private long rescanUntil;
     private boolean collecting;
@@ -141,6 +148,8 @@ final class CompanionLoot {
             // His own throw: kept out of the bag on purpose (the mine leaves excess stone this way, PR #48).
             if (item.getOwner() == owner) continue;
             if (item.getPersistentData().hasUUID(HARVESTER)) continue;
+            // Junk he let go to make room for his own things: taking it back would fill the freed slot with it again.
+            if (item.getPersistentData().getBoolean(CompanionBag.JUNK)) continue;
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
             int before = offered.getCount();
@@ -148,6 +157,9 @@ final class CompanionLoot {
             else owner.storeLoot(offered);
             int moved = before - offered.getCount();
             if (moved == 0) continue;
+            if (item.getPersistentData().hasUUID(CompanionBag.BELONGINGS)
+                    || item.getPersistentData().hasUUID(CompanionBag.BELONGINGS_SPOT)
+                    || item.getPersistentData().getBoolean(CompanionPlayersThings.MARK)) belongingsTaken++;
             // Not counted as harvest progress: this was lying there, not gathered for a task.
             takeFrom(item, offered, moved, true);
         }
@@ -159,8 +171,26 @@ final class CompanionLoot {
                 "dropEntity", item.getUUID(), "item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getItem().getItem()),
                 "count", moved, "position", item.position(), "loose", loose);
         owner.take(item, moved);
-        if (owner.level() instanceof ServerLevel level) level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
+        if (owner.level() instanceof ServerLevel level) {
+            level.playSound(null, owner.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, .2F, 1.1F);
+            noteBelonging(level, item, moved, offered.getCount());
+        }
         if (offered.isEmpty()) item.discard(); else item.setItem(offered);
+    }
+
+    /**
+     * A stack of a death place taken by him: the walk's ledger counts what he moved, and the place's manifest loses the
+     * stack (or keeps what is left of it), so nobody ever walks to it again for what is already in the bag.
+     */
+    private void noteBelonging(ServerLevel level, ItemEntity item, int moved, int left) {
+        CompoundTag data = item.getPersistentData();
+        if (!data.hasUUID(CompanionBag.BELONGINGS_SPOT)) return;
+        takenByMe.merge(item.getUUID(), moved, Integer::sum);
+        UUID spotId = data.getUUID(CompanionBag.BELONGINGS_SPOT);
+        UUID ownerId = data.hasUUID(CompanionBag.BELONGINGS) ? data.getUUID(CompanionBag.BELONGINGS) : owner.getOwnerId();
+        var places = CompanionDeathSpots.get(level.getServer());
+        if (left <= 0) places.pruneEntry(ownerId, spotId, item.getUUID());
+        else places.setEntryCount(ownerId, spotId, item.getUUID(), left);
     }
     boolean hasPending() {
         if (!(owner.level() instanceof ServerLevel level)) return false;
@@ -402,7 +432,7 @@ final class CompanionLoot {
      * in a ravine wall lay two blocks over his feet and was «out of reach» for a rule of a block and a half). The box is that
      * of a body standing at {@code at}; a full block between them leaves no overlap, as for the player.
      */
-    private boolean touches(Vec3 at, ItemEntity item) {
+    boolean touches(Vec3 at, ItemEntity item) {
         return owner.getBoundingBox().move(at.subtract(owner.position())).inflate(1, .5, 1).intersects(item.getBoundingBox());
     }
     int collectedLogs() { return collectedLogs; }

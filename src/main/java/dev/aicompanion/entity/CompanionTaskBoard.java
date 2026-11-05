@@ -8,13 +8,15 @@ public final class CompanionTaskBoard {
     private CompanionTaskBoard() { }
     public record Snapshot(UUID companion, String name, String activity, String detail, long work,
                            UUID goal, CompanionGoals.State goalState, String goalStatus, String goalNext,
-                           boolean autonomous, boolean autonomyHeld, String autonomyTask, CompanionAgendaView.View agenda) { }
+                           boolean autonomous, boolean autonomyHeld, String autonomyTask, CompanionAgendaView.View agenda,
+                           String recovery) { }
     public static Snapshot read(ServerPlayer player) {
         var c = CompanionEvents.getOwnedCompanion(player);
         if (c == null) return null;
         return new Snapshot(c.getUUID(), c.getName().getString(), c.taskActivity(), c.getLastTaskResult(), c.activeWorkId(),
                 c.goals().id(), c.goals().state(), c.goals().status(), c.goals().nextTask(),
-                c.autonomy().enabled(), c.autonomy().held(), c.autonomy().taskPreview(), CompanionAgendaView.of(c));
+                c.autonomy().enabled(), c.autonomy().held(), c.autonomy().taskPreview(), CompanionAgendaView.of(c),
+                c.deathTrip.active() ? c.deathTrip.describe() : "");
     }
     public static void control(ServerPlayer player, Snapshot shown, String command) {
         var c = CompanionEvents.getOwnedCompanion(player);
@@ -22,6 +24,7 @@ public final class CompanionTaskBoard {
         switch (command) {
             // The three buttons of a long goal act on that goal only, as the phrases do; a screen that shows an older goal changes
             // nothing. A screen without a long goal keeps the old meaning of these buttons: the pickaxe order.
+            case "cancel_recovery" -> { if (!shown.recovery().isBlank()) c.deathTrip.cancel(); }
             case "cancel_goal" -> {
                 if (shown.agenda() != null) CompanionAgenda.cancelShown(player, c, shown.agenda().goal());
                 else cancelPickaxes(c, shown);

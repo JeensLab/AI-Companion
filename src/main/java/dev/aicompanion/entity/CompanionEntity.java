@@ -17,6 +17,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -133,7 +134,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
     final CompanionBlockBreaking dirtBreaking = new CompanionBlockBreaking(this);
     final CompanionLoot loot = new CompanionLoot(this);
-    final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
+    public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
+    private boolean deathRecovery = true;
+    private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
+    public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionCreeperGuard creeperGuard = new CompanionCreeperGuard(this);
     private final CompanionShieldDefense shieldDefense = new CompanionShieldDefense(this);
@@ -329,6 +333,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
+        this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
@@ -596,6 +601,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean fighting() { return entityData.get(DATA_FIGHTING); }
     public void reactToSpeech(String text) { social.reactToSpeech(text); }
     public void setLifestyle(boolean chunks, boolean speech) { chunkLoading = chunks; autonomousSpeech = speech; }
+    /** Whether he goes back for his own things after a death (the player can turn it off in the settings). */
+    public boolean deathRecovery() { return deathRecovery; }
+    public void setDeathRecovery(boolean on) { deathRecovery = on; }
+    public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
+    public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
+    public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
     public String socialObservation() { return social.socialObservation(); }
     public int socialSequence() { return social.socialSequence(); }
     public long socialTime() { return social.socialTime(); }
@@ -821,6 +832,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     @Override protected void customServerAiStep() {
         super.customServerAiStep();
+        // Back on his feet and with nothing ordered: his own things are the first work (death recovery).
+        if (!deathTrip.active() && tickCount % 20 == 0 && !work.isActive() && !gatheringLogs && !gatheringDirt
+                && getTarget() == null && inventoryViewers == 0 && !isPassenger() && !hasPendingLoot()
+                && !temporaryPillar.isActive() && !temporaryPillar.isRecovering()
+                && !CompanionAgenda.suppressesDeeds(this)) deathTrip.begin();
         // In a boat or minecart vanilla switches off every walking goal: the order would hang without even a timeout.
         // Like a player, step out to work; just riding along stays allowed.
         if (isPassenger() && (work.isActive() || gatheringLogs || gatheringDirt)) {
@@ -898,7 +914,25 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
-            boolean dropped = bag.dropBelongings() | playersThings.drop();
+            if (deathTrip.active() && getOwnerId() != null)
+                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.spotId());
+            deathTrip.stop();
+            double worth = CompanionBelongings.worth(this);
+            java.util.UUID spotId = java.util.UUID.randomUUID();
+            // What falls is the manifest of the place: the entity, the exact point and the count of every stack, so the walk
+            // fetches exactly these and judges each of them by its own existence.
+            java.util.List<ItemEntity> fallen = new java.util.ArrayList<>(bag.dropBelongings(spotId));
+            fallen.addAll(playersThings.drop(spotId));
+            boolean dropped = !fallen.isEmpty();
+            // Every fall is remembered with its price; the walk back is decided when he is back on his feet.
+            if (dropped && worth >= CompanionBelongings.WORTH_GOING && getOwnerId() != null) {
+                CompanionDeathSpots.get(((ServerLevel) level()).getServer()).died(getOwnerId(), spotId,
+                        level().dimension(), blockPosition(), worth, level().getGameTime(), CompanionDeathSpots.manifestOf(fallen));
+                deathTrip.freshPlace(blockPosition());
+            }
+            // A death not worth a walk is simply not spoken of.
+            dev.aicompanion.AICompanionMod.LOGGER.debug("[death] dropped={} worth={} spot={} recorded={}",
+                    dropped, worth, spotId, dropped && worth >= CompanionBelongings.WORTH_GOING);
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
             CompanionEvents.companionDied(this, nbt.memory(), where, dropped);
         }
@@ -966,6 +1000,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final String FULL_BAG_FOR_LOGS = "В сумке нет места для брёвен: все ячейки заняты. Освободи место или попроси сложить вещи в сундук.";
     boolean hasRoomForLogs() { return gathering.hasRoomForLogs(); }
     boolean canStoreDrops(List<ItemStack> drops) { return gathering.canStoreDrops(drops); }
+    /** Whether a stack lies within the pickup's own reach from where he stands (the arrival test of the death walk). */
+    public boolean reachesItem(net.minecraft.world.entity.item.ItemEntity item) { return loot.touches(position(), item); }
+    /** Whether this stack would fit in his bag as it is now. */
+    public boolean canStore(ItemStack stack) { return canStoreDrops(List.of(stack)); }
 
 
     boolean storeInCompanionInventory(ItemStack stack) { return bag.storeInCompanionInventory(stack); }

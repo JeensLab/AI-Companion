@@ -41,6 +41,8 @@ public final class AICompanionMod {
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onFarmlandTrample);
         NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, CompanionEvents::onBlockPlaced);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionGoals::pickedUp);
+        // A player took a stack of a fall: the place's manifest loses it before any walk sets out for it.
+        NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionDeathSpots::onPlayerPickup);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::registerCommands);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionChunks::tick);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.client.CompanionServerPlanPort::tick);

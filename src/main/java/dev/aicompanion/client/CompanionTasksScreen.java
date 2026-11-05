@@ -114,6 +114,11 @@ public final class CompanionTasksScreen extends Screen {
             result.add(outstanding ? 0 : result.size(), goal);
         }
         if (snapshot != null && snapshot.agenda() != null) result.addFirst(agendaRow(snapshot.agenda()));
+        if (snapshot != null && !snapshot.recovery().isBlank()) result.addFirst(new Row("recovery", "Забрать свои вещи",
+                "Выполняется", 0xF2C46B, List.of(snapshot.recovery(), "",
+                "Он идёт к месту своей смерти и подбирает то, что там лежит.",
+                "Твоё поручение прервёт этот поход один раз; вторая просьба — отменит его."),
+                0, -1, () -> control("cancel_recovery"), null, null));
         if (snapshot != null && snapshot.autonomous()) result.add(new Row("autonomy", "Самостоятельные дела", snapshot.autonomyHeld() ? "На паузе" : "Порядок и запас",
                 0xB7A2DE, List.of(snapshot.autonomyTask(), "", "Проверяет запасы, готовит инструменты, собирает материалы и складывает лишнее.",
                 "Твои поручения выполняются первыми. Следующее самостоятельное дело выбирается по обстановке."),
