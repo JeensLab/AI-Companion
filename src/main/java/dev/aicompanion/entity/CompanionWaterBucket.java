@@ -46,8 +46,8 @@ final class CompanionWaterBucket {
     private static final int WORTH = 4;
     /** How many ticks ahead his landing is looked for. */
     private static final int AHEAD = 2;
-    /** A player's reach for a block (the block interaction range), and what the server allows a player past it when he pours. */
-    private static final double REACH = 4.5, ALLOWANCE = 1;
+    /** A player's reach for a block: the block interaction range. */
+    private static final double REACH = 4.5;
     /** He says what the bucket did at most this often (ticks): a dragon may fling him again and again (the owner, 05.11). */
     private static final int TALK = 1200;
     /** How long his water may stand before he gives it up (ticks): 30 seconds (the owner, 05.11). */
@@ -65,6 +65,8 @@ final class CompanionWaterBucket {
     /** Water he poured and has not scooped back, oldest first: flung again before he scooped it, he may pour a second bucket. */
     private final List<Pool> pools = new ArrayList<>();
     private long saidAt = Long.MIN_VALUE / 2;
+    /** The water he is going back for, and his looks for a way to it. */
+    private Pool fetching;
     private int noWay;
     private long lookedAt;
 
@@ -105,18 +107,26 @@ final class CompanionWaterBucket {
 
     /**
      * Where he lands within the next ticks, moved as the game moves him through the air (gravity, the air's drag), with the fall he
-     * will have by then: the landing move itself is not counted (Entity.checkFallDamage). Null if not so soon, or if the fall ends
-     * before, in a liquid or a block that resets it.
+     * will have by then: the landing move itself is not counted (Entity.checkFallDamage). Null if not so soon, or if the game ends the
+     * fall before, as it does: a climbable block at his feet before a move (LivingEntity.onClimbable); along the line of his feet a
+     * move of a block or more through water or a fall-resetting block (Entity.move); water in his box after a move (lava too: no pour
+     * over it); a cobweb, berry bush or powder snow after a move that is not the landing (their entityInside comes after the fall is
+     * counted).
      */
     private Landing landing(ServerLevel level) {
         Vec3 motion = c.getDeltaMovement();
         AABB box = c.getBoundingBox();
         float fall = c.fallDistance;
         for (int tick = 0; tick < AHEAD; tick++) {
+            if (level.getBlockState(feet(box)).is(BlockTags.CLIMBABLE)) return null;
             Vec3 moved = Entity.collideBoundingBox(c, motion, box, level, List.of());
+            Vec3 from = new Vec3(box.getCenter().x, box.minY, box.getCenter().z);
+            if (fall != 0 && moved.lengthSqr() >= 1 && level.clip(new ClipContext(from, from.add(moved), ClipContext.Block.FALLDAMAGE_RESETTING,
+                    ClipContext.Fluid.WATER, c)).getType() != HitResult.Type.MISS) return null;
             AABB next = box.move(moved);
-            if (softened(level, box.minmax(next))) return null;
-            if (moved.y > motion.y + 1.0E-7) return new Landing(next, fall, BlockPos.containing(next.getCenter().x, next.minY - .2, next.getCenter().z));
+            if (level.containsAnyLiquid(next)) return null;
+            if (moved.y > motion.y + 1.0E-7) return new Landing(next, fall, on(level, next));
+            if (holds(level, next)) return null;
             fall -= (float) moved.y;
             box = next;
             motion = new Vec3(motion.x * .91, (motion.y - c.getGravity()) * .98, motion.z * .91);
@@ -124,18 +134,29 @@ final class CompanionWaterBucket {
         return null;
     }
 
-    /**
-     * A liquid, or a block that ends a fall, anywhere in the box: a cobweb, a ladder or vine, berry bushes (the fall_damage_resetting
-     * blocks) and powder snow, which holds him as a cobweb does (Entity.makeStuckInBlock).
-     */
-    private static boolean softened(ServerLevel level, AABB box) {
-        if (level.containsAnyLiquid(box)) return true;
-        for (BlockPos pos : BlockPos.betweenClosed(Mth.floor(box.minX), Mth.floor(box.minY), Mth.floor(box.minZ),
-                Mth.floor(box.maxX), Mth.floor(box.maxY), Mth.floor(box.maxZ))) {
+    private static BlockPos feet(AABB box) { return BlockPos.containing(box.getCenter().x, box.minY, box.getCenter().z); }
+
+    /** A cobweb or berry bush in his box, or powder snow at his feet: it holds him and so ends the fall (Entity.makeStuckInBlock). */
+    private static boolean holds(ServerLevel level, AABB box) {
+        if (level.getBlockState(feet(box)).is(Blocks.POWDER_SNOW)) return true;
+        AABB inside = box.deflate(1.0E-5);
+        for (BlockPos pos : BlockPos.betweenClosed(Mth.floor(inside.minX), Mth.floor(inside.minY), Mth.floor(inside.minZ),
+                Mth.floor(inside.maxX), Mth.floor(inside.maxY), Mth.floor(inside.maxZ))) {
             BlockState state = level.getBlockState(pos);
-            if (state.is(BlockTags.FALL_DAMAGE_RESETTING) || state.is(Blocks.POWDER_SNOW)) return true;
+            if (state.is(Blocks.COBWEB) || state.is(Blocks.SWEET_BERRY_BUSH)) return true;
         }
         return false;
+    }
+
+    /**
+     * The block the game counts him to land on (Entity.getOnPosLegacy): the supporting block nearest his middle, or under a fence or
+     * wall the block 0.2 below his feet.
+     */
+    private BlockPos on(ServerLevel level, AABB box) {
+        BlockPos under = BlockPos.containing(box.getCenter().x, box.minY - .2, box.getCenter().z);
+        BlockPos support = level.findSupportingBlock(c, new AABB(box.minX, box.minY - 1.0E-6, box.minZ, box.maxX, box.minY, box.maxZ)).orElse(null);
+        if (support == null) return under;
+        return level.getBlockState(support).collisionExtendsVertically(level, support, c) ? support.atY(under.getY()) : support;
     }
 
     /**
@@ -181,12 +202,15 @@ final class CompanionWaterBucket {
     }
 
     /**
-     * Whether a player could pour there from his eyes: on the block that holds the water, or on the top of the one under the cell, within
-     * his reach and the server's allowance (Player.canInteractWithBlock). Too far yet, he pours a tick later.
+     * Whether a player could pour there from his eyes: on the block that holds the water, or on the one under the cell, within his reach
+     * of its outline (a bucket goes by Item.getPlayerPOVHitResult, without the server's allowance for useItemOn). Too far yet, he
+     * pours a tick later; coming down faster than that, he may not manage it, as a player would not.
      */
     private boolean inReach(ServerLevel level, BlockPos cell) {
         BlockPos clicked = holdsWater(level, cell, level.getBlockState(cell)) ? cell : cell.below();
-        return new AABB(clicked).distanceToSqr(c.getEyePosition()) <= (REACH + ALLOWANCE) * (REACH + ALLOWANCE);
+        var shape = level.getBlockState(clicked).getShape(level, clicked);
+        AABB outline = shape.isEmpty() ? new AABB(clicked) : shape.bounds().move(clicked);
+        return outline.distanceToSqr(c.getEyePosition()) <= REACH * REACH;
     }
 
     /** Pours this bucket into the cell; the journal keeps the health the landing would have cost him. */
@@ -269,7 +293,7 @@ final class CompanionWaterBucket {
         return null;
     }
 
-    void fetchBegin() { noWay = 0; lookedAt = Long.MIN_VALUE / 2; c.getNavigation().stop(); }
+    void fetchBegin() { fetching = null; }
 
     /**
      * A way to his water when the last one is walked; a search this tick had no share for is asked again the next. Three looks without
@@ -278,6 +302,7 @@ final class CompanionWaterBucket {
     void fetchTick() {
         Pool pool = astray();
         if (pool == null) return;
+        if (pool != fetching) { fetching = pool; noWay = 0; lookedAt = Long.MIN_VALUE / 2; c.getNavigation().stop(); }
         if (!pool.told) {
             pool.told = true;
             c.autonomySay(FETCHING, c.hasActiveWorkOrder());

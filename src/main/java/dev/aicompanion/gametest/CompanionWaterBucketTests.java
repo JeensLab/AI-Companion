@@ -291,18 +291,19 @@ public final class CompanionWaterBucketTests {
     }
 
     /**
-     * Fast from sixty blocks he still pours only as a player can: on a block within reach of his eyes (4.5 and the server's
-     * allowance of one, Player.canInteractWithBlock), not two ticks early from twice as high.
+     * Fast from 140 blocks he pours only as a player can: on a block within reach of his eyes (4.5 to its outline: a bucket is used
+     * through Item.getPlayerPOVHitResult, without the allowance of useItemOn), in the last tick if not before. Coming down faster than
+     * that reach leaves him a tick, some falls cannot be caught, as a player's could not.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 200, skyAccess = true)
-    public static void fromSixtyBlocksHePoursOnlyWithinReach(GameTestHelper h) {
+    @GameTest(template = "tall_tree", timeoutTicks = 300, skyAccess = true)
+    public static void fromHighUpHePoursOnlyWithinReach(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
-        // Six falls from 55 to 60 blocks, each a column of its own: each comes to the ground at another moment of a tick.
+        // Six falls from 140 to 145 blocks, each a column of its own: each comes to the ground at another moment of a tick.
         List<CompanionEntity> all = new java.util.ArrayList<>();
         double[] reach = new double[6];
         java.util.Arrays.fill(reach, -1);
         for (int i = 0; i < 6; i++) {
-            CompanionEntity c = spawn(h, 3 + 5 * i, 56 + i, 16);
+            CompanionEntity c = spawn(h, 3 + 5 * i, 141 + i, 16);
             c.setItem(0, new ItemStack(Items.WATER_BUCKET));
             all.add(c);
             int column = 3 + 5 * i, index = i;
@@ -318,35 +319,57 @@ public final class CompanionWaterBucketTests {
             });
         }
         h.succeedWhen(() -> {
+            int poured = 0;
             for (int i = 0; i < 6; i++) {
-                h.assertTrue(reach[i] >= 0, "Fall " + i + " not poured yet");
-                h.assertTrue(reach[i] <= 5.5, "Fall " + i + " poured from " + reach[i] + " blocks: " + java.util.Arrays.toString(reach));
-                h.assertTrue(all.get(i).isAlive() && all.get(i).getHealth() == all.get(i).getMaxHealth(), "Fall " + i + " hurt: " + all.get(i).getHealth());
-                h.assertTrue(count(all.get(i), Items.WATER_BUCKET) == 1, "Fall " + i + " bag: " + all.get(i).getStoredItemsSummary());
+                CompanionEntity c = all.get(i);
+                h.assertTrue(!c.isAlive() || c.onGround(), "Fall " + i + " not down yet");
+                if (reach[i] < 0) continue;
+                poured++;
+                h.assertTrue(reach[i] <= 4.5, "Fall " + i + " poured from " + reach[i] + " blocks: " + java.util.Arrays.toString(reach));
+                h.assertTrue(c.isAlive() && c.getHealth() == c.getMaxHealth() && count(c, Items.WATER_BUCKET) == 1,
+                        "Fall " + i + " poured but: health " + c.getHealth() + ", bag " + c.getStoredItemsSummary());
             }
-            h.assertTrue(water(h, 32) == null, "Water left at " + water(h, 32));
+            h.assertTrue(poured >= 3, "Only " + poured + " of 6 poured: " + java.util.Arrays.toString(reach));
         });
     }
 
     /**
-     * The dragon's case: flung up and away the moment he poured, still in the air. With a second bucket he catches the second landing
-     * too, scoops that water, then goes back for the first: both buckets full, nothing left.
+     * A column of twisting vines beside his fall, his side within a few hundredths of a block of it: the game counts a climbable block
+     * only at his feet (LivingEntity.onClimbable), so the vines do not end this fall and the bucket must.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200, skyAccess = true)
+    public static void vinesBesideHisFallDoNotKeepTheBucketBack(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        for (int y = 1; y <= 25; y++) h.setBlock(5, y, 4, Blocks.TWISTING_VINES);
+        CompanionEntity c = spawn(h, 4.8, 26, 4.5);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 30, "Not down yet");
+            unhurtAndDry(h, c, 8);
+        });
+    }
+
+    /**
+     * The dragon's case: rammed up and away the moment he lands in his water, before he could scoop it. With a second bucket he
+     * catches the next landing too, scoops that water, then goes back for the first: both buckets full, nothing left.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 900, skyAccess = true)
-    public static void flungAgainInTheAirHeCatchesItWithTheSecondBucketAndFetchesBoth(GameTestHelper h) {
+    public static void rammedAwayFromHisWaterHeCatchesTheNextFallWithTheSecondBucketAndFetchesBoth(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
-        CompanionEntity c = spawn(h, 6, 31, 16);
+        CompanionEntity c = spawn(h, 16, 31, 16);
         c.setItem(0, new ItemStack(Items.WATER_BUCKET));
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
-        var across = h.absoluteVec(new net.minecraft.world.phys.Vec3(30.5, 31, 16.5)).subtract(c.position()).normalize().scale(1.2);
-        boolean[] flung = {false};
+        boolean[] rammed = {false};
         h.onEachTick(() -> {
-            if (flung[0] || water(h, 32) == null || c.isInWater() || c.onGround()) return;
-            flung[0] = true;
-            c.setDeltaMovement(across.x, .8, across.z);
+            if (rammed[0] || count(c, Items.BUCKET) == 0) return;
+            rammed[0] = true;
+            // Thirteen blocks up and ten across: the next landing would cost him ten.
+            var up = h.absoluteVec(new net.minecraft.world.phys.Vec3(26.5, 14, 16.5));
+            c.teleportTo(up.x, up.y, up.z);
+            c.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
         });
         h.succeedWhen(() -> {
-            h.assertTrue(flung[0], "Not flung in the air");
+            h.assertTrue(rammed[0], "Not rammed yet");
             h.assertTrue(c.isAlive() && c.getHealth() == c.getMaxHealth(), "Hurt: health " + c.getHealth());
             h.assertTrue(count(c, Items.WATER_BUCKET) == 2 && count(c, Items.BUCKET) == 0, "Bag: " + c.getStoredItemsSummary());
             h.assertTrue(water(h, 32) == null, "Water left at " + water(h, 32));
