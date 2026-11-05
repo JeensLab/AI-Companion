@@ -57,6 +57,8 @@ public final class CompanionEndCrystalTests {
     @AfterBatch(batch = "crystal_shot") public static void afterShot(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_stay") public static void afterStay(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_stay_next") public static void afterStayNext(ServerLevel level) { clean(level); }
+    @AfterBatch(batch = "crystal_stop") public static void afterStop(ServerLevel level) { clean(level); }
+    @AfterBatch(batch = "crystal_stop_fight") public static void afterStopFight(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_sword") public static void afterSword(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "crystal_unreachable") public static void afterUnreachable(ServerLevel level) { clean(level); }
 
@@ -216,6 +218,51 @@ public final class CompanionEndCrystalTests {
             h.assertTrue(far.isRemoved(), "Stuck on the hidden crystal; arrows left " + count(companion, Items.ARROW));
             h.assertTrue(hidden.isAlive(), "The hidden one broke");
         });
+    }
+
+    /**
+     * «Стоп» as the chat sends it, the moment he takes up the crystal: not one arrow at it after, though the stop sets him following
+     * the player again; the next order of the player («иди за мной») sets him at the crystals again.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 900, batch = "crystal_stop")
+    public static void toldToStopHeLeavesTheCrystalsUntilTheNextOrder(GameTestHelper h) {
+        arena(h);
+        EndCrystal crystal = onPillar(h, 1);
+        dragon(h);
+        CompanionEntity companion = archer(h, 16, 4);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        long[] stoppedAt = {-1};
+        h.onEachTick(() -> {
+            if (stoppedAt[0] < 0 && said(companion, "Сбиваю кристаллы.") == 1) {
+                stoppedAt[0] = h.getTick();
+                owner.getServer().getCommands().performPrefixedCommand(owner.createCommandSourceStack(), "companion stop");
+            }
+            if (stoppedAt[0] >= 0 && h.getTick() == stoppedAt[0] + 300) {
+                h.assertTrue(crystal.isAlive() && count(companion, Items.ARROW) == 16,
+                        "Shot after «стоп»: arrows left " + count(companion, Items.ARROW));
+                CompanionEvents.executeAction(owner, "follow", "", 1);
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stoppedAt[0] >= 0 && h.getTick() > stoppedAt[0] + 300 && crystal.isRemoved(),
+                "Not at the crystal again after «иди за мной»; arrows left " + count(companion, Items.ARROW)));
+    }
+
+    /** «Стоп» holds for this fight only: the dragon gone and a new one up, he takes up the crystals again by himself. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900, batch = "crystal_stop_fight")
+    public static void theStopHoldsForThisFightOnly(GameTestHelper h) {
+        arena(h);
+        EndCrystal crystal = onPillar(h, 1);
+        EnderDragon first = dragon(h);
+        CompanionEntity companion = archer(h, 16, 4);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.runAtTickTime(5, () -> CompanionEvents.executeAction(owner, "stop", "", 1));
+        h.runAtTickTime(200, () -> {
+            h.assertTrue(crystal.isAlive() && count(companion, Items.ARROW) == 16, "Shot after «стоп»: arrows left " + count(companion, Items.ARROW));
+            first.discard();
+        });
+        h.runAtTickTime(260, () -> dragon(h));
+        h.succeedWhen(() -> h.assertTrue(h.getTick() > 260 && crystal.isRemoved(),
+                "Not at the crystal in the next fight; arrows left " + count(companion, Items.ARROW)));
     }
 
     /** «Защищай меня»: with no arrow to the crystal from where he stands, he keeps by the player as she walks off, not by the crystal. */

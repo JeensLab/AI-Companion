@@ -61,6 +61,8 @@ public final class CompanionEndCrystals {
     private CompanionArrowFlight.Flight flight;
     private int flightAt, scannedAt, fightCheckedAt = -FIGHT_CHECK_EVERY, worked, spent;
     private boolean fight, shooting, chosenTold, toldStart, toldDone, toldCaged, toldLeft, toldNoBow;
+    /** The player's «стоп» in this fight: no crystal until his next order, or the next fight. */
+    private boolean stopped;
     /** Crystals that went while he was shooting at them: only then are the crystals «his» to report as shot down. */
     private int broke;
     /** Crystals no arrow of his got to from any stand, or that cost too much: the player's now. */
@@ -78,12 +80,16 @@ public final class CompanionEndCrystals {
     /** He is at a crystal now: the bow is his weapon, whatever blade the player chose (CompanionEquipment.selectWeaponForCombat). */
     boolean shooting() { return shooting; }
 
+    /** An order of the player (CompanionAutonomy.playerOrder): «стоп» leaves the crystals alone, any other sets him at them again. */
+    void playerOrder(String action) { stopped = "stop".equals(action); }
+
     /**
-     * A crystal to go for now: the fight is on, no order of the player runs, he has a bow and arrows, and a crystal he can try stands.
-     * Not following the player (told to stay or to guard), only while an arrow gets to it from where he is.
+     * A crystal to go for now: the fight is on, no order of the player runs nor his «стоп», he has a bow and arrows, and a crystal he
+     * can try stands. Not following the player (told to stay or to guard), only while an arrow gets to it from where he is.
      */
     boolean wanted() {
-        if (!(c.level() instanceof ServerLevel level) || c.inventoryViewers != 0 || !fightOn(level) || c.hasActiveWorkOrder()) return false;
+        // The fight looked at first: its end lifts the «стоп».
+        if (!(c.level() instanceof ServerLevel level) || c.inventoryViewers != 0 || !fightOn(level) || stopped || c.hasActiveWorkOrder()) return false;
         // The crystals are looked over with the flight, not every tick: the box is some four hundred chunks wide, and a flight that
         // fails flies all its pitches. So also with no crystal at hand (guarding a walking player, none to be hit from here).
         if (c.tickCount - scannedAt < FLIGHT_EVERY) return crystal != null && crystal.isAlive() && (c.following || flight != null);
@@ -128,7 +134,7 @@ public final class CompanionEndCrystals {
         boolean on = false;
         for (EnderDragon dragon : level.getDragons()) on |= dragon.distanceToSqr(c) <= FIGHT_RANGE * FIGHT_RANGE;
         // A fight over: the next one is told about again from the start.
-        if (!on) { toldStart = toldDone = toldCaged = toldLeft = toldNoBow = false; broke = 0; left.clear(); notFromHere.clear(); crystal = null; }
+        if (!on) { toldStart = toldDone = toldCaged = toldLeft = toldNoBow = stopped = false; broke = 0; left.clear(); notFromHere.clear(); crystal = null; }
         return fight = on;
     }
 
