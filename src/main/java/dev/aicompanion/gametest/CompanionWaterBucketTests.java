@@ -209,6 +209,58 @@ public final class CompanionWaterBucketTests {
         });
     }
 
+    /** Resistance IV takes four fifths of the ten blocks' seven (LivingEntity.getDamageAfterMagicAbsorb): not worth the bucket. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void resistanceMakesTenBlocksNotWorthTheBucket(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        CompanionEntity c = spawn(h, 4, 11, 4);
+        c.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE, 600, 3));
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = watchPour(h, c);
+        h.runAfterDelay(40, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket under Resistance IV");
+            h.assertTrue(c.getHealth() < c.getMaxHealth() && c.getHealth() > c.getMaxHealth() - 2, "Health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /** A golden apple's absorption (four) takes most of eight blocks' five: his health loses one, not worth the bucket. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void absorptionMakesEightBlocksNotWorthTheBucket(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        CompanionEntity c = spawn(h, 4, 9, 4);
+        c.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.ABSORPTION, 600, 0));
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = watchPour(h, c);
+        h.runAfterDelay(40, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket with absorption to spare");
+            h.assertTrue(c.getHealth() == c.getMaxHealth() - 1 && c.getAbsorptionAmount() == 0, "Health " + c.getHealth() + ", absorption " + c.getAbsorptionAmount());
+            h.succeed();
+        });
+    }
+
+    /** Flung into a pond after pouring: the pond broke the fall, not his bucket, so he does not boast; he still fetches his water. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900, skyAccess = true)
+    public static void flungIntoAPondHeDoesNotBoastButFetchesHisWater(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        for (int x = 25; x <= 27; x++) for (int z = 15; z <= 17; z++) {
+            h.setBlock(x, 0, z, Blocks.WATER);
+            h.setBlock(x, -1, z, Blocks.STONE);
+        }
+        CompanionEntity c = spawn(h, 16, 31, 16);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        List<String> said = said(h, c);
+        flingOnPour(h, c, water -> {
+            var pond = h.absoluteVec(new net.minecraft.world.phys.Vec3(26.5, 0.2, 16.5));
+            c.teleportTo(pond.x, pond.y, pond.z);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(said.stream().noneMatch(SAVED::contains), "Boasted of the pond: " + said);
+            h.assertTrue(said.contains("Сбегаю за водой — ведро пустое."), "Did not go for his water: " + said);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1, "Bag: " + c.getStoredItemsSummary());
+        });
+    }
+
     /** Onto a stalagmite five blocks cost (5 + 2 - 3) x 2 = 8 or more (PointedDripstoneBlock.fallOn): worth the bucket. */
     @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
     public static void aFallOfFiveOntoAStalagmiteIsCaught(GameTestHelper h) {
@@ -319,14 +371,17 @@ public final class CompanionWaterBucketTests {
     }
 
     /**
-     * The tick his water appears, he is set down ten blocks away on the ground, out of his water's reach (a fling ending softly), and
+     * The tick he pours (an empty bucket in his bag, water over the floor), he is set down ten blocks away on the ground, out of his water's reach (a fling ending softly), and
      * {@code then} is done to the water's cell.
      */
     private static void flingOnPour(GameTestHelper h, CompanionEntity c, java.util.function.Consumer<BlockPos> then) {
         boolean[] done = {false};
         h.onEachTick(() -> {
-            BlockPos water = water(h, 32);
-            if (done[0] || water == null) return;
+            if (done[0] || count(c, Items.BUCKET) == 0) return;
+            BlockPos water = null;
+            for (BlockPos pos : BlockPos.betweenClosed(0, 1, 0, 31, 4, 31))
+                if (h.getLevel().getFluidState(h.absolutePos(pos)).is(FluidTags.WATER)) { water = pos.immutable(); break; }
+            if (water == null) return;
             done[0] = true;
             var away = h.absoluteVec(new net.minecraft.world.phys.Vec3(26.5, 1, 16.5));
             c.teleportTo(away.x, away.y, away.z);

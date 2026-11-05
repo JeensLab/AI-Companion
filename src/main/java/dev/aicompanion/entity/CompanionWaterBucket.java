@@ -95,7 +95,7 @@ final class CompanionWaterBucket {
         // Two hearts and more, or his death, are worth the bucket; a step's knock is not (the owner, 05.11).
         if (loss < WORTH && loss < c.getHealth()) return;
         BlockPos cell = cellFor(level, landing.box, loss >= c.getHealth());
-        if (cell != null && inReach(level, cell)) pour(level, slot, cell);
+        if (cell != null && inReach(level, cell)) pour(level, slot, cell, loss);
     }
 
     private int waterBucket() {
@@ -189,14 +189,15 @@ final class CompanionWaterBucket {
         return new AABB(clicked).distanceToSqr(c.getEyePosition()) <= (REACH + ALLOWANCE) * (REACH + ALLOWANCE);
     }
 
-    private void pour(ServerLevel level, int slot, BlockPos cell) {
+    /** Pours this bucket into the cell; the journal keeps the health the landing would have cost him. */
+    private void pour(ServerLevel level, int slot, BlockPos cell, float loss) {
         ItemStack bucket = c.getItem(slot);
         if (!((BucketItem) bucket.getItem()).emptyContents(null, level, cell, null, bucket)) return;
         c.setItem(slot, new ItemStack(Items.BUCKET));
         c.animateAction(1, cell, bucket);
         Pool pool = new Pool(cell, level.getGameTime());
         pools.add(pool);
-        event("water_bucket_poured", pool);
+        event("water_bucket_poured", pool, "loss", loss);
     }
 
     /** His water, each pool: down by it he scoops it; gone, given up, too far or too late, he leaves it. */
