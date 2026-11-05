@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.CombatRules;
 import net.minecraft.world.effect.MobEffects;
@@ -109,9 +110,9 @@ final class CompanionWaterBucket {
      * Where he lands within the next ticks, moved as the game moves him through the air (gravity, the air's drag), with the fall he
      * will have by then: the landing move itself is not counted (Entity.checkFallDamage). Null if not so soon, or if the game ends the
      * fall before, as it does: a climbable block at his feet before a move (LivingEntity.onClimbable); along the line of his feet a
-     * move of a block or more through water or a fall-resetting block (Entity.move); water in his box after a move (lava too: no pour
-     * over it); a cobweb, berry bush or powder snow after a move that is not the landing (their entityInside comes after the fall is
-     * counted).
+     * move of a block or more through water or a fall-resetting block (Entity.move); water about his body after a move; a cobweb, berry
+     * bush or powder snow after a move that is not the landing (their entityInside comes after the fall is counted). Lava ends no
+     * fall (it halves it a tick later): over lava he pours as anywhere.
      */
     private Landing landing(ServerLevel level) {
         Vec3 motion = c.getDeltaMovement();
@@ -124,7 +125,7 @@ final class CompanionWaterBucket {
             if (fall != 0 && moved.lengthSqr() >= 1 && level.clip(new ClipContext(from, from.add(moved), ClipContext.Block.FALLDAMAGE_RESETTING,
                     ClipContext.Fluid.WATER, c)).getType() != HitResult.Type.MISS) return null;
             AABB next = box.move(moved);
-            if (level.containsAnyLiquid(next)) return null;
+            if (inWater(level, next)) return null;
             if (moved.y > motion.y + 1.0E-7) return new Landing(next, fall, on(level, next));
             if (holds(level, next)) return null;
             fall -= (float) moved.y;
@@ -132,6 +133,17 @@ final class CompanionWaterBucket {
             motion = new Vec3(motion.x * .91, (motion.y - c.getGravity()) * .98, motion.z * .91);
         }
         return null;
+    }
+
+    /** Water that counts as him in it: in his box, its surface at his feet or above (Entity.updateFluidHeightAndDoFluidPushing). */
+    private static boolean inWater(ServerLevel level, AABB box) {
+        AABB inside = box.deflate(.001);
+        for (BlockPos pos : BlockPos.betweenClosed(Mth.floor(inside.minX), Mth.floor(inside.minY), Mth.floor(inside.minZ),
+                Mth.ceil(inside.maxX) - 1, Mth.ceil(inside.maxY) - 1, Mth.ceil(inside.maxZ) - 1)) {
+            var fluid = level.getFluidState(pos);
+            if (fluid.is(FluidTags.WATER) && pos.getY() + fluid.getHeight(level, pos) >= inside.minY) return true;
+        }
+        return false;
     }
 
     private static BlockPos feet(AABB box) { return BlockPos.containing(box.getCenter().x, box.minY, box.getCenter().z); }
@@ -149,19 +161,19 @@ final class CompanionWaterBucket {
     }
 
     /**
-     * The block the game counts him to land on (Entity.getOnPosLegacy): the supporting block nearest his middle, or under a fence or
-     * wall the block 0.2 below his feet.
+     * The block the game counts him to land on (Entity.getOnPosLegacy): a fence or wall he stands on itself, any other supporting
+     * block the one 0.2 below his feet in its column (so a carpet on hay counts as the hay).
      */
     private BlockPos on(ServerLevel level, AABB box) {
         BlockPos under = BlockPos.containing(box.getCenter().x, box.minY - .2, box.getCenter().z);
         BlockPos support = level.findSupportingBlock(c, new AABB(box.minX, box.minY - 1.0E-6, box.minZ, box.maxX, box.minY, box.maxZ)).orElse(null);
         if (support == null) return under;
-        return level.getBlockState(support).collisionExtendsVertically(level, support, c) ? support.atY(under.getY()) : support;
+        return level.getBlockState(support).collisionExtendsVertically(level, support, c) ? support : support.atY(under.getY());
     }
 
     /**
      * The health the landing would cost him, as the game counts it: what the block he lands on makes of the fall (BedBlock, HayBlock,
-     * HoneyBlock, SlimeBlock, PointedDripstoneBlock.fallOn), then Resistance, the protection of his enchantments (Feather Falling) and
+     * HoneyBlock, SlimeBlock, PowderSnowBlock, PointedDripstoneBlock.fallOn), then Resistance, the protection of his enchantments (Feather Falling) and
      * his absorption (LivingEntity.getDamageAfterMagicAbsorb and actuallyHurt; NeoForge's version of the first may only run in a hit).
      */
     private float loss(ServerLevel level, Landing landing) {
@@ -169,7 +181,7 @@ final class CompanionWaterBucket {
         float fall = landing.fall, times = 1;
         if (on.getBlock() instanceof BedBlock) fall *= .5F;
         else if (on.is(Blocks.HAY_BLOCK) || on.is(Blocks.HONEY_BLOCK)) times = .2F;
-        else if (on.is(Blocks.SLIME_BLOCK)) times = 0;
+        else if (on.is(Blocks.SLIME_BLOCK) || on.is(Blocks.POWDER_SNOW)) times = 0;
         else if (on.is(Blocks.POINTED_DRIPSTONE) && on.getValue(PointedDripstoneBlock.TIP_DIRECTION) == Direction.UP
                 && on.getValue(PointedDripstoneBlock.THICKNESS) == DripstoneThickness.TIP) { fall += 2; times = 2; }
         float damage = c.fallDamage(fall, times);

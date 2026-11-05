@@ -361,9 +361,9 @@ public final class CompanionWaterBucketTests {
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
         boolean[] rammed = {false};
         h.onEachTick(() -> {
-            if (rammed[0] || count(c, Items.BUCKET) == 0) return;
+            if (rammed[0] || count(c, Items.BUCKET) == 0 || !c.isInWater()) return;
             rammed[0] = true;
-            // Thirteen blocks up and ten across: the next landing would cost him ten.
+            // Down in his water (the fall reset), thirteen blocks up and ten across: the next landing would cost him ten.
             var up = h.absoluteVec(new net.minecraft.world.phys.Vec3(26.5, 14, 16.5));
             c.teleportTo(up.x, up.y, up.z);
             c.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
@@ -436,6 +436,70 @@ public final class CompanionWaterBucketTests {
             h.assertTrue(openedAt[0] >= 0 && h.getTick() > openedAt[0] + 100, "The bag not closed yet");
             h.assertTrue(said.contains("Сбегаю за водой — ведро пустое."), "Did not go for it: " + said);
             h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && water(h, 32) == null, "Bag: " + c.getStoredItemsSummary() + ", water at " + water(h, 32));
+        });
+    }
+
+    /**
+     * Into lava a block deep: the game does not end a fall in lava (it halves it a tick later, too late for this landing), so twenty
+     * blocks would kill him there. The water goes over the lava, about his body: the fall is caught, the lava under it sets.
+     */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void aFallIntoShallowLavaIsCaughtOverIt(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) h.setBlock(x, 1, z, x >= 3 && x <= 5 && z >= 3 && z <= 5 ? Blocks.LAVA : Blocks.STONE);
+        CompanionEntity c = spawn(h, 4, 21, 4);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        h.runAfterDelay(60, () -> {
+            h.assertTrue(c.isAlive() && c.getHealth() > 10, "Not caught over the lava: health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /**
+     * Onto farmland beside its water: the water's surface is below the farmland's top, so it does not count as him in water (Entity
+     * .updateFluidHeightAndDoFluidPushing) and the fall would hurt him in full. He pours.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200, skyAccess = true)
+    public static void farmlandWaterBesideHisLandingDoesNotKeepTheBucketBack(GameTestHelper h) {
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) h.setBlock(x, 0, z, Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(5, 0, 4, Blocks.WATER);
+        h.setBlock(5, -1, 4, Blocks.STONE);
+        CompanionEntity c = spawn(h, 4.8, 21, 4.5);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 30 && c.isAlive() && c.onGround() && c.getHealth() == c.getMaxHealth(), "Hurt: health " + c.getHealth());
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.BUCKET) == 0, "Bag: " + c.getStoredItemsSummary());
+        });
+    }
+
+    /** Powder snow takes a fall whole (PowderSnowBlock.fallOn does no damage): nothing to pour for. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void aFallOntoPowderSnowIsNotPouredFor(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) h.setBlock(x, 1, z, Blocks.POWDER_SNOW);
+        CompanionEntity c = spawn(h, 4, 21, 4);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = {false};
+        h.onEachTick(() -> poured[0] |= count(c, Items.BUCKET) > 0);
+        h.runAfterDelay(60, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket over powder snow");
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "Hurt: health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /** A carpet on hay: the game counts the hay under it (Entity.getOnPos), so ten blocks cost two: not worth the bucket. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void aFallOntoACarpetOverHayIsTakenWithoutTheBucket(GameTestHelper h) {
+        floor(h, Blocks.HAY_BLOCK);
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) h.setBlock(x, 1, z, Blocks.WHITE_CARPET);
+        CompanionEntity c = spawn(h, 4, 11, 4);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = watchPour(h, c);
+        h.runAfterDelay(40, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket over a carpet on hay");
+            h.assertTrue(c.getHealth() >= c.getMaxHealth() - 2, "The hay did not take the fall: health " + c.getHealth());
+            h.succeed();
         });
     }
 
