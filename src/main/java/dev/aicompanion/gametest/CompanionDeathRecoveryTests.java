@@ -832,7 +832,8 @@ public final class CompanionDeathRecoveryTests {
         UUID spotId = place(h, c, place, 20, item);
         for (int i = 0; i < 5; i++) store.attempted(c.getOwnerId(), spotId);
         h.assertTrue(!c.deathTrip.begin(), "He set out a sixth time");
-        h.assertTrue(c.deathTrip.lastLine().contains("подавитесь"), "He did not say why he let it lie: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("№1 — бросил."),
+                "He did not name the row he dropped: " + c.deathTrip.lastLine());
         h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "The given-up place is still remembered");
         h.succeed();
     }
@@ -1608,10 +1609,11 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
-    /** A place he has given up keeps its number: the next place is spoken of by the number the list gives it. */
+    /** A place he has given up leaves the list, and the next place is spoken of by the number it has there now. */
     @GameTest(template = "empty")
     public static void theNumberIsTheListsWhenTheDearestIsGivenUp(GameTestHelper h) {
         CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         settle(c);
         yard(h, c, 12);
         BlockPos dearest = c.blockPosition().offset(6, 0, 0);
@@ -1621,9 +1623,15 @@ public final class CompanionDeathRecoveryTests {
         var secondStack = stack(h, second, new ItemStack(Items.GOLDEN_APPLE, 2));
         UUID secondId = place(h, c, second, 40, secondStack);
         var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        h.assertTrue(CompanionDeathBoard.places(owner).get(1).number() == 2, "The second place was not number two to begin with");
         for (int i = 0; i < 5; i++) store.attempted(c.getOwnerId(), firstId);
         h.assertTrue(c.deathTrip.begin(), "He did not set out for the second place");
-        h.assertTrue(c.deathTrip.lastLine().equals("Иду за вещами №2."),
+        // The given-up place left the list, so the place he set out for is number one there: he must say that number,
+        // not the one it had before the drop.
+        var after = CompanionDeathBoard.places(owner);
+        h.assertTrue(after.size() == 1 && after.get(0).id().equals(secondId) && after.get(0).number() == 1,
+                "The list did not follow the given-up place: " + after);
+        h.assertTrue(c.deathTrip.lastLine().equals("Иду за вещами №1."),
                 "The number is not the place's in the list: " + c.deathTrip.lastLine());
         h.assertTrue(c.deathTrip.spotId().equals(secondId), "He set out for another place: " + c.deathTrip.spotId());
         h.succeed();

@@ -139,38 +139,44 @@ public final class CompanionDeathTrip {
         var server = level.getServer();
         if (server == null) return false;
         CompanionDeathSpots data = CompanionDeathSpots.get(server);
-        // The number he says is the place's position in the settings list: the same order, the dearest first.
+        // The number he says is the place's position in the settings list: the same order, the dearest first. A place
+        // that leaves the list takes its number with it, so the ranking is read again after every drop and the number
+        // of the next place is its position in the list the player will see, not the one it had before the drop.
         List<CompanionDeathSpots.Spot> places = data.ranked(c.getOwnerId());
-        for (int index = 0; index < places.size(); index++) {
+        int index = 0;
+        while (index < places.size()) {
             CompanionDeathSpots.Spot place = places.get(index);
             int number = index + 1;
             if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
                 data.taken(c.getOwnerId(), place.id());
-                say("Ну и подавитесь своим лутом.");
+                say("№" + number + " — бросил.");
+                places = data.ranked(c.getOwnerId());
                 continue;
             }
             Long tried = triedAt.get(place.pos());
-            if (tried != null && level.getGameTime() - tried < RETRY_TICKS) continue;
+            if (tried != null && level.getGameTime() - tried < RETRY_TICKS) { index++; continue; }
             // Only the stacks of the manifest that still lie there are walked to: a stack somebody took is struck off
             // before the walk starts, so a looted place costs no walk at all.
             List<CompanionDeathSpots.Entry> live = liveEntries(level, place);
             if (live.isEmpty()) {
                 // A stack looked for once and not found may still be on its way into the world: the place is asked
                 // again in a moment instead of being struck off on that one look.
-                if (missedOnce(level, place)) continue;
+                if (missedOnce(level, place)) { index++; continue; }
                 // Nothing is left there: the place goes, and a death not worth a walk is not spoken of.
                 data.taken(c.getOwnerId(), place.id());
+                places = data.ranked(c.getOwnerId());
                 continue;
             }
             if (!place.dimension().equals(level.dimension())) {
                 // The Overworld and the Nether are crossed both ways on foot; a place in the End needs its own portal and is left.
                 if (place.worth() < CROSS_WORTH || place.dimension().equals(Level.END)) {
                     data.taken(c.getOwnerId(), place.id());
+                    places = data.ranked(c.getOwnerId());
                     continue;
                 }
                 // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
                 var entered = c.portals.enter(level);
-                if (!entered.success()) continue;
+                if (!entered.success()) { index++; continue; }
                 data.attempted(c.getOwnerId(), place.id());
                 start(place, live, level, true, number);
                 say("Иду за вещами №" + number + " через портал.");
