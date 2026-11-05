@@ -136,6 +136,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionCreeperGuard creeperGuard = new CompanionCreeperGuard(this);
+    private final CompanionShieldDefense shieldDefense = new CompanionShieldDefense(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
@@ -883,13 +884,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 && getTarget().distanceToSqr(guardedOwner) > 14 * 14) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
-        if (inventoryViewers == 0 && getOffhandItem().canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK)) {
-            var enemy = getTarget();
-            boolean defend = enemy != null && enemy.isAlive() && !archery.aiming() && hasLineOfSight(enemy)
-                    && (distanceToSqr(enemy) < 9 || enemy instanceof net.minecraft.world.entity.monster.AbstractSkeleton && distanceToSqr(enemy) < 144);
-            if (defend && !isUsingItem()) startUsingItem(InteractionHand.OFF_HAND);
-            else if (!defend && isUsingItem() && getUsedItemHand() == InteractionHand.OFF_HAND) stopUsingItem();
-        }
+        shieldDefense.tick();
         if (inventoryViewers == 0 && !hasActiveWorkOrder() && !recovery.active() && !preferredWeapon.isEmpty() && tickCount % 20 == 0)
             selectWeaponForCombat();
     }
@@ -917,6 +912,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     ItemStack eating = ItemStack.EMPTY;
     int lastHurtTick = -1000;
     static final int EAT_TICKS = 32;
+
+    @Override protected void hurtCurrentlyUsedShield(float damage) { equipment.wearShield(damage); }
 
     @Override public boolean hurt(net.minecraft.world.damagesource.DamageSource source, float amount) {
         boolean hurt = super.hurt(source, amount);

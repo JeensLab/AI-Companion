@@ -88,16 +88,25 @@ final class CompanionCreeperGuard {
     private static final float REACH_RANGE = 24;
 
     private final CompanionEntity owner;
-    private boolean active, finished, fighting, dashing, leading, mayStrike, room = true;
+    private boolean active, finished, fighting, shielded, dashing, leading, mayStrike, room = true;
     private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt;
     private int retreats, flees, leadTried;
     private Vec3 flee, house;
     private Creeper watched, fuseOf;
     private String shown = "";
+    private final CompanionShieldGuard shield;
     /** The way out while he runs, and a second one only to judge, before the fuse is lit, whether he would have one. */
     private final CompanionFuseEscape escape, probe;
 
-    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; escape = new CompanionFuseEscape(owner); probe = new CompanionFuseEscape(owner); }
+    CompanionCreeperGuard(CompanionEntity owner) {
+        this.owner = owner;
+        shield = new CompanionShieldGuard(owner);
+        escape = new CompanionFuseEscape(owner);
+        probe = new CompanionFuseEscape(owner);
+    }
+
+    /** The shield is up against a lit fuse: the lowering of it with no other danger near ({@link CompanionShieldDefense}) waits. */
+    boolean shielding() { return shield.holding(); }
 
     /** True when a creeper is fought: healthy, with a way out of its blast, and not after a run of retreats with no blow landed. */
     boolean fights() {
@@ -119,7 +128,8 @@ final class CompanionCreeperGuard {
             probe.plan(level, threats(level));
             room = probe.clears();
         }
-        return creeper != null && plan(level, creeper);
+        shielded = creeper != null && burns(creeper) && shield.covers(level, creeper);
+        return creeper != null && (shielded || plan(level, creeper));
     }
 
     /** A creeper that can hurt him stands in sight within this many blocks, foe or not: a pickup or a torch must not take his turn then. */
@@ -168,10 +178,10 @@ final class CompanionCreeperGuard {
             retreats++;
             lastRetreat = now;
         }
-        owner.workStatus(leading ? "Увожу крипера от дома." : mayStrike ? "Бью крипера и отскакиваю от взрыва."
+        owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : leading ? "Увожу крипера от дома." : mayStrike ? "Бью крипера и отскакиваю от взрыва."
                 : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, ухожу от него.");
-        event(leading ? "lead" : mayStrike ? "strike_first" : fighting ? "retreat" : dashing ? "dash" : "flee", watched, path);
-        if (!fighting && !leading) leaveLootAfterFlees(now);
+        event(shielded ? "shield" : leading ? "lead" : mayStrike ? "strike_first" : fighting ? "retreat" : dashing ? "dash" : "flee", watched, path);
+        if (!shielded && !fighting && !leading) leaveLootAfterFlees(now);
     }
 
     /** A creeper that stays by the things he goes for, with nothing to meet it, would have him step away and come back for ever: the things are let lie. */
@@ -190,6 +200,11 @@ final class CompanionCreeperGuard {
         long now = level.getGameTime();
         Creeper creeper = seen(level);
         lookAtFuse(creeper, now);
+        if (shielded) {
+            shielded = creeper != null && burns(creeper) && shield.hold(level, creeper);
+            if (shielded) lastSeen = now; else finished = true;
+            return;
+        }
         if (creeper == null) {
             if (now - lastSeen >= CALM_TICKS) finished = true;
             return;
@@ -215,7 +230,8 @@ final class CompanionCreeperGuard {
         if (!active) return;
         // A creeper that would not be walked off in a whole episode is fought where it is for a while.
         if (leading && owner.level().getGameTime() - begun >= EPISODE_TICKS) leadAgainAt = owner.level().getGameTime() + FORGET_TICKS;
-        active = fighting = dashing = leading = mayStrike = false;
+        active = fighting = shielded = dashing = leading = mayStrike = false;
+        shield.release();
         escape.reset();
         flee = null;
         owner.getNavigation().stop();
