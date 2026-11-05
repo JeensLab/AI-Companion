@@ -67,6 +67,8 @@ public final class CompanionPlaybooks {
 
     private static List<Milestone> dragon() {
         List<Milestone> list = nether();
+        // Against the fall when the dragon's ram flings him (CompanionWaterBucket); not for the Nether, where water boils away.
+        list.add(CompanionMilestones.stock(Items.WATER_BUCKET, 1, "ведро воды", true));
         list.add(CompanionMilestones.skill("obsidian", "10 обсидиана"));
         list.add(CompanionMilestones.skill("portal", "портал в Незер"));
         list.add(CompanionMilestones.skill("nether", "поход в Незер"));
