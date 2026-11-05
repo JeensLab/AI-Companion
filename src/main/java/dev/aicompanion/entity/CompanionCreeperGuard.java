@@ -39,6 +39,8 @@ final class CompanionCreeperGuard {
     static final double NEAR = 9;
     private static final int LOOK_EVERY = 5, FIGHT_LOOK_EVERY = 2, PLAN_EVERY = 10, EPISODE_TICKS = 20 * 12, CALM_TICKS = 20;
     private static final int FLEE_RANGE = 12, FLEE_HEIGHT = 6;
+    /** A step away from an unlit creeper keeps this near the player, when he is within the second range (else he is off on his own work). */
+    private static final double LEASH = 12, LEASH_FROM = 32;
     private static final double FLEE_SPEED = 1.3;
     /**
      * The fight. Health above which a creeper is fought; the retreats with no blow landed he bears before he gives up the fight,
@@ -249,10 +251,35 @@ final class CompanionCreeperGuard {
             return leading;
         }
         if (lit(creeper)) { dashing = true; return true; }
+        // By the player a step away stays by him: a creeper that hunts him would else lead him off a step at a time (review of PR #95).
+        var player = owner.getOwnerPlayer();
+        if (player != null && player.level() == level && owner.distanceTo(player) <= LEASH_FROM) {
+            flee = byThePlayer(threats(level), creeper, player.position());
+            return true;
+        }
         Vec3 target = LandRandomPos.getPosAway(owner, FLEE_RANGE, FLEE_HEIGHT, creeper.position());
         Vec3 clear = retreatSpot(threats(level), target);
         flee = clear != null ? clear : target;
         return flee != null;
+    }
+
+    /**
+     * A step away from the creeper no farther than {@link #LEASH} from the player: the spot that keeps clear of every creeper and gains on
+     * this one most, the nearer to the player the better. With none, to the player himself: he is the one who can deal with it.
+     */
+    private Vec3 byThePlayer(List<Creeper> threats, Creeper creeper, Vec3 player) {
+        double now = owner.distanceTo(creeper);
+        List<Vec3> spots = ring();
+        for (int i = 0; i < AWAY_TRIES; i++) {
+            Vec3 spot = LandRandomPos.getPosAway(owner, FLEE_RANGE, FLEE_HEIGHT, creeper.position());
+            if (spot != null) spots.add(spot);
+        }
+        List<Vec3> ranked = spots.stream().filter(spot -> spot.distanceTo(player) <= LEASH && spot.distanceTo(creeper.position()) > now
+                        && clear(spot, threats, GAP_SLACK))
+                .sorted(Comparator.comparingDouble((Vec3 spot) -> -gap(spot, threats)).thenComparingDouble(spot -> spot.distanceTo(player)))
+                .limit(PATH_TESTS).toList();
+        for (Vec3 spot : ranked) if (reachable(spot)) return spot;
+        return player;
     }
 
     /**

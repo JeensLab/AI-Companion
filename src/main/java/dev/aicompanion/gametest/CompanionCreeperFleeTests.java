@@ -34,6 +34,9 @@ public final class CompanionCreeperFleeTests {
     private static final int RUN_TICKS = 20, WATCH_TICKS = 60, STRIKE_TICKS = 400, BLOW_TICKS = 10, KILL_TICKS = 1000, FIST_KILL_TICKS = 3600;
     /** Below the health at which he fights a creeper. */
     private static final float HURT = 10;
+    /** Half a minute of a hunt (mnimar's 69 blocks took 30 s), and how far from the player he may be: the guard's leash plus a dash. */
+    private static final int CHASE_TICKS = 600;
+    private static final double CHASE_LEASH = 18;
 
     private CompanionCreeperFleeTests() { }
 
@@ -49,6 +52,33 @@ public final class CompanionCreeperFleeTests {
             h.assertTrue(c.isAlive(), "Died");
             h.assertTrue(creeper.getSwellDir() <= 0, "The creeper lit its fuse, the test is no longer about an unlit one");
             h.assertTrue(c.distanceTo(creeper) > SEES_WITHIN, "Still " + String.format("%.1f", c.distanceTo(creeper)) + " blocks from the creeper");
+        });
+    }
+
+    /**
+     * Review of PR #95 (mnimar, 04.11): a creeper after him while he is too hurt to fight led him 70-100 blocks off the player, a step away
+     * at a time. Now every step away stays by the player: never more than the leash and a few steps of slack from him while it hunts him.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = CHASE_TICKS + 100)
+    public static void aCreeperAfterHimWhenTooHurtToFightDoesNotLeadHimOffThePlayer(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        c.setHealth(HURT);
+        ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        // In creative the creeper hunts him, not the player.
+        player.setGameMode(GameType.CREATIVE);
+        Creeper creeper = h.spawn(EntityType.CREEPER, new Vec3(16.5, 1, 24.5));
+        creeper.setPersistenceRequired();
+        creeper.setTarget(c);
+        long begun = h.getTick();
+        double[] farthest = {0};
+        h.onEachTick(() -> {
+            farthest[0] = Math.max(farthest[0], c.distanceTo(player));
+            String trace = " | tick " + (h.getTick() - begun) + ", from the player " + String.format("%.1f", c.distanceTo(player)) + " (at most "
+                    + String.format("%.1f", farthest[0]) + "), creeper " + (creeper.isAlive() ? "alive, gap " + String.format("%.1f", c.distanceTo(creeper)) : "gone")
+                    + ", health " + c.getHealth();
+            h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(c.distanceTo(player) <= CHASE_LEASH, "Led off the player" + trace);
+            if (h.getTick() - begun >= CHASE_TICKS) h.succeed();
         });
     }
 
