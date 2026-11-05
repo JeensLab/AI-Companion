@@ -169,12 +169,18 @@ public final class CompanionShieldGuardTests {
         return Math.abs(Mth.wrapDegrees(c.getYHeadRot() - yawTo(c, creeper)));
     }
 
-    private static CompanionEntity setup(GameTestHelper h, boolean shield) {
+    private static CompanionEntity setup(GameTestHelper h, boolean shield) { return setup(h, shield, false); }
+
+    /**
+     * With the player away in the far corner, past the 16 blocks within which Oleg meets what comes for him (CompanionCombat), in creative
+     * so that no monster turns to him instead, and Oleg told to stay, a monster set on Oleg is no target of his before it strikes.
+     */
+    static CompanionEntity setup(GameTestHelper h, boolean shield, boolean playerAway) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
         var player = h.makeMockServerPlayerInLevel();
-        player.setGameMode(GameType.SURVIVAL);
-        BlockPos stand = h.absolutePos(new BlockPos(14, 1, 15));
+        player.setGameMode(playerAway ? GameType.CREATIVE : GameType.SURVIVAL);
+        BlockPos stand = h.absolutePos(playerAway ? new BlockPos(0, 1, 0) : new BlockPos(14, 1, 15));
         player.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
         companion.setOwnerId(player.getUUID());
         player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
@@ -182,6 +188,7 @@ public final class CompanionShieldGuardTests {
         companion.setSearchRadius(16);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
         if (shield) companion.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        if (playerAway) companion.setFollowing(false);
         return companion;
     }
 }
