@@ -308,12 +308,12 @@ public final class CompanionDeathRecoveryTests {
     public static void aStackThatVanishedIsGoneNotTaken(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
-        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        yard(h, c, 12);
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
-        for (int tick = 0; tick < 6; tick++) c.tick();
+        for (int tick = 0; tick < 4; tick++) c.tick();
         item.discard();
         walk(h, c, 600);
         h.assertTrue(!c.deathTrip.active(), "The walk never ended");
@@ -527,8 +527,8 @@ public final class CompanionDeathRecoveryTests {
     public static void aTakenAndALostStackAreBothSaid(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
-        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        yard(h, c, 12);
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
         var taken = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         var lost = stack(h, place.offset(3, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
         place(h, c, place, 30, taken, lost);
@@ -547,8 +547,8 @@ public final class CompanionDeathRecoveryTests {
     public static void aStackTakenMidWalkIsNotClaimed(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
-        BlockPos place = c.blockPosition().offset(12, 0, 0);
+        yard(h, c, 12);
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
@@ -591,6 +591,7 @@ public final class CompanionDeathRecoveryTests {
         for (int tick = 0; tick < 200 && !sword.isRemoved(); tick++) zombie.tick();
         h.assertTrue(sword.isRemoved(), "The zombie did not pick the sword up: " + sword.getItem() + " at " + sword.blockPosition() + ", zombie at " + zombie.blockPosition());
         h.assertTrue(!c.deathTrip.begin(), "He set out after a pile a zombie already took");
+        zombie.discard();
         h.succeed();
     }
 
@@ -866,8 +867,8 @@ public final class CompanionDeathRecoveryTests {
         CompanionEntity c = spawn(h);
         var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         settle(c);
-        yard(h, c, 16);
-        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        yard(h, c, 12);
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
@@ -912,8 +913,8 @@ public final class CompanionDeathRecoveryTests {
         CompanionEntity c = spawn(h);
         var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         settle(c);
-        yard(h, c, 16);
-        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        yard(h, c, 12);
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
@@ -1083,8 +1084,8 @@ public final class CompanionDeathRecoveryTests {
     public static void aStackOfAnotherFallTakenOnTheWayIsNoClaim(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
-        BlockPos walked = c.blockPosition().offset(14, 0, 0);
+        yard(h, c, 12);
+        BlockPos walked = c.blockPosition().offset(8, 0, 0);
         var target = stack(h, walked, new ItemStack(Items.DIAMOND, 2));
         place(h, c, walked, 20, target);
         BlockPos onTheWay = c.blockPosition().offset(2, 0, 0);
@@ -1176,6 +1177,7 @@ public final class CompanionDeathRecoveryTests {
         for (int tick = 0; tick < 60 && c.deathTrip.active(); tick++) c.tick();
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The pile was not taken with a monster on him");
         h.assertTrue(!c.swinging, "He stopped to swing at the monster");
+        foe.discard();
         h.succeed();
     }
 
@@ -1223,8 +1225,8 @@ public final class CompanionDeathRecoveryTests {
     public static void theLastStackTakenByAPlayerMidWalkIsNotClaimed(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
-        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        yard(h, c, 12);
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         UUID spotId = place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
