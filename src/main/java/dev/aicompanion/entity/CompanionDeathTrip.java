@@ -54,8 +54,8 @@ public final class CompanionDeathTrip {
     private static final int APPROACH_PATIENCE = 200;
     /** The stack drifts (water, a slope, a shove): the way to it is searched again this often. */
     private static final int REPATH = 5;
-    /** A second order inside this window means the player insists, and his own walk gives way. */
-    private static final long INSIST_WINDOW = 20 * 20;
+    /** After an order of the player took the walk away, it waits this long before he sets out again. */
+    private static final long ORDER_HOLD_TICKS = 20 * 120;
     /** A place that keeps something behind is not tried again for this long (his bag may be full). */
     private static final int RETRY_TICKS = 20 * 30;
     /** A stack is struck off the manifest only after this many looks in a row that found nothing. */
@@ -90,8 +90,8 @@ public final class CompanionDeathTrip {
     /** The trip's own ticks: the game's counter advances only for entities the level ticks, a trip is bounded by its own. */
     private int ticks;
     private boolean crossing;
-    private boolean refused;
-    private long refusedAt;
+    /** The game clock before which a walk the player's order put off is not started again. */
+    private long heldUntil;
     /** The place's number in the settings list, as he said it when he set out. */
     private int placeNumber;
     /** When this place was last tried (the game clock), so a place that keeps refusing is not tried again at once. */
@@ -137,7 +137,7 @@ public final class CompanionDeathTrip {
     public boolean begin() {
         if (spot != null || !c.deathRecovery() || !(c.level() instanceof ServerLevel level) || c.getOwnerId() == null) return false;
         var server = level.getServer();
-        if (server == null) return false;
+        if (server == null || level.getGameTime() < heldUntil) return false;
         CompanionDeathSpots data = CompanionDeathSpots.get(server);
         // The number he says is the place's position in the settings list: the same order, the dearest first.
         List<CompanionDeathSpots.Spot> places = data.ranked(c.getOwnerId());
@@ -250,7 +250,6 @@ public final class CompanionDeathTrip {
         approach = 0;
         closest = Double.MAX_VALUE;
         crossing = cross;
-        refused = false;
         ticks = 0;
         giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2
                 + (long) (Math.sqrt(c.blockPosition().distSqr(place.pos())) * TICKS_PER_BLOCK);
@@ -618,25 +617,18 @@ public final class CompanionDeathTrip {
     }
 
     /**
-     * An order arrived. True: he is busy with his own things and says so once. False: the player asked a second time
-     * and the walk gives way to the order.
+     * An order of the player arrived: it comes first, so the walk gives way at once. The place stays (his things are still
+     * lying there), the try it cost is given back, and he sets out again only once the order is done and a while has passed:
+     * «за мной» or «стой» leave him idle, and he must not walk off a second after being told.
      */
-    boolean refuseOrder() {
-        if (spot == null) return false;
-        long now = c.level().getGameTime();
-        if (refused && now - refusedAt <= INSIST_WINDOW) {
-            // The walk gives way, but the place stays: his things are still lying there.
-            stop();
-            say("Ладно, твоё дело важнее.");
-            return false;
-        }
-        refused = true;
-        refusedAt = now;
-        return true;
+    void giveWay() {
+        if (spot == null) return;
+        if (c.getOwnerId() != null && c.level().getServer() != null)
+            CompanionDeathSpots.get(c.level().getServer()).refundAttempt(c.getOwnerId(), spot.id());
+        stop();
+        heldUntil = c.level().getGameTime() + ORDER_HOLD_TICKS;
+        say("Ладно, за вещами схожу потом.");
     }
-
-    /** The refusal of a first order: the same notice he set out with, so the player knows what keeps him. */
-    public String refusalLine() { return "Иду за вещами №" + placeNumber + "."; }
 
     /** A new fall at a place clears the wait that a previous walk there left behind. */
     public void freshPlace(net.minecraft.core.BlockPos pos) { triedAt.remove(pos); }

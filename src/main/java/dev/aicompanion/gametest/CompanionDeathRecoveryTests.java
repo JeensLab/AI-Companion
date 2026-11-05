@@ -966,9 +966,12 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
-    /** An order waits once: the first ask is refused with a word, the second one takes the walk away. */
+    /**
+     * The player's order comes first, the walk too: the first «за мной» is obeyed, not refused, the place and its try are kept,
+     * and he does not walk off again the moment he is idle (the walk waits a while after the order).
+     */
     @GameTest(template = "empty")
-    public static void anOrderIsRefusedOnceThenObeys(GameTestHelper h) {
+    public static void aPlayersOrderComesBeforeTheWalkAndPutsItOff(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         settle(c);
@@ -977,21 +980,19 @@ public final class CompanionDeathRecoveryTests {
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         h.assertTrue(setOut(h, c), "He did not set out");
-        var first = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
-        h.assertTrue(first.status() == dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
-                "The first order was not refused: " + first.status());
-        h.assertTrue(first.message().equals("Иду за вещами №1."), "The refusal is not the notice he set out with: " + first.message());
-        h.assertTrue(c.deathTrip.active(), "The walk was dropped on the first ask");
-        var second = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
-        h.assertTrue(second.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
-                "The second order was refused too: " + second.status());
-        h.assertTrue(!c.deathTrip.active(), "The walk survived the second ask");
-        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).size() == 1,
-                "The place was forgotten when the player insisted");
+        var order = CompanionEvents.executeAction(owner, "follow", "", 1);
+        h.assertTrue(order.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
+                "The order was refused: " + order.status() + " " + order.message());
+        h.assertTrue(!c.deathTrip.active(), "The walk did not give way to the order");
+        var kept = CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId());
+        h.assertTrue(kept.size() == 1, "The place was forgotten when the player gave an order");
+        h.assertTrue(kept.get(0).attempts() == 0, "The order cost the place a try: " + kept.get(0).attempts());
+        for (int tick = 0; tick < 200; tick++) c.tick();
+        h.assertTrue(!c.deathTrip.active(), "He walked off for his things right after the order");
         h.succeed();
     }
 
-    /** A step of a goal of his is not the player insisting: the walk goes on and the refusal stays for the player. */
+    /** A step of a goal of his is not the player's order: the walk goes on, and only the player's order takes it away. */
     @GameTest(template = "empty")
     public static void aGoalStepDoesNotTakeTheRefusal(GameTestHelper h) {
         CompanionEntity c = spawn(h);
@@ -1007,8 +1008,9 @@ public final class CompanionDeathRecoveryTests {
                 "A goal step was refused: " + step.status());
         h.assertTrue(c.deathTrip.active(), "A goal step cancelled the walk");
         var order = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
-        h.assertTrue(order.status() == dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
-                "The player's first order was not refused after a goal step: " + order.status());
+        h.assertTrue(order.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
+                "The player's order was refused after a goal step: " + order.status());
+        h.assertTrue(!c.deathTrip.active(), "The player's order did not take the walk away");
         h.succeed();
     }
 

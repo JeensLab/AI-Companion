@@ -266,18 +266,16 @@ public final class CompanionEvents {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
-        // His own things after a death come first, once: the player asking again takes the walk away (CompanionDeathTrip).
-        // An order of his own (a goal step, a deed) and naming the home are not the player insisting.
+        // An order of the player comes before the walk back for his own things too: the walk gives way and waits (CompanionDeathTrip).
+        // An order of his own (a goal step, a deed), naming the home and asking about a goal are not orders.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("goal_status")
-                && !action.equals("goal_cancel") && !action.equals("goal_defer")
-                && companion.deathTrip.active() && companion.deathTrip.refuseOrder()) {
-            dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "death_recovery");
-            return CompanionActionResult.blocked(companion.deathTrip.refusalLine());
+                && !action.equals("goal_cancel") && !action.equals("goal_defer") && companion.deathTrip.active()) {
+            companion.deathTrip.giveWay();
+            dev.aicompanion.CompanionDiagnostics.event(trace, "death_recovery_gave_way", "action", action);
         }
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         // Naming the home is a word, not an order: whatever he is busy with goes on.
-        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("goal_status")
-                && !action.equals("goal_cancel") && !action.equals("goal_defer")) {
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
