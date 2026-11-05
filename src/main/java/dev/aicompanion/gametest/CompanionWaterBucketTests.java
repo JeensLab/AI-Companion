@@ -45,6 +45,41 @@ public final class CompanionWaterBucketTests {
         });
     }
 
+    /**
+     * As it looks from aside, the way a speedrunner's does: the water comes in the tick he lands, not ticks before while he is still
+     * up there (a player's client draws a mob some ticks behind), and he stands in it a moment before he scoops it. On open stone a
+     * ring of water that runs out and dries again harms nothing.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 200, skyAccess = true)
+    public static void theWaterComesAsHeLandsAndHeStandsInItAMoment(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        // Six falls of 8 to 13 blocks, each a column of its own: slow enough that a tick early would be within his reach.
+        List<CompanionEntity> all = new java.util.ArrayList<>();
+        long[] poured = new long[6], scooped = new long[6];
+        boolean[] downAtPour = new boolean[6];
+        java.util.Arrays.fill(poured, -1);
+        java.util.Arrays.fill(scooped, -1);
+        for (int i = 0; i < 6; i++) {
+            CompanionEntity c = spawn(h, 3 + 5 * i, 9 + i, 16);
+            c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+            all.add(c);
+            int index = i;
+            h.onEachTick(() -> {
+                if (poured[index] < 0 && count(c, Items.BUCKET) == 1) { poured[index] = h.getTick(); downAtPour[index] = c.onGround(); }
+                if (poured[index] >= 0 && scooped[index] < 0 && count(c, Items.WATER_BUCKET) == 1) scooped[index] = h.getTick();
+            });
+        }
+        h.succeedWhen(() -> {
+            for (int i = 0; i < 6; i++) {
+                h.assertTrue(scooped[i] >= 0, "Fall " + i + " not scooped yet");
+                h.assertTrue(downAtPour[i], "Fall " + i + " poured while still in the air, a tick before he landed");
+                h.assertTrue(scooped[i] - poured[i] >= 8, "Fall " + i + " scooped " + (scooped[i] - poured[i]) + " ticks after pouring: too quick to be seen");
+                h.assertTrue(all.get(i).getHealth() == all.get(i).getMaxHealth(), "Fall " + i + " hurt: " + all.get(i).getHealth());
+            }
+            h.assertTrue(water(h, 32) == null, "Water left at " + water(h, 32));
+        });
+    }
+
     /** Onto a bottom slab the water goes into the slab itself, as a player's bucket does; it is dry again after. */
     @GameTest(template = "empty", timeoutTicks = 200, skyAccess = true)
     public static void aFallOntoASlabIsCaughtInTheSlab(GameTestHelper h) {

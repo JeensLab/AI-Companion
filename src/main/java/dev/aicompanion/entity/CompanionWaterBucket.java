@@ -38,15 +38,23 @@ import java.util.Set;
 
 /**
  * The speedrunners' water bucket: falling to a landing that would hurt, with a water bucket in his bag, he pours it about his body in
- * the last ticks before he lands (poured water starts to run five ticks later), and scoops it back the moment he is down. The game's
- * own bucket pours and scoops, sounds and all, and the water stops the fall as it does a player's (LivingEntity.checkFallDamage looks
- * for water before it counts the fall). Not in the Nether, where water boils away.
+ * the tick he lands, stands in it a moment and scoops it back. The game's own bucket pours and scoops, sounds and all, and the water
+ * stops the fall as it does a player's (LivingEntity.checkFallDamage looks for water before it counts the fall). Not in the Nether,
+ * where water boils away.
  */
 final class CompanionWaterBucket {
     /** The least health a landing must cost him to be worth the bucket, unless it kills him (decided 05.11: two hearts). */
     private static final int WORTH = 4;
-    /** How many ticks ahead his landing is looked for. */
-    private static final int AHEAD = 2;
+    /**
+     * How many ticks ahead his landing is looked for: the one he lands in. Water poured a tick earlier showed up while he was still
+     * high in the air, as a player's client draws a mob some ticks behind.
+     */
+    private static final int AHEAD = 1;
+    /**
+     * How long his water stands before he scoops it (ticks), so that he is seen in it: poured water runs to the next cells five ticks
+     * later and on five ticks after that, so with something there it would wash away (a crop, a torch) he scoops it before it runs.
+     */
+    private static final int STAND = 9, STAND_BY_THINGS = 4;
     /** A player's reach for a block: the block interaction range. */
     private static final double REACH = 4.5;
     /** He says what the bucket did at most this often (ticks): a dragon may fling him again and again (decided 05.11). */
@@ -73,12 +81,13 @@ final class CompanionWaterBucket {
 
     CompanionWaterBucket(CompanionEntity c) { this.c = c; }
 
-    /** Water of his: where, when he poured it, whether he has come down since, whether he has said he goes back for it. */
+    /** Water of his: where, when he poured it, how long it stands, whether he has come down since, whether he has said he goes for it. */
     private static final class Pool {
         final BlockPos cell;
         final long at;
+        final int stand;
         boolean down, told;
-        Pool(BlockPos cell, long at) { this.cell = cell; this.at = at; }
+        Pool(BlockPos cell, long at, int stand) { this.cell = cell; this.at = at; this.stand = stand; }
     }
 
     /** His landing: his box as he touches down, the fall counted by then, the block he lands on. */
@@ -205,9 +214,21 @@ final class CompanionWaterBucket {
             BlockPos cell = BlockPos.containing(box.getCenter().x, y, box.getCenter().z);
             BlockState state = level.getBlockState(cell);
             if (state.isAir() || holdsWater(level, cell, state)) return cell;
-            if (washable == null && state.getFluidState().isEmpty() && state.canBeReplaced(Fluids.WATER)) washable = cell;
+            if (washable == null && washable(state)) washable = cell;
         }
         return deadly ? washable : null;
+    }
+
+    /** A block that water running into its cell would wash away. */
+    private static boolean washable(BlockState state) {
+        return !state.isAir() && state.getFluidState().isEmpty() && state.canBeReplaced(Fluids.WATER);
+    }
+
+    /** How long water poured into the cell may stand: until it runs, if a cell it would run into first holds something it washes away. */
+    private static int stand(ServerLevel level, BlockPos cell) {
+        for (BlockPos next : List.of(cell.below(), cell.north(), cell.south(), cell.east(), cell.west()))
+            if (washable(level.getBlockState(next))) return STAND_BY_THINGS;
+        return STAND;
     }
 
     private static boolean holdsWater(ServerLevel level, BlockPos cell, BlockState state) {
@@ -232,19 +253,20 @@ final class CompanionWaterBucket {
         if (!((BucketItem) bucket.getItem()).emptyContents(null, level, cell, null, bucket)) return;
         c.setItem(slot, new ItemStack(Items.BUCKET));
         c.animateAction(1, cell, bucket);
-        Pool pool = new Pool(cell, level.getGameTime());
+        Pool pool = new Pool(cell, level.getGameTime(), stand(level, cell));
         pools.add(pool);
         event("water_bucket_poured", pool, "loss", loss);
     }
 
-    /** His water, each pool: down by it he scoops it; gone, given up, too far or too late, he leaves it. */
+    /** His water, each pool: down by it, once it has stood its while, he scoops it; gone, too far or too late, he leaves it. */
     private void settle(ServerLevel level) {
         boolean landed = c.onGround() || c.isInWater();
+        long now = level.getGameTime();
         for (Pool pool : List.copyOf(pools)) {
             if (!pool.down && landed) landed(level, pool);
             if (!level.getFluidState(pool.cell).isSourceOfType(Fluids.WATER)) leave(pool, "gone");
-            else if (pool.down && reachable(pool.cell)) { if (!scoop(level, pool)) leave(pool, "no_bucket"); }
-            else if (level.getGameTime() - pool.at > FETCH) leave(pool, "late");
+            else if (pool.down && reachable(pool.cell)) { if (now - pool.at >= pool.stand && !scoop(level, pool)) leave(pool, "no_bucket"); }
+            else if (now - pool.at > FETCH) leave(pool, "late");
             else if (pool.down && c.distanceToSqr(Vec3.atCenterOf(pool.cell)) > FAR * FAR) leave(pool, "far");
         }
     }
