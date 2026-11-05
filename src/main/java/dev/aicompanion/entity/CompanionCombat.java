@@ -111,7 +111,7 @@ final class CompanionCombat {
     /**
      * Without a guard order, like a friend (the player 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня
      * напал»): a monster at the player's side, or one going for the player or for Oleg, is met first. Only while Oleg is near the
-     * player; never his own hunt. A creeper only when he fights it with the sword, striking and running from its fuse
+     * player; never his own hunt. A creeper only when he fights it, striking and running from its fuse
      * (CompanionCreeperGuard), and only one going for the player or for him: one that just stands by the player is left alone, as
      * a hit wakes it to a blast beside him — wolves leave them alone too.
      */

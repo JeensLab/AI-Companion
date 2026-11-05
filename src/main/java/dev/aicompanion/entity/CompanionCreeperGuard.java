@@ -21,16 +21,17 @@ import java.util.Set;
  * The watch against a creeper that sees him: a goal of its own at the top priority, so that nothing (an order, a pickup, a fight)
  * keeps him from it, with no order at all.
  * <p>
- * Armed, with health to spare and a way out of the blast from where he stands, he fights a creeper as a wary player does: the moment its
+ * With health to spare and a way out of the blast from where he stands, he fights a creeper as a wary player does: the moment its
  * fuse is lit he strikes it first, while the fuse is young and the creeper within a lunge, and then runs, fast and away from it, until the
  * fuse is out ({@link Creeper#getSwellDir}); the melee goal, or the creeper itself, brings them together for the next blow. His reach is a
- * player's three blocks and the fuse lights at three, so the blow needs no step in most times. Vanilla's fuse goes out beyond 7 blocks or
+ * player's three blocks and the fuse lights at three, so the blow needs no step in most times. A sword or an axe is taken out for it when he
+ * has one; with none he fights with his fists, and the fight only takes more of these rounds. Vanilla's fuse goes out beyond 7 blocks or
  * without a line of sight, and a blast reaches 6 blocks.
  * <p>
  * By the house a blast takes the walls with it: an unlit creeper there is first walked away from it, and a lit one there is run from with no
  * blow; one that would not be walked off is fought where it is for a while.
  * <p>
- * The rest is the fallback, for when he cannot fight it (no sword, low health, too many retreats with no blow landed, nowhere to run): he
+ * The rest is the fallback, for when he cannot fight it (low health, too many retreats with no blow landed, nowhere to run): he
  * walks away from a creeper whose fuse is not lit, and dashes from one whose fuse is.
  */
 final class CompanionCreeperGuard {
@@ -40,7 +41,7 @@ final class CompanionCreeperGuard {
     private static final int FLEE_RANGE = 12, FLEE_HEIGHT = 6;
     private static final double FLEE_SPEED = 1.3;
     /**
-     * The fight. Health above which a creeper is met with the sword; the retreats with no blow landed he bears before he gives up the fight,
+     * The fight. Health above which a creeper is fought; the retreats with no blow landed he bears before he gives up the fight,
      * and how long they are remembered.
      */
     static final float FIGHT_HEALTH = 12;
@@ -96,9 +97,9 @@ final class CompanionCreeperGuard {
 
     CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; escape = new CompanionFuseEscape(owner); probe = new CompanionFuseEscape(owner); }
 
-    /** True when a creeper is met with the sword: armed, healthy, with a way out of its blast, and not after a run of retreats with no blow landed. */
+    /** True when a creeper is fought: healthy, with a way out of its blast, and not after a run of retreats with no blow landed. */
     boolean fights() {
-        if (owner.getHealth() <= FIGHT_HEALTH || !owner.equipment.hasMeleeWeapon() || !room) return false;
+        if (owner.getHealth() <= FIGHT_HEALTH || !room) return false;
         if (retreats > 0 && owner.level().getGameTime() - lastRetreat > FORGET_TICKS) retreats = 0;
         return retreats < GIVE_UP;
     }
@@ -111,7 +112,7 @@ final class CompanionCreeperGuard {
         Creeper creeper = seen(level);
         watched = creeper;
         lookAtFuse(creeper, now);
-        if (creeper != null && now >= nextProbe && owner.getHealth() > FIGHT_HEALTH && owner.equipment.hasMeleeWeapon()) {
+        if (creeper != null && now >= nextProbe && owner.getHealth() > FIGHT_HEALTH) {
             nextProbe = now + PLAN_EVERY;
             probe.plan(level, threats(level));
             room = probe.clears();
@@ -152,7 +153,7 @@ final class CompanionCreeperGuard {
         escape.reset();
         shown = "";
         int path = -1;
-        // The melee goal does not run while the guard holds the turn, so it cannot bring the sword out for it.
+        // The melee goal does not run while the guard holds the turn, so it cannot bring a weapon out for it.
         if (fighting || dashing) {
             owner.selectWeaponForCombat();
             path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()));

@@ -23,24 +23,27 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * A creeper that sees him on open ground, with no mine: unarmed, he steps away from one that has not lit its fuse and dashes from one that
- * has; with a sword, in any mode, he strikes a lit one first and then runs, and by the house he walks it off before the first blow.
+ * A creeper that sees him on open ground, with no mine: in any mode, with a sword or with his fists, he strikes a lit one first and then
+ * runs, and by the house he walks it off before the first blow; too hurt to fight, he steps away from one that has not lit its fuse and
+ * dashes from one that has.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionCreeperFleeTests {
     private static final double SEES_WITHIN = 9, RUN_GAP = 4, HOUSE_NEAR = 10;
-    private static final int RUN_TICKS = 20, WATCH_TICKS = 60, STRIKE_TICKS = 400, BLOW_TICKS = 10, KILL_TICKS = 1000;
+    private static final int RUN_TICKS = 20, WATCH_TICKS = 60, STRIKE_TICKS = 400, BLOW_TICKS = 10, KILL_TICKS = 1000, FIST_KILL_TICKS = 3600;
+    /** Below the health at which he fights a creeper. */
+    private static final float HURT = 10;
 
     private CompanionCreeperFleeTests() { }
 
     @AfterBatch(batch = "creeper_flee_goal") public static void afterGoal(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
-    /** Five blocks off and unlit, with no weapon to meet it and no order to keep him: he goes out of the range at which the guard sees a creeper. */
+    /** Five blocks off and unlit, too hurt to fight it and no order to keep him: he goes out of the range at which the guard sees a creeper. */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
-    public static void anUnlitCreeperInSightMakesHimStepAwayWithNoOrder(GameTestHelper h) {
+    public static void anUnlitCreeperInSightMakesHimStepAwayWhenTooHurtToFight(GameTestHelper h) {
         CompanionEntity c = setup(h);
-        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        c.setHealth(HURT);
         Creeper creeper = creeper(h, new Vec3(21.5, 1, 16.5));
         h.succeedWhen(() -> {
             h.assertTrue(c.isAlive(), "Died");
@@ -88,8 +91,17 @@ public final class CompanionCreeperFleeTests {
 
     /** The fuse lit two and a half blocks off, a sword in hand and no order: a blow lands within half a second, and the blast does not reach him. */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
-    public static void aLitFuseIsStruckBeforeHeRuns(GameTestHelper h) {
+    public static void aLitFuseIsStruckBeforeHeRuns(GameTestHelper h) { strikeBeforeTheRun(h, setup(h)); }
+
+    /** The same with no weapon at all: the blow is a punch. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void aLitFuseIsPunchedBeforeHeRunsWithNoWeapon(GameTestHelper h) {
         CompanionEntity c = setup(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        strikeBeforeTheRun(h, c);
+    }
+
+    private static void strikeBeforeTheRun(GameTestHelper h, CompanionEntity c) {
         Creeper creeper = creeper(h, new Vec3(19, 1, 16.5));
         creeper.ignite();
         long begun = h.getTick();
@@ -108,8 +120,17 @@ public final class CompanionCreeperFleeTests {
 
     /** Guarding the player with a sword, a creeper that walks up to him is struck and run from until it is dead, and he is never hurt. */
     @GameTest(template = "tall_tree", batch = "creeper_flee_goal", timeoutTicks = 1200)
-    public static void aGuardWithASwordKillsAWalkingCreeperUnhurt(GameTestHelper h) {
+    public static void aGuardWithASwordKillsAWalkingCreeperUnhurt(GameTestHelper h) { killUnhurt(h, setup(h), KILL_TICKS); }
+
+    /** The same with his fists: a punch a round, so it takes longer, and still no blast reaches him. */
+    @GameTest(template = "tall_tree", batch = "creeper_flee_goal", timeoutTicks = FIST_KILL_TICKS + 200)
+    public static void aGuardWithNoWeaponPunchesAWalkingCreeperDeadUnhurt(GameTestHelper h) {
         CompanionEntity c = setup(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        killUnhurt(h, c, FIST_KILL_TICKS);
+    }
+
+    private static void killUnhurt(GameTestHelper h, CompanionEntity c, int within) {
         ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         player.setInvulnerable(true);
         CompanionActionResult guard = CompanionEvents.executeAction(player, "protect", "", 1);
@@ -123,7 +144,7 @@ public final class CompanionCreeperFleeTests {
             h.assertTrue(c.getHealth() >= c.getMaxHealth(), "Hurt" + trace);
             if (creeper.isDeadOrDying()) { h.succeed(); return; }
             h.assertTrue(creeper.isAlive(), "The creeper blew up" + trace);
-            h.assertTrue(h.getTick() - begun < KILL_TICKS, "The creeper was not killed in time" + trace);
+            h.assertTrue(h.getTick() - begun < within, "The creeper was not killed in time" + trace);
         });
     }
 
