@@ -237,8 +237,9 @@ final class CompanionRecovery {
         for (Direction direction : directions) {
             if (blockedStairs.contains(feet.asLong() * 4 + direction.get2DDataValue())) continue;
             BlockPos step = feet.relative(direction), next = step.above();
-            // A wall to cut steps into: solid underfoot in front, not a drop.
-            if (!level.getBlockState(step).isFaceSturdy(level, step, Direction.UP)) continue;
+            // A wall to cut steps into: solid underfoot in front, not a drop, and no fire or magma on the step or beside it.
+            if (!level.getBlockState(step).isFaceSturdy(level, step, Direction.UP) || hot(level.getBlockState(step))
+                    || nearFire(level, next) || nearFire(level, next.above())) continue;
             BlockPos closed = null;
             for (BlockPos cell : new BlockPos[]{feet.above(2), next, next.above()})
                 if (!level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) { closed = cell; break; }
@@ -285,7 +286,7 @@ final class CompanionRecovery {
     private boolean safeToDig(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || owner.distanceToSqr(pos.getCenter()) > 16) return false;
         BlockState state = level.getBlockState(pos);
-        if (!(CompanionQuarry.soil(state) || CompanionWork.isStone(state) || state.is(net.minecraft.tags.BlockTags.LEAVES)) || state.getDestroySpeed(level, pos) < 0) return false;
+        if (!(CompanionQuarry.soil(state) || rock(state) || state.is(net.minecraft.tags.BlockTags.LEAVES)) || state.getDestroySpeed(level, pos) < 0) return false;
         for (Direction direction : Direction.values()) {
             BlockPos near = pos.relative(direction);
             var fluid = level.getFluidState(near);
@@ -302,7 +303,7 @@ final class CompanionRecovery {
     private boolean safeBelow(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos)) return false;
         BlockState state = level.getBlockState(pos);
-        if (!(CompanionQuarry.soil(state) || CompanionWork.isStone(state)) || state.getDestroySpeed(level, pos) < 0
+        if (!(CompanionQuarry.soil(state) || rock(state)) || state.getDestroySpeed(level, pos) < 0
                 || state.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
         for (Direction direction : Direction.values()) {
             BlockPos near = pos.relative(direction);
@@ -311,10 +312,28 @@ final class CompanionRecovery {
         }
         for (int down = 1; down <= 3; down++) {
             BlockPos cell = pos.below(down);
-            if (!level.hasChunkAt(cell) || level.getFluidState(cell).is(net.minecraft.tags.FluidTags.LAVA)) return false;
+            if (!level.hasChunkAt(cell) || level.getFluidState(cell).is(net.minecraft.tags.FluidTags.LAVA) || hot(level.getBlockState(cell))) return false;
             if (level.getBlockState(cell).isFaceSturdy(level, cell, Direction.UP)) return true;
             if (!level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) return false;
         }
+        return false;
+    }
+    /**
+     * Stone to dig a way out of: the natural stone, and the Nether's and the End's own (recon 04.11, E1: in a pocket of netherrack, by
+     * the End's obsidian platform «Не могу к тебе пройти»). Not in isStone: stone orders count by it.
+     */
+    private static boolean rock(BlockState state) {
+        return CompanionWork.isStone(state) || state.is(Blocks.NETHERRACK) || state.is(Blocks.END_STONE);
+    }
+    /** Burns or scorches where he would stand or drop: in the Nether fire lies on netherrack and magma in it (review 05.11). */
+    private static boolean hot(BlockState state) {
+        return state.is(net.minecraft.tags.BlockTags.FIRE) || state.is(Blocks.MAGMA_BLOCK);
+    }
+    /** A cell to step into: a fire beside it burns him too, the step overshoots its middle by a few tenths (review 05.11). */
+    private static boolean nearFire(ServerLevel level, BlockPos cell) {
+        if (hot(level.getBlockState(cell))) return true;
+        for (Direction direction : Direction.Plane.HORIZONTAL)
+            if (level.getBlockState(cell.relative(direction)).is(net.minecraft.tags.BlockTags.FIRE)) return true;
         return false;
     }
     private boolean safeTarget(ServerLevel level, BlockPos pos) {
@@ -325,8 +344,9 @@ final class CompanionRecovery {
         if (CompanionQuarry.soil(state)) {
             CompanionTools.equip(owner, ItemTags.SHOVELS, state);
             if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(ItemTags.SHOVELS)) owner.unequipForSupport("mainhand");
-        } else if (CompanionWork.isStone(state)) {
-            if (!CompanionTools.equip(owner, ItemTags.PICKAXES, state) && makePickaxe(level, state)) return;
+        } else if (rock(state)) {
+            // Netherrack goes in 2 s by hand: a pickaxe in the bag is taken, but no wood and bench are spent on one (review 05.11).
+            if (!CompanionTools.equip(owner, ItemTags.PICKAXES, state) && !state.is(Blocks.NETHERRACK) && makePickaxe(level, state)) return;
         }
         owner.getLookControl().setLookAt(digTarget.getX() + .5, digTarget.getY() + .5, digTarget.getZ() + .5);
         owner.workStatus(digTarget.equals(owner.blockPosition().below()) ? "Спускаюсь: раскапываю блок под ногами." : "Расчищаю небольшой проход, чтобы выбраться.");

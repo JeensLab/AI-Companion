@@ -327,9 +327,43 @@ public final class CompanionMarathonFixTests {
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void fromAHighPillarHeComesDownWithoutAFall(GameTestHelper h) {
+        comesDownFromAPillarOf(h, Blocks.DIRT);
+    }
+
+    /** Recon 04.11 (E1): a pillar of netherrack is dug away under his feet as one of soil, not jumped off. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void fromANetherrackPillarHeComesDownWithoutAFall(GameTestHelper h) {
+        comesDownFromAPillarOf(h, Blocks.NETHERRACK);
+    }
+
+    /**
+     * Review 05.11: fire burns on netherrack in the Nether. On a ledge of netherrack, with a fire two blocks down where he would land,
+     * he does not dig the ledge away under his feet and drop into it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 700)
+    public static void heDoesNotDigDownIntoAFireBelowANetherrackLedge(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 12; y++)
             h.setBlock(new BlockPos(x, y, z), y == 0 ? Blocks.BEDROCK : Blocks.AIR);
-        for (int y = 1; y <= 7; y++) h.setBlock(new BlockPos(10, y, 10), Blocks.DIRT);
+        h.setBlock(new BlockPos(10, 1, 10), Blocks.NETHERRACK); h.setBlock(new BlockPos(10, 2, 10), Blocks.FIRE);
+        h.setBlock(new BlockPos(10, 4, 10), Blocks.NETHERRACK);
+        CompanionEntity oleg = spawn(h, 10, 5, 10);
+        var owner = player(h, oleg);
+        var at = h.absoluteVec(new net.minecraft.world.phys.Vec3(18.5, 1, 10.5));
+        owner.teleportTo(at.x, at.y, at.z);
+        boolean[] burned = {false};
+        h.onEachTick(() -> burned[0] |= oleg.isOnFire());
+        h.runAfterDelay(20, () -> h.assertTrue(CompanionEvents.executeAction(owner, "come", "", 1).success(), "Not accepted"));
+        h.runAtTickTime(600, () -> {
+            h.assertTrue(h.getBlockState(new BlockPos(10, 2, 10)).is(Blocks.FIRE), "The fire went out: the test proves nothing");
+            h.assertFalse(burned[0], "Dropped into the fire: at " + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+            h.succeed();
+        });
+    }
+
+    private static void comesDownFromAPillarOf(GameTestHelper h, net.minecraft.world.level.block.Block pillar) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 12; y++)
+            h.setBlock(new BlockPos(x, y, z), y == 0 ? Blocks.BEDROCK : Blocks.AIR);
+        for (int y = 1; y <= 7; y++) h.setBlock(new BlockPos(10, y, 10), pillar);
         CompanionEntity oleg = spawn(h, 10, 8, 10);
         var owner = player(h, oleg);
         var at = h.absoluteVec(new net.minecraft.world.phys.Vec3(18.5, 1, 10.5));
