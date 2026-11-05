@@ -28,7 +28,7 @@ import java.util.List;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionWaterBucketTests {
-    /** What he may say after the bucket saved him (the owner's choice, 05.11). */
+    /** What he may say after the bucket saved him (chosen 05.11). */
     private static final List<String> SAVED = List.of("Фух, ведро выручило.", "Выучил спидранерскую фишку — крутая, да?",
             "Ведро воды — и ни царапины.", "Как у спидранеров, видал?", "Вот это я понимаю — приземление.");
 
@@ -75,7 +75,7 @@ public final class CompanionWaterBucketTests {
     }
 
     /**
-     * Onto ripe wheat: the water goes over the wheat, about his body, and washes nothing away (the owner, 05.11: the player's crops
+     * Onto ripe wheat: the water goes over the wheat, about his body, and washes nothing away (decided 05.11: the player's crops
      * before two hearts of his). The farmland he lands on stays: he never tramples it (CompanionEvents.onFarmlandTrample).
      */
     @GameTest(template = "empty", timeoutTicks = 200, skyAccess = true)
@@ -124,7 +124,7 @@ public final class CompanionWaterBucketTests {
 
     /**
      * Flung away the moment he poured (as the dragon does), he lands out of reach of his water: he says he goes for it, walks back and
-     * scoops it up, or the next fling finds his bucket empty (the owner, 05.11).
+     * scoops it up, or the next fling finds his bucket empty (decided 05.11).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 900, skyAccess = true)
     public static void flungAwayFromHisWaterHeGoesBackForIt(GameTestHelper h) {
@@ -155,7 +155,7 @@ public final class CompanionWaterBucketTests {
         });
     }
 
-    /** Two falls within a minute: he says what the bucket did once (the owner, 05.11: a dragon flings him again and again). */
+    /** Two falls within a minute: he says what the bucket did once (decided 05.11: a dragon flings him again and again). */
     @GameTest(template = "empty", timeoutTicks = 300, skyAccess = true)
     public static void twoFallsInAMinuteAreToldOnce(GameTestHelper h) {
         floor(h, Blocks.STONE);
@@ -392,7 +392,7 @@ public final class CompanionWaterBucketTests {
         });
     }
 
-    /** Flung more than 48 blocks from his water he does not go back for it (the owner, 05.11): he says the bucket stays empty. */
+    /** Flung more than 48 blocks from his water he does not go back for it (decided 05.11): he says the bucket stays empty. */
     @GameTest(template = "large_search", timeoutTicks = 300, skyAccess = true)
     public static void flungFartherThanFortyEightBlocksHeLeavesHisWater(GameTestHelper h) {
         for (int x = 0; x < 72; x++) for (int z = 8; z < 24; z++) h.setBlock(x, 0, z, Blocks.STONE);
@@ -577,7 +577,7 @@ public final class CompanionWaterBucketTests {
     }
 
     /**
-     * Six and a half blocks cost him three health, under the two hearts that are worth the bucket (the owner, 05.11): he takes them.
+     * Six and a half blocks cost him three health, under the two hearts that are worth the bucket (decided 05.11): he takes them.
      * The game does not count the landing move into the fall (Entity.checkFallDamage); counted, it would make these four.
      */
     @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)

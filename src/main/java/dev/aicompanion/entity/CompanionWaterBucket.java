@@ -43,15 +43,15 @@ import java.util.Set;
  * for water before it counts the fall). Not in the Nether, where water boils away.
  */
 final class CompanionWaterBucket {
-    /** The least health a landing must cost him to be worth the bucket, unless it kills him (the owner, 05.11: two hearts). */
+    /** The least health a landing must cost him to be worth the bucket, unless it kills him (decided 05.11: two hearts). */
     private static final int WORTH = 4;
     /** How many ticks ahead his landing is looked for. */
     private static final int AHEAD = 2;
     /** A player's reach for a block: the block interaction range. */
     private static final double REACH = 4.5;
-    /** He says what the bucket did at most this often (ticks): a dragon may fling him again and again (the owner, 05.11). */
+    /** He says what the bucket did at most this often (ticks): a dragon may fling him again and again (decided 05.11). */
     private static final int TALK = 1200;
-    /** How long his water may stand before he gives it up (ticks): 30 seconds (the owner, 05.11). */
+    /** How long his water may stand before he gives it up (ticks): 30 seconds (decided 05.11). */
     private static final int FETCH = 600;
     /** Farther than this from his water he does not go back for it (blocks). */
     private static final int FAR = 48;
@@ -95,7 +95,7 @@ final class CompanionWaterBucket {
         Landing landing = landing(level);
         if (landing == null) return;
         float loss = loss(level, landing);
-        // Two hearts and more, or his death, are worth the bucket; a step's knock is not (the owner, 05.11).
+        // Two hearts and more, or his death, are worth the bucket; a step's knock is not (decided 05.11).
         if (loss < WORTH && loss < c.getHealth()) return;
         BlockPos cell = cellFor(level, landing.box, loss >= c.getHealth());
         if (cell != null && inReach(level, cell)) pour(level, slot, cell, loss);
@@ -197,7 +197,7 @@ final class CompanionWaterBucket {
      * The cell to pour into: the lowest about his body as he lands that takes water without harm, empty or a block that holds water (a
      * slab, a fence). Water anywhere about his body stops the fall (Entity.updateFluidHeightAndDoFluidPushing), so over ripe wheat it
      * goes about his chest, as a player's bucket put on the wheat's top does. A block the water would wash away (a crop, a torch,
-     * grass) only if the fall would kill him (the owner, 05.11); null if none.
+     * grass) only if the fall would kill him (decided 05.11); null if none.
      */
     private static BlockPos cellFor(ServerLevel level, AABB box, boolean deadly) {
         BlockPos washable = null;
@@ -292,7 +292,7 @@ final class CompanionWaterBucket {
         return true;
     }
 
-    /** He gives this water up: it stays where it is, a bucket of his stays empty, and he says so (the owner, 05.11). */
+    /** He gives this water up: it stays where it is, a bucket of his stays empty, and he says so (decided 05.11). */
     private void leave(Pool pool, String why) {
         pools.remove(pool);
         event("water_bucket_left", pool, "why", why);
@@ -333,7 +333,7 @@ final class CompanionWaterBucket {
 
     /**
      * Back to his water standing out of his reach, the work waiting meanwhile (WorkGoal pauses it): the next fling would find his
-     * bucket empty (the owner, 05.11). Beside the self-rescue in rank, under his air.
+     * bucket empty (decided 05.11). Beside the self-rescue in rank, under his air.
      */
     static final class FetchGoal extends Goal {
         private final CompanionEntity c;
