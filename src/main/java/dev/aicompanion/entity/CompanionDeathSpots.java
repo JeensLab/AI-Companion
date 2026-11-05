@@ -18,6 +18,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -213,6 +214,16 @@ public final class CompanionDeathSpots extends SavedData {
     }
 
     public List<Spot> all(UUID owner) { return List.copyOf(spots.getOrDefault(owner, List.of())); }
+
+    /**
+     * The owner's remembered places in the order he would walk them: the dearest first. The number in his spoken line and
+     * in the settings list is a place's position here, so the two can never disagree.
+     */
+    public List<Spot> ranked(UUID owner) {
+        List<Spot> ranked = new ArrayList<>(all(owner));
+        ranked.sort(Comparator.comparingDouble(Spot::worth).reversed());
+        return ranked;
+    }
 
     /** Forgetting a place by its own id: another fall at the same coordinates is another place. */
     public void taken(UUID owner, UUID spotId) {
