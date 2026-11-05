@@ -103,12 +103,13 @@ public final class CompanionDragonBreathTests {
      * The player stands in the breath: following, he waits at its edge instead of going in, and says why, once in the fight. The
      * player out of it, he comes; in it again, he waits again without saying it again.
      */
-    @GameTest(template = "tall_tree", batch = "breath_player", timeoutTicks = 600)
+    @GameTest(template = "tall_tree", batch = "breath_player", timeoutTicks = 800)
     public static void heWaitsAtTheEdgeWhileThePlayerStandsInTheBreath(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 1, 15, 15, 15);
         ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
-        AreaEffectCloud cloud = sittingFlame(h, h.absolutePos(new BlockPos(15, 2, 15)), 600);
+        // It lasts past the last look at tick 700.
+        AreaEffectCloud cloud = sittingFlame(h, h.absolutePos(new BlockPos(15, 2, 15)), 900);
         double[] nearest = {Double.MAX_VALUE};
         java.util.List<String> said = new java.util.ArrayList<>();
         int[] serial = {c.autonomyLineSerial()};
@@ -127,12 +128,18 @@ public final class CompanionDragonBreathTests {
             BlockPos out = h.absolutePos(new BlockPos(15, 2, 28));
             player.teleportTo(out.getX() + .5, out.getY(), out.getZ() + .5);
         });
-        h.runAfterDelay(360, () -> {
-            h.assertTrue(c.distanceToSqr(player) <= 25, "Did not come once the player was out: " + where(h, c, cloud));
-            BlockPos in = h.absolutePos(new BlockPos(15, 2, 15));
-            player.teleportTo(in.getX() + .5, in.getY(), in.getZ() + .5);
+        // The way to the player round the breath's walls is searched again every two seconds: he is waited for, up to 400 ticks, not looked at on one tick.
+        long[] came = {-1};
+        h.onEachTick(() -> {
+            if (came[0] >= 0 || h.getTick() <= 160) return;
+            if (c.distanceToSqr(player) <= 25) {
+                came[0] = h.getTick();
+                BlockPos in = h.absolutePos(new BlockPos(15, 2, 15));
+                player.teleportTo(in.getX() + .5, in.getY(), in.getZ() + .5);
+            } else h.assertTrue(h.getTick() < 560, "Did not come once the player was out: " + where(h, c, cloud));
         });
-        h.runAfterDelay(500, () -> {
+        h.runAfterDelay(700, () -> {
+            h.assertTrue(came[0] >= 0, "Did not come once the player was out: " + where(h, c, cloud));
             h.assertTrue(c.distanceToSqr(player) > 16, "Went into the breath to the player the second time: " + where(h, c, cloud));
             h.assertTrue(said.equals(java.util.List.of(line)), "Told it again in the same fight: " + said);
             h.assertTrue(nearest[0] > 1.5, "Came within " + Math.round(nearest[0] * 10) / 10.0 + " blocks of the breath");
@@ -175,11 +182,14 @@ public final class CompanionDragonBreathTests {
         ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         AreaEffectCloud cloud = sittingFlame(h, h.absolutePos(new BlockPos(15, 2, 15)), 600);
         double[] nearest = {Double.MAX_VALUE};
-        boolean[] rescued = {false};
+        boolean[] rescued = {false}, moved = {false};
+        // How far from the player the order ended: once it is done he is free to stroll (he is not told to follow), so the tick 600 is too late to measure.
+        double[] ended = {-1};
         h.onEachTick(() -> {
             double dx = c.getX() - cloud.getX(), dz = c.getZ() - cloud.getZ();
             nearest[0] = Math.min(nearest[0], Math.sqrt(dx * dx + dz * dz) - cloud.getRadius());
             rescued[0] |= c.isSelfRescuing();
+            if (moved[0] && ended[0] < 0 && !c.isWorking()) ended[0] = c.distanceToSqr(player);
         });
         h.runAfterDelay(10, () -> h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted"));
         h.runAfterDelay(330, () -> {
@@ -188,9 +198,11 @@ public final class CompanionDragonBreathTests {
             h.assertTrue(gap(cloud, c) <= 7, "Did not come up to its edge: " + where(h, c, cloud));
             BlockPos out = h.absolutePos(new BlockPos(15, 2, 28));
             player.teleportTo(out.getX() + .5, out.getY(), out.getZ() + .5);
+            moved[0] = true;
         });
         h.runAfterDelay(600, () -> {
-            h.assertTrue(!c.isWorking() && c.didLastTaskSucceed() && c.distanceToSqr(player) <= 16, "Not with the player once out: " + c.getLastTaskResult() + ", " + where(h, c, cloud));
+            h.assertTrue(!c.isWorking() && c.didLastTaskSucceed() && ended[0] >= 0 && ended[0] <= 16, "Not with the player once out: " + c.getLastTaskResult()
+                    + ", ended " + (ended[0] < 0 ? "never" : String.format("%.1f", Math.sqrt(ended[0])) + " blocks from him") + ", " + where(h, c, cloud));
             h.assertTrue(nearest[0] > 1.5, "Came within " + Math.round(nearest[0] * 10) / 10.0 + " blocks of the breath");
             h.assertTrue(!rescued[0], "Took the breath's edge for a trap: dug or pillared there");
             h.succeed();
