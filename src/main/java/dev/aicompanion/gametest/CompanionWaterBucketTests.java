@@ -76,7 +76,7 @@ public final class CompanionWaterBucketTests {
 
     /**
      * Onto ripe wheat: the water goes over the wheat, about his body, and washes nothing away (the owner, 05.11: the player's crops
-     * before two hearts of his). The fall itself would trample the farmland.
+     * before two hearts of his). The farmland he lands on stays: he never tramples it (CompanionEvents.onFarmlandTrample).
      */
     @GameTest(template = "empty", timeoutTicks = 200, skyAccess = true)
     public static void aFallOntoWheatWashesNothingAway(GameTestHelper h) {
