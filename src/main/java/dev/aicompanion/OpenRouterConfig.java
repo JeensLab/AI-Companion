@@ -15,7 +15,7 @@ public final class OpenRouterConfig {
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
     public static final ModConfigSpec.BooleanValue COMPANION_MARKER = BUILDER
-            .comment("Outline the companion through walls when he is out of sight (toggled with the key G).")
+            .comment("Outline the companion through walls when he is out of sight, and mark him on the screen when he is too far to be seen (toggled with the key G).")
             .define("companionMarker", true);
     public static final ModConfigSpec.BooleanValue MOOD_PANEL = BUILDER
             .comment("Show the companion's mood, bond and character as a thin panel on the right of the screen (toggled with the key N).")
