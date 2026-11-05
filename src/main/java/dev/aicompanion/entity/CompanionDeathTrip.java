@@ -268,8 +268,8 @@ public final class CompanionDeathTrip {
     public boolean tick() {
         if (spot == null) return false;
         if (!(c.level() instanceof ServerLevel level)) { stop(); return false; }
-        // The player turned the feature off: the walk ends here, as he asked.
-        if (!c.deathRecovery()) { stop(); say("Ладно, вещи подождут."); return false; }
+        // The player turned the feature off: the walk ends here, as he asked, without a word about it.
+        if (!c.deathRecovery()) { stop(); return false; }
         ticks++;
         if (crossing) {
             if (level.dimension().equals(spot.dimension())) { crossing = false; return true; }

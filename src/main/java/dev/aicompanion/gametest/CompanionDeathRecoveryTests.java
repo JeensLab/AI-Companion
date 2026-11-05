@@ -812,11 +812,14 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(!c.deathTrip.begin(), "He set out with the feature turned off");
         c.setDeathRecovery(true);
         h.assertTrue(setOut(h, c), "He did not set out with the feature on");
+        String before = c.deathTrip.lastLine();
         c.setDeathRecovery(false);
         c.tick();
         h.assertTrue(!c.deathTrip.active(), "The walk went on after the feature was turned off");
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).size() == 1,
                 "Turning the feature off forgot the place");
+        // The player switched it off himself: the walk ends without a word about it.
+        h.assertTrue(c.deathTrip.lastLine().equals(before), "He spoke of the walk he was told to end: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
