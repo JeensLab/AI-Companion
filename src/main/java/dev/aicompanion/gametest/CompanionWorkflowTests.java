@@ -131,6 +131,38 @@ public final class CompanionWorkflowTests {
         stablePitExit(helper, companion);
     }
 
+    /** Netherrack goes in 2 s by hand: the logs in the bag are not spent on a pickaxe and a bench for it (review 05.11). */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesNetherrackPitByHandWithoutCraftingAPickaxe(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.NETHERRACK, 4); companion.setItem(0, new ItemStack(Items.OAK_LOG, 4));
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        helper.onEachTick(() -> helper.assertTrue(count(companion, Items.WOODEN_PICKAXE) == 0, "Crafted a pickaxe for netherrack"));
+        stablePitExit(helper, companion);
+    }
+
+    /** Recon 04.11 (E1) as it was met: «иди ко мне» from a pocket in end stone ends beside the player, not in «Не могу к тебе пройти». */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void calledOutOfAnEndStonePitHeCutsHisWayUp(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.END_STONE, 4); companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        helper.runAfterDelay(20, () -> helper.assertTrue(CompanionEvents.executeAction(player, "come", "", 1).success(), "Not accepted"));
+        helper.succeedWhen(() -> helper.assertTrue(helper.getTick() > 20 && companion.didLastTaskSucceed()
+                && companion.getY() >= helper.absolutePos(new BlockPos(16, 5, 16)).getY(), diagnostic(companion)));
+    }
+
+    /**
+     * Review 05.11: a fire on the netherrack beside the cell his last step toward the player comes out at (19, 5, 16): the step
+     * overshoots to x 19.7 and touches it. He steps up another way.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void hisStepsOutOfNetherrackGoRoundAFire(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.NETHERRACK, 4); helper.setBlock(new BlockPos(20, 5, 16), Blocks.FIRE);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        helper.onEachTick(() -> helper.assertFalse(companion.isOnFire(), "Stepped into the fire at " + companion.blockPosition().subtract(helper.absolutePos(BlockPos.ZERO)).toShortString()));
+        stablePitExit(helper, companion);
+    }
+
     /** End stone takes 15 s a block by hand: the pickaxe in the bag goes into the hand, as for stone. */
     @GameTest(template = "tall_tree", timeoutTicks = 1300)
     public static void escapesEndStonePitWithThePickaxeFromTheBag(GameTestHelper helper) {
