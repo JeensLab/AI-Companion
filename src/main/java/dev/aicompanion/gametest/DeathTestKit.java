@@ -74,9 +74,21 @@ final class DeathTestKit {
         h.getLevel().setBlock(pos, state, 3);
     }
 
+    /**
+     * Sets him out for the dearest place, asking again a moment later: a stack that fell a moment ago can be missing from
+     * the first look, and the walk only sets out once it has been seen. Returns whether the walk is under way.
+     */
+    static boolean setOut(GameTestHelper h, CompanionEntity c) {
+        for (int attempt = 0; attempt < 3 && !c.deathTrip.active(); attempt++) {
+            if (c.deathTrip.begin()) return true;
+            c.tick();
+        }
+        return c.deathTrip.active();
+    }
+
     /** Sets him out and ticks until the walk ends; returns how many ticks it took. */
     static int walk(GameTestHelper h, CompanionEntity c, int limit) {
-        if (!c.deathTrip.active()) c.deathTrip.begin();
+        if (!c.deathTrip.active()) setOut(h, c);
         int tick = 0;
         for (; tick < limit && c.deathTrip.active(); tick++) c.tick();
         return tick;

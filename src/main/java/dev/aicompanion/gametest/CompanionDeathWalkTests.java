@@ -5,6 +5,7 @@ import dev.aicompanion.entity.CompanionDeathTrip;
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.item.ItemStack;
@@ -18,6 +19,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import static dev.aicompanion.gametest.DeathTestKit.place;
 import static dev.aicompanion.gametest.DeathTestKit.put;
+import static dev.aicompanion.gametest.DeathTestKit.setOut;
 import static dev.aicompanion.gametest.DeathTestKit.settle;
 import static dev.aicompanion.gametest.DeathTestKit.spawn;
 import static dev.aicompanion.gametest.DeathTestKit.stack;
@@ -42,7 +44,7 @@ public final class CompanionDeathWalkTests {
         BlockPos feet = yard(h, c, 4);
         var item = stack(h, feet, new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         int ticks = walk(h, c, 40);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack under him was not taken");
         h.assertTrue(ticks < 10, "He walked somewhere for a stack at his feet: " + ticks);
@@ -60,7 +62,7 @@ public final class CompanionDeathWalkTests {
         put(h, hole, Blocks.AIR);
         var item = stack(h, hole, new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack a block down was not taken: " + item.getItem());
         h.assertTrue(c.deathTrip.verdict(item.getUUID()).fate() == CompanionDeathTrip.Fate.TAKEN,
@@ -79,7 +81,7 @@ public final class CompanionDeathWalkTests {
         put(h, bottom, Blocks.AIR);
         var item = stack(h, bottom, new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the hole was not taken: " + item.getItem());
         h.succeed();
@@ -95,7 +97,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(2, 1, 0), Blocks.STONE);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack behind the block was not taken: " + item.getItem());
         h.succeed();
@@ -110,7 +112,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 0, 0), Blocks.STONE);
         var item = stack(h, feet.offset(3, 1, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack on the ledge was not taken: " + item.getItem());
         h.succeed();
@@ -128,7 +130,7 @@ public final class CompanionDeathWalkTests {
         }
         var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack behind the wall was not taken: " + item.getItem());
         h.succeed();
@@ -143,7 +145,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 1, 0), Blocks.OAK_LEAVES);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack under the leaves was not taken: " + item.getItem());
         h.succeed();
@@ -158,7 +160,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 0, 0), Blocks.CACTUS);
         var item = stack(h, feet.offset(3, 1, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack on the cactus was not taken: " + item.getItem());
         h.succeed();
@@ -173,7 +175,7 @@ public final class CompanionDeathWalkTests {
         for (int dz = -2; dz <= 2; dz++) put(h, feet.offset(2, 0, dz), Blocks.OAK_FENCE);
         var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack behind the fence was not taken: " + item.getItem());
         h.succeed();
@@ -188,7 +190,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 0, 0), Blocks.STONE_SLAB);
         var item = stack(h, feet.offset(3, 1, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack on the slab was not taken: " + item.getItem());
         h.succeed();
@@ -203,7 +205,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, -1, 0), Blocks.MAGMA_BLOCK);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack on the magma was not taken: " + item.getItem());
         h.succeed();
@@ -218,7 +220,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 0, 0), Blocks.FIRE);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the fire was not taken: " + item.getItem());
         h.succeed();
@@ -233,7 +235,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 0, 0), Blocks.OAK_TRAPDOOR);
         var item = stack(h, feet.offset(3, 1, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(),
                 "The stack on the trapdoor was not taken: " + item.getItem() + " at " + item.blockPosition() + ", he at " + c.blockPosition());
@@ -253,7 +255,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 1, 0), Blocks.STONE);
         var item = stack(h, feet.offset(3, 2, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack on the hill was not taken: " + item.getItem());
         h.succeed();
@@ -270,7 +272,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(2, 1, 0), Blocks.AIR);
         var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack through the tunnel was not taken: " + item.getItem());
         h.succeed();
@@ -285,7 +287,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(2, -1, 0), Blocks.AIR);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack across the gap was not taken: " + item.getItem());
         h.succeed();
@@ -305,7 +307,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, -3, 0), Blocks.STONE);
         var item = stack(h, feet.offset(3, -2, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack down the drop was not taken: " + item.getItem());
         h.succeed();
@@ -322,7 +324,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(2, 1, 0), Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
         var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack behind the door was not taken: " + item.getItem());
         h.succeed();
@@ -340,7 +342,7 @@ public final class CompanionDeathWalkTests {
         }
         var item = stack(h, feet.offset(3, 3, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(),
                 "The stack up the ladder was not taken: " + item.getItem() + " at " + item.blockPosition() + ", he at " + c.blockPosition()
@@ -360,7 +362,7 @@ public final class CompanionDeathWalkTests {
         }
         var item = stack(h, feet.offset(3, -3, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(),
                 "The stack down the ladder was not taken: " + item.getItem() + " at " + item.blockPosition() + ", he at " + c.blockPosition()
@@ -377,7 +379,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(2, 0, 0), Blocks.STONE);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack beyond the step was not taken: " + item.getItem());
         h.succeed();
@@ -393,7 +395,7 @@ public final class CompanionDeathWalkTests {
             for (int dy = 0; dy < step; dy++) put(h, feet.offset(1 + step, dy, 0), Blocks.STONE);
         var item = stack(h, feet.offset(4, 3, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(),
                 "The stack up the staircase was not taken: " + item.getItem() + " at " + item.blockPosition() + ", he at " + c.blockPosition());
@@ -408,10 +410,38 @@ public final class CompanionDeathWalkTests {
         BlockPos feet = yard(h, c, 24);
         var item = stack(h, feet.offset(20, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet.offset(20, 0, 0), 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         int ticks = walk(h, c, 1200);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack twenty blocks off was not taken: " + item.getItem());
         h.assertTrue(ticks < 400, "The walk took too long: " + ticks);
+        h.succeed();
+    }
+
+    /** A stack eighty blocks off is fetched on foot: a long way there is not a stuck walk. */
+    @GameTest(template = "empty")
+    public static void aStackEightyBlocksOffIsFetched(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        // The stack lies where the owner stands, in a chunk the world hands its entities out from; the walk starts at the
+        // far end of a road of its own, so what is tried here is the distance and not the ground it crosses.
+        BlockPos feet = yard(h, c, 6);
+        for (int dx = 7; dx <= 80; dx++) for (int dz = -8; dz <= 8; dz++) {
+            put(h, feet.offset(dx, -1, dz), Blocks.STONE);
+            for (int dy = 0; dy <= 2; dy++) put(h, feet.offset(dx, dy, dz), Blocks.AIR);
+        }
+        // Every chunk of the road is force-loaded: the way is searched over chunks the world hands its blocks out from.
+        for (int chunkX = SectionPos.blockToSectionCoord(feet.getX()); chunkX <= SectionPos.blockToSectionCoord(feet.getX() + 80); chunkX++)
+            h.getLevel().setChunkForced(chunkX, SectionPos.blockToSectionCoord(feet.getZ()), true);
+        var item = stack(h, feet, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, feet, 40, item);
+        BlockPos start = feet.offset(80, 0, 0);
+        c.teleportTo(start.getX() + .5, start.getY(), start.getZ() + .5);
+        h.assertTrue(setOut(h, c), "He did not set out");
+        int ticks = walk(h, c, 1800);
+        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(),
+                "The stack eighty blocks off was not taken: " + item.getItem() + " at " + item.blockPosition() + ", he at "
+                        + c.blockPosition() + ", " + c.deathTrip.verdict(item.getUUID()));
+        h.assertTrue(ticks < 1800, "The walk of eighty blocks ran into its bound: " + ticks);
         h.succeed();
     }
 
@@ -429,7 +459,7 @@ public final class CompanionDeathWalkTests {
         }
         var item = stack(h, feet.offset(3, 0, 3), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 800);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack behind the corner was not taken: " + item.getItem());
         h.succeed();
@@ -444,7 +474,7 @@ public final class CompanionDeathWalkTests {
         for (int dy = 0; dy <= 3; dy++) put(h, feet.offset(3, dy, 0), Blocks.STONE);
         var item = stack(h, feet.offset(3, 4, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         var verdict = c.deathTrip.verdict(item.getUUID());
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE, "The stack was not called unreachable: " + verdict);
@@ -464,7 +494,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 0, 0), Blocks.WATER);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the water was not taken: " + item.getItem());
         h.succeed();
@@ -485,7 +515,7 @@ public final class CompanionDeathWalkTests {
         }
         var item = stack(h, pool, new ItemStack(Items.DIAMOND, 2));
         place(h, c, pool, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         boolean swam = false;
         for (int tick = 0; tick < 400 && c.deathTrip.active(); tick++) {
             c.tick();
@@ -507,7 +537,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(4, 3, 0), Blocks.WATER);
         var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack at the waterfall was not taken: " + item.getItem());
         h.succeed();
@@ -523,7 +553,7 @@ public final class CompanionDeathWalkTests {
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         item.setDeltaMovement(.12, 0, 0);
         place(h, c, feet.offset(3, 0, 0), 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The drifting stack was not taken: " + item.getItem() + " at " + item.blockPosition());
         h.succeed();
@@ -543,7 +573,7 @@ public final class CompanionDeathWalkTests {
         }
         var item = stack(h, centre, new ItemStack(Items.DIAMOND, 2));
         place(h, c, centre, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 800);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the pool was not taken: " + item.getItem());
         h.succeed();
@@ -559,7 +589,7 @@ public final class CompanionDeathWalkTests {
         put(h, feet.offset(3, 1, 0), Blocks.STONE);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the water under the ledge was not taken: " + item.getItem());
         h.succeed();
@@ -574,7 +604,7 @@ public final class CompanionDeathWalkTests {
         for (int dx = 2; dx <= 20; dx++) put(h, feet.offset(dx, 0, 0), Blocks.WATER);
         var item = stack(h, feet.offset(20, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet.offset(20, 0, 0), 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 1200);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The washed-away stack was not taken: " + item.getItem());
         h.succeed();
@@ -589,7 +619,7 @@ public final class CompanionDeathWalkTests {
         for (int dx = 2; dx <= 6; dx++) put(h, feet.offset(dx, 0, 0), Blocks.WATER);
         var item = stack(h, feet.offset(5, 0, 0), new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet.offset(5, 0, 0), 20, item);
-        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the stream was not taken: " + item.getItem());
         h.succeed();
