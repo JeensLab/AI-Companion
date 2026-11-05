@@ -182,14 +182,23 @@ final class CompanionEquipment {
             if (matchesEquipment(c.getMainHandItem(), c.preferredWeapon)) return;
             if (equipItemInternal(c.preferredWeapon, "mainhand").success()) return;
         }
-        double best = equipmentScore(c.getMainHandItem(), EquipmentSlot.MAINHAND);
+        ItemStack choice = bestWeapon(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
+        // No sword or axe in the bag or the hand: the hardest-hitting pickaxe, as a player would; a stone pickaxe against a zombie
+        // is an even trade he can lose by one blow while an iron one lies in the bag. The hand is not in the bag: a held sword stays.
+        ItemStack hand = c.getMainHandItem();
+        if (choice.isEmpty() && !hand.is(ItemTags.SWORDS) && !hand.is(ItemTags.AXES)) choice = bestWeapon(stack -> stack.is(ItemTags.PICKAXES));
+        if (!choice.isEmpty() && meleeScore(choice) > meleeScore(c.getMainHandItem()))
+            equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+    }
+
+    /** Damage over time, not per blow: a wooden axe hits harder than a stone sword but twice as rarely, and loses a fight the sword wins. */
+    private double meleeScore(ItemStack stack) { return equipmentScore(stack, EquipmentSlot.MAINHAND) * CompanionCombat.attackSpeed(stack); }
+
+    private ItemStack bestWeapon(java.util.function.Predicate<ItemStack> kind) {
         ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : c.companionInventory) if ((stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES)) && !c.carriedForPlayer(stack)
-                && equipmentScore(stack, EquipmentSlot.MAINHAND) > best) {
-            best = equipmentScore(stack, EquipmentSlot.MAINHAND);
-            choice = stack;
-        }
-        if (!choice.isEmpty()) equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+        for (ItemStack stack : c.companionInventory)
+            if (kind.test(stack) && !c.carriedForPlayer(stack) && (choice.isEmpty() || meleeScore(stack) > meleeScore(choice))) choice = stack;
+        return choice;
     }
 
     private void preferCurrentWeapon() {
