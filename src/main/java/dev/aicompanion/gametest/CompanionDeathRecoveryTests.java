@@ -355,6 +355,42 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
+    /**
+     * Two part stacks of one item of the same fall merge into one: what the game moved into the neighbour is in the bag
+     * with it, so the stack it was taken from is not called lost and the place is forgotten, not kept for another walk.
+     */
+    @GameTest(template = "empty")
+    public static void aStackMergedIntoAnotherOfHisIsCreditedWithIt(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 12);
+        // Room for sixteen diamonds only: he takes part of the first stack, and the rest is what merges into the second.
+        for (int slot = 1; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.DIRT, 64));
+        c.setItem(0, new ItemStack(Items.DIAMOND, 48));
+        BlockPos place = c.blockPosition().offset(3, 0, 0);
+        var first = stack(h, place, new ItemStack(Items.DIAMOND, 40));
+        var second = stack(h, place.offset(2, 0, 0), new ItemStack(Items.DIAMOND, 40));
+        UUID spotId = place(h, c, place, 80, first, second);
+        h.assertTrue(setOut(h, c), "He did not set out");
+        for (int tick = 0; tick < 600 && !first.isRemoved() && first.getItem().getCount() == 40; tick++) c.tick();
+        h.assertTrue(first.getItem().getCount() == 24, "He did not take what fitted of the first stack: " + first.getItem());
+        // Vanilla's merge: the 24 left go into the second stack, which is full at 64, and the first entity is removed.
+        second.setItem(new ItemStack(Items.DIAMOND, 64));
+        first.discard();
+        walk(h, c, 900);
+        h.assertTrue(second.isRemoved() || second.getItem().isEmpty(), "The merged stack was not taken: " + second.getItem());
+        var firstVerdict = c.deathTrip.verdict(first.getUUID());
+        var secondVerdict = c.deathTrip.verdict(second.getUUID());
+        h.assertTrue(firstVerdict != null && firstVerdict.fate() == CompanionDeathTrip.Fate.TAKEN,
+                "The stack that merged away was called lost though all of it is in the bag: " + firstVerdict);
+        h.assertTrue(secondVerdict != null && secondVerdict.fate() == CompanionDeathTrip.Fate.TAKEN,
+                "The stack it merged into is not in the ledger as taken: " + secondVerdict);
+        h.assertTrue(c.deathTrip.lastLine().equals("Забрал свои вещи."), "He did not claim them: " + c.deathTrip.lastLine());
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
+                "The place is kept although all of it is in the bag");
+        h.succeed();
+    }
+
     /** A stack the player emptied by throwing it back is gone, and the place is forgotten without a chase. */
     @GameTest(template = "empty")
     public static void aStackThrownBackIsNotChased(GameTestHelper h) {

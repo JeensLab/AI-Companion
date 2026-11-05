@@ -83,6 +83,10 @@ public final class CompanionDeathTrip {
     private double closest;
     /** Looks at a stack's own place that found nothing, in a row: one look is not proof that the stack is gone. */
     private final Map<UUID, Integer> misses = new HashMap<>();
+    /** What each stack's own entity had given him when the walk began: only what the walk takes is part of its ledger. */
+    private final Map<UUID, Integer> takenAtStart = new HashMap<>();
+    /** Of a stack the game merged away, what a neighbour's surplus has already covered, by item. */
+    private final Map<String, Integer> mergedCredit = new HashMap<>();
     private long giveUpAt;
     /** The trip's own ticks: the game's counter advances only for entities the level ticks, a trip is bounded by its own. */
     private int ticks;
@@ -228,7 +232,13 @@ public final class CompanionDeathTrip {
         spot = place;
         original = List.copyOf(live);
         ledger.clear();
-        for (CompanionDeathSpots.Entry entry : live) ledger.put(entry.id(), new Verdict(Fate.PENDING, 0, entry.count(), ""));
+        takenAtStart.clear();
+        mergedCredit.clear();
+        for (CompanionDeathSpots.Entry entry : live) {
+            ledger.put(entry.id(), new Verdict(Fate.PENDING, 0, entry.count(), ""));
+            // What he picked up on his way here is not this walk's doing: the ledger counts what the walk itself took.
+            takenAtStart.put(entry.id(), c.loot.takenByMe(entry.id()));
+        }
         target = null;
         routedPos = null;
         repathAt = 0;
@@ -346,7 +356,7 @@ public final class CompanionDeathTrip {
             // Not judged where the chunk is not full: a look there sees nothing, and nothing is not gone.
             if (!judgeable(level, entry)) continue;
             ItemEntity item = alive(level, entry);
-            int mine = c.loot.takenByMe(entry.id());
+            int mine = takenOf(entry);
             if (item != null) {
                 found(entry);
                 // Still lying there: part of it in his bag is a part taken, the rest is still his errand.
@@ -355,13 +365,42 @@ public final class CompanionDeathTrip {
             }
             // A stack looked for once and not found is asked for again next tick before it is called gone.
             if (!missingAgain(entry)) continue;
+            // Vanilla merges stacks of one item into one entity: what went into a neighbour is in the bag with it, not lost.
+            int credited = withMergedSurplus(level, entry, mine);
             Verdict now;
-            if (mine >= entry.count()) now = new Verdict(Fate.TAKEN, entry.count(), 0, "");
-            else if (mine > 0) now = new Verdict(Fate.PARTIAL, mine, 0, "остальное пропало");
+            if (credited >= entry.count()) now = new Verdict(Fate.TAKEN, entry.count(), 0, "");
+            else if (credited > 0) now = new Verdict(Fate.PARTIAL, credited, 0, "остальное пропало");
             else now = new Verdict(Fate.GONE, 0, 0, goneReason(level, entry));
             ledger.put(entry.id(), now);
             CompanionDeathSpots.get(level.getServer()).pruneEntry(c.getOwnerId(), spot.id(), entry.id());
         }
+    }
+
+    /** What this walk has taken of one stack: what its own entity gave him since the walk began. */
+    private int takenOf(CompanionDeathSpots.Entry entry) {
+        return Math.max(0, c.loot.takenByMe(entry.id()) - takenAtStart.getOrDefault(entry.id(), 0));
+    }
+
+    /**
+     * What of a stack the game merged into a neighbour of the same item is accounted for: his own take of this entity,
+     * plus the count that went into the neighbour, read off what the walk has of that item beyond the record of the
+     * stacks it took it from (taken into the bag or still lying in them). A merged stack is not a lost one: its count
+     * went where the ledger can see it, and «остальное пропало» must not be said of what is in the bag.
+     */
+    private int withMergedSurplus(ServerLevel level, CompanionDeathSpots.Entry entry, int mine) {
+        int need = entry.count() - mine;
+        if (need <= 0) return mine;
+        int surplus = 0;
+        for (CompanionDeathSpots.Entry other : original) {
+            if (!other.item().equals(entry.item())) continue;
+            ItemEntity floor = alive(level, other);
+            int held = takenOf(other) + (floor == null ? 0 : floor.getItem().getCount());
+            surplus += Math.max(0, held - other.count());
+        }
+        int available = Math.max(0, surplus - mergedCredit.getOrDefault(entry.item(), 0));
+        int credited = Math.min(need, available);
+        if (credited > 0) mergedCredit.merge(entry.item(), credited, Integer::sum);
+        return mine + credited;
     }
 
     /** The nearest stack still to fetch, among the manifest entries that lie in a loaded chunk. */
@@ -473,7 +512,7 @@ public final class CompanionDeathTrip {
 
     /** Records what became of one stack and moves on to the next: never a long stand at one place. */
     private void giveUpEntry(CompanionDeathSpots.Entry entry, ItemEntity item, String reason) {
-        int mine = c.loot.takenByMe(entry.id());
+        int mine = takenOf(entry);
         int left = item == null ? 0 : item.getItem().getCount();
         Fate fate;
         if (left > 0) fate = mine > 0 ? Fate.PARTIAL : Fate.UNREACHABLE;
