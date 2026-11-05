@@ -17,7 +17,6 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -93,6 +92,8 @@ public final class CompanionDeathTrip {
     private boolean crossing;
     private boolean refused;
     private long refusedAt;
+    /** The place's number in the settings list, as he said it when he set out. */
+    private int placeNumber;
     /** When this place was last tried (the game clock), so a place that keeps refusing is not tried again at once. */
     private final Map<BlockPos, Long> triedAt = new HashMap<>();
     private String lastLine = "";
@@ -129,7 +130,7 @@ public final class CompanionDeathTrip {
             Verdict verdict = ledger.get(entry.id());
             if (verdict == null || verdict.fate() == Fate.PENDING) left++;
         }
-        return "Иду за своими вещами: " + spot.pos().toShortString() + (left > 0 ? ", осталось " + left + "." : ".");
+        return "Иду за вещами №" + placeNumber + (left > 0 ? ", осталось " + left + "." : ".");
     }
 
     /** Sets out for the dearest place with a stack still lying there; false when there is nothing worth or possible to walk to. */
@@ -138,9 +139,11 @@ public final class CompanionDeathTrip {
         var server = level.getServer();
         if (server == null) return false;
         CompanionDeathSpots data = CompanionDeathSpots.get(server);
-        List<CompanionDeathSpots.Spot> places = new ArrayList<>(data.all(c.getOwnerId()));
-        places.sort(Comparator.comparingDouble(CompanionDeathSpots.Spot::worth).reversed());
-        for (CompanionDeathSpots.Spot place : places) {
+        // The number he says is the place's position in the settings list: the same order, the dearest first.
+        List<CompanionDeathSpots.Spot> places = data.ranked(c.getOwnerId());
+        for (int index = 0; index < places.size(); index++) {
+            CompanionDeathSpots.Spot place = places.get(index);
+            int number = index + 1;
             if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
                 data.taken(c.getOwnerId(), place.id());
                 say("Ну и подавитесь своим лутом.");
@@ -155,8 +158,8 @@ public final class CompanionDeathTrip {
                 // A stack looked for once and not found may still be on its way into the world: the place is asked
                 // again in a moment instead of being struck off on that one look.
                 if (missedOnce(level, place)) continue;
+                // Nothing is left there: the place goes, and a death not worth a walk is not spoken of.
                 data.taken(c.getOwnerId(), place.id());
-                say("Вещей на месте уже нет.");
                 continue;
             }
             if (!place.dimension().equals(level.dimension())) {
@@ -169,13 +172,13 @@ public final class CompanionDeathTrip {
                 var entered = c.portals.enter(level);
                 if (!entered.success()) continue;
                 data.attempted(c.getOwnerId(), place.id());
-                start(place, live, level, true);
-                say("Иду за своими вещами через портал.");
+                start(place, live, level, true, number);
+                say("Иду за вещами №" + number + " через портал.");
                 return true;
             }
             data.attempted(c.getOwnerId(), place.id());
-            start(place, live, level, false);
-            say("Иду за своими вещами.");
+            start(place, live, level, false, number);
+            say("Иду за вещами №" + number + ".");
             return true;
         }
         return false;
@@ -228,8 +231,9 @@ public final class CompanionDeathTrip {
         misses.remove(entry.id());
     }
 
-    private void start(CompanionDeathSpots.Spot place, List<CompanionDeathSpots.Entry> live, ServerLevel level, boolean cross) {
+    private void start(CompanionDeathSpots.Spot place, List<CompanionDeathSpots.Entry> live, ServerLevel level, boolean cross, int number) {
         spot = place;
+        placeNumber = number;
         original = List.copyOf(live);
         ledger.clear();
         takenAtStart.clear();
@@ -262,19 +266,19 @@ public final class CompanionDeathTrip {
         if (!c.deathRecovery()) { stop(); say("Ладно, вещи подождут."); return false; }
         ticks++;
         if (crossing) {
-            if (level.dimension().equals(spot.dimension())) { crossing = false; say("Перешёл, иду к вещам."); return true; }
+            if (level.dimension().equals(spot.dimension())) { crossing = false; return true; }
             if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return false; }
-            if (ticks > MOST_TICKS) { stop(); say("Портал не пустил."); return false; }
+            if (ticks > MOST_TICKS) { stop(); return false; }
             return true;
         }
         // Moved out of the dimension by something else: back through a portal, or the place is left.
         if (!level.dimension().equals(spot.dimension())) {
             if (!c.portals.walking()) {
                 var entered = c.portals.enter(level);
-                if (!entered.success()) { stop(); say("Оказался в другом измерении, портала рядом нет."); return false; }
+                if (!entered.success()) { stop(); say("Не смог перейти в другое измерение."); return false; }
                 crossing = true;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
-                say("Возвращаюсь к своим вещам через портал.");
+                say("Иду за вещами №" + placeNumber + " через портал.");
             }
             return true;
         }
@@ -531,43 +535,41 @@ public final class CompanionDeathTrip {
     }
 
     /**
-     * Done for now: the report comes from the ledger alone. Everything of the walk in his bag is «Забрал свои вещи»; a
-     * stack still lying there is named with the reason it stayed, and the place waits for the next walk; nothing left at
-     * all forgets the place.
+     * Done for now: the report comes from the ledger alone, and it is a notice, never an explanation. Everything of the
+     * walk in his bag is «Забрал свои вещи»; a part of it is «Забрал часть вещей» and the place waits for the next walk;
+     * nothing taken at all is «Не смог забрать вещи». A place with nothing left is forgotten and not spoken of again.
      */
     private void finish(ServerLevel level) {
         refresh(level);
-        int taken = 0, gone = 0;
-        List<String> left = new ArrayList<>();
+        int taken = 0;
+        boolean anythingLeft = false;
         for (CompanionDeathSpots.Entry entry : original) {
             Verdict verdict = ledger.get(entry.id());
             if (verdict == null) verdict = new Verdict(Fate.PENDING, 0, entry.count(), "не дошёл");
             switch (verdict.fate()) {
                 case TAKEN -> taken++;
-                case GONE -> gone++;
+                case GONE -> { }
                 // Nothing of it left is taken, whatever the merges did to its count.
-                case PARTIAL -> { if (verdict.left() <= 0) taken++; else left.add(name(entry) + " — осталось " + verdict.left() + " из " + entry.count() + ", " + verdict.reason()); }
-                case UNREACHABLE -> left.add(name(entry) + " — " + verdict.reason());
-                case PENDING -> left.add(name(entry) + " — не дошёл");
+                case PARTIAL -> { if (verdict.left() <= 0) taken++; else anythingLeft = true; }
+                case UNREACHABLE -> anythingLeft = true;
+                case PENDING -> anythingLeft = true;
             }
         }
-        boolean everything = !original.isEmpty() && taken == original.size();
-        if (everything) {
+        if (!original.isEmpty() && taken == original.size()) {
             forget(level);
             say("Забрал свои вещи.");
             return;
         }
-        if (!left.isEmpty()) {
+        if (anythingLeft) {
             // A walk that turned back only because the bag was full costs no try: the place waits for room, not for a budget.
             if (bagWasTheOnlyReason()) CompanionDeathSpots.get(level.getServer()).refundAttempt(c.getOwnerId(), spot.id());
             // Something of his is still lying there: the place waits, and is tried again in tens of seconds, not minutes.
             triedAt.put(spot.pos(), level.getGameTime());
             stop();
-            say("Часть моих вещей осталась: " + String.join("; ", left) + ".");
-            return;
+        } else {
+            forget(level);
         }
-        forget(level);
-        say(taken > 0 ? "Забрал свои вещи, остальное пропало." : "Вещей на месте уже нет.");
+        say(taken > 0 ? "Забрал часть вещей." : "Не смог забрать вещи.");
     }
 
     /** Whether every stack that stayed stayed because the bag was full: then the walk was not the place's fault. */
@@ -586,13 +588,6 @@ public final class CompanionDeathTrip {
     private void forget(ServerLevel level) {
         CompanionDeathSpots.get(level.getServer()).taken(c.getOwnerId(), spot.id());
         stop();
-    }
-
-    private String name(CompanionDeathSpots.Entry entry) {
-        ResourceLocation id = ResourceLocation.tryParse(entry.item());
-        if (id == null) return entry.item();
-        var item = BuiltInRegistries.ITEM.get(id);
-        return new ItemStack(item).getHoverName().getString();
     }
 
     /** A full bag is made room in by letting the cheapest junk go, never a diamond; what is dropped is marked as junk. */
@@ -640,7 +635,8 @@ public final class CompanionDeathTrip {
         return true;
     }
 
-    public String refusalLine() { return "Сейчас только вещи заберу свои после смерти."; }
+    /** The refusal of a first order: the same notice he set out with, so the player knows what keeps him. */
+    public String refusalLine() { return "Иду за вещами №" + placeNumber + "."; }
 
     /** A new fall at a place clears the wait that a previous walk there left behind. */
     public void freshPlace(net.minecraft.core.BlockPos pos) { triedAt.remove(pos); }
@@ -654,10 +650,9 @@ public final class CompanionDeathTrip {
         c.getNavigation().stop();
     }
 
-    void cancel(String why) {
+    void cancel() {
         if (spot != null && c.level().getServer() != null) CompanionDeathSpots.get(c.level().getServer()).taken(c.getOwnerId(), spot.id());
         stop();
-        if (why != null && !why.isEmpty()) say(why);
     }
 
     private void say(String line) {

@@ -24,7 +24,7 @@ public final class CompanionTaskBoard {
         switch (command) {
             // The three buttons of a long goal act on that goal only, as the phrases do; a screen that shows an older goal changes
             // nothing. A screen without a long goal keeps the old meaning of these buttons: the pickaxe order.
-            case "cancel_recovery" -> { if (!shown.recovery().isBlank()) c.deathTrip.cancel("Ладно, бросил свои вещи."); }
+            case "cancel_recovery" -> { if (!shown.recovery().isBlank()) c.deathTrip.cancel(); }
             case "cancel_goal" -> {
                 if (shown.agenda() != null) CompanionAgenda.cancelShown(player, c, shown.agenda().goal());
                 else cancelPickaxes(c, shown);

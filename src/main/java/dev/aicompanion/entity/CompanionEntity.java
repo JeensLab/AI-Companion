@@ -919,7 +919,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 CompanionDeathSpots.get(((ServerLevel) level()).getServer()).died(getOwnerId(), spotId,
                         level().dimension(), blockPosition(), worth, level().getGameTime(), CompanionDeathSpots.manifestOf(fallen));
                 deathTrip.freshPlace(blockPosition());
-            } else if (dropped) autonomySay("За мелочью не пойду: пусть лежит.");
+            }
+            // A death not worth a walk is simply not spoken of.
             dev.aicompanion.AICompanionMod.LOGGER.info("[death] dropped={} worth={} spot={} recorded={}",
                     dropped, worth, spotId, dropped && worth >= CompanionBelongings.WORTH_GOING);
             noteDeed("Погиб на " + where + " (" + cause + ")." + (dropped ? " Все вещи выпали там." : ""), false);
