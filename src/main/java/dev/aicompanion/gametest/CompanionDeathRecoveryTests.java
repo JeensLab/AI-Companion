@@ -530,7 +530,7 @@ public final class CompanionDeathRecoveryTests {
         yard(h, c, 16);
         BlockPos place = c.blockPosition().offset(14, 0, 0);
         var taken = stack(h, place, new ItemStack(Items.DIAMOND, 2));
-        var lost = stack(h, place.offset(1, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
+        var lost = stack(h, place.offset(3, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
         place(h, c, place, 30, taken, lost);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
         for (int tick = 0; tick < 4; tick++) c.tick();
