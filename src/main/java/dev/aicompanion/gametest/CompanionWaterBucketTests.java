@@ -177,6 +177,137 @@ public final class CompanionWaterBucketTests {
         });
     }
 
+    /** Ten blocks onto hay costs two health (HayBlock.fallOn takes a fifth): not worth the bucket. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void aFallOntoHayIsTakenWithoutTheBucket(GameTestHelper h) {
+        floor(h, Blocks.HAY_BLOCK);
+        CompanionEntity c = spawn(h, 4, 11, 4);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = watchPour(h, c);
+        h.runAfterDelay(40, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket over hay");
+            h.assertTrue(c.getHealth() == c.getMaxHealth() - 2, "The hay did not take the fall: health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /** Boots of Feather Falling IV make ten blocks cost under two hearts (the enchantment's protection): not worth the bucket. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void featherFallingBootsMakeTenBlocksNotWorthTheBucket(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        CompanionEntity c = spawn(h, 4, 11, 4);
+        ItemStack boots = new ItemStack(Items.DIAMOND_BOOTS);
+        boots.enchant(h.getLevel().registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                .getHolderOrThrow(net.minecraft.world.item.enchantment.Enchantments.FEATHER_FALLING), 4);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.FEET, boots);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = watchPour(h, c);
+        h.runAfterDelay(40, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket in Feather Falling boots");
+            h.assertTrue(c.getHealth() < c.getMaxHealth() && c.getHealth() > c.getMaxHealth() - 4, "Health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /** Onto a stalagmite five blocks cost (5 + 2 - 3) x 2 = 8 or more (PointedDripstoneBlock.fallOn): worth the bucket. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void aFallOfFiveOntoAStalagmiteIsCaught(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) h.setBlock(x, 1, z, Blocks.POINTED_DRIPSTONE.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.PointedDripstoneBlock.TIP_DIRECTION, net.minecraft.core.Direction.UP));
+        CompanionEntity c = spawn(h, 4, 7, 4);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        h.succeedWhen(() -> {
+            h.assertTrue(c.isAlive() && c.getHealth() == c.getMaxHealth(), "Hurt: health " + c.getHealth());
+            h.assertTrue(h.getTick() > 30 && count(c, Items.WATER_BUCKET) == 1 && water(h, 8) == null, "Bag: " + c.getStoredItemsSummary() + ", water at " + water(h, 8));
+        });
+    }
+
+    /** A cobweb on the way down ends the fall (it resets it, as ladders and powder snow do): nothing to pour for. */
+    @GameTest(template = "empty", timeoutTicks = 200, skyAccess = true)
+    public static void aCobwebOnTheWayDownIsNotPouredFor(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) h.setBlock(x, 2, z, Blocks.COBWEB);
+        CompanionEntity c = spawn(h, 4, 25, 4);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = watchPour(h, c);
+        h.runAfterDelay(150, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket over a cobweb");
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "Hurt: health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /**
+     * Fast from sixty blocks he still pours only as a player can: on a block within reach of his eyes (4.5 and the server's
+     * allowance of one, Player.canInteractWithBlock), not two ticks early from twice as high.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 200, skyAccess = true)
+    public static void fromSixtyBlocksHePoursOnlyWithinReach(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        // Six falls from 55 to 60 blocks, each a column of its own: each comes to the ground at another moment of a tick.
+        List<CompanionEntity> all = new java.util.ArrayList<>();
+        double[] reach = new double[6];
+        java.util.Arrays.fill(reach, -1);
+        for (int i = 0; i < 6; i++) {
+            CompanionEntity c = spawn(h, 3 + 5 * i, 56 + i, 16);
+            c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+            all.add(c);
+            int column = 3 + 5 * i, index = i;
+            h.onEachTick(() -> {
+                if (reach[index] >= 0 || count(c, Items.BUCKET) == 0) return;
+                BlockPos water = null;
+                for (BlockPos pos : BlockPos.betweenClosed(column - 2, 0, 14, column + 2, 3, 18))
+                    if (h.getLevel().getFluidState(h.absolutePos(pos)).is(FluidTags.WATER)) { water = pos.immutable(); break; }
+                if (water == null) return;
+                // Where his eyes were when he poured: the start of this tick, before the move that came after the pour.
+                var eyes = new net.minecraft.world.phys.Vec3(c.xo, c.yo + c.getEyeHeight(), c.zo);
+                reach[index] = Math.sqrt(new net.minecraft.world.phys.AABB(h.absolutePos(water).below()).distanceToSqr(eyes));
+            });
+        }
+        h.succeedWhen(() -> {
+            for (int i = 0; i < 6; i++) {
+                h.assertTrue(reach[i] >= 0, "Fall " + i + " not poured yet");
+                h.assertTrue(reach[i] <= 5.5, "Fall " + i + " poured from " + reach[i] + " blocks: " + java.util.Arrays.toString(reach));
+                h.assertTrue(all.get(i).isAlive() && all.get(i).getHealth() == all.get(i).getMaxHealth(), "Fall " + i + " hurt: " + all.get(i).getHealth());
+                h.assertTrue(count(all.get(i), Items.WATER_BUCKET) == 1, "Fall " + i + " bag: " + all.get(i).getStoredItemsSummary());
+            }
+            h.assertTrue(water(h, 32) == null, "Water left at " + water(h, 32));
+        });
+    }
+
+    /**
+     * The dragon's case: flung up and away the moment he poured, still in the air. With a second bucket he catches the second landing
+     * too, scoops that water, then goes back for the first: both buckets full, nothing left.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 900, skyAccess = true)
+    public static void flungAgainInTheAirHeCatchesItWithTheSecondBucketAndFetchesBoth(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        CompanionEntity c = spawn(h, 6, 31, 16);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        var across = h.absoluteVec(new net.minecraft.world.phys.Vec3(30.5, 31, 16.5)).subtract(c.position()).normalize().scale(1.2);
+        boolean[] flung = {false};
+        h.onEachTick(() -> {
+            if (flung[0] || water(h, 32) == null || c.isInWater() || c.onGround()) return;
+            flung[0] = true;
+            c.setDeltaMovement(across.x, .8, across.z);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(flung[0], "Not flung in the air");
+            h.assertTrue(c.isAlive() && c.getHealth() == c.getMaxHealth(), "Hurt: health " + c.getHealth());
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 2 && count(c, Items.BUCKET) == 0, "Bag: " + c.getStoredItemsSummary());
+            h.assertTrue(water(h, 32) == null, "Water left at " + water(h, 32));
+        });
+    }
+
+    /** Whether water ever appears in the template or an empty bucket in his bag, from now on. */
+    private static boolean[] watchPour(GameTestHelper h, CompanionEntity c) {
+        boolean[] poured = {false};
+        h.onEachTick(() -> poured[0] |= water(h, 8) != null || count(c, Items.BUCKET) > 0);
+        return poured;
+    }
+
     /** What he says, line by line, from now on. */
     private static List<String> said(GameTestHelper h, CompanionEntity c) {
         List<String> said = new java.util.ArrayList<>();

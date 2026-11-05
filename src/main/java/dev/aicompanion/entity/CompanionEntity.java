@@ -542,8 +542,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean isWorking() { return work.isActive(); }
     /** Read only, for the GameTest observer: a self-rescue running, the work's job/phase, and a visible action in hand. */
     public boolean isSelfRescuing() { return recovery.active(); }
-    /** The damage a landing after this fall would do him, by the game's own count (CompanionWaterBucket). */
-    int fallDamage(float distance) { return calculateFallDamage(distance, 1.0F); }
+    /** The damage a landing after this fall does him before his protection, by the game's own count (CompanionWaterBucket). */
+    int fallDamage(float distance, float times) { return calculateFallDamage(distance, times); }
     /** Read only: his own drops still to pick up (after «стоп» too: nothing of his is left lying). */
     public boolean isCollectingDrops() { return loot.hasPending(); }
     public String workPhase() { return work.watchPhase(); }
