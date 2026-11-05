@@ -12,11 +12,13 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.server.level.TicketType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
@@ -735,6 +737,64 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(!c.deathTrip.begin(), "He set out across dimensions with no portal");
         h.assertTrue(store.all(c.getOwnerId()).size() == 1,
                 "A dear place across dimensions was forgotten without a portal: " + store.all(c.getOwnerId()));
+        h.succeed();
+    }
+
+    /**
+     * The crossing is both ways: a place in the Overworld is kept while he stands in the Nether, and walked back to
+     * through the portal at hand. Only a place in the End, which needs its own portal, is forgotten.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void anOverworldPlaceIsCrossedBackToFromTheNether(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        UUID spotId = place(h, c, place, 40, item);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        // Him in the Nether, his place in the Overworld: far from every portal another test lit, so no crossing is at hand.
+        BlockPos away = new BlockPos(2000, 64, 2000);
+        nether.setBlockAndUpdate(away.below(), Blocks.NETHERRACK.defaultBlockState());
+        // The world outlives a test: the portal this test lit last time is put out, so the first look has none at hand.
+        nether.setBlockAndUpdate(away.offset(2, 0, 0), Blocks.AIR.defaultBlockState());
+        nether.setBlockAndUpdate(away.offset(2, 1, 0), Blocks.AIR.defaultBlockState());
+        nether.getChunkSource().addRegionTicket(TicketType.PORTAL, new ChunkPos(away), 1, away);
+        var inNether = new CompanionEntity(AICompanionMod.COMPANION.get(), nether);
+        inNether.moveTo(away.getX() + .5, away.getY(), away.getZ() + .5, 0, 0);
+        inNether.setOwnerId(c.getOwnerId());
+        nether.addFreshEntity(inNether);
+        h.assertTrue(inNether.level() == nether, "He is not in the Nether: " + inNether.level().dimension().location());
+        h.assertTrue(!inNether.deathTrip.begin(), "He set out with no portal at hand");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
+                "An Overworld place was forgotten because he stood in the Nether");
+        // A portal of his own: the way back is walked, and the place across the worlds is what he goes for.
+        nether.setBlockAndUpdate(away.offset(2, 0, 0), Blocks.NETHER_PORTAL.defaultBlockState());
+        nether.setBlockAndUpdate(away.offset(2, 1, 0), Blocks.NETHER_PORTAL.defaultBlockState());
+        h.assertTrue(inNether.deathTrip.begin(), "He did not set out through the portal at hand");
+        h.assertTrue(inNether.deathTrip.dimension().equals(Level.OVERWORLD),
+                "He set out for another place: " + inNether.deathTrip.dimension().location());
+        h.assertTrue(inNether.deathTrip.lastLine().equals("Иду за своими вещами через портал."),
+                "He did not say he was crossing: " + inNether.deathTrip.lastLine());
+        h.succeed();
+    }
+
+    /** A place in the End is forgotten: it needs a portal of its own, and no walk crosses to it on foot. */
+    @GameTest(template = "empty")
+    public static void aPlaceInTheEndIsForgotten(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        var item = stack(h, c.blockPosition().offset(4, 0, 0), new ItemStack(Items.DIAMOND, 4));
+        BlockPos far = new BlockPos(6000, 64, 6000);
+        UUID spotId = UUID.randomUUID();
+        store.died(c.getOwnerId(), spotId, Level.END, far, 40, 0,
+                List.of(new CompanionDeathSpots.Entry(item.getUUID(), far.getCenter(), "minecraft:diamond", 4)));
+        h.assertTrue(!c.deathTrip.begin(), "He set out for the End");
+        h.assertTrue(store.byId(c.getOwnerId(), spotId) == null,
+                "A place in the End is kept: " + store.all(c.getOwnerId()));
         h.succeed();
     }
 

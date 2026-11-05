@@ -160,8 +160,8 @@ public final class CompanionDeathTrip {
                 continue;
             }
             if (!place.dimension().equals(level.dimension())) {
-                // Only the Nether can be crossed on foot: the End needs its own portal, so a place there is left.
-                if (place.worth() < CROSS_WORTH || !place.dimension().equals(Level.NETHER)) {
+                // The Overworld and the Nether are crossed both ways on foot; a place in the End needs its own portal and is left.
+                if (place.worth() < CROSS_WORTH || place.dimension().equals(Level.END)) {
                     data.taken(c.getOwnerId(), place.id());
                     continue;
                 }
