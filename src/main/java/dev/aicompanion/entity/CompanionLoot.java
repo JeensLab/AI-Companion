@@ -146,6 +146,8 @@ final class CompanionLoot {
             // His own throw: kept out of the bag on purpose (the mine leaves excess stone this way, PR #48).
             if (item.getOwner() == owner) continue;
             if (item.getPersistentData().hasUUID(HARVESTER)) continue;
+            // Junk he let go to make room for his own things: taking it back would fill the freed slot with it again.
+            if (item.getPersistentData().getBoolean(CompanionBag.JUNK)) continue;
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
             int before = offered.getCount();

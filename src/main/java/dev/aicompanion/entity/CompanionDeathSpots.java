@@ -124,8 +124,14 @@ public final class CompanionDeathSpots extends SavedData {
 
     /** A part of a stack was taken: the manifest keeps the stack with what is left of it. */
     public void setEntryCount(UUID owner, UUID spotId, UUID itemId, int left) {
+        if (owner != null && setEntryCountIn(owner, spotId, itemId, left)) return;
+        // The owner's mark can be missing on an old drop: the spot's own id is enough to find it.
+        for (UUID other : List.copyOf(spots.keySet())) if (setEntryCountIn(other, spotId, itemId, left)) return;
+    }
+
+    private boolean setEntryCountIn(UUID owner, UUID spotId, UUID itemId, int left) {
         List<Spot> list = spots.get(owner);
-        if (list == null) return;
+        if (list == null) return false;
         for (int index = 0; index < list.size(); index++) {
             Spot spot = list.get(index);
             if (!spot.id().equals(spotId)) continue;
@@ -136,9 +142,13 @@ public final class CompanionDeathSpots extends SavedData {
                 manifest.set(at, new Entry(entry.id(), entry.pos(), entry.item(), left));
                 list.set(index, new Spot(spot.id(), spot.dimension(), spot.pos(), spot.worth(), spot.tick(), spot.attempts(), spot.deaths(), manifest));
                 setDirty();
-                return;
+                return true;
             }
+            // The stack is in this place but already counted so: nothing to write, and no other place is asked.
+            for (Entry entry : manifest) if (entry.id().equals(itemId)) return true;
+            return false;
         }
+        return false;
     }
 
     /** A player took a stack of a fall: what he emptied leaves the manifest, a part he took keeps the rest. */
@@ -158,6 +168,12 @@ public final class CompanionDeathSpots extends SavedData {
     public void attempted(UUID owner, UUID spotId) {
         replaceById(owner, spotId, spot -> new Spot(spot.id(), spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
                 spot.attempts() + 1, spot.deaths(), spot.manifest()));
+    }
+
+    /** A walk that ended only because his bag was full gives the try back: the place is not closer to being given up. */
+    public void refundAttempt(UUID owner, UUID spotId) {
+        replaceById(owner, spotId, spot -> new Spot(spot.id(), spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
+                Math.max(0, spot.attempts() - 1), spot.deaths(), spot.manifest()));
     }
 
     /** He died on the way to it: the place remembers how many times it cost him his life. */
@@ -273,7 +289,9 @@ public final class CompanionDeathSpots extends SavedData {
                             new Vec3(saved.getDouble("px"), saved.getDouble("py"), saved.getDouble("pz")),
                             saved.getString("item"), saved.getInt("count")));
                 }
-                list.add(new Spot(one.getUUID("id"), dimension, new BlockPos(one.getInt("x"), one.getInt("y"), one.getInt("z")),
+                // An old save can lack the place's id: it gets one now, so a walk can charge and forget it by id later.
+                UUID spotId = one.hasUUID("id") ? one.getUUID("id") : UUID.randomUUID();
+                list.add(new Spot(spotId, dimension, new BlockPos(one.getInt("x"), one.getInt("y"), one.getInt("z")),
                         one.getDouble("worth"), one.getLong("tick"), one.getInt("attempts"), one.getInt("deaths"), manifest));
             }
             data.spots.put(UUID.fromString(key), list);
