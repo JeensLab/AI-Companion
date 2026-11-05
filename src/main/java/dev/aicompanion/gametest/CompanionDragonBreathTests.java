@@ -30,18 +30,25 @@ public final class CompanionDragonBreathTests {
     /** What one touch of the fireball's cloud costs: Instant Damage II at half strength. */
     private static final float ONE_HIT = 6;
 
-    /** The breath falls on him where he stands by the player: he walks out of it and does not come back while it lasts. */
+    /**
+     * The breath falls on him where he stands by the player: he walks out of it and is not in it again while it lasts. Growing, it
+     * may come into his margin by the player; then he steps out again before it reaches him.
+     */
     @GameTest(template = "tall_tree", batch = "breath_on_him", timeoutTicks = 400)
     public static void heStepsOutOfTheBreathThatFallsOnHim(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 15, 15, 9, 15);
         float[] lowest = {c.getHealth()};
-        h.onEachTick(() -> lowest[0] = Math.min(lowest[0], c.getHealth()));
         AreaEffectCloud[] cloud = new AreaEffectCloud[1];
+        boolean[] backIn = {false};
+        h.onEachTick(() -> {
+            lowest[0] = Math.min(lowest[0], c.getHealth());
+            if (cloud[0] != null && cloud[0].tickCount > OUT_IN && insideOf(cloud[0], c)) backIn[0] = true;
+        });
         h.runAfterDelay(20, () -> cloud[0] = fireballCloud(h, c.position()));
         h.runAfterDelay(20 + OUT_IN, () -> h.assertTrue(outOf(cloud[0], c), "Still in the breath: " + where(h, c, cloud[0])));
-        h.runAfterDelay(20 + 200, () -> {
-            h.assertTrue(outOf(cloud[0], c), "Back in the breath: " + where(h, c, cloud[0]));
+        h.runAfterDelay(20 + 300, () -> {
+            h.assertTrue(!backIn[0], "Back in the breath");
             h.assertTrue(c.isAlive() && c.getMaxHealth() - lowest[0] <= ONE_HIT, "Hurt by the breath: lowest health " + lowest[0]);
             h.succeed();
         });
