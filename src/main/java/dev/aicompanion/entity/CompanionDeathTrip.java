@@ -562,18 +562,21 @@ public final class CompanionDeathTrip {
             if (bagWasTheOnlyReason()) CompanionDeathSpots.get(level.getServer()).refundAttempt(c.getOwnerId(), spot.id());
             // Something of his is still lying there: the place waits, and is tried again in tens of seconds, not minutes.
             triedAt.put(spot.pos(), level.getGameTime());
+            String line = "Часть вещей осталась: " + spot.pos().toShortString() + ", " + where(spot.dimension()) + ".";
             stop();
-            say("Часть моих вещей осталась: " + named(left) + ".");
+            say(line);
             return;
         }
         forget(level);
         say(taken > 0 ? "Забрал свои вещи, остальное пропало." : "Вещей на месте уже нет.");
     }
 
-    /** Three names at most: a wall of items is not a report a player reads. */
-    private static String named(List<String> left) {
-        if (left.size() <= 3) return String.join("; ", left);
-        return String.join("; ", left.subList(0, 3)) + " и ещё " + (left.size() - 3);
+    /** How he names a dimension aloud. */
+    private static String where(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension) {
+        String path = dimension.location().getPath();
+        if (path.equals("the_nether")) return "nether";
+        if (path.equals("the_end")) return "end";
+        return "world";
     }
 
     /** Whether every stack that stayed stayed because the bag was full: then the walk was not the place's fault. */

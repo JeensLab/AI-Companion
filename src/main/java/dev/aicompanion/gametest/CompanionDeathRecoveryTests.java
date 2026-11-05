@@ -435,7 +435,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE,
                 "The stack he could not take was not called unreachable: " + verdict);
         h.assertTrue(verdict.reason().equals("метит в другого"), "The reason is not the real one: " + verdict.reason());
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"), "He claimed more than he took: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть вещей осталась"), "He claimed more than he took: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
                 "A place with something left was forgotten");
         h.succeed();
@@ -458,7 +458,7 @@ public final class CompanionDeathRecoveryTests {
                 "A stack that did not fit was not called unreachable: " + verdict);
         h.assertTrue(verdict.reason().equals("сумка полна"), "The reason is not the bag: " + verdict.reason());
         h.assertTrue(item.isAlive() && !item.getItem().isEmpty(), "The stack that did not fit was taken anyway");
-        h.assertTrue(c.deathTrip.lastLine().contains("сумка полна"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть вещей осталась"), "The report does not say what stayed: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
                 "The place with a stack left is forgotten");
         h.succeed();
@@ -542,9 +542,9 @@ public final class CompanionDeathRecoveryTests {
         walk(h, c, 400);
         h.assertTrue(taken.isRemoved() || taken.getItem().isEmpty(), "The reachable stack was not taken");
         h.assertTrue(!left.isRemoved() && !left.getItem().isEmpty(), "The stack aimed at another was taken");
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"), "He did not say part of it stayed: " + c.deathTrip.lastLine());
-        h.assertTrue(c.deathTrip.lastLine().contains("Diamond"), "The report does not name what stayed: " + c.deathTrip.lastLine());
-        h.assertTrue(c.deathTrip.lastLine().contains("метит в другого"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть вещей осталась"), "He did not say part of it stayed: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().contains(","), "The report does not name the place: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть вещей осталась"), "The report does not say what stayed: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -1179,7 +1179,7 @@ public final class CompanionDeathRecoveryTests {
         var verdict = c.deathTrip.verdict(item.getUUID());
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE, "The stack was not called unreachable: " + verdict);
         h.assertTrue(verdict.reason().equals("нет пути"), "The reason is not the way: " + verdict.reason());
-        h.assertTrue(c.deathTrip.lastLine().contains("нет пути"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть вещей осталась"), "The report does not say what stayed: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
                 "A place he could not reach is forgotten");
         h.succeed();
@@ -1300,7 +1300,7 @@ public final class CompanionDeathRecoveryTests {
         place(h, c, place, 20, mine);
         h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"),
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть вещей осталась"),
                 "A foreign drop made him claim his own: " + c.deathTrip.lastLine());
         h.assertTrue(c.deathTrip.verdict(foreign.getUUID()) == null, "A foreign drop is in the walk's ledger");
         h.succeed();
@@ -1434,9 +1434,10 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
         String line = c.deathTrip.lastLine();
-        h.assertTrue(line.contains("Diamond") && line.contains("Iron Ingot"), "The report does not name both stacks: " + line);
-        h.assertTrue(line.indexOf("Diamond") < line.indexOf("Iron Ingot") || line.indexOf("Iron Ingot") < line.indexOf("Diamond"),
-                "The report names only one: " + line);
+        h.assertTrue(line.startsWith("Часть вещей осталась") && line.contains(","), "The report does not name the place: " + line);
+        // Spoken aloud, the line names the place instead of every stack; both stacks are still on the place.
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).size() == 1,
+                "The place with both stacks was forgotten: " + line);
         h.succeed();
     }
 
@@ -1498,7 +1499,7 @@ public final class CompanionDeathRecoveryTests {
         var spot = CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId);
         h.assertTrue(spot != null, "The place with a stack left was forgotten");
         h.assertTrue(spot.attempts() == 0, "A walk that ended for a full bag spent a try: " + spot.attempts());
-        h.assertTrue(c.deathTrip.lastLine().contains("сумка полна"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть вещей осталась"), "The report does not say what stayed: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
