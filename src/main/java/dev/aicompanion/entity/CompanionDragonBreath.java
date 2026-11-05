@@ -43,7 +43,7 @@ final class CompanionDragonBreath {
 
     private final CompanionEntity c;
     private Set<BlockPos> out = Set.of();
-    private long lookedAt;
+    private long lookedAt, caughtAt;
     /** He has said why he waits at the breath's edge in the fight with this dragon (null: a cloud of nobody's): once in a fight. */
     private boolean told;
     private UUID toldFor;
@@ -85,8 +85,18 @@ final class CompanionDragonBreath {
     boolean canUse() { return caught(MARGIN); }
     boolean canContinue() { return caught(CLEAR); }
 
-    void begin() { c.getNavigation().stop(); out = Set.of(); lookedAt = Long.MIN_VALUE; }
-    void end() { c.getNavigation().stop(); out = Set.of(); }
+    void begin() { c.getNavigation().stop(); out = Set.of(); lookedAt = Long.MIN_VALUE; caughtAt = c.level().getGameTime(); event("dragon_breath_caught"); }
+    void end() { c.getNavigation().stop(); out = Set.of(); event("dragon_breath_out"); }
+
+    /** The journal's line: where he is, how far the nearest breath's edge is (negative: in it), his health, the ticks since caught. */
+    private void event(String name) {
+        double edge = Double.MAX_VALUE;
+        for (AreaEffectCloud cloud : around(c.getX(), c.getY(), c.getZ(), WIDEST + CLEAR + OUT, 3))
+            edge = Math.min(edge, Math.hypot(c.getX() - cloud.getX(), c.getZ() - cloud.getZ()) - cloud.getRadius());
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnosticTrace(), name, "at", c.blockPosition().toShortString(),
+                "edge", edge == Double.MAX_VALUE ? "none" : String.format(java.util.Locale.ROOT, "%.1f", edge), "health", c.getHealth(),
+                "ticks", c.level().getGameTime() - caughtAt);
+    }
 
     void tick() {
         if (!c.getNavigation().isDone() && !c.getNavigation().isStuck()) return;
@@ -131,6 +141,7 @@ final class CompanionDragonBreath {
         if (told && Objects.equals(toldFor, dragon)) return;
         told = true; toldFor = dragon;
         c.autonomySay(WAITING, c.hasActiveWorkOrder());
+        event("dragon_breath_waits");
     }
 
     /** Along each ray round him, the first cell he can stand in that is clear of all the breath: the nearest ways out. */
