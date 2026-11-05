@@ -174,7 +174,8 @@ final class CompanionEquipment {
     }
 
     public void selectWeaponForCombat() {
-        if (c.archery.wants(c.getTarget())) {
+        // The crystals of the End are shot with no target set: the sword the player chose must not come back mid-draw.
+        if (c.archery.wants(c.getTarget()) || c.endCrystals.shooting()) {
             if (!(c.getMainHandItem().getItem() instanceof net.minecraft.world.item.BowItem)) equipItemInternal("minecraft:bow", "mainhand");
             return;
         }

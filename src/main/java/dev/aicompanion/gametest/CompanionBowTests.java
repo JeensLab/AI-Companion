@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.animal.Cow;
+import net.minecraft.world.entity.monster.EnderMan;
 import net.minecraft.world.entity.monster.Ghast;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.projectile.AbstractArrow;
@@ -51,6 +52,24 @@ public final class CompanionBowTests {
                     "Wear " + companion.getMainHandItem().getDamageValue() + " for " + (16 - count(companion, Items.ARROW)) + " arrows");
             h.assertTrue(arrows(h).stream().allMatch(arrow -> arrow.pickup == AbstractArrow.Pickup.ALLOWED), "An arrow that cannot be picked up");
         });
+    }
+
+    /** An enderman takes no arrow: it teleports away from every one (EnderMan.hurt). So it gets the sword, even from afar. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300, batch = "bow")
+    public static void anEndermanGetsTheSwordNotArrows(GameTestHelper h) {
+        ground(h);
+        EnderMan enderman = h.spawn(EntityType.ENDERMAN, 16, GROUND + 1, 18);
+        enderman.setNoAi(true);
+        CompanionEntity companion = spawn(h, 16, 8);
+        companion.setItem(0, new ItemStack(Items.BOW));
+        companion.setItem(1, new ItemStack(Items.ARROW, 16));
+        companion.setItem(2, new ItemStack(Items.DIAMOND_SWORD));
+        enderman.setTarget(companion);
+        companion.setTarget(enderman);
+        h.runAtTickTime(200, () -> h.succeedIf(() -> {
+            h.assertTrue(count(companion, Items.ARROW) == 16, "Arrows sent at an enderman: " + (16 - count(companion, Items.ARROW)));
+            h.assertTrue(enderman.getHealth() < enderman.getMaxHealth(), "The sword never reached it; in hand " + companion.getMainHandItem());
+        }));
     }
 
     /** A bow and an empty quiver: nothing flies. */

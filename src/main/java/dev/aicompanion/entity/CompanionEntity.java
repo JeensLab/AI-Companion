@@ -126,6 +126,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private final CompanionSwimming swimming = new CompanionSwimming(this);
     final CompanionCombat combat = new CompanionCombat(this);
     final CompanionArchery archery = new CompanionArchery(this);
+    final CompanionEndCrystals endCrystals = new CompanionEndCrystals(this);
     final CompanionPortals portals = new CompanionPortals(this);
     private final CompanionEating meals = new CompanionEating(this);
     private final CompanionBag bag = new CompanionBag(this);
@@ -325,6 +326,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
+        this.goalSelector.addGoal(3, new CompanionEndCrystals.CrystalGoal(this));
         this.goalSelector.addGoal(3, new CompanionPortals.FollowThroughPortalGoal(this));
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
         this.goalSelector.addGoal(3, new CompanionDigGoal(this));

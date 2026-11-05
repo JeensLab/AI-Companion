@@ -4,6 +4,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.FlyingMob;
 import net.minecraft.world.entity.LivingEntity;
@@ -19,6 +20,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
+import java.util.List;
 
 /**
  * The bow in a fight, as a player has it: a bow and arrows from his bag, a full draw, a real arrow that is gone from the bag and lies
@@ -70,6 +72,8 @@ final class CompanionArchery {
 
     private boolean aiming(LivingEntity target) {
         if (target == null || !target.isAlive() || !(target instanceof Enemy) || c.tickCount < bladeUntil || !armed()) return false;
+        // An enderman teleports away from every arrow and takes none of it (EnderMan.hurt): the sword, however far off it is.
+        if (target instanceof net.minecraft.world.entity.monster.EnderMan) return false;
         double distance = c.distanceTo(target);
         if (distance > FARTHEST || !c.getSensing().hasLineOfSight(target)) return false;
         // In water an arrow loses two fifths of its speed a tick and is spent after four blocks or so: a foe deeper than that is left
@@ -94,21 +98,41 @@ final class CompanionArchery {
         else c.getNavigation().stop();
         ItemStack bow = c.getMainHandItem();
         if (!(bow.getItem() instanceof BowItem)) { c.selectWeaponForCombat(); return; }
+        if (!drawn()) return;
+        Vec3 aim = aim(target);
+        if (loose(target, aim, List.of(c.getEyePosition(), aim))) held = 0;
+        else if (++held >= HOLD_FIRE_TICKS) { bladeUntil = c.tickCount + BLADE_AFTER_HOLD_TICKS; held = 0; }
+    }
+
+    /**
+     * A shot at something still that is no living foe, a crystal on a pillar: the same full draw, real arrow and wear as in a fight,
+     * sent along the worked-out flight. True when the arrow left.
+     */
+    boolean shootStill(Entity target, CompanionArrowFlight.Flight flight) {
+        Vec3 aim = flight.aim();
+        c.getLookControl().setLookAt(aim.x, aim.y, aim.z, 30F, 30F);
+        if (!(c.getMainHandItem().getItem() instanceof BowItem)) { c.equipForSupport("minecraft:bow"); return false; }
+        return drawn() && loose(target, aim, flight.path());
+    }
+
+    /** The bow drawn full in the main hand: the arrow may leave now. */
+    private boolean drawn() {
         if (!c.isUsingItem()) {
             if (--pause <= 0) c.startUsingItem(InteractionHand.MAIN_HAND);
-            return;
+            return false;
         }
-        if (c.getUsedItemHand() != InteractionHand.MAIN_HAND) { c.stopUsingItem(); return; }
-        if (c.getTicksUsingItem() < DRAW_TICKS || !(c.level() instanceof ServerLevel level)) return;
-        Vec3 aim = aim(target);
-        if (someoneOnTheLine(level, aim, target)) {
-            if (++held >= HOLD_FIRE_TICKS) { bladeUntil = c.tickCount + BLADE_AFTER_HOLD_TICKS; held = 0; }
-            return;
-        }
-        held = 0;
-        shoot(level, bow, aim);
+        if (c.getUsedItemHand() != InteractionHand.MAIN_HAND) { c.stopUsingItem(); return false; }
+        return c.getTicksUsingItem() >= DRAW_TICKS && c.level() instanceof ServerLevel;
+    }
+
+    /** Sends the arrow toward {@code aim}, unless someone who is no enemy is near its way ({@code line}); false when it is held. */
+    private boolean loose(Entity target, Vec3 aim, List<Vec3> line) {
+        ServerLevel level = (ServerLevel) c.level();
+        if (someoneOnTheLine(level, line, target)) return false;
+        shoot(level, c.getMainHandItem(), aim);
         c.stopUsingItem();
         pause = BETWEEN_SHOTS;
+        return true;
     }
 
     /** Where the arrow is sent: the body of the target where it will be, as high over it as the arrow sinks on the way. */
@@ -119,11 +143,14 @@ final class CompanionArchery {
         return at.add(moves.x * flight, target.onGround() ? 0 : moves.y * flight, moves.z * flight).add(0, ARROW_GRAVITY / 2 * flight * flight, 0);
     }
 
-    /** Anyone alive who is no enemy, near the way of the arrow: the player, his pets, a cow. */
-    private boolean someoneOnTheLine(ServerLevel level, Vec3 aim, LivingEntity target) {
-        Vec3 from = c.getEyePosition();
-        return !level.getEntitiesOfClass(LivingEntity.class, new AABB(from, aim).inflate(1), other -> other != c && other != target
-                && !(other instanceof Enemy) && !other.isSpectator() && other.getBoundingBox().inflate(.6).clip(from, aim).isPresent()).isEmpty();
+    /** Anyone alive who is no enemy, near the way of the arrow, piece by piece of it: the player, his pets, a cow. */
+    private boolean someoneOnTheLine(ServerLevel level, List<Vec3> line, Entity target) {
+        for (int i = 1; i < line.size(); i++) {
+            Vec3 from = line.get(i - 1), to = line.get(i);
+            if (!level.getEntitiesOfClass(LivingEntity.class, new AABB(from, to).inflate(1), other -> other != c && other != target
+                    && !(other instanceof Enemy) && !other.isSpectator() && other.getBoundingBox().inflate(.6).clip(from, to).isPresent()).isEmpty()) return true;
+        }
+        return false;
     }
 
     private void shoot(ServerLevel level, ItemStack bow, Vec3 aim) {
