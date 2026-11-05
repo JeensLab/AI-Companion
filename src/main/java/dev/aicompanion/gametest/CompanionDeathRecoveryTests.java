@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionBelongings;
+import dev.aicompanion.entity.CompanionDeathBoard;
 import dev.aicompanion.entity.CompanionDeathSpots;
 import dev.aicompanion.entity.CompanionDeathTrip;
 import dev.aicompanion.entity.CompanionEntity;
@@ -192,6 +193,7 @@ public final class CompanionDeathRecoveryTests {
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         UUID spotId = place(h, c, place, 20, item);
         h.assertTrue(setOut(h, c), "He did not set out");
+        h.assertTrue(c.deathTrip.lastLine().equals("Иду за вещами №1."), "He did not name the place: " + c.deathTrip.lastLine());
         walk(h, c, 600);
         h.assertTrue(!c.deathTrip.active(), "The walk never ended: " + c.deathTrip.describe());
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The diamond was not taken: " + item.getItem());
@@ -239,8 +241,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(!c.deathTrip.begin(), "He set out for a place with nothing left");
         for (int tick = 0; tick < 5; tick++) c.tick();
         h.assertTrue(!c.deathTrip.begin(), "He set out for a place with nothing left");
-        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."),
-                "He did not say the place was empty: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().isEmpty(), "He spoke of a place with nothing left: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
                 "An empty place is still remembered");
         h.succeed();
@@ -329,7 +330,7 @@ public final class CompanionDeathRecoveryTests {
         var verdict = c.deathTrip.verdict(item.getUUID());
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.GONE,
                 "A stack that vanished was not called gone: " + verdict);
-        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."),
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."),
                 "He claimed what he never had: " + c.deathTrip.lastLine());
         h.succeed();
     }
@@ -353,7 +354,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.GONE,
                 "A merged stack was not called gone: " + verdict);
         h.assertTrue(verdict.reason().equals("слилось с соседней стопкой"), "The reason is not the merge: " + verdict.reason());
-        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."), "He claimed the merged stack: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."), "He claimed the merged stack: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -435,7 +436,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE,
                 "The stack he could not take was not called unreachable: " + verdict);
         h.assertTrue(verdict.reason().equals("метит в другого"), "The reason is not the real one: " + verdict.reason());
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"), "He claimed more than he took: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."), "He claimed more than he took: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
                 "A place with something left was forgotten");
         h.succeed();
@@ -458,7 +459,7 @@ public final class CompanionDeathRecoveryTests {
                 "A stack that did not fit was not called unreachable: " + verdict);
         h.assertTrue(verdict.reason().equals("сумка полна"), "The reason is not the bag: " + verdict.reason());
         h.assertTrue(item.isAlive() && !item.getItem().isEmpty(), "The stack that did not fit was taken anyway");
-        h.assertTrue(c.deathTrip.lastLine().contains("сумка полна"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."), "He claimed what did not fit: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
                 "The place with a stack left is forgotten");
         h.succeed();
@@ -527,7 +528,7 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
-    /** The report never claims a stack the walk did not take: a partly fetched pile says what stayed and why. */
+    /** The report never claims a stack the walk did not take: a partly fetched pile says only that a part was taken. */
     @GameTest(template = "empty")
     public static void aPartlyFetchedPileSaysWhatStayed(GameTestHelper h) {
         CompanionEntity c = spawn(h);
@@ -542,9 +543,7 @@ public final class CompanionDeathRecoveryTests {
         walk(h, c, 400);
         h.assertTrue(taken.isRemoved() || taken.getItem().isEmpty(), "The reachable stack was not taken");
         h.assertTrue(!left.isRemoved() && !left.getItem().isEmpty(), "The stack aimed at another was taken");
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"), "He did not say part of it stayed: " + c.deathTrip.lastLine());
-        h.assertTrue(c.deathTrip.lastLine().contains("Diamond"), "The report does not name what stayed: " + c.deathTrip.lastLine());
-        h.assertTrue(c.deathTrip.lastLine().contains("метит в другого"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Забрал часть вещей."), "He did not say part of it stayed: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -567,9 +566,9 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
-    /** One stack taken and another lost: the report says both, never that everything was taken. */
+    /** One stack taken and another lost: he says only that he took a part, never that everything was taken. */
     @GameTest(template = "empty")
-    public static void aTakenAndALostStackAreBothSaid(GameTestHelper h) {
+    public static void aTakenAndALostStackSaysOnlyAPart(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
         yard(h, c, 12);
@@ -582,8 +581,8 @@ public final class CompanionDeathRecoveryTests {
         lost.discard();
         walk(h, c, 600);
         h.assertTrue(taken.isRemoved() || taken.getItem().isEmpty(), "The diamond was not taken");
-        h.assertTrue(c.deathTrip.lastLine().equals("Забрал свои вещи, остальное пропало."),
-                "The report does not say the rest was lost: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Забрал часть вещей."),
+                "He did not say only a part was taken: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -600,7 +599,7 @@ public final class CompanionDeathRecoveryTests {
         for (int tick = 0; tick < 4; tick++) c.tick();
         item.discard();
         walk(h, c, 400);
-        h.assertTrue(!c.deathTrip.lastLine().equals("Забрал свои вещи."), "He claimed a stack somebody else took: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."), "He claimed a stack somebody else took: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -619,7 +618,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(!c.deathTrip.begin(), "He set out for a stack that burned");
         for (int tick = 0; tick < 5; tick++) c.tick();
         h.assertTrue(!c.deathTrip.begin(), "He set out for a stack that burned");
-        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."), "He did not say the place was empty: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().isEmpty(), "He spoke of a place with nothing left: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -669,10 +668,10 @@ public final class CompanionDeathRecoveryTests {
         BlockPos cheap = c.blockPosition().offset(3, 0, 0);
         var dearItems = stack(h, dear, new ItemStack(Items.DIAMOND, 6));
         var cheapItems = stack(h, cheap, new ItemStack(Items.IRON_INGOT, 6));
-        place(h, c, dear, 60, dearItems);
+        UUID dearId = place(h, c, dear, 60, dearItems);
         place(h, c, cheap, 18, cheapItems);
         h.assertTrue(setOut(h, c), "He did not set out");
-        h.assertTrue(c.deathTrip.describe().contains(dear.toShortString()), "He set out for the cheaper place: " + c.deathTrip.describe());
+        h.assertTrue(c.deathTrip.spotId().equals(dearId), "He set out for the cheaper place: " + c.deathTrip.describe());
         for (int tick = 0; tick < 1200 && !CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(); tick++) {
             if (!c.deathTrip.active()) setOut(h, c);
             c.tick();
@@ -695,10 +694,10 @@ public final class CompanionDeathRecoveryTests {
         var dearItems = stack(h, dear, new ItemStack(Items.DIAMOND, 6));
         var cheapItems = stack(h, cheap, new ItemStack(Items.IRON_INGOT, 6));
         place(h, c, dear, 60, dearItems);
-        place(h, c, cheap, 18, cheapItems);
+        UUID cheapId = place(h, c, cheap, 18, cheapItems);
         dearItems.discard();
         h.assertTrue(setOut(h, c), "He did not set out for the place that still had something");
-        h.assertTrue(c.deathTrip.describe().contains(cheap.toShortString()), "He set out for the emptied place: " + c.deathTrip.describe());
+        h.assertTrue(c.deathTrip.spotId().equals(cheapId), "He set out for the emptied place: " + c.deathTrip.describe());
         walk(h, c, 600);
         h.assertTrue(cheapItems.isRemoved() || cheapItems.getItem().isEmpty(), "The cheap place was not fetched");
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(), "A place is still remembered");
@@ -775,8 +774,8 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(inNether.deathTrip.begin(), "He did not set out through the portal at hand");
         h.assertTrue(inNether.deathTrip.dimension().equals(Level.OVERWORLD),
                 "He set out for another place: " + inNether.deathTrip.dimension().location());
-        h.assertTrue(inNether.deathTrip.lastLine().equals("Иду за своими вещами через портал."),
-                "He did not say he was crossing: " + inNether.deathTrip.lastLine());
+        h.assertTrue(inNether.deathTrip.lastLine().equals("Иду за вещами №1 через портал."),
+                "He did not say he was crossing, with the place's number: " + inNether.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -981,7 +980,7 @@ public final class CompanionDeathRecoveryTests {
         var first = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
         h.assertTrue(first.status() == dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
                 "The first order was not refused: " + first.status());
-        h.assertTrue(first.message().contains("вещи"), "The refusal does not say why: " + first.message());
+        h.assertTrue(first.message().equals("Иду за вещами №1."), "The refusal is not the notice he set out with: " + first.message());
         h.assertTrue(c.deathTrip.active(), "The walk was dropped on the first ask");
         var second = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
         h.assertTrue(second.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
@@ -1179,7 +1178,7 @@ public final class CompanionDeathRecoveryTests {
         var verdict = c.deathTrip.verdict(item.getUUID());
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE, "The stack was not called unreachable: " + verdict);
         h.assertTrue(verdict.reason().equals("нет пути"), "The reason is not the way: " + verdict.reason());
-        h.assertTrue(c.deathTrip.lastLine().contains("нет пути"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."), "He did not say he could not take them: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
                 "A place he could not reach is forgotten");
         h.succeed();
@@ -1300,7 +1299,7 @@ public final class CompanionDeathRecoveryTests {
         place(h, c, place, 20, mine);
         h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"),
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."),
                 "A foreign drop made him claim his own: " + c.deathTrip.lastLine());
         h.assertTrue(c.deathTrip.verdict(foreign.getUUID()) == null, "A foreign drop is in the walk's ledger");
         h.succeed();
@@ -1343,7 +1342,7 @@ public final class CompanionDeathRecoveryTests {
         CompanionDeathSpots.onPlayerPickup(new ItemEntityPickupEvent.Post(player, item, taken));
         item.discard();
         walk(h, c, 400);
-        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."),
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."),
                 "He claimed a stack the player took: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
                 "A place emptied by the player is still remembered");
@@ -1419,9 +1418,9 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
-    /** Two stacks that stayed are both named, with the reason each stayed. */
+    /** Two stacks that stayed are not named: the notice is bare, and the ledger keeps the details. */
     @GameTest(template = "empty")
-    public static void theReportNamesEveryStackThatStayed(GameTestHelper h) {
+    public static void theNoticeNamesNoStackThatStayed(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
         yard(h, c, 8);
@@ -1433,10 +1432,10 @@ public final class CompanionDeathRecoveryTests {
         place(h, c, place, 40, one, two);
         h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
-        String line = c.deathTrip.lastLine();
-        h.assertTrue(line.contains("Diamond") && line.contains("Iron Ingot"), "The report does not name both stacks: " + line);
-        h.assertTrue(line.indexOf("Diamond") < line.indexOf("Iron Ingot") || line.indexOf("Iron Ingot") < line.indexOf("Diamond"),
-                "The report names only one: " + line);
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."), "The notice names what stayed: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.verdict(one.getUUID()).fate() == CompanionDeathTrip.Fate.UNREACHABLE
+                        && c.deathTrip.verdict(two.getUUID()).fate() == CompanionDeathTrip.Fate.UNREACHABLE,
+                "The ledger lost what stayed: " + c.deathTrip.ledger());
         h.succeed();
     }
 
@@ -1479,7 +1478,7 @@ public final class CompanionDeathRecoveryTests {
         for (int tick = 0; tick < 5; tick++) c.tick();
         h.assertTrue(!c.deathTrip.begin(), "He set out for a stack the second look proved gone");
         h.assertTrue(store.byId(c.getOwnerId(), spotId) == null, "A place whose stack was missed twice is still remembered");
-        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."), "He did not say the place was empty: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().isEmpty(), "He spoke of a place with nothing left: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -1498,7 +1497,7 @@ public final class CompanionDeathRecoveryTests {
         var spot = CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId);
         h.assertTrue(spot != null, "The place with a stack left was forgotten");
         h.assertTrue(spot.attempts() == 0, "A walk that ended for a full bag spent a try: " + spot.attempts());
-        h.assertTrue(c.deathTrip.lastLine().contains("сумка полна"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Не смог забрать вещи."), "He claimed what did not fit: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -1567,6 +1566,95 @@ public final class CompanionDeathRecoveryTests {
         data.attempted(owner, spots.get(0).id());
         data.taken(owner, spots.get(0).id());
         h.assertTrue(data.all(owner).isEmpty(), "A place saved without an id could not be forgotten by its id");
+        h.succeed();
+    }
+
+    // ---- the settings list: the number he says, and forgetting a place ----
+
+    /** The number he says is the place's position in the settings list: the dearest first, and the list follows a taken place. */
+    @GameTest(template = "empty")
+    public static void theNumberHeSaysIsThePlacePositionInTheList(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        settle(c);
+        yard(h, c, 12);
+        BlockPos dearest = c.blockPosition().offset(6, 0, 0);
+        var first = stack(h, dearest, new ItemStack(Items.DIAMOND, 4));
+        UUID firstId = place(h, c, dearest, 60, first);
+        BlockPos middle = c.blockPosition().offset(-4, 0, 0);
+        var second = stack(h, middle, new ItemStack(Items.GOLDEN_APPLE, 2));
+        UUID secondId = place(h, c, middle, 40, second);
+        BlockPos last = c.blockPosition().offset(0, 0, 6);
+        var third = stack(h, last, new ItemStack(Items.IRON_INGOT, 8));
+        UUID thirdId = place(h, c, last, 20, third);
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        var list = CompanionDeathBoard.places(owner);
+        h.assertTrue(list.size() == 3, "The list does not hold every place: " + list);
+        h.assertTrue(list.get(0).number() == 1 && list.get(0).id().equals(firstId), "The dearest is not number one: " + list);
+        h.assertTrue(list.get(1).number() == 2 && list.get(1).id().equals(secondId), "The second place is not number two: " + list);
+        h.assertTrue(list.get(2).number() == 3 && list.get(2).id().equals(thirdId), "The last place is not number three: " + list);
+        h.assertTrue(list.get(0).world().equals("world") && list.get(0).x() == dearest.getX() && list.get(0).z() == dearest.getZ(),
+                "The list names another world or point: " + list.get(0));
+        h.assertTrue(setOut(h, c), "He did not set out");
+        h.assertTrue(c.deathTrip.lastLine().equals("Иду за вещами №1."), "He did not say the place's number: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.spotId().equals(firstId), "He set out for another place: " + c.deathTrip.spotId());
+        // The companion sets out again at once for the next place, so the walk is followed only until this one is gone.
+        for (int tick = 0; tick < 600 && store.byId(c.getOwnerId(), firstId) != null; tick++) c.tick();
+        h.assertTrue(first.isRemoved() || first.getItem().isEmpty(), "The dearest stack was not taken");
+        // A place that is taken leaves the list, and the places after it move up a number.
+        var after = CompanionDeathBoard.places(owner);
+        h.assertTrue(after.size() == 2 && after.get(0).id().equals(secondId) && after.get(0).number() == 1,
+                "The taken place stayed in the list or the numbers did not follow: " + after);
+        h.succeed();
+    }
+
+    /** A place he has given up keeps its number: the next place is spoken of by the number the list gives it. */
+    @GameTest(template = "empty")
+    public static void theNumberIsTheListsWhenTheDearestIsGivenUp(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 12);
+        BlockPos dearest = c.blockPosition().offset(6, 0, 0);
+        var first = stack(h, dearest, new ItemStack(Items.DIAMOND, 4));
+        UUID firstId = place(h, c, dearest, 60, first);
+        BlockPos second = c.blockPosition().offset(-5, 0, 0);
+        var secondStack = stack(h, second, new ItemStack(Items.GOLDEN_APPLE, 2));
+        UUID secondId = place(h, c, second, 40, secondStack);
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        for (int i = 0; i < 5; i++) store.attempted(c.getOwnerId(), firstId);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out for the second place");
+        h.assertTrue(c.deathTrip.lastLine().equals("Иду за вещами №2."),
+                "The number is not the place's in the list: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.spotId().equals(secondId), "He set out for another place: " + c.deathTrip.spotId());
+        h.succeed();
+    }
+
+    /** The delete button's command forgets exactly the place it names: a neighbour stays, and the list follows. */
+    @GameTest(template = "empty")
+    public static void theDeleteCommandForgetsExactlyOnePlace(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        settle(c);
+        yard(h, c, 12);
+        BlockPos dearest = c.blockPosition().offset(6, 0, 0);
+        var first = stack(h, dearest, new ItemStack(Items.DIAMOND, 4));
+        UUID firstId = place(h, c, dearest, 60, first);
+        BlockPos second = c.blockPosition().offset(-5, 0, 0);
+        var secondStack = stack(h, second, new ItemStack(Items.GOLDEN_APPLE, 2));
+        UUID secondId = place(h, c, second, 40, secondStack);
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        var shown = CompanionDeathBoard.places(owner);
+        h.assertTrue(shown.size() == 2 && shown.get(1).id().equals(secondId), "The list does not show both places: " + shown);
+        // The button sends the id of the row it stands on: number two, the golden apples.
+        h.assertTrue(CompanionDeathBoard.forget(owner, shown.get(1).id()), "The delete was refused");
+        h.assertTrue(store.byId(owner.getUUID(), secondId) == null, "The place the button named is still remembered");
+        h.assertTrue(store.byId(owner.getUUID(), firstId) != null, "A neighbour place was forgotten with it");
+        var after = CompanionDeathBoard.places(owner);
+        h.assertTrue(after.size() == 1 && after.get(0).id().equals(firstId) && after.get(0).number() == 1,
+                "The list did not follow the delete: " + after);
+        // A second press on the same row changes nothing.
+        h.assertTrue(!CompanionDeathBoard.forget(owner, secondId), "An unknown place was reported forgotten");
+        h.assertTrue(CompanionDeathBoard.places(owner).size() == 1, "A second press took another place");
         h.succeed();
     }
 }
