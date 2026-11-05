@@ -353,6 +353,69 @@ public final class CompanionWaterBucketTests {
         });
     }
 
+    /** Into a pond the water breaks his fall by itself: nothing to pour for. */
+    @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
+    public static void aFallIntoAPondIsNotPouredFor(GameTestHelper h) {
+        floor(h, Blocks.STONE);
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) h.setBlock(x, 1, z, Blocks.WATER);
+        CompanionEntity c = spawn(h, 4, 26, 4);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        boolean[] poured = {false};
+        h.onEachTick(() -> poured[0] |= count(c, Items.BUCKET) > 0);
+        h.runAfterDelay(60, () -> {
+            h.assertTrue(!poured[0], "Poured the bucket over a pond");
+            h.assertTrue(c.getHealth() == c.getMaxHealth(), "Hurt: health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /** Flung more than 48 blocks from his water he does not go back for it (the owner, 05.11): he says the bucket stays empty. */
+    @GameTest(template = "large_search", timeoutTicks = 300, skyAccess = true)
+    public static void flungFartherThanFortyEightBlocksHeLeavesHisWater(GameTestHelper h) {
+        for (int x = 0; x < 72; x++) for (int z = 8; z < 24; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        CompanionEntity c = spawn(h, 10, 31, 16);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        List<String> said = said(h, c);
+        boolean[] done = {false};
+        h.onEachTick(() -> {
+            if (done[0] || count(c, Items.BUCKET) == 0) return;
+            done[0] = true;
+            var away = h.absoluteVec(new net.minecraft.world.phys.Vec3(66.5, 1, 16.5));
+            c.teleportTo(away.x, away.y, away.z);
+            c.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+            c.resetFallDistance();
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(said.contains("Воду не забрал, ведро осталось пустым."), "Did not give it up: " + said);
+            h.assertTrue(!said.contains("Сбегаю за водой — ведро пустое."), "Went for water 50 blocks away: " + said);
+            h.assertTrue(count(c, Items.BUCKET) == 1 && count(c, Items.WATER_BUCKET) == 0, "Bag: " + c.getStoredItemsSummary());
+        });
+    }
+
+    /** With the player looking into his bag he does not walk off for his water; the bag closed, he goes. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900, skyAccess = true)
+    public static void withHisBagOpenHeWaitsToFetchHisWater(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        CompanionEntity c = spawn(h, 16, 31, 16);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        List<String> said = said(h, c);
+        var viewer = h.makeMockServerPlayerInLevel();
+        long[] openedAt = {-1};
+        net.minecraft.world.phys.Vec3[] at = {null};
+        flingOnPour(h, c, water -> { c.startOpen(viewer); openedAt[0] = h.getTick(); at[0] = c.position(); });
+        h.onEachTick(() -> {
+            if (openedAt[0] < 0 || h.getTick() != openedAt[0] + 100) return;
+            h.assertTrue(!said.contains("Сбегаю за водой — ведро пустое.") && c.position().distanceTo(at[0]) < 1.5,
+                    "Went for his water with his bag open: " + said + ", moved " + c.position().distanceTo(at[0]));
+            c.stopOpen(viewer);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(openedAt[0] >= 0 && h.getTick() > openedAt[0] + 100, "The bag not closed yet");
+            h.assertTrue(said.contains("Сбегаю за водой — ведро пустое."), "Did not go for it: " + said);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && water(h, 32) == null, "Bag: " + c.getStoredItemsSummary() + ", water at " + water(h, 32));
+        });
+    }
+
     /** Whether water ever appears in the template or an empty bucket in his bag, from now on. */
     private static boolean[] watchPour(GameTestHelper h, CompanionEntity c) {
         boolean[] poured = {false};
@@ -426,16 +489,19 @@ public final class CompanionWaterBucketTests {
         h.assertTrue(water(h, size) == null, "Water left at " + water(h, size));
     }
 
-    /** Six blocks cost him three health, under the two hearts that are worth the bucket (the owner, 05.11): he takes them. */
+    /**
+     * Six and a half blocks cost him three health, under the two hearts that are worth the bucket (the owner, 05.11): he takes them.
+     * The game does not count the landing move into the fall (Entity.checkFallDamage); counted, it would make these four.
+     */
     @GameTest(template = "empty", timeoutTicks = 100, skyAccess = true)
-    public static void aFallOfSixIsTakenWithoutTheBucket(GameTestHelper h) {
+    public static void aFallOfSixAndAHalfIsTakenWithoutTheBucket(GameTestHelper h) {
         floor(h, Blocks.STONE);
-        CompanionEntity c = spawn(h, 4, 7, 4);
+        CompanionEntity c = spawn(h, 4.5, 7.4, 4.5);
         c.setItem(0, new ItemStack(Items.WATER_BUCKET));
         boolean[] poured = {false};
         h.onEachTick(() -> poured[0] |= water(h, 8) != null || count(c, Items.BUCKET) > 0);
         h.runAfterDelay(40, () -> {
-            h.assertTrue(!poured[0], "Poured the bucket for a fall of six");
+            h.assertTrue(!poured[0], "Poured the bucket for a fall of six and a half");
             h.assertTrue(c.getHealth() == c.getMaxHealth() - 3, "The fall did not cost three: health " + c.getHealth());
             h.succeed();
         });
@@ -471,8 +537,10 @@ public final class CompanionWaterBucketTests {
         return count;
     }
 
-    private static CompanionEntity spawn(GameTestHelper h, int x, int y, int z) {
-        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), x, y, z);
+    private static CompanionEntity spawn(GameTestHelper h, int x, int y, int z) { return spawn(h, x + .5, y, z + .5); }
+
+    private static CompanionEntity spawn(GameTestHelper h, double x, double y, double z) {
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), new net.minecraft.world.phys.Vec3(x, y, z));
         var owner = h.makeMockServerPlayerInLevel();
         var at = h.absoluteVec(new net.minecraft.world.phys.Vec3(1.5, 1, 1.5));
         owner.teleportTo(at.x, at.y, at.z);
