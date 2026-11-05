@@ -137,6 +137,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
+    final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     BlockPos movementIntent;
@@ -323,6 +324,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
+        this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
@@ -544,6 +546,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean isWorking() { return work.isActive(); }
     /** Read only, for the GameTest observer: a self-rescue running, the work's job/phase, and a visible action in hand. */
     public boolean isSelfRescuing() { return recovery.active(); }
+    /** The damage a landing after this fall does him before his protection, by the game's own count (CompanionWaterBucket). */
+    int fallDamage(float distance, float times) { return calculateFallDamage(distance, times); }
     /** Read only: his own drops still to pick up (after «стоп» too: nothing of his is left lying). */
     public boolean isCollectingDrops() { return loot.hasPending(); }
     public String workPhase() { return work.watchPhase(); }
@@ -818,6 +822,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             dev.aicompanion.CompanionDiagnostics.event(diagnostics.trace(), "left_vehicle", "entity", getUUID(), "vehicle", getVehicle().getType().toShortString());
             stopRiding();
         }
+        waterBucket.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
         pushOutOfBlocks();
