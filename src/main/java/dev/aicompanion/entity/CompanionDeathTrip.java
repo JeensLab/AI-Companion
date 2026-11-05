@@ -262,7 +262,7 @@ public final class CompanionDeathTrip {
         if (!c.deathRecovery()) { stop(); say("Ладно, вещи подождут."); return false; }
         ticks++;
         if (crossing) {
-            if (level.dimension().equals(spot.dimension())) { crossing = false; say("Перешёл, иду к вещам."); return true; }
+            if (level.dimension().equals(spot.dimension())) { crossing = false; return true; }
             if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return false; }
             if (ticks > MOST_TICKS) { stop(); say("Портал не пустил."); return false; }
             return true;
@@ -271,7 +271,7 @@ public final class CompanionDeathTrip {
         if (!level.dimension().equals(spot.dimension())) {
             if (!c.portals.walking()) {
                 var entered = c.portals.enter(level);
-                if (!entered.success()) { stop(); say("Оказался в другом измерении, портала рядом нет."); return false; }
+                if (!entered.success()) { stop(); say("Не смог перейти в другое измерение."); return false; }
                 crossing = true;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
                 say("Возвращаюсь к своим вещам через портал.");
@@ -331,7 +331,7 @@ public final class CompanionDeathTrip {
                 if (nav.lastSearchExhausted()) { CompanionMiningNavigation.walk(c, path); return true; }
                 double range = c.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
                 if (item.distanceToSqr(c) <= range * range) {
-                    dev.aicompanion.AICompanionMod.LOGGER.info("[death] no route from {} to {} ({} cells)",
+                    dev.aicompanion.AICompanionMod.LOGGER.debug("[death] no route from {} to {} ({} cells)",
                             c.blockPosition(), item.blockPosition(), cells.size());
                     giveUpEntry(entry, item, "нет пути");
                     return true;
@@ -527,7 +527,7 @@ public final class CompanionDeathTrip {
         closest = Double.MAX_VALUE;
         c.getNavigation().stop();
         c.work.route.stop();
-        dev.aicompanion.AICompanionMod.LOGGER.info("[death] stack {}: {} ({})", entry.id(), fate, reason);
+        dev.aicompanion.AICompanionMod.LOGGER.debug("[death] stack {}: {} ({})", entry.id(), fate, reason);
     }
 
     /**
@@ -563,11 +563,17 @@ public final class CompanionDeathTrip {
             // Something of his is still lying there: the place waits, and is tried again in tens of seconds, not minutes.
             triedAt.put(spot.pos(), level.getGameTime());
             stop();
-            say("Часть моих вещей осталась: " + String.join("; ", left) + ".");
+            say("Часть моих вещей осталась: " + named(left) + ".");
             return;
         }
         forget(level);
         say(taken > 0 ? "Забрал свои вещи, остальное пропало." : "Вещей на месте уже нет.");
+    }
+
+    /** Three names at most: a wall of items is not a report a player reads. */
+    private static String named(List<String> left) {
+        if (left.size() <= 3) return String.join("; ", left);
+        return String.join("; ", left.subList(0, 3)) + " и ещё " + (left.size() - 3);
     }
 
     /** Whether every stack that stayed stayed because the bag was full: then the walk was not the place's fault. */
@@ -663,6 +669,6 @@ public final class CompanionDeathTrip {
     private void say(String line) {
         lastLine = line;
         c.autonomySay(line);
-        dev.aicompanion.AICompanionMod.LOGGER.info("[death] says: {}", line);
+        dev.aicompanion.AICompanionMod.LOGGER.debug("[death] says: {}", line);
     }
 }
