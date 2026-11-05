@@ -74,7 +74,7 @@ final class CompanionCreeperGuard {
 
     CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; shield = new CompanionShieldGuard(owner); escape = new CompanionFuseEscape(owner); }
 
-    /** The shield is up against a lit fuse: the idle lowering of it (CompanionEntity) waits. */
+    /** The shield is up against a lit fuse: the lowering of it with no other danger near ({@link CompanionShieldDefense}) waits. */
     boolean shielding() { return shield.holding(); }
 
     /** True when a creeper is met with the sword: on a long goal, armed, healthy, and not after a run of retreats from it. */
