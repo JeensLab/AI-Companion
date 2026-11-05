@@ -290,9 +290,19 @@ final class CompanionWaterBucket {
         return hit.getType() == HitResult.Type.MISS || hit.getBlockPos().equals(cell);
     }
 
-    /** Back into a bucket of his: any empty one, with a free cell if it lies in a stack. False if he has none. */
+    /** Back into a bucket of his: any empty one. False if he has none. */
     private boolean scoop(ServerLevel level, Pool pool) {
-        BlockPos cell = pool.cell;
+        if (!scoopInto(c, level, pool.cell)) return false;
+        pools.remove(pool);
+        event("water_bucket_scooped", pool);
+        return true;
+    }
+
+    /**
+     * The water of the cell into an empty bucket of his, with a free cell if it lies in a stack, by the game's own bucket, sound and
+     * all (CompanionWaterFill fills his buckets the same way). False if he has none.
+     */
+    static boolean scoopInto(CompanionEntity c, ServerLevel level, BlockPos cell) {
         BlockState state = level.getBlockState(cell);
         if (!(state.getBlock() instanceof BucketPickup pickup)) return false;
         int empty = -1, free = -1;
@@ -309,8 +319,6 @@ final class CompanionWaterBucket {
         pickup.getPickupSound(state).ifPresent(sound -> level.playSound(null, cell, sound, SoundSource.BLOCKS, 1.0F, 1.0F));
         level.gameEvent(c, GameEvent.FLUID_PICKUP, cell);
         c.animateAction(1, cell, filled);
-        pools.remove(pool);
-        event("water_bucket_scooped", pool);
         return true;
     }
 
@@ -320,6 +328,20 @@ final class CompanionWaterBucket {
         event("water_bucket_left", pool, "why", why);
         c.autonomySay(LEFT, false);
     }
+
+    /** An empty bucket of his that water can go into: one alone, or one of a stack with a free cell for the full one (as scoopInto takes it). */
+    static boolean roomToScoop(CompanionEntity c) {
+        boolean single = false, stacked = false, free = false;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            ItemStack stack = c.getItem(slot);
+            if (stack.is(Items.BUCKET)) { if (stack.getCount() == 1) single = true; else stacked = true; }
+            else if (stack.isEmpty()) free = true;
+        }
+        return single || stacked && free;
+    }
+
+    /** Water of his from a fall still stands: an empty bucket of his is kept for it. */
+    boolean hasPools() { return !pools.isEmpty(); }
 
     /** The first water of his he is down out of reach of, or null: he goes back for it, unless the player has his bag open. */
     private Pool astray() {

@@ -313,7 +313,7 @@ public final class CompanionEvents {
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -381,6 +381,8 @@ public final class CompanionEvents {
     /** True while a deed of his own is being given (not an order of the player: it does not end itself). Server thread only. */
     private static boolean autonomousDispatch;
     private static boolean goalDispatch;
+    /** A long goal's own step is being given (CompanionWaterFill tells its journal a goal's water from an order's). */
+    static boolean goalDispatching() { return goalDispatch; }
 
     static CompanionActionResult executeGoal(ServerPlayer player, String action, String item, int count) {
         return executeGoal(player, action, item, count, "auto", dev.aicompanion.CompanionDiagnostics.newTrace(), "near_player");

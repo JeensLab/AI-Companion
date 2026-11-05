@@ -138,6 +138,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
+    final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     BlockPos movementIntent;
@@ -335,6 +336,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(3, new CompanionGatherGoals.GatherLogsGoal(this));
         this.goalSelector.addGoal(3, new CompanionDigGoal(this));
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
+        this.goalSelector.addGoal(3, new CompanionWaterFill.RefillGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
         this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F) {
@@ -823,6 +825,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             stopRiding();
         }
         waterBucket.tick();
+        waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
         pushOutOfBlocks();

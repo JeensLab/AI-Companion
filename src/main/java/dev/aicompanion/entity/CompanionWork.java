@@ -27,8 +27,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -311,6 +311,7 @@ public final class CompanionWork {
             case BREED -> "разведение животных";
             case FARM -> "в поле";
             case COURSE -> "в пути";
+            case WATER -> "за водой";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -337,6 +338,7 @@ public final class CompanionWork {
             case ORE -> "добычу руды «" + ore.oreName + "» (" + oreMined + " из " + oreWanted + ")";
             case FARM -> farming.jobName();
             case COURSE -> course.jobName();
+            case WATER -> "набор воды в ведро";
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -413,6 +415,7 @@ public final class CompanionWork {
             }
             case "come" -> { job = Job.COME; phase = Phase.RETURN; }
             case "walk_heading" -> { CompanionActionResult refusal = course.begin(item, count); if (refusal != null) return refusal; job = Job.COURSE; phase = Phase.COURSE; }
+            case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "give_items" -> {
                 if (!"logs".equals(item) && (ResourceLocation.tryParse(item) == null || !BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse(item))))
                     return CompanionActionResult.failed("Не понял, какой предмет отдать.");
@@ -598,6 +601,7 @@ public final class CompanionWork {
             case BREED -> breeding.tick(level);
             case FARM -> farming.tick(level);
             case COURSE -> course.tick(level);
+            case WATER -> owner.waterFill.orderTick(level);
             default -> { }
         }
     }

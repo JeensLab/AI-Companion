@@ -91,6 +91,13 @@ public final class CompanionObtain {
             case "minecraft:dirt" -> { return add("gather_dirt", "", count); }
             case "minecraft:sand", "minecraft:red_sand", "minecraft:gravel" -> { return addSplit("gather_loose", key, count, 64); }
             case FLINT -> { return addSplit("gather_loose", key, count, FLINT_STEP); }   // gravel dug (and re-placed) until this much flint drops
+            // An empty bucket of his (or one made now) filled from living water (CompanionWaterFill); none to be had in the Nether or the
+            // End, or with the game's rule that refills water off: then no bucket is made for it either.
+            case "minecraft:water_bucket" -> {
+                String refusal = CompanionWaterFill.refusal(level);
+                if (refusal != null) return refuse(refusal);
+                return need("minecraft:bucket", count, depth + 1) && add("fill_bucket", key, count);
+            }
             default -> { }
         }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
