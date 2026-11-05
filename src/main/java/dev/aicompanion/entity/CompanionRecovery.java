@@ -285,7 +285,7 @@ final class CompanionRecovery {
     private boolean safeToDig(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos) || owner.distanceToSqr(pos.getCenter()) > 16) return false;
         BlockState state = level.getBlockState(pos);
-        if (!(CompanionQuarry.soil(state) || CompanionWork.isStone(state) || state.is(net.minecraft.tags.BlockTags.LEAVES)) || state.getDestroySpeed(level, pos) < 0) return false;
+        if (!(CompanionQuarry.soil(state) || rock(state) || state.is(net.minecraft.tags.BlockTags.LEAVES)) || state.getDestroySpeed(level, pos) < 0) return false;
         for (Direction direction : Direction.values()) {
             BlockPos near = pos.relative(direction);
             var fluid = level.getFluidState(near);
@@ -302,7 +302,7 @@ final class CompanionRecovery {
     private boolean safeBelow(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getWorldBorder().isWithinBounds(pos)) return false;
         BlockState state = level.getBlockState(pos);
-        if (!(CompanionQuarry.soil(state) || CompanionWork.isStone(state)) || state.getDestroySpeed(level, pos) < 0
+        if (!(CompanionQuarry.soil(state) || rock(state)) || state.getDestroySpeed(level, pos) < 0
                 || state.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
         for (Direction direction : Direction.values()) {
             BlockPos near = pos.relative(direction);
@@ -317,6 +317,13 @@ final class CompanionRecovery {
         }
         return false;
     }
+    /**
+     * Stone to dig a way out of: the natural stone, and the Nether's and the End's own (recon 04.11, E1: in a pocket of netherrack, by
+     * the End's obsidian platform «Не могу к тебе пройти»). Not in isStone: stone orders count by it.
+     */
+    private static boolean rock(BlockState state) {
+        return CompanionWork.isStone(state) || state.is(Blocks.NETHERRACK) || state.is(Blocks.END_STONE);
+    }
     private boolean safeTarget(ServerLevel level, BlockPos pos) {
         return pos.equals(owner.blockPosition().below()) ? safeBelow(level, pos) : safeToDig(level, pos);
     }
@@ -325,7 +332,7 @@ final class CompanionRecovery {
         if (CompanionQuarry.soil(state)) {
             CompanionTools.equip(owner, ItemTags.SHOVELS, state);
             if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(ItemTags.SHOVELS)) owner.unequipForSupport("mainhand");
-        } else if (CompanionWork.isStone(state)) {
+        } else if (rock(state)) {
             if (!CompanionTools.equip(owner, ItemTags.PICKAXES, state) && makePickaxe(level, state)) return;
         }
         owner.getLookControl().setLookAt(digTarget.getX() + .5, digTarget.getY() + .5, digTarget.getZ() + .5);

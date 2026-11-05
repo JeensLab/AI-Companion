@@ -12,6 +12,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -122,6 +123,22 @@ public final class CompanionWorkflowTests {
         stablePitExit(helper, companion);
     }
 
+    /** Recon 04.11 (E1): a pocket of netherrack was «Не могу к тебе пройти» — he digs out of it by hand, as out of soil. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesNetherrackPit(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.NETHERRACK, 4);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        stablePitExit(helper, companion);
+    }
+
+    /** End stone takes 15 s a block by hand: the pickaxe in the bag goes into the hand, as for stone. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesEndStonePitWithThePickaxeFromTheBag(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.END_STONE, 4); companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        stablePitExit(helper, companion);
+    }
+
     private static void stablePitExit(GameTestHelper helper, CompanionEntity companion) {
         double top = helper.absolutePos(new BlockPos(16, 5, 16)).getY();
         int[] stable = {0};
@@ -211,7 +228,10 @@ public final class CompanionWorkflowTests {
         return pit(helper, soil, 4);
     }
     private static CompanionEntity pit(GameTestHelper helper, boolean soil, int depth) {
-        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= depth; y++) helper.setBlock(new BlockPos(x, y, z), soil && y > 0 ? Blocks.DIRT : Blocks.BEDROCK);
+        return pit(helper, soil ? Blocks.DIRT : Blocks.BEDROCK, depth);
+    }
+    private static CompanionEntity pit(GameTestHelper helper, Block walls, int depth) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= depth; y++) helper.setBlock(new BlockPos(x, y, z), y > 0 ? walls : Blocks.BEDROCK);
         for (int y = 1; y <= depth; y++) helper.setBlock(new BlockPos(16, y, 16), Blocks.AIR);
         CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
         var player = helper.makeMockServerPlayerInLevel(); BlockPos at = helper.absolutePos(new BlockPos(21, depth + 1, 16)); player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
