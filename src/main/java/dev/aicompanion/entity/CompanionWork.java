@@ -354,6 +354,11 @@ public final class CompanionWork {
     }
     public void pause() { breaking.reset(); resetApproach(); }
 
+    /** Ticks the creeper guard held the work off are not the order's: its deadline moves by them. */
+    void credit(long ticks) {
+        if (job != null) deadline += ticks;
+    }
+
     /**
      * Stone materials this work still needs in the bag; an escape pillar must not use them (review 22.10, В8: the furnace stone
      * of the iron chain went under his feet). A stone order keeps all its stone.

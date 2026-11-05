@@ -28,19 +28,24 @@ final class CompanionCombat {
     static final class PlayerPaceAttackGoal extends MeleeAttackGoal {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
-        private int nextSwing;
         /** At range the bow has him, when he has one (CompanionArchery). */
         @Override public boolean canUse() { return !c.archery.wants(c.getTarget()) && super.canUse(); }
         @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
         @Override public void start() { super.start(); c.selectWeaponForCombat(); }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
-            if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
-            nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
+            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
+            c.combat.swung();
             c.swing(InteractionHand.MAIN_HAND);
-            c.doHurtTarget(target);
+            if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
         }
     }
+
+    /** One pace for every blow he deals, the melee goal's and the creeper guard's: no second blow a tick after the first. */
+    private int nextSwing;
+    boolean swingReady() { return ticksToSwing() == 0; }
+    int ticksToSwing() { return Math.max(0, nextSwing - c.tickCount); }
+    void swung() { nextSwing = c.tickCount + weaponCooldownTicks(); }
 
     int weaponCooldownTicks() { return Math.max(6, Math.min(40, (int) Math.ceil(20 / Math.max(.5, attackSpeed(c.getMainHandItem()))))); }
 
@@ -108,16 +113,20 @@ final class CompanionCombat {
     /**
      * Without a guard order, like a friend (the player 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня
      * напал»): a monster at the player's side, or one going for the player or for Oleg, is met first. Only while Oleg is near the
-     * player; never a creeper (a hit beside the player may end in its blast — wolves leave them alone too), never his own hunt.
+     * player; never his own hunt. A creeper only when he fights it, striking and running from its fuse
+     * (CompanionCreeperGuard), and only one going for the player or for him: one that just stands by the player is left alone, as
+     * a hit wakes it to a blast beside him — wolves leave them alone too.
      */
     boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
-                || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper) return false;
+                || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights()) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
         if (owner == null || owner.level() != c.level() || owner.isSpectator() || c.distanceToSqr(owner) > GUARD_RANGE * GUARD_RANGE) return false;
+        boolean hunts = monster.getTarget() == owner || monster.getTarget() == c;
+        if (monster instanceof net.minecraft.world.entity.monster.Creeper) return hunts && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
         return monster.distanceToSqr(owner) <= 6 * 6 || monster.distanceToSqr(c) <= 4 * 4
-                || (monster.getTarget() == owner || monster.getTarget() == c) && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
+                || hunts && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
     }
     /** A flier near the player, while Oleg is near him too: no Monster, so comesForOwner does not see it. */
     boolean fliesAtOwner(net.minecraft.world.entity.LivingEntity target) {

@@ -24,6 +24,8 @@ import java.util.UUID;
 /** Harvested items are normal world entities. Transfer to the bag requires physical proximity. */
 final class CompanionLoot {
     private static final String HARVESTER = "aicompanion:harvester";
+    /** How near a creeper in sight must be for the pickup to wait, whether or not he fights it: the drop may lie beside it. */
+    static final double CREEPER_NEAR = 7;
     private final CompanionEntity owner;
     private final Set<UUID> pending = new HashSet<>();
     private final Set<UUID> unreachable = new HashSet<>();
@@ -214,7 +216,7 @@ final class CompanionLoot {
     }
     boolean canChase() {
         if (!hasPending() || !owner.canCollectItems() || owner.isRecoveringSupports() || owner.getTemporarySupportCount() > 0
-                || owner.isSwingingAtBlock()) return false;
+                || owner.isSwingingAtBlock() || owner.creeperGuard.nearby(CREEPER_NEAR)) return false;
         if (owner.level() instanceof ServerLevel level) for (UUID id : pending) if (chaseable(level, id)) return true;
         return false;
     }
@@ -454,6 +456,7 @@ final class CompanionLoot {
     }
 
     private boolean chaseable(ServerLevel level, UUID id) {
+        if (shunned.getOrDefault(id, 0L) > level.getGameTime()) return false;
         if (unreachable.contains(id)) {
             // Given up from one spot only: four blocks away the drop is tried again.
             BlockPos from = unreachableFrom.get(id);
@@ -488,7 +491,10 @@ final class CompanionLoot {
         return found;
     }
     private final Map<UUID, Long> reclaimedAt = new HashMap<>();
-    void beginCollection() { collecting = true; leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
+    /** Drops left lying until the given game time (a creeper that will not leave them): not chased, and the work does not wait for them. */
+    private final Map<UUID, Long> shunned = new HashMap<>();
+    void shun(long until) { for (UUID id : pending) shunned.put(id, until); pause(); }
+    void beginCollection() { collecting = true; shunned.clear(); leavesCleared.clear(); unreachable.clear(); unreachableFrom.clear(); attempts.clear(); retryAt.clear(); }
     void resumeCollection() { collecting = true; }
-    void cancel() { collecting = false; leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }
+    void cancel() { collecting = false; shunned.clear(); leavesCleared.clear(); pending.clear(); unreachable.clear(); unreachableFrom.clear(); born.clear(); attempts.clear(); retryAt.clear(); sites.clear(); rescanUntil = 0; pause(); }
 }
