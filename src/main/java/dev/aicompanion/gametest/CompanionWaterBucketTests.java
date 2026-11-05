@@ -132,9 +132,10 @@ public final class CompanionWaterBucketTests {
         CompanionEntity c = spawn(h, 16, 31, 16);
         c.setItem(0, new ItemStack(Items.WATER_BUCKET));
         List<String> said = said(h, c);
-        flingOnPour(h, c, false);
+        flingOnPour(h, c, water -> {});
         h.succeedWhen(() -> {
             h.assertTrue(said.contains("Сбегаю за водой — ведро пустое."), "Did not say he goes for it: " + said);
+            h.assertTrue(said.stream().noneMatch(SAVED::contains), "Boasted of a save the water did not make: " + said);
             h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.BUCKET) == 0, "Bag: " + c.getStoredItemsSummary());
             h.assertTrue(water(h, 32) == null, "Water left at " + water(h, 32));
         });
@@ -147,7 +148,7 @@ public final class CompanionWaterBucketTests {
         CompanionEntity c = spawn(h, 16, 31, 16);
         c.setItem(0, new ItemStack(Items.WATER_BUCKET));
         List<String> said = said(h, c);
-        flingOnPour(h, c, true);
+        flingOnPour(h, c, water -> h.setBlock(water, Blocks.AIR));
         h.succeedWhen(() -> {
             h.assertTrue(said.contains("Воду не забрал, ведро осталось пустым."), "Did not say the bucket is empty: " + said);
             h.assertTrue(count(c, Items.WATER_BUCKET) == 0 && count(c, Items.BUCKET) == 1, "Bag: " + c.getStoredItemsSummary());
@@ -187,10 +188,10 @@ public final class CompanionWaterBucketTests {
     }
 
     /**
-     * The tick his water appears, he is set down ten blocks away on the ground, out of his water's reach (a fling ending softly);
-     * with {@code scooped} the water is taken away then too.
+     * The tick his water appears, he is set down ten blocks away on the ground, out of his water's reach (a fling ending softly), and
+     * {@code then} is done to the water's cell.
      */
-    private static void flingOnPour(GameTestHelper h, CompanionEntity c, boolean scooped) {
+    private static void flingOnPour(GameTestHelper h, CompanionEntity c, java.util.function.Consumer<BlockPos> then) {
         boolean[] done = {false};
         h.onEachTick(() -> {
             BlockPos water = water(h, 32);
@@ -200,7 +201,27 @@ public final class CompanionWaterBucketTests {
             c.teleportTo(away.x, away.y, away.z);
             c.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
             c.resetFallDistance();
-            if (scooped) h.setBlock(water, Blocks.AIR);
+            then.accept(water);
+        });
+    }
+
+    /**
+     * His water walled in glass: he sees it but cannot reach it, as a player's bucket cannot through a wall. After thirty seconds he
+     * gives it up and says so; it stays where it is.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 900, skyAccess = true)
+    public static void hisWaterBehindGlassIsGivenUpNotScoopedThroughIt(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        CompanionEntity c = spawn(h, 16, 31, 16);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        List<String> said = said(h, c);
+        flingOnPour(h, c, water -> {
+            for (var side : net.minecraft.core.Direction.values()) if (side != net.minecraft.core.Direction.DOWN) h.setBlock(water.relative(side), Blocks.GLASS);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(said.contains("Воду не забрал, ведро осталось пустым."), "Did not give it up: " + said);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 0 && count(c, Items.BUCKET) == 1, "Bag: " + c.getStoredItemsSummary());
+            h.assertTrue(water(h, 32) != null, "The water is gone from behind the glass");
         });
     }
 
