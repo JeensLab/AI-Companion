@@ -23,6 +23,8 @@ public final class CompanionDeathRecoveryScreen extends Screen {
     private String notice = "";
     private int offset, listTop, listBottom, ticks;
     private boolean reading;
+    /** A refresh asked for while a read was in flight: it runs once that read is done, never lost. */
+    private boolean refreshQueued;
 
     public CompanionDeathRecoveryScreen(Screen parent) {
         super(Component.literal("Вещи после смерти"));
@@ -73,7 +75,8 @@ public final class CompanionDeathRecoveryScreen extends Screen {
             setPlaces(List.of());
             return;
         }
-        if (reading) return;
+        // A read is already in flight: ask for another one rather than dropping this request on the floor.
+        if (reading) { refreshQueued = true; return; }
         reading = true;
         var playerId = minecraft.player.getUUID();
         var world = minecraft.level;
@@ -82,7 +85,10 @@ public final class CompanionDeathRecoveryScreen extends Screen {
             var value = player == null ? List.<CompanionDeathBoard.Place>of() : CompanionDeathBoard.places(player);
             minecraft.execute(() -> {
                 reading = false;
-                if (minecraft.screen != this || minecraft.level != world) return;
+                if (minecraft.screen != this || minecraft.level != world) { refreshQueued = false; return; }
+                // A refresh queued meanwhile is the newer truth: its own read is started instead of showing this one,
+                // which may already be behind a delete.
+                if (refreshQueued) { refreshQueued = false; refresh(); return; }
                 notice = "";
                 setPlaces(value);
             });
