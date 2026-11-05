@@ -17,7 +17,7 @@ try {
         finally { $ErrorActionPreference = 'Stop' }
         $output = Get-Content -LiteralPath $outputPath -Raw
         $passed = [regex]::Match($output, 'All (\d+) required tests passed')
-        $failed = [regex]::Matches($output, 'LogTestReporter[^\r\n]*?\]: ([^\r\n]+) failed at') | ForEach-Object { $_.Groups[1].Value }
+        $failed = [regex]::Matches($output, 'LogTestReporter[^\r\n]*?\]: ([^\r\n]+) failed at [^\r\n]*?! ([^\r\n]{0,200})') | ForEach-Object { "$($_.Groups[1].Value): $($_.Groups[2].Value)" }
         $metrics = Join-Path $reportDirectory "verification-endurance-$iteration"
         if (Test-Path -LiteralPath 'run/endurance') {
             New-Item -ItemType Directory -Path $metrics -Force | Out-Null

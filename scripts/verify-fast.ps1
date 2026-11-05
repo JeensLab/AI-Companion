@@ -10,8 +10,7 @@ function Read-Shard([int]$Shard) {
     try { $reader=[IO.StreamReader]::new($stream); $output=$reader.ReadToEnd() } finally { $stream.Dispose() }
     $selection=[regex]::Match($output,'Game test selection: pool=\d+ selected=\d+ pool-required=(\d+) selected-required=(\d+)')
     $parsed=ConvertFrom-GameTestLog $output
-    $failed=@([regex]::Matches($output,'\]: ([^\r\n]+) failed at [^\r\n]*?! ([^\r\n]{0,200})') | ForEach-Object {"$($_.Groups[1].Value): $($_.Groups[2].Value)"} | Select-Object -Unique)
-    [ordered]@{shard=$Shard;passed=$parsed.passed;expected=if($selection.Success){[int]$selection.Groups[2].Value}else{0};pool=if($selection.Success){[int]$selection.Groups[1].Value}else{0};failedCount=$parsed.failedCount;failed=$failed;encodingBroken=$parsed.encodingBroken}
+    [ordered]@{shard=$Shard;passed=$parsed.passed;expected=if($selection.Success){[int]$selection.Groups[2].Value}else{0};pool=if($selection.Success){[int]$selection.Groups[1].Value}else{0};failedCount=$parsed.failedCount;failed=$parsed.failed;encodingBroken=$parsed.encodingBroken}
 }
 
 # One server holds about 1.5 GB; 2 GB each keeps the system out of swap. Six and eight shards were no faster than four, and eight left 1.4 GB free.
@@ -44,6 +43,7 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     # A shard that flakes is retried alone, as the Linux gate does; its world and log start clean so a stale
     # lock cannot fail the retry as well.
     $retried=@()
+    $flaky=@()
     foreach($shard in 0..($shardCount-1)){
         $result=$results[$shard]
         if($result.expected -le 0 -or $result.passed -ne $result.expected -or $result.failedCount){
@@ -51,6 +51,11 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
             $retried+=$shard
             $shardDir=Join-Path $gameTestRoot "run\shard-$shard"
             $stale=Join-Path $shardDir 'logs\latest.log'
+            # The retry overwrites the log and the result; a flake that then passes would leave no trace of what failed.
+            $firstLog=Join-Path $gameTestReports "fast-$iteration-shard-$shard-attempt-1.log"
+            if(Test-Path -LiteralPath $stale){Copy-Item -LiteralPath $stale -Destination $firstLog -Force}
+            $firstAttempt=[ordered]@{passed=$result.passed;expected=$result.expected;failedCount=$result.failedCount;failed=@($result.failed);log=$firstLog}
+            $flaky+=@($result.failed)
             if(Test-Path -LiteralPath $stale){Remove-Item -LiteralPath $stale -Force}
             $world=Join-Path $shardDir 'world'
             if(Test-Path -LiteralPath $world){Remove-Item -LiteralPath $world -Recurse -Force}
@@ -59,6 +64,7 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
             try { & ./gradlew.bat --offline "-PgameTestShards=$shardCount" "runGameTestShard$shard" *>> $log; $retryExit=$LASTEXITCODE }
             finally { $ErrorActionPreference='Stop'; Pop-Location }
             $results[$shard]=Read-Shard $shard
+            $results[$shard].firstAttempt=$firstAttempt
             if($retryExit -ne 0){ $results[$shard].failed += "exit-$retryExit" }
         }
     }
@@ -66,7 +72,16 @@ for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     $passed=($results | ForEach-Object {$_.passed} | Measure-Object -Sum).Sum
     $expected=($results | ForEach-Object {$_.expected} | Measure-Object -Sum).Sum
     $pool=($results | ForEach-Object {$_.pool} | Sort-Object -Unique)
-    $run=[ordered]@{iteration=$iteration;exitCode=$testExit;passed=[int]$passed;expected=[int]$expected;seconds=[math]::Round(((Get-Date)-$started).TotalSeconds,2);log=$log;retried=($retried -join ',');shards=$results}
+    $run=[ordered]@{iteration=$iteration;exitCode=$testExit;passed=[int]$passed;expected=[int]$expected;seconds=[math]::Round(((Get-Date)-$started).TotalSeconds,2);log=$log;retried=($retried -join ',');flaky=@($flaky);shards=$results}
+    # A nonzero exit code must never stay unexplained in the summary.
+    if($testExit -ne 0 -and @($results | ForEach-Object {$_.failed} | Where-Object {$_}).Count -eq 0 -and $flaky.Count -eq 0){
+        $gradleLines=@([IO.File]::ReadAllText($log) -split '\r?\n')
+        $marker=@(0..($gradleLines.Count-1) | Where-Object {$gradleLines[$_] -match 'What went wrong'} | Select-Object -First 1)
+        $wentWrong=if($marker.Count){(@($gradleLines[$marker[0]..([math]::Min($marker[0]+6,$gradleLines.Count-1))]) -join "`n")}else{''}
+        $run.cause='unknown'
+        $run.wentWrong=$wentWrong
+        Write-Output "::warning::exit $testExit with no failed test in any shard (cause unknown). $wentWrong"
+    }
     $runs+=$run
     Write-GameTestSummary 'fast' @($runs)
     # A shard that died early or logged nothing must not pass as a smaller suite: each one has to report work,

@@ -22,6 +22,6 @@ for($i=1;$i -le $Repetitions;$i++) {
     $run.metrics=$destination
     $runs+=$run
     Write-GameTestSummary 'endurance-targeted' @($runs)
-    if($run.exitCode -ne 0 -or -not $run.ok){throw "Endurance run $i failed: $($run.log)"}
+    if($run.exitCode -ne 0 -or -not $run.ok){Save-GameTestServerLog '' "endurance-$i-latest.log";throw "Endurance run $i failed: $($run.log)"}
     Write-Output "Endurance run $i passed: $($run.passed)"
 }
