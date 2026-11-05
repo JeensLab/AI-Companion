@@ -5,14 +5,17 @@ import dev.aicompanion.entity.CompanionBelongings;
 import dev.aicompanion.entity.CompanionDeathSpots;
 import dev.aicompanion.entity.CompanionDeathTrip;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionTaskBoard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -20,6 +23,13 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
 import java.util.UUID;
+
+import static dev.aicompanion.gametest.DeathTestKit.place;
+import static dev.aicompanion.gametest.DeathTestKit.settle;
+import static dev.aicompanion.gametest.DeathTestKit.spawn;
+import static dev.aicompanion.gametest.DeathTestKit.stack;
+import static dev.aicompanion.gametest.DeathTestKit.walk;
+import static dev.aicompanion.gametest.DeathTestKit.yard;
 
 /** His own things after a death: the manifest of what fell, the ledger of the walk, and every way a stack can be gone. */
 @GameTestHolder(AICompanionMod.MOD_ID)
@@ -69,6 +79,20 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
+    /** The player's things he was carrying fell with his own and are in the manifest too. */
+    @GameTest(template = "empty")
+    public static void thePlayersThingsAreInTheManifestToo(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND, 2));
+        c.playersThings.keep(new ItemStack(Items.IRON_INGOT, 4));
+        c.hurt(h.getLevel().damageSources().generic(), 1000);
+        var spot = CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).get(0);
+        h.assertTrue(spot.manifest().size() == 2, "The player's things are missing from the manifest: " + spot.manifest());
+        boolean ingots = spot.manifest().stream().anyMatch(entry -> entry.item().equals("minecraft:iron_ingot") && entry.count() == 4);
+        h.assertTrue(ingots, "The player's ingots are not in the manifest: " + spot.manifest());
+        h.succeed();
+    }
+
     /** The manifest outlives a reload: ids, points, items and counts come back the same. */
     @GameTest(template = "empty")
     public static void theManifestSurvivesASaveAndLoad(GameTestHelper h) {
@@ -90,10 +114,24 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
+    /** An old save has no manifest: its place is forgotten without a walk, not trusted for ever. */
+    @GameTest(template = "empty")
+    public static void anOldSaveWithoutAManifestIsForgotten(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var server = h.getLevel().getServer();
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        CompanionDeathSpots.get(server).died(c.getOwnerId(), h.getLevel().dimension(), place, 40, 0);
+        h.assertTrue(!c.deathTrip.begin(), "He set out for a place with no manifest");
+        h.assertTrue(CompanionDeathSpots.get(server).all(c.getOwnerId()).isEmpty(), "An old place without a manifest stayed");
+        h.succeed();
+    }
+
     /** Two falls at one place are two records with their own manifests, and one is not the other's. */
     @GameTest(template = "empty")
     public static void twoFallsAtOnePlaceAreTwoRecords(GameTestHelper h) {
         CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition().offset(4, 0, 0);
         var first = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         var second = stack(h, place, new ItemStack(Items.IRON_INGOT, 6));
@@ -117,8 +155,7 @@ public final class CompanionDeathRecoveryTests {
         c.setItem(0, new ItemStack(Items.DIRT, 32));
         c.setItem(1, new ItemStack(Items.GRAVEL, 16));
         c.hurt(h.getLevel().damageSources().generic(), 1000);
-        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(),
-                "Junk was remembered");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(), "Junk was remembered");
         h.succeed();
     }
 
@@ -144,21 +181,41 @@ public final class CompanionDeathRecoveryTests {
     public static void theWalkTakesTheStackAndForgetsThePlace(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition().offset(4, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         UUID spotId = place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
-        for (int tick = 0; tick < 600 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 600);
         h.assertTrue(!c.deathTrip.active(), "The walk never ended: " + c.deathTrip.describe());
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The diamond was not taken: " + item.getItem());
         h.assertTrue(c.deathTrip.verdict(item.getUUID()) != null
                         && c.deathTrip.verdict(item.getUUID()).fate() == CompanionDeathTrip.Fate.TAKEN,
                 "The ledger does not say taken: " + c.deathTrip.verdict(item.getUUID()));
-        h.assertTrue(c.deathTrip.lastLine().equals("Забрал свои вещи."),
-                "He did not say he had them: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Забрал свои вещи."), "He did not say he had them: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
                 "The place is still remembered");
+        h.succeed();
+    }
+
+    /** The ledger has one entry for every stack of the fall, and each says what became of it. */
+    @GameTest(template = "empty")
+    public static void theLedgerHoldsEveryStackOfTheFall(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var one = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var two = stack(h, place.offset(1, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
+        var three = stack(h, place.offset(-1, 0, 0), new ItemStack(Items.GOLDEN_APPLE, 3));
+        place(h, c, place, 60, one, two, three);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        walk(h, c, 600);
+        var ledger = c.deathTrip.ledger();
+        h.assertTrue(ledger.size() == 3, "The ledger does not hold every stack: " + ledger);
+        for (ItemEntity item : List.of(one, two, three))
+            h.assertTrue(ledger.containsKey(item.getUUID()) && ledger.get(item.getUUID()).fate() == CompanionDeathTrip.Fate.TAKEN,
+                    "A stack is not in the ledger as taken: " + item.getItem() + " " + ledger.get(item.getUUID()));
         h.succeed();
     }
 
@@ -167,7 +224,7 @@ public final class CompanionDeathRecoveryTests {
     public static void anEmptyPlaceIsForgottenWithoutAWalk(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 12);
         BlockPos place = c.blockPosition().offset(10, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         UUID spotId = place(h, c, place, 20, item);
@@ -185,7 +242,7 @@ public final class CompanionDeathRecoveryTests {
     public static void aStackThePlayerTookIsPrunedBeforeTheWalk(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 12);
         BlockPos place = c.blockPosition().offset(10, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         UUID spotId = place(h, c, place, 20, item);
@@ -206,7 +263,7 @@ public final class CompanionDeathRecoveryTests {
     public static void aPartTakenByThePlayerKeepsTheRest(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition().offset(4, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 5));
         UUID spotId = place(h, c, place, 50, item);
@@ -218,10 +275,31 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(manifest.size() == 1 && manifest.get(0).count() == 2,
                 "The manifest does not hold what the player left: " + manifest);
         h.assertTrue(c.deathTrip.begin(), "He did not set out for the rest");
-        for (int tick = 0; tick < 600 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 600);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The rest was not taken");
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
                 "The place is still remembered after the rest was taken");
+        h.succeed();
+    }
+
+    /** His own pickup of a part of a stack keeps the rest in the manifest, with what is left. */
+    @GameTest(template = "empty")
+    public static void hisOwnPartPickupKeepsTheRestInTheManifest(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        for (int slot = 1; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.DIRT, 64));
+        c.setItem(0, new ItemStack(Items.DIAMOND, 62));
+        BlockPos place = c.blockPosition();
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        UUID spotId = place(h, c, place, 40, item);
+        // No walk: he simply stands on it and the pickup takes what fits (2 of the 4).
+        c.setDeathRecovery(false);
+        for (int tick = 0; tick < 4; tick++) c.tick();
+        var manifest = CompanionDeathSpots.get(h.getLevel().getServer()).manifestOf(c.getOwnerId(), spotId);
+        h.assertTrue(manifest.size() == 1, "The partly taken stack left the manifest: " + manifest);
+        h.assertTrue(manifest.get(0).count() == 2, "The manifest does not hold what is left: " + manifest);
+        h.assertTrue(item.isAlive() && item.getItem().getCount() == 2, "The stack was not taken in part: " + item.getItem());
         h.succeed();
     }
 
@@ -237,7 +315,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
         for (int tick = 0; tick < 6; tick++) c.tick();
         item.discard();
-        for (int tick = 0; tick < 600 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 600);
         h.assertTrue(!c.deathTrip.active(), "The walk never ended");
         var verdict = c.deathTrip.verdict(item.getUUID());
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.GONE,
@@ -247,12 +325,35 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
+    /** A stack merged into a neighbour is gone with the game's own reason, and is not claimed. */
+    @GameTest(template = "empty")
+    public static void aStackMergedIntoANeighbourIsGoneWithItsReason(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(5, 0, 0);
+        var mine = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var neighbour = stack(h, place, new ItemStack(Items.DIAMOND, 3));
+        place(h, c, place, 20, mine);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        // Vanilla's merge: the neighbour grows and the other entity is removed, the same item within half a block.
+        neighbour.setItem(new ItemStack(Items.DIAMOND, 5));
+        mine.discard();
+        walk(h, c, 600);
+        var verdict = c.deathTrip.verdict(mine.getUUID());
+        h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.GONE,
+                "A merged stack was not called gone: " + verdict);
+        h.assertTrue(verdict.reason().equals("слилось с соседней стопкой"), "The reason is not the merge: " + verdict.reason());
+        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."), "He claimed the merged stack: " + c.deathTrip.lastLine());
+        h.succeed();
+    }
+
     /** A stack the player emptied by throwing it back is gone, and the place is forgotten without a chase. */
     @GameTest(template = "empty")
     public static void aStackThrownBackIsNotChased(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition().offset(6, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         UUID spotId = place(h, c, place, 20, item);
@@ -276,23 +377,45 @@ public final class CompanionDeathRecoveryTests {
     public static void aStackAimedAtAnotherIsLeftWithAReason(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition();
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         item.setTarget(c.getOwnerId());
         UUID spotId = place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
-        for (int tick = 0; tick < 400 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 400);
         h.assertTrue(!c.deathTrip.active(), "The walk never ended");
         h.assertTrue(!item.isRemoved() && !item.getItem().isEmpty(), "The stack aimed at another was taken");
         var verdict = c.deathTrip.verdict(item.getUUID());
         h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE,
                 "The stack he could not take was not called unreachable: " + verdict);
         h.assertTrue(verdict.reason().equals("метит в другого"), "The reason is not the real one: " + verdict.reason());
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"),
-                "He claimed more than he took: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"), "He claimed more than he took: " + c.deathTrip.lastLine());
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
                 "A place with something left was forgotten");
+        h.succeed();
+    }
+
+    /** A full bag of things worth having is not made room in: the stack stays with the reason named. */
+    @GameTest(template = "empty")
+    public static void aBagFullOfGoodsLeavesTheStackWithTheReason(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.DIAMOND, 64));
+        BlockPos place = c.blockPosition();
+        var item = stack(h, place, new ItemStack(Items.IRON_INGOT, 8));
+        UUID spotId = place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        walk(h, c, 400);
+        var verdict = c.deathTrip.verdict(item.getUUID());
+        h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE,
+                "A stack that did not fit was not called unreachable: " + verdict);
+        h.assertTrue(verdict.reason().equals("сумка полна"), "The reason is not the bag: " + verdict.reason());
+        h.assertTrue(item.isAlive() && !item.getItem().isEmpty(), "The stack that did not fit was taken anyway");
+        h.assertTrue(c.deathTrip.lastLine().contains("сумка полна"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
+                "The place with a stack left is forgotten");
         h.succeed();
     }
 
@@ -301,13 +424,13 @@ public final class CompanionDeathRecoveryTests {
     public static void aFullBagMakesRoomForAStackInReach(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         for (int slot = 0; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.DIRT, 64));
         BlockPos place = c.blockPosition();
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out with a full bag");
-        for (int tick = 0; tick < 300 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 300);
         int diamonds = 0;
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.DIAMOND)) diamonds += c.getItem(slot).getCount();
         h.assertTrue(diamonds == 2, "No room was made in a bag of dirt: " + diamonds);
@@ -321,19 +444,38 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
+    /** Nothing is let go for a stack that is still far off: the bag is made room in only in reach. */
+    @GameTest(template = "empty")
+    public static void aFullBagKeepsItsLoadWhileTheStackIsFar(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 12);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.DIRT, 64));
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        for (int tick = 0; tick < 4; tick++) c.tick();
+        int dirt = 0;
+        for (var entity : h.getLevel().getAllEntities())
+            if (entity instanceof ItemEntity dropped && dropped.getItem().is(Items.DIRT)) dirt += dropped.getItem().getCount();
+        h.assertTrue(dirt == 0, "Junk was let go before he reached the stack: " + dirt);
+        h.succeed();
+    }
+
     /** A diamond in a bag of dirt is never the junk that makes room. */
     @GameTest(template = "empty")
     public static void theDiamondIsNeverTheJunkThatMakesRoom(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         for (int slot = 0; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.DIRT, 64));
         c.setItem(0, new ItemStack(Items.DIAMOND, 3));
         BlockPos place = c.blockPosition();
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
-        for (int tick = 0; tick < 300 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 300);
         int diamonds = 0;
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.DIAMOND)) diamonds += c.getItem(slot).getCount();
         h.assertTrue(diamonds == 5, "A diamond was let go to make room: " + diamonds);
@@ -345,18 +487,17 @@ public final class CompanionDeathRecoveryTests {
     public static void aPartlyFetchedPileSaysWhatStayed(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition();
         var taken = stack(h, place, new ItemStack(Items.DIAMOND, 4));
         var left = stack(h, place.offset(1, 0, 0), new ItemStack(Items.DIAMOND, 4));
         left.setTarget(c.getOwnerId());
         place(h, c, place, 40, taken, left);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
-        for (int tick = 0; tick < 400 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 400);
         h.assertTrue(taken.isRemoved() || taken.getItem().isEmpty(), "The reachable stack was not taken");
         h.assertTrue(!left.isRemoved() && !left.getItem().isEmpty(), "The stack aimed at another was taken");
-        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"),
-                "He did not say part of it stayed: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"), "He did not say part of it stayed: " + c.deathTrip.lastLine());
         h.assertTrue(c.deathTrip.lastLine().contains("Diamond"), "The report does not name what stayed: " + c.deathTrip.lastLine());
         h.assertTrue(c.deathTrip.lastLine().contains("метит в другого"), "The report does not say why: " + c.deathTrip.lastLine());
         h.succeed();
@@ -367,18 +508,37 @@ public final class CompanionDeathRecoveryTests {
     public static void everyStackTakenIsTheOnlyClaimOfEverything(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition().offset(3, 0, 0);
         var one = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         var two = stack(h, place.offset(1, 0, 0), new ItemStack(Items.IRON_INGOT, 5));
         UUID spotId = place(h, c, place, 30, one, two);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
-        for (int tick = 0; tick < 600 && c.deathTrip.active(); tick++) c.tick();
+        walk(h, c, 600);
         h.assertTrue(one.isRemoved() || one.getItem().isEmpty(), "The diamonds were left");
         h.assertTrue(two.isRemoved() || two.getItem().isEmpty(), "The ingots were left");
         h.assertTrue(c.deathTrip.lastLine().equals("Забрал свои вещи."), "He did not claim them: " + c.deathTrip.lastLine());
-        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
-                "The place is still remembered");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null, "The place is still remembered");
+        h.succeed();
+    }
+
+    /** One stack taken and another lost: the report says both, never that everything was taken. */
+    @GameTest(template = "empty")
+    public static void aTakenAndALostStackAreBothSaid(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 16);
+        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        var taken = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var lost = stack(h, place.offset(1, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
+        place(h, c, place, 30, taken, lost);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        for (int tick = 0; tick < 4; tick++) c.tick();
+        lost.discard();
+        walk(h, c, 600);
+        h.assertTrue(taken.isRemoved() || taken.getItem().isEmpty(), "The diamond was not taken");
+        h.assertTrue(c.deathTrip.lastLine().equals("Забрал свои вещи, остальное пропало."),
+                "The report does not say the rest was lost: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -394,9 +554,8 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
         for (int tick = 0; tick < 4; tick++) c.tick();
         item.discard();
-        for (int tick = 0; tick < 400 && c.deathTrip.active(); tick++) c.tick();
-        h.assertTrue(!c.deathTrip.lastLine().equals("Забрал свои вещи."),
-                "He claimed a stack somebody else took: " + c.deathTrip.lastLine());
+        walk(h, c, 400);
+        h.assertTrue(!c.deathTrip.lastLine().equals("Забрал свои вещи."), "He claimed a stack somebody else took: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -405,15 +564,14 @@ public final class CompanionDeathRecoveryTests {
     public static void aStackInLavaIsGoneWithItsReason(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition().offset(6, 0, 0);
-        put(h, place.below(), Blocks.LAVA);
+        DeathTestKit.put(h, place.below(), Blocks.LAVA);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         place(h, c, place, 20, item);
         item.discard();
         h.assertTrue(!c.deathTrip.begin(), "He set out for a stack that burned");
-        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."),
-                "He did not say the place was empty: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."), "He did not say the place was empty: " + c.deathTrip.lastLine());
         h.succeed();
     }
 
@@ -422,17 +580,33 @@ public final class CompanionDeathRecoveryTests {
     public static void aStackAMobTookIsNotWalkedTo(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 8);
         BlockPos place = c.blockPosition().offset(6, 0, 0);
-        var zombie = new net.minecraft.world.entity.monster.Zombie(h.getLevel());
+        var zombie = new Zombie(h.getLevel());
         zombie.moveTo(place.getX() + .5, place.getY(), place.getZ() + .5);
         zombie.setCanPickUpLoot(true);
         h.getLevel().addFreshEntity(zombie);
         var sword = stack(h, place, new ItemStack(Items.IRON_SWORD));
         place(h, c, place, 20, sword);
-        for (int tick = 0; tick < 80 && !sword.isRemoved(); tick++) zombie.tick();
-        h.assertTrue(sword.isRemoved(), "The zombie did not pick the sword up");
+        for (int tick = 0; tick < 200 && !sword.isRemoved(); tick++) zombie.tick();
+        h.assertTrue(sword.isRemoved(), "The zombie did not pick the sword up: " + sword.getItem() + " at " + sword.blockPosition() + ", zombie at " + zombie.blockPosition());
         h.assertTrue(!c.deathTrip.begin(), "He set out after a pile a zombie already took");
+        h.succeed();
+    }
+
+    /** A stack the companion itself picked up outside the walk leaves the manifest, so nobody walks to it again. */
+    @GameTest(template = "empty")
+    public static void hisOwnPickupPrunesTheManifest(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        UUID spotId = place(h, c, place, 20, item);
+        for (int tick = 0; tick < 4; tick++) c.tick();
+        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The pickup did not take the stack at his feet");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).manifestOf(c.getOwnerId(), spotId).isEmpty(),
+                "His own pickup did not prune the manifest");
         h.succeed();
     }
 
@@ -441,7 +615,7 @@ public final class CompanionDeathRecoveryTests {
     public static void theDearerFallGoesFirstAndTheOtherAfter(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        yard(h, c, 16);
+        yard(h, c, 10);
         BlockPos dear = c.blockPosition().offset(-3, 0, 0);
         BlockPos cheap = c.blockPosition().offset(3, 0, 0);
         var dearItems = stack(h, dear, new ItemStack(Items.DIAMOND, 6));
@@ -449,8 +623,7 @@ public final class CompanionDeathRecoveryTests {
         place(h, c, dear, 60, dearItems);
         place(h, c, cheap, 18, cheapItems);
         h.assertTrue(c.deathTrip.begin(), "He did not set out");
-        h.assertTrue(c.deathTrip.describe().contains(dear.toShortString()),
-                "He set out for the cheaper place: " + c.deathTrip.describe());
+        h.assertTrue(c.deathTrip.describe().contains(dear.toShortString()), "He set out for the cheaper place: " + c.deathTrip.describe());
         for (int tick = 0; tick < 1200 && !CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(); tick++) {
             if (!c.deathTrip.active()) c.deathTrip.begin();
             c.tick();
@@ -459,6 +632,27 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(cheapItems.isRemoved() || cheapItems.getItem().isEmpty(), "The cheaper place was left behind");
         h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(),
                 "A place is still remembered after both walks");
+        h.succeed();
+    }
+
+    /** A place whose stacks are all gone is skipped and the next one is walked to. */
+    @GameTest(template = "empty")
+    public static void aPlaceWhoseStacksAreGoneIsSkippedForTheNext(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 10);
+        BlockPos dear = c.blockPosition().offset(-3, 0, 0);
+        BlockPos cheap = c.blockPosition().offset(3, 0, 0);
+        var dearItems = stack(h, dear, new ItemStack(Items.DIAMOND, 6));
+        var cheapItems = stack(h, cheap, new ItemStack(Items.IRON_INGOT, 6));
+        place(h, c, dear, 60, dearItems);
+        place(h, c, cheap, 18, cheapItems);
+        dearItems.discard();
+        h.assertTrue(c.deathTrip.begin(), "He did not set out for the place that still had something");
+        h.assertTrue(c.deathTrip.describe().contains(cheap.toShortString()), "He set out for the emptied place: " + c.deathTrip.describe());
+        walk(h, c, 600);
+        h.assertTrue(cheapItems.isRemoved() || cheapItems.getItem().isEmpty(), "The cheap place was not fetched");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(), "A place is still remembered");
         h.succeed();
     }
 
@@ -479,59 +673,679 @@ public final class CompanionDeathRecoveryTests {
         h.succeed();
     }
 
-
-    // ---- helpers ----
-
-    /** An item entity of the test's own, not yet part of a fall. */
-    private static ItemEntity stack(GameTestHelper h, BlockPos pos, ItemStack stack) {
-        var item = new ItemEntity(h.getLevel(), pos.getX() + .5, pos.getY() + .2, pos.getZ() + .5, stack);
-        h.getLevel().addFreshEntity(item);
-        return item;
-    }
-
-    /** A fall at a place, with the manifest of these stacks; returns the place's id. */
-    private static UUID place(GameTestHelper h, CompanionEntity c, BlockPos pos, double worth, ItemEntity... items) {
-        UUID spotId = UUID.randomUUID();
-        for (ItemEntity item : items) {
-            item.getPersistentData().putUUID("aicompanion:belongings", c.getOwnerId());
-            item.getPersistentData().putUUID("aicompanion:belongings_spot", spotId);
-        }
-        CompanionDeathSpots.get(h.getLevel().getServer()).died(c.getOwnerId(), spotId, h.getLevel().dimension(), pos,
-                worth, h.getLevel().getGameTime(), CompanionDeathSpots.manifestOf(List.of(items)));
-        return spotId;
-    }
-
-    /** A flat stone yard round him, air above: the test's ground of its own, whatever another test left nearby. */
-    private static BlockPos yard(GameTestHelper h, CompanionEntity c, int radius) {
-        BlockPos feet = c.blockPosition();
-        for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
-            put(h, feet.offset(dx, -1, dz), Blocks.STONE);
-            for (int dy = 0; dy <= 2; dy++) put(h, feet.offset(dx, dy, dz), Blocks.AIR);
-        }
-        return feet;
-    }
-
-    /** A block at an absolute position (the helper's own setBlock counts from the structure's corner). */
-    private static void put(GameTestHelper h, BlockPos pos, net.minecraft.world.level.block.Block block) {
-        h.getLevel().setBlock(pos, block.defaultBlockState(), 3);
-    }
-
-    /** Lets him fall to the ground before the test builds its geometry round him. */
-    private static void settle(CompanionEntity c) {
-        for (int tick = 0; tick < 40 && !c.onGround(); tick++) c.tick();
-    }
-
-    private static CompanionEntity spawn(GameTestHelper h) {
-        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 2, 16);
-        var owner = h.makeMockServerPlayerInLevel();
-        owner.teleportTo(companion.getX() - 4, companion.getY(), companion.getZ() - 4);
-        companion.setOwnerId(owner.getUUID());
-        owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
-        dev.aicompanion.entity.CompanionEvents.getOwnedCompanion(owner);
-        companion.setSearchRadius(16);
-        // The world and its store outlive a test: this owner starts with no places of his own.
+    /** Another dimension is crossed only for a place that is really dear, and only when there is a portal to cross by. */
+    @GameTest(template = "empty")
+    public static void anotherDimensionNeedsAPortalAndAWorthwhilePlace(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var dear = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        var cheap = stack(h, place.offset(2, 0, 0), new ItemStack(Items.IRON_INGOT, 2));
         var store = CompanionDeathSpots.get(h.getLevel().getServer());
-        for (var spot : store.all(owner.getUUID())) store.taken(owner.getUUID(), spot.id());
-        return companion;
+        store.died(c.getOwnerId(), UUID.randomUUID(), Level.NETHER, place, 40, 0, CompanionDeathSpots.manifestOf(List.of(dear)));
+        store.died(c.getOwnerId(), UUID.randomUUID(), Level.NETHER, place.offset(0, 0, 2), 8, 1, CompanionDeathSpots.manifestOf(List.of(cheap)));
+        h.assertTrue(!c.deathTrip.begin(), "He set out across dimensions with no portal");
+        h.assertTrue(store.all(c.getOwnerId()).size() == 1,
+                "A dear place across dimensions was forgotten without a portal: " + store.all(c.getOwnerId()));
+        h.succeed();
+    }
+
+    // ---- the walk is a task and a decision the player can make ----
+
+    /** The player can turn the feature off: no walk starts, and one under way ends. */
+    @GameTest(template = "empty")
+    public static void theFeatureCanBeTurnedOff(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        c.setDeathRecovery(false);
+        h.assertTrue(!c.deathTrip.begin(), "He set out with the feature turned off");
+        c.setDeathRecovery(true);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out with the feature on");
+        c.setDeathRecovery(false);
+        c.tick();
+        h.assertTrue(!c.deathTrip.active(), "The walk went on after the feature was turned off");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).size() == 1,
+                "Turning the feature off forgot the place");
+        h.succeed();
+    }
+
+    /** Five tries at one place and he lets it lie, with a word about it. */
+    @GameTest(template = "empty")
+    public static void fiveAttemptsAndThePlaceIsLeft(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        UUID spotId = place(h, c, place, 20, item);
+        for (int i = 0; i < 5; i++) store.attempted(c.getOwnerId(), spotId);
+        h.assertTrue(!c.deathTrip.begin(), "He set out a sixth time");
+        h.assertTrue(c.deathTrip.lastLine().contains("подавитесь"), "He did not say why he let it lie: " + c.deathTrip.lastLine());
+        h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "The given-up place is still remembered");
+        h.succeed();
+    }
+
+    /** Ten deaths on the way to one place: it is not worth his life any more. */
+    @GameTest(template = "empty")
+    public static void tenDeathsOnTheWayAndThePlaceIsLeft(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        UUID spotId = place(h, c, place, 20, item);
+        for (int i = 0; i < 10; i++) store.deathOnTheWay(c.getOwnerId(), spotId);
+        h.assertTrue(!c.deathTrip.begin(), "He set out an eleventh time");
+        h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "The place that cost ten lives is still remembered");
+        h.succeed();
+    }
+
+    /** The budget is the one in the settings, not a number in the code. */
+    @GameTest(template = "empty")
+    public static void theBudgetIsWhatTheSettingsSay(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        c.setDeathRecoveryLimits(2, 3);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        UUID spotId = place(h, c, place, 20, item);
+        store.attempted(c.getOwnerId(), spotId);
+        store.attempted(c.getOwnerId(), spotId);
+        h.assertTrue(!c.deathTrip.begin(), "He set out past the attempt budget");
+        h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "The place past its budget is still remembered");
+        h.succeed();
+    }
+
+    /** Setting out spends a try: a pile he never reaches cannot be retried for ever. */
+    @GameTest(template = "empty")
+    public static void settingOutSpendsATry(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var spots = CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId());
+        h.assertTrue(spots.size() == 1 && spots.get(0).attempts() == 1, "Setting out did not spend a try: " + spots);
+        h.succeed();
+    }
+
+    /** The tries and the deaths are counted against the place, as the budget needs. */
+    @GameTest(template = "empty")
+    public static void triesAndDeathsAreCounted(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        UUID spotId = place(h, c, place, 20, item);
+        store.attempted(c.getOwnerId(), spotId);
+        store.attempted(c.getOwnerId(), spotId);
+        store.deathOnTheWay(c.getOwnerId(), spotId);
+        var spots = store.all(c.getOwnerId());
+        h.assertTrue(spots.size() == 1, "The place went missing: " + spots);
+        h.assertTrue(spots.get(0).attempts() == 2, "The tries were not counted: " + spots.get(0).attempts());
+        h.assertTrue(spots.get(0).deaths() == 1, "The deaths were not counted: " + spots.get(0).deaths());
+        h.succeed();
+    }
+
+    /** The switch and the budget live in the save with him, and an old save has the walk on. */
+    @GameTest(template = "empty")
+    public static void theSwitchAndBudgetAreSaved(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setDeathRecovery(false);
+        c.setDeathRecoveryLimits(3, 7);
+        var tag = c.saveWithoutId(new net.minecraft.nbt.CompoundTag());
+        CompanionEntity other = h.spawn(AICompanionMod.COMPANION.get(), 20, 2, 20);
+        other.load(tag);
+        h.assertTrue(!other.deathRecovery(), "The switch was not saved");
+        h.assertTrue(other.deathRecoveryAttempts() == 3, "The tries were not saved: " + other.deathRecoveryAttempts());
+        h.assertTrue(other.deathRecoveryDeaths() == 7, "The deaths were not saved: " + other.deathRecoveryDeaths());
+        var old = new net.minecraft.nbt.CompoundTag();
+        CompanionEntity third = h.spawn(AICompanionMod.COMPANION.get(), 24, 2, 24);
+        third.setDeathRecovery(false);
+        third.load(old);
+        h.assertTrue(third.deathRecovery(), "An old save loaded with the walk off");
+        h.assertTrue(third.deathRecoveryAttempts() == 5 && third.deathRecoveryDeaths() == 10,
+                "An old save loaded with a strange budget: " + third.deathRecoveryAttempts() + "/" + third.deathRecoveryDeaths());
+        h.succeed();
+    }
+
+    /** Cancelling from the task screen clears the walk and its place. */
+    @GameTest(template = "empty")
+    public static void cancellingClearsThePlace(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        UUID spotId = place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var shown = CompanionTaskBoard.read(owner);
+        CompanionTaskBoard.control(owner, shown, "cancel_recovery");
+        h.assertTrue(!c.deathTrip.active(), "The walk survived the cancel");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
+                "The cancelled place is still remembered");
+        h.succeed();
+    }
+
+    /** The walk is a task the player can see in the task screen, and cancel from it. */
+    @GameTest(template = "empty")
+    public static void theWalkIsShownAndCanBeCancelled(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var shown = CompanionTaskBoard.read(owner);
+        h.assertTrue(shown != null && !shown.recovery().isBlank(), "The task screen does not show the walk: " + shown);
+        h.assertTrue(shown.recovery().contains("вещами"), "The task does not say what it is: " + shown.recovery());
+        CompanionTaskBoard.control(owner, shown, "cancel_recovery");
+        h.assertTrue(!c.deathTrip.active(), "The walk survived the cancel");
+        h.succeed();
+    }
+
+    /** An order waits once: the first ask is refused with a word, the second one takes the walk away. */
+    @GameTest(template = "empty")
+    public static void anOrderIsRefusedOnceThenObeys(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        settle(c);
+        yard(h, c, 16);
+        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var first = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
+        h.assertTrue(first.status() == dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
+                "The first order was not refused: " + first.status());
+        h.assertTrue(first.message().contains("вещи"), "The refusal does not say why: " + first.message());
+        h.assertTrue(c.deathTrip.active(), "The walk was dropped on the first ask");
+        var second = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
+        h.assertTrue(second.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
+                "The second order was refused too: " + second.status());
+        h.assertTrue(!c.deathTrip.active(), "The walk survived the second ask");
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).size() == 1,
+                "The place was forgotten when the player insisted");
+        h.succeed();
+    }
+
+    /** A step of a goal of his is not the player insisting: the walk goes on and the refusal stays for the player. */
+    @GameTest(template = "empty")
+    public static void aGoalStepDoesNotTakeTheRefusal(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var step = CompanionEvents.executeGoal(owner, "gather_stone", "", 1, "auto", "test-trace", "near_player");
+        h.assertTrue(step.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
+                "A goal step was refused: " + step.status());
+        h.assertTrue(c.deathTrip.active(), "A goal step cancelled the walk");
+        var order = CompanionEvents.executeAction(owner, "gather_stone", "", 1);
+        h.assertTrue(order.status() == dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
+                "The player's first order was not refused after a goal step: " + order.status());
+        h.succeed();
+    }
+
+    /** Naming the home is a word, not an order: the walk goes on. */
+    @GameTest(template = "empty")
+    public static void namingTheHomeDoesNotRefuse(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        settle(c);
+        yard(h, c, 16);
+        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var home = CompanionEvents.executeAction(owner, "set_home", "", 1);
+        h.assertTrue(home.status() != dev.aicompanion.entity.CompanionActionResult.Status.BLOCKED,
+                "Naming the home was refused: " + home.status());
+        h.assertTrue(c.deathTrip.active(), "Naming the home cancelled the walk");
+        h.succeed();
+    }
+
+    // ---- multi-death and regressions ----
+
+    /** A new fall while he walks to an old one is taken up after the walk he is on, not forgotten. */
+    @GameTest(template = "empty")
+    public static void aNewFallDuringTheWalkIsTakenUpAfterwards(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 10);
+        BlockPos first = c.blockPosition().offset(3, 0, 0);
+        BlockPos second = c.blockPosition().offset(-3, 0, 0);
+        var firstItems = stack(h, first, new ItemStack(Items.DIAMOND, 4));
+        place(h, c, first, 40, firstItems);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var secondItems = stack(h, second, new ItemStack(Items.IRON_INGOT, 8));
+        place(h, c, second, 24, secondItems);
+        for (int tick = 0; tick < 1200 && !CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(); tick++) {
+            if (!c.deathTrip.active()) c.deathTrip.begin();
+            c.tick();
+        }
+        h.assertTrue(firstItems.isRemoved() || firstItems.getItem().isEmpty(), "The first place was not fetched");
+        h.assertTrue(secondItems.isRemoved() || secondItems.getItem().isEmpty(), "The new fall was forgotten: " + secondItems.getItem());
+        h.succeed();
+    }
+
+    /** Dying on the way back with things on him: the walk stops and the new place is remembered for later. */
+    @GameTest(template = "empty")
+    public static void dyingOnTheWalkRemembersTheNewPlace(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        UUID spotId = place(h, c, place, 20, item);
+        c.setItem(0, new ItemStack(Items.DIAMOND, 3));
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        c.tick();
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
+                "The old place was lost before the death");
+        c.hurt(h.getLevel().damageSources().generic(), 1000);
+        h.assertTrue(!c.deathTrip.active(), "The walk survived his own death");
+        var spots = CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId());
+        h.assertTrue(spots.size() >= 2, "The new fall was not remembered: " + spots.size() + " " + spots);
+        h.succeed();
+    }
+
+    /** A death on the way is charged to the record he was walking to, not to another fall at the same place. */
+    @GameTest(template = "empty")
+    public static void aDeathOnTheWayIsChargedToItsOwnRecord(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var one = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        var two = stack(h, place.offset(3, 0, 0), new ItemStack(Items.IRON_INGOT, 8));
+        UUID dear = place(h, c, place, 40, one);
+        UUID cheap = place(h, c, place, 24, two);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        c.tick();
+        c.hurt(h.getLevel().damageSources().generic(), 1000);
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        h.assertTrue(store.byId(c.getOwnerId(), dear).deaths() == 1, "The death was not charged to the place walked to");
+        h.assertTrue(store.byId(c.getOwnerId(), cheap).deaths() == 0, "The death was charged to another fall at the same place");
+        h.succeed();
+    }
+
+    /** Two falls at one place are both walked, and taking one does not forget the other. */
+    @GameTest(template = "empty")
+    public static void twoFallsAtOnePlaceAreBothWalked(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var first = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        var second = stack(h, place.offset(3, 0, 0), new ItemStack(Items.IRON_INGOT, 6));
+        UUID dear = place(h, c, place, 40, first);
+        UUID cheap = place(h, c, place, 24, second);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        for (int tick = 0; tick < 400 && store.byId(c.getOwnerId(), dear) != null; tick++) c.tick();
+        h.assertTrue(first.isRemoved() || first.getItem().isEmpty(), "The dearer fall was not fetched");
+        h.assertTrue(store.byId(c.getOwnerId(), dear) == null, "The fetched place is still remembered");
+        h.assertTrue(store.byId(c.getOwnerId(), cheap) != null, "The other fall at the same place was forgotten");
+        // The companion sets out for the second fall by himself: only the places are driven here.
+        for (int tick = 0; tick < 800 && store.byId(c.getOwnerId(), cheap) != null; tick++) c.tick();
+        h.assertTrue(second.isRemoved() || second.getItem().isEmpty(), "The second fall was not fetched");
+        h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "A place is still remembered");
+        h.succeed();
+    }
+
+    /** Another fall's stack at the same place is not fetched by this walk. */
+    @GameTest(template = "empty")
+    public static void anotherFallsStackIsNotFetchedByThisWalk(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var mine = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        var other = stack(h, place.offset(6, 0, 0), new ItemStack(Items.IRON_INGOT, 6));
+        place(h, c, place, 40, mine);
+        place(h, c, place, 24, other);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        // Only this walk: the companion sets out for the next place on his own afterwards, and that is another test.
+        for (int tick = 0; tick < 300 && mine.isAlive() && !mine.getItem().isEmpty(); tick++) c.tick();
+        h.assertTrue(mine.isRemoved() || mine.getItem().isEmpty(), "His own stack was not fetched");
+        h.assertTrue(!other.isRemoved() && !other.getItem().isEmpty(),
+                "Another fall's stack was taken by this walk: removed=" + other.isRemoved() + " " + other.getItem()
+                        + " at " + other.blockPosition() + ", he at " + c.blockPosition());
+        h.succeed();
+    }
+
+    /** A stranger's junk far off is not a reason for a trip: only the manifest is walked to. */
+    @GameTest(template = "empty")
+    public static void aStrangersJunkFarOffIsNotFetched(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 20);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var mine = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var junk = new ItemEntity(h.getLevel(), c.getX() + 18.5, c.getY() + .2, c.getZ() + .5, new ItemStack(Items.DIRT, 64));
+        h.getLevel().addFreshEntity(junk);
+        place(h, c, place, 20, mine);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        int ticks = walk(h, c, 600);
+        h.assertTrue(mine.isRemoved() || mine.getItem().isEmpty(), "His diamond was not fetched");
+        h.assertTrue(junk.isAlive() && junk.getItem().getCount() == 64, "He walked to a stranger's junk");
+        h.assertTrue(ticks < 200, "The walk to one stack took too long: " + ticks);
+        h.succeed();
+    }
+
+    /** A walk to a stack with no way to it ends in bounded time, with the reason and the place kept. */
+    @GameTest(template = "empty")
+    public static void aWalkWithNoWayEndsInBoundedTime(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        BlockPos feet = yard(h, c, 8);
+        BlockPos pocket = feet.offset(3, 0, 0);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
+            if (dx != 0 || dz != 0) DeathTestKit.put(h, pocket.offset(dx, 0, dz), Blocks.STONE);
+        DeathTestKit.put(h, pocket.above(2), Blocks.STONE);
+        var item = stack(h, pocket, new ItemStack(Items.DIAMOND, 2));
+        UUID spotId = place(h, c, pocket, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        int ticks = walk(h, c, 600);
+        h.assertTrue(!c.deathTrip.active(), "The walk never ended: " + c.deathTrip.describe());
+        h.assertTrue(ticks < 300, "He stood at the pocket too long: " + ticks);
+        var verdict = c.deathTrip.verdict(item.getUUID());
+        h.assertTrue(verdict != null && verdict.fate() == CompanionDeathTrip.Fate.UNREACHABLE, "The stack was not called unreachable: " + verdict);
+        h.assertTrue(verdict.reason().equals("нет пути"), "The reason is not the way: " + verdict.reason());
+        h.assertTrue(c.deathTrip.lastLine().contains("нет пути"), "The report does not say why: " + c.deathTrip.lastLine());
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) != null,
+                "A place he could not reach is forgotten");
+        h.succeed();
+    }
+
+    /** A stack of another fall taken on the way is not a claim of this walk. */
+    @GameTest(template = "empty")
+    public static void aStackOfAnotherFallTakenOnTheWayIsNoClaim(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 16);
+        BlockPos walked = c.blockPosition().offset(14, 0, 0);
+        var target = stack(h, walked, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, walked, 20, target);
+        BlockPos onTheWay = c.blockPosition().offset(2, 0, 0);
+        var other = stack(h, onTheWay, new ItemStack(Items.IRON_INGOT, 4));
+        place(h, c, onTheWay, 12, other);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        walk(h, c, 600);
+        h.assertTrue(other.isRemoved() || other.getItem().isEmpty(), "The stack on the way was not picked up");
+        h.assertTrue(c.deathTrip.verdict(other.getUUID()) == null, "Another fall's stack is in this walk's ledger");
+        h.succeed();
+    }
+
+    // ---- the value model: what a fall is worth ----
+
+    /** Junk is not worth a walk; one diamond is. */
+    @GameTest(template = "empty")
+    public static void junkIsNothingAndADiamondIsWorthGoing(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIRT, 32));
+        c.setItem(1, new ItemStack(Items.COBBLESTONE, 32));
+        c.setItem(2, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(3, new ItemStack(Items.WHEAT_SEEDS, 8));
+        h.assertTrue(CompanionBelongings.worth(c) < CompanionBelongings.WORTH_GOING, "Junk was worth a walk: " + CompanionBelongings.worth(c));
+        c.setItem(4, new ItemStack(Items.DIAMOND, 1));
+        h.assertTrue(CompanionBelongings.worth(c) >= CompanionBelongings.WORTH_GOING, "A diamond was not worth a walk: " + CompanionBelongings.worth(c));
+        c.setItem(5, new ItemStack(Items.BREAD, 32));
+        h.assertTrue(CompanionBelongings.worth(c) >= CompanionBelongings.WORTH_GOING + 6, "A bag of food added nothing: " + CompanionBelongings.worth(c));
+        h.succeed();
+    }
+
+    /** A bag of food alone is worth a walk, as the owner asked: more than twenty of it. */
+    @GameTest(template = "empty")
+    public static void aBagOfFoodAloneIsWorthGoing(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.BREAD, 21));
+        h.assertTrue(CompanionBelongings.worth(c) >= CompanionBelongings.WORTH_GOING, "Twenty-one bread was not worth a walk");
+        c.setItem(0, new ItemStack(Items.BREAD, 20));
+        h.assertTrue(CompanionBelongings.worth(c) < CompanionBelongings.WORTH_GOING, "Twenty bread was worth a walk");
+        h.succeed();
+    }
+
+    /** The player's things he was carrying are priced and fetched too: they fell with the rest. */
+    @GameTest(template = "empty")
+    public static void thePlayersThingsHeCarriedCountToo(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        c.playersThings.keep(new ItemStack(Items.DIAMOND, 4));
+        h.assertTrue(CompanionBelongings.worth(c) >= CompanionBelongings.WORTH_GOING, "The player's diamonds were worth nothing");
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var kept = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        kept.getPersistentData().putBoolean("aicompanion:players", true);
+        place(h, c, place, 40, kept);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out for the player's things");
+        walk(h, c, 600);
+        h.assertTrue(kept.isRemoved() || kept.getItem().isEmpty(), "The player's things were left lying");
+        h.succeed();
+    }
+
+    /** One ingot out of a dear pile is still his: he fetches it. */
+    @GameTest(template = "empty")
+    public static void oneLeftIngotIsFetched(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var ingot = stack(h, place, new ItemStack(Items.IRON_INGOT, 1));
+        place(h, c, place, 40, ingot);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out for the ingot");
+        walk(h, c, 400);
+        h.assertTrue(ingot.isRemoved() || ingot.getItem().isEmpty(), "The ingot was left lying");
+        h.succeed();
+    }
+
+    /** A monster on him does not stop the walk: he grabs his things and never swings at it. */
+    @GameTest(template = "empty")
+    public static void aMonsterOnHimIsNotFought(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var foe = new Zombie(h.getLevel());
+        foe.moveTo(c.getX() + 3.5, c.getY(), c.getZ() + .5);
+        h.getLevel().addFreshEntity(foe);
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        c.setTarget(foe);
+        for (int tick = 0; tick < 60 && c.deathTrip.active(); tick++) c.tick();
+        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The pile was not taken with a monster on him");
+        h.assertTrue(!c.swinging, "He stopped to swing at the monster");
+        h.succeed();
+    }
+
+    /** A foreign drop beside him does not make him claim his own: only his stacks count. */
+    @GameTest(template = "empty")
+    public static void aForeignDropIsNotHis(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var mine = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        mine.setPickUpDelay(32767);
+        var foreign = stack(h, place, new ItemStack(Items.IRON_INGOT, 8));
+        place(h, c, place, 20, mine);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        walk(h, c, 400);
+        h.assertTrue(c.deathTrip.lastLine().startsWith("Часть моих вещей осталась"),
+                "A foreign drop made him claim his own: " + c.deathTrip.lastLine());
+        h.assertTrue(c.deathTrip.verdict(foreign.getUUID()) == null, "A foreign drop is in the walk's ledger");
+        h.succeed();
+    }
+
+    /** A manifest with only one stack still lying there is walked for that one, and the claim is exact. */
+    @GameTest(template = "empty")
+    public static void aManifestWithOneLiveStackIsWalkedForIt(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var kept = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var goneOne = stack(h, place.offset(1, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
+        var goneTwo = stack(h, place.offset(2, 0, 0), new ItemStack(Items.GOLDEN_APPLE, 3));
+        place(h, c, place, 40, kept, goneOne, goneTwo);
+        goneOne.discard();
+        goneTwo.discard();
+        h.assertTrue(c.deathTrip.begin(), "He did not set out for the stack still lying there");
+        walk(h, c, 600);
+        h.assertTrue(kept.isRemoved() || kept.getItem().isEmpty(), "The live stack was not taken");
+        h.assertTrue(c.deathTrip.lastLine().equals("Забрал свои вещи."), "He did not claim what he took: " + c.deathTrip.lastLine());
+        h.succeed();
+    }
+
+    /** The last stack taken by the player in the middle of the walk is not claimed, and the place goes. */
+    @GameTest(template = "empty")
+    public static void theLastStackTakenByAPlayerMidWalkIsNotClaimed(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 16);
+        BlockPos place = c.blockPosition().offset(14, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        UUID spotId = place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        for (int tick = 0; tick < 4; tick++) c.tick();
+        Player player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        ItemStack taken = item.getItem().copy();
+        item.setItem(ItemStack.EMPTY);
+        CompanionDeathSpots.onPlayerPickup(new ItemEntityPickupEvent.Post(player, item, taken));
+        item.discard();
+        walk(h, c, 400);
+        h.assertTrue(c.deathTrip.lastLine().equals("Вещей на месте уже нет."),
+                "He claimed a stack the player took: " + c.deathTrip.lastLine());
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).byId(c.getOwnerId(), spotId) == null,
+                "A place emptied by the player is still remembered");
+        h.succeed();
+    }
+
+    /** Setting out twice does not spend two tries on one walk. */
+    @GameTest(template = "empty")
+    public static void beginTwiceDoesNotSpendAnotherTry(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        UUID spotId = place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        h.assertTrue(!c.deathTrip.begin(), "A second begin started another walk");
+        var spots = CompanionDeathSpots.get(h.getLevel().getServer()).all(c.getOwnerId());
+        h.assertTrue(spots.size() == 1 && spots.get(0).attempts() == 1, "The second begin spent another try: " + spots);
+        h.succeed();
+    }
+
+    /** A place across dimensions with a manifest is kept for a portal, not judged empty from here. */
+    @GameTest(template = "empty")
+    public static void aPlaceAcrossDimensionsWithAManifestIsKept(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var dear = stack(h, place, new ItemStack(Items.DIAMOND, 4));
+        var store = CompanionDeathSpots.get(h.getLevel().getServer());
+        store.died(c.getOwnerId(), UUID.randomUUID(), Level.NETHER, place, 40, 0, CompanionDeathSpots.manifestOf(List.of(dear)));
+        h.assertTrue(!c.deathTrip.begin(), "He set out across dimensions with no portal");
+        h.assertTrue(store.all(c.getOwnerId()).size() == 1, "The dear place across dimensions was forgotten");
+        h.succeed();
+    }
+
+    /** Every stack of a fall taken by the player empties the place before any walk. */
+    @GameTest(template = "empty")
+    public static void everyStackTakenByThePlayerEmptiesThePlace(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 12);
+        BlockPos place = c.blockPosition().offset(8, 0, 0);
+        var one = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var two = stack(h, place.offset(1, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
+        UUID spotId = place(h, c, place, 30, one, two);
+        Player player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        for (ItemEntity item : List.of(one, two)) {
+            ItemStack taken = item.getItem().copy();
+            item.setItem(ItemStack.EMPTY);
+            CompanionDeathSpots.onPlayerPickup(new ItemEntityPickupEvent.Post(player, item, taken));
+            item.discard();
+        }
+        h.assertTrue(CompanionDeathSpots.get(h.getLevel().getServer()).manifestOf(c.getOwnerId(), spotId).isEmpty(),
+                "The player's takes did not empty the manifest");
+        h.assertTrue(!c.deathTrip.begin(), "He set out for a place the player had already emptied");
+        h.succeed();
+    }
+
+    /** A place walked to once and emptied is not walked to again. */
+    @GameTest(template = "empty")
+    public static void thePlaceIsNotWalkedToAgainAfterTheWalk(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition().offset(4, 0, 0);
+        var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        place(h, c, place, 20, item);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        walk(h, c, 600);
+        h.assertTrue(!c.deathTrip.begin(), "He set out again for the place he had already emptied");
+        h.succeed();
+    }
+
+    /** Two stacks that stayed are both named, with the reason each stayed. */
+    @GameTest(template = "empty")
+    public static void theReportNamesEveryStackThatStayed(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var one = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var two = stack(h, place.offset(1, 0, 0), new ItemStack(Items.IRON_INGOT, 4));
+        one.setTarget(c.getOwnerId());
+        two.setTarget(c.getOwnerId());
+        place(h, c, place, 40, one, two);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        walk(h, c, 400);
+        String line = c.deathTrip.lastLine();
+        h.assertTrue(line.contains("Diamond") && line.contains("Iron Ingot"), "The report does not name both stacks: " + line);
+        h.assertTrue(line.indexOf("Diamond") < line.indexOf("Iron Ingot") || line.indexOf("Iron Ingot") < line.indexOf("Diamond"),
+                "The report names only one: " + line);
+        h.succeed();
+    }
+
+    /** Junk that fell with the rest is part of the manifest and is fetched: the mark is the truth, not the price. */
+    @GameTest(template = "empty")
+    public static void junkInTheManifestIsFetchedWithTheRest(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        yard(h, c, 8);
+        BlockPos place = c.blockPosition();
+        var diamonds = stack(h, place, new ItemStack(Items.DIAMOND, 2));
+        var dirt = stack(h, place.offset(1, 0, 0), new ItemStack(Items.DIRT, 12));
+        place(h, c, place, 40, diamonds, dirt);
+        h.assertTrue(c.deathTrip.begin(), "He did not set out");
+        walk(h, c, 400);
+        h.assertTrue(diamonds.isRemoved() || diamonds.getItem().isEmpty(), "The diamonds were not taken");
+        h.assertTrue(dirt.isRemoved() || dirt.getItem().isEmpty(), "The junk of the same fall was left");
+        h.succeed();
     }
 }

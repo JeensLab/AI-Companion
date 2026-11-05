@@ -74,12 +74,13 @@ public final class CompanionDeathTrip {
     private int entryTicks;
     private int approach;
     private long giveUpAt;
-    private int startedAt;
+    /** The trip's own ticks: the game's counter advances only for entities the level ticks, a trip is bounded by its own. */
+    private int ticks;
     private boolean crossing;
     private boolean refused;
     private long refusedAt;
-    /** When this place was last tried, so a place that keeps refusing is not tried again at once. */
-    private final Map<BlockPos, Integer> triedAt = new HashMap<>();
+    /** When this place was last tried (the game clock), so a place that keeps refusing is not tried again at once. */
+    private final Map<BlockPos, Long> triedAt = new HashMap<>();
     private String lastLine = "";
 
     CompanionDeathTrip(CompanionEntity c) { this.c = c; }
@@ -131,8 +132,8 @@ public final class CompanionDeathTrip {
                 say("Ну и подавитесь своим лутом.");
                 continue;
             }
-            Integer tried = triedAt.get(place.pos());
-            if (tried != null && c.tickCount - tried < RETRY_TICKS) continue;
+            Long tried = triedAt.get(place.pos());
+            if (tried != null && level.getGameTime() - tried < RETRY_TICKS) continue;
             // Only the stacks of the manifest that still lie there are walked to: a stack somebody took is struck off
             // before the walk starts, so a looted place costs no walk at all.
             List<CompanionDeathSpots.Entry> live = liveEntries(level, place);
@@ -186,7 +187,7 @@ public final class CompanionDeathTrip {
         approach = 0;
         crossing = cross;
         refused = false;
-        startedAt = c.tickCount;
+        ticks = 0;
         giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2
                 + (long) (Math.sqrt(c.blockPosition().distSqr(place.pos())) * TICKS_PER_BLOCK);
         // Water is walked like a player walks it: he wades, and he swims where it is deep enough to float.
@@ -199,10 +200,11 @@ public final class CompanionDeathTrip {
         if (!(c.level() instanceof ServerLevel level)) { stop(); return false; }
         // The player turned the feature off: the walk ends here, as he asked.
         if (!c.deathRecovery()) { stop(); say("Ладно, вещи подождут."); return false; }
+        ticks++;
         if (crossing) {
             if (level.dimension().equals(spot.dimension())) { crossing = false; say("Перешёл, иду к вещам."); return true; }
             if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return false; }
-            if (c.tickCount - startedAt > MOST_TICKS) { stop(); say("Портал не пустил."); return false; }
+            if (ticks > MOST_TICKS) { stop(); say("Портал не пустил."); return false; }
             return true;
         }
         // Moved out of the dimension by something else: back through a portal, or the place is left.
@@ -216,7 +218,7 @@ public final class CompanionDeathTrip {
             }
             return true;
         }
-        if (c.tickCount - startedAt > MOST_TICKS || level.getGameTime() > giveUpAt) {
+        if (ticks > MOST_TICKS || level.getGameTime() > giveUpAt) {
             finish(level);
             return false;
         }
@@ -244,29 +246,33 @@ public final class CompanionDeathTrip {
             c.getNavigation().stop();
             if (entryTicks == 0 && !c.canStoreDrops(List.of(item.getItem().copyWithCount(1)))) makeRoom(level);
             entryTicks++;
-            if (entryTicks > WAIT_IN_REACH) giveUpEntry(entry, item, inReachReason(level, item));
+            if (entryTicks > WAIT_IN_REACH) giveUpEntry(entry, item, inReachReason(item));
             return true;
         }
         approach++;
         if (approach > APPROACH_PATIENCE) { giveUpEntry(entry, item, "не дошёл"); return true; }
         boolean drifted = routedPos == null || !routedPos.equals(item.blockPosition());
-        if (drifted || c.tickCount >= repathAt || c.getNavigation().isDone() || c.getNavigation().isStuck()) {
-            repathAt = c.tickCount + REPATH;
+        if (drifted || ticks >= repathAt || c.getNavigation().isDone() || c.getNavigation().isStuck()) {
+            repathAt = ticks + REPATH;
             routedPos = item.blockPosition().immutable();
             Set<BlockPos> cells = standCells(level, item);
             if (cells.isEmpty()) { giveUpEntry(entry, item, standReason(level, item)); return true; }
-            var reach = c.work.route.cells(cells, 0);
-            // This tick's search budget went elsewhere: ask again next tick, the walk is not lost.
-            if (reach.busy()) return true;
-            if (!reach.found()) {
-                // A search that did not even begin (he is in the air, on a ladder) proves nothing yet.
-                if (CompanionRoute.NOT_SEARCHED.equals(reach.reason())) return true;
-                dev.aicompanion.AICompanionMod.LOGGER.info("[death] no route from {} to {} ({} cells): {}",
-                        c.blockPosition(), item.blockPosition(), cells.size(), reach.reason());
-                giveUpEntry(entry, item, "нет пути");
-                return true;
+            if (!(c.getNavigation() instanceof CompanionNavigation nav)) return true;
+            // The way is searched whole, not in this tick's share: a walk to one stack must decide on that stack now.
+            Path path = nav.searchNow(cells, 0);
+            // No cell to stand in yet (he is in the air, on a ladder): not a verdict, ask again next tick.
+            if (path == null) return true;
+            if (!path.canReach()) {
+                double range = c.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
+                if (item.distanceToSqr(c) <= range * range) {
+                    dev.aicompanion.AICompanionMod.LOGGER.info("[death] no route from {} to {} ({} cells)",
+                            c.blockPosition(), item.blockPosition(), cells.size());
+                    giveUpEntry(entry, item, "нет пути");
+                    return true;
+                }
+                // A stack farther than one search sees: walk the leg it does see, and search again from there.
             }
-            c.work.route.walk(reach.path());
+            CompanionMiningNavigation.walk(c, path);
         }
         return true;
     }
@@ -354,10 +360,15 @@ public final class CompanionDeathTrip {
         return cells;
     }
 
-    /** A cell he can be in: standing on a floor, or swimming where the water is deep enough to float him. */
+    /**
+     * A cell he can be in: standing on a floor, holding a ladder or vine (nothing under his feet there), or swimming where
+     * the water is deep enough to float him.
+     */
     private boolean canBeAt(ServerLevel level, BlockPos cell) {
         if (CompanionMiningNavigation.standable(c, cell)) return true;
-        if (!level.getFluidState(cell).is(FluidTags.WATER) || CompanionLava.at(level, cell)) return false;
+        if (CompanionLava.at(level, cell)) return false;
+        if (level.getBlockState(cell).is(net.minecraft.tags.BlockTags.CLIMBABLE)) return level.noCollision(c, bodyAt(cell));
+        if (!level.getFluidState(cell).is(FluidTags.WATER)) return false;
         return level.noCollision(c, bodyAt(cell));
     }
 
@@ -377,7 +388,7 @@ public final class CompanionDeathTrip {
     }
 
     /** Why a stack in reach was not taken: the game's own reasons, not a guess. */
-    private String inReachReason(ServerLevel level, ItemEntity item) {
+    private String inReachReason(ItemEntity item) {
         if (item.hasPickUpDelay()) return "нельзя взять сразу";
         // The game lets only the stack's target take it, and that is never the companion.
         if (item.getTarget() != null) return "метит в другого";
@@ -432,7 +443,7 @@ public final class CompanionDeathTrip {
         }
         if (!left.isEmpty()) {
             // Something of his is still lying there: the place waits, and is tried again in tens of seconds, not minutes.
-            triedAt.put(spot.pos(), c.tickCount);
+            triedAt.put(spot.pos(), level.getGameTime());
             stop();
             say("Часть моих вещей осталась: " + String.join("; ", left) + ".");
             return;
