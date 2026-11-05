@@ -228,6 +228,7 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
         own.setCanPassDoors(evaluator.canPassDoors()); own.setCanOpenDoors(evaluator.canOpenDoors());
         own.setCanFloat(evaluator.canFloat()); own.setCanWalkOverFences(evaluator.canWalkOverFences());
         own.prepare(new net.minecraft.world.level.PathNavigationRegion(level, at.offset(-i, -i, -i), at.offset(i, i, i)), mob);
+        own.keepOffBreath(CompanionDragonBreath.clouds(level, new net.minecraft.world.phys.AABB(at).inflate(i)));
         CompanionSearch search = CompanionSearch.create(own, mob, key.targets, key.accuracy, key.range, now);
         if (search == null) own.done(); else search.budget = Math.min(search.budget, budget);
         return search;

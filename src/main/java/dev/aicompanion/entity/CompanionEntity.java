@@ -135,6 +135,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
     final CompanionBreath breath = new CompanionBreath(this);
+    final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
     BlockPos movementIntent;
@@ -322,6 +323,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
+        this.goalSelector.addGoal(1, new CompanionEntityGoals.DragonBreathGoal(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));

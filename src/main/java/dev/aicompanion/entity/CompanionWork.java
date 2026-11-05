@@ -649,6 +649,10 @@ public final class CompanionWork {
         if (owner.distanceToSqr(player) <= 9 && Math.abs(owner.getY() - player.getY()) <= 1.25 && owner.hasLineOfSight(player) && (owner.onGround() || !owner.onClimbable())) {
             finish(true, "Я рядом."); return;
         }
+        // The player in the dragon's breath: to its edge, and the order waits there; no way while it lasts is no stall.
+        BlockPos meet = owner.dragonBreath.meetingPoint(player);
+        if (owner.dragonBreath.about()) orderProgressPosition = null;
+        if (meet == null || !meet.equals(player.blockPosition())) { if (meet != null && route.follow(meet, 1) != CompanionTravel.Step.WALKING) owner.travel().reset(); return; }
         owner.workStatus("Пытаюсь добраться до игрока.");
         // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
         // far by the way. Legs that came to nothing are not started again from the same spot at once: the self-rescue takes him over
