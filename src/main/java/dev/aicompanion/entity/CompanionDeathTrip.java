@@ -94,6 +94,8 @@ public final class CompanionDeathTrip {
     private long heldUntil;
     /** The place's number in the settings list, as he said it when he set out. */
     private int placeNumber;
+    /** The number of the last place dropped in this pass, said once at the end. */
+    private int lastDropped = -1;
     /** When this place was last tried (the game clock), so a place that keeps refusing is not tried again at once. */
     private final Map<BlockPos, Long> triedAt = new HashMap<>();
     private String lastLine = "";
@@ -122,6 +124,14 @@ public final class CompanionDeathTrip {
     /** What became of one stack of this walk, or null when it is not part of it. */
     public Verdict verdict(UUID stack) { return ledger.get(stack); }
 
+    /** Where this place stands in the list he would walk right now, not where it stood when the walk began. */
+    private int number() {
+        if (spot == null || c.level().getServer() == null) return placeNumber;
+        var ranked = CompanionDeathSpots.get(c.level().getServer()).ranked(c.getOwnerId());
+        for (int i = 0; i < ranked.size(); i++) if (ranked.get(i).id().equals(spot.id())) return i + 1;
+        return placeNumber;
+    }
+
     /** What he is about, for the task screen. */
     public String describe() {
         if (spot == null) return "";
@@ -130,7 +140,7 @@ public final class CompanionDeathTrip {
             Verdict verdict = ledger.get(entry.id());
             if (verdict == null || verdict.fate() == Fate.PENDING) left++;
         }
-        return "Иду за вещами №" + placeNumber + (left > 0 ? ", осталось " + left + "." : ".");
+        return "Иду за вещами №" + number() + (left > 0 ? ", осталось " + left + "." : ".");
     }
 
     /** Sets out for the dearest place with a stack still lying there; false when there is nothing worth or possible to walk to. */
@@ -139,38 +149,44 @@ public final class CompanionDeathTrip {
         var server = level.getServer();
         if (server == null || level.getGameTime() < heldUntil) return false;
         CompanionDeathSpots data = CompanionDeathSpots.get(server);
-        // The number he says is the place's position in the settings list: the same order, the dearest first.
+        // The number he says is the place's position in the settings list: the same order, the dearest first. A place
+        // that leaves the list takes its number with it, so the ranking is read again after every drop and the number
+        // of the next place is its position in the list the player will see, not the one it had before the drop.
         List<CompanionDeathSpots.Spot> places = data.ranked(c.getOwnerId());
-        for (int index = 0; index < places.size(); index++) {
+        int index = 0;
+        while (index < places.size()) {
             CompanionDeathSpots.Spot place = places.get(index);
             int number = index + 1;
             if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
                 data.taken(c.getOwnerId(), place.id());
-                say("Ну и подавитесь своим лутом.");
+                lastDropped = number;
+                places = data.ranked(c.getOwnerId());
                 continue;
             }
             Long tried = triedAt.get(place.pos());
-            if (tried != null && level.getGameTime() - tried < RETRY_TICKS) continue;
+            if (tried != null && level.getGameTime() - tried < RETRY_TICKS) { index++; continue; }
             // Only the stacks of the manifest that still lie there are walked to: a stack somebody took is struck off
             // before the walk starts, so a looted place costs no walk at all.
             List<CompanionDeathSpots.Entry> live = liveEntries(level, place);
             if (live.isEmpty()) {
                 // A stack looked for once and not found may still be on its way into the world: the place is asked
                 // again in a moment instead of being struck off on that one look.
-                if (missedOnce(level, place)) continue;
+                if (missedOnce(level, place)) { index++; continue; }
                 // Nothing is left there: the place goes, and a death not worth a walk is not spoken of.
                 data.taken(c.getOwnerId(), place.id());
+                places = data.ranked(c.getOwnerId());
                 continue;
             }
             if (!place.dimension().equals(level.dimension())) {
                 // The Overworld and the Nether are crossed both ways on foot; a place in the End needs its own portal and is left.
                 if (place.worth() < CROSS_WORTH || place.dimension().equals(Level.END)) {
                     data.taken(c.getOwnerId(), place.id());
+                    places = data.ranked(c.getOwnerId());
                     continue;
                 }
                 // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
                 var entered = c.portals.enter(level);
-                if (!entered.success()) continue;
+                if (!entered.success()) { index++; continue; }
                 data.attempted(c.getOwnerId(), place.id());
                 start(place, live, level, true, number);
                 say("Иду за вещами №" + number + " через портал.");
@@ -181,6 +197,8 @@ public final class CompanionDeathTrip {
             say("Иду за вещами №" + number + ".");
             return true;
         }
+        // A drop is said once, at the end of the pass, whether or not another place was found.
+        if (lastDropped >= 0) { say("№" + lastDropped + " — бросил."); lastDropped = -1; }
         return false;
     }
 
@@ -234,6 +252,7 @@ public final class CompanionDeathTrip {
     private void start(CompanionDeathSpots.Spot place, List<CompanionDeathSpots.Entry> live, ServerLevel level, boolean cross, int number) {
         spot = place;
         placeNumber = number;
+        if (lastDropped >= 0) { say("№" + lastDropped + " — бросил."); lastDropped = -1; }
         original = List.copyOf(live);
         ledger.clear();
         takenAtStart.clear();
@@ -261,8 +280,8 @@ public final class CompanionDeathTrip {
     public boolean tick() {
         if (spot == null) return false;
         if (!(c.level() instanceof ServerLevel level)) { stop(); return false; }
-        // The player turned the feature off: the walk ends here, as he asked.
-        if (!c.deathRecovery()) { stop(); say("Ладно, вещи подождут."); return false; }
+        // The player turned the feature off: the walk ends here, as he asked, without a word about it.
+        if (!c.deathRecovery()) { stop(); return false; }
         ticks++;
         if (crossing) {
             if (level.dimension().equals(spot.dimension())) { crossing = false; return true; }
@@ -277,7 +296,7 @@ public final class CompanionDeathTrip {
                 if (!entered.success()) { stop(); say("Не смог перейти в другое измерение."); return false; }
                 crossing = true;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
-                say("Иду за вещами №" + placeNumber + " через портал.");
+                say("Иду за вещами №" + number() + " через портал.");
             }
             return true;
         }
