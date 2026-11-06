@@ -189,8 +189,11 @@ public final class CompanionObtain {
         return item == Items.BEEF || item == Items.PORKCHOP ? ceil(count, 2) : count;
     }
     private static int perOre(CompanionOre.Kind ore) {
-        // Raw drops one ore block gives without Fortune: copper two, lapis and redstone four, the rest one.
-        return switch (ore) { case COPPER -> 2; case LAPIS, REDSTONE -> 4; case COAL, IRON, GOLD, DIAMOND, EMERALD -> 1; };
+        return switch (ore) {
+            case COPPER -> 2;
+            case LAPIS, REDSTONE -> 4; // raw drops one block gives without Fortune
+            case COAL, IRON, GOLD, DIAMOND, EMERALD -> 1;
+        };
     }
 
     private boolean add(String type, String item, int count) { steps.add(new Step(type, item, count)); return true; }
