@@ -47,6 +47,6 @@ public record CompanionActionResult(boolean success, String message, Status stat
                         e.hasUUID("ItemEntity") ? e.getUUID("ItemEntity") : null);
             }
             return new CompanionActionResult(status == Status.SUCCESS || status == Status.ACCEPTED, tag.getString("Message"), status, facts);
-        } catch (RuntimeException ex) { return blocked("Сохранённый результат работы повреждён; успех не подтверждён."); }
+        } catch (RuntimeException ex) { return blocked("Сохранённый результат работы повреждён; успех не подтверждён."); } // a damaged saved result must never read as success
     }
 }

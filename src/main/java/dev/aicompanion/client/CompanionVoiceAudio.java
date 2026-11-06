@@ -54,7 +54,7 @@ public final class CompanionVoiceAudio {
                 try {
                     Voice voice = new Voice(speaker, prepared, done);
                     ACTIVE.add(voice); client.getSoundManager().play(voice);
-                } catch (Exception playbackError) { done.completeExceptionally(playbackError); }
+                } catch (Exception playbackError) { done.completeExceptionally(playbackError); } // the playback failure reaches the caller through done
             });
         });
         return done;

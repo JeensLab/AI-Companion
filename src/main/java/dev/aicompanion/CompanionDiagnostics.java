@@ -120,6 +120,7 @@ public final class CompanionDiagnostics {
     /** Bounded drain when a server stops; keep the writer reusable for the next world. */
     public static void flush() {
         try { WRITER.submit(() -> { }).get(2, TimeUnit.SECONDS); }
+        // Best effort on shutdown: a timeout or interrupt only means the queue was not fully drained.
         catch (Exception ignored) { }
     }
 }

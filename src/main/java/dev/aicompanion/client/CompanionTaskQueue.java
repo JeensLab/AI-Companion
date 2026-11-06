@@ -180,7 +180,7 @@ public final class CompanionTaskQueue {
         for (Probe probe : probes) {
             boolean isReady;
             try { isReady = probe.readiness().getAsBoolean(); }
-            catch (RuntimeException error) { fail(probe, error); continue; }
+            catch (RuntimeException error) { fail(probe, error); continue; } // a failing readiness probe fails its task through fail()
             if (isReady) synchronized (this) { if (current(probe)) probe.task().ready = true; }
         }
         pump();
@@ -228,7 +228,7 @@ public final class CompanionTaskQueue {
         return () -> {
             CompletableFuture<Result> run;
             try { run = task.runner.apply(task); }
-            catch (Exception error) { run = CompletableFuture.failedFuture(error); }
+            catch (Exception error) { run = CompletableFuture.failedFuture(error); } // a runner that throws becomes a failed result for finish()
             run.whenComplete((result, error) -> finish(task, result, error));
         };
     }

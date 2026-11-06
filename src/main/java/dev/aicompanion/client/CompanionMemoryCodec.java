@@ -168,6 +168,7 @@ public final class CompanionMemoryCodec {
             JsonElement root = GSON.getAdapter(JsonElement.class).read(reader);
             return reader.peek() == JsonToken.END_DOCUMENT ? root : null;
         } catch (IOException | RuntimeException error) {
+            // Malformed or truncated JSON from the model is an unusable answer, not a crash: null makes the caller discard it.
             return null;
         }
     }
