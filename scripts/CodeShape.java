@@ -1,0 +1,208 @@
+import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.MethodTree;
+import com.sun.source.util.JavacTask;
+import com.sun.source.util.SourcePositions;
+import com.sun.source.util.TreePathScanner;
+import com.sun.source.util.Trees;
+
+import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.ToolProvider;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * Size ceilings for production code, checked against a baseline that may only shrink.
+ *
+ * <p>Usage, from the repository root:
+ * <pre>
+ *   java scripts/CodeShape.java                    # compare the tree with tools/code-shape-baseline.txt
+ *   java scripts/CodeShape.java --write-baseline   # record the current tree as the new baseline
+ * </pre>
+ *
+ * <p>Baseline line: {@code file <path> <lines>}, {@code method <path> <Class.name(Types)> <lines>} or
+ * {@code params <path> <Class.name(Types)> <count>}. A method spans from its first modifier or annotation to the closing
+ * brace, inclusive; lambdas are not methods. Methods are read with the javac Tree API, never with regular expressions.
+ */
+public final class CodeShape {
+    private static final Path SOURCES = Path.of("src/main/java");
+    private static final Path BASELINE = Path.of("tools/code-shape-baseline.txt");
+    private static final String GAMETEST_DIR = "dev/aicompanion/gametest/";
+    private static final int MAX_FILE_LINES = 800;
+    private static final int MAX_METHOD_LINES = 80;
+    private static final int MAX_PARAMS = 5;
+    /** Ceiling for files under gametest/; 0 means none. Set to 600 once the stage 7 split of those files has landed. */
+    private static final int GAMETEST_FILE_CEILING = 0;
+
+    public static void main(String[] args) throws Exception {
+        boolean write = args.length == 1 && args[0].equals("--write-baseline");
+        if (args.length > 0 && !write) {
+            System.err.println("Usage: java scripts/CodeShape.java [--write-baseline]");
+            System.exit(2);
+        }
+        if (!Files.isDirectory(SOURCES)) {
+            System.err.println("Run from the repository root: " + SOURCES + " not found");
+            System.exit(2);
+        }
+        Map<String, Integer> current = measure();
+        if (write) {
+            Files.write(BASELINE, render(current).getBytes(StandardCharsets.UTF_8));
+            System.out.println("Wrote " + BASELINE + ": " + summary(current));
+            return;
+        }
+        List<String> problems = compare(readBaseline(), current);
+        problems.forEach(System.out::println);
+        System.out.println(problems.isEmpty() ? "PASS code-shape: " + summary(current)
+                : "FAIL code-shape: " + problems.size() + " difference(s) from " + BASELINE);
+        System.exit(problems.isEmpty() ? 0 : 1);
+    }
+
+    /** Every violation of the current tree: key "kind path [signature]" to its size. */
+    private static Map<String, Integer> measure() throws IOException {
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(SOURCES)) {
+            files = walk.filter(path -> path.toString().endsWith(".java")).sorted().collect(Collectors.toList());
+        }
+        Map<String, Integer> found = new TreeMap<>();
+        for (Path file : files) {
+            String path = file.toString().replace('\\', '/');
+            int lines = Files.readAllLines(file, StandardCharsets.UTF_8).size();
+            int ceiling = path.contains(GAMETEST_DIR) ? GAMETEST_FILE_CEILING : MAX_FILE_LINES;
+            if (ceiling > 0 && lines > ceiling) {
+                found.put("file " + path, lines);
+            }
+        }
+        scanMethods(files, found);
+        return found;
+    }
+
+    private static void scanMethods(List<Path> files, Map<String, Integer> found) throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        try (StandardJavaFileManager manager = compiler.getStandardFileManager(null, null, StandardCharsets.UTF_8)) {
+            Iterable<? extends JavaFileObject> units = manager.getJavaFileObjectsFromPaths(files);
+            JavacTask task = (JavacTask) compiler.getTask(null, manager, null, List.of("-proc:none"), null, units);
+            SourcePositions positions = Trees.instance(task).getSourcePositions();
+            for (CompilationUnitTree unit : task.parse()) {
+                new MethodScanner(unit, positions, found).scan(unit, null);
+            }
+        }
+    }
+
+    private static final class MethodScanner extends TreePathScanner<Void, Void> {
+        private final CompilationUnitTree unit;
+        private final SourcePositions positions;
+        private final Map<String, Integer> found;
+        private final Deque<String> classes = new ArrayDeque<>();
+        private final String path;
+
+        MethodScanner(CompilationUnitTree unit, SourcePositions positions, Map<String, Integer> found) {
+            this.unit = unit;
+            this.positions = positions;
+            this.found = found;
+            this.path = Path.of(unit.getSourceFile().toUri()).toString().replace('\\', '/')
+                    .replaceFirst("^.*?/(src/main/java/)", "$1");
+        }
+
+        @Override
+        public Void visitClass(ClassTree tree, Void unused) {
+            String name = tree.getSimpleName().toString();
+            classes.addLast(name.isEmpty() ? "<anonymous>" : name);
+            try {
+                return super.visitClass(tree, unused);
+            } finally {
+                classes.removeLast();
+            }
+        }
+
+        @Override
+        public Void visitMethod(MethodTree tree, Void unused) {
+            String name = tree.getName().contentEquals("<init>") ? classes.peekLast() : tree.getName().toString();
+            String types = tree.getParameters().stream().map(parameter -> parameter.getType().toString())
+                    .collect(Collectors.joining(","));
+            String signature = (String.join(".", classes) + "." + name + "(" + types + ")").replaceAll("\\s+", "");
+            int length = lineOf(positions.getEndPosition(unit, tree)) - lineOf(positions.getStartPosition(unit, tree)) + 1;
+            if (length > MAX_METHOD_LINES) {
+                record("method " + path + " " + signature, length);
+            }
+            if (tree.getParameters().size() > MAX_PARAMS) {
+                record("params " + path + " " + signature, tree.getParameters().size());
+            }
+            return super.visitMethod(tree, unused);
+        }
+
+        /** Two methods with the same signature (anonymous classes) get a "#n" suffix in source order. */
+        private void record(String key, int value) {
+            String unique = key;
+            for (int copy = 2; found.containsKey(unique); copy++) {
+                unique = key + "#" + copy;
+            }
+            found.put(unique, value);
+        }
+
+        private int lineOf(long position) {
+            return (int) unit.getLineMap().getLineNumber(position);
+        }
+    }
+
+    private static Map<String, Integer> readBaseline() throws IOException {
+        Map<String, Integer> baseline = new TreeMap<>();
+        if (!Files.exists(BASELINE)) {
+            return baseline;
+        }
+        for (String line : Files.readAllLines(BASELINE, StandardCharsets.UTF_8)) {
+            if (line.isBlank()) {
+                continue;
+            }
+            int space = line.lastIndexOf(' ');
+            baseline.put(line.substring(0, space), Integer.parseInt(line.substring(space + 1)));
+        }
+        return baseline;
+    }
+
+    private static List<String> compare(Map<String, Integer> baseline, Map<String, Integer> current) {
+        List<String> problems = new ArrayList<>();
+        for (String key : new TreeSet<>(current.keySet())) {
+            Integer allowed = baseline.get(key);
+            int now = current.get(key);
+            if (allowed == null) {
+                problems.add("NEW " + key + " " + now + ": over the ceiling and not in the baseline; make it smaller");
+            } else if (now > allowed) {
+                problems.add("GREW " + key + " " + allowed + " -> " + now + ": do not make it larger; shrink it");
+            } else if (now < allowed) {
+                problems.add("SHRANK " + key + " " + allowed + " -> " + now
+                        + ": lower the baseline with --write-baseline and commit it");
+            }
+        }
+        for (String key : new TreeSet<>(baseline.keySet())) {
+            if (!current.containsKey(key)) {
+                problems.add("FIXED " + key + ": gone or under the ceiling; remove it with --write-baseline and commit");
+            }
+        }
+        return problems;
+    }
+
+    private static String render(Map<String, Integer> violations) {
+        return violations.entrySet().stream().map(entry -> entry.getKey() + " " + entry.getValue() + "\n")
+                .collect(Collectors.joining());
+    }
+
+    private static String summary(Map<String, Integer> violations) {
+        long files = violations.keySet().stream().filter(key -> key.startsWith("file ")).count();
+        long methods = violations.keySet().stream().filter(key -> key.startsWith("method ")).count();
+        long params = violations.keySet().stream().filter(key -> key.startsWith("params ")).count();
+        return files + " file(s), " + methods + " method(s), " + params + " parameter list(s) in the baseline";
+    }
+}
