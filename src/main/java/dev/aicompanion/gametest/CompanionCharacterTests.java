@@ -13,7 +13,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
-import java.util.List;
 
 /** Character/expression tests use real entities and local policies. Never call cloud APIs. */
 @GameTestHolder(AICompanionMod.MOD_ID)
