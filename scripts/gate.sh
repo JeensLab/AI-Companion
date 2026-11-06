@@ -31,18 +31,19 @@ fi
 steps="source-guard"
 
 # 2. Whitespace errors, in the working tree and in the committed range.
+# Some tracked Java files are stored with CRLF; cr-at-eol keeps the CR from counting as trailing whitespace.
 echo "== diff-check"
-git diff --check HEAD || fail "diff-check (working tree)"
+git -c core.whitespace=cr-at-eol diff --check HEAD || fail "diff-check (working tree)"
 if git rev-parse --verify -q origin/main >/dev/null; then
   base="$(git merge-base origin/main HEAD)" || fail "diff-check (merge base)"
   echo "range: ${base:0:10}..HEAD (merge base with origin/main)"
-  git diff --check "$base" HEAD || fail "diff-check (range)"
+  git -c core.whitespace=cr-at-eol diff --check "$base" HEAD || fail "diff-check (range)"
 elif [ -n "${CI:-}" ]; then
   echo "origin/main is missing in CI: the committed range cannot be checked" >&2
   fail "diff-check (origin/main missing)"
 elif git rev-parse --verify -q HEAD~1 >/dev/null; then
   echo "WARNING: origin/main is not available: checking only HEAD~1..HEAD"
-  git diff --check HEAD~1 HEAD || fail "diff-check (range)"
+  git -c core.whitespace=cr-at-eol diff --check HEAD~1 HEAD || fail "diff-check (range)"
 else
   echo "WARNING: origin/main and HEAD~1 are not available: the committed range is not checked"
 fi

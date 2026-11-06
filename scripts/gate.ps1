@@ -27,15 +27,16 @@ if(-not (Get-ChildItem -LiteralPath 'src/main/java' -Filter '*.java' -Recurse -F
 $steps='source-guard'
 
 # 2. Whitespace errors, in the working tree and in the committed range.
+# Some tracked Java files are stored with CRLF; cr-at-eol keeps the CR from counting as trailing whitespace.
 Write-Host '== diff-check'
-& git diff --check HEAD | Out-Host
+& git -c core.whitespace=cr-at-eol diff --check HEAD | Out-Host
 if($LASTEXITCODE -ne 0){Stop-Gate 'diff-check (working tree)'}
 & git rev-parse --verify -q origin/main *> $null
 if($LASTEXITCODE -eq 0){
     $base=(& git merge-base origin/main HEAD)
     if($LASTEXITCODE -ne 0){Stop-Gate 'diff-check (merge base)'}
     Write-Host "range: $($base.Substring(0,10))..HEAD (merge base with origin/main)"
-    & git diff --check $base HEAD | Out-Host
+    & git -c core.whitespace=cr-at-eol diff --check $base HEAD | Out-Host
     if($LASTEXITCODE -ne 0){Stop-Gate 'diff-check (range)'}
 } elseif($env:CI){
     [Console]::Error.WriteLine('origin/main is missing in CI: the committed range cannot be checked')
@@ -44,7 +45,7 @@ if($LASTEXITCODE -eq 0){
     & git rev-parse --verify -q 'HEAD~1' *> $null
     if($LASTEXITCODE -eq 0){
         Write-Host 'WARNING: origin/main is not available: checking only HEAD~1..HEAD'
-        & git diff --check HEAD~1 HEAD | Out-Host
+        & git -c core.whitespace=cr-at-eol diff --check HEAD~1 HEAD | Out-Host
         if($LASTEXITCODE -ne 0){Stop-Gate 'diff-check (range)'}
     } else {
         Write-Host 'WARNING: origin/main and HEAD~1 are not available: the committed range is not checked'
