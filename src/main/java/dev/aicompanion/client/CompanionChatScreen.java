@@ -96,7 +96,7 @@ public final class CompanionChatScreen extends Screen {
                             }));
                 }
                 InworldTtsClient.speak(reply.text(), trace).exceptionally(speechError -> {
-                    dev.aicompanion.AICompanionMod.LOGGER.warn("Inworld speech could not be played: {}", speechError.getMessage());
+                    dev.aicompanion.AICompanionMod.LOGGER.warn("Speech could not be played: {}", speechError.getMessage());
                     return null;
                 });
             } else {
@@ -257,7 +257,7 @@ public final class CompanionChatScreen extends Screen {
         appendHistory(reply);
         minecraft.gui.getChat().addMessage(reply);
         InworldTtsClient.speak(text, trace).exceptionally(speechError -> {
-            dev.aicompanion.AICompanionMod.LOGGER.warn("Inworld speech could not be played: {}", speechError.getMessage());
+            dev.aicompanion.AICompanionMod.LOGGER.warn("Speech could not be played: {}", speechError.getMessage());
             return null;
         });
     }
