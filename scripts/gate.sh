@@ -51,7 +51,7 @@ steps="$steps, diff-check"
 
 # 3. Shape checks run only when their script exists, so later stages add them without editing the gate.
 shape_run=0
-for name in code-shape switch-check arch-check catch-check magic-numbers line-check test-quality; do
+for name in code-shape switch-check arch-check catch-check magic-numbers line-check test-quality format-check; do
   script="scripts/$name.sh"
   if [ -f "$script" ]; then
     echo "== $name"

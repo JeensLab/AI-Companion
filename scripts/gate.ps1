@@ -55,7 +55,7 @@ $steps="$steps, diff-check"
 
 # 3. Shape checks run only when their script exists, so later stages add them without editing the gate.
 $shapeRun=0
-foreach($name in 'code-shape','switch-check','arch-check','catch-check','magic-numbers','line-check','test-quality'){
+foreach($name in 'code-shape','switch-check','arch-check','catch-check','magic-numbers','line-check','test-quality','format-check'){
     $script="scripts/$name.ps1"
     if(Test-Path -LiteralPath $script){
         Write-Host "== $name"
