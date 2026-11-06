@@ -12,12 +12,14 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   mutation:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # Worst case is the baseline plus 13 mutants at the 20-minute cap each: (1 + 13) x 20 = 280 minutes, under this cap of 300.
+    # A run normally takes a fraction of that. Add a mutant, and this number moves with it (or split the table over two jobs).
+    timeout-minutes: 300
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,7 +33,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run the spot mutants
-        run: bash scripts/mutation-spot.sh --all
+        run: bash scripts/mutation-spot.sh --all --timeout-min 20
       - name: Upload mutation logs
         if: always()
         uses: actions/upload-artifact@v4

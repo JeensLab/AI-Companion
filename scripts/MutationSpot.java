@@ -5,7 +5,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -18,42 +21,51 @@ import javax.tools.ToolProvider;
 
 /**
  * Spot mutation testing: breaks one real rule in the sources (tools/mutants.txt), runs only the GameTests that own that rule,
- * and expects at least one of them to fail. A mutant that every selected test survives is a rule nobody checks.
+ * and expects one of them to fail. A mutant that every selected test survives is a rule nobody checks.
  *
  * <p>Usage, from the repository root (the wrappers scripts/mutation-spot.sh and .ps1 call this):
  * <pre>
  *   java scripts/MutationSpot.java --list
  *   java scripts/MutationSpot.java --dry-run --all     # apply, check the syntax, show the diff, restore; no Gradle
- *   java scripts/MutationSpot.java --one &lt;id&gt;
- *   java scripts/MutationSpot.java --all
+ *   java scripts/MutationSpot.java --one &lt;id&gt; [--timeout-min 20]
+ *   java scripts/MutationSpot.java --all [--timeout-min 20]
  * </pre>
- * The working tree must be clean before a run so that {@code git checkout -- <file>} puts every byte back; the file is restored
- * after each mutant, on failure and on Ctrl-C, and the tree is checked clean again. Exit 1 when a mutant survived or is broken.
+ * Before the first mutant the selected tests run once on the unmutated tree; a failure there stops everything, so a failure
+ * under a mutant can only mean the mutant. KILLED needs the failing test to be one of the listed methods.
+ *
+ * <p>The working tree must be clean, untracked files included (in practice a separate worktree), so that
+ * {@code git checkout -- <file>} puts every byte of the one mutated file back; it is restored after each mutant, on failure and
+ * on Ctrl-C. Exit codes: 0 all killed; 1 a mutant survived, is broken, timed out or ended with an unexpected failure;
+ * 2 usage error, dirty tree or a red baseline; 3 the tree was still dirty after a restore.
  */
 public final class MutationSpot {
     private static final String TABLE = "tools/mutants.txt";
     private static final String SEPARATOR = " \\| ";
-    private static final long GRADLE_TIMEOUT_MINUTES = 40;
+    private static final int DEFAULT_TIMEOUT_MINUTES = 20;
     private static final Pattern FAILED_TEST = Pattern.compile("LogTestReporter[^\\r\\n]*?\\]: ([^\\r\\n]+) failed at");
 
     private record Mutant(String id, String file, String from, String to, List<String> methods, String why, String line) { }
 
-    private enum Verdict { KILLED, SURVIVED, BROKEN, ERROR }
+    private record GradleRun(boolean timedOut, int exit, String output, Path log) { }
+
+    private enum Verdict { KILLED, SURVIVED, BROKEN, TIMEOUT, ERROR }
 
     private static Path root;
+    private static int timeoutMinutes = DEFAULT_TIMEOUT_MINUTES;
 
     public static void main(String[] args) throws Exception {
-        root = Path.of(args.length > 0 && args[0].equals("--root") ? args[1] : ".").toAbsolutePath().normalize();
         List<String> rest = new ArrayList<>(List.of(args));
-        if (rest.size() > 1 && rest.get(0).equals("--root")) { rest.remove(0); rest.remove(0); }
+        root = Path.of(".").toAbsolutePath().normalize();
+        String rootArg = take(rest, "--root");
+        if (rootArg != null) root = Path.of(rootArg).toAbsolutePath().normalize();
+        String timeoutArg = take(rest, "--timeout-min");
+        if (timeoutArg != null) timeoutMinutes = timeoutArg.matches("\\d{1,4}") ? Integer.parseInt(timeoutArg) : 0;
         boolean dryRun = rest.remove("--dry-run");
         boolean list = rest.remove("--list");
         boolean all = rest.remove("--all");
-        String one = null;
-        int oneAt = rest.indexOf("--one");
-        if (oneAt >= 0 && oneAt + 1 < rest.size()) { one = rest.get(oneAt + 1); rest.remove(oneAt + 1); rest.remove(oneAt); }
-        if (!rest.isEmpty() || (!list && !all && one == null) || (all && one != null)) {
-            System.err.println("usage: mutation-spot (--list | [--dry-run] --all | [--dry-run] --one <id>)");
+        String one = take(rest, "--one");
+        if (!rest.isEmpty() || timeoutMinutes < 1 || (!list && !all && one == null) || (all && one != null)) {
+            System.err.println("usage: mutation-spot (--list | [--dry-run] --all | [--dry-run] --one <id>) [--timeout-min N]");
             System.exit(2);
         }
         List<Mutant> table = readTable();
@@ -65,10 +77,21 @@ public final class MutationSpot {
         for (Mutant mutant : table) if (all || mutant.id.equals(one)) chosen.add(mutant);
         if (chosen.isEmpty()) { System.err.println("no such mutant: " + one); System.exit(2); }
         if (!git("status", "--porcelain").isBlank()) {
-            System.err.println("the working tree is not clean; commit or stash first so the mutated file can be restored:\n" + git("status", "--porcelain"));
+            System.err.println("the working tree is not clean (untracked files count); use a clean worktree so the mutated file can be restored:\n"
+                    + git("status", "--porcelain"));
             System.exit(2);
         }
+        if (!dryRun && !baselineIsGreen(chosen)) System.exit(2);
         System.exit(runAll(chosen, dryRun) ? 0 : 1);
+    }
+
+    private static String take(List<String> args, String flag) {
+        int at = args.indexOf(flag);
+        if (at < 0 || at + 1 >= args.size()) return null;
+        String value = args.get(at + 1);
+        args.remove(at + 1);
+        args.remove(at);
+        return value;
     }
 
     private static boolean runAll(List<Mutant> chosen, boolean dryRun) throws Exception {
@@ -79,9 +102,27 @@ public final class MutationSpot {
             else if (verdict == Verdict.SURVIVED) survived++;
             else other++;
         }
-        System.out.println("mutation-spot: " + chosen.size() + " mutants, " + killed + (dryRun ? " applied and restored, " : " killed, ") + survived + " survived, " + other + " broken or failed"
-                + (dryRun ? " (dry run: Gradle was not run)" : ""));
+        System.out.println("mutation-spot: " + chosen.size() + " mutants, " + killed + (dryRun ? " applied and restored, " : " killed, ")
+                + survived + " survived, " + other + " broken, timed out or failed" + (dryRun ? " (dry run: Gradle was not run)" : ""));
         return survived == 0 && other == 0;
+    }
+
+    // The selected tests, once, on the unmutated tree: without it a red test would look like a kill.
+    private static boolean baselineIsGreen(List<Mutant> chosen) throws Exception {
+        Set<String> methods = new LinkedHashSet<>();
+        for (Mutant mutant : chosen) methods.addAll(mutant.methods);
+        GradleRun run = gradle(new ArrayList<>(methods), "mutation-baseline");
+        if (run.timedOut) {
+            System.out.println("ERROR baseline (no result in " + timeoutMinutes + " minutes, see " + run.log + ")");
+            return false;
+        }
+        if (run.exit == 0 && run.output.contains("All " + methods.size() + " required tests passed")) {
+            System.out.println("baseline green: " + methods.size() + " tests on the unmutated tree");
+            return true;
+        }
+        List<String> failed = failedTests(run.output);
+        System.out.println("ERROR baseline " + (failed.isEmpty() ? "(Gradle exit " + run.exit + " without a test report, see " + run.log + ")" : String.join(", ", failed)));
+        return false;
     }
 
     private static Verdict runOne(Mutant mutant, boolean dryRun) throws Exception {
@@ -120,39 +161,69 @@ public final class MutationSpot {
     }
 
     private static Verdict execute(Mutant mutant) throws Exception {
-        Path logs = root.resolve("build/diagnostics");
-        Files.createDirectories(logs);
-        Path log = logs.resolve("mutation-" + mutant.id + ".log");
-        boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
-        List<String> command = List.of(root.resolve(windows ? "gradlew.bat" : "gradlew").toString(), "runGameTestServer",
-                "-PgameTestMethods=" + String.join(",", mutant.methods), "-PgameTestDirectory=run/mutation", "--console=plain");
-        Process process = new ProcessBuilder(command).directory(root.toFile()).redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.to(log.toFile())).start();
-        boolean finished = process.waitFor(GRADLE_TIMEOUT_MINUTES, TimeUnit.MINUTES);
-        if (!finished) {
-            process.descendants().forEach(ProcessHandle::destroyForcibly);
-            process.destroyForcibly();
-            System.out.println("KILLED " + mutant.id + " by timeout (no result in " + GRADLE_TIMEOUT_MINUTES + " minutes, see " + log + ")");
-            return Verdict.KILLED;
+        GradleRun run = gradle(mutant.methods, "mutation-" + mutant.id);
+        if (run.timedOut) {
+            System.out.println("TIMEOUT " + mutant.id + " (no result in " + timeoutMinutes + " minutes, not counted as a kill, see " + run.log + ")");
+            return Verdict.TIMEOUT;
         }
-        String output = Files.readString(log, StandardCharsets.UTF_8);
-        int exit = process.exitValue();
-        if (output.contains("Execution failed for task ':compileJava'")) {
-            System.out.println("BROKEN " + mutant.id + " (the mutant does not compile, see " + log + ")");
+        if (run.output.contains("Execution failed for task ':compileJava'")) {
+            System.out.println("BROKEN " + mutant.id + " (the mutant does not compile, see " + run.log + ")");
             return Verdict.BROKEN;
         }
-        String allPassed = "All " + mutant.methods.size() + " required tests passed";
-        if (exit == 0 && output.contains(allPassed)) {
+        if (run.exit == 0 && run.output.contains("All " + mutant.methods.size() + " required tests passed")) {
             System.out.println("SURVIVED " + mutant.id + " (" + String.join(",", mutant.methods) + " all passed under the mutant)");
             return Verdict.SURVIVED;
         }
-        Matcher failed = FAILED_TEST.matcher(output);
-        if (failed.find() || output.contains("required tests failed")) {
-            System.out.println("KILLED " + mutant.id + " by " + (failed.find(0) ? failed.group(1) : "a failed test"));
+        List<String> failed = failedTests(run.output);
+        List<String> expected = new ArrayList<>();
+        List<String> unexpected = new ArrayList<>();
+        for (String name : failed) {
+            String owner = mutant.methods.stream().filter(method -> name.toLowerCase(Locale.ROOT).contains(method.toLowerCase(Locale.ROOT))).findFirst().orElse(null);
+            if (owner == null) unexpected.add(name);
+            else expected.add(owner);
+        }
+        if (!expected.isEmpty() && unexpected.isEmpty()) {
+            System.out.println("KILLED " + mutant.id + " by " + expected.get(0));
             return Verdict.KILLED;
         }
-        System.out.println("ERROR " + mutant.id + " (Gradle exit " + exit + " without a test report, see " + log + ")");
+        String detail = failed.isEmpty() ? "Gradle exit " + run.exit + " without a failed test in the report" : "unexpected failing tests: " + String.join(", ", unexpected);
+        System.out.println("ERROR " + mutant.id + " (" + detail + ", see " + run.log + ")");
         return Verdict.ERROR;
+    }
+
+    /**
+     * One focused GameTest run. On a timeout the Gradle process tree is destroyed and the daemon stopped; a game-test JVM that
+     * Gradle forked and detached may survive that, so look for a stray java process if the machine stays busy.
+     */
+    private static GradleRun gradle(List<String> methods, String logName) throws Exception {
+        Path logs = root.resolve("build/diagnostics");
+        Files.createDirectories(logs);
+        Path log = logs.resolve(logName + ".log");
+        List<String> command = List.of(gradlew(), "runGameTestServer", "-PgameTestMethods=" + String.join(",", methods),
+                "-PgameTestDirectory=run/mutation", "--console=plain");
+        Process process = new ProcessBuilder(command).directory(root.toFile()).redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.to(log.toFile())).start();
+        if (!process.waitFor(timeoutMinutes, TimeUnit.MINUTES)) {
+            process.descendants().forEach(ProcessHandle::destroyForcibly);
+            process.destroyForcibly();
+            Process stop = new ProcessBuilder(gradlew(), "--stop").directory(root.toFile()).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+            if (!stop.waitFor(2, TimeUnit.MINUTES)) stop.destroyForcibly();
+            return new GradleRun(true, -1, Files.readString(log, StandardCharsets.UTF_8), log);
+        }
+        return new GradleRun(false, process.exitValue(), Files.readString(log, StandardCharsets.UTF_8), log);
+    }
+
+    private static String gradlew() {
+        boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+        return root.resolve(windows ? "gradlew.bat" : "gradlew").toString();
+    }
+
+    private static List<String> failedTests(String output) {
+        Set<String> names = new LinkedHashSet<>();
+        Matcher matcher = FAILED_TEST.matcher(output);
+        while (matcher.find()) names.add(matcher.group(1).trim());
+        return new ArrayList<>(names);
     }
 
     // Parse only: a mutant that no longer parses would look like a kill, so it is reported as broken instead.
