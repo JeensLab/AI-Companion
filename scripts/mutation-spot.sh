@@ -6,4 +6,4 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then java_bin="$JAVA_HOME/bin/java"; else java_bin="java"; fi
-exec "$java_bin" -Dfile.encoding=UTF-8 scripts/MutationSpot.java --root "$root" "$@"
+exec "$java_bin" -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 scripts/MutationSpot.java --root "$root" "$@"

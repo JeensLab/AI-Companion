@@ -79,8 +79,8 @@ public final class MutationSpot {
             else if (verdict == Verdict.SURVIVED) survived++;
             else other++;
         }
-        System.out.println("mutation-spot: " + chosen.size() + " mutants, " + killed + " killed, " + survived + " survived, " + other + " broken or failed"
-                + (dryRun ? " (dry run: nothing was executed)" : ""));
+        System.out.println("mutation-spot: " + chosen.size() + " mutants, " + killed + (dryRun ? " applied and restored, " : " killed, ") + survived + " survived, " + other + " broken or failed"
+                + (dryRun ? " (dry run: Gradle was not run)" : ""));
         return survived == 0 && other == 0;
     }
 

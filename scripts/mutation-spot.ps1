@@ -4,7 +4,7 @@ param([switch]$List,[switch]$All,[switch]$DryRun,[string]$One='')
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 $java=if($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin\java.exe'))){Join-Path $env:JAVA_HOME 'bin\java.exe'}else{'java'}
-$javaArgs=@('-Dfile.encoding=UTF-8',(Join-Path $root 'scripts\MutationSpot.java'),'--root',$root)
+$javaArgs=@('-Dfile.encoding=UTF-8','-Dstdout.encoding=UTF-8',(Join-Path $root 'scripts\MutationSpot.java'),'--root',$root)
 if($List){$javaArgs+='--list'}
 if($DryRun){$javaArgs+='--dry-run'}
 if($All){$javaArgs+='--all'}
