@@ -1,0 +1,19 @@
+# Production catch blocks that scripts/CatchCheck.java flags but that are intentional.
+# Format: <file>:<method>:<ordinal> <reason>. The ordinal counts the catches of that method name in the file.
+# A reason says why the error is expected here and where it goes; stale entries fail the check.
+src/main/java/dev/aicompanion/CompanionDiagnostics.java:event:1 diagnostics must never fail a conversation or change game behavior
+src/main/java/dev/aicompanion/CompanionDiagnostics.java:flush:1 best-effort drain on server stop; a timeout or interrupt only leaves lines undrained
+src/main/java/dev/aicompanion/client/CompanionMemoryCodec.java:strictRoot:1 malformed JSON from the model is an expected bad answer; null makes the caller discard it
+src/main/java/dev/aicompanion/client/CompanionMemoryFlow.java:request:1 a synchronous failure of the request builder becomes a failed future handled by whenComplete
+src/main/java/dev/aicompanion/client/CompanionServerPlanPort.java:onServer:1 server-thread failure is handed to the caller through the result future
+src/main/java/dev/aicompanion/client/CompanionTaskQueue.java:tick:1 a failing readiness probe fails its own task through fail()
+src/main/java/dev/aicompanion/client/CompanionTaskQueue.java:next:1 a runner that throws becomes a failed future that finish() reports
+src/main/java/dev/aicompanion/client/CompanionVoiceAudio.java:play:2 a playback failure is handed to the caller through the done future
+src/main/java/dev/aicompanion/client/InworldSttClient.java:readError:1 the service may return a plain-text error instead of JSON; the raw body is used instead
+src/main/java/dev/aicompanion/client/MicrophoneRecorder.java:capture:1 after stop() an exception ends the recording normally; otherwise it fails the result with a player message
+src/main/java/dev/aicompanion/client/OpenRouterClient.java:endpoint:1 a malformed address is reported right below as a player-facing IllegalStateException
+src/main/java/dev/aicompanion/client/OpenRouterClient.java:readError:1 the service may return non-JSON data; a status-based message is used instead
+src/main/java/dev/aicompanion/client/OpenRouterRetry.java:retryDelay:2 an unparsable Retry-After header keeps the default exponential backoff
+src/main/java/dev/aicompanion/entity/CompanionActionResult.java:load:1 a damaged saved result is returned as blocked, never as success
+src/main/java/dev/aicompanion/entity/CompanionFurnaceBatchNbt.java:load:1 an unknown saved status leaves the batch in WAITING until the first read
+src/main/java/dev/aicompanion/entity/CompanionGoals.java:load:1 corrupt goal data marks the goal unsupported via invalid() instead of resuming
