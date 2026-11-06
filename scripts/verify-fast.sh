@@ -40,9 +40,10 @@ esac
 if [ "$repetitions" -lt 1 ] || [ "$repetitions" -gt 20 ]; then echo "--repetitions must be 1..20" >&2; exit 2; fi
 
 # One server holds about 1.5 GB and needs its own world; 2 GB each keeps the machine out of swap.
-# Four shards is the default and the only count whose stability is claimed; five to eight are reachable with --force
-# and are not guaranteed stable (they were not reliably faster and flaked on the measured machine).
+# Measured on one machine: 4 shards took 228 s, 6 took 193 s, 8 took 270 s, and 1 / 1 / 3 tests were still red after the retry.
+# Stability is claimed only for 4, the default; 5-8 need --force.
 if [ -r /proc/meminfo ]; then
+  # Git Bash's /proc/meminfo has no MemAvailable, so fall back to MemFree.
   free_gb=$(( $(awk '/MemAvailable/ {a=$2} /MemFree/ {f=$2} END {print a ? a : f + 0}' /proc/meminfo) / 1024 / 1024 ))
 elif command -v sysctl >/dev/null 2>&1; then
   # macOS: total memory, and half of it assumed free for the shards.
@@ -60,7 +61,7 @@ if [ "$shards" = "auto" ]; then
   shards="$wanted"
   echo "shards: $shards (cores $cores, free ${free_gb} GB, limit 4)"
 elif [ "$shards" -gt 4 ] && [ "$force" -eq 0 ]; then
-  echo "shards: 4 (asked $shards; 5-8 need --force: they were not faster and flaked here)"
+  echo "shards: 4 (asked $shards; 5-8 need --force: they were not always faster and flaked here)"
   shards=4
 elif [ "$shards" -gt 4 ]; then
   echo "shards: $shards (asked $shards with --force; stability is not guaranteed above 4)"
