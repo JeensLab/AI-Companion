@@ -25,7 +25,7 @@ import java.util.Map;
  * fuse cannot see (a fuse goes out without a line of sight, and a blast does not reach round a corner), then the farthest from the nearest
  * creeper up to the gap beyond which the fuse goes out anyway, then the nearest to walk to.
  */
-final class CompanionFuseEscape {
+public final class CompanionFuseEscape {
     private static final int DEPTH = 12, REPLAN_TICKS = 5, MAX_DROP = 3;
     private static final long NEVER = Long.MIN_VALUE / 2;
     /** How much nearer to a creeper than he is now a cell may be (a corner is rounded on a cell not much farther), and how near to one never. */
@@ -41,7 +41,7 @@ final class CompanionFuseEscape {
     private long builtAt = NEVER;
     private boolean holding, clears;
 
-    CompanionFuseEscape(CompanionEntity owner) { this.owner = owner; }
+    public CompanionFuseEscape(CompanionEntity owner) { this.owner = owner; }
 
     /** Forgets the way, so the next step builds it afresh. */
     void reset() {
@@ -51,7 +51,7 @@ final class CompanionFuseEscape {
         holding = clears = false;
     }
 
-    BlockPos goal() { return path.isEmpty() ? null : path.get(path.size() - 1); }
+    public BlockPos goal() { return path.isEmpty() ? null : path.get(path.size() - 1); }
 
     boolean holding() { return holding; }
 
@@ -61,7 +61,7 @@ final class CompanionFuseEscape {
     int length() { return path.size() - index; }
 
     /** Builds the way now; its length, or -1 where he has none. */
-    int plan(ServerLevel level, List<Creeper> threats) {
+    public int plan(ServerLevel level, List<Creeper> threats) {
         build(level, threats);
         builtAt = level.getGameTime();
         return holding ? 0 : path.isEmpty() ? -1 : path.size();

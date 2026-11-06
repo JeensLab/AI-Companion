@@ -14,13 +14,13 @@ import java.util.List;
  * mob can walk down and back up. Soil and stone are both dug; stone dug on the way is already the harvest.
  * Never a vertical shaft: every step moves one block sideways for each block down.
  */
-final class CompanionQuarry {
+public final class CompanionQuarry {
     static final int MAX_DEPTH = 6;
     /** cells in digging order; start is the surface cell the stairs begin from (and the way back out). */
-    record Plan(List<BlockPos> cells, BlockPos start, java.util.Set<BlockPos> supports, int stoneCells) { }
+    public record Plan(List<BlockPos> cells, BlockPos start, java.util.Set<BlockPos> supports, int stoneCells) { }
     private CompanionQuarry() { }
 
-    static Plan find(CompanionEntity owner, int wantedStone) {
+    public static Plan find(CompanionEntity owner, int wantedStone) {
         return find(owner, wantedStone, java.util.Set.of());
     }
 

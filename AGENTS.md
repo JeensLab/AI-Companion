@@ -86,7 +86,7 @@
 Долгая цель (действие `pursue_goal`) — тоже на сервере: движок `entity/CompanionAgenda`,
 закрытый каталог `CompanionPlaybooks`, этапы по фактам `CompanionMilestones`; очередь
 закрывает её задачу на `ACCEPTED`.
-Игровые регрессии — `gametest/` и `entity/CompanionStairApproachTests.java`;
+Игровые регрессии — только `gametest/` (классы `*Tests` вне неё запрещены);
 структуры — `src/main/resources/data/aicompanion/structure/`.
 
 Несмотря на имя папки, `CompanionPlanRunner`, `CompanionServerPlanPort` и часть других
@@ -125,6 +125,8 @@
 ## Проверка и передача результата
 
 - Сборка: Windows `.\gradlew.bat build`; Linux/macOS `./gradlew build`.
+- `scripts/arch-check.sh` (`.ps1`) проверяет по импортам границы пакетов: `net.minecraft.client.*` только в файлах
+  `tools/arch-whitelist.txt`, `entity/` и `inventory/` не импортируют `client/`, классы `*Tests` лежат в `gametest/`.
 - Игровые тесты: повседневно `.\scripts\verify-fast.ps1` на Windows и `./scripts/verify-fast.sh` на
   Linux/macOS (все тесты без трёх длинных
   сценариев `endurance`, в нескольких процессах); перед PR один раз полный `.\gradlew.bat runGameTestServer`
