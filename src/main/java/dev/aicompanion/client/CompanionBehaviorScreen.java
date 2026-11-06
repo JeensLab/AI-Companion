@@ -3,6 +3,7 @@ package dev.aicompanion.client;
 import dev.aicompanion.OpenRouterConfig;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -10,7 +11,7 @@ final class CompanionBehaviorScreen extends Screen {
     private final Screen parent;
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
-        int left = width / 2 - 150, top = Math.max(32, height / 2 - 85);
+        int left = width / 2 - 150, top = Math.max(30, height / 2 - 90); // six rows end above the note at height - 64, down to a GUI height of 240
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();
@@ -18,16 +19,16 @@ final class CompanionBehaviorScreen extends Screen {
         addRenderableWidget(Button.builder(chunksLabel(), b -> {
             OpenRouterConfig.CHUNK_LOADING.set(!OpenRouterConfig.CHUNK_LOADING.get()); OpenRouterConfig.CHUNK_LOADING.save();
             b.setMessage(chunksLabel()); CompanionPreferences.sync();
-        }).bounds(left, top + 30, 300, 20).build());
+        }).bounds(left, top + 24, 300, 20).build());
         addRenderableWidget(Button.builder(distanceLabel(), b -> {
             int next = (OpenRouterConfig.VOICE_DISTANCE.get() / 16 + 1) * 16;
             OpenRouterConfig.VOICE_DISTANCE.set(next > 64 ? 16 : next);
             OpenRouterConfig.VOICE_DISTANCE.save(); b.setMessage(distanceLabel());
-        }).bounds(left, top + 60, 300, 20).build());
+        }).bounds(left, top + 48, 300, 20).build());
         addRenderableWidget(Button.builder(markerLabel(), b -> {
             OpenRouterConfig.COMPANION_MARKER.set(!OpenRouterConfig.COMPANION_MARKER.get()); OpenRouterConfig.COMPANION_MARKER.save();
             b.setMessage(markerLabel());
-        }).bounds(left, top + 90, 300, 20).build());
+        }).bounds(left, top + 72, 300, 20).build());
         addRenderableWidget(Button.builder(autonomyLabel(CompanionVoiceAudio.speaker() != null && CompanionVoiceAudio.speaker().autonomyEnabled()), b -> {
             // Kept in the world with Oleg (off in a world that never had it), so the switch asks him, not the config file.
             var client = minecraft;
@@ -42,7 +43,13 @@ final class CompanionBehaviorScreen extends Screen {
                 companion.autonomy().setEnabled(on);
                 client.execute(() -> b.setMessage(autonomyLabel(on)));
             });
+        }).bounds(left, top + 96, 300, 20).build());
+        Button windowsVoice = addRenderableWidget(Button.builder(windowsVoiceLabel(), b -> {
+            OpenRouterConfig.WINDOWS_VOICE.set(!OpenRouterConfig.WINDOWS_VOICE.get()); OpenRouterConfig.WINDOWS_VOICE.save();
+            b.setMessage(windowsVoiceLabel());
         }).bounds(left, top + 120, 300, 20).build());
+        windowsVoice.setTooltip(Tooltip.create(Component.literal(
+                "Без ключа Inworld Олег говорит русским голосом Windows. Нет такого голоса — добавь русский язык с речью в параметрах Windows.")));
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
     }
     private static Component autonomyLabel(boolean on) {
@@ -51,6 +58,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
+    private Component windowsVoiceLabel() { return Component.literal("Голос Windows без ключа Inworld: " + (OpenRouterConfig.WINDOWS_VOICE.get() ? "вкл." : "выкл.")); }
     private Component distanceLabel() { return Component.literal("Слышимость голоса: " + OpenRouterConfig.VOICE_DISTANCE.get() + " блоков"); }
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);

@@ -25,6 +25,9 @@ public final class OpenRouterConfig {
             .comment("Write local diagnostic events, dialogue and game state to logs/aicompanion. May include private conversations and coordinates.")
             .define("diagnosticLogging", true);
     public static final ModConfigSpec.IntValue VOICE_DISTANCE = BUILDER.defineInRange("voiceDistance", 32, 8, 64);
+    public static final ModConfigSpec.BooleanValue WINDOWS_VOICE = BUILDER
+            .comment("Without an Inworld key, speak with a Russian voice installed in Windows (nothing is sent anywhere).")
+            .define("windowsVoice", true);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
             .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
@@ -42,7 +45,7 @@ public final class OpenRouterConfig {
             .define("apiUrl", "");
 
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
-            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to disable voice output.")
+            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to speak with the Windows voice (windowsVoice) or not at all.")
             .translation("config.aicompanion.inworld_api_key")
             .define("inworldApiKey", "");
 
