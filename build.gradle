@@ -3,6 +3,7 @@ plugins {
     id 'maven-publish'
     id 'net.neoforged.moddev' version '2.0.148'
     id 'idea'
+    id 'pmd'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -245,6 +246,41 @@ tasks.named('jar', Jar).configure {
     exclude 'data/aicompanion/structure/b65_hillside.nbt'
     exclude 'data/aicompanion/structure/marathon_*.nbt'
 }
+
+// Complexity ceilings (tools/pmd-ruleset.xml). PMD only reports; the baseline comparison below decides, so the
+// violations that already exist do not block the build and a new one does.
+pmd {
+    toolVersion = '7.29.0'
+    consoleOutput = true
+    ignoreFailures = true
+    sourceSets = [project.sourceSets.main]
+    ruleSets = []
+    ruleSetFiles = files('tools/pmd-ruleset.xml')
+}
+
+tasks.named('pmdMain', Pmd).configure {
+    // Regression fixtures are not the target of the ceilings.
+    exclude 'dev/aicompanion/gametest/**'
+    exclude '**/build/generated/**'
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+// Fails on a violation that is not in tools/pmd-baseline.txt, and on a baseline entry that no longer applies.
+def pmdBaselineJava = javaToolchains.launcherFor(java.toolchain).get().executablePath.asFile.absolutePath
+tasks.register('pmdBaselineCheck', Exec) {
+    group = 'verification'
+    description = 'Compares the PMD report with tools/pmd-baseline.txt: a new violation or a stale entry fails the build.'
+    dependsOn tasks.named('pmdMain')
+    inputs.file layout.buildDirectory.file('reports/pmd/main.xml')
+    inputs.file 'tools/pmd-baseline.txt'
+    inputs.file 'scripts/PmdCheck.java'
+    workingDir = projectDir
+    commandLine pmdBaselineJava, 'scripts/PmdCheck.java'
+}
+tasks.named('check').configure { dependsOn 'pmdBaselineCheck' }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
