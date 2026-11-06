@@ -1,10 +1,3 @@
-  summary=$(grep -ao "All [0-9]* required tests passed" "$shard_log" | tail -1 || true)
-  local complete failed
-  complete=$(grep -ao "[0-9]* GAME TESTS COMPLETE" "$shard_log" | tail -1 | sed -n "s/([0-9]*) GAME TESTS COMPLETE//p" || true)
-  failed=$(grep -ao "[0-9]* required tests failed" "$shard_log" | tail -1 | sed -n "s/([0-9]*) required tests failed//p" || true)
-  local complete failed
-  complete=$(grep -ao "[0-9]* GAME TESTS COMPLETE" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
-  failed=$(grep -ao "[0-9]* required tests failed" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
 #!/usr/bin/env bash
 # Fast GameTest gate for Linux and macOS: the sharded run the Windows script does, with the same checks.
 # A shard that dies early, reports nothing or passes fewer tests than it selected must not look green, and the
