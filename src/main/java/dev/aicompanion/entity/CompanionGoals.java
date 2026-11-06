@@ -294,6 +294,7 @@ public final class CompanionGoals {
             ListTag list = t.getList("Results", Tag.TAG_COMPOUND); for (int i = Math.max(0, list.size() - 24); i < list.size(); i++) results.add(list.getCompound(i).copy());
             if (operation == null && results.stream().anyMatch(r -> r.getString("Action").equals("toss"))) throw new IllegalArgumentException("У выданного предмета потерян номер операции.");
             // WorkId/Skill/old routes are diagnostic only. The resumed skill is chosen from actual inventory and receipts.
-        } catch (RuntimeException ex) { invalid("Не могу безопасно прочитать цель: " + ex.getMessage()); } // invalid() marks the goal unsupported instead of resuming from corrupt data
+        // invalid() marks the goal unsupported instead of resuming from corrupt data
+        } catch (RuntimeException ex) { invalid("Не могу безопасно прочитать цель: " + ex.getMessage()); }
     }
 }
