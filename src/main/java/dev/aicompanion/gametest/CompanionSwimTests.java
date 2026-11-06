@@ -319,4 +319,31 @@ public final class CompanionSwimTests {
             h.assertTrue(lowestHealth[0] >= oleg.getMaxHealth() && lowestAir[0] > 0, "Drowned: health " + lowestHealth[0] + ", air " + lowestAir[0]);
         });
     }
+
+    /**
+     * The same column, the opening in the wall a block high: the dry cell beyond it is in sight and out of reach, and the walls bedrock. The
+     * pocket of an aquifer under a ceiling (runs descent and void of seed 7): the push at the bank went on with the work shut out of its turn
+     * until the order timed out. The push is given up after a while, and the order gets its turn and its answer.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aDryCellInSightButOutOfReachDoesNotHoldTheOrderForGood(GameTestHelper h) {
+        for (int x = 8; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 0; y <= 16; y++) {
+            boolean shaft = x == 12 && z == 16, wall = Math.abs(x - 12) + Math.abs(z - 16) == 1;
+            boolean opening = x == 13 && z == 16 && y == 13;
+            BlockState block = y <= 11 && !(shaft && y >= 1) ? Blocks.STONE.defaultBlockState()
+                    : shaft && y >= 1 && y <= 14 ? Fluids.FLOWING_WATER.getFlowing(8, true).createLegacyBlock()
+                    : wall && !opening ? Blocks.BEDROCK.defaultBlockState() : Blocks.AIR.defaultBlockState();
+            h.setBlock(new BlockPos(x, y, z), block);
+        }
+        var low = h.absolutePos(new BlockPos(8, 0, 12));
+        var high = h.absolutePos(new BlockPos(24, 16, 20));
+        ((LevelTicks<Fluid>) h.getLevel().getFluidTicks()).clearArea(BoundingBox.fromCorners(low, high));
+        CompanionEntity oleg = spawn(h, 12, 7, 16);
+        var at = h.absoluteVec(new Vec3(20.5, 12, 16.5));
+        player(h, oleg).teleportTo(at.x, at.y, at.z);
+        h.assertTrue(CompanionEvents.executeAction(player(h, oleg), "come", "", 1).success(), "The order was not accepted");
+        long id = oleg.activeWorkId();
+        h.succeedWhen(() -> h.assertTrue(!oleg.isWorking() && oleg.workResult(id) != null, "The order has no answer yet, he is at "
+                + oleg.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString() + ": " + oleg.getLastTaskResult()));
+    }
 }

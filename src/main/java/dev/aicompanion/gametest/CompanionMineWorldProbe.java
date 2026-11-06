@@ -74,6 +74,8 @@ public final class CompanionMineWorldProbe {
     private static CompanionAgenda.State lastState;
     private static CompanionMineWorldClimbs.State climbState = CompanionMineWorldClimbs.State.START;
     private static String signature = "";
+    /** Where he was when the signature last changed: afloat he bobs a block up and down, which is no progress (run descent of seed 7 stood 9000 ticks unseen). */
+    private static net.minecraft.world.phys.Vec3 stallAnchor;
     private static long entityTickStart;
 
     @SubscribeEvent public static void started(ServerStartedEvent event) {
@@ -284,10 +286,11 @@ public final class CompanionMineWorldProbe {
         }
         lastState = state;
         if (journal.climbs > MAX_CLIMBS) { fail(server, "left the mine for the surface " + journal.climbs + " times (limit " + MAX_CLIMBS + ")"); return; }
-        String now = companion.blockPosition().toShortString() + "|" + companion.mineSite().opened() + "|" + count(Items.DIAMOND) + "|" + state;
-        stallFor = now.equals(signature) ? stallFor + 1 : 0;
+        String now = companion.mineSite().opened() + "|" + count(Items.DIAMOND) + "|" + state;
+        if (!now.equals(signature) || stallAnchor == null || companion.position().distanceToSqr(stallAnchor) > 1) { stallAnchor = companion.position(); stallFor = 0; }
+        else stallFor++;
         signature = now;
-        if (stallFor >= STALL_TICKS) fail(server, "stalled for " + STALL_TICKS + " ticks at " + now + " | " + report(goal));
+        if (stallFor >= STALL_TICKS) fail(server, "stalled for " + STALL_TICKS + " ticks at " + companion.blockPosition().toShortString() + "|" + now + " | " + report(goal));
     }
 
     private static void scenarioHooks(MinecraftServer server, CompanionAgendaData.Goal goal, int depth) {

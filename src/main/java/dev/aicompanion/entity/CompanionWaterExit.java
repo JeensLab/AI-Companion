@@ -14,14 +14,17 @@ import java.util.EnumSet;
  * takes him sideways: at a waterfall with air one step away he bobbed, with no route, until he drowned. A route through the water
  * is left to the work. This goal moves him to the nearest dry
  * cell, with the move flag only: the float goes on lifting him, and the guard (priority 0) keeps the turn if it has it.
+ * A dry cell in sight that the push does not reach (a pocket of an aquifer under a ceiling, runs descent and void of seed 7: he
+ * floated there with the mine's work shut out of its turn until the order timed out) is given up after a while, and the turn goes
+ * back to the work, which cuts or lays its own way; the push is tried again later.
  */
 final class CompanionWaterExit extends Goal {
-    private static final int STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60;
+    private static final int STEP_DOWN = 3, REPLAN_EVERY = 10, TREADING_TICKS = 60, PATIENCE = 20 * 8, REST = 20 * 10;
     private static final double DRIFT = 2;
 
     private final CompanionEntity c;
     private BlockPos target;
-    private long nextPlan, treadingSince;
+    private long nextPlan, treadingSince, giveUpAt, restUntil;
     private Vec3 anchor;
 
     CompanionWaterExit(CompanionEntity c) {
@@ -31,6 +34,7 @@ final class CompanionWaterExit extends Goal {
 
     @Override public boolean canUse() {
         return c.inventoryViewers == 0 && c.work.isActive() && !c.gatheringLogs && !c.gatheringDirt && c.canWorkNow()
+                && c.level().getGameTime() >= restUntil
                 && c.getNavigation().isDone() && treadingWater() && (target = nearestDry()) != null;
     }
 
@@ -43,10 +47,19 @@ final class CompanionWaterExit extends Goal {
         return now - treadingSince >= TREADING_TICKS;
     }
 
-    @Override public boolean canContinueToUse() { return c.inventoryViewers == 0 && c.isAlive() && c.isInWater(); }
+    @Override public boolean canContinueToUse() { return c.inventoryViewers == 0 && c.isAlive() && c.isInWater() && c.level().getGameTime() < giveUpAt; }
     @Override public boolean requiresUpdateEveryTick() { return true; }
-    @Override public void start() { nextPlan = c.level().getGameTime() + REPLAN_EVERY; c.getNavigation().stop(); }
-    @Override public void stop() { target = null; anchor = null; }
+    @Override public void start() {
+        long now = c.level().getGameTime();
+        nextPlan = now + REPLAN_EVERY;
+        giveUpAt = now + PATIENCE;
+        c.getNavigation().stop();
+    }
+    @Override public void stop() {
+        restUntil = c.level().getGameTime() + REST;
+        target = null;
+        anchor = null;
+    }
 
     @Override public void tick() {
         if (target == null || c.level().getGameTime() >= nextPlan) {

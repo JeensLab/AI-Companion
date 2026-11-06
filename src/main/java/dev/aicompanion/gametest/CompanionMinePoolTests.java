@@ -3,6 +3,7 @@ package dev.aicompanion.gametest;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
+import dev.aicompanion.entity.CompanionShaftPlan;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.item.Items;
@@ -48,6 +49,24 @@ public final class CompanionMinePoolTests {
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "He said «" + result.message() + "» | " + report(c));
+        });
+    }
+
+    /**
+     * Run void-5 (seed 7) of 06.11: the shaft he had cut down to coal before the mine, a block wide and three deep, was taken for the entrance
+     * (under the sky, a floor, room to stand), and the diamonds came back up to its floor, with no way to the player from there. The floor
+     * of a pit is no entrance: the one chosen lies on the surface.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 100)
+    public static void theFloorOfAPitIsNoEntrance(GameTestHelper h) {
+        mountain(h);
+        int floor = GROUND - 2;
+        for (int y = floor; y <= GROUND; y++) h.setBlock(new BlockPos(CENTER, y, CENTER), Blocks.AIR);
+        BlockPos pit = h.absolutePos(new BlockPos(CENTER, floor, CENTER));
+        h.succeedWhen(() -> {
+            CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(h.getLevel(), pit, 8);
+            h.assertTrue(entrance != null, "No entrance found round the pit");
+            h.assertTrue(entrance.feet().getY() == h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY(), "The entrance is at " + entrance.feet().subtract(h.absolutePos(BlockPos.ZERO)).toShortString() + ", the pit's floor at " + floor);
         });
     }
 }

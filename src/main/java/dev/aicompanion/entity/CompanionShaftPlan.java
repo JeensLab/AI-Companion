@@ -153,9 +153,24 @@ public final class CompanionShaftPlan {
     }
 
     private static Entrance entranceAt(ServerLevel level, BlockPos feet) {
-        if (!groundSolid(level, feet) || !columnOpen(level, feet) || nearBuilding(level, feet) || waterNear(level, feet)) return null;
+        if (!groundSolid(level, feet) || !columnOpen(level, feet) || !stepOut(level, feet) || nearBuilding(level, feet) || waterNear(level, feet)) return null;
         for (Direction d : Direction.Plane.HORIZONTAL) if (directionFree(level, feet, d)) return new Entrance(feet, d);
         return null;
+    }
+
+    /**
+     * A cell he walks or steps out of: a neighbour at his height, one up or one down with a floor and room to stand. The floor of a pit (the
+     * shaft he cut down to coal before the mine, run void-5 of seed 7) is under the sky too, and a mine begun there ends with the diamonds in
+     * it: the way back to the player has no first step.
+     */
+    private static boolean stepOut(ServerLevel level, BlockPos feet) {
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos side = feet.relative(d);
+            for (BlockPos cell : List.of(side, side.above(), side.below())) {
+                if (level.hasChunkAt(cell) && open(level, cell) && open(level, cell.above()) && !open(level, cell.below())) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean groundSolid(ServerLevel level, BlockPos feet) {
