@@ -7,6 +7,7 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -14,12 +15,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 /**
  * Compares the PMD complexity report with the baseline of violations that already existed, so the build fails on a new one
@@ -70,15 +74,15 @@ public final class PmdCheck {
     }
 
     static int run(Path root, Path report, Path baseline, boolean printKeys, PrintStream out, PrintStream err) {
-        List<String> keys;
+        Map<String, String> found;
         try {
-            keys = readKeys(root, report);
+            found = readFindings(root, report);
         } catch (Exception e) {
             err.println("pmd-check: cannot read " + report + ": " + e.getMessage());
             return 2;
         }
         if (printKeys) {
-            new TreeSet<>(keys).forEach(out::println);
+            new TreeSet<>(found.keySet()).forEach(out::println);
             return 0;
         }
         Set<String> allowed;
@@ -88,7 +92,7 @@ public final class PmdCheck {
             err.println("pmd-check: cannot read " + baseline + ": " + e.getMessage());
             return 2;
         }
-        Set<String> current = new LinkedHashSet<>(keys);
+        Set<String> current = found.keySet();
         List<String> added = new ArrayList<>();
         List<String> stale = new ArrayList<>();
         int baselined = 0;
@@ -106,7 +110,7 @@ public final class PmdCheck {
         }
         Collections.sort(added);
         Collections.sort(stale);
-        added.forEach(key -> out.println("new: " + key));
+        added.forEach(key -> out.println("new: " + found.get(key) + " [" + key + "]"));
         stale.forEach(key -> out.println("baseline-stale: " + key));
         out.println("pmd-check: " + current.size() + " violations, " + baselined + " baselined, " + added.size() + " new, "
             + stale.size() + " stale");
@@ -120,7 +124,8 @@ public final class PmdCheck {
         return added.isEmpty() && stale.isEmpty() ? 0 : 1;
     }
 
-    private static List<String> readKeys(Path root, Path report) throws Exception {
+    /** Key to a human line {@code path:line Rule: message}, in report order. */
+    private static Map<String, String> readFindings(Path root, Path report) throws Exception {
         if (!Files.isRegularFile(report)) {
             throw new IllegalStateException("no report, run ./gradlew pmdMain first");
         }
@@ -143,7 +148,7 @@ public final class PmdCheck {
                     + first.getAttribute("filename") + " " + first.getAttribute("msg"));
             }
         }
-        List<String> keys = new ArrayList<>();
+        Map<String, String> findings = new LinkedHashMap<>();
         Map<String, Integer> seen = new HashMap<>();
         NodeList files = document.getElementsByTagName("file");
         for (int i = 0; i < files.getLength(); i++) {
@@ -158,12 +163,14 @@ public final class PmdCheck {
             for (Element violation : ordered) {
                 String owner = violation.getAttribute("class");
                 String method = violation.getAttribute("method");
-                String key = path + ":" + violation.getAttribute("rule") + ":" + (method.isEmpty() ? owner : owner + "." + method);
+                String rule = violation.getAttribute("rule");
+                String key = path + ":" + rule + ":" + (method.isEmpty() ? owner : owner + "." + method);
                 int count = seen.merge(key, 1, Integer::sum);
-                keys.add(count == 1 ? key : key + "#" + count);
+                String message = violation.getTextContent().trim().replaceAll("\s+", " ");
+                findings.put(count == 1 ? key : key + "#" + count, path + ":" + line(violation) + " " + rule + ": " + message);
             }
         }
-        return keys;
+        return findings;
     }
 
     private static int line(Element violation) {
@@ -189,6 +196,16 @@ public final class PmdCheck {
 
     private static int selfTest() throws Exception {
         Path dir = Files.createTempDirectory("pmd-check-selftest");
+        try {
+            return selfTestIn(dir);
+        } finally {
+            try (Stream<Path> tree = Files.walk(dir)) {
+                tree.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+            }
+        }
+    }
+
+    private static int selfTestIn(Path dir) throws Exception {
         Path report = dir.resolve("main.xml");
         Path baseline = dir.resolve("baseline.txt");
         String file = dir.resolve("src/A.java").toString();
@@ -205,7 +222,12 @@ public final class PmdCheck {
         Files.writeString(baseline, "# header\n\n" + f1 + "\n" + f2 + "\n" + whole + "\n");
         failures += expect("clean", 0, run(dir, report, baseline, false, quiet, quiet));
         Files.writeString(baseline, f1 + "\n" + whole + "\n");
-        failures += expect("new violation", 1, run(dir, report, baseline, false, quiet, quiet));
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        failures += expect("new violation", 1, run(dir, report, baseline, false, new PrintStream(captured), quiet));
+        if (!captured.toString().contains("new: src/A.java:30 CyclomaticComplexity: m [" + f2 + "]")) {
+            System.out.println("selftest new violation: no line and message in " + captured);
+            failures++;
+        }
         Files.writeString(baseline, f1 + "\n" + f2 + "\n" + whole + "\nsrc/A.java:NPathComplexity:A.gone\n");
         failures += expect("stale entry", 1, run(dir, report, baseline, false, quiet, quiet));
         failures += expect("missing report", 2, run(dir, dir.resolve("none.xml"), baseline, false, quiet, quiet));

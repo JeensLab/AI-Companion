@@ -251,7 +251,7 @@ tasks.named('jar', Jar).configure {
 // violations that already exist do not block the build and a new one does.
 pmd {
     toolVersion = '7.29.0'
-    consoleOutput = true
+    consoleOutput = false
     ignoreFailures = true
     sourceSets = [project.sourceSets.main]
     ruleSets = []
@@ -259,9 +259,10 @@ pmd {
 }
 
 tasks.named('pmdMain', Pmd).configure {
-    // Regression fixtures are not the target of the ceilings.
+    // Regression fixtures are not the target of the ceilings: gametest/ and the two fixtures the jar leaves out.
     exclude 'dev/aicompanion/gametest/**'
-    exclude '**/build/generated/**'
+    exclude 'dev/aicompanion/entity/CompanionStairApproachTests*.java'
+    exclude 'dev/aicompanion/entity/CompanionMineK14Tests*.java'
     reports {
         xml.required = true
         html.required = true
@@ -269,16 +270,16 @@ tasks.named('pmdMain', Pmd).configure {
 }
 
 // Fails on a violation that is not in tools/pmd-baseline.txt, and on a baseline entry that no longer applies.
-def pmdBaselineJava = javaToolchains.launcherFor(java.toolchain).get().executablePath.asFile.absolutePath
+// It declares no outputs, so it runs on every build by design: it is cheap and must never be skipped as up to date.
+def pmdBaselineLauncher = javaToolchains.launcherFor(java.toolchain)
 tasks.register('pmdBaselineCheck', Exec) {
     group = 'verification'
     description = 'Compares the PMD report with tools/pmd-baseline.txt: a new violation or a stale entry fails the build.'
     dependsOn tasks.named('pmdMain')
-    inputs.file layout.buildDirectory.file('reports/pmd/main.xml')
-    inputs.file 'tools/pmd-baseline.txt'
-    inputs.file 'scripts/PmdCheck.java'
     workingDir = projectDir
-    commandLine pmdBaselineJava, 'scripts/PmdCheck.java'
+    doFirst {
+        commandLine pmdBaselineLauncher.get().executablePath.asFile.absolutePath, 'scripts/PmdCheck.java'
+    }
 }
 tasks.named('check').configure { dependsOn 'pmdBaselineCheck' }
 

@@ -1,8 +1,12 @@
 # PMD complexity baseline: violations of tools/pmd-ruleset.xml that existed when the ceilings were introduced.
 # One key per line: <path>:<rule>:<Class.method> (or <Class> for a whole class); '#' starts a comment. Keys carry no line
-# numbers, so edits elsewhere in a file do not change them; overloads get '#2', '#3' in source order.
+# numbers, so edits elsewhere in a file do not change them. A repeated key gets '#2', '#3' in source order: overloads,
+# several violations of one rule in one method, same-named methods of nested classes.
 # scripts/PmdCheck.java fails on a violation missing here (fix it by splitting the decision into a named method, never by
 # adding it here) and reports an entry whose violation disappeared as 'baseline-stale': delete it. The list only shrinks.
+# The one other allowed edit: a renamed or moved violating method replaces its key in the same commit (one 'new' and
+# one 'baseline-stale' line become one changed line).
+# The first run needs the PMD jars: run './gradlew pmdMain' once without --offline; every later run uses --offline.
 src/main/java/dev/aicompanion/CompanionConversation.java:CyclomaticComplexity:CompanionConversation
 src/main/java/dev/aicompanion/CompanionConversation.java:CyclomaticComplexity:CompanionConversation.rejection
 src/main/java/dev/aicompanion/CompanionConversation.java:TooManyMethods:CompanionConversation
@@ -491,7 +495,6 @@ src/main/java/dev/aicompanion/entity/CompanionMemory.java:CyclomaticComplexity:C
 src/main/java/dev/aicompanion/entity/CompanionMemory.java:TooManyMethods:CompanionMemory
 src/main/java/dev/aicompanion/entity/CompanionMilestones.java:CyclomaticComplexity:CompanionMilestones.Milestone.method
 src/main/java/dev/aicompanion/entity/CompanionMilestones.java:CyclomaticComplexity:CompanionMilestones.Milestone.progress
-src/main/java/dev/aicompanion/entity/CompanionMineK14Tests.java:CognitiveComplexity:CompanionMineK14Tests.fuseEscapeNeverEndsAtTheEdgeOfLava
 src/main/java/dev/aicompanion/entity/CompanionMiningNavigation.java:CognitiveComplexity:CompanionMiningNavigation.canWalkBackUp
 src/main/java/dev/aicompanion/entity/CompanionMiningNavigation.java:CognitiveComplexity:CompanionMiningNavigation.dropCollectable
 src/main/java/dev/aicompanion/entity/CompanionMiningNavigation.java:CognitiveComplexity:CompanionMiningNavigation.standCells
@@ -668,7 +671,6 @@ src/main/java/dev/aicompanion/entity/CompanionSoul.java:CognitiveComplexity:Comp
 src/main/java/dev/aicompanion/entity/CompanionSoul.java:CyclomaticComplexity:CompanionSoul.load
 src/main/java/dev/aicompanion/entity/CompanionSoul.java:CyclomaticComplexity:CompanionSoul.next
 src/main/java/dev/aicompanion/entity/CompanionSoul.java:NPathComplexity:CompanionSoul.load
-src/main/java/dev/aicompanion/entity/CompanionStairApproachTests.java:CognitiveComplexity:CompanionStairApproachTests.playerStepsOntoPlannedStairsHeFindsAnotherDescent
 src/main/java/dev/aicompanion/entity/CompanionStoneMining.java:AvoidDeeplyNestedIfStmts:CompanionStoneMining.mine
 src/main/java/dev/aicompanion/entity/CompanionStoneMining.java:AvoidDeeplyNestedIfStmts:CompanionStoneMining.mine#10
 src/main/java/dev/aicompanion/entity/CompanionStoneMining.java:AvoidDeeplyNestedIfStmts:CompanionStoneMining.mine#2
