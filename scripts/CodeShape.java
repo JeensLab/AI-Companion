@@ -29,13 +29,14 @@ import java.util.stream.Stream;
 
 /**
  * Size ceilings for production code, checked against a baseline that may only shrink. A violation that moves with
- * its file or method to another path (same member, same size) is reported as MOVED, not NEW: --write-baseline
- * records the move.
+ * its file or method to another path (the same member: method name and parameters, or file name) is reported as
+ * MOVED, not NEW, and --write-baseline records the move; a member that moved and grew is GREW and is refused.
  *
  * <p>Usage, from the repository root:
  * <pre>
  *   java scripts/CodeShape.java                    # compare the tree with tools/code-shape-baseline.txt
  *   java scripts/CodeShape.java --write-baseline   # record the current tree as the new baseline
+ *   java scripts/CodeShape.java --selftest         # verdicts of compare() on hand-made moves
  * </pre>
  *
  * <p>Baseline line: {@code file <path> <lines>}, {@code method <path> <Class.name(Types)> <lines>} or
@@ -55,8 +56,12 @@ public final class CodeShape {
 
     public static void main(String[] args) throws Exception {
         boolean write = args.length == 1 && args[0].equals("--write-baseline");
+        if (args.length == 1 && args[0].equals("--selftest")) {
+            selftest();
+            return;
+        }
         if (args.length > 0 && !write) {
-            System.err.println("Usage: java scripts/CodeShape.java [--write-baseline]");
+            System.err.println("Usage: java scripts/CodeShape.java [--write-baseline | --selftest]");
             System.exit(2);
         }
         if (!Files.isDirectory(SOURCES)) {
@@ -213,9 +218,12 @@ public final class CodeShape {
         for (String key : new TreeSet<>(current.keySet())) {
             Integer allowed = baseline.get(key);
             int now = current.get(key);
-            if (moved.containsKey(key)) {
-                problems.add("MOVED " + moved.get(key) + " -> " + key + " " + now
-                        + ": the same violation at a new path; record the move with --write-baseline and commit it");
+            String from = moved.get(key);
+            if (from != null) {
+                int was = baseline.get(from);
+                problems.add((now > was ? "GREW " : "MOVED ") + from + " -> " + key + " " + was + " -> " + now
+                        + (now > was ? ": moved and grew; do not make it larger; shrink it"
+                        : ": the same member at a new path; record the move with --write-baseline and commit it"));
             } else if (allowed == null) {
                 problems.add("NEW " + key + " " + now + ": over the ceiling and not in the baseline; make it smaller");
             } else if (now > allowed) {
@@ -234,30 +242,34 @@ public final class CodeShape {
     }
 
     /**
-     * Violations that left one path and appeared at another with the same member and size: a file or a method moved
-     * (a split test class, a helper taken into a package), not growth. Keyed by the new key, valued by the old one.
+     * Violations that left one path and appeared at another with the same member: a file or a method moved (a split
+     * test class, a helper taken into a package). Candidates pair in key order, so the pairing is deterministic, and
+     * the size is judged afterwards by compare(). Keyed by the new key, valued by the old one.
      */
     private static Map<String, String> moves(Map<String, Integer> baseline, Map<String, Integer> current) {
-        Map<String, String> gone = new HashMap<>();
-        for (Map.Entry<String, Integer> entry : baseline.entrySet()) {
-            if (!current.containsKey(entry.getKey())) {
-                gone.put(member(entry.getKey()) + " " + entry.getValue(), entry.getKey());
+        Map<String, Deque<String>> gone = new HashMap<>();
+        for (String key : new TreeSet<>(baseline.keySet())) {
+            if (!current.containsKey(key)) {
+                gone.computeIfAbsent(member(key), member -> new ArrayDeque<>()).add(key);
             }
         }
         Map<String, String> moved = new TreeMap<>();
-        for (Map.Entry<String, Integer> entry : current.entrySet()) {
-            if (baseline.containsKey(entry.getKey())) {
+        for (String key : new TreeSet<>(current.keySet())) {
+            if (baseline.containsKey(key)) {
                 continue;
             }
-            String old = gone.remove(member(entry.getKey()) + " " + entry.getValue());
-            if (old != null) {
-                moved.put(entry.getKey(), old);
+            Deque<String> candidates = gone.get(member(key));
+            if (candidates != null && !candidates.isEmpty()) {
+                moved.put(key, candidates.poll());
             }
         }
         return moved;
     }
 
-    /** The key without its directory and class: "file Name.java", "method name(params)" or "params name(params)". */
+    /**
+     * The key without its directory and class: "file Name.java", "method name(params)" or "params name(params)".
+     * Paths never contain spaces: the tool measures src/main/java, whose files are Java identifiers.
+     */
     private static String member(String key) {
         int kindEnd = key.indexOf(' ');
         int pathEnd = key.indexOf(' ', kindEnd + 1);
@@ -269,6 +281,37 @@ public final class CodeShape {
         int paren = signature.indexOf('(');
         int dot = paren < 0 ? signature.lastIndexOf('.') : signature.lastIndexOf('.', paren);
         return kind + " " + signature.substring(dot + 1);
+    }
+
+    /** compare() on hand-made maps: a move, twins that both move, a move that grew, one that shrank, and no change. */
+    private static void selftest() {
+        Map<String, Integer> base = new TreeMap<>();
+        base.put("method a/A.java A.run(int)", 95);
+        base.put("params a/B.java B.box(int,int,int,int,int,int)", 6);
+        base.put("params a/C.java C.box(int,int,int,int,int,int)", 6);
+        base.put("method a/D.java D.go()", 90);
+        base.put("file a/E.java", 900);
+        Map<String, Integer> moved = new TreeMap<>();
+        moved.put("method p/A.java A.run(int)", 95);
+        moved.put("params p/B.java B.box(int,int,int,int,int,int)", 6);
+        moved.put("params p/C.java C.box(int,int,int,int,int,int)", 6);
+        moved.put("method p/D.java D.go()", 99);
+        moved.put("file p/E.java", 850);
+        List<String> expected = List.of(
+                "MOVED file a/E.java -> file p/E.java 900 -> 850",
+                "MOVED method a/A.java A.run(int) -> method p/A.java A.run(int) 95 -> 95",
+                "GREW method a/D.java D.go() -> method p/D.java D.go() 90 -> 99",
+                "MOVED params a/B.java B.box(int,int,int,int,int,int) -> params p/B.java B.box(int,int,int,int,int,int) 6 -> 6",
+                "MOVED params a/C.java C.box(int,int,int,int,int,int) -> params p/C.java C.box(int,int,int,int,int,int) 6 -> 6");
+        List<String> got = compare(base, moved).stream().map(line -> line.substring(0, line.indexOf(':')))
+                .collect(Collectors.toList());
+        List<String> same = compare(base, base);
+        if (!got.equals(expected) || !same.isEmpty()) {
+            System.out.println("expected: " + expected + "\ngot:      " + got + "\nunchanged tree: " + same);
+            System.out.println("FAIL code-shape selftest");
+            System.exit(1);
+        }
+        System.out.println("code-shape selftest: 5 verdicts on moved members, ok");
     }
 
     private static String render(Map<String, Integer> violations) {
