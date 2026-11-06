@@ -1,21 +1,35 @@
+import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseLabelTree;
 import com.sun.source.tree.CaseTree;
+import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ConstantCaseLabelTree;
 import com.sun.source.tree.DefaultCaseLabelTree;
+import com.sun.source.tree.EnhancedForLoopTree;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ParenthesizedTree;
+import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchExpressionTree;
 import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
+import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
 
+import javax.tools.Diagnostic;
+import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -40,23 +54,39 @@ import java.util.stream.Stream;
  * NeoForge, and switches over strings or numbers, are out of scope.
  *
  * <p>Usage, from the repository root: {@code java scripts/SwitchCheck.java}. Exit code 0 means clean, 1 means findings,
- * 2 means the check itself could not run.
+ * 2 means the check itself could not run (a source does not parse, no project enum was found, an internal error).
  *
  * <p>Method: the sources are only parsed, never attributed. Attribution needs the Minecraft classpath, and without it
  * javac fails on some switch expressions. The enum behind a switch is found from its case labels instead: the labels
  * must all be constants of one enum declared under dev.aicompanion. Labels that fit no project enum belong to a
  * Minecraft enum, a string or a number and are skipped. Labels that fit several project enums are narrowed by a
- * qualified label ({@code Phase.CRAFT}) or by the type of the selector variable when it is declared in the same file;
- * if that still leaves several, the switch is reported as ambiguous so that nothing passes unchecked.
+ * qualified label ({@code Phase.CRAFT}) or by the declared type of the selector; if that still leaves several, the
+ * switch is reported as ambiguous so that nothing passes unchecked. A switch with no constant label (only
+ * {@code default}) is checked only through the declared type of the selector.
+ *
+ * <p>Known gap: the declared type is looked up only for a selector that is a plain name or {@code this.name}, among the
+ * parameters, locals and fields of the same file. A method-call selector, a {@code var} local or a lambda parameter
+ * has no declared type here, so such a switch is checked by its labels alone and a default-only one is skipped.
  */
 public final class SwitchCheck {
     private static final String ROOT = "src/main/java/dev/aicompanion";
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        int code;
+        try {
+            code = run();
+        } catch (Exception | Error failure) {
+            System.err.println("switch-check: internal error: " + failure);
+            code = 2;
+        }
+        System.exit(code);
+    }
+
+    private static int run() throws Exception {
         Path root = Paths.get(ROOT);
         if (!Files.isDirectory(root)) {
             System.err.println("switch-check: " + ROOT + " not found, run from the repository root");
-            System.exit(2);
+            return 2;
         }
         List<Path> sources = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(root)) {
@@ -67,17 +97,33 @@ public final class SwitchCheck {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             System.err.println("switch-check: no system Java compiler, run with a JDK");
-            System.exit(2);
+            return 2;
         }
         StandardJavaFileManager files = compiler.getStandardFileManager(null, null, StandardCharsets.UTF_8);
         Iterable<? extends JavaFileObject> units = files.getJavaFileObjectsFromPaths(sources);
-        JavacTask task = (JavacTask) compiler.getTask(null, files, diagnostic -> { }, List.of("-proc:none"), null, units);
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        JavacTask task = (JavacTask) compiler.getTask(null, files, diagnostics, List.of("-proc:none"), null, units);
         List<CompilationUnitTree> parsed = new ArrayList<>();
         task.parse().forEach(parsed::add);
+        Set<String> errors = new LinkedHashSet<>();
+        for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics.getDiagnostics()) {
+            if (diagnostic.getKind() == Diagnostic.Kind.ERROR) {
+                errors.add("switch-check: " + diagnostic.getSource().getName() + ":" + diagnostic.getLineNumber()
+                        + " " + diagnostic.getMessage(null));
+            }
+        }
+        if (!errors.isEmpty()) {
+            errors.forEach(System.err::println);
+            return 2;
+        }
 
         Map<String, List<String>> enums = new LinkedHashMap<>();
         for (CompilationUnitTree unit : parsed) {
             new EnumCollector(unit, enums).scan(unit, null);
+        }
+        if (enums.isEmpty()) {
+            System.err.println("switch-check: no project enums found in " + sources.size() + " sources, the scan did not see the tree");
+            return 2;
         }
         Checker checker = new Checker(Trees.instance(task).getSourcePositions(), enums);
         for (CompilationUnitTree unit : parsed) {
@@ -87,7 +133,7 @@ public final class SwitchCheck {
         checker.findings.forEach(System.out::println);
         System.out.println("switch-check: " + enums.size() + " project enums, " + checker.checked + " switches checked, "
                 + checker.findings.size() + " findings");
-        System.exit(checker.findings.isEmpty() ? 0 : 1);
+        return checker.findings.isEmpty() ? 0 : 1;
     }
 
     private static String packageOf(CompilationUnitTree unit) {
@@ -111,8 +157,9 @@ public final class SwitchCheck {
             if (node.getKind() == Tree.Kind.ENUM) {
                 List<String> constants = new ArrayList<>();
                 for (Tree member : node.getMembers()) {
-                    if (member instanceof VariableTree variable && variable.getType().toString().equals(node.getSimpleName().toString())
-                            && variable.getInitializer() instanceof com.sun.source.tree.NewClassTree) {
+                    if (member instanceof VariableTree variable && variable.getType() != null
+                            && variable.getType().toString().equals(node.getSimpleName().toString())
+                            && variable.getInitializer() instanceof NewClassTree) {
                         constants.add(variable.getName().toString());
                     }
                 }
@@ -124,7 +171,7 @@ public final class SwitchCheck {
         }
     }
 
-    private static final class Checker extends TreeScanner<Void, Void> {
+    private static final class Checker extends TreePathScanner<Void, Void> {
         final List<String> findings = new ArrayList<>();
         final SourcePositions positions;
         final Map<String, List<String>> enums;
@@ -172,7 +219,7 @@ public final class SwitchCheck {
                     }
                 }
             }
-            if (!isEnumShaped || listed.isEmpty()) {
+            if (!isEnumShaped) {
                 return;
             }
             List<String> candidates = new ArrayList<>();
@@ -181,8 +228,12 @@ public final class SwitchCheck {
                     candidates.add(entry.getKey());
                 }
             }
-            if (candidates.size() > 1) {
-                candidates = narrowBySelector(selector, candidates);
+            String declared = declaredTypeOf(selector);
+            if (listed.isEmpty()) {
+                candidates = declared == null ? List.of() : byDeclaredType(candidates, declared);
+            } else if (candidates.size() > 1 && declared != null) {
+                List<String> narrowed = byDeclaredType(candidates, declared);
+                candidates = narrowed.isEmpty() ? candidates : narrowed;
             }
             if (candidates.isEmpty()) {
                 return;
@@ -213,44 +264,83 @@ public final class SwitchCheck {
             return true;
         }
 
-        /** A selector that is a plain name or a field read is matched to a declaration of that name in the same file. */
-        private List<String> narrowBySelector(ExpressionTree selector, List<String> candidates) {
-            String name = selectorName(selector);
-            if (name == null) {
-                return candidates;
-            }
-            Set<String> declaredTypes = new LinkedHashSet<>();
-            new TreeScanner<Void, Void>() {
-                @Override
-                public Void visitVariable(VariableTree variable, Void unused) {
-                    if (variable.getName().contentEquals(name)) {
-                        declaredTypes.add(variable.getType().toString());
-                    }
-                    return super.visitVariable(variable, unused);
-                }
-            }.scan(unit, null);
-            List<String> narrowed = new ArrayList<>();
+        private static List<String> byDeclaredType(List<String> candidates, String declared) {
+            List<String> matching = new ArrayList<>();
             for (String candidate : candidates) {
-                for (String type : declaredTypes) {
-                    if (candidate.equals(type) || candidate.endsWith("." + type)) {
-                        narrowed.add(candidate);
-                        break;
-                    }
+                if (candidate.equals(declared) || candidate.endsWith("." + declared)) {
+                    matching.add(candidate);
                 }
             }
-            return narrowed.isEmpty() ? candidates : narrowed;
+            return matching;
         }
 
-        private static String selectorName(ExpressionTree selector) {
+        /**
+         * The declared type of a selector that is a plain name or {@code this.name}: the nearest enclosing declaration of
+         * that name among parameters, locals and fields. Null when there is none in the file, or the type is inferred.
+         */
+        private String declaredTypeOf(ExpressionTree selector) {
             Tree tree = selector;
-            while (tree instanceof com.sun.source.tree.ParenthesizedTree parenthesized) {
+            while (tree instanceof ParenthesizedTree parenthesized) {
                 tree = parenthesized.getExpression();
             }
+            String name;
             if (tree instanceof IdentifierTree identifier) {
-                return identifier.getName().toString();
+                name = identifier.getName().toString();
+            } else if (tree instanceof MemberSelectTree select && select.getExpression() instanceof IdentifierTree owner
+                    && owner.getName().contentEquals("this")) {
+                name = select.getIdentifier().toString();
+            } else {
+                return null;
             }
-            if (tree instanceof MemberSelectTree select) {
-                return select.getIdentifier().toString();
+            for (TreePath path = getCurrentPath(); path != null; path = path.getParentPath()) {
+                VariableTree found = declarationIn(path.getLeaf(), name);
+                if (found != null) {
+                    Tree type = found.getType();
+                    return type == null || type.toString().equals("var") ? null : type.toString();
+                }
+            }
+            return null;
+        }
+
+        private static VariableTree declarationIn(Tree scope, String name) {
+            List<VariableTree> variables = new ArrayList<>();
+            if (scope instanceof MethodTree method) {
+                variables.addAll(method.getParameters());
+            } else if (scope instanceof LambdaExpressionTree lambda) {
+                variables.addAll(lambda.getParameters());
+            } else if (scope instanceof BlockTree block) {
+                for (StatementTree statement : block.getStatements()) {
+                    if (statement instanceof VariableTree variable) {
+                        variables.add(variable);
+                    }
+                }
+            } else if (scope instanceof ForLoopTree loop) {
+                for (StatementTree statement : loop.getInitializer()) {
+                    if (statement instanceof VariableTree variable) {
+                        variables.add(variable);
+                    }
+                }
+            } else if (scope instanceof EnhancedForLoopTree loop) {
+                variables.add(loop.getVariable());
+            } else if (scope instanceof CatchTree handler) {
+                variables.add(handler.getParameter());
+            } else if (scope instanceof TryTree attempt) {
+                for (Tree resource : attempt.getResources()) {
+                    if (resource instanceof VariableTree variable) {
+                        variables.add(variable);
+                    }
+                }
+            } else if (scope instanceof ClassTree type) {
+                for (Tree member : type.getMembers()) {
+                    if (member instanceof VariableTree variable) {
+                        variables.add(variable);
+                    }
+                }
+            }
+            for (VariableTree variable : variables) {
+                if (variable.getName().contentEquals(name)) {
+                    return variable;
+                }
             }
             return null;
         }
