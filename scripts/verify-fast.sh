@@ -11,8 +11,12 @@ mkdir -p "$reports"
 
 shards="auto"
 repetitions=1
+force=0
+dry_run=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --force) force=1; shift ;;
+    --dry-run) dry_run=1; shift ;;
     --shards|--repetitions)
       [ $# -ge 2 ] || { echo "$1 needs a value" >&2; exit 2; }
       case "$1" in
@@ -36,9 +40,10 @@ esac
 if [ "$repetitions" -lt 1 ] || [ "$repetitions" -gt 20 ]; then echo "--repetitions must be 1..20" >&2; exit 2; fi
 
 # One server holds about 1.5 GB and needs its own world; 2 GB each keeps the machine out of swap.
-# Six shards were the fastest here (952 tests in about 130 s); eight and ten only added contention and flake.
+# Four shards is the default and the only count whose stability is claimed; five to eight are reachable with --force
+# and are not guaranteed stable (they were not reliably faster and flaked on the measured machine).
 if [ -r /proc/meminfo ]; then
-  free_gb=$(( $(awk '/MemAvailable/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
+  free_gb=$(( $(awk '/MemAvailable/ {a=$2} /MemFree/ {f=$2} END {print a ? a : f + 0}' /proc/meminfo) / 1024 / 1024 ))
 elif command -v sysctl >/dev/null 2>&1; then
   # macOS: total memory, and half of it assumed free for the shards.
   free_gb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 / 1024 / 1024 / 2 ))
@@ -50,11 +55,19 @@ if [ "$shards" = "auto" ]; then
   by_memory=$(( free_gb / 2 ))
   wanted=$(( cores - 1 ))
   [ "$by_memory" -lt "$wanted" ] && wanted="$by_memory"
-  [ "$wanted" -gt 6 ] && wanted=6
+  [ "$wanted" -gt 4 ] && wanted=4
   [ "$wanted" -lt 1 ] && wanted=1
   shards="$wanted"
-  echo "shards: $shards (cores $cores, free ${free_gb} GB, limit 6)"
+  echo "shards: $shards (cores $cores, free ${free_gb} GB, limit 4)"
+elif [ "$shards" -gt 4 ] && [ "$force" -eq 0 ]; then
+  echo "shards: 4 (asked $shards; 5-8 need --force: they were not faster and flaked here)"
+  shards=4
+elif [ "$shards" -gt 4 ]; then
+  echo "shards: $shards (asked $shards with --force; stability is not guaranteed above 4)"
+else
+  echo "shards: $shards (asked $shards)"
 fi
+[ "$dry_run" -eq 1 ] && exit 0
 
 # Reads one shard's own log: the required pool it saw, how many required tests it selected, and how many it passed.
 read_shard() {
