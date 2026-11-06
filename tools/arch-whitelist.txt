@@ -1,0 +1,29 @@
+# Files allowed to import net.minecraft.client.* or com.mojang.blaze3d.*; a new one is added deliberately. Paths are relative to src/main/java/dev/aicompanion.
+[client-imports]
+client/AICompanionClient.java
+client/CompanionActionExecutor.java
+client/CompanionAmbientClient.java
+client/CompanionBehaviorScreen.java
+client/CompanionChatScreen.java
+client/CompanionDeathRecoveryScreen.java
+client/CompanionInventoryScreen.java
+client/CompanionMarker.java
+client/CompanionMoodPanel.java
+client/CompanionNavigation.java
+client/CompanionPreferences.java
+client/CompanionRenderer.java
+client/CompanionSettingsScreen.java
+client/CompanionShiftDragEvents.java
+client/CompanionSkin.java
+client/CompanionTasksScreen.java
+client/CompanionThinking.java
+client/CompanionVoiceAudio.java
+client/GameContext.java
+gametest/CompanionFaceRenderProbe.java
+gametest/CompanionHomeTerrainProbe.java
+gametest/CompanionMoodRenderProbe.java
+gametest/CompanionTasksRenderProbe.java
+
+# entity/, inventory/ and the root package must not import dev.aicompanion.client.*; this file still does, until stage 6b removes it.
+[until-6b]
+entity/CompanionAgenda.java
