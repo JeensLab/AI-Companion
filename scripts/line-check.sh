@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Ratchet over the lines a change adds: length, names, TODO. See scripts/LineCheck.java.
-# Usage: scripts/line-check.sh [--base <ref>]
+# Usage: scripts/line-check.sh [--base <ref> | --selftest]
 cd "$(dirname "$0")/.." || exit 2
 JAVA=java
 if ! command -v java >/dev/null 2>&1; then

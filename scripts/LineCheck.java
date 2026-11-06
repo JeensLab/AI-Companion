@@ -1,35 +1,43 @@
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Ratchet over the lines a change adds to {@code src/main/java/**}{@code /*.java}: old code stays, new or touched
  * lines must pass.
  *
- * <p>Usage: {@code java scripts/LineCheck.java [--base <ref>]}. Base defaults to the merge-base with
- * {@code origin/main}; if it is missing, exit 2 when {@code CI} is set, otherwise a WARNING and {@code HEAD~1}.
- * Checked: the diff of the working tree against the base plus untracked files. Exit 0 clean, 1 findings, 2 error.
+ * <p>Usage: {@code java scripts/LineCheck.java [--base <ref> | --selftest]}. Base defaults to the merge-base with
+ * {@code origin/main}; if it is missing, exit 2 when {@code CI} is set (non-empty and not {@code false}), otherwise
+ * a WARNING and {@code HEAD~1}. Checked: the diff of the working tree against the base plus untracked files.
+ * Exit 0 clean, 1 findings, 2 error. {@code --selftest} runs the tool over a throwaway git repo in a temp directory
+ * (never the real one) and prints {@code line-check selftest: N cases, ok}, or the failed cases and exit 1.
  *
  * <p>Rules: {@code line-length} (over 160 code points), {@code todo-comment} (TODO/FIXME/XXX in a comment),
- * {@code name} (types PascalCase; {@code static final} UPPER_SNAKE_CASE; other fields, locals and parameters
- * camelCase, one or two lowercase letters pass).
+ * {@code name} (types PascalCase; {@code static final} and interface fields UPPER_SNAKE_CASE; other fields, locals
+ * and parameters camelCase, one or two lowercase letters pass). Identifiers starting with {@code _} or {@code $}
+ * ({@code _y}, {@code $x}) are flagged: they are not camelCase under this rule.
  *
  * <p>Known gaps of {@code name}: one-line regexes over code with strings and comments removed, no parser. Missed:
- * several declarators in one statement ({@code int a, B;}), implicit interface constants, enum constants,
- * {@code static}/{@code final} on another line than the declaration, method names. False positive: a chain such
- * as {@code f(a < b, c > D)} read as a generic type.
+ * several declarators in one statement ({@code int a, B;}), enum constants, {@code static}/{@code final} on another
+ * line than the declaration, method names. False positive: a chain such as {@code f(a < b, c > D)} read as a
+ * generic type.
  *
  * <p>Deferred: {@code JavadocMethod} for the public API of the {@code plan/} package (arrives with stage 6a).
  */
 public final class LineCheck {
     private static final int MAX_LENGTH = 160;
     private static final String SRC = "src/main/java/";
+    private static final String USAGE = "usage: java scripts/LineCheck.java [--base <ref> | --selftest]";
     private static final Pattern HUNK = Pattern.compile("^@@ -\\d+(?:,\\d+)? \\+(\\d+)");
     private static final Pattern TODO = Pattern.compile("\\b(TODO|FIXME|XXX)\\b");
+    private static final Pattern INTERFACE_KW = Pattern.compile("(?<![\\w$])interface(?![\\w$])");
     private static final Pattern LEX = Pattern.compile("//[^\\n]*|/\\*[\\s\\S]*?\\*/|\"\"\"[\\s\\S]*?\"\"\""
             + "|\"(?:[^\"\\\\\\n]|\\\\.)*\"|'(?:[^'\\\\\\n]|\\\\.)*'");
     private static final Pattern TYPE_DECL = Pattern.compile(
@@ -37,7 +45,8 @@ public final class LineCheck {
     private static final Pattern VAR_DECL = Pattern.compile("(?<![\\w.$])([A-Za-z_][\\w.]*"
             + "(?:<[\\w\\s,.?<>\\[\\]]*>)?(?:\\[\\])*)\\s+([A-Za-z_$][\\w$]*)\\s*(?=[=;,):])");
     private static final Set<String> NOT_A_TYPE = Set.of("return", "throw", "new", "else", "case", "assert", "yield",
-            "goto", "instanceof", "extends", "implements", "throws", "permits", "default", "do", "package", "import");
+            "goto", "instanceof", "extends", "implements", "throws", "permits", "default", "do", "package", "import",
+            "break", "continue");
     private static final Pattern PASCAL = Pattern.compile("[A-Z][A-Za-z0-9]*");
     private static final Pattern CAMEL = Pattern.compile("[a-z][A-Za-z0-9]*");
     private static final Pattern UPPER_SNAKE = Pattern.compile("[A-Z][A-Z0-9_]*");
@@ -48,25 +57,27 @@ public final class LineCheck {
 
     public static void main(String[] args) {
         try {
-            System.exit(run(args));
+            boolean selfTest = args.length == 1 && args[0].equals("--selftest");
+            System.exit(selfTest ? selfTest() : run(Path.of("."), args, System.out));
         } catch (Exception e) {
             System.err.println("line-check: " + e.getMessage());
             System.exit(2);
         }
     }
 
-    private static int run(String[] args) throws Exception {
+    private static int run(Path dir, String[] args, PrintStream out) throws Exception {
         if (args.length != 0 && !(args.length == 2 && args[0].equals("--base"))) {
-            throw new IllegalArgumentException("usage: java scripts/LineCheck.java [--base <ref>]");
+            throw new IllegalArgumentException(USAGE);
         }
-        Path root = Path.of(Objects.requireNonNull(git(Path.of("."), "rev-parse", "--show-toplevel")).strip());
+        Path root = Path.of(git(dir, "rev-parse", "--show-toplevel").strip());
         String base = args.length == 2 ? verified(root, args[1]) : defaultBase(root);
         Map<String, Set<Integer>> changed = new TreeMap<>();
-        collectDiff(Objects.requireNonNull(git(root, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "-U0", "-M",
-                base, "--", "src/main/java")), changed);
-        for (String f : Objects.requireNonNull(git(root, "ls-files", "--others", "--exclude-standard", "--", "src/main/java")).split("\n")) {
-            if (isSource(f.strip())) {
-                changed.put(f.strip(), null);
+        collectDiff(git(root, "-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/",
+                "--dst-prefix=b/", "-U0", "-M", base, "--", "src/main/java"), changed);
+        for (String f : git(root, "-c", "core.quotepath=false", "ls-files", "-z", "--others", "--exclude-standard", "--",
+                "src/main/java").split("\0")) {
+            if (isSource(f)) {
+                changed.put(f, null);
             }
         }
         List<Finding> findings = new ArrayList<>();
@@ -78,17 +89,17 @@ public final class LineCheck {
                 total += check(entry.getKey(), text, entry.getValue(), findings);
             }
         }
-        findings.forEach(f -> System.out.println(f.file + ":" + f.line + " " + f.rule + ": " + f.detail));
+        findings.forEach(f -> out.println(f.file + ":" + f.line + " " + f.rule + ": " + f.detail));
         if (findings.isEmpty()) {
-            System.out.println("line-check OK (" + total + " changed lines)");
+            out.println("line-check OK (" + total + " changed lines)");
             return 0;
         }
-        System.out.println("line-check: " + total + " changed lines, " + findings.size() + " findings");
+        out.println("line-check: " + total + " changed lines, " + findings.size() + " findings");
         return 1;
     }
 
     /** Stdout of git, or null when it exits non-zero (its stderr goes through). */
-    private static String git(Path dir, String... args) throws IOException, InterruptedException {
+    private static String tryGit(Path dir, String... args) throws IOException, InterruptedException {
         List<String> cmd = new ArrayList<>(List.of("git"));
         cmd.addAll(List.of(args));
         Process p = new ProcessBuilder(cmd).directory(dir.toFile()).redirectError(ProcessBuilder.Redirect.INHERIT).start();
@@ -96,23 +107,36 @@ public final class LineCheck {
         return p.waitFor() == 0 ? out : null;
     }
 
+    private static String git(Path dir, String... args) throws IOException, InterruptedException {
+        String out = tryGit(dir, args);
+        if (out == null) {
+            throw new IllegalStateException("git failed: git " + String.join(" ", args));
+        }
+        return out;
+    }
+
     private static String verified(Path root, String ref) throws Exception {
-        if (git(root, "rev-parse", "--verify", "--quiet", ref + "^{commit}") == null) {
+        if (tryGit(root, "rev-parse", "--verify", "--quiet", ref + "^{commit}") == null) {
             throw new IllegalArgumentException("base '" + ref + "' is not a commit");
         }
         return ref;
     }
 
     private static String defaultBase(Path root) throws Exception {
-        String mergeBase = git(root, "merge-base", "origin/main", "HEAD");
+        String mergeBase = tryGit(root, "merge-base", "origin/main", "HEAD");
         if (mergeBase != null) {
             return mergeBase.strip();
         }
-        if (System.getenv("CI") != null) {
+        if (isCi()) {
             throw new IllegalStateException("origin/main is missing in CI; fetch it before the check");
         }
         System.err.println("line-check: WARNING origin/main not found, comparing with HEAD~1");
         return verified(root, "HEAD~1");
+    }
+
+    private static boolean isCi() {
+        String ci = System.getenv("CI");
+        return ci != null && !ci.isBlank() && !ci.strip().equalsIgnoreCase("false");
     }
 
     private static boolean isSource(String path) {
@@ -130,6 +154,7 @@ public final class LineCheck {
                 file = null;
             } else if (!inHunk && line.startsWith("+++ ")) {
                 String path = line.substring(4);
+                path = path.endsWith("\t") ? path.substring(0, path.length() - 1) : path;
                 file = path.startsWith("b/") && isSource(path.substring(2)) ? path.substring(2) : null;
             } else if (line.startsWith("@@")) {
                 Matcher m = HUNK.matcher(line);
@@ -145,6 +170,7 @@ public final class LineCheck {
     private static int check(String file, String text, Set<Integer> numbers, List<Finding> out) {
         String[] raw = text.split("\n", -1);
         String[][] lexed = lex(text);
+        boolean[][] interfaces = interfaceBodies(lexed[0]);
         int lines = text.endsWith("\n") ? raw.length - 1 : raw.length;
         int checked = 0;
         for (int i = 0; i < lines; i++) {
@@ -160,12 +186,12 @@ public final class LineCheck {
             if (todo.find()) {
                 out.add(new Finding(file, i + 1, "todo-comment", todo.group(1) + " in a comment"));
             }
-            checkNames(file, i + 1, lexed[0][i], out);
+            checkNames(file, i + 1, lexed[0][i], interfaces[i], out);
         }
         return checked;
     }
 
-    private static void checkNames(String file, int number, String code, List<Finding> out) {
+    private static void checkNames(String file, int number, String code, boolean[] inInterface, List<Finding> out) {
         String head = code.stripLeading();
         if (head.startsWith("import ") || head.startsWith("package ")) {
             return;
@@ -185,7 +211,9 @@ public final class LineCheck {
                 continue;
             }
             boolean topLevel = before.indexOf('(') < 0 && before.indexOf('{') < 0;
-            if (topLevel && STATIC.matcher(before).find() && FINAL.matcher(before).find()) {
+            boolean constant = inInterface[v.start(1)]
+                    || topLevel && STATIC.matcher(before).find() && FINAL.matcher(before).find();
+            if (constant) {
                 if (!UPPER_SNAKE.matcher(name).matches() && !name.equals("serialVersionUID")) {
                     out.add(new Finding(file, number, "name", "constant '" + name + "' is not UPPER_SNAKE_CASE"));
                 }
@@ -193,6 +221,38 @@ public final class LineCheck {
                 out.add(new Finding(file, number, "name", "'" + name + "' is not camelCase"));
             }
         }
+    }
+
+    /** Per code character: true when it sits directly in an {@code interface} body, outside any parentheses. */
+    private static boolean[][] interfaceBodies(String[] code) {
+        boolean[][] mask = new boolean[code.length][];
+        Deque<Boolean> bodies = new ArrayDeque<>();
+        boolean pending = false;
+        int parens = 0;
+        for (int i = 0; i < code.length; i++) {
+            mask[i] = new boolean[code[i].length()];
+            Matcher keyword = INTERFACE_KW.matcher(code[i]);
+            int nextKeyword = keyword.find() ? keyword.start() : -1;
+            for (int c = 0; c < code[i].length(); c++) {
+                mask[i][c] = parens == 0 && Boolean.TRUE.equals(bodies.peek());
+                if (c == nextKeyword) {
+                    pending = true;
+                    nextKeyword = keyword.find() ? keyword.start() : -1;
+                }
+                char ch = code[i].charAt(c);
+                if (ch == '{') {
+                    bodies.push(pending);
+                    pending = false;
+                } else if (ch == '}' && !bodies.isEmpty()) {
+                    bodies.pop();
+                } else if (ch == '(') {
+                    parens++;
+                } else if (ch == ')' && parens > 0) {
+                    parens--;
+                }
+            }
+        }
+        return mask;
     }
 
     /** Line-aligned views of the text: [0] code with strings emptied and comments removed, [1] comment text. */
@@ -214,5 +274,86 @@ public final class LineCheck {
         code.append(tail);
         comments.append(tail.replaceAll("[^\\n]", ""));
         return new String[][] {code.toString().split("\n", -1), comments.toString().split("\n", -1)};
+    }
+
+    private static int selfTest() throws Exception {
+        Path dir = Files.createTempDirectory("line-check-selftest");
+        try {
+            return selfTestIn(dir);
+        } finally {
+            try (Stream<Path> tree = Files.walk(dir)) {
+                for (Path p : tree.sorted(Comparator.reverseOrder()).toList()) {
+                    p.toFile().setWritable(true);
+                    Files.delete(p);
+                }
+            }
+        }
+    }
+
+    private static int selfTestIn(Path dir) throws Exception {
+        String a = "src/main/java/p/A.java";
+        String spaced = "src/main/java/p q/E F.java";
+        git(dir, "init", "-q", "-b", "main");
+        for (String kv : new String[] {"user.name=selftest", "user.email=selftest@example.invalid",
+                "commit.gpgsign=false", "core.autocrlf=false"}) {
+            git(dir, "config", kv.substring(0, kv.indexOf('=')), kv.substring(kv.indexOf('=') + 1));
+        }
+        put(dir, a, "class A {\n}\n");
+        put(dir, spaced, "class E {\n}\n");
+        git(dir, "add", "--", "src");
+        git(dir, "commit", "-q", "-m", "baseline");
+        String sha = git(dir, "rev-parse", "HEAD").strip();
+        List<String> failed = new ArrayList<>();
+        int cases = 0;
+        for (String option : new String[] {"diff.noprefix", "diff.mnemonicPrefix"}) {
+            git(dir, "config", option, "true");
+            put(dir, a, "class A {\n    int Bad = 1;\n}\n");
+            cases += expect(failed, option, probe(dir, sha), "A.java:2 name: 'Bad' is not camelCase");
+            git(dir, "config", "--unset", option);
+        }
+        put(dir, a, "class A {\n}\n");
+        put(dir, spaced, "class E {\n    int Bad;\n}\n");
+        cases += expect(failed, "path with a space", probe(dir, sha), "E F.java:2 name: 'Bad' is not camelCase");
+        put(dir, spaced, "class E {\n}\n");
+        String unicode = "src/main/java/p/Привет.java";
+        put(dir, unicode, "class Hello {\n    int Bad;\n}\n");
+        cases += expect(failed, "untracked non-ASCII name", probe(dir, sha), "вет.java:2 name: 'Bad'");
+        Files.delete(dir.resolve(unicode));
+        put(dir, a, "interface I {\n    int MAX = 2;\n}\ninterface J { int MAX = 2; }\nclass B {\n    void f() {\n"
+                + "        OUTERX:\n        for (;;) {\n            break OUTERX;\n        }\n"
+                + "        OUTERY:\n        for (;;) {\n            continue OUTERY;\n        }\n    }\n}\n");
+        cases += expect(failed, "interface constant and labels", probe(dir, sha), null);
+        put(dir, a, "interface K {\n    int bad = 2;\n}\n");
+        cases += expect(failed, "interface field in lower case", probe(dir, sha), "constant 'bad' is not UPPER_SNAKE_CASE");
+        put(dir, a, "class A {\n    int ok = 1;\n}\n");
+        cases += expect(failed, "negative control", probe(dir, sha), null);
+        if (failed.isEmpty()) {
+            System.out.println("line-check selftest: " + cases + " cases, ok");
+            return 0;
+        }
+        failed.forEach(f -> System.out.println("line-check selftest FAILED: " + f));
+        return 1;
+    }
+
+    /** Exit code, a bar and the output of a normal run with the baseline commit as base. */
+    private static String probe(Path dir, String sha) throws Exception {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        int code = run(dir, new String[] {"--base", sha}, new PrintStream(buffer, true, StandardCharsets.UTF_8));
+        return code + "|" + buffer.toString(StandardCharsets.UTF_8);
+    }
+
+    /** A null needle expects a clean run, otherwise exit 1 and the needle in the output; returns 1 as the case count. */
+    private static int expect(List<String> failed, String name, String result, String needle) {
+        boolean ok = needle == null ? result.startsWith("0|line-check OK") : result.startsWith("1|") && result.contains(needle);
+        if (!ok) {
+            failed.add(name + ": got " + result.strip().replace("\n", " / "));
+        }
+        return 1;
+    }
+
+    private static void put(Path dir, String relative, String text) throws IOException {
+        Path file = dir.resolve(relative);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, text, StandardCharsets.UTF_8);
     }
 }

@@ -1,6 +1,6 @@
 # Ratchet over the lines a change adds: length, names, TODO. See scripts/LineCheck.java.
-# Usage: .\scripts\line-check.ps1 [-Base <ref>]
-param([string]$Base)
+# Usage: .\scripts\line-check.ps1 [-Base <ref>] [-SelfTest]
+param([string]$Base, [switch]$SelfTest)
 
 $root = Split-Path -Parent $PSScriptRoot
 $java = (Get-Command java -ErrorAction SilentlyContinue).Source
@@ -13,6 +13,7 @@ if (-not $java) {
 }
 $lineCheckArgs = @("$root\scripts\LineCheck.java")
 if ($Base) { $lineCheckArgs += @('--base', $Base) }
+if ($SelfTest) { $lineCheckArgs += '--selftest' }
 Set-Location $root
 & $java @lineCheckArgs
 exit $LASTEXITCODE
