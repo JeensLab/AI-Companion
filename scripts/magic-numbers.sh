@@ -37,8 +37,8 @@ if [ -z "$base" ]; then
 fi
 
 {
-    git diff -U0 "$base" -- src/main/java
+    git diff --no-color --no-ext-diff -U0 "$base" -- src/main/java
     git ls-files --others --exclude-standard -z -- src/main/java | while IFS= read -r -d '' file; do
-        git diff -U0 --no-index -- /dev/null "$file" || true
+        git diff --no-color --no-ext-diff -U0 --no-index -- /dev/null "$file" || true
     done
 } | "$java_cmd" scripts/MagicNumbers.java

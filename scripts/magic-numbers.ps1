@@ -37,9 +37,9 @@ if (-not $Base) {
 }
 
 $diff = [System.Collections.Generic.List[string]]::new()
-$diff.AddRange([string[]]@(git diff -U0 $Base -- src/main/java))
+$diff.AddRange([string[]]@(git diff --no-color --no-ext-diff -U0 $Base -- src/main/java))
 foreach ($file in @(git ls-files --others --exclude-standard -- src/main/java)) {
-    $diff.AddRange([string[]]@(git diff -U0 --no-index -- /dev/null $file))
+    $diff.AddRange([string[]]@(git diff --no-color --no-ext-diff -U0 --no-index -- /dev/null $file))
 }
 
 $diff | & $javaCmd scripts/MagicNumbers.java
