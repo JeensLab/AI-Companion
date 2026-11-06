@@ -22,6 +22,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static dev.aicompanion.gametest.DeathTestKit.place;
+import static dev.aicompanion.gametest.DeathTestKit.put;
 import static dev.aicompanion.gametest.DeathTestKit.setOut;
 import static dev.aicompanion.gametest.DeathTestKit.settle;
 import static dev.aicompanion.gametest.DeathTestKit.spawn;
@@ -1668,6 +1670,30 @@ public final class CompanionDeathRecoveryTests {
         // A second press on the same row changes nothing.
         h.assertTrue(!CompanionDeathBoard.forget(owner, secondId), "An unknown place was reported forgotten");
         h.assertTrue(CompanionDeathBoard.places(owner).size() == 1, "A second press took another place");
+        h.succeed();
+    }
+
+    /**
+     * A stack put down in a chunk this test itself brought into being is in the world the game hands out, at once. The
+     * arena of a fresh run lies on chunks the run promotes itself; a stack in one of them was, until the server's queued
+     * chunk work had run, in a section nobody hands out — found by no look, ticked by nothing — so the walk called it
+     * gone and never set out.
+     */
+    @GameTest(template = "empty")
+    public static void aStackInAChunkTheTestBroughtIntoBeingIsInTheWorld(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        settle(c);
+        BlockPos feet = yard(h, c, 4);
+        // A chunk the yard does not cover: the test's own edit brings it into being, as a fresh arena's ground does.
+        BlockPos fresh = feet.offset(64, 0, 0);
+        put(h, fresh.below(), Blocks.STONE);
+        put(h, fresh, Blocks.AIR);
+        var item = stack(h, fresh, new ItemStack(Items.DIAMOND, 2));
+        h.assertTrue(h.getLevel().getEntity(item.getUUID()) == item,
+                "The stack is not in the world the game hands out: it lies in a chunk whose entities nobody has taken yet");
+        h.assertTrue(h.getLevel().getEntitiesOfClass(ItemEntity.class,
+                        new AABB(fresh).inflate(1)).contains(item),
+                "The scan of the world does not see the stack");
         h.succeed();
     }
 }
