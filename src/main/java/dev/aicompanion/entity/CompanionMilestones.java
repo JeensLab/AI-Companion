@@ -168,6 +168,7 @@ public final class CompanionMilestones {
             // The coal he carries is made into torches first: a trip for ore to reach the full stock may find none, and then the bag's coal must still be enough.
             int sticksLeft = facts.carried(Items.STICK);
             boolean stockShort = false;
+            int stockSticks = 0;
             if (facts.carried(Items.TORCH) < TORCHES_STOCK) {
                 int torches = (int) Math.clamp(facts.carried(Items.TORCH) + 4L * facts.carried(Items.COAL), TORCHES_MIN, TORCHES_STOCK);
                 stockShort = torches < TORCHES_STOCK;
@@ -175,6 +176,7 @@ public final class CompanionMilestones {
                 // Only the coal in the bag turns into torches here: a torch the plan cannot make takes no stick.
                 int made = (int) Math.min(torches - facts.carried(Items.TORCH), 4L * facts.carried(Items.COAL));
                 sticksLeft -= (made + 3) / 4;
+                stockSticks = (TORCHES_STOCK - torches + 3) / 4;
             }
             if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) {
                 steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
@@ -183,12 +185,15 @@ public final class CompanionMilestones {
             steps.addAll(swordSteps(facts));
             if (sparePickaxe(facts)) steps.add(obtain(Items.IRON_PICKAXE, 2));
             if (facts.carried(Items.CRAFTING_TABLE) == 0) steps.add(obtain(Items.CRAFTING_TABLE, 1));
-            // The torches and the pickaxes made above take their sticks first: what is left must still be enough for a pickaxe made below.
+            // The torches and the pickaxes made above take their sticks first, the full stock of torches too (seed 314159: it took the last eight, and the
+            // pickaxes ran out at the diamonds' depth): what is left must still be enough for a pickaxe made below.
+            boolean stockTorches = stockShort && facts.coalInSight();
+            if (stockTorches) sticksLeft -= stockSticks;
             if (sticksLeft < STICKS_MIN) steps.add(obtain(Items.STICK, STICKS_STOCK));
             if (facts.carried(held -> CompanionSeal.seals(new ItemStack(held))) < SEALS_MIN) steps.add(obtain(Items.COBBLESTONE, SEALS_STOCK));
             if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
             // The full stock last, and only for coal in sight: coal fetched from afar may not be found, and a failed step must not take the rest of the kit with it.
-            if (stockShort && facts.coalInSight()) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
+            if (stockTorches) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
             steps.addAll(shieldSteps(facts, true));
             return steps;
         }
