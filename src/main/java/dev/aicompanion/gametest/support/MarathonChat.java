@@ -33,7 +33,10 @@ public final class MarathonChat {
 
     public record Said(String text, List<PlannedAction> plan, CompletableFuture<CompanionPlanRunner.Outcome> outcome) {
         public boolean done() { return outcome.isDone(); }
-        public String report() { return !outcome.isDone() ? "(running)" : outcome.isCompletedExceptionally() ? "(failed: " + outcome.handle((o, e) -> e).join() + ")" : outcome.join().report(); }
+        public String report() {
+            if (!outcome.isDone()) return "(running)";
+            return outcome.isCompletedExceptionally() ? "(failed: " + outcome.handle((o, e) -> e).join() + ")" : outcome.join().report();
+        }
     }
 
     public MarathonChat(GameTestHelper h, CompanionEntity oleg) { this.h = h; this.oleg = oleg; }
