@@ -13,7 +13,7 @@ fast=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --fast) fast=1; shift ;;
-    *) echo "unknown argument: $1" >&2; exit 2 ;;
+    *) echo "unknown argument: $1" >&2; echo "GATE FAIL: usage"; exit 2 ;;
   esac
 done
 
@@ -37,17 +37,20 @@ if git rev-parse --verify -q origin/main >/dev/null; then
   base="$(git merge-base origin/main HEAD)" || fail "diff-check (merge base)"
   echo "range: ${base:0:10}..HEAD (merge base with origin/main)"
   git diff --check "$base" HEAD || fail "diff-check (range)"
+elif [ -n "${CI:-}" ]; then
+  echo "origin/main is missing in CI: the committed range cannot be checked" >&2
+  fail "diff-check (origin/main missing)"
 elif git rev-parse --verify -q HEAD~1 >/dev/null; then
-  echo "origin/main is not available: checking only HEAD~1..HEAD"
+  echo "WARNING: origin/main is not available: checking only HEAD~1..HEAD"
   git diff --check HEAD~1 HEAD || fail "diff-check (range)"
 else
-  echo "origin/main and HEAD~1 are not available: the committed range is not checked"
+  echo "WARNING: origin/main and HEAD~1 are not available: the committed range is not checked"
 fi
 steps="$steps, diff-check"
 
 # 3. Shape checks run only when their script exists, so later stages add them without editing the gate.
 shape_run=0
-for name in code-shape arch-check catch-check magic-numbers line-check test-quality; do
+for name in code-shape switch-check arch-check catch-check magic-numbers line-check test-quality; do
   script="scripts/$name.sh"
   if [ -f "$script" ]; then
     echo "== $name"

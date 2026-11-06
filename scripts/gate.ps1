@@ -3,8 +3,13 @@
 # Usage: .\scripts\gate.ps1 [-Fast]
 #   -Fast  skips the GameTests. For local iteration only: CI and the final pre-PR run must never use it.
 # Env GATE_GRADLE_ARGS passes extra arguments to the Gradle build (for example --offline).
-param([switch]$Fast)
+param([switch]$Fast,[Parameter(ValueFromRemainingArguments)][string[]]$Rest)
 $ErrorActionPreference='Stop'
+if($Rest){
+    [Console]::Error.WriteLine("unknown argument: $($Rest[0])")
+    Write-Host "GATE FAIL: usage"
+    exit 2
+}
 $root=Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
 $psHost=(Get-Process -Id $PID).Path
@@ -32,21 +37,24 @@ if($LASTEXITCODE -eq 0){
     Write-Host "range: $($base.Substring(0,10))..HEAD (merge base with origin/main)"
     & git diff --check $base HEAD | Out-Host
     if($LASTEXITCODE -ne 0){Stop-Gate 'diff-check (range)'}
+} elseif($env:CI){
+    [Console]::Error.WriteLine('origin/main is missing in CI: the committed range cannot be checked')
+    Stop-Gate 'diff-check (origin/main missing)'
 } else {
     & git rev-parse --verify -q 'HEAD~1' *> $null
     if($LASTEXITCODE -eq 0){
-        Write-Host 'origin/main is not available: checking only HEAD~1..HEAD'
+        Write-Host 'WARNING: origin/main is not available: checking only HEAD~1..HEAD'
         & git diff --check HEAD~1 HEAD | Out-Host
         if($LASTEXITCODE -ne 0){Stop-Gate 'diff-check (range)'}
     } else {
-        Write-Host 'origin/main and HEAD~1 are not available: the committed range is not checked'
+        Write-Host 'WARNING: origin/main and HEAD~1 are not available: the committed range is not checked'
     }
 }
 $steps="$steps, diff-check"
 
 # 3. Shape checks run only when their script exists, so later stages add them without editing the gate.
 $shapeRun=0
-foreach($name in 'code-shape','arch-check','catch-check','magic-numbers','line-check','test-quality'){
+foreach($name in 'code-shape','switch-check','arch-check','catch-check','magic-numbers','line-check','test-quality'){
     $script="scripts/$name.ps1"
     if(Test-Path -LiteralPath $script){
         Write-Host "== $name"
