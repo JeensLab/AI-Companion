@@ -143,6 +143,8 @@ public final class CompanionDeathTrip {
         return "Иду за вещами №" + number() + (left > 0 ? ", осталось " + left + "." : ".");
     }
 
+    private enum Pass { DROPPED, SKIPPED, STARTED }
+
     /** Sets out for the dearest place with a stack still lying there; false when there is nothing worth or possible to walk to. */
     public boolean begin() {
         if (spot != null || !c.deathRecovery() || !(c.level() instanceof ServerLevel level) || c.getOwnerId() == null) return false;
@@ -157,9 +159,7 @@ public final class CompanionDeathTrip {
         while (index < places.size()) {
             CompanionDeathSpots.Spot place = places.get(index);
             int number = index + 1;
-            if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
-                data.taken(c.getOwnerId(), place.id());
-                lastDropped = number;
+            if (exhausted(data, place, number)) {
                 places = data.ranked(c.getOwnerId());
                 continue;
             }
@@ -169,28 +169,17 @@ public final class CompanionDeathTrip {
             // before the walk starts, so a looted place costs no walk at all.
             List<CompanionDeathSpots.Entry> live = liveEntries(level, place);
             if (live.isEmpty()) {
-                // A stack looked for once and not found may still be on its way into the world: the place is asked
-                // again in a moment instead of being struck off on that one look.
-                if (missedOnce(level, place)) { index++; continue; }
-                // Nothing is left there: the place goes, and a death not worth a walk is not spoken of.
-                data.taken(c.getOwnerId(), place.id());
-                places = data.ranked(c.getOwnerId());
+                if (looted(data, level, place)) places = data.ranked(c.getOwnerId());
+                else index++;
                 continue;
             }
             if (!place.dimension().equals(level.dimension())) {
-                // The Overworld and the Nether are crossed both ways on foot; a place in the End needs its own portal and is left.
-                if (place.worth() < CROSS_WORTH || place.dimension().equals(Level.END)) {
-                    data.taken(c.getOwnerId(), place.id());
-                    places = data.ranked(c.getOwnerId());
-                    continue;
+                switch (crossTo(data, level, place, live, number)) {
+                    case STARTED -> { return true; }
+                    case DROPPED -> places = data.ranked(c.getOwnerId());
+                    case SKIPPED -> index++;
                 }
-                // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
-                var entered = c.portals.enter(level);
-                if (!entered.success()) { index++; continue; }
-                data.attempted(c.getOwnerId(), place.id());
-                start(place, live, level, true, number);
-                say("Иду за вещами №" + number + " через портал.");
-                return true;
+                continue;
             }
             data.attempted(c.getOwnerId(), place.id());
             start(place, live, level, false, number);
@@ -200,6 +189,40 @@ public final class CompanionDeathTrip {
         // A drop is said once, at the end of the pass, whether or not another place was found.
         if (lastDropped >= 0) { say("№" + lastDropped + " — бросил."); lastDropped = -1; }
         return false;
+    }
+
+    /** A place tried too often, or one that took too many of his lives, is struck off the list. */
+    private boolean exhausted(CompanionDeathSpots data, CompanionDeathSpots.Spot place, int number) {
+        if (!(place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths())) return false;
+        data.taken(c.getOwnerId(), place.id());
+        lastDropped = number;
+        return true;
+    }
+
+    /** Strikes off a place with nothing left in it; false when it is to be asked again in a moment. */
+    private boolean looted(CompanionDeathSpots data, ServerLevel level, CompanionDeathSpots.Spot place) {
+        // A stack looked for once and not found may still be on its way into the world: the place is asked
+        // again in a moment instead of being struck off on that one look.
+        if (missedOnce(level, place)) return false;
+        // Nothing is left there: the place goes, and a death not worth a walk is not spoken of.
+        data.taken(c.getOwnerId(), place.id());
+        return true;
+    }
+
+    private Pass crossTo(CompanionDeathSpots data, ServerLevel level, CompanionDeathSpots.Spot place,
+                         List<CompanionDeathSpots.Entry> live, int number) {
+        // The Overworld and the Nether are crossed both ways on foot; a place in the End needs its own portal and is left.
+        if (place.worth() < CROSS_WORTH || place.dimension().equals(Level.END)) {
+            data.taken(c.getOwnerId(), place.id());
+            return Pass.DROPPED;
+        }
+        // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
+        var entered = c.portals.enter(level);
+        if (!entered.success()) return Pass.SKIPPED;
+        data.attempted(c.getOwnerId(), place.id());
+        start(place, live, level, true, number);
+        say("Иду за вещами №" + number + " через портал.");
+        return Pass.STARTED;
     }
 
     /** The stacks of a place that still lie there, judged only where they can be seen. */
@@ -276,6 +299,12 @@ public final class CompanionDeathTrip {
         c.getNavigation().setCanFloat(true);
     }
 
+    private enum Flow { ON, END, NEXT }
+
+    private record Fetch(Flow flow, CompanionDeathSpots.Entry entry, ItemEntity item) {
+        static Fetch of(Flow flow) { return new Fetch(flow, null, null); }
+    }
+
     /** One tick of the walk: true while it goes on. */
     public boolean tick() {
         if (spot == null) return false;
@@ -283,43 +312,64 @@ public final class CompanionDeathTrip {
         // The player turned the feature off: the walk ends here, as he asked, without a word about it.
         if (!c.deathRecovery()) { stop(); return false; }
         ticks++;
+        Flow crossed = tickCrossing(level);
+        if (crossed != Flow.NEXT) return crossed == Flow.ON;
+        Fetch fetch = tickToPlace(level);
+        if (fetch.flow() != Flow.NEXT) return fetch.flow() == Flow.ON;
+        tickStack(level, fetch.entry(), fetch.item());
+        return true;
+    }
+
+    private Flow tickCrossing(ServerLevel level) {
         if (crossing) {
-            if (level.dimension().equals(spot.dimension())) { crossing = false; return true; }
-            if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return false; }
-            if (ticks > MOST_TICKS) { stop(); return false; }
-            return true;
+            if (level.dimension().equals(spot.dimension())) { crossing = false; return Flow.ON; }
+            if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return Flow.END; }
+            if (ticks > MOST_TICKS) { stop(); return Flow.END; }
+            return Flow.ON;
         }
         // Moved out of the dimension by something else: back through a portal, or the place is left.
         if (!level.dimension().equals(spot.dimension())) {
             if (!c.portals.walking()) {
                 var entered = c.portals.enter(level);
-                if (!entered.success()) { stop(); say("Не смог перейти в другое измерение."); return false; }
+                if (!entered.success()) { stop(); say("Не смог перейти в другое измерение."); return Flow.END; }
                 crossing = true;
                 giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
                 say("Иду за вещами №" + number() + " через портал.");
             }
-            return true;
+            return Flow.ON;
         }
+        return Flow.NEXT;
+    }
+
+    private Fetch tickToPlace(ServerLevel level) {
         if (ticks > MOST_TICKS || level.getGameTime() > giveUpAt) {
             finish(level);
-            return false;
+            return Fetch.of(Flow.END);
         }
         // Not loaded yet: the walk goes to the coordinates and the chunk loads on the way; nothing can be judged before that.
         if (!level.hasChunkAt(spot.pos())) {
-            c.movementIntent(spot.pos());
-            c.travel().toward(spot.pos(), NEAR);
-            return true;
+            walkToPlace();
+            return Fetch.of(Flow.ON);
         }
         refresh(level);
         CompanionDeathSpots.Entry entry = nextEntry(level);
         if (entry == null) {
             // Nothing left to walk at now, but a stack in a chunk nobody has loaded yet is not gone: walk to the place.
-            if (unjudged(level)) { c.movementIntent(spot.pos()); c.travel().toward(spot.pos(), NEAR); return true; }
+            if (unjudged(level)) { walkToPlace(); return Fetch.of(Flow.ON); }
             finish(level);
-            return false;
+            return Fetch.of(Flow.END);
         }
         ItemEntity item = alive(level, entry);
-        if (item == null) return true;
+        if (item == null) return Fetch.of(Flow.ON);
+        return new Fetch(Flow.NEXT, entry, item);
+    }
+
+    private void walkToPlace() {
+        c.movementIntent(spot.pos());
+        c.travel().toward(spot.pos(), NEAR);
+    }
+
+    private void tickStack(ServerLevel level, CompanionDeathSpots.Entry entry, ItemEntity item) {
         // A new stack to fetch: the patience and the way belong to this stack, not to the walk.
         if (!entry.id().equals(target)) { target = entry.id(); entryTicks = 0; approach = 0; closest = Double.MAX_VALUE; repathAt = 0; routedPos = null; }
         c.movementIntent(item.blockPosition());
@@ -329,40 +379,41 @@ public final class CompanionDeathTrip {
             if (entryTicks == 0 && !c.canStoreDrops(List.of(item.getItem().copyWithCount(1)))) makeRoom(level);
             entryTicks++;
             if (entryTicks > WAIT_IN_REACH) giveUpEntry(entry, item, inReachReason(item));
-            return true;
+            return;
         }
         // A step that brings him nearer is progress, whatever the clock says: a long way to a stack is not a stuck walk.
         double distance = c.distanceToSqr(item);
         if (distance + .05 < closest) { closest = distance; approach = 0; }
         else approach++;
-        if (approach > approachPatience(distance)) { giveUpEntry(entry, item, "не дошёл"); return true; }
+        if (approach > approachPatience(distance)) { giveUpEntry(entry, item, "не дошёл"); return; }
         boolean drifted = routedPos == null || !routedPos.equals(item.blockPosition());
-        if (drifted || ticks >= repathAt || c.getNavigation().isDone() || c.getNavigation().isStuck()) {
-            repathAt = ticks + REPATH;
-            routedPos = item.blockPosition().immutable();
-            Set<BlockPos> cells = standCells(level, item);
-            if (cells.isEmpty()) { giveUpEntry(entry, item, standReason(level, item)); return true; }
-            if (!(c.getNavigation() instanceof CompanionNavigation nav)) return true;
-            // The way is searched whole, not in this tick's share: a walk to one stack must decide on that stack now.
-            Path path = nav.searchNow(cells, 0);
-            // No cell to stand in yet (he is in the air, on a ladder): not a verdict, ask again next tick.
-            if (path == null) return true;
-            if (!path.canReach()) {
-                // A search that ran out of its cells saw only part of the world: it proves nothing about the way it did
-                // not look at, so the leg it did find is walked and the way is asked again from there.
-                if (nav.lastSearchExhausted()) { CompanionMiningNavigation.walk(c, path); return true; }
-                double range = c.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
-                if (item.distanceToSqr(c) <= range * range) {
-                    dev.aicompanion.AICompanionMod.LOGGER.debug("[death] no route from {} to {} ({} cells)",
-                            c.blockPosition(), item.blockPosition(), cells.size());
-                    giveUpEntry(entry, item, "нет пути");
-                    return true;
-                }
-                // A stack farther than one search sees: walk the leg it does see, and search again from there.
+        if (drifted || ticks >= repathAt || c.getNavigation().isDone() || c.getNavigation().isStuck()) route(level, entry, item);
+    }
+
+    private void route(ServerLevel level, CompanionDeathSpots.Entry entry, ItemEntity item) {
+        repathAt = ticks + REPATH;
+        routedPos = item.blockPosition().immutable();
+        Set<BlockPos> cells = standCells(level, item);
+        if (cells.isEmpty()) { giveUpEntry(entry, item, standReason(level, item)); return; }
+        if (!(c.getNavigation() instanceof CompanionNavigation nav)) return;
+        // The way is searched whole, not in this tick's share: a walk to one stack must decide on that stack now.
+        Path path = nav.searchNow(cells, 0);
+        // No cell to stand in yet (he is in the air, on a ladder): not a verdict, ask again next tick.
+        if (path == null) return;
+        if (!path.canReach()) {
+            // A search that ran out of its cells saw only part of the world: it proves nothing about the way it did
+            // not look at, so the leg it did find is walked and the way is asked again from there.
+            if (nav.lastSearchExhausted()) { CompanionMiningNavigation.walk(c, path); return; }
+            double range = c.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
+            if (item.distanceToSqr(c) <= range * range) {
+                dev.aicompanion.AICompanionMod.LOGGER.debug("[death] no route from {} to {} ({} cells)",
+                        c.blockPosition(), item.blockPosition(), cells.size());
+                giveUpEntry(entry, item, "нет пути");
+                return;
             }
-            CompanionMiningNavigation.walk(c, path);
+            // A stack farther than one search sees: walk the leg it does see, and search again from there.
         }
-        return true;
+        CompanionMiningNavigation.walk(c, path);
     }
 
     /** Walking at one stack this long without getting any nearer gives it up: the patience covers the way's length too. */
