@@ -108,6 +108,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | --- | --- |
 | Документация и инструкции | Проверить пути, команды и `git diff --check`; игровой запуск не требуется |
 | Java, ресурсы или сборка | `.\gradlew.bat build` плюс подходящая проверка поведения |
+| Числовые литералы в изменённом production-коде | `.\scripts\magic-numbers.ps1` или `./scripts/magic-numbers.sh` (нужен JDK 21; база — `merge-base origin/main HEAD`, `-Base <ref>` / `--base <ref>` задаёт её явно): без именованной константы или комментария с причиной в строке падает; игровой запуск не требуется |
 | Игровая механика, планы, навигация | Повседневно `.\scripts\verify-fast.ps1` на Windows или `./scripts/verify-fast.sh` на Linux/macOS: все тесты без трёх длинных сценариев `endurance` в нескольких процессах, итог в `build/diagnostics/fast-summary.json`. Число процессов считается по ядрам и свободной памяти (на Linux до 6: 6 шардов дали ~130 с против ~6 минут одним процессом, 8 уже флакуют; на Windows скрипт ограничен 4), `-Shards <1-8>` (Windows) или `--shards <1-8>` (Linux/macOS) задаёт его явно. Миры `run/shard-N/world` удаляются перед каждым прогоном. Перед PR один раз полный `.\gradlew.bat runGameTestServer` |
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
