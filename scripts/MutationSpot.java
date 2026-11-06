@@ -36,7 +36,7 @@ import javax.tools.ToolProvider;
  * <p>The working tree must be clean, untracked files included (in practice a separate worktree), so that
  * {@code git checkout -- <file>} puts every byte of the one mutated file back; it is restored after each mutant, on failure and
  * on Ctrl-C. Exit codes: 0 all killed; 1 a mutant survived, is broken, timed out or ended with an unexpected failure;
- * 2 usage error, dirty tree or a red baseline; 3 the tree was still dirty after a restore.
+ * 2 usage error, unreadable table, failing git, dirty tree or a red baseline; 3 the tree was still dirty after a restore.
  */
 public final class MutationSpot {
     private static final String TABLE = "tools/mutants.txt";
@@ -52,8 +52,22 @@ public final class MutationSpot {
 
     private static Path root;
     private static int timeoutMinutes = DEFAULT_TIMEOUT_MINUTES;
+    private static volatile Process child;
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        try {
+            run(args);
+        } catch (IOException | RuntimeException e) {
+            System.err.println("mutation-spot: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+            System.exit(2);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("mutation-spot: interrupted");
+            System.exit(2);
+        }
+    }
+
+    private static void run(String[] args) throws IOException, InterruptedException {
         List<String> rest = new ArrayList<>(List.of(args));
         root = Path.of(".").toAbsolutePath().normalize();
         String rootArg = take(rest, "--root");
@@ -81,6 +95,7 @@ public final class MutationSpot {
                     + git("status", "--porcelain"));
             System.exit(2);
         }
+        Runtime.getRuntime().addShutdownHook(new Thread(MutationSpot::stopChild));
         if (!dryRun && !baselineIsGreen(chosen)) System.exit(2);
         System.exit(runAll(chosen, dryRun) ? 0 : 1);
     }
@@ -94,7 +109,7 @@ public final class MutationSpot {
         return value;
     }
 
-    private static boolean runAll(List<Mutant> chosen, boolean dryRun) throws Exception {
+    private static boolean runAll(List<Mutant> chosen, boolean dryRun) throws IOException, InterruptedException {
         int survived = 0, killed = 0, other = 0;
         for (Mutant mutant : chosen) {
             Verdict verdict = runOne(mutant, dryRun);
@@ -108,7 +123,7 @@ public final class MutationSpot {
     }
 
     // The selected tests, once, on the unmutated tree: without it a red test would look like a kill.
-    private static boolean baselineIsGreen(List<Mutant> chosen) throws Exception {
+    private static boolean baselineIsGreen(List<Mutant> chosen) throws IOException, InterruptedException {
         Set<String> methods = new LinkedHashSet<>();
         for (Mutant mutant : chosen) methods.addAll(mutant.methods);
         GradleRun run = gradle(new ArrayList<>(methods), "mutation-baseline");
@@ -125,7 +140,7 @@ public final class MutationSpot {
         return false;
     }
 
-    private static Verdict runOne(Mutant mutant, boolean dryRun) throws Exception {
+    private static Verdict runOne(Mutant mutant, boolean dryRun) throws IOException, InterruptedException {
         Path file = root.resolve(mutant.file);
         String source = Files.readString(file, StandardCharsets.UTF_8);
         int first = source.indexOf(mutant.from);
@@ -133,7 +148,8 @@ public final class MutationSpot {
             System.out.println("BROKEN " + mutant.id + " (from-text must occur exactly once in " + mutant.file + ")");
             return Verdict.BROKEN;
         }
-        Thread restore = new Thread(() -> restoreQuietly(mutant.file));
+        // On Ctrl-C the Gradle child must stop before the file is put back, or it would go on testing a half-restored tree.
+        Thread restore = new Thread(() -> { stopChild(); restoreQuietly(mutant.file); });
         Runtime.getRuntime().addShutdownHook(restore);
         try {
             String mutated = source.substring(0, first) + mutant.to + source.substring(first + mutant.from.length());
@@ -160,7 +176,7 @@ public final class MutationSpot {
         }
     }
 
-    private static Verdict execute(Mutant mutant) throws Exception {
+    private static Verdict execute(Mutant mutant) throws IOException, InterruptedException {
         GradleRun run = gradle(mutant.methods, "mutation-" + mutant.id);
         if (run.timedOut) {
             System.out.println("TIMEOUT " + mutant.id + " (no result in " + timeoutMinutes + " minutes, not counted as a kill, see " + run.log + ")");
@@ -178,7 +194,7 @@ public final class MutationSpot {
         List<String> expected = new ArrayList<>();
         List<String> unexpected = new ArrayList<>();
         for (String name : failed) {
-            String owner = mutant.methods.stream().filter(method -> name.toLowerCase(Locale.ROOT).contains(method.toLowerCase(Locale.ROOT))).findFirst().orElse(null);
+            String owner = mutant.methods.stream().filter(method -> name.toLowerCase(Locale.ROOT).equals(method.toLowerCase(Locale.ROOT))).findFirst().orElse(null);
             if (owner == null) unexpected.add(name);
             else expected.add(owner);
         }
@@ -192,26 +208,30 @@ public final class MutationSpot {
     }
 
     /**
-     * One focused GameTest run. On a timeout the Gradle process tree is destroyed and the daemon stopped; a game-test JVM that
-     * Gradle forked and detached may survive that, so look for a stray java process if the machine stays busy.
+     * One focused GameTest run. Gradle runs with {@code --no-daemon}: a single-use daemon dies with its client, and no other
+     * worktree's daemon is touched. On a timeout, or on Ctrl-C, the client process tree is destroyed; a game-test JVM that Gradle
+     * forked and detached may still survive that hard kill, so look for a stray java process if the machine stays busy.
      */
-    private static GradleRun gradle(List<String> methods, String logName) throws Exception {
+    private static GradleRun gradle(List<String> methods, String logName) throws IOException, InterruptedException {
         Path logs = root.resolve("build/diagnostics");
         Files.createDirectories(logs);
         Path log = logs.resolve(logName + ".log");
         List<String> command = List.of(gradlew(), "runGameTestServer", "-PgameTestMethods=" + String.join(",", methods),
-                "-PgameTestDirectory=run/mutation", "--console=plain");
-        Process process = new ProcessBuilder(command).directory(root.toFile()).redirectErrorStream(true)
+                "-PgameTestDirectory=run/mutation", "--console=plain", "--no-daemon");
+        child = new ProcessBuilder(command).directory(root.toFile()).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.to(log.toFile())).start();
-        if (!process.waitFor(timeoutMinutes, TimeUnit.MINUTES)) {
-            process.descendants().forEach(ProcessHandle::destroyForcibly);
-            process.destroyForcibly();
-            Process stop = new ProcessBuilder(gradlew(), "--stop").directory(root.toFile()).redirectErrorStream(true)
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
-            if (!stop.waitFor(2, TimeUnit.MINUTES)) stop.destroyForcibly();
-            return new GradleRun(true, -1, Files.readString(log, StandardCharsets.UTF_8), log);
-        }
-        return new GradleRun(false, process.exitValue(), Files.readString(log, StandardCharsets.UTF_8), log);
+        boolean finished = child.waitFor(timeoutMinutes, TimeUnit.MINUTES);
+        if (!finished) stopChild();
+        int exit = finished ? child.exitValue() : -1;
+        child = null;
+        return new GradleRun(!finished, exit, new String(Files.readAllBytes(log), StandardCharsets.UTF_8), log);
+    }
+
+    private static void stopChild() {
+        Process process = child;
+        if (process == null || !process.isAlive()) return;
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
     }
 
     private static String gradlew() {

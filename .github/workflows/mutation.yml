@@ -18,6 +18,7 @@ jobs:
   mutation:
     runs-on: ubuntu-latest
     # Worst case is the baseline plus 13 mutants at the 20-minute cap each: (1 + 13) x 20 = 280 minutes, under this cap of 300.
+    # Nothing else adds time: Gradle runs with --no-daemon and a timeout only destroys the client, with no stop step.
     # A run normally takes a fraction of that. Add a mutant, and this number moves with it (or split the table over two jobs).
     timeout-minutes: 300
     steps:
