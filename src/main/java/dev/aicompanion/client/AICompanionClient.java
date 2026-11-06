@@ -76,6 +76,9 @@ public final class AICompanionClient {
     private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         OpenRouterClient.resetSession();
         CompanionMemoryFlow.unbind();
+        CompanionAmbientClient.forgetWorld();
+        GameContext.forgetWorld();
+        CompanionMoodPanel.forgetWorld();
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {

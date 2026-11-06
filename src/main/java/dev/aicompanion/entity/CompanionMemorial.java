@@ -9,7 +9,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -18,9 +19,11 @@ import java.util.UUID;
  * A companion that died, kept with the world (not with the player, who may be offline at that moment): its UUID is never
  * waited for again, and its memory (journal of deeds, places, house) goes to the companion who comes back.
  */
-final class CompanionMemorial extends SavedData {
+public final class CompanionMemorial extends SavedData {
     private static final Factory<CompanionMemorial> FACTORY = new Factory<>(CompanionMemorial::new, CompanionMemorial::load, null);
-    private final Set<UUID> dead = new HashSet<>();
+    /** Past this many, the oldest records go; the order of insertion is the order of saving. */
+    public static final int MAX_DEAD = 20;
+    private final Set<UUID> dead = new LinkedHashSet<>();
     private final Map<UUID, CompoundTag> memories = new HashMap<>();
     private final Map<UUID, Long> returnAt = new HashMap<>();
 
@@ -28,13 +31,18 @@ final class CompanionMemorial extends SavedData {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, "aicompanion_memorial");
     }
 
-    boolean isDead(UUID companion) { return dead.contains(companion); }
-    boolean awaitsReturn(UUID owner) { return returnAt.containsKey(owner); }
+    public boolean isDead(UUID companion) { return dead.contains(companion); }
+    public boolean awaitsReturn(UUID owner) { return returnAt.containsKey(owner); }
     boolean mayReturn(UUID owner, long now) { return returnAt.containsKey(owner) && now >= returnAt.get(owner); }
     Set<UUID> waitingOwners() { return Set.copyOf(returnAt.keySet()); }
 
-    void died(UUID owner, UUID companion, CompoundTag memory, long returnTick) {
-        dead.add(companion); memories.put(owner, memory.copy()); returnAt.put(owner, returnTick); setDirty();
+    public void died(UUID owner, UUID companion, CompoundTag memory, long returnTick) {
+        remember(companion); memories.put(owner, memory.copy()); returnAt.put(owner, returnTick); setDirty();
+    }
+
+    private void remember(UUID companion) {
+        dead.add(companion);
+        for (Iterator<UUID> oldest = dead.iterator(); dead.size() > MAX_DEAD && oldest.hasNext(); ) { oldest.next(); oldest.remove(); }
     }
 
     /** The memory for the companion who comes back; the owner then no longer waits. */
@@ -59,9 +67,9 @@ final class CompanionMemorial extends SavedData {
         return tag;
     }
 
-    private static CompanionMemorial load(CompoundTag tag, HolderLookup.Provider registries) {
+    public static CompanionMemorial load(CompoundTag tag, HolderLookup.Provider registries) {
         CompanionMemorial memorial = new CompanionMemorial();
-        for (Tag id : tag.getList("Dead", Tag.TAG_INT_ARRAY)) memorial.dead.add(NbtUtils.loadUUID(id));
+        for (Tag id : tag.getList("Dead", Tag.TAG_INT_ARRAY)) memorial.remember(NbtUtils.loadUUID(id));
         ListTag waiting = tag.getList("Waiting", Tag.TAG_COMPOUND);
         for (int i = 0; i < waiting.size(); i++) {
             CompoundTag owner = waiting.getCompound(i);
