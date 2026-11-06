@@ -1,4 +1,5 @@
 # Runs the production catch-block rules (scripts/CatchCheck.java); passes its exit code through, 2 when Java is missing.
+# --selftest runs scripts/CatchCheckSelfTest.java instead, which checks the tool itself.
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -14,5 +15,7 @@ if (-not $java) {
     exit 2
 }
 
-& $java (Join-Path $root 'scripts/CatchCheck.java') $root
+Set-Location $root
+if ($args -contains '--selftest') { & $java 'scripts/CatchCheckSelfTest.java' }
+else { & $java 'scripts/CatchCheck.java' $root }
 exit $LASTEXITCODE

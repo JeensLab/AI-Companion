@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Runs the production catch-block rules (scripts/CatchCheck.java); passes its exit code through, 2 when Java is missing.
+# --selftest runs scripts/CatchCheckSelfTest.java instead, which checks the tool itself.
 set -u
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,4 +15,7 @@ else
   exit 2
 fi
 
+if [ "${1:-}" = "--selftest" ]; then
+  exec "$java_bin" scripts/CatchCheckSelfTest.java
+fi
 "$java_bin" scripts/CatchCheck.java "$root"
