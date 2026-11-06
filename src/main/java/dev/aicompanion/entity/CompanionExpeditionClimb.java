@@ -16,7 +16,7 @@ import java.util.List;
 final class CompanionExpeditionClimb {
     enum Result { WORKING, DONE }
 
-    private enum Phase { WALK, TRAVEL, UNPLUG, CUT_OUT }
+    private enum Phase { WALK, TRAVEL, UNPLUG, CUT_OUT, STAIRS_UP }
 
     /** Two cells of the way further apart than this (squared) are not neighbours: the record has a gap between them. */
     private static final double GAP = 9;
@@ -33,6 +33,10 @@ final class CompanionExpeditionClimb {
     private final CompanionExpeditionWalk toPlug;
     /** Stone from the walls where he stands, for the floor of the way up when the bag has none. */
     private final CompanionExpeditionStock stone;
+    private final CompanionExpeditionSupply supply;
+    /** The staircase cut up to the surface once the rescues are spent: the way up whatever it takes. */
+    private final CompanionExpeditionStairsUp stairs;
+    private int stairSteps;
     private String why = "", outcome = "";
     private List<BlockPos> cells = List.of();
     /** The end (exclusive) of the stretch being walked: the cell there, if any, lies across a gap. */
@@ -42,9 +46,11 @@ final class CompanionExpeditionClimb {
     private int plugs;
     private int cuts, cutWait, rescuesBefore;
 
-    CompanionExpeditionClimb(CompanionWork w, CompanionExpeditionDig dig) {
+    CompanionExpeditionClimb(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionSupply supply) {
         this.w = w;
         this.dig = dig;
+        this.supply = supply;
+        this.stairs = new CompanionExpeditionStairsUp(w, dig);
         this.walk = new CompanionExpeditionWalk(dig);
         this.toPlug = new CompanionExpeditionWalk(dig);
         this.stone = new CompanionExpeditionStock(w, dig);
@@ -126,6 +132,7 @@ final class CompanionExpeditionClimb {
             case TRAVEL -> travel();
             case UNPLUG -> unplug();
             case CUT_OUT -> cutting();
+            case STAIRS_UP -> climbingStairs();
         };
     }
 
@@ -195,9 +202,9 @@ final class CompanionExpeditionClimb {
         return Result.WORKING;
     }
 
-    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore): without one the rock stays, and so does he. */
+    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent, he cuts a staircase of his own to the surface. */
     private Result cutOut() {
-        if (cuts >= MAX_CUTS || w.items.countCarried(Items.STONE_PICKAXE) == 0 && !dig.ironLeft(0) && dig.hardPickaxe() == null) return finish(CLOSED);
+        if (cuts >= MAX_CUTS || !rockTool()) return stairsUp();
         cuts++;
         cutWait = 0;
         rescuesBefore = w.owner.recovery.begun();
@@ -213,9 +220,46 @@ final class CompanionExpeditionClimb {
             phase = Phase.TRAVEL;
             return Result.WORKING;
         }
-        if (++cutWait > CUT_PATIENCE) return finish(CLOSED);
+        if (++cutWait > CUT_PATIENCE) return cutOut();
         w.owner.movementIntent(cells.get(stretchEnd));
         return Result.WORKING;
+    }
+
+    private boolean rockTool() { return w.items.countCarried(Items.STONE_PICKAXE) > 0 || dig.ironLeft(0) || dig.hardPickaxe() != null; }
+
+    /** A stone pickaxe made on the spot, else the iron one down to its last wear: out is worth more than ore. */
+    private boolean makeTool() {
+        if (supply.craftStonePickaxe()) return true;
+        if (!dig.ironLeft(0) && dig.hardPickaxe() == null) return false;
+        dig.ironForRock(0);
+        return true;
+    }
+
+    /** The record's way up is cut and no rescue opens it: a staircase of his own up to the entrance on the surface, as a player digs out of a lost mine. */
+    private Result stairsUp() {
+        if (!rockTool() && !makeTool()) return finish(CLOSED);
+        BlockPos top = w.mine.origin() != null ? w.mine.origin() : w.mine.entrance();
+        stairs.begin(top);
+        stairSteps = 0;
+        w.owner.getNavigation().stop();
+        w.expedition.climbTime();
+        phase = Phase.STAIRS_UP;
+        w.owner.workStatus("Своей лестницы наверх не нашёл, прокапываю новую к поверхности.");
+        return Result.WORKING;
+    }
+
+    private Result climbingStairs() {
+        ServerLevel level = (ServerLevel) w.owner.level();
+        switch (stairs.tick(level)) {
+            case WORKING -> {
+                if (stairs.steps() == stairSteps) return Result.WORKING;
+                stairSteps = stairs.steps();
+                w.expedition.climbTime();
+                return onSurface() ? finish(" Своей лестницы наверх не нашёл, прокопал новую к поверхности.") : Result.WORKING;
+            }
+            case NO_TOOL -> { return makeTool() ? Result.WORKING : finish(" " + shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + CLOSED); }
+            default -> { return finish(stairs.why().equals("путь наверх закрыт") ? CLOSED : " Подняться не вышло: " + stairs.why() + ", остался где стою."); }
+        }
     }
 
     /** The one time the expedition lets the self-rescue work: its walls are the plan at any other. */
@@ -269,6 +313,8 @@ final class CompanionExpeditionClimb {
         walk.clear();
         toPlug.clear();
         stone.reset();
+        stairs.reset();
+        stairSteps = 0;
         why = outcome = "";
         cells = List.of();
         stretchEnd = plugs = cuts = cutWait = rescuesBefore = 0;

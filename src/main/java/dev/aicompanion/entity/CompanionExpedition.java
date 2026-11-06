@@ -74,14 +74,14 @@ final class CompanionExpedition {
         this.w = w;
         this.owner = w.owner;
         this.dig = new CompanionExpeditionDig(w);
-        this.climb = new CompanionExpeditionClimb(w, dig);
+        this.supply = new CompanionExpeditionSupply(w);
+        this.climb = new CompanionExpeditionClimb(w, dig, supply);
         this.lead = new CompanionExpeditionWalk(dig).sealingLiquid(w);
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount, this::cutStone);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.digOut = new CompanionExpeditionDigOut(w, dig);
-        this.supply = new CompanionExpeditionSupply(w);
         this.bench = new CompanionExpeditionBench(w);
         this.stock = new CompanionExpeditionStock(w, dig);
     }
@@ -139,7 +139,8 @@ final class CompanionExpedition {
         if (unheld) owner.workStatus("Не смог удержать чанки вокруг шахты загруженными: если уйти далеко, могу встать.");
         if (SURFACE.equals(w.requestedItem)) {
             surfaceOnly = true;
-            climb.begin("Под землёй дерева нет.", owner.blockPosition());
+            // The surface is needed (wood, the diamonds for the player): with no cell of his own to start from, the way up is one gap to walk, open or cut.
+            climb.beginAnyway("Под землёй дерева нет.", owner.blockPosition());
             stage = Stage.CLIMB;
             owner.workStatus("Поднимаюсь по своей лестнице на поверхность: под землёй дерева нет.");
         } else changeWay(level);

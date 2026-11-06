@@ -187,6 +187,13 @@ public final class CompanionMineSite {
     /** The way up that the restarts under the ground left behind, deepest cell first, the entrance on the surface last; empty for a mine not started again there. */
     public List<BlockPos> above() { return Collections.unmodifiableList(above); }
 
+    /** A step of a staircase he cut up to the surface when the way above was shut: it joins the way up, before the entrance on the surface that ends it. */
+    public void wayCut(BlockPos cell) {
+        if (above.size() >= MAX_ABOVE) return;
+        int at = !above.isEmpty() && above.get(above.size() - 1).equals(origin) ? above.size() - 1 : above.size();
+        above.add(at, cell.immutable());
+    }
+
     /** The air of the records the restarts replaced; empty in a save from before it was kept. */
     public Set<BlockPos> dug() { return Collections.unmodifiableSet(dug); }
 
