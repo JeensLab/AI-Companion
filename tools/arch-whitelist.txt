@@ -24,6 +24,11 @@ gametest/CompanionHomeTerrainProbe.java
 gametest/CompanionMoodRenderProbe.java
 gametest/CompanionTasksRenderProbe.java
 
-# entity/, inventory/ and the root package must not import dev.aicompanion.client.*; this file still does, until stage 6b removes it.
+# entity/, inventory/ and the root package must not refer to dev.aicompanion.client.*; these files still do, until stage 6b removes the references.
 [until-6b]
+# 4 imports (CompanionDialogue, CompanionPlanRunner, CompanionServerPlanPort, PlannedAction)
 entity/CompanionAgenda.java
+# line 456: dev.aicompanion.client.CompanionDialogue.speakable(...)
+entity/CompanionAutonomy.java
+# lines 48, 61: dev.aicompanion.client.CompanionServerPlanPort
+AICompanionMod.java
