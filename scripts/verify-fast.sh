@@ -1,3 +1,10 @@
+  summary=$(grep -ao "All [0-9]* required tests passed" "$shard_log" | tail -1 || true)
+  local complete failed
+  complete=$(grep -ao "[0-9]* GAME TESTS COMPLETE" "$shard_log" | tail -1 | sed -n "s/([0-9]*) GAME TESTS COMPLETE//p" || true)
+  failed=$(grep -ao "[0-9]* required tests failed" "$shard_log" | tail -1 | sed -n "s/([0-9]*) required tests failed//p" || true)
+  local complete failed
+  complete=$(grep -ao "[0-9]* GAME TESTS COMPLETE" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
+  failed=$(grep -ao "[0-9]* required tests failed" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
 #!/usr/bin/env bash
 # Fast GameTest gate for Linux and macOS: the sharded run the Windows script does, with the same checks.
 # A shard that dies early, reports nothing or passes fewer tests than it selected must not look green, and the
@@ -80,11 +87,18 @@ read_shard() {
   local selection summary
   selection=$(grep -ao "Game test selection: pool=[0-9]* selected=[0-9]* pool-required=[0-9]* selected-required=[0-9]*" "$shard_log" | tail -1 || true)
   summary=$(grep -ao "All [0-9]* required tests passed" "$shard_log" | tail -1 || true)
+  local complete failed
+  complete=$(grep -ao "[0-9]* GAME TESTS COMPLETE" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
+  failed=$(grep -ao "[0-9]* required tests failed" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
   shard_pool=$(printf '%s\n' "$selection" | sed -n 's/.*pool-required=\([0-9]*\).*/\1/p' || true)
   shard_selected=$(printf '%s\n' "$selection" | sed -n 's/.*selected-required=\([0-9]*\).*/\1/p' || true)
   shard_passed=$(printf '%s\n' "$summary" | sed -n 's/All \([0-9]*\) required tests passed/\1/p' || true)
   shard_pool=${shard_pool:-0}
   shard_selected=${shard_selected:-0}
+  # One failed test used to zero the whole shard: without the All-line, passed is complete minus failed, as in GameTestRun.ps1.
+  if [ -z "$shard_passed" ] && [ "${complete:-0}" -gt 0 ] && [ "${failed:-0}" -gt 0 ]; then
+    shard_passed=$(( complete - failed ))
+  fi
   shard_passed=${shard_passed:-0}
 }
 
