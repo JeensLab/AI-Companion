@@ -1,0 +1,2 @@
+# Known @GameTest methods without a reachable assertion, for scripts/TestQuality.java.
+# One "Class.method # reason" per line; an entry whose test now asserts (or is gone) fails the check.
