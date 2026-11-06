@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -27,7 +28,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Size ceilings for production code, checked against a baseline that may only shrink.
+ * Size ceilings for production code, checked against a baseline that may only shrink. A violation that moves with
+ * its file or method to another path (same member, same size) is reported as MOVED, not NEW: --write-baseline
+ * records the move.
  *
  * <p>Usage, from the repository root:
  * <pre>
@@ -206,10 +209,14 @@ public final class CodeShape {
 
     private static List<String> compare(Map<String, Integer> baseline, Map<String, Integer> current) {
         List<String> problems = new ArrayList<>();
+        Map<String, String> moved = moves(baseline, current);
         for (String key : new TreeSet<>(current.keySet())) {
             Integer allowed = baseline.get(key);
             int now = current.get(key);
-            if (allowed == null) {
+            if (moved.containsKey(key)) {
+                problems.add("MOVED " + moved.get(key) + " -> " + key + " " + now
+                        + ": the same violation at a new path; record the move with --write-baseline and commit it");
+            } else if (allowed == null) {
                 problems.add("NEW " + key + " " + now + ": over the ceiling and not in the baseline; make it smaller");
             } else if (now > allowed) {
                 problems.add("GREW " + key + " " + allowed + " -> " + now + ": do not make it larger; shrink it");
@@ -219,11 +226,49 @@ public final class CodeShape {
             }
         }
         for (String key : new TreeSet<>(baseline.keySet())) {
-            if (!current.containsKey(key)) {
+            if (!current.containsKey(key) && !moved.containsValue(key)) {
                 problems.add("FIXED " + key + ": gone or under the ceiling; remove it with --write-baseline and commit");
             }
         }
         return problems;
+    }
+
+    /**
+     * Violations that left one path and appeared at another with the same member and size: a file or a method moved
+     * (a split test class, a helper taken into a package), not growth. Keyed by the new key, valued by the old one.
+     */
+    private static Map<String, String> moves(Map<String, Integer> baseline, Map<String, Integer> current) {
+        Map<String, String> gone = new HashMap<>();
+        for (Map.Entry<String, Integer> entry : baseline.entrySet()) {
+            if (!current.containsKey(entry.getKey())) {
+                gone.put(member(entry.getKey()) + " " + entry.getValue(), entry.getKey());
+            }
+        }
+        Map<String, String> moved = new TreeMap<>();
+        for (Map.Entry<String, Integer> entry : current.entrySet()) {
+            if (baseline.containsKey(entry.getKey())) {
+                continue;
+            }
+            String old = gone.remove(member(entry.getKey()) + " " + entry.getValue());
+            if (old != null) {
+                moved.put(entry.getKey(), old);
+            }
+        }
+        return moved;
+    }
+
+    /** The key without its directory and class: "file Name.java", "method name(params)" or "params name(params)". */
+    private static String member(String key) {
+        int kindEnd = key.indexOf(' ');
+        int pathEnd = key.indexOf(' ', kindEnd + 1);
+        String kind = key.substring(0, kindEnd);
+        if (pathEnd < 0) {
+            return kind + " " + key.substring(key.lastIndexOf('/') + 1);
+        }
+        String signature = key.substring(pathEnd + 1);
+        int paren = signature.indexOf('(');
+        int dot = paren < 0 ? signature.lastIndexOf('.') : signature.lastIndexOf('.', paren);
+        return kind + " " + signature.substring(dot + 1);
     }
 
     private static String render(Map<String, Integer> violations) {
