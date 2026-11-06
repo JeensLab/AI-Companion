@@ -41,11 +41,16 @@ public final class CompanionShaftPlan {
         public static Hazard floor(BlockPos cell) { return new Hazard(Kind.FLOOR, cell); }
     }
 
-    /** Cells the mine must not open again and moves (a stand and a direction) that already failed; consulted only by the overloads that take it. */
-    public record Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused, Predicate<BlockPos> shunned) {
+    /**
+     * Cells the mine must not open again, moves (a stand and a direction) that already failed, and water cells he wades in (his own stand,
+     * which no block can seal while he is in it); consulted only by the overloads that take it.
+     */
+    public record Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused, Predicate<BlockPos> shunned, Set<BlockPos> waded) {
         public static final Avoid NONE = new Avoid(Set.of(), (stand, d) -> false);
 
         public Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused) { this(forbidden, refused, cell -> false); }
+
+        public Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused, Predicate<BlockPos> shunned) { this(forbidden, refused, shunned, Set.of()); }
     }
 
     /** Cost added to a turn whose first step along is blocked: the landing is reachable, but it only moves the dead end aside. */
@@ -232,7 +237,7 @@ public final class CompanionShaftPlan {
         BlockPos liquid = null;
         for (BlockPos pos : around(cell)) {
             if (!level.hasChunkAt(pos)) return Hazard.BLOCKED;
-            if (level.getFluidState(pos).isEmpty()) continue;
+            if (level.getFluidState(pos).isEmpty() || avoid.waded().contains(pos)) continue;
             if (!sealable(level, stand, pos)) {
                 if (pos.equals(laid)) continue;
                 return Hazard.BLOCKED;

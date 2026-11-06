@@ -303,8 +303,9 @@ final class CompanionRecovery {
             BlockPos near = pos.relative(direction);
             var fluid = level.getFluidState(near);
             // Marathon 23.10: out of a flooded shaft at the bottom of a ravine every wall cell touches the water, and no step was ever
-            // cut. Water only wets the new step (a player digs there); lava never. Sand or gravel falls in only from above.
-            if (!level.hasChunkAt(near) || fluid.is(net.minecraft.tags.FluidTags.LAVA) || level.getBlockEntity(near) != null
+            // cut. Water only wets the new step (a player digs there); lava never. Sand or gravel falls in only from above, and so
+            // does water: in a pocket a block wide it takes the air he breathes (seed 7, a pocket under an aquifer).
+            if (!level.hasChunkAt(near) || fluid.is(net.minecraft.tags.FluidTags.LAVA) || direction == Direction.UP && !fluid.isEmpty() || level.getBlockEntity(near) != null
                     || level.getBlockState(near).is(Blocks.CRAFTING_TABLE)
                     || direction == Direction.UP && level.getBlockState(near).getBlock() instanceof net.minecraft.world.level.block.FallingBlock) return false;
         }

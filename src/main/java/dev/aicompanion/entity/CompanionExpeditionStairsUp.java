@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.FluidTags;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -13,8 +14,10 @@ import java.util.Set;
  * A staircase cut up through the rock towards the entrance on the surface when the record's way up is gone (a restart under the ground
  * whose cells above lie across rock, water or a cave): what a player does with a pickaxe and a lost mine. One step is a cell ahead and one
  * higher: the cell over his head, the step and the cell over it come out, a floor is laid under the step where there is none, liquid
- * beside it is sealed first, and he steps up. At the goal's height the steps go level towards it, and the goal's cell is the arrival. A side
- * that cannot be opened is not tried from the same stand again.
+ * beside it is sealed first, and he steps up. At the goal's height the steps go level towards it, and the goal's cell is the arrival. With
+ * every step up shut (water over the rock on each side: the pocket of an aquifer, runs descent and void of seed 7) the step is level,
+ * never straight back, as a player tunnels out from under a lake before he cuts up. A side that cannot be opened is not tried from the
+ * same stand again.
  */
 final class CompanionExpeditionStairsUp {
     enum Result { WORKING, ARRIVED, STUCK, NO_TOOL }
@@ -79,14 +82,22 @@ final class CompanionExpeditionStairsUp {
         return steps >= MAX_STEPS ? stop("лестница наверх вышла слишком длинной") : Result.WORKING;
     }
 
-    /** The next step, a cell up while below the goal and level at its height: towards the goal where the rock allows, else along the last direction, else any side left; false when every side is shut. */
+    /** The next step, a cell up while below the goal and level at its height or when every step up is shut: towards the goal where the rock allows, else along the last direction, else any side left; false when every side is shut. */
     private boolean plan(ServerLevel level, BlockPos here) {
         boolean up = here.getY() < goal.getY();
+        if (step(level, here, up, false)) return true;
+        if (up && step(level, here, false, true)) return true;
+        why = "путь наверх закрыт";
+        return false;
+    }
+
+    private boolean step(ServerLevel level, BlockPos here, boolean up, boolean sideways) {
         CompanionShaftPlan.Avoid own = w.mine.avoid();
+        Set<BlockPos> waded = waded(level, here);
         for (Set<BlockPos> forbidden : List.of(own.forbidden(), Set.<BlockPos>of())) {
-            CompanionShaftPlan.Avoid avoid = new CompanionShaftPlan.Avoid(forbidden, own.refused());
+            CompanionShaftPlan.Avoid avoid = new CompanionShaftPlan.Avoid(forbidden, own.refused(), cell -> false, waded);
             for (Direction d : order(here)) {
-                if (refused.contains(key(here, d))) continue;
+                if (refused.contains(key(here, d)) || sideways && dir != null && d == dir.getOpposite()) continue;
                 BlockPos step = up ? here.relative(d).above() : here.relative(d);
                 List<BlockPos> column = up ? List.of(here.above(2), step, step.above()) : List.of(step, step.above());
                 CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, here, column, List.of(step.below()), w.mine.seals(), avoid, true);
@@ -114,8 +125,14 @@ final class CompanionExpeditionStairsUp {
                 return true;
             }
         }
-        why = "путь наверх закрыт";
         return false;
+    }
+
+    /** The water of his own stand, feet or head: he wades in it, as a player climbs out of a pool, and no block can go where he is. Lava is no wade. */
+    private static Set<BlockPos> waded(ServerLevel level, BlockPos stand) {
+        Set<BlockPos> cells = new HashSet<>(2);
+        for (BlockPos cell : List.of(stand, stand.above())) if (level.getFluidState(cell).is(FluidTags.WATER)) cells.add(cell);
+        return cells;
     }
 
     private List<Direction> order(BlockPos here) {
@@ -131,7 +148,8 @@ final class CompanionExpeditionStairsUp {
     private Result open(ServerLevel level) {
         if (!dig.reach(from)) return dig.walkStuck() ? giveUp(level, "walk") : Result.WORKING;
         BlockPos cell = cells.get(index);
-        CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), CompanionShaftPlan.Avoid.NONE, laying == null ? null : laying.cell);
+        CompanionShaftPlan.Avoid wading = new CompanionShaftPlan.Avoid(Set.of(), (stand, d) -> false, c -> false, waded(level, from));
+        CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, from, cell, w.mine.seals(), wading, laying == null ? null : laying.cell);
         if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) {
             CompanionSeal.Result placed = CompanionSeal.place(owner, flowed.cell());
             if (placed.placed()) { w.mine.sealed(flowed.cell()); seals++; return Result.WORKING; }

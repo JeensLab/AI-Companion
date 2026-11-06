@@ -15,6 +15,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.util.List;
+
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.GROUND;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
@@ -37,7 +39,7 @@ public final class CompanionMineClimbOutTests {
     /** The pit reaches up to the soil under the turf, which is its roof. */
     private static final int PIT_TOP = GROUND - 2, SOIL = 31, SURFACE_MARGIN = 2;
     /** The deep pit: its feet in the deepslate over the diamond ring, east of the surface entrance, and the old stand further east through the rock. */
-    private static final int DEEP_EAST = 6, DEEP_FEET = 3, OLD_STAND_EAST = 8;
+    private static final int DEEP_EAST = 6, DEEP_FEET = 3, OLD_STAND_EAST = 8, LAKE = 1;
 
     private CompanionMineClimbOutTests() { }
 
@@ -70,6 +72,18 @@ public final class CompanionMineClimbOutTests {
         });
     }
 
+    /**
+     * Runs descent and void of seed 7 (07.11): a pocket of an aquifer, water over the rock of every column round him, so no step up may be
+     * cut, and «путь наверх закрыт» with the diamonds in his bag. The way is level first, out from under the water, and up from there.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void tunnelsLevelOutFromUnderALakeBeforeCuttingUp(GameTestHelper h) {
+        CompanionEntity c = underLake(h);
+        BlockPos stand = c.mineSite().stands().get(0);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        climb(h, c, stand, result -> h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c)));
+    }
+
     /** The same pit in bedrock: no cut gets anywhere, the climb ends once, said as it is, and he is still down there. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void endsTheClimbOnceWhenThePitCannotBeCutOutOf(GameTestHelper h) {
@@ -81,6 +95,18 @@ public final class CompanionMineClimbOutTests {
         });
     }
 
+    /** A pocket of two cells deep in the deepslate, a spring beside it flooding his feet, water in the layer over its ceiling three blocks each way; the record as in {@link #deepPit}. */
+    private static CompanionEntity underLake(GameTestHelper h) {
+        mountain(h, false);
+        BlockPos entrance = new BlockPos(CENTER + DEEP_EAST, DEEP_FEET + 1, CENTER + SOUTH), stand = entrance.north().below();
+        for (BlockPos cell : List.of(stand, stand.above(), entrance)) h.setBlock(cell, Blocks.AIR);
+        h.setBlock(stand.north(), Blocks.WATER);
+        for (int x = -LAKE; x <= LAKE; x++) for (int z = -LAKE; z <= LAKE; z++) h.setBlock(stand.offset(x, 3, z), Blocks.WATER);
+        BlockPos oldStand = stand.east(OLD_STAND_EAST);
+        for (BlockPos cell : CompanionShaftPlan.column(oldStand)) h.setBlock(cell, Blocks.AIR);
+        return recorded(h, entrance, stand, oldStand);
+    }
+
     /** A chamber of three by three deep in the deepslate; the old record had a stand eight blocks east of it through the rock, and its entrance on the surface. */
     private static CompanionEntity deepPit(GameTestHelper h) {
         mountain(h, true);
@@ -90,6 +116,10 @@ public final class CompanionMineClimbOutTests {
         }
         BlockPos oldStand = stand.east(OLD_STAND_EAST);
         for (BlockPos cell : CompanionShaftPlan.column(oldStand)) h.setBlock(cell, Blocks.AIR);
+        return recorded(h, entrance, stand, oldStand);
+    }
+
+    private static CompanionEntity recorded(GameTestHelper h, BlockPos entrance, BlockPos stand, BlockPos oldStand) {
         CompanionEntity c = rig(h);
         c.setFollowing(false);
         c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
