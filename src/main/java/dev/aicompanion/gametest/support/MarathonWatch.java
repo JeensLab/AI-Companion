@@ -1,4 +1,4 @@
-package dev.aicompanion.gametest;
+package dev.aicompanion.gametest.support;
 
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
@@ -22,7 +22,7 @@ import java.util.UUID;
  * player and from the work, and every item that fell in the arena and whether it was picked up.
  * Built in the test, ticked by {@code h.onEachTick(watch::tick)}; its trail goes into every failure message.
  */
-final class MarathonWatch {
+public final class MarathonWatch {
     private final GameTestHelper h;
     private CompanionEntity oleg;
     private final ServerPlayer player;
@@ -31,39 +31,39 @@ final class MarathonWatch {
     private String lastLine = "";
     private long tick;
     /** Self-rescues begun, and when each one started (relative position and status). */
-    final List<String> rescues = new ArrayList<>();
+    public final List<String> rescues = new ArrayList<>();
     private boolean rescuing;
     /** Stood within a block of one spot with nothing visibly in hand while he had something to do. */
     private Vec3 idleAnchor;
     private long idleSince = -1;
-    long worstIdleTicks;
-    String worstIdleAt = "";
+    public long worstIdleTicks;
+    public String worstIdleAt = "";
     /** Walked a lot without getting anywhere: path length against net displacement over a sliding 15 seconds. */
     private final List<Vec3> recent = new ArrayList<>();
-    double worstCircling;
-    String worstCirclingAt = "";
-    double farthestFromPlayer;
+    public double worstCircling;
+    public String worstCirclingAt = "";
+    public double farthestFromPlayer;
     /** Items that fell in the arena (not gifts thrown to the player): when first seen and what. */
     private final Map<UUID, String> fallen = new HashMap<>();
     private final Map<UUID, ItemEntity> fallenEntities = new HashMap<>();
     /** Oleg's deaths, with the game's own death message. */
-    final List<String> deaths = new ArrayList<>();
+    public final List<String> deaths = new ArrayList<>();
     private boolean reportedDeath;
-    void assertAlive() { expect(deaths.isEmpty(), "Died: " + deaths); }
+    public void assertAlive() { expect(deaths.isEmpty(), "Died: " + deaths); }
 
     /** Jumps of more than three blocks in one tick: a teleport, not a walk. */
-    final List<String> teleports = new ArrayList<>();
+    public final List<String> teleports = new ArrayList<>();
     private Vec3 lastPosition;
     /** Pause measurements while a scene is set up on purpose (the player walks away, a mob is spawned). */
-    boolean paused;
+    public boolean paused;
 
-    MarathonWatch(GameTestHelper h, CompanionEntity oleg, ServerPlayer player, int sizeX, int sizeY, int sizeZ) {
+    public MarathonWatch(GameTestHelper h, CompanionEntity oleg, ServerPlayer player, int sizeX, int sizeY, int sizeZ) {
         this.h = h; this.oleg = oleg; this.player = player;
         BlockPos from = h.absolutePos(new BlockPos(MarathonArena.M, 0, MarathonArena.M)), to = h.absolutePos(new BlockPos(MarathonArena.M + sizeX, sizeY, MarathonArena.M + sizeZ));
         arena = new AABB(Vec3.atLowerCornerOf(from), Vec3.atLowerCornerOf(to)).inflate(2);
     }
 
-    void tick() {
+    public void tick() {
         tick++;
         if (!oleg.isAlive() && !reportedDeath) {
             reportedDeath = true;
@@ -115,7 +115,7 @@ final class MarathonWatch {
     /** The blocks around him, layer by layer (O is Oleg's feet, i an item, # stone, d soil, ~ water, * leaves, L log, . air). */
     private void terrain() { terrain(oleg.blockPosition(), trail); }
     /** The blocks around him now, into the trail: for a test that wants to see where something went wrong. */
-    void snapshot() { terrain(); }
+    public void snapshot() { terrain(); }
     private void terrain(BlockPos at, List<String> out) {
         java.util.Set<BlockPos> items = new java.util.HashSet<>();
         for (ItemEntity item : h.getLevel().getEntitiesOfClass(ItemEntity.class, new AABB(at).inflate(8))) items.add(item.blockPosition());
@@ -163,7 +163,7 @@ final class MarathonWatch {
     }
 
     /** Fallen items still lying in the arena, not counting what nobody needs (saplings, sticks and apples from leaves). */
-    List<String> leftOnGround() {
+    public List<String> leftOnGround() {
         List<String> left = new ArrayList<>();
         fallenEntities.forEach((id, item) -> {
             if (!item.isAlive()) return;
@@ -176,18 +176,20 @@ final class MarathonWatch {
     }
 
     /** A line of the test's own into the trail. */
-    void note(String line) { trail.add(tick + "@NOTE " + line); }
+    public void note(String line) { trail.add(tick + "@NOTE " + line); }
 
     /** After a reload the companion is a new entity with the same UUID. */
-    void watch(CompanionEntity reloaded) { oleg = reloaded; lastPosition = null; reportedDeath = false; }
+    public void watch(CompanionEntity reloaded) { oleg = reloaded; lastPosition = null; reportedDeath = false; }
 
     /** Relative position (GameTestHelper.relativePos mirrors an unrotated test, so subtract the origin here). */
-    String where(BlockPos pos) { return pos.subtract(h.absolutePos(new BlockPos(MarathonArena.M, 0, MarathonArena.M))).toShortString().replace(" ", ""); }
+    public String where(BlockPos pos) {
+        return pos.subtract(h.absolutePos(new BlockPos(MarathonArena.M, 0, MarathonArena.M))).toShortString().replace(" ", "");
+    }
 
-    String trail() { return String.join(" | ", trail.subList(Math.max(0, trail.size() - 25), trail.size())); }
+    public String trail() { return String.join(" | ", trail.subList(Math.max(0, trail.size() - 25), trail.size())); }
 
     /** The whole trail and the item log into run/marathon/<name>.txt, for reading a failure step by step. */
-    void dump(String name, String extra) {
+    public void dump(String name, String extra) {
         try {
             var dir = java.nio.file.Path.of("marathon");
             java.nio.file.Files.createDirectories(dir);
@@ -203,7 +205,7 @@ final class MarathonWatch {
         } catch (java.io.IOException ignored) { }
     }
 
-    String summary() {
+    public String summary() {
         return "idle " + worstIdleTicks / 20 + "s at " + worstIdleAt + "; circling " + Math.round(worstCircling) + " at " + worstCirclingAt
                 + "; rescues " + rescues.size() + " " + rescues + "; farthest from player " + Math.round(farthestFromPlayer);
     }
@@ -211,11 +213,11 @@ final class MarathonWatch {
     // ---- the checks «как у человека» ----
 
     /** Problems found so far, each with the stage it was seen in; the script fails the test with all of them at the end. */
-    final List<String> issues = new ArrayList<>();
-    String section = "start";
+    public final List<String> issues = new ArrayList<>();
+    public String section = "start";
     private final List<String> allRescues = new ArrayList<>();
 
-    void expect(boolean ok, String message) {
+    public void expect(boolean ok, String message) {
         if (ok) return;
         String bare = message.contains(" || ") ? message.substring(0, message.indexOf(" || ")) : message;
         issues.add("[" + section + "] " + bare);
@@ -223,39 +225,39 @@ final class MarathonWatch {
     }
 
     /** A new stretch of the chain: the idle, circling, distance and rescue measures start again (items on the ground stay). */
-    void newSection(String name) {
+    public void newSection(String name) {
         section = name; worstIdleTicks = 0; worstIdleAt = ""; worstCircling = 0; worstCirclingAt = ""; farthestFromPlayer = 0;
         allRescues.addAll(rescues); rescues.clear(); idleSince = -1; recent.clear();
     }
 
     /** Self-rescues over the whole test. */
-    List<String> everyRescue() { List<String> all = new ArrayList<>(allRescues); all.addAll(rescues); return all; }
+    public List<String> everyRescue() { List<String> all = new ArrayList<>(allRescues); all.addAll(rescues); return all; }
 
-    void assertNoLongIdle(int seconds) {
+    public void assertNoLongIdle(int seconds) {
         expect(worstIdleTicks <= seconds * 20L, "Stood still " + worstIdleTicks / 20 + "s (limit " + seconds + "s) at " + worstIdleAt + " || " + trail());
     }
 
-    void assertNoCircling(double limit) {
+    public void assertNoCircling(double limit) {
         expect(worstCircling <= limit, "Walked in circles: " + worstCirclingAt + " || " + trail());
     }
 
-    void assertNoTeleport() { expect(teleports.isEmpty(), "Teleported instead of walking: " + teleports); }
+    public void assertNoTeleport() { expect(teleports.isEmpty(), "Teleported instead of walking: " + teleports); }
 
-    void assertNoRescue() {
+    public void assertNoRescue() {
         expect(rescues.isEmpty(), "Self-rescue where a player just walks: " + rescues + " || " + trail());
     }
 
-    void assertNothingLeft() {
+    public void assertNothingLeft() {
         var left = leftOnGround();
         expect(left.isEmpty(), "Left on the ground: " + left + " || " + trail());
     }
 
-    void assertWithPlayer(double distance) {
+    public void assertWithPlayer(double distance) {
         expect(oleg.level() == player.level() && oleg.distanceTo(player) <= distance,
                 "Not back with the player: " + Math.round(oleg.distanceTo(player)) + " blocks, at " + where(oleg.blockPosition()) + " || " + trail());
     }
 
-    void assertStayedNear(double distance) {
+    public void assertStayedNear(double distance) {
         expect(farthestFromPlayer <= distance, "Went " + Math.round(farthestFromPlayer) + " blocks from the player (limit " + distance + ") || " + trail());
     }
 }

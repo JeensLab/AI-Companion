@@ -1,5 +1,6 @@
 package dev.aicompanion.gametest;
 
+import dev.aicompanion.gametest.support.MarathonArena;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Blocks;

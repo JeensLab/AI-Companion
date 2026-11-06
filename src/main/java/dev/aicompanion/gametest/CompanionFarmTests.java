@@ -13,6 +13,7 @@ import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.gametest.support.CompanionFixtureCleanup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;

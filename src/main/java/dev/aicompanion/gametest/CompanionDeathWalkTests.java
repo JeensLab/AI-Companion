@@ -17,14 +17,14 @@ import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-import static dev.aicompanion.gametest.DeathTestKit.place;
-import static dev.aicompanion.gametest.DeathTestKit.put;
-import static dev.aicompanion.gametest.DeathTestKit.setOut;
-import static dev.aicompanion.gametest.DeathTestKit.settle;
-import static dev.aicompanion.gametest.DeathTestKit.spawn;
-import static dev.aicompanion.gametest.DeathTestKit.stack;
-import static dev.aicompanion.gametest.DeathTestKit.walk;
-import static dev.aicompanion.gametest.DeathTestKit.yard;
+import static dev.aicompanion.gametest.support.DeathTestKit.place;
+import static dev.aicompanion.gametest.support.DeathTestKit.put;
+import static dev.aicompanion.gametest.support.DeathTestKit.setOut;
+import static dev.aicompanion.gametest.support.DeathTestKit.settle;
+import static dev.aicompanion.gametest.support.DeathTestKit.spawn;
+import static dev.aicompanion.gametest.support.DeathTestKit.stack;
+import static dev.aicompanion.gametest.support.DeathTestKit.walk;
+import static dev.aicompanion.gametest.support.DeathTestKit.yard;
 
 /**
  * The geometry, the navigation and the water of a walk to a death place: where the stack lies, what is in the way, and

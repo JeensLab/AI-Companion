@@ -3,6 +3,8 @@ package dev.aicompanion.gametest;
 import com.google.gson.GsonBuilder;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.*;
+import dev.aicompanion.gametest.support.MarathonArena;
+import dev.aicompanion.gametest.support.MarathonTicks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.*;

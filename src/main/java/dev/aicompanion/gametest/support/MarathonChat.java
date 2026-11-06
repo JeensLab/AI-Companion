@@ -1,4 +1,4 @@
-package dev.aicompanion.gametest;
+package dev.aicompanion.gametest.support;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -23,23 +23,26 @@ import java.util.concurrent.atomic.AtomicLong;
  * CompanionServerPlanPort. Plans queue one after another, and «стоп», «иди за мной» or a plan that starts with a priority order
  * cancel the ones before it, as CompanionActionExecutor does.
  */
-final class MarathonChat {
+public final class MarathonChat {
     private final GameTestHelper h;
     private CompanionEntity oleg;
     private final AtomicLong generation = new AtomicLong();
     private CompletableFuture<Void> queue = CompletableFuture.completedFuture(null);
     /** Every request: what was said, the plan that ran, and the report once it is done. */
-    final List<Said> said = new ArrayList<>();
+    public final List<Said> said = new ArrayList<>();
 
-    record Said(String text, List<PlannedAction> plan, CompletableFuture<CompanionPlanRunner.Outcome> outcome) {
-        boolean done() { return outcome.isDone(); }
-        String report() { return !outcome.isDone() ? "(running)" : outcome.isCompletedExceptionally() ? "(failed: " + outcome.handle((o, e) -> e).join() + ")" : outcome.join().report(); }
+    public record Said(String text, List<PlannedAction> plan, CompletableFuture<CompanionPlanRunner.Outcome> outcome) {
+        public boolean done() { return outcome.isDone(); }
+        public String report() {
+            if (!outcome.isDone()) return "(running)";
+            return outcome.isCompletedExceptionally() ? "(failed: " + outcome.handle((o, e) -> e).join() + ")" : outcome.join().report();
+        }
     }
 
-    MarathonChat(GameTestHelper h, CompanionEntity oleg) { this.h = h; this.oleg = oleg; }
+    public MarathonChat(GameTestHelper h, CompanionEntity oleg) { this.h = h; this.oleg = oleg; }
 
     /** A short order: the local command it is in the game. Fails the test if the phrase would go to the model. */
-    Said say(String text) {
+    public Said say(String text) {
         String command = CompanionLocalCommands.route(text, "Олег");
         h.assertTrue(command != null, "«" + text + "» is no local command; give the model's plan");
         if (CompanionLocalCommands.cancelsPlans(command)) generation.incrementAndGet();
@@ -47,7 +50,7 @@ final class MarathonChat {
     }
 
     /** A request for the model, with the steps it would send in queue_companion_plan. */
-    Said say(String text, String modelSteps) {
+    public Said say(String text, String modelSteps) {
         h.assertTrue(CompanionLocalCommands.route(text, "Олег") == null, "«" + text + "» is a local command in the game");
         List<PlannedAction> plan = CompanionPlanRequirements.apply(text, CompanionPlanCodec.decode(toolCall(modelSteps))).actions();
         if (CompanionLocalCommands.priorityOrder(plan)) generation.incrementAndGet();
@@ -65,12 +68,12 @@ final class MarathonChat {
     }
 
     /** The world closed: every plan of it stops, as CompanionServerPlanPort.stop and a new generation do in the game. */
-    void worldClosed() { generation.incrementAndGet(); }
-    void watch(CompanionEntity reloaded) { oleg = reloaded; }
+    public void worldClosed() { generation.incrementAndGet(); }
+    public void watch(CompanionEntity reloaded) { oleg = reloaded; }
 
-    boolean idle() { return said.stream().allMatch(Said::done); }
+    public boolean idle() { return said.stream().allMatch(Said::done); }
 
-    String history() {
+    public String history() {
         StringBuilder b = new StringBuilder();
         for (Said entry : said) b.append("«").append(entry.text()).append("» ").append(entry.plan()).append(" → ").append(entry.report().replace('\n', ' ')).append(" ;; ");
         return b.toString();

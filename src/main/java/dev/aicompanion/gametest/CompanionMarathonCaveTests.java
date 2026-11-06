@@ -1,6 +1,7 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.gametest.support.MarathonArena;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;

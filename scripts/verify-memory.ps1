@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'GameTestRun.ps1')
 $projectRoot=Split-Path -Parent $PSScriptRoot
-$testClasses=@('CompanionMemoryTests','CompanionBondTests','CompanionHappeningsTests','CompanionSoulTests')
+$testClasses=@('CompanionMemoryCodecTests','CompanionMemoryPromptTests','CompanionMemorySessionTests','CompanionMemoryCompressionTests','CompanionBondTests','CompanionHappeningsTests','CompanionSoulTests')
 $knownFlaky=@('woodtoolschestandawalk','hundredminutesfullbagorderscancellationandreloads','ninetyminutescavefoodorelightandchangingpassage','escapessoilpitwithoutfreestartingblocks')
 $reports=Join-Path $projectRoot 'build\diagnostics'
 New-Item -ItemType Directory -Path $reports -Force | Out-Null

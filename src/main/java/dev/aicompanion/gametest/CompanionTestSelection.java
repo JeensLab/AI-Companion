@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import com.mojang.logging.LogUtils;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.gametest.support.CompanionFixtureCleanup;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;

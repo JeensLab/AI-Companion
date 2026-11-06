@@ -5,6 +5,7 @@ import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.gametest.support.CompanionFixtureCleanup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.AfterBatch;
