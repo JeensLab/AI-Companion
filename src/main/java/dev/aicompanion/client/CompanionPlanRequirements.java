@@ -120,7 +120,12 @@ public final class CompanionPlanRequirements {
         for (int i = 0; i < decoded.actions().size(); i++) if (decoded.actions().get(i).type().equals("mine_ore")) last = i;
         if (last < 0) return decoded;
         var kind = dev.aicompanion.entity.CompanionOre.Kind.of(decoded.actions().get(last).item());
-        String raw = kind == null ? null : switch (kind) { case IRON -> "minecraft:raw_iron"; case GOLD -> "minecraft:raw_gold"; case COPPER -> "minecraft:raw_copper"; case COAL, LAPIS, REDSTONE, DIAMOND, EMERALD -> null; };
+        String raw = kind == null ? null : switch (kind) {
+            case IRON -> "minecraft:raw_iron";
+            case GOLD -> "minecraft:raw_gold";
+            case COPPER -> "minecraft:raw_copper";
+            case COAL, LAPIS, REDSTONE, DIAMOND, EMERALD -> null;
+        };
         if (raw == null || decoded.actions().size() >= CompanionPlanCodec.MAX_STEPS) return decoded;
         List<PlannedAction> result = new ArrayList<>(decoded.actions());
         result.add(last + 1, new PlannedAction("smelt_items", 0, PlannedAction.ALL_CARRIED, raw));
