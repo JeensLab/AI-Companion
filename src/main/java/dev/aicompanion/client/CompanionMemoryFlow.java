@@ -139,6 +139,7 @@ public final class CompanionMemoryFlow {
         try {
             reply = completer.complete(CompanionMemoryCodec.request(lines, soul), COMPRESSION_TOKENS, trace);
         } catch (RuntimeException error) {
+            // A synchronous failure of the request builder or of completer.complete takes the same failed-future path as an asynchronous one.
             reply = CompletableFuture.failedFuture(error);
         }
         reply.whenComplete((text, error) -> {

@@ -66,7 +66,7 @@ public final class OpenRouterRetry {
                     seconds = Duration.between(ZonedDateTime.now(), ZonedDateTime.parse(header, DateTimeFormatter.RFC_1123_DATE_TIME)).toSeconds();
                 }
             }
-        } catch (RuntimeException ignored) { }
+        } catch (RuntimeException ignored) { } // an unparsable Retry-After header keeps the default backoff
         return Duration.ofSeconds(Math.max(1, Math.min(30, seconds)));
     }
 }

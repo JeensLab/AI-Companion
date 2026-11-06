@@ -54,6 +54,7 @@ public final class MicrophoneRecorder {
             }
             result.complete(audio.toByteArray());
         } catch (Exception exception) {
+            // After stop() any exception ends the recording with what was captured; before it, the microphone failure is reported.
             if (stopRequested) result.complete(audio.toByteArray());
             else result.completeExceptionally(new IllegalStateException("Не удалось открыть микрофон: " + exception.getMessage(), exception));
         } finally {

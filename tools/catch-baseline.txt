@@ -1,0 +1,23 @@
+# Production catch blocks that scripts/CatchCheck.java flags but that are intentional.
+# Format: <key> <rule[,rule]> <reason>, key = <file>:<Outer.Inner>:<method>/<arity>:<ordinal>
+# (initializers are <clinit>/<init>, an anonymous class is <anon@enclosingMethod/arity>; the ordinal counts
+# the catches of that scope in source order, not lines). A rule not listed for a key is reported again.
+# Only a LOGGER/LOG/log call or a throw counts as handling: a diagnostics helper (CompanionDiagnostics.failure/event)
+# does not, so such a catch belongs here with a reason. A reason says why the error is expected and where it goes;
+# stale entries (no such catch, or a listed rule that no longer applies) fail the check.
+src/main/java/dev/aicompanion/CompanionDiagnostics.java:CompanionDiagnostics:event/3:1 empty-catch,generic-catch diagnostics must never fail a conversation or change game behavior
+src/main/java/dev/aicompanion/CompanionDiagnostics.java:CompanionDiagnostics:flush/0:1 empty-catch,generic-catch best-effort drain on server stop; a timeout or failure only leaves lines undrained, but an InterruptedException is swallowed without restoring the interrupt flag
+src/main/java/dev/aicompanion/client/CompanionMemoryCodec.java:CompanionMemoryCodec:strictRoot/1:1 generic-catch malformed JSON from the model is an expected bad answer; null makes the caller discard it
+src/main/java/dev/aicompanion/client/CompanionMemoryFlow.java:CompanionMemoryFlow:request/6:1 generic-catch a synchronous failure of the request builder or of completer.complete becomes a failed future handled by whenComplete
+src/main/java/dev/aicompanion/client/CompanionServerPlanPort.java:CompanionServerPlanPort:onServer/1:1 generic-catch server-thread failure is handed to the caller through the result future
+src/main/java/dev/aicompanion/client/CompanionTaskQueue.java:CompanionTaskQueue:tick/0:1 generic-catch a failing readiness probe fails its own task through fail()
+src/main/java/dev/aicompanion/client/CompanionTaskQueue.java:CompanionTaskQueue:next/0:1 generic-catch a runner that throws becomes a failed future that finish() reports
+src/main/java/dev/aicompanion/client/CompanionVoiceAudio.java:CompanionVoiceAudio:play/3:2 generic-catch a playback failure is handed to the caller through the done future
+src/main/java/dev/aicompanion/client/InworldSttClient.java:InworldSttClient:readError/2:1 empty-catch,generic-catch the service may return a plain-text error instead of JSON; the raw body is used instead
+src/main/java/dev/aicompanion/client/MicrophoneRecorder.java:MicrophoneRecorder:capture/1:1 generic-catch after stop() an exception ends the recording normally; otherwise it fails the result with a player message
+src/main/java/dev/aicompanion/client/OpenRouterClient.java:OpenRouterClient:endpoint/1:1 empty-catch a malformed address is reported right below as a player-facing IllegalStateException
+src/main/java/dev/aicompanion/client/OpenRouterClient.java:OpenRouterClient:readError/3:1 empty-catch,generic-catch the service may return non-JSON data; a status-based message is used instead
+src/main/java/dev/aicompanion/client/OpenRouterRetry.java:OpenRouterRetry:retryDelay/2:2 empty-catch,generic-catch an unparsable Retry-After header keeps the default exponential backoff
+src/main/java/dev/aicompanion/entity/CompanionActionResult.java:CompanionActionResult:load/1:1 generic-catch a damaged saved result is returned as blocked, never as success
+src/main/java/dev/aicompanion/entity/CompanionFurnaceBatchNbt.java:CompanionFurnaceBatchNbt:load/2:1 empty-catch an unknown saved status leaves the batch in WAITING until the first read
+src/main/java/dev/aicompanion/entity/CompanionGoals.java:CompanionGoals:load/1:1 generic-catch corrupt goal data marks the goal unsupported via invalid() instead of resuming

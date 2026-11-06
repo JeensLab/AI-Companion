@@ -385,7 +385,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
                 if (player == null) throw new IllegalStateException("Игрок вышел из мира.");
                 begin(player);
                 result.complete(action.apply(player));
-            } catch (Exception exception) { result.completeExceptionally(exception); }
+            } catch (Exception exception) { result.completeExceptionally(exception); } // the caller receives the failure through the future
         });
         return result.orTimeout(15, TimeUnit.SECONDS);
     }
