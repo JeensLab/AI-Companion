@@ -6,6 +6,8 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 
+import javax.tools.Diagnostic;
+import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -39,7 +41,8 @@ import java.util.stream.Stream;
  */
 public final class CodeShape {
     private static final Path SOURCES = Path.of("src/main/java");
-    private static final Path BASELINE = Path.of("tools/code-shape-baseline.txt");
+    private static final String BASELINE_NAME = "tools/code-shape-baseline.txt";
+    private static final Path BASELINE = Path.of(BASELINE_NAME);
     private static final String GAMETEST_DIR = "dev/aicompanion/gametest/";
     private static final int MAX_FILE_LINES = 800;
     private static final int MAX_METHOD_LINES = 80;
@@ -58,16 +61,28 @@ public final class CodeShape {
             System.exit(2);
         }
         Map<String, Integer> current = measure();
+        List<String> problems = compare(readBaseline(), current);
         if (write) {
-            Files.write(BASELINE, render(current).getBytes(StandardCharsets.UTF_8));
-            System.out.println("Wrote " + BASELINE + ": " + summary(current));
+            writeBaseline(problems, current);
             return;
         }
-        List<String> problems = compare(readBaseline(), current);
         problems.forEach(System.out::println);
         System.out.println(problems.isEmpty() ? "PASS code-shape: " + summary(current)
-                : "FAIL code-shape: " + problems.size() + " difference(s) from " + BASELINE);
+                : "FAIL code-shape: " + problems.size() + " difference(s) from " + BASELINE_NAME);
         System.exit(problems.isEmpty() ? 0 : 1);
+    }
+
+    /** The baseline only shrinks: a tree with a new or larger violation cannot be recorded. */
+    private static void writeBaseline(List<String> problems, Map<String, Integer> current) throws IOException {
+        List<String> growth = problems.stream().filter(line -> line.startsWith("NEW ") || line.startsWith("GREW "))
+                .collect(Collectors.toList());
+        if (!growth.isEmpty()) {
+            growth.forEach(System.out::println);
+            System.out.println("REFUSED: fix the code, the baseline only shrinks");
+            System.exit(1);
+        }
+        Files.write(BASELINE, render(current).getBytes(StandardCharsets.UTF_8));
+        System.out.println("Wrote " + BASELINE_NAME + ": " + summary(current));
     }
 
     /** Every violation of the current tree: key "kind path [signature]" to its size. */
@@ -91,14 +106,31 @@ public final class CodeShape {
 
     private static void scanMethods(List<Path> files, Map<String, Integer> found) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        try (StandardJavaFileManager manager = compiler.getStandardFileManager(null, null, StandardCharsets.UTF_8)) {
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        try (StandardJavaFileManager manager = compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
             Iterable<? extends JavaFileObject> units = manager.getJavaFileObjectsFromPaths(files);
-            JavacTask task = (JavacTask) compiler.getTask(null, manager, null, List.of("-proc:none"), null, units);
+            JavacTask task = (JavacTask) compiler.getTask(null, manager, diagnostics, List.of("-proc:none"), null, units);
             SourcePositions positions = Trees.instance(task).getSourcePositions();
-            for (CompilationUnitTree unit : task.parse()) {
+            List<CompilationUnitTree> trees = new ArrayList<>();
+            task.parse().forEach(trees::add);
+            failOnSyntaxErrors(diagnostics);
+            for (CompilationUnitTree unit : trees) {
                 new MethodScanner(unit, positions, found).scan(unit, null);
             }
         }
+    }
+
+    /** A partial tree would make the sizes wrong, so a file that does not parse stops the check. */
+    private static void failOnSyntaxErrors(DiagnosticCollector<JavaFileObject> diagnostics) {
+        List<Diagnostic<? extends JavaFileObject>> errors = diagnostics.getDiagnostics().stream()
+                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR).collect(Collectors.toList());
+        if (errors.isEmpty()) {
+            return;
+        }
+        errors.forEach(error -> System.out.println("SYNTAX " + error.getSource().getName() + ":" + error.getLineNumber()
+                + ": " + error.getMessage(null)));
+        System.out.println("FAIL code-shape: " + errors.size() + " syntax error(s); sizes cannot be measured");
+        System.exit(2);
     }
 
     private static final class MethodScanner extends TreePathScanner<Void, Void> {
