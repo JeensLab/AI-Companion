@@ -14,6 +14,7 @@ public final class GameContext {
     private static String remoteState = "не найден рядом";
     private static long remoteAt;
     public static void setRemoteState(Object world, String state) { remoteWorld = world; remoteState = state; remoteAt = System.nanoTime(); }
+    static void forgetWorld() { remoteWorld = null; }
     private GameContext() {
     }
 
