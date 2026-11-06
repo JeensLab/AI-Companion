@@ -89,7 +89,7 @@ final class CompanionSkin {
                 case PLEASED -> 146 - 12 * x * x;
                 case WORRIED, SURPRISED -> 137 + 9 * x * x;
                 case COMBAT -> 141 + 4 * x * x;
-                default -> 141;
+                case CALM, FOCUSED, DISPLEASED -> 141;
             };
         }
         private float gap(float u) {

@@ -607,7 +607,7 @@ public final class CompanionWork {
             case FARM -> farming.tick(level);
             case COURSE -> course.tick(level);
             case WATER -> owner.waterFill.orderTick(level);
-            default -> { }
+            case WOOD -> { }
         }
     }
 
@@ -696,7 +696,7 @@ public final class CompanionWork {
             case NEED_WOOD -> crafting.requestWood(Phase.BUILD, result.logs());
             case DONE -> finish(true, result.message());
             case FAILED -> finish(false, result.message());
-            default -> { }
+            case WORKING -> { }
         }
     }
 
