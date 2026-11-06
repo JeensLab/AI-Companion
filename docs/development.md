@@ -80,7 +80,8 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java` |
 | Разговор по своей инициативе, память и характер | `CompanionConversation.java` (сцены и темп), `CompanionTopics.java` (банк тем), `CompanionPersonality.java`, `client/CompanionAmbientClient.java`; память в мире и её сжатие вместе с чертами и своими темами — `client/CompanionMemoryFlow.java`, `CompanionMemoryCodec.java`, `entity/CompanionMemory.java`, `CompanionSoul.java`, `CompanionBonds.java`; тесты `gametest/CompanionSoulTests.java`, `CompanionMemoryTests.java` |
 | Локальные настройки и диагностика | `OpenRouterConfig.java`, `CompanionDiagnostics.java`, [SECURITY.md](../SECURITY.md) |
-| Регрессии и структуры | `gametest/`, `entity/CompanionStairApproachTests.java`, `src/main/resources/data/aicompanion/structure/` |
+| Регрессии и структуры | `gametest/`, `src/main/resources/data/aicompanion/structure/` |
+| Границы пакетов | `scripts/ArchCheck.java` (запуск `arch-check.sh` или `.ps1`), исключения — `tools/arch-whitelist.txt`; новый файл с `net.minecraft.client.*` или тест вне `gametest/` проверка отклонит |
 
 Путь поручения от чата до сообщения игроку описан в AGENTS.md.
 Долгая цель не ждёт итога в очереди: `pursue_goal` принимается (`ACCEPTED`),

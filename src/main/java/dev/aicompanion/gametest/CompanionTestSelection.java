@@ -31,7 +31,7 @@ import org.slf4j.Logger;
 public final class CompanionTestSelection {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final String DEFAULT_BATCH = "defaultBatch";
-    private static final List<String> TEST_PACKAGES = List.of("dev.aicompanion.gametest.", "dev.aicompanion.entity.");
+    private static final List<String> TEST_PACKAGES = List.of("dev.aicompanion.gametest.");
 
     private CompanionTestSelection() {
     }

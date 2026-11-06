@@ -629,7 +629,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Our drops given up as out of reach get another round of pickup attempts (the terrain around them changed). */
     void retryHarvestPickup() { loot.beginCollection(); syncWorkState(); }
     int collectedLogs() { return loot.collectedLogs(); }
-    int collectedStone() { return loot.collectedStone(); }
+    public int collectedStone() { return loot.collectedStone(); }
     /** Physical pickups that count toward a gather order; -1 when the order has no measurable stock. */
     public int planProgress(String action) {
         return switch (action) {

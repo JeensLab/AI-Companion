@@ -1,6 +1,9 @@
-package dev.aicompanion.entity;
+package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.entity.CompanionChunks;
+import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionQuarry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;

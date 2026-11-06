@@ -1,6 +1,8 @@
-package dev.aicompanion.entity;
+package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionFuseEscape;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
@@ -12,7 +14,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-/** The way out of a fuse, in the cases where the floor it leads over is not a plain one. The tests live beside the package-private classes they call. */
+/** The way out of a fuse, in the cases where the floor it leads over is not a plain one. */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionMineK14Tests {
