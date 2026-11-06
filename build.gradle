@@ -239,7 +239,6 @@ tasks.named('jar', Jar).configure {
     exclude 'dev/aicompanion/gametest/**'
     exclude 'dev/aicompanion/entity/CompanionStairApproachTests*.class'
     exclude 'dev/aicompanion/entity/CompanionMineK14Tests*.class'
-    exclude 'dev/aicompanion/entity/CompanionMemorialTests*.class'
     exclude 'data/aicompanion/structure/empty.nbt'
     exclude 'data/aicompanion/structure/large_search.nbt'
     exclude 'data/aicompanion/structure/tall_tree.nbt'
