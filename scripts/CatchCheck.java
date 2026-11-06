@@ -13,7 +13,8 @@ import java.util.stream.*;
  * Usage: java scripts/CatchCheck.java [repoRoot]. Exit 0 clean, 1 findings, 2 tool error.
  *
  * Rules: empty-catch, generic-catch, tick-swallows-error, baseline-stale.
- * Only a LOGGER/LOG/log call or a throw counts as handling a generic catch.
+ * Only a LOGGER/LOG/log call or a throw counts as handling a generic catch; only a throw
+ * silences tick-swallows-error (logging an Error in tick still swallows it).
  * tools/catch-baseline.txt suppresses a catch per rule, one "key rules reason" per line, where
  * key = file:Outer.Inner:method/arity:ordinal (initializers are <clinit>/<init>, an anonymous class is
  * <anon@enclosingMethod/arity>) and ordinal is the 1-based position among the catches of that scope.
@@ -28,7 +29,7 @@ public class CatchCheck {
     static final Set<String> LOGGERS = Set.of("LOGGER", "LOG", "log");
 
     record Finding(String file, long line, String rule, String detail, String key) {}
-    record Entry(Set<String> rules, String reason) {}
+    record Entry(Set<String> rules, String reason, int line) {}
 
     static final class ToolError extends RuntimeException {
         ToolError(String message) { super(message); }
@@ -91,12 +92,12 @@ public class CatchCheck {
         for (String key : new TreeSet<>(baseline.keySet())) {
             Set<String> actual = flagged.getOrDefault(key, Set.of());
             if (actual.isEmpty()) {
-                findings.add(new Finding(BASELINE, 0, "baseline-stale", "no flagged catch; remove the entry [" + key + "]", key));
+                findings.add(new Finding(BASELINE, baseline.get(key).line(), "baseline-stale", "no flagged catch; remove the entry [" + key + "]", key));
                 continue;
             }
             for (String rule : new TreeSet<>(baseline.get(key).rules())) {
                 if (!actual.contains(rule)) {
-                    findings.add(new Finding(BASELINE, 0, "baseline-stale", "the catch no longer breaks " + rule + " [" + key + "]", key));
+                    findings.add(new Finding(BASELINE, baseline.get(key).line(), "baseline-stale", "the catch no longer breaks " + rule + " [" + key + "]", key));
                 }
             }
         }
@@ -124,9 +125,10 @@ public class CatchCheck {
             if (parts.length < 3 || parts[0].split(":").length != 4) {
                 throw new ToolError(where + "expected 'file:Class:method/arity:ordinal rule[,rule] reason'");
             }
-            Set<String> rules = new TreeSet<>(Arrays.asList(parts[1].split(",")));
-            if (!RULES.containsAll(rules)) throw new ToolError(where + "unknown rule in " + parts[1]);
-            if (entries.put(parts[0], new Entry(rules, parts[2])) != null) throw new ToolError(where + "duplicate entry " + parts[0]);
+            List<String> listed = Arrays.asList(parts[1].split(",", -1));
+            if (listed.stream().anyMatch(r -> !RULES.contains(r))) throw new ToolError(where + "empty or unknown rule in '" + parts[1] + "' (use rule,rule without spaces)");
+            Set<String> rules = new TreeSet<>(listed);
+            if (entries.put(parts[0], new Entry(rules, parts[2], i + 1)) != null) throw new ToolError(where + "duplicate entry " + parts[0]);
         }
         return entries;
     }
@@ -194,11 +196,11 @@ public class CatchCheck {
             if (node.getBlock().getStatements().isEmpty()) {
                 out.add(new Finding(file, line, "empty-catch", where + "has an empty body [" + key + "]", key));
             }
-            if (types.stream().anyMatch(GENERIC::contains) && !logsOrThrows(node.getBlock())) {
+            if (types.stream().anyMatch(GENERIC::contains) && !handles(node.getBlock(), true)) {
                 out.add(new Finding(file, line, "generic-catch", where + "neither logs nor throws [" + key + "]", key));
             }
             Optional<String> tick = frames.stream().filter(m -> m.startsWith("tick")).findFirst();
-            if (tick.isPresent() && types.stream().anyMatch(FATAL::contains)) {
+            if (tick.isPresent() && types.stream().anyMatch(FATAL::contains) && !handles(node.getBlock(), false)) {
                 out.add(new Finding(file, line, "tick-swallows-error", where + "inside " + tick.get() + " [" + key + "]", key));
             }
             return super.visitCatch(node, unused);
@@ -209,7 +211,7 @@ public class CatchCheck {
             return alternatives.stream().map(t -> t.toString().replaceAll("^.*\\.", "")).toList();
         }
 
-        private static boolean logsOrThrows(BlockTree block) {
+        private static boolean handles(BlockTree block, boolean logCounts) {
             boolean[] found = {false};
             new TreeScanner<Void, Void>() {
                 @Override
@@ -220,7 +222,7 @@ public class CatchCheck {
 
                 @Override
                 public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
-                    if (node.getMethodSelect() instanceof MemberSelectTree select && isLogger(select.getExpression())) {
+                    if (node.getMethodSelect() instanceof MemberSelectTree select && logCounts && isLogger(select.getExpression())) {
                         found[0] = true;
                     }
                     return super.visitMethodInvocation(node, unused);
