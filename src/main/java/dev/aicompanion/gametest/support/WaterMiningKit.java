@@ -47,7 +47,9 @@ public final class WaterMiningKit {
     public static int count(CompanionEntity c, Item item) {
         int count = 0;
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) count += c.getItem(slot).getCount();
-        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (c.getItemBySlot(slot).is(item)) count += c.getItemBySlot(slot).getCount();
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) {
+            if (c.getItemBySlot(slot).is(item)) count += c.getItemBySlot(slot).getCount();
+        }
         return count;
     }
 }

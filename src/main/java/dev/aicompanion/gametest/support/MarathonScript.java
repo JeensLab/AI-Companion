@@ -45,7 +45,10 @@ public final class MarathonScript {
     }
 
     /** Waits for something Oleg should do on his own; not done in time is an issue, and the chain goes on. */
-    public MarathonScript waitUntil(String name, BooleanSupplier done, int limitTicks) { stages.add(new Stage(name, () -> { }, done, limitTicks, true)); return this; }
+    public MarathonScript waitUntil(String name, BooleanSupplier done, int limitTicks) {
+        stages.add(new Stage(name, () -> { }, done, limitTicks, true));
+        return this;
+    }
 
     /** Lets the game run a while (a player looks around); never fails. */
     public MarathonScript pause(int ticks) {

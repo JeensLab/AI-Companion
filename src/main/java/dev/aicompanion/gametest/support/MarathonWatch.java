@@ -182,7 +182,9 @@ public final class MarathonWatch {
     public void watch(CompanionEntity reloaded) { oleg = reloaded; lastPosition = null; reportedDeath = false; }
 
     /** Relative position (GameTestHelper.relativePos mirrors an unrotated test, so subtract the origin here). */
-    public String where(BlockPos pos) { return pos.subtract(h.absolutePos(new BlockPos(MarathonArena.M, 0, MarathonArena.M))).toShortString().replace(" ", ""); }
+    public String where(BlockPos pos) {
+        return pos.subtract(h.absolutePos(new BlockPos(MarathonArena.M, 0, MarathonArena.M))).toShortString().replace(" ", "");
+    }
 
     public String trail() { return String.join(" | ", trail.subList(Math.max(0, trail.size() - 25), trail.size())); }
 
