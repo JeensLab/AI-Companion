@@ -257,6 +257,7 @@ final class CompanionExpeditionClimb {
                 w.expedition.climbTime();
                 return onSurface() ? finish(" Своей лестницы наверх не нашёл, прокопал новую к поверхности.") : Result.WORKING;
             }
+            case ARRIVED -> { return finish(" Своей лестницы наверх не нашёл, прокопал новую к поверхности."); }
             case NO_TOOL -> { return makeTool() ? Result.WORKING : finish(" " + shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + CLOSED); }
             default -> { return finish(stairs.why().equals("путь наверх закрыт") ? CLOSED : " Подняться не вышло: " + stairs.why() + ", остался где стою."); }
         }

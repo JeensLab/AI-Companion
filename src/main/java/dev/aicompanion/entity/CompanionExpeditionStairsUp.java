@@ -13,10 +13,11 @@ import java.util.Set;
  * A staircase cut up through the rock towards the entrance on the surface when the record's way up is gone (a restart under the ground
  * whose cells above lie across rock, water or a cave): what a player does with a pickaxe and a lost mine. One step is a cell ahead and one
  * higher: the cell over his head, the step and the cell over it come out, a floor is laid under the step where there is none, liquid
- * beside it is sealed first, and he steps up. A side that cannot be opened is not tried from the same stand again.
+ * beside it is sealed first, and he steps up. At the goal's height the steps go level towards it, and the goal's cell is the arrival. A side
+ * that cannot be opened is not tried from the same stand again.
  */
 final class CompanionExpeditionStairsUp {
-    enum Result { WORKING, STUCK, NO_TOOL }
+    enum Result { WORKING, ARRIVED, STUCK, NO_TOOL }
 
     private static final int MAX_STEPS = 256, STEP_PATIENCE = 20 * 40, MAX_SEALS = 32, MAX_STUCK = 6;
 
@@ -48,9 +49,13 @@ final class CompanionExpeditionStairsUp {
     String why() { return why; }
 
     Result tick(ServerLevel level) {
-        if (to == null && !plan(level)) return Result.STUCK;
-        // A seal placed this tick is no step: the side is looked at again next tick.
-        if (to == null) return Result.WORKING;
+        if (to == null) {
+            BlockPos here = CompanionExpeditionRecord.standingCell(level, owner);
+            if (here.getY() >= goal.getY() && here.distManhattan(goal) <= 1) return Result.ARRIVED;
+            if (!plan(level, here)) return Result.STUCK;
+            // A seal placed this tick is no step: the side is looked at again next tick.
+            if (to == null) return Result.WORKING;
+        }
         if (++stepTicks > STEP_PATIENCE) return giveUp(level, "patience");
         if (!moved) {
             if (index < cells.size()) return open(level);
@@ -74,16 +79,16 @@ final class CompanionExpeditionStairsUp {
         return steps >= MAX_STEPS ? stop("лестница наверх вышла слишком длинной") : Result.WORKING;
     }
 
-    /** The next step: towards the goal where the rock allows, else along the last direction, else any side left; null when every side is shut. */
-    private boolean plan(ServerLevel level) {
-        BlockPos here = CompanionExpeditionRecord.standingCell(level, owner);
+    /** The next step, a cell up while below the goal and level at its height: towards the goal where the rock allows, else along the last direction, else any side left; false when every side is shut. */
+    private boolean plan(ServerLevel level, BlockPos here) {
+        boolean up = here.getY() < goal.getY();
         CompanionShaftPlan.Avoid own = w.mine.avoid();
         for (Set<BlockPos> forbidden : List.of(own.forbidden(), Set.<BlockPos>of())) {
             CompanionShaftPlan.Avoid avoid = new CompanionShaftPlan.Avoid(forbidden, own.refused());
             for (Direction d : order(here)) {
                 if (refused.contains(key(here, d))) continue;
-                BlockPos step = here.relative(d).above();
-                List<BlockPos> column = List.of(here.above(2), step, step.above());
+                BlockPos step = up ? here.relative(d).above() : here.relative(d);
+                List<BlockPos> column = up ? List.of(here.above(2), step, step.above()) : List.of(step, step.above());
                 CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, here, column, List.of(step.below()), w.mine.seals(), avoid, true);
                 switch (hazard.kind()) {
                     case BLOCKED -> { continue; }

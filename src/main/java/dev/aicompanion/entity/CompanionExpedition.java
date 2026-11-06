@@ -30,6 +30,10 @@ final class CompanionExpedition {
     private static final int WET_TICKS = 100;
     /** Within this many blocks of the entrance he walks down his own stairs from it instead of searching a route to their far bottom. */
     private static final int NEAR_ENTRANCE = 16;
+    /** Afloat in a pool under a cliff, the surface lies above the reach of the entrance search from his height: it is looked for this much higher, up to the limit. */
+    private static final int POOL_RISE = 8, MAX_POOL_RISE = 32;
+    /** Ticks waited for the float to bring him up to the top of the water, where the block under his feet goes. */
+    private static final int WADE_PATIENCE = 20 * 15;
     /** What the climb says of a way up it could not open (see {@link CompanionExpeditionClimb}). */
     /** How long a meal is given to raise his health before the climb, and how recent a blow from a mob keeps the climb. */
     private static final int MEAL_GRACE = 200, RECENT_HURT = 100;
@@ -55,6 +59,10 @@ final class CompanionExpedition {
     private final CompanionExpeditionSupply supply;
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
+    /** The way out of a pool with no walk to its bank: a block under his feet, then a staircase cut and laid up towards the goal of the walk. */
+    private final CompanionExpeditionStairsUp wadeStairs;
+    private boolean wading;
+    private int wadeTicks, wadeSteps;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
@@ -74,6 +82,7 @@ final class CompanionExpedition {
         this.w = w;
         this.owner = w.owner;
         this.dig = new CompanionExpeditionDig(w);
+        this.wadeStairs = new CompanionExpeditionStairsUp(w, dig);
         this.supply = new CompanionExpeditionSupply(w);
         this.climb = new CompanionExpeditionClimb(w, dig, supply);
         this.lead = new CompanionExpeditionWalk(dig).sealingLiquid(w);
@@ -174,6 +183,9 @@ final class CompanionExpedition {
         retreat.reset();
         backtrack.reset();
         digOut.reset();
+        wadeStairs.reset();
+        wading = false;
+        wadeTicks = wadeSteps = 0;
         supply.reset();
         bench.reset();
         stock.reset();
@@ -355,6 +367,8 @@ final class CompanionExpedition {
         // A buried record is no reason to start again while he stands on the surface: only under the ground is the pit the place to go on from.
         if (mine.exists() && (mine.buried() && !CompanionExpeditionRecord.underSky(level, here.above()) || here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !CompanionExpeditionRecord.underSky(level, here.above()))) { restartHere("Я под землёй, а своей лестницы рядом нет."); return; }
         CompanionShaftPlan.Entrance entrance = CompanionShaftPlan.chooseEntrance(level, here, NEAR_RADIUS);
+        // Afloat in a pool at the foot of a cliff (a water-filled pit), the surface is out of the search's reach from his height: higher up, the walk or the way he cuts out of the water gets him there.
+        for (int up = POOL_RISE; entrance == null && owner.isInWater() && up <= MAX_POOL_RISE; up += POOL_RISE) entrance = CompanionShaftPlan.chooseEntrance(level, here.above(up), NEAR_RADIUS);
         // No spot for a new entrance here (a lake shore): the known mine is the way out, the walk to it ends in a restart at the entrance if it fails.
         if (entrance == null && mine.exists()) { stage = Stage.CHECK_NEAR; return; }
         if (entrance == null) { end(Ending.BLOCKED, "Рядом нет места для входа в шахту: нужна твёрдая земля без построек и воды."); return; }
@@ -387,6 +401,7 @@ final class CompanionExpedition {
     private void walkDown(ServerLevel level) {
         if (level.getGameTime() < walkAgain) return;
         if (routeIndex < 0) {
+            if (wading) { wade(level, route.get(joining ? route.size() - 1 : 0)); return; }
             // A failed search can leave him on a partial path out to the surface: the way down is then his own stairs from the entrance, not the far foot.
             if (joining && joinedBelow && !w.mine.buried() && !belowTop((ServerLevel) owner.level()) && owner.getY() >= w.mine.entrance().getY() - UNDERGROUND_DEPTH) {
                 w.route.legsEnd(false);
@@ -396,13 +411,15 @@ final class CompanionExpedition {
             int target = joining ? route.size() - 1 : 0;
             // A search stops up to two blocks short of its goal: the last steps are his own.
             if (owner.blockPosition().distManhattan(route.get(target)) <= OWN_STEPS) {
-                if (dig.reach(route.get(target))) { routeIndex = target; softFails = 0; }
+                if (dig.reach(route.get(target))) { routeIndex = target; softFails = 0; wadeStairs.reset(); }
+                else if (dig.walkStuck() && startWade()) return;
                 else if (dig.walkStuck() && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
                 else if (dig.walkStuck()) walkAgain = level.getGameTime() + WALK_RETRY;
                 return;
             }
             CompanionTravel.Step walk = w.route.legs(route.get(target), ENTRANCE_NEAR);
-            if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; }
+            if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; wadeStairs.reset(); }
+            else if (walk == CompanionTravel.Step.FAILED && startWade()) return;
             // A failed search can be a passing one (a mob in the way), and a restart gives up the whole staircase.
             else if (walk == CompanionTravel.Step.FAILED && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
             else if (walk == CompanionTravel.Step.FAILED) walkAgain = level.getGameTime() + WALK_RETRY;
@@ -424,6 +441,54 @@ final class CompanionExpedition {
         ore.scan = true;
         stage = reachedDepth(level) ? Stage.BRANCH : Stage.DESCEND;
         if (stage == Stage.BRANCH) enterBranch();
+    }
+
+    /**
+     * Afloat with no walk to the goal, or on a staircase begun out of the water with none from there either: the way is a block under his feet and
+     * a staircase of his own cut and laid up towards the goal, as a player climbs out of a pool under a cliff (seed 7: a water-filled pit, its
+     * bank three blocks over the water). True when that is now his work.
+     */
+    private boolean startWade() {
+        if (!owner.isInWater() && wadeStairs.steps() == 0 || owner.isInLava()) return false;
+        w.route.legsEnd(false);
+        owner.getNavigation().stop();
+        dig.forget();
+        wadeStairs.begin(route.get(joining ? route.size() - 1 : 0));
+        wading = true;
+        wadeTicks = wadeSteps = 0;
+        owner.workStatus(owner.isInWater() ? "Я в воде, а на берег не выйти: кладу блок под ноги и прокапываю лестницу наверх." : "Дороги к цели и отсюда нет, прокапываю лестницу дальше.");
+        return true;
+    }
+
+    /** One tick of the way out of the water: the block under his feet at the top of the water, then the staircase; it ends once a step of it has a walk to the goal. */
+    private void wade(ServerLevel level, BlockPos goal) {
+        if (owner.isInWater()) {
+            BlockPos top = owner.blockPosition();
+            while (level.getFluidState(top.above()).is(FluidTags.WATER)) top = top.above();
+            BlockPos floor = top.below();
+            if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) {
+                CompanionSeal.Result placed = CompanionSeal.place(owner, floor);
+                if (placed.placed()) { w.mine.sealed(floor); wadeTicks = 0; }
+                else if (placed == CompanionSeal.Result.NO_BLOCK) { wading = false; end(Ending.BLOCKED, "Я в воде, берега рядом нет, а блоков, чтобы выбраться из неё, в сумке нет."); }
+                else if (++wadeTicks > WADE_PATIENCE) { wading = false; walkAgain = level.getGameTime() + WALK_RETRY; }
+                return;
+            }
+        }
+        switch (wadeStairs.tick(level)) {
+            case WORKING -> {
+                if (wadeStairs.steps() == wadeSteps) return;
+                wadeSteps = wadeStairs.steps();
+                if (w.route.legs(goal, ENTRANCE_NEAR) != CompanionTravel.Step.FAILED) { wading = false; softFails = 0; }
+            }
+            case ARRIVED -> { wading = false; softFails = 0; }
+            case NO_TOOL -> {
+                if (supply.craftStonePickaxe()) return;
+                if (dig.ironLeft(0) || dig.hardPickaxe() != null) { dig.ironForRock(0); return; }
+                wading = false;
+                end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + " Из воды наверх не выбраться.");
+            }
+            case STUCK -> { wading = false; restartHere("Из воды наверх не выбрался: " + wadeStairs.why() + "."); }
+        }
     }
 
     /** His own plug from the last retreat comes out of the step before he goes down it; the block drops and is picked up like any other. */
