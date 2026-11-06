@@ -9,6 +9,7 @@ import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionAgendaData.Goal;
 import dev.aicompanion.entity.CompanionMilestones.Kind;
 import dev.aicompanion.entity.CompanionMilestones.Milestone;
+import dev.aicompanion.entity.CompanionMilestones.Step;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -16,11 +17,14 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,8 +51,12 @@ public final class CompanionAgenda {
 
     static final int MAX_ATTEMPTS = 12, MAX_FAILURES = 3, MAX_DEATHS = 2, FALLBACK_FAILURES = 2;
     private static final int SAFE_TICKS = 100, LEASE_TICKS = 100;
+    /** A retreat that ends in a rest he cannot take (hurt, nothing to eat) is waited out this many times, a minute each, before it counts as a failure of the mine step. */
+    private static final int GAME_WAITS = 4, HUNGRY_WAITS = 6, HUNGRY_WAIT_TICKS = 20 * 60;
     /** A fight or a fire that does not let go for this long stops the goal: waiting longer would not change anything. */
     private static final int PAUSE_LIMIT_TICKS = 20 * 60;
+    /** What the hunt reports when no game of the kind is in range at all (CompanionHunting.finishHunt). */
+    private static final String NO_GAME = "больше не нашёл";
     /** Working time without a single milestone met: the goal stops and says so rather than going round in circles. */
     private static final long STALL_TICKS = 20L * 60 * 60;
     /**
@@ -57,8 +65,13 @@ public final class CompanionAgenda {
      */
     private static final long IDLE_SAY_TICKS = 20L * 60 * 5, IDLE_BLOCK_TICKS = 20L * 60 * 30;
     /** The things of a dead companion are searched this far round his death place, and fetched from no farther than a trip he can make. */
-    private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, VOID_MARGIN = 4;
-    private static final String COLLECT = "collect";
+    private static final int RECOVER_RADIUS = 8, RECOVER_RANGE = 96, VOID_MARGIN = 4, FOE_RADIUS = 12;
+    /** The health he goes for his things with after a death: the same he rests up to in a retreat. */
+    private static final String FOES_AT_THE_THINGS = "рядом с вещами мобы, а оружия у меня нет";
+    private static final float RECOVER_HEALTH = CompanionExpeditionRetreat.FIT;
+    private static final String COLLECT = "collect", SHIELD = "shield", ASCEND = "ascend";
+    /** The last step of find_diamonds, outside the playbook: the bag no longer holds the diamonds after it, so only the goal's own record says it was made. */
+    static final String HAND_OVER = "handover:diamond";
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
     /** A request of only these (follow, stay, guard…) holds the goal until the player says to go on. */
@@ -204,6 +217,9 @@ public final class CompanionAgenda {
         if (explicit) {
             Milestone next = pick(goal, CompanionFacts.of(c), c);
             if (next != null) { int[] counter = goal.counter(next.key()); counter[0] = 0; counter[1] = 0; }
+            // A final stop of the mine blocks the goal on the first failure after the resume, whatever the counters say.
+            c.mineSite().stopForgotten();
+            goal.hungryWaits = 0; goal.waitUntil = 0;
         }
         if (explicit || goal.state == State.BLOCKED) {
             goal.counters.values().forEach(counter -> counter[1] = 0);
@@ -362,7 +378,7 @@ public final class CompanionAgenda {
         if (goal.companion == null) { goal.companion = c.getUUID(); data.setDirty(); }
         // The same companion loaded again (a reload, a chunk): the run waits on the work of an entity that is gone.
         if (run != null && run.entity != c.getId()) { cancelRun(owner, null); run = null; }
-        if (danger(c, player)) {
+        if (danger(c, player) && !ownsExpedition(run, c)) {
             if (goal.state != State.PAUSED_DANGER) {
                 var enemy = c.getTarget();
                 cancelRun(owner, c);
@@ -386,6 +402,7 @@ public final class CompanionAgenda {
         if (leased(server, owner)) return;
         if (!free(c)) { waiting(data, owner, goal, c, "занят другим делом"); return; }
         if (c.batches().readyForQueue()) { waiting(data, owner, goal, c, "жду готовую партию из печи по твоей просьбе"); return; }
+        if (c.level().getGameTime() < goal.waitUntil) return;
         if (goal.state == State.INTERRUPTED) {
             goal.state = State.ACTIVE;
             data.setDirty();
@@ -403,7 +420,7 @@ public final class CompanionAgenda {
         if (orphan > 0) { start(server, owner, goal, c, COLLECT, null, List.of(new PlannedAction("collect_smelt", 0, 1, String.valueOf(orphan)))); return; }
         var book = goal.book();
         List<Milestone> all = book.milestones();
-        CompanionFacts facts = CompanionFacts.of(c);
+        CompanionFacts facts = CompanionFacts.of(c).withShieldTrekSpent(goal.shieldTrek);
         int done = (int) all.stream().filter(milestone -> milestone.satisfied(facts, goal.fallback, all)).count();
         if (done != goal.done) {
             if (done > goal.done) { goal.workTicks = 0; goal.idleTicks = 0; goal.idleSaid = false; }
@@ -411,6 +428,12 @@ public final class CompanionAgenda {
             data.setDirty();
         }
         Milestone next = next(goal, facts), last = all.getLast();
+        // The mine done ends the digging of the goal: a pickaxe that broke on the way is not made again for it.
+        boolean mined = goal.playbook().equals("find_diamonds") && last.kind() == Kind.EXPEDITION && last.satisfied(facts, goal.fallback, all);
+        if (!goal.handedOver() && goal.playbook().equals("find_diamonds") && goal.counter(HAND_OVER)[0] > 0 && facts.carried(Items.DIAMOND) == 0
+                && thrown(c.completedWorkResult(), owner)) goal.record(HAND_OVER, c.completedWorkResult().evidence().workId(), c.level().getGameTime(), c.getUUID());
+        if (goal.handedOver()) { data.setDirty(); complete(data, owner, goal, c); return; }
+        if ((next == null || mined) && goal.playbook().equals("find_diamonds") && facts.carried(Items.DIAMOND) > 0) { handOver(server, data, owner, goal, c, facts.carried(Items.DIAMOND)); return; }
         if (next == null || last.kind() == Kind.DRAGON && last.satisfied(facts, goal.fallback, all)) { complete(data, owner, goal, c); return; }
         if (!next.supported()) {
             List<String> cannot = all.subList(all.indexOf(next), all.size()).stream()
@@ -420,11 +443,30 @@ public final class CompanionAgenda {
         }
         Milestone pick = pick(goal, facts, c);
         if (pick == null) { waiting(data, owner, goal, c, "жду, пока в печи доготовится партия"); return; }
+        if (goal.ascendForWood) {
+            goal.ascendForWood = false;
+            if (facts.belowMine()) { start(server, owner, goal, c, ASCEND, null, List.of(new PlannedAction("dig_for_diamonds", 0, 1, CompanionExpedition.SURFACE))); return; }
+        }
+        if (goal.descendForOre) {
+            goal.descendForOre = false;
+            Milestone dig = all.stream().filter(milestone -> milestone.kind() == Kind.EXPEDITION && milestone.supported() && !milestone.satisfied(facts, goal.fallback, all)).findFirst().orElse(null);
+            if (dig != null && pick.kind() != Kind.EXPEDITION) { pick = dig; goal.mineAsIs = true; }
+        }
         int[] counter = goal.counter(pick.key());
         if (counter[0] >= MAX_ATTEMPTS) { block(data, owner, goal, c, pick.label(goal.fallback) + " — попытки исчерпаны. " + goal.reason); return; }
         if (goal.workTicks >= STALL_TICKS) { block(data, owner, goal, c, "давно нет продвижения: " + pick.label(goal.fallback) + "."); return; }
+        List<Step> shield = pick.kind() == Kind.EXPEDITION && !goal.mineAsIs ? Milestone.shieldTrekSteps(facts) : List.of();
+        if (!shield.isEmpty()) {
+            goal.shieldTrek = true;
+            data.setDirty();
+            CompanionDiagnostics.event(c.diagnosticTrace(), "shield_trek_planned", "goal", goal.playbook, "at", c.blockPosition());
+            start(server, owner, goal, c, SHIELD, null, shield.stream().map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList());
+            return;
+        }
         List<PlannedAction> plan = pick.method(facts, goal.fallback, all).stream()
                 .map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList();
+        if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) plan = List.of(plan.getLast());
+        goal.mineAsIs = false;
         if (!pick.key().equals(goal.announced)) {
             if (!goal.announced.isEmpty()) c.autonomySay("Дальше: " + pick.label(goal.fallback) + ".");
             goal.announced = pick.key();
@@ -433,14 +475,61 @@ public final class CompanionAgenda {
         start(server, owner, goal, c, pick.key(), pick.progress(facts, goal.fallback, all), plan);
     }
 
+    /**
+     * The mined diamonds go to the player by the ordinary give_items (a real drop at his feet); his tools stay in the bag. A player who is away
+     * (offline, in another dimension) is waited for like any wait of the goal, and counts as no failure.
+     */
+    private static void handOver(MinecraftServer server, CompanionAgendaData data, UUID owner, Goal goal, CompanionEntity c, int diamonds) {
+        int[] counter = goal.counter(HAND_OVER);
+        if (counter[1] >= MAX_FAILURES) { block(data, owner, goal, c, "не получилось отдать алмазы: " + goal.reason); return; }
+        ServerPlayer player = server.getPlayerList().getPlayer(owner);
+        if (player == null || player.level() != c.level()) { waiting(data, owner, goal, c, "жду, пока ты будешь рядом, чтобы отдать алмазы"); return; }
+        if (!HAND_OVER.equals(goal.announced)) { c.autonomySay("Алмазы добыты, несу их тебе."); goal.announced = HAND_OVER; }
+        // Attempts are saved with the goal: a reload after the throw finds out from them that a hand-over was under way.
+        counter[0]++;
+        data.setDirty();
+        List<PlannedAction> plan = new ArrayList<>();
+        // From the pit the way to the player is his own stairs, not a dig toward him: the give starts on the surface.
+        if (CompanionFacts.of(c).belowMine()) plan.add(new PlannedAction("dig_for_diamonds", 0, 1, CompanionExpedition.SURFACE));
+        plan.add(new PlannedAction("give_items", 0, diamonds, "minecraft:diamond", "auto"));
+        start(server, owner, goal, c, HAND_OVER, null, plan);
+    }
+
+    /** A give_items of diamonds to the owner that the server confirmed: the drop was thrown. */
+    private static boolean thrown(CompanionActionResult result, UUID owner) {
+        var facts = result == null || !result.success() ? null : result.evidence();
+        return facts != null && "give_items".equals(facts.action()) && "minecraft:diamond".equals(facts.item()) && facts.count() > 0 && owner.equals(facts.recipient());
+    }
+
+    /**
+     * The hand-over step is over. What was thrown is gone from the bag whatever else happened (a cancel, a fight, a reload), so the confirmed
+     * throw is recorded even from a neutral finish; with diamonds picked up since, the next second hands those over too. Without a throw
+     * only a refusal of the mechanics counts.
+     */
+    private static void handedOver(CompanionAgendaData data, UUID owner, Goal goal, CompanionEntity c, Run run, boolean neutral, CompanionPlanRunner.Outcome outcome, Throwable error) {
+        int[] counter = goal.counter(HAND_OVER);
+        var result = c.workResult(run.port.ownedWorkId());
+        if (thrown(result, owner)) {
+            counter[1] = 0; goal.reason = "";
+            if (CompanionFacts.of(c).carried(Items.DIAMOND) == 0) goal.record(HAND_OVER, result.evidence().workId(), c.level().getGameTime(), c.getUUID());
+        } else if (!neutral) {
+            counter[1]++;
+            goal.reason = error != null ? "сбой механики, подробности в журнале диагностики." : reason(outcome == null ? "" : outcome.report());
+        }
+        data.setDirty();
+    }
+
     /** What his own furnaces are cooking is not made again: the first unmet milestone that does not wait for it, null when there is none. */
     private static Milestone pick(Goal goal, CompanionFacts facts, CompanionEntity c) {
         List<Milestone> all = goal.book().milestones();
         List<Item> cooking = c.level() instanceof ServerLevel level ? c.batches().cookingOutputs(level) : List.of();
+        boolean waitsAhead = false;
         for (Milestone milestone : all) {
             if (milestone.satisfied(facts, goal.fallback, all)) continue;
             if (!milestone.supported()) return null;
-            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) continue;
+            // The mine needs what comes before it in hand (the iron pickaxe still in the furnace): it is not dug meanwhile.
+            if (waitsAhead && milestone.kind() == Kind.EXPEDITION) return null;
+            if (cooking.stream().anyMatch(output -> milestone.dependsOn(output, facts, goal.fallback))) { waitsAhead = true; continue; }
             return milestone;
         }
         return null;
@@ -492,10 +581,30 @@ public final class CompanionAgenda {
                 || danger(c, player);
         CompanionDiagnostics.event(run.port.trace(), "goal_step_finished", "milestone", run.milestone, "neutral", neutral,
                 "report", outcome == null ? "" : outcome.report(), "error", error == null ? "" : error.toString());
-        if (neutral || COLLECT.equals(run.milestone)) return;
+        if (HAND_OVER.equals(run.milestone) && goal != null && goal.id.equals(run.goal) && c != null && c.getUUID().equals(run.companion)) {
+            handedOver(data, owner, goal, c, run, neutral, outcome, error);
+            return;
+        }
+        if (neutral || COLLECT.equals(run.milestone) || SHIELD.equals(run.milestone)) return;
+        if (ASCEND.equals(run.milestone)) {
+            if (error != null || CompanionFacts.of(c).belowMine())
+                block(data, owner, goal, c, "не выбраться наверх за деревом: " + (error != null ? "сбой механики, подробности в журнале диагностики." : reason(outcome.report())));
+            return;
+        }
         var book = goal.book();
         Milestone milestone = book.milestone(run.milestone);
         if (milestone == null) return;
+        // A top-up that stopped the plan before the mine is no failure of the mine: the next step goes down with what he has,
+        // but only once the food and sticks are in the bag; otherwise the failed top-up counts like any failed step.
+        if (milestone.kind() == Kind.EXPEDITION && error == null && outcome != null && milestone.kitMinimum(CompanionFacts.of(c))
+                && outcome.skipped().stream().anyMatch(step -> "dig_for_diamonds".equals(step.type()))) {
+            goal.mineAsIs = true; goal.reason = reason(outcome.report());
+            data.setDirty();
+            return;
+        }
+        if (waitsForGame(data, owner, goal, milestone, c, outcome, error)) return;
+        if (waitsForFood(data, goal, milestone, c, outcome, error)) return;
+        goal.hungryWaits = 0;
         int[] counter = goal.counter(milestone.key());
         counter[0]++;
         CompanionFacts facts = CompanionFacts.of(c);
@@ -510,7 +619,26 @@ public final class CompanionAgenda {
         data.setDirty();
         // A step that moved the bag (ingots smelted, ore mined, meat hunted) is progress, not a failure.
         boolean progressed = run.progress != null && !run.progress.equals(milestone.progress(facts, goal.fallback, book.milestones()));
-        if (progressed) { counter[1] = 0; return; }
+        if (progressed) {
+            counter[1] = 0;
+            // A mine step that opened new cells is the goal moving: steps and time are not counted against it.
+            if (milestone.kind() == Kind.EXPEDITION) { counter[0] = 0; goal.workTicks = 0; }
+            return;
+        }
+        // The iron is below what the ore search sees: not a failure of the milestone, the way to it is down (the stairs of the mine), then he looks again.
+        if (milestone.kind() != Kind.EXPEDITION && error == null && outcome != null && ironBeyondReach(outcome.report())) {
+            goal.descendForOre = true; counter[1] = 0;
+            return;
+        }
+        // No tree to be had is the end of what the bag can be made of here: the next steps would search for wood again, minutes each.
+        if (error == null && outcome != null && outcome.report().contains(CompanionPlanRunner.NO_TREE)) {
+            // Under the ground there is no tree to look for: the surface is up his own stairs, and the trees are looked for there.
+            if (facts.belowMine()) { goal.ascendForWood = true; counter[1] = 0; return; }
+            block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
+            return;
+        }
+        // The mine has another way to try from this stop: the next step takes it, and only when those are spent does the stop count.
+        if (milestone.kind() == Kind.EXPEDITION && error == null && c.mineSite().stopWayLeft()) return;
         counter[1]++;
         if (milestone.concernsDiamonds(goal.fallback) && !goal.fallback && hasFreeSlot(c)) {
             // One empty search does not end an honest hunt for diamonds; the second one in a row does.
@@ -519,7 +647,46 @@ public final class CompanionAgenda {
             c.autonomySay("Алмазов добыть не вышло: " + why + " Сделаю снаряжение из железа.");
             return;
         }
-        if (counter[1] >= MAX_FAILURES) block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
+        boolean spent = milestone.kind() == Kind.EXPEDITION && c.mineSite().stopFinal();
+        if (counter[1] >= MAX_FAILURES || spent) block(data, owner, goal, c, milestone.label(goal.fallback) + ": " + why);
+    }
+
+    /**
+     * The top-up stopped before the mine for lack of food, and the descent is not allowed without it. A hunt that found no game at all
+     * changes nothing by waiting: with full health the goal stops at once and asks for food; a hurt one (or a hunt that saw game it could not
+     * take) waits a minute and hunts again, a few times, before a failure counts.
+     */
+    private static boolean waitsForGame(CompanionAgendaData data, UUID owner, Goal goal, Milestone milestone, CompanionEntity c, CompanionPlanRunner.Outcome outcome, Throwable error) {
+        if (milestone.kind() != Kind.EXPEDITION || error != null || outcome == null || goal.hungryWaits >= GAME_WAITS
+                || outcome.skipped().stream().noneMatch(step -> "dig_for_diamonds".equals(step.type())) || !milestone.foodShort(CompanionFacts.of(c))) return false;
+        boolean hurt = c.getHealth() < c.getMaxHealth();
+        if (outcome.report().contains(NO_GAME) && !hurt) {
+            block(data, owner, goal, c, "нет еды, а животных поблизости нет. Принеси еды, и я пойду вниз.");
+            return true;
+        }
+        if (goal.hungryWaits++ == 0) c.autonomySay("Еды нет, а без неё вниз не пойду: подожду и поищу еду снова.");
+        goal.waitUntil = c.level().getGameTime() + HUNGRY_WAIT_TICKS;
+        goal.reason = (hurt ? CompanionExpeditionRetreat.NO_FOOD : "нет еды для спуска") + ": " + reason(outcome.report());
+        data.setDirty();
+        return true;
+    }
+
+    /**
+     * A mine step that ended in a rest he could not take (hurt, no food, a stomach too empty to mend) is no failure of the mine: a stop spent on it
+     * is gone for a wound that only food heals. The goal waits a minute and tries again, a few times, and says why once.
+     */
+    private static boolean waitsForFood(CompanionAgendaData data, Goal goal, Milestone milestone, CompanionEntity c, CompanionPlanRunner.Outcome outcome, Throwable error) {
+        if (milestone.kind() != Kind.EXPEDITION || error != null || outcome == null || goal.hungryWaits >= HUNGRY_WAITS || !outcome.report().contains(CompanionExpeditionRetreat.NO_FOOD)) return false;
+        if (goal.hungryWaits++ == 0) c.autonomySay("Еды нет, а рана сама не заживает: подожду и поищу еду снова.");
+        goal.waitUntil = c.level().getGameTime() + HUNGRY_WAIT_TICKS;
+        goal.reason = reason(outcome.report());
+        data.setDirty();
+        return true;
+    }
+
+    /** The ore search came back empty for iron: none seen within its depth, or seen but not safely reachable from here. */
+    private static boolean ironBeyondReach(String report) {
+        return report.contains("«железная руда»") && (report.contains("блоков вниз.") || report.contains("не нашёл безопасного хода"));
     }
 
     private static boolean hasFreeSlot(CompanionEntity c) {
@@ -574,17 +741,24 @@ public final class CompanionAgenda {
     /**
      * A boundary of the goal's steps after a death. One try per death place, so neither a reload nor a second death can make the goal
      * wait for them: his things within reach on a safe spot go on his pickup list (he walks to them and takes them up like his own
-     * harvest; nothing is made anew), anything else is said once; the place stays in his status and the journal. True: the pickup
+     * harvest; nothing is made anew), anything else is said once, without the place (issue 61); the place stays in the journal. True: the pickup
      * begins and the goal waits for it.
      */
     private static boolean recover(CompanionAgendaData data, Goal goal, CompanionEntity c, ServerLevel level) {
         BlockPos place = goal.deathPlace;
         if (place == null) return false;
         UUID owner = c.getOwnerId();
+        // Hurt, he goes for his things only after he has mended; with nothing to mend him the try is spent, with the reason said.
+        boolean hurt = c.getHealth() < RECOVER_HEALTH;
+        if (hurt && (c.satiety > 0 || c.eatTicks > 0 || CompanionEating.hasFood(c))) { waiting(data, owner, goal, c, "жду, пока поправлюсь, прежде чем идти за вещами"); return true; }
         String why = !level.dimension().equals(goal.deathDimension) ? "это другое измерение"
                 : !level.isLoaded(place) ? "туда не дойти, место не загружено"
                 : c.blockPosition().distSqr(place) > RECOVER_RANGE * RECOVER_RANGE ? "до них слишком далеко"
-                : place.getY() < level.getMinBuildHeight() + VOID_MARGIN ? "там пустота" : null;
+                : place.getY() < level.getMinBuildHeight() + VOID_MARGIN ? "там пустота"
+                : c.mineSite().shunned(place) ? "там пещера, из которой я бежал"
+                : !c.equipment.hasMeleeWeapon() && foeNear(level, place) ? FOES_AT_THE_THINGS
+                : hurt ? "я ранен, а лечиться нечем" : null;
+        if (FOES_AT_THE_THINGS.equals(why)) c.mineSite().shunTheEnd(place);
         goal.deathPlace = null; goal.deathDimension = null;
         data.setDirty();
         List<ItemEntity> mine = why != null ? List.of() : level.getEntitiesOfClass(ItemEntity.class, new AABB(place).inflate(RECOVER_RADIUS),
@@ -604,6 +778,11 @@ public final class CompanionAgenda {
         return true;
     }
 
+    /** A living hostile with a mind of its own near the place: without a weapon he would meet it with bare hands, as in the death before. */
+    private static boolean foeNear(ServerLevel level, BlockPos place) {
+        return !level.getEntitiesOfClass(Monster.class, new AABB(place).inflate(FOE_RADIUS), foe -> foe.isAlive() && !foe.isNoAi()).isEmpty();
+    }
+
     /** Ends the current run; its own work stops only if it is still the active one, so a newer order is never cut. */
     private static void cancelRun(UUID owner, CompanionEntity c) {
         Run run = RUNS.remove(owner);
@@ -616,6 +795,11 @@ public final class CompanionAgenda {
     private static boolean free(CompanionEntity c) {
         return !c.hasActiveWorkOrder() && !c.isGatheringTask() && !c.hasPendingLoot() && c.canWorkNow() && !c.isSelfRescuing()
                 && c.actionAnimation() == 0 && !c.autonomy().running();
+    }
+
+    /** The mine step deals with a fight, a fire and low health itself (it retreats); cancelling it from here would leave him underground. */
+    private static boolean ownsExpedition(Run run, CompanionEntity c) {
+        return run != null && run.port != null && c.work.job == CompanionWork.Job.EXPEDITION && run.port.ownedWorkId() == c.activeWorkId();
     }
 
     private static boolean danger(CompanionEntity c, ServerPlayer player) {

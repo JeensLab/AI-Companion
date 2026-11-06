@@ -194,6 +194,8 @@ public final class CompanionFoodLightTests {
         f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
         f.oleg.setItem(0,new ItemStack(Items.OAK_LOG,16)); f.oleg.setItem(1,new ItemStack(Items.COBBLESTONE,32));
         f.oleg.setItem(2,new ItemStack(Items.COAL,8)); f.oleg.setItem(3,new ItemStack(Items.BEEF,6));
+        // Torches of his own: at night his lighting would make them from a log, and fifteen logs send the first deed to the trees.
+        f.oleg.setItem(4,new ItemStack(Items.TORCH,4));
         BlockPos players=new BlockPos(14,1,19);
         h.setBlock(players,Blocks.FURNACE);
         f.oleg.autonomy().setEnabled(true);
@@ -215,6 +217,8 @@ public final class CompanionFoodLightTests {
         f.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.STONE_PICKAXE));
         f.oleg.setItem(0,new ItemStack(Items.OAK_LOG,16)); f.oleg.setItem(1,new ItemStack(Items.COBBLESTONE,32));
         f.oleg.setItem(2,new ItemStack(Items.COAL,8)); f.oleg.setItem(3,new ItemStack(Items.BEEF,6));
+        // Torches of his own: at night his lighting would make them from a log, and fifteen logs send the first deed to the trees.
+        f.oleg.setItem(4,new ItemStack(Items.TORCH,4));
         BlockPos players=new BlockPos(14,1,19);
         h.setBlock(players,Blocks.FURNACE);
         var oven=(net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity)h.getBlockEntity(players);

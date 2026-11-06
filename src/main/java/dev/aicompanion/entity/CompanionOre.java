@@ -81,10 +81,20 @@ public final class CompanionOre {
     static final int MAX_CELLS = 30;
     private CompanionOre() { }
 
-    /** Natural ground a tunnel may go through: stone of the world, soil and any ore. Built blocks are never dug. */
+    /**
+     * Natural ground a tunnel may go through: stone of the world, soil, the calcite and smooth basalt shell of a geode and any ore.
+     * Built blocks are never dug; amethyst is not dug either, so the geode inside stays a wall like any cave.
+     */
     static boolean tunnelable(BlockState state) {
-        return state.is(BlockTags.BASE_STONE_OVERWORLD) || CompanionQuarry.soil(state)
+        return state.is(BlockTags.BASE_STONE_OVERWORLD) || CompanionQuarry.soil(state) || state.is(Blocks.DRIPSTONE_BLOCK)
+                || state.is(Blocks.CALCITE) || state.is(Blocks.SMOOTH_BASALT)
                 || state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
+    }
+
+    /** Water or lava next to the ore: the mine expedition digs without plugging, so it leaves such ore alone. */
+    static boolean liquidNear(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (!level.getFluidState(pos.relative(side)).isEmpty()) return true;
+        return !level.getFluidState(pos).isEmpty();
     }
 
     /**
@@ -208,6 +218,12 @@ public final class CompanionOre {
         }
         int radius() { return radius; }
         int depth() { return origin.getY() - minY; }
+
+        /** Ore of the kind with a face in the open and no liquid beside it, within the radius: what he can see from outside, not ore inside the rock. */
+        boolean anyInSight(ServerLevel level) {
+            while (!scan(level)) { /* the sections are few, a radius this small is searched in one go */ }
+            return found.stream().anyMatch(pos -> exposed(level, pos) && !liquidNear(level, pos));
+        }
 
         private static boolean exposed(ServerLevel level, BlockPos pos) {
             for (Direction side : Direction.values())

@@ -250,6 +250,20 @@ public final class CompanionFurnaceBatches {
         return -1;
     }
 
+    /**
+     * His own batch still cooking here whose raw material or product is {@code item}: a new smelt of it would only set down another furnace
+     * beside the loaded one. -1 when there is none.
+     */
+    public long cookingFor(ServerLevel level, String item) {
+        var wanted = net.minecraft.resources.ResourceLocation.tryParse(item == null ? "" : item.trim());
+        if (wanted == null) return -1;
+        for (Batch batch : batches.values()) {
+            if (!batch.orphan || batch.mixedMeat || batch.status != Status.WAITING || !canProgress(batch, level)) continue;
+            if (wanted.equals(BuiltInRegistries.ITEM.getKey(batch.recipe.input())) || wanted.equals(BuiltInRegistries.ITEM.getKey(batch.recipe.result().getItem()))) return batch.id;
+        }
+        return -1;
+    }
+
     /** What his own batches still cooking here will give: a long goal does not make that item itself meanwhile. */
     List<Item> cookingOutputs(ServerLevel level) {
         return batches.values().stream().filter(batch -> batch.orphan && batch.status == Status.WAITING && canProgress(batch, level))

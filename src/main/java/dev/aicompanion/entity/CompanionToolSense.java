@@ -111,9 +111,11 @@ final class CompanionToolSense {
         // Use the real detached recipe planner, including existing sticks and hand-held materials.
         // Optional upgrades never start another gathering/smelting order.
         // Like a player: iron and diamonds go into a pickaxe on their own, other tools from them only on request.
+        // Diamonds mined for the player are not material: while a diamond hunt runs they stay in the bag.
+        boolean diamondsWanted = diamondsWanted();
         for (String material : kind.equals("pickaxe") ? new String[]{"diamond", "iron", "stone", "wooden"} : new String[]{"stone", "wooden"}) {
             String id = "minecraft:" + material + "_" + kind;
-            if (speed(id) <= best || blocked(id) || material.equals("wooden") && best > 0 || woodOnly && !material.equals("wooden")) continue;
+            if (speed(id) <= best || blocked(id) || material.equals("wooden") && best > 0 || woodOnly && !material.equals("wooden") || diamondsWanted && material.equals("diamond")) continue;
             boolean available = switch (material) {
                 case "diamond" -> count(net.minecraft.world.item.Items.DIAMOND) >= stoneCost();
                 case "iron" -> count(net.minecraft.world.item.Items.IRON_INGOT) >= stoneCost();
@@ -123,6 +125,14 @@ final class CompanionToolSense {
             if (available && CompanionCrafting.plan(level, carried(), id, 1, true).success()) return id;
         }
         return null;
+    }
+
+    /** A diamond expedition (an order or the step of a goal) is running, or a find_diamonds goal is outstanding: its diamonds are the player's. */
+    private boolean diamondsWanted() {
+        if (owner.work.job == CompanionWork.Job.EXPEDITION || owner.work.job == CompanionWork.Job.ORE && owner.work.ore == CompanionOre.Kind.DIAMOND) return true;
+        if (owner.getServer() == null || owner.getOwnerId() == null) return false;
+        CompanionAgendaData.Goal goal = CompanionAgendaData.get(owner.getServer()).active(owner.getOwnerId());
+        return goal != null && goal.state().outstanding() && goal.playbook().equals("find_diamonds");
     }
 
     private boolean craft(String target) {

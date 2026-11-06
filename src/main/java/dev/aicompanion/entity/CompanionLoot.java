@@ -207,10 +207,17 @@ final class CompanionLoot {
                 && (chaseable(level, id) || !unreachable.contains(id) && settling(level, id, item)));
     }
     private boolean settling(ServerLevel level, UUID id, ItemEntity item) {
-        return item.hasPickUpDelay() || level.getGameTime() - born.getOrDefault(id, 0L) < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
+        long age = level.getGameTime() - born.getOrDefault(id, 0L);
+        return item.hasPickUpDelay() && age < DELAY_LIMIT || age < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
     }
     /** A drop has this long to come to rest before «no way to it» is believed. */
     private static final int SETTLE = 40;
+    /**
+     * The longest wait for a pickup delay to run out (it is ten ticks for a harvest drop, forty for a thrown one). A drop flushed into a
+     * chunk nobody ticks hangs with its delay for ever (run m4b/lava: the work and the goal stood behind it for good); a drop let go here
+     * is chased again as soon as the delay does run out.
+     */
+    private static final int DELAY_LIMIT = 200;
     /** Where he stood when a drop was found out of reach: from four blocks away it gets another try. */
     private final Map<UUID, BlockPos> unreachableFrom = new HashMap<>();
     private void giveUpFromHere(ServerLevel level, UUID id) {
@@ -497,8 +504,15 @@ final class CompanionLoot {
         // Floating in the water is taken like one on the ground: he swims to it, as a player does.
         return level.getEntity(id) instanceof ItemEntity item && item.isAlive() && !item.hasPickUpDelay()
                 && (item.onGround() || item.isInWater() || Math.abs(item.getY() - owner.getY()) < 2.3)
+                && !rubbleFarBelow(item)
                 && owner.canStoreDrops(List.of(item.getItem().copyWithCount(1)));
     }
+    /** In the mine, a cobblestone or a lump of soil that fell into a hole far below him is left: the way to it was once the stairs up and round (run w1a/void). */
+    private boolean rubbleFarBelow(ItemEntity item) {
+        ItemStack stack = item.getItem();
+        return owner.work.expedition.active() && item.getY() < owner.getY() - RUBBLE_DEPTH && (CompanionTools.soilItem(stack) || stack.is(ItemTags.STONE_TOOL_MATERIALS));
+    }
+    private static final int RUBBLE_DEPTH = 3;
     /**
      * His own harvest lying near a spot (tagged as his) that is not on the pickup list: put back on it, each item at most once in
      * five minutes (one out of reach does not keep him busy forever). Returns how many were taken up again.
