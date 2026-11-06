@@ -61,9 +61,7 @@ public final class MutationSpot {
             System.err.println("mutation-spot: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
             System.exit(2);
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            System.err.println("mutation-spot: interrupted");
-            System.exit(2);
+            Thread.currentThread().interrupt(); System.err.println("mutation-spot: interrupted"); System.exit(2);
         }
     }
 
