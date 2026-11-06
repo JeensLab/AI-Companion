@@ -49,6 +49,8 @@ final class CompanionExpeditionStairsUp {
 
     Result tick(ServerLevel level) {
         if (to == null && !plan(level)) return Result.STUCK;
+        // A seal placed this tick is no step: the side is looked at again next tick.
+        if (to == null) return Result.WORKING;
         if (++stepTicks > STEP_PATIENCE) return giveUp(level, "patience");
         if (!moved) {
             if (index < cells.size()) return open(level);
