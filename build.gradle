@@ -232,6 +232,10 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+    // -Werror has no per-category form: keep -Xlint limited to unchecked,rawtypes so only these become errors.
+    // Do not add -Xlint:all or deprecation here: NeoForge API deprecation warnings would then fail the build.
+    // -removal is switched off because [removal] is on by default and -Werror would fail on the deprecated-for-removal GameTest API.
+    options.compilerArgs += ['-Xlint:unchecked,rawtypes,-removal', '-Werror']
 }
 
 // Regression fixtures are available to development runs, not installed in players' worlds.

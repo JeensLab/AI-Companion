@@ -125,6 +125,8 @@
 ## Проверка и передача результата
 
 - Сборка: Windows `.\gradlew.bat build`; Linux/macOS `./gradlew build`.
+- Предупреждения javac `unchecked` и `rawtypes` — ошибки компиляции (`-Werror` в `build.gradle`);
+  остальные предупреждения javac остаются предупреждениями.
 - Игровые тесты: повседневно `.\scripts\verify-fast.ps1` на Windows и `./scripts/verify-fast.sh` на
   Linux/macOS (все тесты без трёх длинных
   сценариев `endurance`, в нескольких процессах); перед PR один раз полный `.\gradlew.bat runGameTestServer`
