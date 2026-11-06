@@ -1,0 +1,42 @@
+name: Mutation spot check
+
+# Not part of the main gate: each mutant is one real GameTest run, so the whole table takes a while.
+# It breaks one rule at a time (tools/mutants.txt) and expects the test that owns the rule to fail.
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run the spot mutants
+        run: bash scripts/mutation-spot.sh --all
+      - name: Upload mutation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-logs
+          path: build/diagnostics
+          retention-days: 14
+          if-no-files-found: ignore
