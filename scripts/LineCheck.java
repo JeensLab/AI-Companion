@@ -361,7 +361,7 @@ public final class LineCheck {
         put(dir, a, "class A {\n" + longLine + "}\n");
         cases += expect(failed, "long line moved from the base tree", probe(dir, sha), null);
         put(dir, a, "class A {\n" + longLine.replace('x', 'y') + "}\n");
-        cases += expect(failed, "new long line", probe(dir, sha), "A.java:2 line-length: 185 > 160");
+        cases += expect(failed, "new long line", probe(dir, sha), "A.java:2 line-length: 188 > 160");
         put(dir, a, "class A {\n    int ok = 1;\n}\n");
         cases += expect(failed, "negative control", probe(dir, sha), null);
         if (failed.isEmpty()) {
