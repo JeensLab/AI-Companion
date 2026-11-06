@@ -8,6 +8,7 @@ import dev.aicompanion.entity.CompanionDeathTrip;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionTaskBoard;
+import dev.aicompanion.gametest.support.DeathTestKit;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -30,13 +31,13 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.util.List;
 import java.util.UUID;
 
-import static dev.aicompanion.gametest.DeathTestKit.place;
-import static dev.aicompanion.gametest.DeathTestKit.setOut;
-import static dev.aicompanion.gametest.DeathTestKit.settle;
-import static dev.aicompanion.gametest.DeathTestKit.spawn;
-import static dev.aicompanion.gametest.DeathTestKit.stack;
-import static dev.aicompanion.gametest.DeathTestKit.walk;
-import static dev.aicompanion.gametest.DeathTestKit.yard;
+import static dev.aicompanion.gametest.support.DeathTestKit.place;
+import static dev.aicompanion.gametest.support.DeathTestKit.setOut;
+import static dev.aicompanion.gametest.support.DeathTestKit.settle;
+import static dev.aicompanion.gametest.support.DeathTestKit.spawn;
+import static dev.aicompanion.gametest.support.DeathTestKit.stack;
+import static dev.aicompanion.gametest.support.DeathTestKit.walk;
+import static dev.aicompanion.gametest.support.DeathTestKit.yard;
 
 /** His own things after a death: the manifest of what fell, the ledger of the walk, and every way a stack can be gone. */
 @GameTestHolder(AICompanionMod.MOD_ID)
