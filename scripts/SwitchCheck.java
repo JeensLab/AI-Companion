@@ -67,6 +67,9 @@ import java.util.stream.Stream;
  * <p>Known gap: the declared type is looked up only for a selector that is a plain name or {@code this.name}, among the
  * parameters, locals and fields of the same file. A method-call selector, a {@code var} local or a lambda parameter
  * has no declared type here, so such a switch is checked by its labels alone and a default-only one is skipped.
+ * A pattern binding ({@code instanceof Foo name}, {@code case Foo name}) is not seen as a declaration, so a field of
+ * the same name and of a project enum type shadows it and a default-only switch over the binding is a false finding;
+ * rename one of them. A {@code case null} label makes the switch non-enum-shaped and it is skipped.
  */
 public final class SwitchCheck {
     private static final String ROOT = "src/main/java/dev/aicompanion";
