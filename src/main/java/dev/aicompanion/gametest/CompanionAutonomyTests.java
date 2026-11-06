@@ -4,6 +4,8 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.entity.CompanionAutonomy;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.gametest.support.MarathonArena;
+import dev.aicompanion.gametest.support.MarathonChat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;

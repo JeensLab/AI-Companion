@@ -2,6 +2,8 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.*;
+import dev.aicompanion.gametest.support.CompanionFixtureCleanup;
+import dev.aicompanion.gametest.support.MarathonArena;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.*;
 import net.minecraft.nbt.CompoundTag;

@@ -1,4 +1,4 @@
-package dev.aicompanion.gametest;
+package dev.aicompanion.gametest.support;
 
 import net.minecraft.gametest.framework.GameTestHelper;
 
@@ -12,7 +12,7 @@ import java.util.function.Supplier;
  * what happened, say the next thing. Each stage has a time limit in ticks; a stage over time fails the test with the observer's
  * trail. The checks of a stage run once, right after it.
  */
-final class MarathonScript {
+public final class MarathonScript {
     /** soft: running over time is an issue noted for the end, not the end of the test. */
     private record Stage(String name, Runnable start, BooleanSupplier done, int limit, boolean soft) { }
 
@@ -26,37 +26,37 @@ final class MarathonScript {
     private boolean finished;
     private String name = "marathon";
 
-    MarathonScript(GameTestHelper h, MarathonWatch watch, MarathonChat chat) { this.h = h; this.watch = watch; this.chat = chat; }
+    public MarathonScript(GameTestHelper h, MarathonWatch watch, MarathonChat chat) { this.h = h; this.watch = watch; this.chat = chat; }
 
     /** A request; the stage ends when its plan is done. */
-    MarathonScript ask(String text, String modelSteps, int limitTicks) {
+    public MarathonScript ask(String text, String modelSteps, int limitTicks) {
         MarathonChat.Said[] said = new MarathonChat.Said[1];
         stages.add(new Stage("«" + text + "»", () -> { watch.newSection(text); said[0] = modelSteps == null ? chat.say(text) : chat.say(text, modelSteps); }, () -> said[0].done(), limitTicks, false));
         return this;
     }
 
     /** A short order that only switches a mode («иди за мной», «стой»): done as soon as the server took it. */
-    MarathonScript order(String text) { return ask(text, null, 200); }
+    public MarathonScript order(String text) { return ask(text, null, 200); }
 
     /** Something happens in the world (the player walks off, a mob comes): started once, done when the condition holds. */
-    MarathonScript then(String name, Runnable start, BooleanSupplier done, int limitTicks) {
+    public MarathonScript then(String name, Runnable start, BooleanSupplier done, int limitTicks) {
         stages.add(new Stage(name, start, done, limitTicks, false));
         return this;
     }
 
     /** Waits for something Oleg should do on his own; not done in time is an issue, and the chain goes on. */
-    MarathonScript waitUntil(String name, BooleanSupplier done, int limitTicks) { stages.add(new Stage(name, () -> { }, done, limitTicks, true)); return this; }
+    public MarathonScript waitUntil(String name, BooleanSupplier done, int limitTicks) { stages.add(new Stage(name, () -> { }, done, limitTicks, true)); return this; }
 
     /** Lets the game run a while (a player looks around); never fails. */
-    MarathonScript pause(int ticks) {
+    public MarathonScript pause(int ticks) {
         long[] until = {0};
         return then("pause " + ticks, () -> until[0] = tick + ticks, () -> tick >= until[0], ticks + 20);
     }
 
-    MarathonScript check(String name, Runnable check) { return then(name, check, () -> true, 20); }
+    public MarathonScript check(String name, Runnable check) { return then(name, check, () -> true, 20); }
 
     /** Installs the script: the observer ticks every tick, the test succeeds when the last stage is done. */
-    void run(String name, Supplier<String> finalNote) {
+    public void run(String name, Supplier<String> finalNote) {
         this.name = name;
         MarathonTicks.each(h, this::tick);
         h.succeedWhen(() -> h.assertTrue(finished && watch.issues.isEmpty(), (finished ? "Issues: " + String.join(" ;; ", watch.issues) + " || " : "") + "Stage " + (current + 1) + "/" + stages.size() + " " + (current < stages.size() ? stages.get(current).name() : "")

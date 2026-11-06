@@ -1,4 +1,4 @@
-package dev.aicompanion.gametest;
+package dev.aicompanion.gametest.support;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionChunks;
@@ -25,7 +25,7 @@ public final class CompanionFixtureCleanup {
     @AfterBatch(batch = "autonomy_session")
     public static void afterSessions(ServerLevel level) { clean(level); }
 
-    static void clean(ServerLevel level) {
+    public static void clean(ServerLevel level) {
         if (!(level.getServer() instanceof GameTestServer)) return;
         List<CompanionEntity> completed = new ArrayList<>();
         for (var entity : level.getAllEntities()) if (entity instanceof CompanionEntity companion) completed.add(companion);

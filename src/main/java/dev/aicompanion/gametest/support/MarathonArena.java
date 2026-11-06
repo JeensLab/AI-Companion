@@ -1,4 +1,4 @@
-package dev.aicompanion.gametest;
+package dev.aicompanion.gametest.support;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
@@ -18,20 +18,20 @@ import java.util.List;
  * One marathon arena in a test: its size, Oleg and the player on its ground, the observer, the chat and the script.
  * Positions are relative to the arena, like everything a GameTestHelper does.
  */
-final class MarathonArena {
-    final GameTestHelper h;
-    final int sizeX, sizeY, sizeZ;
-    CompanionEntity oleg;
-    final ServerPlayer player;
-    final MarathonWatch watch;
-    final MarathonChat chat;
-    final MarathonScript script;
+public final class MarathonArena {
+    public final GameTestHelper h;
+    public final int sizeX, sizeY, sizeZ;
+    public CompanionEntity oleg;
+    public final ServerPlayer player;
+    public final MarathonWatch watch;
+    public final MarathonChat chat;
+    public final MarathonScript script;
     /** Where the player is being walked to, and how fast (blocks a tick); null when he stands. */
     private List<Vec3> route;
     private int routeIndex;
     private double speed;
 
-    MarathonArena(GameTestHelper h, int sizeX, int sizeY, int sizeZ, int olegX, int olegZ, int playerX, int playerZ, int searchRadius) {
+    public MarathonArena(GameTestHelper h, int sizeX, int sizeY, int sizeZ, int olegX, int olegZ, int playerX, int playerZ, int searchRadius) {
         this.h = h; this.sizeX = sizeX; this.sizeY = sizeY; this.sizeZ = sizeZ;
         h.assertTrue(ground(olegX, olegZ) != NO_GROUND && ground(playerX, playerZ) != NO_GROUND, "No ground to stand on at the start");
         oleg = h.spawn(AICompanionMod.COMPANION.get(), spot(olegX + .5, ground(olegX, olegZ), olegZ + .5));
@@ -53,17 +53,17 @@ final class MarathonArena {
      * Empty air round every marathon arena in its template (32 blocks a side): the next test of the GameTest grid lies beyond
      * the reach of his searches. All coordinates of the tests are inside the arena, from its own corner.
      */
-    static final int M = 32;
-    BlockPos cell(int x, int y, int z) { return new BlockPos(x + M, y, z + M); }
-    Vec3 spot(double x, double y, double z) { return new Vec3(x + M, y, z + M); }
+    public static final int M = 32;
+    public BlockPos cell(int x, int y, int z) { return new BlockPos(x + M, y, z + M); }
+    public Vec3 spot(double x, double y, double z) { return new Vec3(x + M, y, z + M); }
     /** Where to put something standing on the ground of this column (relative to the helper, for h.spawn). */
-    Vec3 at(int x, int z) { return spot(x + .5, ground(x, z), z + .5); }
+    public Vec3 at(int x, int z) { return spot(x + .5, ground(x, z), z + .5); }
 
     /** No place to stand in this column: never a step for the walking player. */
-    static final int NO_GROUND = -10000;
+    public static final int NO_GROUND = -10000;
 
     /** Feet height of the ground at a column: the highest spot with solid ground (not leaves) under it and room for a body. */
-    int ground(int x, int z) {
+    public int ground(int x, int z) {
         for (int y = sizeY - 2; y > 0; y--) {
             BlockState below = h.getBlockState(cell(x, y - 1, z));
             // On water the player swims at its surface.
@@ -81,12 +81,12 @@ final class MarathonArena {
     }
 
     /** Walks the player through these columns at about a player's walking pace, on the ground. */
-    void walkPlayer(double blocksPerTick, int... xz) {
+    public void walkPlayer(double blocksPerTick, int... xz) {
         route = new java.util.ArrayList<>();
         for (int i = 0; i + 1 < xz.length; i += 2) route.add(new Vec3(xz[i] + .5, 0, xz[i + 1] + .5));
         routeIndex = 0; speed = blocksPerTick; routeBest = Double.MAX_VALUE; routeStill = 0;
     }
-    boolean playerArrived() { return route == null; }
+    public boolean playerArrived() { return route == null; }
 
     /** After a death the companion who comes back is a new entity: the test follows him. */
     private void followRespawn() {
@@ -136,7 +136,7 @@ final class MarathonArena {
     private double routeBest = Double.MAX_VALUE;
 
     /** Teleports the player (a scene set up, not a walk). */
-    void putPlayer(int x, int z) {
+    public void putPlayer(int x, int z) {
         route = null;
         Vec3 to = h.absoluteVec(spot(x + .5, ground(x, z), z + .5));
         player.teleportTo(to.x, to.y, to.z);
@@ -146,7 +146,7 @@ final class MarathonArena {
      * Leaving the world and coming back, for Oleg: saved to NBT, removed, and a tick later loaded as a new entity with the same
      * UUID (as the game does). The plans of the old session are cancelled, as a closed world cancels them.
      */
-    void reload(Runnable after) {
+    public void reload(Runnable after) {
         var saved = new net.minecraft.nbt.CompoundTag();
         oleg.saveWithoutId(saved);
         oleg.discard();
@@ -160,16 +160,16 @@ final class MarathonArena {
         });
     }
 
-    int count(Item item) { return count(oleg, item); }
+    public int count(Item item) { return count(oleg, item); }
 
-    static int count(CompanionEntity companion, Item item) {
+    public static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();
         for (EquipmentSlot slot : EquipmentSlot.values()) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
         return count;
     }
 
-    int countTag(net.minecraft.tags.TagKey<Item> tag) {
+    public int countTag(net.minecraft.tags.TagKey<Item> tag) {
         int count = 0;
         for (int slot = 0; slot < oleg.getContainerSize(); slot++) if (oleg.getItem(slot).is(tag)) count += oleg.getItem(slot).getCount();
         for (EquipmentSlot slot : EquipmentSlot.values()) if (oleg.getItemBySlot(slot).is(tag)) count += oleg.getItemBySlot(slot).getCount();
@@ -177,15 +177,15 @@ final class MarathonArena {
     }
 
     /** Items thrown to the player and lying at his feet or picked up: what he got. */
-    int given(Item item) {
+    public int given(Item item) {
         int count = player.getInventory().countItem(item);
         for (var entity : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, player.getBoundingBox().inflate(6)))
             if (entity.getItem().is(item)) count += entity.getItem().getCount();
         return count;
     }
 
-    double toPlayer() { return oleg.distanceTo(player); }
+    public double toPlayer() { return oleg.distanceTo(player); }
 
     /** A soft check: noted with the stage, the test fails at the end with every issue found. */
-    void expect(boolean ok, String message) { watch.expect(ok, message); }
+    public void expect(boolean ok, String message) { watch.expect(ok, message); }
 }

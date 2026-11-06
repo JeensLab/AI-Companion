@@ -10,6 +10,7 @@ import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionFacts;
 import dev.aicompanion.entity.CompanionMilestones;
 import dev.aicompanion.entity.CompanionPlaybooks;
+import dev.aicompanion.gametest.support.CompanionFixtureCleanup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.BeforeBatch;

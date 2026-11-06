@@ -11,6 +11,7 @@ import dev.aicompanion.entity.CompanionAgendaData;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionFurnaceBatches;
+import dev.aicompanion.gametest.support.CompanionFixtureCleanup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.BeforeBatch;
