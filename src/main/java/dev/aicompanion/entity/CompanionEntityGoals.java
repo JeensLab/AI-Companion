@@ -58,6 +58,18 @@ final class CompanionEntityGoals {
         @Override public void stop() { c.recovery.cancel(); c.getNavigation().stop(); }
     }
 
+    /** His own things after a death: the walk to the place he fell, until the pickup has them or the road gives up. */
+    static final class RecoverBelongingsGoal extends Goal {
+        final CompanionEntity c;
+        RecoverBelongingsGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
+        /** He grabs and runs: a monster on him does not stop the walk, as the owner asked. */
+        @Override public boolean canUse() { return c.deathTrip.active() && c.canCollectItems(); }
+        @Override public boolean canContinueToUse() { return c.deathTrip.active() && c.canCollectItems(); }
+        @Override public boolean requiresUpdateEveryTick() { return true; }
+        @Override public void tick() { c.deathTrip.tick(); }
+        @Override public void stop() { c.getNavigation().stop(); c.travel().reset(); }
+    }
+
     /** Low on air under water: the work waits while he swims to air and breathes (CompanionBreath). The float goal beside it holds no flag (WadingFloatGoal). */
     static final class BreatheGoal extends Goal {
         final CompanionEntity c;
@@ -68,6 +80,18 @@ final class CompanionEntityGoals {
         @Override public void start() { c.breath.begin(); }
         @Override public void tick() { c.breath.tick(); }
         @Override public void stop() { c.breath.end(); }
+    }
+
+    /** In the dragon's breath or near its edge: the work waits while he walks out of it (CompanionDragonBreath). */
+    static final class DragonBreathGoal extends Goal {
+        final CompanionEntity c;
+        DragonBreathGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.JUMP)); }
+        @Override public boolean canUse() { return c.dragonBreath.canUse(); }
+        @Override public boolean canContinueToUse() { return c.dragonBreath.canContinue(); }
+        @Override public boolean requiresUpdateEveryTick() { return true; }
+        @Override public void start() { c.dragonBreath.begin(); }
+        @Override public void tick() { c.dragonBreath.tick(); }
+        @Override public void stop() { c.dragonBreath.end(); }
     }
 
     static final class RoamGoal extends Goal {
@@ -189,7 +213,11 @@ final class CompanionEntityGoals {
             }
             if (companion.level().getGameTime() < retryAt) return;
             if (!companion.onGround() && !companion.isInWater()) return;
-            var step = companion.work.route.follow(owner.blockPosition(), FOLLOW_NEAR, owner.isSprinting());
+            // The player in the dragon's breath: no farther than its edge (CompanionDragonBreath).
+            BlockPos meet = companion.dragonBreath.meetingPoint(owner, true);
+            if (meet == null) { companion.getNavigation().stop(); return; }
+            boolean edge = !meet.equals(owner.blockPosition());
+            var step = companion.work.route.follow(meet, FOLLOW_NEAR, owner.isSprinting());
             if (step == CompanionTravel.Step.WALKING) {
                 travelling = true;
                 // A whole route to him exists again: the next time there is none is a new occasion to say so.
@@ -200,6 +228,8 @@ final class CompanionEntityGoals {
             companion.travel().reset();
             if (step == CompanionTravel.Step.FAILED) {
                 companion.getNavigation().stop();
+                // The breath walls the way off only while it lasts: tried again in two seconds, without a word.
+                if (edge || companion.dragonBreath.onTheWay(owner.blockPosition())) { retryAt = companion.level().getGameTime() + 40; return; }
                 waitingFor = owner.blockPosition();
                 // Told only where the route search sees there is no way, once per place of the player; a stuck walk is the
                 // self-rescue's, silently (not «no way»), and is tried anew in a few seconds.

@@ -117,7 +117,7 @@ public final class CompanionSortingFullTests {
         helper.succeedWhen(() -> {
             helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
             helper.assertTrue(companion.getLastTaskResult().startsWith("Разложил по 3 сундукам"), companion.getLastTaskResult());
-            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled");
+            helper.assertTrue(totals(companion, chests).equals(before), "Items lost or doubled: " + totals(companion, chests) + " vs " + before);
             for (Group group : Group.values()) helper.assertTrue(chestsHolding(chests, group) <= 1, group + " is in several chests");
         });
     }

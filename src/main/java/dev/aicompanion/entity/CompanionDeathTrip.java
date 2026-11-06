@@ -1,0 +1,674 @@
+package dev.aicompanion.entity;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.FullChunkStatus;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * The walk back to where he fell. The place carries the manifest of the stacks that fell from him, and the walk is a walk
+ * to those stacks, one by one: the pickup's own reach decides arrival, the game's own route (CompanionMiningNavigation)
+ * decides the way — through water, up steps, down drops — and the manifest decides what is his.
+ * <p>
+ * Every stack is judged in a ledger: taken, part of it, gone (somebody else had it), or unreachable with a reason. The
+ * report is written from that ledger alone, so «Забрал свои вещи» is said only when every stack of the walk is in his bag.
+ * <p>
+ * A place in a chunk nobody has loaded is walked to all the same; what lies there is judged only once the chunk is loaded,
+ * because an unloaded chunk is not an empty one.
+ */
+public final class CompanionDeathTrip {
+    /** What became of one stack of his: the ledger the report is written from. */
+    public enum Fate { PENDING, TAKEN, PARTIAL, GONE, UNREACHABLE }
+
+    /** One stack's outcome: how many of it reached the bag, what stayed, and why. */
+    public record Verdict(Fate fate, int taken, int left, String reason) { }
+
+    /** A walk longer than this, with a block's worth of time for every block of the way, is a walk that got stuck. */
+    private static final int PATIENCE_TICKS = 20 * 120;
+    private static final int TICKS_PER_BLOCK = 4;
+    /** A walk that has been at it this long ends, whatever the game clock says. */
+    private static final int MOST_TICKS = 20 * 90;
+    /** Standing in the pickup's reach this long: it did not take the stack, name the reason and go on. */
+    private static final int WAIT_IN_REACH = 60;
+    /** Walking at one stack this long without getting into its reach: give it up with a reason and go on. */
+    private static final int APPROACH_PATIENCE = 200;
+    /** The stack drifts (water, a slope, a shove): the way to it is searched again this often. */
+    private static final int REPATH = 5;
+    /** After an order of the player took the walk away, it waits this long before he sets out again. */
+    private static final long ORDER_HOLD_TICKS = 20 * 120;
+    /** A place that keeps something behind is not tried again for this long (his bag may be full). */
+    private static final int RETRY_TICKS = 20 * 30;
+    /** A stack is struck off the manifest only after this many looks in a row that found nothing. */
+    private static final int MISSES_BEFORE_GONE = 2;
+    /** A step that brings him nearer is progress; a stack is given up only after walking this long without any. */
+    private static final int APPROACH_PER_BLOCK = 8;
+    /** A place in another dimension is worth a crossing only for things that are really dear: a portal costs more. */
+    private static final double CROSS_WORTH = 20;
+    /** Standing within this of the place itself is close enough to start judging it on foot. */
+    private static final double NEAR = 1.2;
+
+    private final CompanionEntity c;
+    private CompanionDeathSpots.Spot spot;
+    /** Every stack the walk set out for, as the manifest stood when it began: the report covers all of them. */
+    private List<CompanionDeathSpots.Entry> original = List.of();
+    /** The ledger: what became of each stack of this walk. */
+    private final Map<UUID, Verdict> ledger = new LinkedHashMap<>();
+    private UUID target;
+    private BlockPos routedPos;
+    private int repathAt;
+    private int entryTicks;
+    private int approach;
+    /** How near he has got to the stack he is walking at, so real progress starts the patience over. */
+    private double closest;
+    /** Looks at a stack's own place that found nothing, in a row: one look is not proof that the stack is gone. */
+    private final Map<UUID, Integer> misses = new HashMap<>();
+    /** What each stack's own entity had given him when the walk began: only what the walk takes is part of its ledger. */
+    private final Map<UUID, Integer> takenAtStart = new HashMap<>();
+    /** Of a stack the game merged away, what a neighbour's surplus has already covered, by item. */
+    private final Map<String, Integer> mergedCredit = new HashMap<>();
+    private long giveUpAt;
+    /** The trip's own ticks: the game's counter advances only for entities the level ticks, a trip is bounded by its own. */
+    private int ticks;
+    private boolean crossing;
+    /** The game clock before which a walk the player's order put off is not started again. */
+    private long heldUntil;
+    /** The place's number in the settings list, as he said it when he set out. */
+    private int placeNumber;
+    /** The number of the last place dropped in this pass, said once at the end. */
+    private int lastDropped = -1;
+    /** When this place was last tried (the game clock), so a place that keeps refusing is not tried again at once. */
+    private final Map<BlockPos, Long> triedAt = new HashMap<>();
+    private String lastLine = "";
+
+    CompanionDeathTrip(CompanionEntity c) { this.c = c; }
+
+    public boolean active() { return spot != null; }
+
+    /** Where he is walking to, for the death hook. */
+    public BlockPos place() { return spot == null ? null : spot.pos(); }
+
+    /** The id of the place he is walking to, so a death on the way is charged to this record and not to a neighbour. */
+    public UUID spotId() { return spot == null ? null : spot.id(); }
+
+    /** The dimension of the place he is walking to, for the death hook. */
+    public net.minecraft.resources.ResourceKey<Level> dimension() {
+        return spot == null ? null : spot.dimension();
+    }
+
+    /** The last thing he said about the walk, for the tests that check he does not claim what he did not take. */
+    public String lastLine() { return lastLine; }
+
+    /** The ledger of the walk, by stack: the truth the report is written from (for the task screen and the tests). */
+    public Map<UUID, Verdict> ledger() { return Map.copyOf(ledger); }
+
+    /** What became of one stack of this walk, or null when it is not part of it. */
+    public Verdict verdict(UUID stack) { return ledger.get(stack); }
+
+    /** Where this place stands in the list he would walk right now, not where it stood when the walk began. */
+    private int number() {
+        if (spot == null || c.level().getServer() == null) return placeNumber;
+        var ranked = CompanionDeathSpots.get(c.level().getServer()).ranked(c.getOwnerId());
+        for (int i = 0; i < ranked.size(); i++) if (ranked.get(i).id().equals(spot.id())) return i + 1;
+        return placeNumber;
+    }
+
+    /** What he is about, for the task screen. */
+    public String describe() {
+        if (spot == null) return "";
+        int left = 0;
+        for (CompanionDeathSpots.Entry entry : original) {
+            Verdict verdict = ledger.get(entry.id());
+            if (verdict == null || verdict.fate() == Fate.PENDING) left++;
+        }
+        return "Иду за вещами №" + number() + (left > 0 ? ", осталось " + left + "." : ".");
+    }
+
+    /** Sets out for the dearest place with a stack still lying there; false when there is nothing worth or possible to walk to. */
+    public boolean begin() {
+        if (spot != null || !c.deathRecovery() || !(c.level() instanceof ServerLevel level) || c.getOwnerId() == null) return false;
+        var server = level.getServer();
+        if (server == null || level.getGameTime() < heldUntil) return false;
+        CompanionDeathSpots data = CompanionDeathSpots.get(server);
+        // The number he says is the place's position in the settings list: the same order, the dearest first. A place
+        // that leaves the list takes its number with it, so the ranking is read again after every drop and the number
+        // of the next place is its position in the list the player will see, not the one it had before the drop.
+        List<CompanionDeathSpots.Spot> places = data.ranked(c.getOwnerId());
+        int index = 0;
+        while (index < places.size()) {
+            CompanionDeathSpots.Spot place = places.get(index);
+            int number = index + 1;
+            if (place.attempts() >= c.deathRecoveryAttempts() || place.deaths() >= c.deathRecoveryDeaths()) {
+                data.taken(c.getOwnerId(), place.id());
+                lastDropped = number;
+                places = data.ranked(c.getOwnerId());
+                continue;
+            }
+            Long tried = triedAt.get(place.pos());
+            if (tried != null && level.getGameTime() - tried < RETRY_TICKS) { index++; continue; }
+            // Only the stacks of the manifest that still lie there are walked to: a stack somebody took is struck off
+            // before the walk starts, so a looted place costs no walk at all.
+            List<CompanionDeathSpots.Entry> live = liveEntries(level, place);
+            if (live.isEmpty()) {
+                // A stack looked for once and not found may still be on its way into the world: the place is asked
+                // again in a moment instead of being struck off on that one look.
+                if (missedOnce(level, place)) { index++; continue; }
+                // Nothing is left there: the place goes, and a death not worth a walk is not spoken of.
+                data.taken(c.getOwnerId(), place.id());
+                places = data.ranked(c.getOwnerId());
+                continue;
+            }
+            if (!place.dimension().equals(level.dimension())) {
+                // The Overworld and the Nether are crossed both ways on foot; a place in the End needs its own portal and is left.
+                if (place.worth() < CROSS_WORTH || place.dimension().equals(Level.END)) {
+                    data.taken(c.getOwnerId(), place.id());
+                    places = data.ranked(c.getOwnerId());
+                    continue;
+                }
+                // No portal within reach right now is not a reason to forget a dear place: it waits for next time.
+                var entered = c.portals.enter(level);
+                if (!entered.success()) { index++; continue; }
+                data.attempted(c.getOwnerId(), place.id());
+                start(place, live, level, true, number);
+                say("Иду за вещами №" + number + " через портал.");
+                return true;
+            }
+            data.attempted(c.getOwnerId(), place.id());
+            start(place, live, level, false, number);
+            say("Иду за вещами №" + number + ".");
+            return true;
+        }
+        // A drop is said once, at the end of the pass, whether or not another place was found.
+        if (lastDropped >= 0) { say("№" + lastDropped + " — бросил."); lastDropped = -1; }
+        return false;
+    }
+
+    /** The stacks of a place that still lie there, judged only where they can be seen. */
+    private List<CompanionDeathSpots.Entry> liveEntries(ServerLevel level, CompanionDeathSpots.Spot place) {
+        ServerLevel there = place.dimension().equals(level.dimension()) ? level : level.getServer().getLevel(place.dimension());
+        List<CompanionDeathSpots.Entry> live = new ArrayList<>();
+        for (CompanionDeathSpots.Entry entry : place.manifest()) {
+            // A chunk that is not yet full keeps its entities queued: what lies there is walked to, not judged.
+            if (!judgeable(there, entry)) { live.add(entry); continue; }
+            if (alive(there, entry) != null) { found(entry); live.add(entry); continue; }
+            // One look that found nothing does not strike the stack off: it is looked for again before it is believed gone.
+            if (missingAgain(entry)) CompanionDeathSpots.get(level.getServer()).pruneEntry(c.getOwnerId(), place.id(), entry.id());
+        }
+        return live;
+    }
+
+    /** A stack looked for and not found once, but not yet often enough to be struck off: the place is asked again in a moment. */
+    private boolean missedOnce(ServerLevel level, CompanionDeathSpots.Spot place) {
+        ServerLevel there = place.dimension().equals(level.dimension()) ? level : level.getServer().getLevel(place.dimension());
+        for (CompanionDeathSpots.Entry entry : place.manifest()) {
+            Integer count = misses.get(entry.id());
+            if (count != null && count < MISSES_BEFORE_GONE && judgeable(there, entry)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether a look at a stack's own place means anything: the chunk is loaded and its entities are in place. A chunk
+     * that is loaded but not yet full keeps whatever falls into it in a queue nobody hands out — {@code
+     * isPositionEntityTicking} is false there too — so a look that finds nothing there proves nothing. A full chunk
+     * hands its entities to the scan even where it does not tick them.
+     */
+    private boolean judgeable(ServerLevel level, CompanionDeathSpots.Entry entry) {
+        if (level == null) return false;
+        BlockPos pos = entry.blockPos();
+        var chunk = level.getChunkSource().getChunkNow(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
+        return chunk != null && chunk.getFullStatus().isOrAfter(FullChunkStatus.FULL);
+    }
+
+    /** Counts a look that found nothing; true only once the stack has been missed twice in a row. */
+    private boolean missingAgain(CompanionDeathSpots.Entry entry) {
+        return misses.merge(entry.id(), 1, Integer::sum) >= MISSES_BEFORE_GONE;
+    }
+
+    /** A stack was seen: whatever it was missed for, the count starts over. */
+    private void found(CompanionDeathSpots.Entry entry) {
+        misses.remove(entry.id());
+    }
+
+    private void start(CompanionDeathSpots.Spot place, List<CompanionDeathSpots.Entry> live, ServerLevel level, boolean cross, int number) {
+        spot = place;
+        placeNumber = number;
+        if (lastDropped >= 0) { say("№" + lastDropped + " — бросил."); lastDropped = -1; }
+        original = List.copyOf(live);
+        ledger.clear();
+        takenAtStart.clear();
+        mergedCredit.clear();
+        for (CompanionDeathSpots.Entry entry : live) {
+            ledger.put(entry.id(), new Verdict(Fate.PENDING, 0, entry.count(), ""));
+            // What he picked up on his way here is not this walk's doing: the ledger counts what the walk itself took.
+            takenAtStart.put(entry.id(), c.loot.takenByMe(entry.id()));
+        }
+        target = null;
+        routedPos = null;
+        repathAt = 0;
+        entryTicks = 0;
+        approach = 0;
+        closest = Double.MAX_VALUE;
+        crossing = cross;
+        ticks = 0;
+        giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2
+                + (long) (Math.sqrt(c.blockPosition().distSqr(place.pos())) * TICKS_PER_BLOCK);
+        // Water is walked like a player walks it: he wades, and he swims where it is deep enough to float.
+        c.getNavigation().setCanFloat(true);
+    }
+
+    /** One tick of the walk: true while it goes on. */
+    public boolean tick() {
+        if (spot == null) return false;
+        if (!(c.level() instanceof ServerLevel level)) { stop(); return false; }
+        // The player turned the feature off: the walk ends here, as he asked, without a word about it.
+        if (!c.deathRecovery()) { stop(); return false; }
+        ticks++;
+        if (crossing) {
+            if (level.dimension().equals(spot.dimension())) { crossing = false; return true; }
+            if (!c.portals.walking()) { stop(); say("Не смог перейти в другое измерение."); return false; }
+            if (ticks > MOST_TICKS) { stop(); return false; }
+            return true;
+        }
+        // Moved out of the dimension by something else: back through a portal, or the place is left.
+        if (!level.dimension().equals(spot.dimension())) {
+            if (!c.portals.walking()) {
+                var entered = c.portals.enter(level);
+                if (!entered.success()) { stop(); say("Не смог перейти в другое измерение."); return false; }
+                crossing = true;
+                giveUpAt = level.getGameTime() + PATIENCE_TICKS * 2;
+                say("Иду за вещами №" + number() + " через портал.");
+            }
+            return true;
+        }
+        if (ticks > MOST_TICKS || level.getGameTime() > giveUpAt) {
+            finish(level);
+            return false;
+        }
+        // Not loaded yet: the walk goes to the coordinates and the chunk loads on the way; nothing can be judged before that.
+        if (!level.hasChunkAt(spot.pos())) {
+            c.movementIntent(spot.pos());
+            c.travel().toward(spot.pos(), NEAR);
+            return true;
+        }
+        refresh(level);
+        CompanionDeathSpots.Entry entry = nextEntry(level);
+        if (entry == null) {
+            // Nothing left to walk at now, but a stack in a chunk nobody has loaded yet is not gone: walk to the place.
+            if (unjudged(level)) { c.movementIntent(spot.pos()); c.travel().toward(spot.pos(), NEAR); return true; }
+            finish(level);
+            return false;
+        }
+        ItemEntity item = alive(level, entry);
+        if (item == null) return true;
+        // A new stack to fetch: the patience and the way belong to this stack, not to the walk.
+        if (!entry.id().equals(target)) { target = entry.id(); entryTicks = 0; approach = 0; closest = Double.MAX_VALUE; repathAt = 0; routedPos = null; }
+        c.movementIntent(item.blockPosition());
+        // Arrival is the pickup's own reach, not a guess of two blocks: from there the game's pickup takes the stack.
+        if (c.loot.touches(c.position(), item)) {
+            c.getNavigation().stop();
+            if (entryTicks == 0 && !c.canStoreDrops(List.of(item.getItem().copyWithCount(1)))) makeRoom(level);
+            entryTicks++;
+            if (entryTicks > WAIT_IN_REACH) giveUpEntry(entry, item, inReachReason(item));
+            return true;
+        }
+        // A step that brings him nearer is progress, whatever the clock says: a long way to a stack is not a stuck walk.
+        double distance = c.distanceToSqr(item);
+        if (distance + .05 < closest) { closest = distance; approach = 0; }
+        else approach++;
+        if (approach > approachPatience(distance)) { giveUpEntry(entry, item, "не дошёл"); return true; }
+        boolean drifted = routedPos == null || !routedPos.equals(item.blockPosition());
+        if (drifted || ticks >= repathAt || c.getNavigation().isDone() || c.getNavigation().isStuck()) {
+            repathAt = ticks + REPATH;
+            routedPos = item.blockPosition().immutable();
+            Set<BlockPos> cells = standCells(level, item);
+            if (cells.isEmpty()) { giveUpEntry(entry, item, standReason(level, item)); return true; }
+            if (!(c.getNavigation() instanceof CompanionNavigation nav)) return true;
+            // The way is searched whole, not in this tick's share: a walk to one stack must decide on that stack now.
+            Path path = nav.searchNow(cells, 0);
+            // No cell to stand in yet (he is in the air, on a ladder): not a verdict, ask again next tick.
+            if (path == null) return true;
+            if (!path.canReach()) {
+                // A search that ran out of its cells saw only part of the world: it proves nothing about the way it did
+                // not look at, so the leg it did find is walked and the way is asked again from there.
+                if (nav.lastSearchExhausted()) { CompanionMiningNavigation.walk(c, path); return true; }
+                double range = c.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
+                if (item.distanceToSqr(c) <= range * range) {
+                    dev.aicompanion.AICompanionMod.LOGGER.debug("[death] no route from {} to {} ({} cells)",
+                            c.blockPosition(), item.blockPosition(), cells.size());
+                    giveUpEntry(entry, item, "нет пути");
+                    return true;
+                }
+                // A stack farther than one search sees: walk the leg it does see, and search again from there.
+            }
+            CompanionMiningNavigation.walk(c, path);
+        }
+        return true;
+    }
+
+    /** Walking at one stack this long without getting any nearer gives it up: the patience covers the way's length too. */
+    private static int approachPatience(double distance) {
+        return APPROACH_PATIENCE + (int) (Math.sqrt(distance) * APPROACH_PER_BLOCK);
+    }
+
+    /** Judges every stack of the manifest that can be seen: gone ones leave it, taken ones are entered in the ledger. */
+    private void refresh(ServerLevel level) {
+        for (CompanionDeathSpots.Entry entry : original) {
+            Verdict known = ledger.get(entry.id());
+            if (known != null && known.fate() != Fate.PENDING) continue;
+            // Not judged where the chunk is not full: a look there sees nothing, and nothing is not gone.
+            if (!judgeable(level, entry)) continue;
+            ItemEntity item = alive(level, entry);
+            int mine = takenOf(entry);
+            if (item != null) {
+                found(entry);
+                // Still lying there: part of it in his bag is a part taken, the rest is still his errand.
+                if (mine > 0) ledger.put(entry.id(), new Verdict(Fate.PENDING, mine, item.getItem().getCount(), ""));
+                continue;
+            }
+            // A stack looked for once and not found is asked for again next tick before it is called gone.
+            if (!missingAgain(entry)) continue;
+            // Vanilla merges stacks of one item into one entity: what went into a neighbour is in the bag with it, not lost.
+            int credited = withMergedSurplus(level, entry, mine);
+            Verdict now;
+            if (credited >= entry.count()) now = new Verdict(Fate.TAKEN, entry.count(), 0, "");
+            else if (credited > 0) now = new Verdict(Fate.PARTIAL, credited, 0, "остальное пропало");
+            else now = new Verdict(Fate.GONE, 0, 0, goneReason(level, entry));
+            ledger.put(entry.id(), now);
+            CompanionDeathSpots.get(level.getServer()).pruneEntry(c.getOwnerId(), spot.id(), entry.id());
+        }
+    }
+
+    /** What this walk has taken of one stack: what its own entity gave him since the walk began. */
+    private int takenOf(CompanionDeathSpots.Entry entry) {
+        return Math.max(0, c.loot.takenByMe(entry.id()) - takenAtStart.getOrDefault(entry.id(), 0));
+    }
+
+    /**
+     * What of a stack the game merged into a neighbour of the same item is accounted for: his own take of this entity,
+     * plus the count that went into the neighbour, read off what the walk has of that item beyond the record of the
+     * stacks it took it from (taken into the bag or still lying in them). A merged stack is not a lost one: its count
+     * went where the ledger can see it, and «остальное пропало» must not be said of what is in the bag.
+     */
+    private int withMergedSurplus(ServerLevel level, CompanionDeathSpots.Entry entry, int mine) {
+        int need = entry.count() - mine;
+        if (need <= 0) return mine;
+        int surplus = 0;
+        for (CompanionDeathSpots.Entry other : original) {
+            if (!other.item().equals(entry.item())) continue;
+            ItemEntity floor = alive(level, other);
+            int held = takenOf(other) + (floor == null ? 0 : floor.getItem().getCount());
+            surplus += Math.max(0, held - other.count());
+        }
+        int available = Math.max(0, surplus - mergedCredit.getOrDefault(entry.item(), 0));
+        int credited = Math.min(need, available);
+        if (credited > 0) mergedCredit.merge(entry.item(), credited, Integer::sum);
+        return mine + credited;
+    }
+
+    /** The nearest stack still to fetch, among the manifest entries that lie in a loaded chunk. */
+    private CompanionDeathSpots.Entry nextEntry(ServerLevel level) {
+        CompanionDeathSpots.Entry best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (CompanionDeathSpots.Entry entry : original) {
+            Verdict verdict = ledger.get(entry.id());
+            if (verdict == null || verdict.fate() != Fate.PENDING) continue;
+            ItemEntity item = alive(level, entry);
+            if (item == null) continue;
+            double distance = item.distanceToSqr(c);
+            if (distance < bestDistance) { bestDistance = distance; best = entry; }
+        }
+        return best;
+    }
+
+    /**
+     * A stack of the walk not judged yet: its chunk not loaded, or a look that found nothing not yet repeated. The walk
+     * goes to the place meanwhile; the next ticks ask again, and only then is the stack called gone.
+     */
+    private boolean unjudged(ServerLevel level) {
+        for (CompanionDeathSpots.Entry entry : original) {
+            Verdict verdict = ledger.get(entry.id());
+            if (verdict != null && verdict.fate() != Fate.PENDING) continue;
+            if (!judgeable(level, entry)) return true;
+            // An entry still lying there would have been picked by nextEntry: one without a stack is a miss to confirm.
+            if (alive(level, entry) == null) return true;
+        }
+        return false;
+    }
+
+    private ItemEntity alive(ServerLevel level, CompanionDeathSpots.Entry entry) {
+        Entity entity = level.getEntity(entry.id());
+        if (entity instanceof ItemEntity item && item.isAlive() && !item.getItem().isEmpty()) return item;
+        if (entity != null) return null;
+        // A chunk that does not tick its entities need not hand them out by id: the scan of the loaded sections is what
+        // sees the stack there, and the walk is not fooled into calling it gone.
+        var found = level.getEntitiesOfClass(ItemEntity.class, new AABB(entry.pos().add(-1, -1, -1), entry.pos().add(1, 1, 1)),
+                item -> item.getUUID().equals(entry.id()) && item.isAlive() && !item.getItem().isEmpty());
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Why a stack that is no longer there is gone, in the game's own terms. */
+    private String goneReason(ServerLevel level, CompanionDeathSpots.Entry entry) {
+        if (CompanionLava.at(level, entry.blockPos())) return "сгорело в лаве";
+        var state = level.getBlockState(entry.blockPos());
+        if (state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE)) return "сгорело";
+        // Vanilla merges a stack into a neighbour of the same item within half a block; the survivor is not this entity.
+        for (ItemEntity other : level.getEntitiesOfClass(ItemEntity.class, new AABB(entry.pos().add(-.5, -.5, -.5), entry.pos().add(.5, .5, .5)),
+                found -> found.isAlive() && !found.getItem().isEmpty() && found.getItem().getItem() == itemOf(entry)))
+            return "слилось с соседней стопкой";
+        return "пропало";
+    }
+
+    private static net.minecraft.world.item.Item itemOf(CompanionDeathSpots.Entry entry) {
+        ResourceLocation id = ResourceLocation.tryParse(entry.item());
+        return id == null ? null : BuiltInRegistries.ITEM.get(id);
+    }
+
+    /** The cells he can be in and take the stack from: the pickup's own reach decides, the game's own standability the rest. */
+    private Set<BlockPos> standCells(ServerLevel level, ItemEntity item) {
+        Set<BlockPos> cells = new HashSet<>();
+        BlockPos center = item.blockPosition();
+        for (int dy = -2; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            BlockPos cell = center.offset(dx, dy, dz);
+            if (!canBeAt(level, cell)) continue;
+            if (!c.loot.touches(Vec3.atBottomCenterOf(cell), item)) continue;
+            cells.add(cell.immutable());
+        }
+        return cells;
+    }
+
+    /**
+     * A cell he can be in: standing on a floor, holding a ladder or vine (nothing under his feet there), or swimming where
+     * the water is deep enough to float him.
+     */
+    private boolean canBeAt(ServerLevel level, BlockPos cell) {
+        if (CompanionMiningNavigation.standable(c, cell)) return true;
+        if (CompanionLava.at(level, cell)) return false;
+        if (level.getBlockState(cell).is(net.minecraft.tags.BlockTags.CLIMBABLE)) return level.noCollision(c, bodyAt(cell));
+        if (!level.getFluidState(cell).is(FluidTags.WATER)) return false;
+        return level.noCollision(c, bodyAt(cell));
+    }
+
+    private AABB bodyAt(BlockPos cell) {
+        return new AABB(cell.getX() + .2, cell.getY(), cell.getZ() + .2,
+                cell.getX() + .8, cell.getY() + c.getBbHeight(), cell.getZ() + .8);
+    }
+
+    /** Why no cell takes the stack: lava, fire, a cactus in the way, or simply nowhere to stand. */
+    private String standReason(ServerLevel level, ItemEntity item) {
+        BlockPos at = item.blockPosition();
+        if (CompanionLava.at(level, at)) return "в лаве";
+        var state = level.getBlockState(at);
+        if (state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE)) return "в огне";
+        if (at.getY() < level.getMinBuildHeight()) return "в пустоте";
+        return "негде встать";
+    }
+
+    /** Why a stack in reach was not taken: the game's own reasons, not a guess. */
+    private String inReachReason(ItemEntity item) {
+        if (item.hasPickUpDelay()) return "нельзя взять сразу";
+        // The game lets only the stack's target take it, and that is never the companion.
+        if (item.getTarget() != null) return "метит в другого";
+        if (!c.canStoreDrops(List.of(item.getItem().copyWithCount(1)))) return "сумка полна";
+        return "не берётся";
+    }
+
+    /** Records what became of one stack and moves on to the next: never a long stand at one place. */
+    private void giveUpEntry(CompanionDeathSpots.Entry entry, ItemEntity item, String reason) {
+        int mine = takenOf(entry);
+        int left = item == null ? 0 : item.getItem().getCount();
+        Fate fate;
+        if (left > 0) fate = mine > 0 ? Fate.PARTIAL : Fate.UNREACHABLE;
+        else if (mine >= entry.count()) fate = Fate.TAKEN;
+        else fate = mine > 0 ? Fate.PARTIAL : Fate.GONE;
+        ledger.put(entry.id(), new Verdict(fate, mine, left, reason));
+        target = null;
+        routedPos = null;
+        repathAt = 0;
+        entryTicks = 0;
+        approach = 0;
+        closest = Double.MAX_VALUE;
+        c.getNavigation().stop();
+        c.work.route.stop();
+        dev.aicompanion.AICompanionMod.LOGGER.debug("[death] stack {}: {} ({})", entry.id(), fate, reason);
+    }
+
+    /**
+     * Done for now: the report comes from the ledger alone, and it is a notice, never an explanation. Everything of the
+     * walk in his bag is «Забрал свои вещи»; a part of it is «Забрал часть вещей» and the place waits for the next walk;
+     * nothing taken at all is «Не смог забрать вещи». A place with nothing left is forgotten and not spoken of again.
+     */
+    private void finish(ServerLevel level) {
+        refresh(level);
+        int taken = 0;
+        boolean anythingLeft = false;
+        for (CompanionDeathSpots.Entry entry : original) {
+            Verdict verdict = ledger.get(entry.id());
+            if (verdict == null) verdict = new Verdict(Fate.PENDING, 0, entry.count(), "не дошёл");
+            switch (verdict.fate()) {
+                case TAKEN -> taken++;
+                case GONE -> { }
+                // Nothing of it left is taken, whatever the merges did to its count.
+                case PARTIAL -> { if (verdict.left() <= 0) taken++; else anythingLeft = true; }
+                case UNREACHABLE -> anythingLeft = true;
+                case PENDING -> anythingLeft = true;
+            }
+        }
+        if (!original.isEmpty() && taken == original.size()) {
+            forget(level);
+            say("Забрал свои вещи.");
+            return;
+        }
+        if (anythingLeft) {
+            // A walk that turned back only because the bag was full costs no try: the place waits for room, not for a budget.
+            if (bagWasTheOnlyReason()) CompanionDeathSpots.get(level.getServer()).refundAttempt(c.getOwnerId(), spot.id());
+            // Something of his is still lying there: the place waits, and is tried again in tens of seconds, not minutes.
+            triedAt.put(spot.pos(), level.getGameTime());
+            stop();
+        } else {
+            forget(level);
+        }
+        say(taken > 0 ? "Забрал часть вещей." : "Не смог забрать вещи.");
+    }
+
+    /** Whether every stack that stayed stayed because the bag was full: then the walk was not the place's fault. */
+    private boolean bagWasTheOnlyReason() {
+        boolean anyLeft = false;
+        for (CompanionDeathSpots.Entry entry : original) {
+            Verdict verdict = ledger.get(entry.id());
+            if (verdict == null) return false;
+            if (verdict.fate() == Fate.TAKEN || verdict.fate() == Fate.GONE) continue;
+            anyLeft = true;
+            if (!"сумка полна".equals(verdict.reason())) return false;
+        }
+        return anyLeft;
+    }
+
+    private void forget(ServerLevel level) {
+        CompanionDeathSpots.get(level.getServer()).taken(c.getOwnerId(), spot.id());
+        stop();
+    }
+
+    /** A full bag is made room in by letting the cheapest junk go, never a diamond; what is dropped is marked as junk. */
+    private void makeRoom(ServerLevel level) {
+        while (room() == 0) {
+            int worst = -1;
+            double worstWorth = Double.MAX_VALUE;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) {
+                ItemStack stack = c.getItem(slot);
+                if (stack.isEmpty()) continue;
+                double worth = CompanionBelongings.worth(stack);
+                if (worth < worstWorth) { worstWorth = worth; worst = slot; }
+            }
+            if (worst < 0 || worstWorth >= CompanionBelongings.WORTH_GOING) return;
+            ItemStack stack = c.getItem(worst);
+            c.setItem(worst, ItemStack.EMPTY);
+            ItemEntity junk = c.spawnAtLocation(stack, .5F);
+            // Junk he let go to make room: never part of a death place again, whoever picks it up.
+            if (junk != null) junk.getPersistentData().putBoolean(CompanionBag.JUNK, true);
+        }
+    }
+
+    /** An empty slot: a new stack needs one, a half stack of dirt will not take a diamond. */
+    private int room() {
+        int free = 0;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).isEmpty()) free++;
+        return free;
+    }
+
+    /**
+     * An order of the player arrived: it comes first, so the walk gives way at once. The place stays (his things are still
+     * lying there), the try it cost is given back, and he sets out again only once the order is done and a while has passed:
+     * «за мной» or «стой» leave him idle, and he must not walk off a second after being told.
+     */
+    void giveWay() {
+        if (spot == null) return;
+        if (c.getOwnerId() != null && c.level().getServer() != null)
+            CompanionDeathSpots.get(c.level().getServer()).refundAttempt(c.getOwnerId(), spot.id());
+        stop();
+        heldUntil = c.level().getGameTime() + ORDER_HOLD_TICKS;
+        say("Ладно, за вещами схожу потом.");
+    }
+
+    /** A new fall at a place clears the wait that a previous walk there left behind. */
+    public void freshPlace(net.minecraft.core.BlockPos pos) { triedAt.remove(pos); }
+
+    /** Stops the walk but keeps the place: he died on the way, and his things are still there. */
+    void stop() {
+        spot = null;
+        original = List.of();
+        c.travel().reset();
+        c.movementIntent(null);
+        c.getNavigation().stop();
+    }
+
+    void cancel() {
+        if (spot != null && c.level().getServer() != null) CompanionDeathSpots.get(c.level().getServer()).taken(c.getOwnerId(), spot.id());
+        stop();
+    }
+
+    private void say(String line) {
+        lastLine = line;
+        c.autonomySay(line);
+        dev.aicompanion.AICompanionMod.LOGGER.debug("[death] says: {}", line);
+    }
+}

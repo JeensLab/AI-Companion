@@ -39,7 +39,7 @@ final class CompanionFuseEscape {
     private List<BlockPos> path = List.of();
     private int index;
     private long builtAt = NEVER;
-    private boolean holding;
+    private boolean holding, clears;
 
     CompanionFuseEscape(CompanionEntity owner) { this.owner = owner; }
 
@@ -48,12 +48,15 @@ final class CompanionFuseEscape {
         path = List.of();
         index = 0;
         builtAt = NEVER;
-        holding = false;
+        holding = clears = false;
     }
 
     BlockPos goal() { return path.isEmpty() ? null : path.get(path.size() - 1); }
 
     boolean holding() { return holding; }
+
+    /** The way built last ends out of the blast: out of the fuse's sight, or beyond the gap at which the fuse goes out. */
+    boolean clears() { return clears; }
 
     int length() { return path.size() - index; }
 
@@ -130,6 +133,7 @@ final class CompanionFuseEscape {
         path = List.copyOf(way);
         index = 0;
         holding = way.isEmpty() && !bestScore.exposed();
+        clears = !bestScore.exposed() || bestScore.gap() >= CompanionCreeperGuard.SAFE_GAP;
     }
 
     /**

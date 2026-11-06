@@ -32,7 +32,7 @@ public final class CompanionPlanRunner {
     public static final String NO_TREE = "Не нашёл доступного дерева";
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "fill_bucket");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");

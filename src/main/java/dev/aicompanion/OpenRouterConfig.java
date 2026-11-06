@@ -15,7 +15,7 @@ public final class OpenRouterConfig {
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
     public static final ModConfigSpec.BooleanValue COMPANION_MARKER = BUILDER
-            .comment("Outline the companion through walls when he is out of sight (toggled with the key G).")
+            .comment("Outline the companion through walls when he is out of sight, and mark him on the screen when he is too far to be seen (toggled with the key G).")
             .define("companionMarker", true);
     public static final ModConfigSpec.BooleanValue MOOD_PANEL = BUILDER
             .comment("Show the companion's mood, bond and character as a thin panel on the right of the screen (toggled with the key N).")
@@ -55,6 +55,22 @@ public final class OpenRouterConfig {
             .comment("Additional personality preferences. Shared character directions also apply to existing saved settings.")
             .translation("config.aicompanion.personality")
             .define("personality", "Ты мой товарищ по выживанию в Minecraft: язвительный, разговорчивый и надёжный. Помни наш разговор, интересуйся происходящим, шути и матерись естественно, без постоянных комплиментов.");
+
+    /** How many times he arrives at one place before letting it lie, and how many deaths going for it are too many. */
+    public static final ModConfigSpec.IntValue DEATH_RECOVERY_ATTEMPTS = BUILDER
+            .comment("Tries at one death place before he lets it lie (1-20).")
+            .translation("config.aicompanion.death_recovery_attempts")
+            .defineInRange("deathRecoveryAttempts", 5, 1, 20);
+    public static final ModConfigSpec.IntValue DEATH_RECOVERY_DEATHS = BUILDER
+            .comment("Deaths going for one death place, on the way or at it, after which he lets it lie (1-50).")
+            .translation("config.aicompanion.death_recovery_deaths")
+            .defineInRange("deathRecoveryDeaths", 10, 1, 50);
+
+    /** Whether he goes back for his own things after a death. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue DEATH_RECOVERY = BUILDER
+            .comment("Go back for his own belongings after a death: the dearest place first, junk left alone.")
+            .translation("config.aicompanion.death_recovery")
+            .define("deathRecovery", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")

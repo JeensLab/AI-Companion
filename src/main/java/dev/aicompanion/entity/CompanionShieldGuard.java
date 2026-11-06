@@ -22,7 +22,7 @@ final class CompanionShieldGuard {
 
     CompanionShieldGuard(CompanionEntity owner) { this.owner = owner; }
 
-    /** The shield is up for a fuse; the ordinary lowering of an idle shield (CompanionEntity) must leave it alone. */
+    /** The shield is up for a fuse; the ordinary lowering of an idle shield ({@link CompanionShieldDefense}) must leave it alone. */
     boolean holding() { return holding; }
 
     /** The nearest lit creeper is in range, and every other lit one in sight lies in front of it: the shield is the answer, not the retreat. */

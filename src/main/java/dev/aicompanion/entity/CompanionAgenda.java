@@ -190,6 +190,9 @@ public final class CompanionAgenda {
         return until != null && server.getTickCount() < until;
     }
 
+    /** A request of the player is under way (its plan leases him): between its steps he takes nothing up by himself. */
+    static boolean requestRunning(CompanionEntity c) { return c.getServer() != null && c.getOwnerId() != null && leased(c.getServer(), c.getOwnerId()); }
+
     /** «Продолжай»: the held, interrupted or blocked goal goes on, or the deferred one comes back. Null: no long goal, or the pickaxe order resumes first. */
     public static CompanionActionResult resume(ServerPlayer player, CompanionEntity c) { return resume(player, c, true); }
 

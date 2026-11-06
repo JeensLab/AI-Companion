@@ -5,10 +5,17 @@ import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 
 /** The game's judgement of cells (type, floor, collision) that the companion's own search (CompanionSearch, CompanionMoves) builds on. */
 final class CompanionNodeEvaluator extends WalkNodeEvaluator {
+    /** The dragon's breath in the region searched, as walls: never stepped into, waited out where there is no way round. */
+    private java.util.List<net.minecraft.world.entity.AreaEffectCloud> breath = java.util.List.of();
+    /** But for a cloud he is caught by already: a way out of it, through it, is a way (CompanionDragonBreath walks him out). */
+    void keepOffBreath(java.util.List<net.minecraft.world.entity.AreaEffectCloud> clouds) {
+        breath = clouds.stream().filter(cloud -> !CompanionDragonBreath.near(cloud, mob.getX(), mob.getY(), mob.getZ(), CompanionDragonBreath.MARGIN)).toList();
+    }
     // What the companion's own search (CompanionSearch) asks of the game's judgement of cells; a cell is one Node for the search.
     net.minecraft.world.level.pathfinder.PathType typeAt(int x, int y, int z) { return getCachedPathType(x, y, z); }
     /** The mob's malus for the cell's type; by lava that stands still (and nothing else hot) the game's malus of «fire near» is cut to a wall's. */
     float malusAt(net.minecraft.world.level.pathfinder.PathType type, int x, int y, int z) {
+        if (!breath.isEmpty() && CompanionDragonBreath.near(breath, x + .5, y, z + .5, CompanionDragonBreath.WALL)) return -1;
         float malus = mob.getPathfindingMalus(type);
         boolean settled = type == net.minecraft.world.level.pathfinder.PathType.DANGER_FIRE && malus > CompanionLava.SETTLED_MALUS
                 && CompanionLava.onlySettledLavaNear(mob.level(), x, y, z, pos -> getPathTypeFromState(mob.level(), pos));

@@ -266,6 +266,13 @@ public final class CompanionEvents {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
+        // An order of the player comes before the walk back for his own things too: the walk gives way and waits (CompanionDeathTrip).
+        // An order of his own (a goal step, a deed), naming the home and asking about a goal are not orders.
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("goal_status")
+                && !action.equals("goal_cancel") && !action.equals("goal_defer") && companion.deathTrip.active()) {
+            companion.deathTrip.giveWay();
+            dev.aicompanion.CompanionDiagnostics.event(trace, "death_recovery_gave_way", "action", action);
+        }
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         // Naming the home is a word, not an order: whatever he is busy with goes on.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
@@ -313,7 +320,7 @@ public final class CompanionEvents {
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -382,6 +389,8 @@ public final class CompanionEvents {
     /** True while a deed of his own is being given (not an order of the player: it does not end itself). Server thread only. */
     private static boolean autonomousDispatch;
     private static boolean goalDispatch;
+    /** A long goal's own step is being given (CompanionWaterFill tells its journal a goal's water from an order's). */
+    static boolean goalDispatching() { return goalDispatch; }
 
     static CompanionActionResult executeGoal(ServerPlayer player, String action, String item, int count) {
         return executeGoal(player, action, item, count, "auto", dev.aicompanion.CompanionDiagnostics.newTrace(), "near_player");
