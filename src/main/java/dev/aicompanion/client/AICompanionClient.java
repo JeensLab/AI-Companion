@@ -78,6 +78,7 @@ public final class AICompanionClient {
         CompanionMemoryFlow.unbind();
         CompanionAmbientClient.forgetWorld();
         GameContext.forgetWorld();
+        CompanionMoodPanel.forgetWorld();
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
