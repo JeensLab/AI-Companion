@@ -1,4 +1,4 @@
-param([ValidateRange(1,20)][int]$Repetitions=1,[ValidatePattern('^(auto|[1-8])$')][string]$Shards='auto')
+param([ValidateRange(1,20)][int]$Repetitions=1,[ValidatePattern('^(auto|[1-8])$')][string]$Shards='auto',[switch]$Force,[switch]$DryRun)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'GameTestRun.ps1')
 
@@ -13,16 +13,32 @@ function Read-Shard([int]$Shard) {
     [ordered]@{shard=$Shard;passed=$parsed.passed;expected=if($selection.Success){[int]$selection.Groups[2].Value}else{0};pool=if($selection.Success){[int]$selection.Groups[1].Value}else{0};failedCount=$parsed.failedCount;failed=$parsed.failed;encodingBroken=$parsed.encodingBroken}
 }
 
-# One server holds about 1.5 GB; 2 GB each keeps the system out of swap. Six and eight shards were no faster than four, and eight left 1.4 GB free.
+# One server holds about 1.5 GB; 2 GB each keeps the system out of swap.
+# Measured on one machine: 4 shards took 228 s, 6 took 193 s, 8 took 270 s, and 1 / 1 / 3 tests were still red after the retry.
+# Stability is claimed only for 4, the default; 5-8 need -Force.
 function Get-AutoShards {
     $freeGb=(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB
     $byMemory=[math]::Floor($freeGb/2)
     $count=[math]::Max(1,[math]::Min(4,[math]::Min([Environment]::ProcessorCount-1,$byMemory)))
-    Write-Host "Shards: $count (cores $([Environment]::ProcessorCount), free $([math]::Round($freeGb,1)) GB, limit 4)"
+    # Returned through a script variable: anything written to the output stream here would become part of the return value.
+    $script:autoShardsLine="Shards: $count (cores $([Environment]::ProcessorCount), free $([math]::Round($freeGb,1)) GB, limit 4)"
     [int]$count
 }
 
-$shardCount=if($Shards -eq 'auto'){Get-AutoShards}else{[int]$Shards}
+if($Shards -eq 'auto'){$shardCount=Get-AutoShards;Write-Output $script:autoShardsLine}
+elseif([int]$Shards -gt 4 -and -not $Force){
+    Write-Output "Shards: 4 (asked $Shards; 5-8 need -Force: they were not always faster and flaked here)"
+    $shardCount=4
+}
+elseif([int]$Shards -gt 4){
+    Write-Output "Shards: $Shards (asked $Shards with -Force; stability is not guaranteed above 4)"
+    $shardCount=[int]$Shards
+}
+else{
+    Write-Output "Shards: $Shards (asked $Shards)"
+    $shardCount=[int]$Shards
+}
+if($DryRun){return}
 $runs=@()
 for($iteration=1;$iteration -le $Repetitions;$iteration++) {
     # Four kept worlds grow four times as fast as run/world, which reached 12.6 GB and slowed runs into random failures.

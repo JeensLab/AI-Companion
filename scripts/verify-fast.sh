@@ -11,8 +11,12 @@ mkdir -p "$reports"
 
 shards="auto"
 repetitions=1
+force=0
+dry_run=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --force) force=1; shift ;;
+    --dry-run) dry_run=1; shift ;;
     --shards|--repetitions)
       [ $# -ge 2 ] || { echo "$1 needs a value" >&2; exit 2; }
       case "$1" in
@@ -36,9 +40,11 @@ esac
 if [ "$repetitions" -lt 1 ] || [ "$repetitions" -gt 20 ]; then echo "--repetitions must be 1..20" >&2; exit 2; fi
 
 # One server holds about 1.5 GB and needs its own world; 2 GB each keeps the machine out of swap.
-# Six shards were the fastest here (952 tests in about 130 s); eight and ten only added contention and flake.
+# Measured on one machine: 4 shards took 228 s, 6 took 193 s, 8 took 270 s, and 1 / 1 / 3 tests were still red after the retry.
+# Stability is claimed only for 4, the default; 5-8 need --force.
 if [ -r /proc/meminfo ]; then
-  free_gb=$(( $(awk '/MemAvailable/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
+  # Git Bash's /proc/meminfo has no MemAvailable, so fall back to MemFree.
+  free_gb=$(( $(awk '/MemAvailable/ {a=$2} /MemFree/ {f=$2} END {print a ? a : f + 0}' /proc/meminfo) / 1024 / 1024 ))
 elif command -v sysctl >/dev/null 2>&1; then
   # macOS: total memory, and half of it assumed free for the shards.
   free_gb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 / 1024 / 1024 / 2 ))
@@ -50,11 +56,19 @@ if [ "$shards" = "auto" ]; then
   by_memory=$(( free_gb / 2 ))
   wanted=$(( cores - 1 ))
   [ "$by_memory" -lt "$wanted" ] && wanted="$by_memory"
-  [ "$wanted" -gt 6 ] && wanted=6
+  [ "$wanted" -gt 4 ] && wanted=4
   [ "$wanted" -lt 1 ] && wanted=1
   shards="$wanted"
-  echo "shards: $shards (cores $cores, free ${free_gb} GB, limit 6)"
+  echo "shards: $shards (cores $cores, free ${free_gb} GB, limit 4)"
+elif [ "$shards" -gt 4 ] && [ "$force" -eq 0 ]; then
+  echo "shards: 4 (asked $shards; 5-8 need --force: they were not always faster and flaked here)"
+  shards=4
+elif [ "$shards" -gt 4 ]; then
+  echo "shards: $shards (asked $shards with --force; stability is not guaranteed above 4)"
+else
+  echo "shards: $shards (asked $shards)"
 fi
+[ "$dry_run" -eq 1 ] && exit 0
 
 # Reads one shard's own log: the required pool it saw, how many required tests it selected, and how many it passed.
 read_shard() {
@@ -66,11 +80,18 @@ read_shard() {
   local selection summary
   selection=$(grep -ao "Game test selection: pool=[0-9]* selected=[0-9]* pool-required=[0-9]* selected-required=[0-9]*" "$shard_log" | tail -1 || true)
   summary=$(grep -ao "All [0-9]* required tests passed" "$shard_log" | tail -1 || true)
+  local complete failed
+  complete=$(grep -ao "[0-9]* GAME TESTS COMPLETE" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
+  failed=$(grep -ao "[0-9]* required tests failed" "$shard_log" | tail -1 | grep -o "^[0-9]*" || true)
   shard_pool=$(printf '%s\n' "$selection" | sed -n 's/.*pool-required=\([0-9]*\).*/\1/p' || true)
   shard_selected=$(printf '%s\n' "$selection" | sed -n 's/.*selected-required=\([0-9]*\).*/\1/p' || true)
   shard_passed=$(printf '%s\n' "$summary" | sed -n 's/All \([0-9]*\) required tests passed/\1/p' || true)
   shard_pool=${shard_pool:-0}
   shard_selected=${shard_selected:-0}
+  # One failed test used to zero the whole shard: without the All-line, passed is complete minus failed, as in GameTestRun.ps1.
+  if [ -z "$shard_passed" ] && [ "${complete:-0}" -gt 0 ] && [ "${failed:-0}" -gt 0 ]; then
+    shard_passed=$(( complete - failed ))
+  fi
   shard_passed=${shard_passed:-0}
 }
 
