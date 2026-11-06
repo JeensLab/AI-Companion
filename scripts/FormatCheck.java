@@ -24,17 +24,24 @@ import java.util.stream.Stream;
  * <p>{@code --fix} repairs only the two whitespace rules and then checks again; imports are never edited.
  *
  * <p>Known gaps of {@code unused-import}: a simple name inside a string is not a use (reflection by name is not
- * seen); a class declared in the same file with the imported simple name is read as a use.
+ * seen); a class declared in the same file with the imported simple name is read as a use; a Javadoc reference
+ * counts only when the tag and the name are on one line ({@code {@link\n Foo}} is not seen).
+ *
+ * <p>Not flagged: blank lines at the end of a file (as Spotless {@code endWithNewline}). A file that ends in a lone
+ * {@code \r} is a line ending too; the import rule assumes {@code \n} or {@code \r\n}.
  */
 public final class FormatCheck {
     private static final String SRC = "src/main/java";
     private static final String USAGE = "usage: java scripts/FormatCheck.java [--fix | --selftest]";
-    private static final Pattern LEX = Pattern.compile("//[^\\n]*|/\\*[\\s\\S]*?\\*/|\"\"\"[\\s\\S]*?\"\"\""
-            + "|\"(?:[^\"\\\\\\n]|\\\\.)*\"|'(?:[^'\\\\\\n]|\\\\.)*'");
+    // Possessive quantifiers: a group repeated with backtracking recurses per character and overflows the stack
+    // on a string literal of about 1300 characters.
+    private static final Pattern LEX = Pattern.compile("//[^\\r\\n]*|/\\*[\\s\\S]*?\\*/|\"\"\"[\\s\\S]*?\"\"\""
+            + "|\"(?:[^\"\\\\\\r\\n]++|\\\\.)*+\"|'(?:[^'\\\\\\r\\n]++|\\\\.)*+'");
+    private static final Pattern LINE_END = Pattern.compile("\\r\\n|\\r|\\n");
     private static final Pattern IMPORT = Pattern.compile("(?m)^[ \\t]*import\\s+(?:static\\s+)?([\\w$.\\s]*?)\\s*;");
     private static final Pattern DOC_REF = Pattern.compile(
             "\\{@(?:link|linkplain|value)\\s+([^}\\n]*)|@(?:see|throws|exception)\\s+([^\\n]*)");
-    private static final Pattern TRAILING = Pattern.compile("[ \\t]+(?=\\r?\\n|\\z)");
+    private static final Pattern TRAILING = Pattern.compile("[ \\t]+(?=[\\r\\n]|\\z)");
 
     record Finding(String file, int line, String rule, String detail) { }
 
@@ -46,8 +53,8 @@ public final class FormatCheck {
                 throw new IllegalArgumentException(USAGE);
             }
             System.exit(selfTest ? selfTest() : run(Path.of("."), fix, System.out));
-        } catch (Exception e) {
-            System.err.println("format-check: " + e.getMessage());
+        } catch (Throwable e) {
+            System.err.println("format-check: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
             System.exit(2);
         }
     }
@@ -85,14 +92,13 @@ public final class FormatCheck {
 
     static List<Finding> check(String file, String text) {
         List<Finding> out = new ArrayList<>();
-        String[] lines = text.split("\n", -1);
+        String[] lines = LINE_END.split(text, -1);
         for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].endsWith("\r") ? lines[i].substring(0, lines[i].length() - 1) : lines[i];
-            if (line.endsWith(" ") || line.endsWith("\t")) {
+            if (lines[i].endsWith(" ") || lines[i].endsWith("\t")) {
                 out.add(new Finding(file, i + 1, "trailing-whitespace", "space or tab before the line end"));
             }
         }
-        if (!text.isEmpty() && !text.endsWith("\n")) {
+        if (!text.isEmpty() && !endsWithLineEnd(text)) {
             out.add(new Finding(file, lines.length, "no-newline-at-eof", "the last line has no line ending"));
         }
         unusedImports(file, text, out);
@@ -102,11 +108,18 @@ public final class FormatCheck {
     /** Trims trailing spaces and tabs and ends the file with a line ending; the file's own ending style is kept. */
     static String fix(String text) {
         String trimmed = TRAILING.matcher(text).replaceAll("");
-        if (trimmed.isEmpty() || trimmed.endsWith("\n")) {
+        if (trimmed.isEmpty() || endsWithLineEnd(trimmed)) {
             return trimmed;
         }
         int lastLf = trimmed.lastIndexOf('\n');
-        return trimmed + (lastLf > 0 && trimmed.charAt(lastLf - 1) == '\r' ? "\r\n" : "\n");
+        if (lastLf > 0 && trimmed.charAt(lastLf - 1) == '\r') {
+            return trimmed + "\r\n";
+        }
+        return trimmed + (lastLf < 0 && trimmed.indexOf('\r') >= 0 ? "\r" : "\n");
+    }
+
+    private static boolean endsWithLineEnd(String text) {
+        return text.endsWith("\n") || text.endsWith("\r");
     }
 
     private static void unusedImports(String file, String text, List<Finding> out) {
@@ -118,7 +131,7 @@ public final class FormatCheck {
             String token = lex.group();
             boolean isComment = token.startsWith("//") || token.startsWith("/*");
             code.append(text, last, lex.start()).append(isComment ? " " : "\"\"")
-                    .append(token.replaceAll("[^\\n]", ""));
+                    .append(token.replaceAll("[^\\r\\n]", ""));
             if (isComment) {
                 docs.append(token).append('\n');
             }
@@ -132,9 +145,9 @@ public final class FormatCheck {
         Matcher imports = IMPORT.matcher(body);
         while (imports.find()) {
             names.add(imports.group(1).replaceAll("\\s+", ""));
-            lineNumbers.add(1 + (int) body.substring(0, imports.start()).chars().filter(c -> c == '\n').count());
+            lineNumbers.add(LINE_END.split(body.substring(0, imports.start()), -1).length);
             for (int i = imports.start(); i < imports.end(); i++) {
-                if (rest.charAt(i) != '\n') {
+                if (rest.charAt(i) != '\n' && rest.charAt(i) != '\r') {
                     rest.setCharAt(i, ' ');
                 }
             }
@@ -199,6 +212,28 @@ public final class FormatCheck {
                 + "class A {\n  int m = max(1, 2);\n}\n"), List.of());
         cases += expect(failed, "static import unused", check("A.java", "import static java.lang.Math.max;\n"
                 + "class A {\n  int m = other.max(1, 2);\n}\n"), List.of("A.java:1 unused-import"));
+        String optional = "import java.util.Optional;\nclass A {\n  ";
+        String useOptional = " Optional<String> o;\n}\n";
+        cases += expect(failed, "double quote in a char literal", check("A.java",
+                optional + "char c = '\"';" + useOptional), List.of());
+        cases += expect(failed, "escaped backslash ends a string", check("A.java",
+                optional + "String s = \"\\\\\";" + useOptional), List.of());
+        cases += expect(failed, "escaped quote in a char literal", check("A.java",
+                optional + "char c = '\\'';" + useOptional), List.of());
+        cases += expect(failed, "line comment marker in a string", check("A.java",
+                optional + "String s = \"a // b\";" + useOptional), List.of());
+        cases += expect(failed, "block comment marker in a string", check("A.java",
+                optional + "String s = \"a /* b\";" + useOptional), List.of());
+        cases += expect(failed, "text block with a comment marker and an apostrophe", check("A.java",
+                optional + "String t = \"\"\"\n    // it's\n    \"\"\";" + useOptional), List.of());
+        cases += expect(failed, "string literal of 20000 characters", check("A.java",
+                optional + "String s = \"" + "x".repeat(20000) + "\";" + useOptional), List.of());
+        cases += expect(failed, "empty file", check("A.java", ""), List.of());
+        cases += expect(failed, "empty file fix", List.of(fix("")), List.of(""));
+        cases += expect(failed, "CR-only file check", check("A.java", "class A {\r  int x; \r}\r"),
+                List.of("A.java:2 trailing-whitespace"));
+        cases += expect(failed, "CR-only file fix", List.of(fix("class A {\r  int x; \r}")),
+                List.of("class A {\r  int x;\r}\r"));
         cases += expect(failed, "fix keeps CRLF", List.of(fix("class A {\r\n  int x; \r\n}")),
                 List.of("class A {\r\n  int x;\r\n}\r\n"));
         cases += expect(failed, "fix keeps LF", List.of(fix("class A {\n  int x; \n}")), List.of("class A {\n  int x;\n}\n"));
@@ -218,6 +253,14 @@ public final class FormatCheck {
                 "format-check: 2 files, 0 findings"));
         cases += expect(failed, "fix kept line endings", List.of(Files.readString(src.resolve("A.java")),
                 Files.readString(src.resolve("B.java"))), List.of("class A {\n}\n", "class B {\r\n}\r\n"));
+        byte[] bom = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
+        byte[] body = "class C {\r\n  String s = \"Привет\"; \r\n}".getBytes(StandardCharsets.UTF_8);
+        byte[] fixedBody = "class C {\r\n  String s = \"Привет\";\r\n}\r\n".getBytes(StandardCharsets.UTF_8);
+        Path bomFile = src.resolve("C.java");
+        Files.write(bomFile, concat(bom, body));
+        runIn(dir, true);
+        cases += expect(failed, "fix keeps BOM, CRLF and Cyrillic bytes",
+                List.of(Arrays.toString(Files.readAllBytes(bomFile))), List.of(Arrays.toString(concat(bom, fixedBody))));
         if (failed.isEmpty()) {
             System.out.println("format-check selftest: " + cases + " cases, ok");
             return 0;
@@ -225,6 +268,12 @@ public final class FormatCheck {
         failed.forEach(System.out::println);
         System.out.println("format-check selftest: " + failed.size() + " of " + cases + " cases failed");
         return 1;
+    }
+
+    private static byte[] concat(byte[] first, byte[] second) {
+        byte[] all = Arrays.copyOf(first, first.length + second.length);
+        System.arraycopy(second, 0, all, first.length, second.length);
+        return all;
     }
 
     private static List<String> runIn(Path dir, boolean fix) throws IOException {
