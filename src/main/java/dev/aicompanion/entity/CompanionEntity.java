@@ -164,7 +164,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionGoals goals = new CompanionGoals(this);
     public CompanionGoals goals() { return goals; }
     final CompanionParkedOrder parked = new CompanionParkedOrder(this);
-    /** An urgent order puts the dig aside for later; false when nothing was put aside and the caller stops the work as before. */
     public boolean parkWork() { return parked.park(); }
     private final CompanionLighting lighting = new CompanionLighting(this);
     public CompanionLighting lighting() { return lighting; }
@@ -993,7 +992,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void startGatheringLogsForWork(int count) { gathering.startGatheringLogsForWork(count); }
     void startGatheringDirtForWork(int count) { gathering.startGatheringDirtForWork(count); }
     void startGatheringDirtForWork(int count, CompanionGround ground) { gathering.startGatheringDirtForWork(count, ground); }
-    public void stopGathering() { parked.drop(); gathering.stopGathering(); }
+    public void stopGathering() { gathering.stopGathering(); }
+    public void stopGatheringForPlayer() { parked.drop(); gathering.stopGathering(); }
 
     ServerPlayer getOwnerPlayer() {
         if (!(level() instanceof ServerLevel serverLevel) || ownerId == null) return null;

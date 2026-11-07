@@ -92,7 +92,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             var companion = player == null ? null : CompanionEvents.getOwnedCompanion(player);
-            if (companion != null && ownedWorkId > 0 && companion.activeWorkId() == ownedWorkId && !(urgent && companion.parkWork())) companion.stopGathering();
+            if (companion != null && ownedWorkId > 0 && companion.activeWorkId() == ownedWorkId && !(urgent && companion.parkWork())) {
+                if (urgent) companion.stopGathering();
+                else companion.stopGatheringForPlayer();
+            }
         });
     }
 

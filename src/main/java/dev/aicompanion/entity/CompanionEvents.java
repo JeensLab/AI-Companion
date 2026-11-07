@@ -243,7 +243,7 @@ public final class CompanionEvents {
         CompanionEntity companion = resolveCanonical(player, false);
         if (companion != null) {
             companion.goals().playerOrder("stop"); companion.autonomy().playerOrder("stop");
-            CompanionAgenda.playerOrder(player, companion, "stop"); companion.stopGathering();
+            CompanionAgenda.playerOrder(player, companion, "stop"); companion.stopGatheringForPlayer();
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон сейчас не загружен в мир."
                 : "Компаньон остановил текущую задачу."));
@@ -293,6 +293,10 @@ public final class CompanionEvents {
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         // Naming the home is a word, not an order: whatever he is busy with goes on.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
+            // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
+            CompanionAgenda.playerOrder(player, companion, action);
+            // The dig is put aside before the goal or the stop hears the order, which would end it; the agenda's own dig is never parked.
+            parkForUrgentOrder(companion, action);
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
@@ -301,14 +305,11 @@ public final class CompanionEvents {
                 // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
-            // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
-            CompanionAgenda.playerOrder(player, companion, action);
         }
         String previousTrace = companion.diagnosticTrace();
         boolean wasWorking = companion.isGatheringTask();
         companion.diagnosticBind(trace);
         companion.diagnosticSnapshot("action_before");
-        parkForUrgentOrder(companion, action);
         CompanionActionResult dispatchResult = switch (action) {
             case "pursue_goal" -> CompanionAgenda.accept(player, companion, item, count);
             case "goal_pickaxes" -> CompanionAgenda.working(player)
@@ -357,7 +358,7 @@ public final class CompanionEvents {
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
             case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
-            case "stop" -> { companion.stopGathering(); yield CompanionActionResult.ok("Ладно, остановился."); }
+            case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok("Ладно, остановился."); }
             case "come" -> {
                 companion.setFollowing(false);
                 yield companion.startWork("come", "", 1);

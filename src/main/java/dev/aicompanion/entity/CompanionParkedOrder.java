@@ -27,7 +27,7 @@ final class CompanionParkedOrder {
     /** Puts the active job aside; false when there is none or it cannot be put aside (the caller then stops it as before). */
     boolean park() {
         CompanionWork work = owner.work;
-        if (!work.isActive()) return false;
+        if (!work.isActive() || owner.goals.ownsWork(owner.activeWorkId())) return false;
         Parked rest = restOf(work);
         if (rest == null) return false;
         String line = "Отложил " + work.jobName() + " — вернусь после.";
@@ -73,8 +73,14 @@ final class CompanionParkedOrder {
     private boolean free() {
         return owner.level().getGameTime() - parkedAt >= PARK_GRACE_TICKS && owner.isFollowing() && !owner.isProtecting()
                 && !owner.hasActiveWorkOrder() && owner.canWorkNow() && !owner.isSelfRescuing() && owner.getTarget() == null
-                && owner.getOwnerPlayer() != null && !owner.deathTrip.active() && !owner.autonomy.running() && !owner.goals.outstanding()
+                && owner.getOwnerPlayer() != null && !owner.deathTrip.active() && !owner.autonomy.running() && !goalHoldsHim()
                 && !CompanionAgenda.suppressesDeeds(owner);
+    }
+
+    /** A goal that is running owns him; one that waits for the player (paused, blocked, unsupported) does not hold the rest back. */
+    private boolean goalHoldsHim() {
+        CompanionGoals.State state = owner.goals.state();
+        return state == CompanionGoals.State.ACTIVE || state == CompanionGoals.State.PAUSED_COMBAT;
     }
 
     /** Starts the rest as a new order, once: the record is consumed first, a second park stores what is then left. */
@@ -105,7 +111,7 @@ final class CompanionParkedOrder {
     /** Any work order but the walk to the player replaces the rest: said once, not kept for later. */
     void replacedBy(String action) {
         // Only a player's work order replaces it: a step of a goal or a deed of his own leaves it for later.
-        if (parked == null || action.equals("come") || CompanionEvents.goalDispatching() || owner.autonomy.running()) return;
+        if (parked == null || action.equals("come") || action.equals("collect_smelt") || CompanionEvents.goalDispatching() || owner.autonomy.running()) return;
         owner.autonomySay("Отложенную " + name(parked, false) + " отменяю.", false);
         parked = null;
     }
