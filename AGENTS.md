@@ -122,8 +122,8 @@
 - Не публикуйте ключи, локальные настройки, аудио, миры и полные журналы.
   Диагностика может содержать диалог, координаты и инвентарь; см. `SECURITY.md`.
 - `switch` по enum проекта — без `default`, все константы перечислены; новая константа обязана
-  ломать сборку или `scripts/switch-check`, а не молча попадать в `default`. Проверку запускают
-  `scripts/gate.sh`/`gate.ps1` (шаг `scripts/switch-check`, если он есть). Для enum Minecraft/NeoForge
+  ломать сборку или `scripts/switch-check`, а не молча попадать в `default`. Проверка —
+  `./scripts/switch-check.sh` или `.\scripts\switch-check.ps1`. Для enum Minecraft/NeoForge
   и для `String` правило не действует; `switch` по вызову метода или `var` без `case` с константами не виден проверке.
 
 ## Проверка и передача результата
