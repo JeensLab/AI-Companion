@@ -9,12 +9,18 @@ import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.BeforeBatch;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import static dev.aicompanion.gametest.CompanionDiamondGoalTests.CENTER;
+import static dev.aicompanion.gametest.CompanionDiamondGoalTests.GROUND;
 import static dev.aicompanion.gametest.CompanionDiamondGoalTests.Rig;
 import static dev.aicompanion.gametest.CompanionDiamondGoalTests.givenToPlayer;
 import static dev.aicompanion.gametest.CompanionDiamondGoalTests.report;
@@ -30,7 +36,7 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.state;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineNightTests {
     private static final String DUSK = "Темнеет — спускаюсь, факелов хватит на начало.";
-    private static final int TIMEOUT = 24000, NIGHT = 18000, TORCHES_FEW = 8, BREAD_MIN = 4, STICKS_MIN = 4, STICKS_NIGHT = 6;
+    private static final int TIMEOUT = 24000, BENCH_TIMEOUT = 12000, NIGHT = 18000, TORCHES_FEW = 8, BREAD_MIN = 4, STICKS_MIN = 4, STICKS_NIGHT = 6, STONE_PICKAXE_STONE = 3;
     private static long clock;
 
     private CompanionMineNightTests() { }
@@ -58,6 +64,32 @@ public final class CompanionMineNightTests {
     }
 
     /**
+     * Runs 07.11 (seed 7, retreat and void-5): the bench of the kit stayed on the surface and no stone pickaxe was in the bag, so below he could not make one
+     * and climbed; at dusk the bare minimum sent him down again, and the order ended on "no stone pickaxe". The bag lacks both: the top-up fells the tree for a bench first.
+     */
+    @GameTest(template = "marathon_cave", batch = "mine_night", timeoutTicks = BENCH_TIMEOUT)
+    public static void theDuskDescentWaitsForAPickaxeAndABench(GameTestHelper h) {
+        Rig r = rig(h, true, new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, 16), new ItemStack(Items.TORCH, 38),
+                new ItemStack(Items.STICK, 23), new ItemStack(Items.COBBLESTONE, 28));
+        r.c().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        for (int y = 1; y <= 4; y++) h.setBlock(new BlockPos(CENTER + 5, GROUND + y, CENTER), Blocks.OAK_LOG);
+        h.setBlock(new BlockPos(CENTER + 5, GROUND + 5, CENTER), Blocks.OAK_LEAVES);
+        start(h, r, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(!DUSK.equals(r.c().autonomyLine()), "He went down at dusk without a pickaxe and a bench | " + report(h, r));
+            h.assertTrue(state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(h, r));
+        });
+        h.succeedWhen(() -> h.assertTrue(count(r.c(), Items.STONE_PICKAXE) >= 1 && count(r.c(), Items.CRAFTING_TABLE) >= 1, "No pickaxe and bench yet | " + report(h, r)));
+    }
+
+    private static int count(CompanionEntity companion, Item item) {
+        int count = 0;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
+        return count;
+    }
+
+    /**
      * Run 07.11 (seed 314159): down to -58 with the sticks of two pickaxes, and the climb started with none. The tunnels below stop at the last pickaxe, so the kit
      * he goes down with at dusk holds the sticks of one more than the minimum of the day's kit.
      */
@@ -67,6 +99,11 @@ public final class CompanionMineNightTests {
         var mine = CompanionPlaybooks.of("find_diamonds", 1).milestones().getLast();
         c.setItem(0, new ItemStack(Items.BREAD, BREAD_MIN));
         c.setItem(1, new ItemStack(Items.TORCH, TORCHES_FEW));
+        c.setItem(2, new ItemStack(Items.STICK, STICKS_NIGHT));
+        h.assertTrue(!mine.kitMinimum(CompanionFacts.of(c)) && !mine.nightKit(CompanionFacts.of(c)), "A bag without a bench meets the kit minimum");
+        c.setItem(3, new ItemStack(Items.CRAFTING_TABLE));
+        h.assertTrue(!mine.kitMinimum(CompanionFacts.of(c)), "A bag without a pickaxe or stone meets the kit minimum");
+        c.setItem(4, new ItemStack(Items.COBBLESTONE, STONE_PICKAXE_STONE));
         c.setItem(2, new ItemStack(Items.STICK, STICKS_MIN));
         h.assertTrue(mine.kitMinimum(CompanionFacts.of(c)) && !mine.nightKit(CompanionFacts.of(c)), "The sticks of two pickaxes make the kit he goes down with at dusk");
         c.setItem(2, new ItemStack(Items.STICK, STICKS_NIGHT));

@@ -29,7 +29,7 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.*;
 @PrefixGameTestTemplate(false)
 public final class CompanionGoalResumeAndPitTests {
     private static final String GOAL = "find_diamonds";
-    private static final int SPENT = 12, HUNT_TICKS = 1200, PIT_TIMEOUT = 2400, SURFACE = 7, FOOD_MIN = 4, STICKS_MIN = 4;
+    private static final int SPENT = 12, HUNT_TICKS = 1200, PIT_TIMEOUT = 2400, SURFACE = 7, FOOD_MIN = 4, STICKS_MIN = 4, STONE_PICKAXE_STONE = 3;
 
     @AfterBatch(batch = "resume_fresh") public static void afterFresh(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "resume_repeat") public static void afterRepeat(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -84,6 +84,8 @@ public final class CompanionGoalResumeAndPitTests {
         c.setItem(1, new ItemStack(Items.STICK, STICKS_MIN)); c.setItem(0, new ItemStack(Items.BREAD, FOOD_MIN - 1));
         h.assertTrue(!mine.kitMinimum(CompanionFacts.of(c)), "Sticks without enough food meet the kit minimum");
         c.setItem(0, new ItemStack(Items.BREAD, FOOD_MIN));
+        h.assertTrue(!mine.kitMinimum(CompanionFacts.of(c)), "Food and sticks without a bench and stone meet the kit minimum");
+        c.setItem(2, new ItemStack(Items.CRAFTING_TABLE)); c.setItem(3, new ItemStack(Items.COBBLESTONE, STONE_PICKAXE_STONE));
         h.assertTrue(mine.kitMinimum(CompanionFacts.of(c)), "A full minimum is refused");
         h.succeed();
     }

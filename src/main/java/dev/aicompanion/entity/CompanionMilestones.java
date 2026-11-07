@@ -51,7 +51,7 @@ public final class CompanionMilestones {
     /** Ingots beyond the sword's that buy a second iron pickaxe, so that a broken first one does not send him to smelt iron. */
     private static final int SPARE_PICKAXE_INGOTS = 3;
     /** A shield is made of what the bag holds already: six boards and an ingot, with the boards a missing bench and sticks would take kept apart. */
-    private static final int SHIELD_PLANKS = 6, BENCH_PLANKS = 4, STICK_PLANKS = 4, PLANKS_PER_LOG = 4;
+    private static final int SHIELD_PLANKS = 6, BENCH_PLANKS = 4, STICK_PLANKS = 4, PLANKS_PER_LOG = 4, PICKAXE_STONE = 3;
     /** Swords he goes down with; without one he fights the tunnel's monsters with his pickaxes (a wooden or golden one is no better). */
     private static final Set<Item> MINE_SWORDS = Set.of(Items.STONE_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD, Items.NETHERITE_SWORD);
 
@@ -153,9 +153,16 @@ public final class CompanionMilestones {
             };
         }
 
-        /** Food and the sticks of a pickaxe or two are what he cannot do without below (the stock of {@link #STICKS_MIN} is only a top-up target): a top-up that stopped short of them does not let the descent start. */
+        /**
+         * Food and the sticks of a pickaxe or two are what he cannot do without below (the stock of {@link #STICKS_MIN} is only a top-up target): a top-up that stopped short of them does not let the descent start.
+         * So are a bench (or its wood) and a stone pickaxe (or its stone): a pickaxe is made below only with both (runs of 07.11, seed 7, retreat and void-5).
+         */
         public boolean kitMinimum(CompanionFacts facts) {
-            return facts.inMine() || facts.carried(READY_FOOD::contains) >= FOOD_MIN && facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * STONE_PICKAXES_MIN;
+            if (facts.inMine()) return true;
+            boolean bench = facts.carried(Items.CRAFTING_TABLE) > 0 || facts.carried(held -> new ItemStack(held).is(ItemTags.PLANKS)) >= BENCH_PLANKS
+                    || facts.carried(held -> new ItemStack(held).is(ItemTags.LOGS)) >= 1;
+            boolean pickaxe = facts.carried(Items.STONE_PICKAXE) > 0 || facts.carried(held -> new ItemStack(held).is(ItemTags.STONE_TOOL_MATERIALS)) >= PICKAXE_STONE;
+            return facts.carried(READY_FOOD::contains) >= FOOD_MIN && facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * STONE_PICKAXES_MIN && bench && pickaxe;
         }
 
         /** Food is what the kit lacks above the ground: a top-up that found no game waits and tries again, like a hurt goal that cannot eat. */
