@@ -35,7 +35,7 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionGuardReachTests {
     private static final int HALF_ROAD = 60, HALF_WIDTH = 4, MIDDLE_X = 2, MIDDLE_Z = 2;
-    private static final List<ChunkPos> forced = new ArrayList<>();
+    private static final List<ChunkPos> FORCED_CHUNKS = new ArrayList<>();
 
     @AfterBatch(batch = "guard_reach_order")
     public static void releaseOrder(ServerLevel level) { release(level); }
@@ -137,7 +137,7 @@ public final class CompanionGuardReachTests {
         for (int cx = SectionPos.blockToSectionCoord(middle.getX() - HALF_ROAD); cx <= SectionPos.blockToSectionCoord(middle.getX() + HALF_ROAD); cx++)
             for (int cz = SectionPos.blockToSectionCoord(middle.getZ() - HALF_WIDTH); cz <= SectionPos.blockToSectionCoord(middle.getZ() + HALF_WIDTH); cz++) {
                 level.setChunkForced(cx, cz, true);
-                forced.add(new ChunkPos(cx, cz));
+                FORCED_CHUNKS.add(new ChunkPos(cx, cz));
                 level.getChunk(cx, cz);
             }
         clearMobs(level);
@@ -149,15 +149,15 @@ public final class CompanionGuardReachTests {
 
     /** The road is outside the template, so the game does not sweep it: what an earlier test left there would join this fight. */
     private static void clearMobs(ServerLevel level) {
-        for (ChunkPos chunk : forced)
+        for (ChunkPos chunk : FORCED_CHUNKS)
             for (var mob : level.getEntitiesOfClass(Mob.class, new AABB(chunk.getMinBlockX(), level.getMinBuildHeight(), chunk.getMinBlockZ(),
                     chunk.getMaxBlockX() + 1, level.getMaxBuildHeight(), chunk.getMaxBlockZ() + 1))) mob.discard();
     }
 
     private static void release(ServerLevel level) {
         clearMobs(level);
-        for (ChunkPos chunk : forced) level.setChunkForced(chunk.x, chunk.z, false);
-        forced.clear();
+        for (ChunkPos chunk : FORCED_CHUNKS) level.setChunkForced(chunk.x, chunk.z, false);
+        FORCED_CHUNKS.clear();
     }
 
     /** A point of the road on the ground, x counted from the player (x = 0). */
