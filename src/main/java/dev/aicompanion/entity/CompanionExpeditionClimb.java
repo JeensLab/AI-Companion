@@ -231,14 +231,16 @@ final class CompanionExpeditionClimb {
     }
 
     /**
-     * The record's way up is shut where he stands and no rescue opens it. Where the record has a gap beyond (or none at all) a staircase of his own is the way up
-     * whatever it takes; where his stairs run on whole to the surface they are known and only shut here, and a new staircase cut from the middle of the mine
-     * would wear the pickaxes out, so the climb ends said as it is.
+     * The record's way up is shut where he stands and no rescue opens it. A staircase of his own is the way up whatever it takes where the record has a gap
+     * beyond the blocked cell (or none at all), and where the blocked cell itself lies across a gap from the cell before it: his stairs then do not lead up
+     * from here, whole or not. Only where his stairs run on whole to the surface and are merely shut at that cell are they known; a new staircase cut from
+     * the middle of the mine would wear the pickaxes out, so the climb ends said as it is.
      */
     private Result noWay() {
         BlockPos beyond = cells.get(stretchEnd);
-        if (lost || gapAfter(cells, stretchEnd) < cells.size()) {
-            newStairsWhy = lost ? "Своей лестницы наверх нет" : "Своя лестница перекрыта на высоте " + beyond.getY();
+        boolean acrossGap = stretchEnd == 0 || cells.get(stretchEnd - 1).distSqr(beyond) > GAP;
+        if (lost || acrossGap || gapAfter(cells, stretchEnd) < cells.size()) {
+            newStairsWhy = lost ? "Своей лестницы наверх нет" : acrossGap ? "До своей лестницы не добраться" : "Своя лестница перекрыта на высоте " + beyond.getY();
             return stairsUp();
         }
         return finish(" Своя лестница перекрыта на высоте " + beyond.getY() + "." + CLOSED);

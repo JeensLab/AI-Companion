@@ -12,6 +12,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -37,6 +38,10 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineWayUpTests {
     private static final int STEPS = 10, TUNNEL = 6, PLUG_AT = 3, SURFACE_MARGIN = 2;
+    /** The chamber deep in the deepslate: its feet over the bottom of the arena, east of the surface entrance. */
+    private static final int DEEP_EAST = 6, DEEP_FEET = 3;
+    /** How far the self-rescue digs from where he stands, and how many cells of rock the record forbids. */
+    private static final int RESCUE_REACH = 4, MAX_FORBIDDEN = 256;
     /** What the new staircase of a lost way is said with; the way up of his own never says it. */
     private static final String NEW_STAIRS = "прокапываю новую";
 
@@ -110,6 +115,47 @@ public final class CompanionMineWayUpTests {
             int worn = 0;
             for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.STONE_PICKAXE)) worn += c.getItem(slot).getDamageValue();
             h.assertTrue(count(c, Items.STONE_PICKAXE) == 1 && worn == 0, "The last pickaxe was spent on the tunnel: " + count(c, Items.STONE_PICKAXE) + " left, wear " + worn + " | " + report(c));
+        });
+    }
+
+    /**
+     * Run lava of seed 7 (07.11): a mine started again under the ground whose record of the way up holds only the entrance on the surface, far above through
+     * solid rock. No walk, plug or rescue crosses that gap, and the climb ended «Своя лестница перекрыта» with a diamond in the bag. His old stairs do not lead up
+     * from here, so a staircase of his own is the way up, as for a lost one.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void cutsNewStairsWhenTheGapToHisOldStairsCannotBeCrossed(GameTestHelper h) {
+        mountain(h, false);
+        BlockPos stand = h.absolutePos(new BlockPos(CENTER + DEEP_EAST, DEEP_FEET, CENTER));
+        for (int y = 0; y <= 2; y++) h.getLevel().setBlock(stand.above(y), Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(1, ItemStack.EMPTY);
+        c.setItem(4, new ItemStack(Items.DIAMOND));
+        CompanionMineSite site = c.mineSite();
+        site.start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        site.restart(stand, Direction.NORTH);
+        site.buried(true);
+        h.assertTrue(site.above().size() == 1, "The record of the way up is not the entrance alone: " + site.above().size() + " cells");
+        // The self-rescue digs no cell his mine forbids, so within its reach (4 blocks) it finds no rock to cut; the staircase of the climb takes them in a second pass.
+        Vec3 feet = new Vec3(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        int shut = 0;
+        for (int x = -RESCUE_REACH; x <= RESCUE_REACH; x++) for (int y = -RESCUE_REACH; y <= RESCUE_REACH + 2; y++) for (int z = -RESCUE_REACH; z <= RESCUE_REACH; z++) {
+            BlockPos cell = stand.offset(x, y, z);
+            if (h.getLevel().getBlockState(cell).isAir() || cell.getCenter().distanceToSqr(feet) > RESCUE_REACH * RESCUE_REACH) continue;
+            site.forbid(cell);
+            shut++;
+        }
+        h.assertTrue(shut <= MAX_FORBIDDEN, "The rock round the chamber does not fit the forbidden cells of the record: " + shut);
+        c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        CompanionMineClimbOutTests.climb(h, c, stand, result -> {
+            h.assertTrue(!result.message().contains("Своя лестница перекрыта") && !result.message().contains("путь наверх закрыт"),
+                    "He ended the climb as shut: " + result.message() + " | " + report(c));
+            h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
+            h.assertTrue(count(c, Items.DIAMOND) == 1, "The diamond is not in the bag | " + report(c));
         });
     }
 
