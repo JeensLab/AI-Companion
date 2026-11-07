@@ -29,7 +29,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionClimbToPlayerTests {
-    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2;
+    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, FOLLOW_RANGE_SHORT = 8;
 
     private CompanionClimbToPlayerTests() { }
 
@@ -37,6 +37,24 @@ public final class CompanionClimbToPlayerTests {
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void cutsStairsUpToThePlayerWhenNoWayLeadsOutOfTheCanyon(GameTestHelper h) {
         CompanionEntity c = pit(h);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) == 0, "He said «" + result.message() + "» in the pit | " + report(c));
+            h.assertTrue(c.getBlockY() >= h.absolutePos(new BlockPos(0, GROUND + 1, 0)).getY(), "He threw it from below the surface at " + c.blockPosition().toShortString() + " | " + report(c));
+        });
+    }
+
+    /**
+     * The same hand-over with the player out of the range where «no way» can be told (seed 7, lava: ninety-seven blocks off the pit): the search
+     * does not see him, so the failed walk is «застрял», not «no way», and the stairs must be cut all the same, the climb not ended by a «walk is possible» that is only the distance.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void cutsStairsUpToThePlayerFromAPitWhenTheWalkFails(GameTestHelper h) {
+        CompanionEntity c = pit(h);
+        c.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).setBaseValue(FOLLOW_RANGE_SHORT);
         c.setItem(6, new ItemStack(Items.DIAMOND));
         h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
         long id = c.activeWorkId();
