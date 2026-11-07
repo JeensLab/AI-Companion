@@ -51,6 +51,12 @@ public final class CompanionGuardReachTests {
     public static void releaseLeave(ServerLevel level) { release(level); }
     @AfterBatch(batch = "guard_reach_creeper")
     public static void releaseCreeper(ServerLevel level) { release(level); }
+    @AfterBatch(batch = "guard_reach_switch")
+    public static void releaseSwitch(ServerLevel level) { release(level); }
+    @AfterBatch(batch = "guard_reach_fenced")
+    public static void releaseFenced(ServerLevel level) { release(level); }
+    @AfterBatch(batch = "guard_reach_fenced_first")
+    public static void releaseFencedFirst(ServerLevel level) { release(level); }
 
     /** The issue's scene: zombies 30 and 10 blocks from the player, the one at 10 dies first, then he goes for the one at 30. */
     @GameTest(template = "empty", timeoutTicks = 900, batch = "guard_reach_order")
@@ -166,6 +172,81 @@ public final class CompanionGuardReachTests {
                     .thenExecute(() -> h.assertTrue(companion.getTarget() == null, "He kept the creeper that left: target=" + companion.getTarget()))
                     .thenSucceed();
         });
+    }
+
+    /** The only monster around stands behind a fence he cannot cross: he goes to it, gives it up and comes back to the player. */
+    @GameTest(template = "empty", timeoutTicks = 900, batch = "guard_reach_fenced")
+    public static void aMonsterHeCannotReachIsGivenUpAndHeStaysByThePlayer(GameTestHelper h) {
+        h.startSequence().thenExecute(() -> arena(h)).thenIdle(20).thenExecute(() -> {
+            CompanionEntity companion = guard(h, 1);
+            ServerPlayer player = player(h, companion);
+            var fenced = zombie(h, -20);
+            fenceIn(h, -20);
+            h.startSequence()
+                    .thenWaitUntil(() -> h.assertTrue(companion.getTarget() == fenced, "He did not go for the fenced zombie: " + companion.getTarget()))
+                    .thenWaitUntil(() -> h.assertTrue(companion.getTarget() == null, "He holds a zombie he cannot reach: " + spots(h, player, companion)))
+                    .thenWaitUntil(() -> h.assertTrue(companion.distanceTo(player) < 6, "He did not come back: " + spots(h, player, companion)))
+                    .thenExecute(() -> h.assertTrue(fenced.isAlive(), "The fenced zombie fell: he reached what cannot be reached"))
+                    .thenSucceed();
+        });
+    }
+
+    /** The monster nearer to the player is unreachable, the one farther is in the open: after giving up the first he kills the second. */
+    @GameTest(template = "empty", timeoutTicks = 1500, batch = "guard_reach_fenced_first")
+    public static void anUnreachableMonsterNearerToThePlayerDoesNotHideAReachableOne(GameTestHelper h) {
+        h.startSequence().thenExecute(() -> arena(h)).thenIdle(20).thenExecute(() -> {
+            CompanionEntity companion = guard(h, 1);
+            ServerPlayer player = player(h, companion);
+            var fenced = zombie(h, -10);
+            fenceIn(h, -10);
+            var open = zombie(h, 18);
+            h.startSequence()
+                    .thenWaitUntil(() -> h.assertTrue(companion.getTarget() == fenced, "He did not choose the fenced zombie first: " + companion.getTarget()))
+                    .thenWaitUntil(() -> h.assertTrue(!open.isAlive(), "The reachable zombie stayed alive: target=" + companion.getTarget() + " "
+                            + spots(h, player, companion) + " openHp=" + open.getHealth()))
+                    .thenExecute(() -> h.assertTrue(fenced.isAlive(), "The fenced zombie fell"))
+                    .thenSucceed();
+        });
+    }
+
+    /** With the switch off the guard order picks as before: the monster nearest to Oleg (4 blocks), not the one nearest to the player (9). */
+    @GameTest(template = "empty", timeoutTicks = 300, batch = "guard_reach_switch")
+    public static void withTheSwitchOffTheTargetIsTheMonsterNearestToHim(GameTestHelper h) {
+        h.startSequence().thenExecute(() -> arena(h)).thenIdle(20).thenExecute(() -> {
+            CompanionEntity companion = guard(h, 8);
+            companion.setGuardByPlayer(false);
+            var nearToPlayer = zombie(h, -9);
+            var nearToHim = zombie(h, 12);
+            h.runAtTickTime(60, () -> {
+                h.assertTrue(companion.getTarget() == nearToHim,
+                        "Target was " + companion.getTarget() + ", wanted the zombie 4 blocks from him; " + spots(h, player(h, companion), companion));
+                h.assertTrue(nearToPlayer.isAlive(), "The zombie nearest to the player fell first");
+                h.succeed();
+            });
+        });
+    }
+
+    /** The switch lives in the save with him; an old save has it on. */
+    @GameTest(template = "empty", batch = "guard_reach_switch")
+    public static void theGuardSwitchIsSavedAndAnOldSaveHasItOn(GameTestHelper h) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 4, 1, 4);
+        c.setGuardByPlayer(false);
+        CompanionEntity other = h.spawn(AICompanionMod.COMPANION.get(), 8, 1, 8);
+        other.load(c.saveWithoutId(new net.minecraft.nbt.CompoundTag()));
+        h.assertTrue(!other.guardByPlayer(), "The switch was not saved");
+        CompanionEntity third = h.spawn(AICompanionMod.COMPANION.get(), 12, 1, 12);
+        third.setGuardByPlayer(false);
+        third.load(new net.minecraft.nbt.CompoundTag());
+        h.assertTrue(third.guardByPlayer(), "An old save loaded with the switch off");
+        h.succeed();
+    }
+
+    /** A ring of fences three blocks from x, round the zombie standing there: a mob cannot jump 1.5 blocks, and a blade does not reach over three. */
+    private static void fenceIn(GameTestHelper h, int x) {
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
+            if (Math.abs(dx) != 3 && Math.abs(dz) != 3) continue;
+            h.getLevel().setBlockAndUpdate(h.absolutePos(at(x).offset(dx, 0, dz)), Blocks.OAK_FENCE.defaultBlockState());
+        }
     }
 
     /** Stone round the foot of the road at x, up to the roof, leaving the one cell the mob stands in. */

@@ -46,6 +46,7 @@ public final class CompanionPreferences {
                 companion.setCompanionName(name); companion.setSearchRadius(radius); companion.setLifestyle(chunks, speech);
                 companion.setConversationAvailable(conversationAvailable);
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());
+                companion.setGuardByPlayer(OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());
                 String remote = companion.getName().getString() + " находится на " + companion.blockPosition().toShortString()
                         + ", измерение=" + companion.level().dimension().location() + ", занят=" + companion.isGatheringTask()

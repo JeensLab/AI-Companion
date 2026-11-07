@@ -8,6 +8,9 @@ import net.minecraft.world.entity.ai.goal.Goal;
 
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * The guard order («охраняй меня»): he watches the blocks around the player, not around himself, and goes for the hostile
@@ -26,22 +29,29 @@ final class CompanionGuardWatch extends Goal {
     /** Outside a guard order a fight lets him go when he and the mob are both this far from the player. */
     private static final int STRAY_SELF = 16, STRAY_ENEMY = 14;
 
+    /** A mob he could not get any closer to (or hurt) for CompanionWork.CHASE_TICKS is not taken again for this long, like an animal of a hunt. */
+    private static final int GIVE_UP_TICKS = 20 * 30;
+
     private final CompanionEntity c;
     private Mob chosen;
     private int nextScan;
     private int lastSeen;
+    private final Map<UUID, Long> givenUp = new HashMap<>();
+    private double bestDistance;
+    private float bestHealth;
+    private long progressSince;
 
     CompanionGuardWatch(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.TARGET)); }
 
     /** The disengage rule of a fight for the player; a guard order widens it to the watch (a hunt keeps its own range). */
     static boolean strayed(CompanionEntity c, ServerPlayer owner, LivingEntity target) {
-        boolean watching = c.protecting && !c.work.isHunting();
+        boolean watching = c.guardByPlayer() && c.protecting && !c.work.isHunting();
         double self = watching ? GUARD_WATCH : STRAY_SELF, enemy = watching ? GUARD_WATCH : STRAY_ENEMY;
         return c.distanceToSqr(owner) > self * self && target.distanceToSqr(owner) > enemy * enemy;
     }
 
     @Override public boolean canUse() {
-        if (!c.protecting || c.work.isHunting() || c.inventoryViewers != 0 || c.tickCount < nextScan) return false;
+        if (!c.guardByPlayer() || !c.protecting || c.work.isHunting() || c.inventoryViewers != 0 || c.tickCount < nextScan) return false;
         nextScan = c.tickCount + SCAN_INTERVAL;
         chosen = nearestToOwner();
         return chosen != null;
@@ -49,14 +59,36 @@ final class CompanionGuardWatch extends Goal {
 
     @Override public void start() {
         lastSeen = c.tickCount;
+        trackProgress();
         c.setTarget(chosen);
     }
 
     @Override public boolean canContinueToUse() {
         ServerPlayer owner = c.getOwnerPlayer();
-        if (!c.protecting || c.work.isHunting() || owner == null || chosen == null || c.getTarget() != chosen || !watched(owner, chosen)) return false;
+        if (!c.guardByPlayer() || !c.protecting || c.work.isHunting() || owner == null || chosen == null || c.getTarget() != chosen || !watched(owner, chosen)) return false;
         if (sees(owner, chosen)) lastSeen = c.tickCount;
-        return c.tickCount - lastSeen <= UNSEEN_TICKS;
+        return c.tickCount - lastSeen <= UNSEEN_TICKS && !unreachable();
+    }
+
+    /** Every tick: no step nearer and no wound for CHASE_TICKS means no way to it (a lone block, a ledge, a pit); it is let go and left for a while. */
+    private boolean unreachable() {
+        if (c.inventoryViewers != 0) { progressSince = c.level().getGameTime(); return false; }
+        double distance = c.distanceToSqr(chosen);
+        if (distance + .5 < bestDistance || chosen.getHealth() < bestHealth) {
+            bestDistance = distance;
+            bestHealth = chosen.getHealth();
+            progressSince = c.level().getGameTime();
+        }
+        if (c.level().getGameTime() - progressSince <= CompanionWork.CHASE_TICKS) return false;
+        givenUp.put(chosen.getUUID(), c.level().getGameTime() + GIVE_UP_TICKS);
+        c.getNavigation().stop();
+        return true;
+    }
+
+    private void trackProgress() {
+        bestDistance = c.distanceToSqr(chosen);
+        bestHealth = chosen.getHealth();
+        progressSince = c.level().getGameTime();
     }
 
     @Override public void tick() {
@@ -67,6 +99,7 @@ final class CompanionGuardWatch extends Goal {
         if (nearest == null || nearest == chosen || nearest.distanceTo(owner) + SWITCH_MARGIN >= chosen.distanceTo(owner)) return;
         chosen = nearest;
         lastSeen = c.tickCount;
+        trackProgress();
         c.setTarget(nearest);
     }
 
@@ -83,7 +116,9 @@ final class CompanionGuardWatch extends Goal {
     private Mob nearestToOwner() {
         ServerPlayer owner = c.getOwnerPlayer();
         if (owner == null || owner.isSpectator()) return null;
-        return c.level().getEntitiesOfClass(Mob.class, owner.getBoundingBox().inflate(GUARD_WATCH), mob -> eligible(owner, mob))
+        long now = c.level().getGameTime();
+        givenUp.values().removeIf(until -> until < now);
+        return c.level().getEntitiesOfClass(Mob.class, owner.getBoundingBox().inflate(GUARD_WATCH), mob -> !givenUp.containsKey(mob.getUUID()) && eligible(owner, mob))
                 .stream().sorted(Comparator.comparingDouble(mob -> mob.distanceToSqr(owner))).filter(mob -> sees(owner, mob)).findFirst().orElse(null);
     }
 

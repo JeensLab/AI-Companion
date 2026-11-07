@@ -72,6 +72,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.death_recovery")
             .define("deathRecovery", true);
 
+    /** Whether the guard order goes for the monster nearest to the player. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue GUARD_NEAREST_TO_PLAYER = BUILDER
+            .comment("On the guard order, go for the monster nearest to the player within fifty blocks of him. Off: only the monsters near the player or near the companion, the nearest to the companion first.")
+            .translation("config.aicompanion.guard_nearest_to_player")
+            .define("guardNearestToPlayer", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")
