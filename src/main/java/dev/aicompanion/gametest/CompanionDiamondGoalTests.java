@@ -367,7 +367,17 @@ public final class CompanionDiamondGoalTests {
         var goal = goal(h, r);
         CompanionEntity c = r.c();
         return "goal " + (goal == null ? "none" : goal.state() + " '" + goal.reason() + "' results " + goal.resultCount()) + ", at " + rel(h, c.blockPosition()).toShortString() + ", hp " + c.getHealth()
-                + ", mine " + (c.mineSite().exists() ? c.mineSite().opened() + " cells" : "none") + " | " + c.getDeedsForAi() + " | " + c.getLastTaskResult() + " | bag: " + c.getStoredItemsSummary();
+                + ", mine " + (c.mineSite().exists() ? c.mineSite().opened() + " cells" : "none") + " | " + c.getDeedsForAi() + " | " + c.getLastTaskResult() + " | bag: " + c.getStoredItemsSummary()
+                + " | " + clock(h, goal);
+    }
+
+    /** The night rule sends him down with what he has (mineAsIs): a test that expects the full kit reads red for the clock it started at, not for the code. */
+    private static String clock(GameTestHelper h, CompanionAgendaData.Goal goal) {
+        String asIs = "none";
+        if (goal != null) {
+            try { asIs = String.valueOf(CompanionSingleRouteTests.field(goal, "mineAsIs")); } catch (Exception error) { asIs = error.toString(); }
+        }
+        return "day=" + h.getLevel().getDayTime() % 24000 + " night=" + h.getLevel().isNight() + " mineAsIs=" + asIs;
     }
 
     /** Diamonds that reached the player: in his inventory or lying at his feet as Oleg's gift drop (a diamond dropped by the ore does not count). */
