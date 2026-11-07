@@ -109,3 +109,44 @@ jobs:
           path: gametest-shard-${{ matrix.shard }}.log
           retention-days: 7
           if-no-files-found: ignore
+
+  # The shards must together cover the whole required pool: a shard that selected less, or passed fewer tests than it
+  # selected, would otherwise leave a smaller suite looking green. Same checks as scripts/verify-fast.sh.
+  gametest-sum:
+    needs: gametest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download shard logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gametest-log-shard-*
+          merge-multiple: true
+      - name: Check that the shards cover the pool
+        run: |
+          set -uo pipefail
+          shards=4 # the size of the gametest matrix
+          fail=0
+          pools=""
+          sum=0
+          for shard in $(seq 0 $(( shards - 1 ))); do
+            log="gametest-shard-$shard.log"
+            if [ ! -f "$log" ]; then echo "::error::shard $shard: no log"; fail=1; continue; fi
+            selection=$(grep -ao "Game test selection: pool=[0-9]* selected=[0-9]* pool-required=[0-9]* selected-required=[0-9]*" "$log" | tail -1 || true)
+            summary=$(grep -ao "All [0-9]* required tests passed" "$log" | tail -1 || true)
+            pool=$(printf '%s\n' "$selection" | sed -n 's/.*pool-required=\([0-9]*\).*/\1/p')
+            selected=$(printf '%s\n' "$selection" | sed -n 's/.*selected-required=\([0-9]*\).*/\1/p')
+            passed=$(printf '%s\n' "$summary" | sed -n 's/All \([0-9]*\) required tests passed/\1/p')
+            if [ -z "$pool" ] || [ -z "$selected" ] || [ -z "$passed" ]; then
+              echo "::error::shard $shard: selection line '${selection:-none}', success line '${summary:-none}'"; fail=1; continue
+            fi
+            echo "shard $shard: pool-required $pool, selected-required $selected, passed $passed"
+            if [ "$passed" -ne "$selected" ]; then echo "::error::shard $shard passed $passed of $selected"; fail=1; fi
+            pools="$pools $pool"
+            sum=$(( sum + selected ))
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          pool_required=$(printf '%s\n' $pools | head -1)
+          if [ "$(printf '%s\n' $pools | sort -u | wc -l)" -ne 1 ]; then echo "::error::the shards saw different pools:$pools"; exit 1; fi
+          if [ "$sum" -ne "$pool_required" ]; then echo "::error::the shards selected $sum required tests, the pool has $pool_required"; exit 1; fi
+          echo "shards OK: selected-required $shards shards = pool-required $pool_required"
