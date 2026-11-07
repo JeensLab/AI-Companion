@@ -361,8 +361,8 @@ public final class CompanionPlanRunner {
     }
 
     /**
-     * The running obtain_item is given up: its unfinished steps and the later steps of the plan that name the same item are dropped
-     * (reported as not done), the rest of the plan goes on. With nothing left to run it is the old whole-plan stop.
+     * The running obtain_item is given up: its unfinished steps, the later steps of the plan that name the same item and the later
+     * dig_for_diamonds steps are dropped (reported as not done), the rest of the plan goes on. With nothing left to run it is the old whole-plan stop.
      */
     private static CompletableFuture<Integer> giveUpObtain(Run run, int index, String reason) {
         PlannedAction obtain = run.obtain;
@@ -371,7 +371,8 @@ public final class CompanionPlanRunner {
         run.plan.subList(from, Math.min(run.obtainEnd, run.plan.size())).clear();
         List<PlannedAction> same = new ArrayList<>();
         for (int i = run.plan.size() - 1; i >= from; i--)
-            if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item())) same.addFirst(run.plan.remove(i));
+            // A mine step after a part of the kit that could not be got is not begun: the goal decides with the bag as it is.
+            if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item()) || "dig_for_diamonds".equals(run.plan.get(i).type())) same.addFirst(run.plan.remove(i));
         boolean earlier = !run.dropped.isEmpty();
         run.dropped.add(obtain);
         run.dropped.addAll(same);

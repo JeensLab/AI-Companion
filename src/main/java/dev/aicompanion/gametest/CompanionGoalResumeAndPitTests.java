@@ -101,6 +101,20 @@ public final class CompanionGoalResumeAndPitTests {
         h.onEachTick(() -> h.assertTrue(r.c().mineSite().opened() == 0, "Went down without food | " + report(h, r)));
     }
 
+    /** No bench, no stone pickaxe and no tree in reach: the top-up gives the wood part up, and the dig step after it is not begun; the goal stops for the missing wood. */
+    @GameTest(template = "marathon_cave", batch = "kit_gate", timeoutTicks = 2400)
+    public static void aTopUpWithoutATreeDoesNotStartTheDescent(GameTestHelper h) {
+        ItemStack[] bag = supplies(32, 0);
+        bag[6] = ItemStack.EMPTY;
+        Rig r = rig(h, false, bag);
+        start(h, r, 1);
+        h.onEachTick(() -> h.assertTrue(r.c().mineSite().opened() == 0, "Went down without a bench and no tree in reach | " + report(h, r)));
+        h.succeedWhen(() -> {
+            h.assertTrue(state(h, r) == CompanionAgenda.State.BLOCKED, "The goal did not stop: " + state(h, r) + " | " + report(h, r));
+            h.assertTrue(goal(h, r).reason().contains("дерев"), "Stopped for another reason: " + goal(h, r).reason());
+        });
+    }
+
     /** A hunt that found no game at all changes nothing by waiting: with full health the goal stops at once and asks for food. */
     @GameTest(template = "marathon_cave", batch = "kit_gate", timeoutTicks = HUNT_TICKS + 300)
     public static void noGameAtAllStopsTheGoalAtOnceAskingForFood(GameTestHelper h) {
