@@ -165,8 +165,8 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
             int alpha = (int) (255 * Math.min(1.0F, 2.0F - 2.0F * age)); // whole for the first half, then fading
             if (alpha < 5) continue; // the font draws an alpha under 4 as opaque
             float rise = 16.0F * (1.0F - (1.0F - age) * (1.0F - age));
-            // «блок», the widest, is 24 wide: numbers up together stand that far apart.
-            float x = (pop.slot() == 1 ? -24.0F : pop.slot() == 2 ? 24.0F : 0.0F) - font.width(pop.text()) / 2.0F;
+            // «-12,5» is 26 wide and «блок» 24: numbers up together stand a little further apart than that.
+            float x = (pop.slot() == 1 ? -28.0F : pop.slot() == 2 ? 28.0F : 0.0F) - font.width(pop.text()) / 2.0F;
             // Above the health bar, which spans 0..8 here (up is negative).
             font.drawInBatch(pop.text(), x, -12.0F - rise, alpha << 24 | pop.kind().color, true, pose.last().pose(), buffers,
                     net.minecraft.client.gui.Font.DisplayMode.NORMAL, 0, net.minecraft.client.renderer.LightTexture.FULL_BRIGHT);

@@ -48,7 +48,7 @@ public final class CompanionDamageNumbers {
         float shown = Math.round(Math.abs(change) * 10) / 10F;
         if (shown == 0) return;
         if (change > 0) { add("+" + amount(shown), Kind.HEAL, tick); return; }
-        add(amount(shown), source == lastCounted ? Kind.HIT : kind(source), tick);
+        add("-" + amount(shown), source == lastCounted ? Kind.HIT : kind(source), tick);
         lastCounted = source;
     }
 
@@ -68,7 +68,7 @@ public final class CompanionDamageNumbers {
         pops.add(new Pop(text, kind, tick, slot));
     }
 
-    /** One decimal with a comma, none when whole: «5,3», «2». */
+    /** One decimal with a comma, none when whole: «5,3», «2»; the sign is the caller's. */
     private static String amount(float shown) {
         return shown == Math.floor(shown) ? String.valueOf((int) shown) : String.valueOf(shown).replace('.', ',');
     }

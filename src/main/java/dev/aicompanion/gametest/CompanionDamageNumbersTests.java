@@ -42,12 +42,12 @@ public final class CompanionDamageNumbersTests {
         companion.hurt(sources.mobAttack(zombie), 6);
         seen(numbers, companion, 1);
         seen(numbers, companion, 2);
-        expect(h, numbers, 2, "5,3", Kind.HIT);
+        expect(h, numbers, 2, "-5,3", Kind.HIT);
 
         again(companion);
         companion.hurt(sources.onFire(), 1);
         seen(numbers, companion, 3);
-        expect(h, numbers, 3, "1", Kind.FIRE); // burning goes past armour
+        expect(h, numbers, 3, "-1", Kind.FIRE); // burning goes past armour
 
         // A harder blow inside the burn's cooldown: the game sends the client no source for it, the burn's is still there.
         var burn = companion.getLastDamageSource();
@@ -64,7 +64,7 @@ public final class CompanionDamageNumbersTests {
         again(companion);
         companion.hurt(sources.magic(), 1);
         seen(numbers, companion, 5);
-        expect(h, numbers, 5, "1", Kind.MAGIC);
+        expect(h, numbers, 5, "-1", Kind.MAGIC);
 
         again(companion);
         companion.hurt(sources.explosion(null, null), 2);
