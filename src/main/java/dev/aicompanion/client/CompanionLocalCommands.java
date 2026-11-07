@@ -115,8 +115,10 @@ public final class CompanionLocalCommands {
 
     /** The plan a local command runs: its step, and for «принеси воды» the hand-over of what it got after it. */
     public static java.util.List<PlannedAction> actions(String command) {
-        PlannedAction action = action(command);
-        return command.endsWith(" give") ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
+        // " give" is not a container: the step is parsed without it, or it would be read as the place to store into.
+        boolean give = command.endsWith(" give");
+        PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
+        return give ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
     }
 
     /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
