@@ -13,5 +13,7 @@
   "config.aicompanion.personality": "Характер компаньона",
   "config.aicompanion.inworld_api_key": "Ключ Inworld (Basic)",
   "config.aicompanion.inworld_voice_id": "ID голоса Inworld",
-  "config.aicompanion.long_term_memory": "Долговременная память"
+  "config.aicompanion.long_term_memory": "Долговременная память",
+  "config.aicompanion.short_murmurs": "Короткие самостоятельные реплики",
+  "config.aicompanion.murmur_interval_percent": "Пауза между репликами, %"
 }

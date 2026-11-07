@@ -150,6 +150,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     BlockPos movementIntent;
     boolean chunkLoading = true;
     boolean autonomousSpeech = true;
+    private int murmurIntervalPercent = 100;
     String preferredWeapon = "";
     private net.minecraft.world.phys.Vec3 previousActivityPosition;
     private boolean activityMoved;
@@ -601,6 +602,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean fighting() { return entityData.get(DATA_FIGHTING); }
     public void reactToSpeech(String text) { social.reactToSpeech(text); }
     public void setLifestyle(boolean chunks, boolean speech) { chunkLoading = chunks; autonomousSpeech = speech; }
+    /** Pushed from the client settings, not saved: the next sync restores it after a load. */
+    public int murmurIntervalPercent() { return murmurIntervalPercent; }
+    public void setMurmurIntervalPercent(int percent) { murmurIntervalPercent = percent; }
     /** Whether he goes back for his own things after a death (the player can turn it off in the settings). */
     public boolean deathRecovery() { return deathRecovery; }
     public void setDeathRecovery(boolean on) { deathRecovery = on; }
