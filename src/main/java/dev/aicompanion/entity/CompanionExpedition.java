@@ -764,6 +764,7 @@ final class CompanionExpedition {
             case BLOCKED -> blocked();
             case NO_TOOL -> {
                 plan = null;
+                if (dig.reserved) { owner.workStatus(CompanionExpeditionClimb.LAST_PICKAXE); climbForSupplies(CompanionExpeditionClimb.LAST_PICKAXE); return; }
                 if (!dig.lackedOre && supply.craftStonePickaxe()) return;
                 // Normally the iron one is kept for ore and he goes up for supplies; from a mine started under the ground with no cells of the way up in the record there is no way up,
                 // a step that began without a stone pickaxe has been up for them already: the way back down with nothing new is no use; and from a tunnel at the foot the climb costs more than the wear.

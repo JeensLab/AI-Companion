@@ -86,7 +86,7 @@ final class CompanionExpeditionOre {
             if (reach < 0) skip();
             if (reach != 1) return Result.WORKING;
         }
-        switch (dig.dig(level, target)) {
+        switch (dig.dig(level, target, true)) {
             case WORKING -> { }
             case DONE -> { dig.flush(); target = null; walking = false; return Result.DONE; }
             case FULL -> {

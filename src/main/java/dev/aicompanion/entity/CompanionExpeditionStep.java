@@ -125,7 +125,7 @@ final class CompanionExpeditionStep {
         // Digging opens sources the check did not see: liquid that has flowed in since is sealed before the cell is broken.
         CompanionShaftPlan.Hazard flowed = CompanionShaftPlan.classify(level, stand, cells.get(index), w.mine.seals(), w.mine.avoid(), null);
         if (flowed.kind() == CompanionShaftPlan.Kind.SEAL) return seal(flowed.cell());
-        switch (dig.dig(level, cells.get(index))) {
+        switch (dig.dig(level, cells.get(index), kind == Kind.TUNNEL)) {
             case DONE -> { if (++index == limit) dig.flush(); }
             case NO_TOOL -> { return Result.NO_TOOL; }
             case NO_HAND -> { return fail("не смог взять кирку в руку"); }

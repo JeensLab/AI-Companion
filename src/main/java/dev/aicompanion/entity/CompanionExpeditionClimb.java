@@ -60,6 +60,7 @@ final class CompanionExpeditionClimb {
         this.stone = new CompanionExpeditionStock(w, dig);
     }
 
+    static final String LAST_PICKAXE = "Кирки на исходе: поднимаюсь, пока есть чем.";
     static final String NO_TORCHES = "Факелы кончились, а сделать их не из чего: копать в темноте не буду.";
 
     /** What ran out, for the report. */

@@ -163,9 +163,12 @@ public final class CompanionMilestones {
             return !facts.inMine() && facts.carried(READY_FOOD::contains) < FOOD_MIN;
         }
 
-        /** The least he goes down with at dusk: the minimum of the kit and torches for the first steps; the rest of the top-up waits for the day, and the night is spent below. */
+        /**
+         * The least he goes down with at dusk: the minimum of the kit and torches for the first steps; the rest of the top-up waits for the day, and the night is spent below.
+         * The sticks are those of one pickaxe more than the minimum's: the tunnels below stop at the last pickaxe, and that one is for the way up.
+         */
         public boolean nightKit(CompanionFacts facts) {
-            return kitMinimum(facts) && facts.carried(Items.TORCH) >= TORCHES_NIGHT;
+            return kitMinimum(facts) && facts.carried(Items.TORCH) >= TORCHES_NIGHT && (facts.inMine() || facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * (STONE_PICKAXES_MIN + 1));
         }
 
         private static List<Step> supplySteps(CompanionFacts facts) {

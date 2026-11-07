@@ -3,6 +3,8 @@ package dev.aicompanion.gametest;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionAgenda;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionFacts;
+import dev.aicompanion.entity.CompanionPlaybooks;
 import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.BeforeBatch;
 import net.minecraft.gametest.framework.GameTest;
@@ -28,7 +30,7 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.state;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineNightTests {
     private static final String DUSK = "Темнеет — спускаюсь, факелов хватит на начало.";
-    private static final int TIMEOUT = 24000, NIGHT = 18000, TORCHES_FEW = 8, BREAD_MIN = 4, STICKS_MIN = 4;
+    private static final int TIMEOUT = 24000, NIGHT = 18000, TORCHES_FEW = 8, BREAD_MIN = 4, STICKS_MIN = 4, STICKS_NIGHT = 6;
     private static long clock;
 
     private CompanionMineNightTests() { }
@@ -41,7 +43,7 @@ public final class CompanionMineNightTests {
     @GameTest(template = "marathon_cave", batch = "mine_night", timeoutTicks = TIMEOUT)
     public static void goesDownAtDuskWithTheMinimumKit(GameTestHelper h) {
         Rig r = rig(h, true, new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, BREAD_MIN), new ItemStack(Items.TORCH, TORCHES_FEW),
-                new ItemStack(Items.STICK, STICKS_MIN), new ItemStack(Items.COBBLESTONE, 32), new ItemStack(Items.CRAFTING_TABLE));
+                new ItemStack(Items.STICK, STICKS_NIGHT), new ItemStack(Items.COBBLESTONE, 32), new ItemStack(Items.CRAFTING_TABLE));
         start(h, r, 1);
         boolean[] said = {false};
         h.onEachTick(() -> {
@@ -53,6 +55,23 @@ public final class CompanionMineNightTests {
             h.assertTrue(said[0], "Nothing said about the dusk | " + report(h, r));
             h.assertTrue(r.c().mineSite().exists(), "No mine begun | " + report(h, r));
         });
+    }
+
+    /**
+     * Run 07.11 (seed 314159): down to -58 with the sticks of two pickaxes, and the climb started with none. The tunnels below stop at the last pickaxe, so the kit
+     * he goes down with at dusk holds the sticks of one more than the minimum of the day's kit.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    public static void theNightKitKeepsSticksForThePickaxesBelow(GameTestHelper h) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 2, 2, 2);
+        var mine = CompanionPlaybooks.of("find_diamonds", 1).milestones().getLast();
+        c.setItem(0, new ItemStack(Items.BREAD, BREAD_MIN));
+        c.setItem(1, new ItemStack(Items.TORCH, TORCHES_FEW));
+        c.setItem(2, new ItemStack(Items.STICK, STICKS_MIN));
+        h.assertTrue(mine.kitMinimum(CompanionFacts.of(c)) && !mine.nightKit(CompanionFacts.of(c)), "The sticks of two pickaxes make the kit he goes down with at dusk");
+        c.setItem(2, new ItemStack(Items.STICK, STICKS_NIGHT));
+        h.assertTrue(mine.nightKit(CompanionFacts.of(c)), "The sticks of three pickaxes do not make the kit he goes down with at dusk");
+        h.succeed();
     }
 
     /** A diamond already in the bag, no food and no game to hunt (both lost on a death): the diamond goes to the player and the goal ends with it, instead of standing blocked behind the food. */

@@ -1,5 +1,6 @@
 package dev.aicompanion.gametest;
 
+import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionMineSite;
 import dev.aicompanion.entity.CompanionShaftPlan;
@@ -7,6 +8,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -16,9 +20,13 @@ import java.util.List;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.CENTER;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.GROUND;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.count;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.ended;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.mountain;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.report;
 import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 
 /**
  * Runs water/2 and void-2/3 of seed 314159, lava/2 and void/3 of seed 7 (07.11): the climb up his own stairs stopped on a cell of the record that
@@ -76,6 +84,32 @@ public final class CompanionMineWayUpTests {
         CompanionMineClimbOutTests.climb(h, c, here, result -> {
             h.assertTrue(result.success() && c.getBlockY() >= surface, "He said «" + result.message() + "» at height " + c.getBlockY() + ", below the surface at " + surface + " | " + report(c));
             h.assertTrue(!said.toString().contains(NEW_STAIRS) && site.above().equals(kept), "He cut a new staircase though the old one was kept | " + report(c));
+        });
+    }
+
+    /**
+     * Runs of 07.11: the tunnels were dug until «кирок нет» and the climb began with none, so a lost stair meant a staircase dug with nothing. One stone pickaxe and nothing
+     * to make another of, at the foot of the stairs: the tunnel is not dug with it, and he climbs while he can still dig, the pickaxe whole.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void turnsBackWhileAPickaxeIsLeftForTheWayUp(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        c.setItem(1, ItemStack.EMPTY);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        c.setFollowing(false);
+        carveMine(h, c, 0);
+        BlockPos foot = c.mineSite().foot();
+        c.teleportTo(foot.getX() + .5, foot.getY(), foot.getZ() + .5);
+        long id = start(h, c, 1);
+        int surface = h.absolutePos(new BlockPos(0, GROUND + 1 - SURFACE_MARGIN, 0)).getY();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.status() == CompanionActionResult.Status.SHORTAGE && result.message().contains("Кирки на исходе") && c.getBlockY() >= surface,
+                    "He said «" + result.message() + "» at height " + c.getBlockY() + " | " + report(c));
+            int worn = 0;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.STONE_PICKAXE)) worn += c.getItem(slot).getDamageValue();
+            h.assertTrue(count(c, Items.STONE_PICKAXE) == 1 && worn == 0, "The last pickaxe was spent on the tunnel: " + count(c, Items.STONE_PICKAXE) + " left, wear " + worn + " | " + report(c));
         });
     }
 
