@@ -30,7 +30,7 @@ public final class CompanionPlanRequirements {
         String location = inside ? "inside_house" : "near_player";
         List<PlannedAction> result = new ArrayList<>();
         for (PlannedAction step : decoded.actions()) {
-            if (inside && List.of("place_block", "store_items", "take_items").contains(step.type()) && !CompanionContainers.KINDS.contains(step.location()))
+            if (inside && List.of("place_block", "store_items", "take_items").contains(step.type()) && !CompanionContainers.NAMEABLE.contains(step.location()))
                 step = new PlannedAction(step.type(), step.seconds(), step.count(), step.item(), step.slot(), location);
             result.add(step);
         }
@@ -44,7 +44,7 @@ public final class CompanionPlanRequirements {
         }
         if (text.matches("(?sU).*\\b(сложи|сложить|убери|убрать)\\b.*(вещ|предмет|ресурс).*")) {
             String filter = text.matches("(?sU).*\\b(все|свои)\\b.*") ? "all" : "resources";
-            result.removeIf(step -> step.type().equals("store_items") && !CompanionContainers.KINDS.contains(step.location()));
+            result.removeIf(step -> step.type().equals("store_items") && !CompanionContainers.NAMEABLE.contains(step.location()));
             if (result.stream().noneMatch(step -> step.type().equals("store_items")))
                 result.add(new PlannedAction("store_items", 0, 1, filter, "auto", location));
         }

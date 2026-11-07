@@ -80,7 +80,7 @@ public final class CompanionPlanCodec {
 
     private static List<String> locations() {
         List<String> names = new ArrayList<>(List.of("near_player", "inside_house"));
-        names.addAll(dev.aicompanion.entity.CompanionContainers.KINDS.stream().sorted().toList());
+        names.addAll(dev.aicompanion.entity.CompanionContainers.NAMEABLE.stream().sorted().toList());
         return List.copyOf(names);
     }
 

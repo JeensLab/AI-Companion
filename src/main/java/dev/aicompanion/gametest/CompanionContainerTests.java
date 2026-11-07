@@ -1,5 +1,8 @@
 package dev.aicompanion.gametest;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionDialogue;
@@ -262,9 +265,14 @@ public final class CompanionContainerTests {
 
     @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_model_path")
     public static void theModelCanNameAContainer(GameTestHelper helper) {
-        String schema = OpenRouterClient.planTool().toString();
+        String offered = locationEnum(OpenRouterClient.planTool()).toString();
         for (String kind : new String[] {"minecraft:barrel", "minecraft:furnace", "minecraft:hopper", "minecraft:shulker_box", "near_player", "inside_house"})
-            helper.assertTrue(schema.contains("\"" + kind + "\""), "The plan schema does not offer " + kind);
+            helper.assertTrue(offered.contains("\"" + kind + "\""), "The plan schema does not offer " + kind + ": " + offered);
+        helper.assertTrue(!offered.contains("chest"), "A chest id is offered, it means near_player: " + offered);
+        for (String location : CompanionPlanCodec.LOCATIONS) {
+            String plan = "[{\"action\":\"store_items\",\"item\":\"stone\",\"count\":4,\"location\":\"" + location + "\"}]";
+            helper.assertTrue(location.equals(CompanionPlanCodec.parsePlan(JsonParser.parseString(plan)).get(0).location()), "Not accepted: " + location);
+        }
         String barrelPlan = "[{\"action\":\"store_items\",\"item\":\"stone\",\"count\":4,\"location\":\"minecraft:barrel\"}]";
         PlannedAction parsed = CompanionPlanCodec.parsePlan(JsonParser.parseString(barrelPlan)).get(0);
         helper.assertTrue("minecraft:barrel".equals(parsed.location()), "The codec dropped the barrel: " + parsed);
@@ -278,7 +286,32 @@ public final class CompanionContainerTests {
         long stores = reply.actions().stream().filter(step -> "store_items".equals(step.type())).count();
         helper.assertTrue(stores == 1 && reply.actions().stream().anyMatch(step -> "minecraft:barrel".equals(step.location())),
                 "The barrel step was replaced: " + reply.actions());
+        PlannedAction chest = new PlannedAction("store_items", 0, 1, "all", "auto", "minecraft:chest");
+        CompanionReply inHouse = CompanionPlanRequirements.apply("поставь сундук в доме", new CompanionReply("", List.of(chest)));
+        helper.assertTrue(inHouse.actions().stream().anyMatch(step -> "store_items".equals(step.type()) && "inside_house".equals(step.location())),
+                "A chest step lost the house: " + inHouse.actions());
         helper.succeed();
+    }
+
+    private static JsonElement locationEnum(JsonElement node) {
+        if (node.isJsonObject()) {
+            JsonObject object = node.getAsJsonObject();
+            if (object.has("location") && object.get("location").isJsonObject() && object.getAsJsonObject("location").has("enum"))
+                return object.getAsJsonObject("location").get("enum");
+            for (var entry : object.entrySet()) {
+                JsonElement found = locationEnum(entry.getValue());
+                if (found != null) return found;
+            }
+        }
+        return node.isJsonArray() ? firstLocation(node.getAsJsonArray()) : null;
+    }
+
+    private static JsonElement firstLocation(JsonArray array) {
+        for (JsonElement element : array) {
+            JsonElement found = locationEnum(element);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private static Container container(GameTestHelper helper, BlockPos pos, Block block) {

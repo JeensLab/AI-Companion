@@ -19,6 +19,7 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * What a store or take order may put things in and take things from. Chests, barrels and shulker boxes are storage for every order;
@@ -29,6 +30,9 @@ public final class CompanionContainers {
     /** The blocks an order may name; a shulker box of any colour counts as {@link #SHULKER}. */
     public static final Set<String> KINDS = Set.of("minecraft:barrel", SHULKER, "minecraft:furnace", "minecraft:blast_furnace", "minecraft:smoker",
             "minecraft:hopper", "minecraft:dispenser", "minecraft:dropper", "minecraft:chest", "minecraft:trapped_chest");
+    private static final Set<String> CHESTS = Set.of("minecraft:chest", "minecraft:trapped_chest");
+    /** The ids an order or the model may name for a place other than a chest: a chest, named or not, is near_player. */
+    public static final Set<String> NAMEABLE = KINDS.stream().filter(kind -> !CHESTS.contains(kind)).collect(Collectors.toUnmodifiableSet());
     /** Blocks `storageAt` decides for (a closed lid or a block above means shut); every other kind is opened as it stands. */
     private static final Set<String> STORAGE_KINDS = Set.of("minecraft:chest", "minecraft:trapped_chest", "minecraft:barrel", SHULKER);
     private static final int FURNACE_RESULT_SLOT = 2;
