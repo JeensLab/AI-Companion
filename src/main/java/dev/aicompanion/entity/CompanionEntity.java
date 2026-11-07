@@ -961,6 +961,18 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         return hurt;
     }
 
+    /** Idea 7ES2V: what he lost or regained, counted on the client for the numbers CompanionRenderer draws above him. */
+    public final dev.aicompanion.CompanionDamageNumbers damageNumbers = new dev.aicompanion.CompanionDamageNumbers();
+    @Override public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
+        super.onSyncedDataUpdated(key);
+        // The game sets his health in its own constructor, before this class's fields exist.
+        if (damageNumbers != null && level().isClientSide) damageNumbers.health(getHealth(), getLastDamageSource(), tickCount);
+    }
+    @Override public void handleEntityEvent(byte id) {
+        super.handleEntityEvent(id);
+        if (id == net.minecraft.world.entity.EntityEvent.ATTACK_BLOCKED) damageNumbers.blocked(tickCount);
+    }
+
     @Override public boolean doHurtTarget(Entity target) {
         boolean hit = super.doHurtTarget(target);
         // Every hit swings the arm he strikes with, whoever dealt it: the goal starts its own stroke first, and a
