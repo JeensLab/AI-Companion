@@ -5,15 +5,11 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.ChestBlock;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
 
 import java.util.ArrayList;
@@ -26,18 +22,39 @@ import java.util.Set;
 final class CompanionChests {
     final CompanionWork w;
 
+    /** The block id a store or take order named («в бочку»); null for chests and the other storage the player does not name. */
+    String kind;
+    private static final int ORDER_MAX = 64;
+    static final CompanionActionResult COUNT_REFUSED = CompanionActionResult.failed("За раз можно добыть от 1 до 64 блоков.");
+
     CompanionChests(CompanionWork w) { this.w = w; }
+
+    /** The container kind a step names in its location, when the step is a store or take order. */
+    static String kindFor(String action, String location) {
+        boolean named = location != null && CompanionContainers.KINDS.contains(location);
+        return named && ("store_items".equals(action) || "take_items".equals(action)) ? location : null;
+    }
+
+    /** 1 to 64; smelt_items, and store_items into a named container, also take ALL_CARRIED: everything, no number said. */
+    static boolean countOk(String action, int count, String location) {
+        boolean everything = "smelt_items".equals(action) || "store_items".equals(action) && kindFor(action, location) != null;
+        return count == CompanionWork.ALL_CARRIED && everything || count >= 1 && count <= ORDER_MAX;
+    }
 
     void store(ServerLevel level) {
         if (w.job == CompanionWork.Job.TAKE) { retrieve(level); return; }
         if (w.job == CompanionWork.Job.PLACE_CHEST) { placeRequestedChests(); return; }
         if (w.trip.walk()) return;
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
-        if (w.job == CompanionWork.Job.STORE && (eligibleCount() == 0 || storeQuota() <= 0)) { w.finish(true, w.transferred > 0 ? "Сложил " + w.transferred + " предметов в сундук." : "Лишних вещей для сундука сейчас нет."); return; }
+        if (w.job == CompanionWork.Job.STORE && (eligibleCount() == 0 || storeQuota() <= 0)) {
+            w.finish(true, w.transferred > 0 ? "Сложил " + w.transferred + " предметов " + into() + "." : "Лишних вещей для " + name() + " сейчас нет.");
+            return;
+        }
         if (w.target == null) {
             w.target = findChest(level);
             w.resetApproach();
             if (w.target == null) {
+                if (kind != null) { w.finish(w.transferred > 0, noRoomMessage()); return; }
                 if (w.newChests >= 1) { w.finish(false, "Сложил " + w.transferred + " предметов, но оставшиеся вещи не помещаются. Они остались в сумке."); return; }
                 if (w.trip.toStation("minecraft:chest")) return;
                 if (!hasChestItem()) {
@@ -61,7 +78,7 @@ final class CompanionChests {
                 return; // Open on the next work stage, after the placement gesture.
             }
         }
-        Container chest = chestAt(level, w.target);
+        Container chest = containerAt(level, w.target);
         if (chest == null) { w.triedChests.add(w.target); w.resetTarget(); return; }
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2D * 3.2D || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
             if (!w.approach(level, w.target, 2.8D)) { w.triedChests.add(w.target); w.resetTarget(); }
@@ -71,7 +88,7 @@ final class CompanionChests {
         w.owner.getLookControl().setLookAt(w.target.getX() + 0.5, w.target.getY() + 0.5, w.target.getZ() + 0.5);
         w.openedChest = w.target.immutable();
         w.animateChest(level, w.openedChest, 1);
-        level.playSound(null, w.openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
+        CompanionContainers.playOpen(level, w.openedChest);
         w.owner.animateAction(3, w.target, ItemStack.EMPTY);
         w.transferred += transfer(chest, level, w.target);
         chest.setChanged();
@@ -81,7 +98,7 @@ final class CompanionChests {
         w.triedChests.add(w.target);
         w.phase = CompanionWork.Phase.CLOSE;
         w.cooldown = 10;
-        w.owner.workStatus("Складываю вещи в сундук.");
+        w.owner.workStatus("Складываю вещи " + into() + ".");
     }
 
     /** An explicit placement order always places new blocks, even if storage already exists. */
@@ -147,10 +164,11 @@ final class CompanionChests {
         w.closeChest();
         w.resetTarget();
         if (w.job == CompanionWork.Job.TAKE) {
-            if (w.transferred >= w.requestedCount) w.finish(true, "Забрал " + w.transferred + " предметов из сундука. В сумке: " + w.owner.getStoredItemsSummary() + ".");
+            if (w.transferred >= w.requestedCount)
+                w.finish(true, "Забрал " + w.transferred + " предметов " + from() + ". В сумке: " + w.owner.getStoredItemsSummary() + ".");
             else w.phase = CompanionWork.Phase.STORE;
         }
-        else if (eligibleCount() == 0) w.finish(true, "Сложил " + w.transferred + " предметов в сундук.");
+        else if (eligibleCount() == 0) w.finish(true, "Сложил " + w.transferred + " предметов " + into() + ".");
         else w.phase = CompanionWork.Phase.STORE;
     }
 
@@ -160,11 +178,14 @@ final class CompanionChests {
         if (w.target == null) { w.target = findChest(level); w.resetApproach(); }
         if (w.target == null) {
             // «Забери всё» that has found something ends there; a chest elsewhere is for what is still missing.
-            if ((w.transferred == 0 || !w.requestedItem.equals("all")) && (w.trip.toStation("minecraft:chest") || w.trip.toHome())) return;
+            boolean seekMore = kind == null && (w.transferred == 0 || !w.requestedItem.equals("all"));
+            if (seekMore && (w.trip.toStation("minecraft:chest") || w.trip.toHome())) return;
+            String nothingLeft = kind == null ? "В доступных сундуках больше нужных вещей нет." : "Больше нужных вещей там нет.";
+            String taken = "Забрал " + w.transferred + (w.requestedItem.equals("all") ? " предметов" : " из " + w.requestedCount);
             w.finish(w.transferred > 0 && (w.requestedItem.equals("all") || w.transferred >= w.requestedCount),
-                    "Забрал " + w.transferred + (w.requestedItem.equals("all") ? " предметов" : " из " + w.requestedCount) + ". В доступных сундуках больше нужных вещей нет. В сумке: " + w.owner.getStoredItemsSummary() + "."); return;
+                    taken + ". " + nothingLeft + " В сумке: " + w.owner.getStoredItemsSummary() + "."); return;
         }
-        Container chest = chestAt(level, w.target);
+        Container chest = containerAt(level, w.target);
         if (chest == null) { w.triedChests.add(w.target); w.resetTarget(); return; }
         w.owner.movementIntent(w.target);
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2 * 3.2 || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
@@ -173,11 +194,11 @@ final class CompanionChests {
         }
         w.owner.getNavigation().stop();
         w.openedChest = w.target.immutable(); w.animateChest(level, w.target, 1);
-        level.playSound(null, w.target, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, .5F, 1);
+        CompanionContainers.playOpen(level, w.target);
         w.owner.observeEvent("chest", "Открыл сундук, чтобы взять нужные вещи.");
         ItemStack shown = ItemStack.EMPTY; int movedHere = 0;
         for (int slot = 0; slot < chest.getContainerSize() && w.transferred < w.requestedCount; slot++) {
-            ItemStack stack = chest.getItem(slot); if (!eligible(stack)) continue;
+            ItemStack stack = chest.getItem(slot); if (!eligible(stack) || !CompanionContainers.takeable(chest, slot)) continue;
             ItemStack offered = stack.copyWithCount(Math.min(stack.getCount(), w.requestedCount - w.transferred));
             int offeredCount = offered.getCount(); w.owner.storeLoot(offered);
             int moved = offeredCount - offered.getCount();
@@ -185,8 +206,9 @@ final class CompanionChests {
         }
         w.owner.animateAction(3, w.target, shown); chest.setChanged(); w.owner.setChanged();
         w.rememberedChest = w.target.immutable(); w.owner.rememberObserved(w.target); w.owner.storageStatus(w.storageForAi()); w.triedChests.add(w.target);
-        if (movedHere == 0) { w.closeChest(); w.finish(false, "В сумке нет места для вещей из сундука. Предметы оставил на месте."); return; }
-        w.phase = CompanionWork.Phase.CLOSE; w.cooldown = 10; w.owner.workStatus("Забираю вещи из сундука.");
+        if (movedHere == 0) { w.closeChest(); w.finish(false, "В сумке нет места для вещей " + from() + ". Предметы оставил на месте."); return; }
+        w.owner.workStatus("Забираю вещи " + from() + ".");
+        w.phase = CompanionWork.Phase.CLOSE; w.cooldown = 10; // ticks the lid stays up
     }
 
     /** Chests he may use now, in the old order: the one he already uses first, then the nearest to the player. */
@@ -197,12 +219,12 @@ final class CompanionChests {
             if (w.triedChests.contains(pos) || w.insideHouse && !w.house.inside(pos)) continue;
             // A deed of his own: only a chest he set down himself, near the player (the player: «не трогает мои сундуки»).
             if (w.owner.ownPlacesOnly() && (!w.owner.placedByMe(pos) || !w.owner.leashAllows(pos))) continue;
-            if (chestAt(level, pos) != null) found.add(pos.immutable());
+            if (containerAt(level, pos) != null) found.add(pos.immutable());
         }
         // The chest Oleg already uses is "ours": fill it before any other one nearby.
         found.sort(Comparator.comparing((BlockPos pos) -> !pos.equals(w.rememberedChest)).thenComparingDouble(pos -> pos.distSqr(center)));
         LinkedHashMap<BlockPos, Container> usable = new LinkedHashMap<>();
-        for (BlockPos pos : found) usable.put(pos, chestAt(level, pos));
+        for (BlockPos pos : found) usable.put(pos, containerAt(level, pos));
         return usable;
     }
 
@@ -283,10 +305,22 @@ final class CompanionChests {
         return found;
     }
 
-    Container chestAt(ServerLevel level, BlockPos pos) {
-        if (!level.hasChunkAt(pos)) return null;
-        BlockState state = level.getBlockState(pos);
-        return state.getBlock() instanceof ChestBlock chest ? ChestBlock.getContainer(chest, state, level, pos, false) : null;
+    /** What this order may use at pos: any storage for an order of «chest», else the block of the kind it names, unless a smelting batch awaits it. */
+    private Container containerAt(ServerLevel level, BlockPos pos) {
+        if (kind == null) return CompanionContainers.storageAt(level, pos);
+        Container named = CompanionContainers.containerAt(level, pos, kind);
+        return named == null || w.owner.batches().reserved(level, pos) ? null : named;
+    }
+
+    private String into() { return CompanionContainers.into(kind); }
+
+    private String from() { return CompanionContainers.from(kind); }
+
+    private String name() { return CompanionContainers.nameOf(kind); }
+
+    private String noRoomMessage() {
+        return w.transferred > 0 ? "Сложил " + w.transferred + " предметов " + into() + ", но остальное не помещается. Оно осталось в сумке."
+                : "Рядом нет " + name() + " с местом для этих вещей.";
     }
 
     private int transfer(Container destination, ServerLevel level, BlockPos at) {
@@ -304,7 +338,7 @@ final class CompanionChests {
             int available = Math.min(stack.getCount() - keep, storeQuota() - moved);
             for (int pass = 0; pass < 2 && available > 0; pass++) {
                 for (int slot = 0; slot < destination.getContainerSize() && available > 0; slot++) {
-                    if (!destination.canPlaceItem(slot, stack)) continue;
+                    if (!CompanionContainers.accepts(destination, slot, stack)) continue;
                     ItemStack existing = destination.getItem(slot);
                     if (pass == 0 && existing.isEmpty() || pass == 1 && !existing.isEmpty()) continue;
                     if (!existing.isEmpty() && !ItemStack.isSameItemSameComponents(existing, stack)) continue;
@@ -333,7 +367,7 @@ final class CompanionChests {
     private static boolean hasRoomFor(Container chest, ItemStack stack) {
         for (int slot = 0; slot < chest.getContainerSize(); slot++) {
             ItemStack existing = chest.getItem(slot);
-            if (chest.canPlaceItem(slot, stack) && (existing.isEmpty() || ItemStack.isSameItemSameComponents(existing, stack)
+            if (CompanionContainers.accepts(chest, slot, stack) && (existing.isEmpty() || ItemStack.isSameItemSameComponents(existing, stack)
                     && existing.getCount() < Math.min(stack.getMaxStackSize(), chest.getMaxStackSize()))) return true;
         }
         return false;
@@ -380,15 +414,18 @@ final class CompanionChests {
         return count;
     }
     private boolean containsRequested(Container chest) {
-        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (eligible(chest.getItem(slot))) return true;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (eligible(chest.getItem(slot)) && CompanionContainers.takeable(chest, slot)) return true;
         return false;
     }
 
     /**
      * "Put the stone sword in the chest" means one sword, not every sword he carries: for a named tool, weapon or
      * armour piece only the requested count goes in (game log 22.10 put away his own sword too). Resources move whole.
+     * An order that names a container takes the count the player said, of anything.
      */
     private int storeQuota() {
+        boolean counted = w.job == CompanionWork.Job.STORE && kind != null && w.requestedCount != CompanionWork.ALL_CARRIED;
+        if (counted) return w.requestedCount - w.transferred;
         if (w.job != CompanionWork.Job.STORE || w.requestedItem.isBlank() || List.of("all", "logs", "stone", "resources", CompanionWork.SURPLUS).contains(w.requestedItem)) return Integer.MAX_VALUE;
         var id = ResourceLocation.tryParse(w.requestedItem);
         if (id == null || !BuiltInRegistries.ITEM.containsKey(id) || new ItemStack(BuiltInRegistries.ITEM.get(id)).getMaxStackSize() != 1) return Integer.MAX_VALUE;

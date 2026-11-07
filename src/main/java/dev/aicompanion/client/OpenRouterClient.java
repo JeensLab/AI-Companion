@@ -39,6 +39,11 @@ public final class OpenRouterClient {
     private static long generation;
     private static long restoredGeneration = -1;
     private static final int MAX_HISTORY = 25;
+    /** The part of the system prompt that lets the model name a container for a store or take step. */
+    private static final String CONTAINER_LOCATIONS_HINT =
+            "Для store_items и take_items: если игрок назвал не сундук, а бочку, печь (забрать можно только готовое), воронку, раздатчик, "
+            + "выбрасыватель или шалкер, укажи в location id блока: minecraft:barrel, minecraft:furnace, minecraft:blast_furnace, minecraft:smoker, "
+            + "minecraft:hopper, minecraft:dispenser, minecraft:dropper, minecraft:shulker_box. Для сундука и без названия контейнера — near_player. ";
     public static synchronized boolean isBusy() { return !pendingRequests.isDone(); }
 
     /** Chat completions of the configured OpenAI-compatible server (issue #2): OpenRouter when empty, a base address completed as OpenAI clients do. */
@@ -525,7 +530,7 @@ public final class OpenRouterClient {
                 + "Сам находит свободную печь в пределах 32 блоков, идёт к запомненной не дальше 128 блоков или делает свою из 8 булыжника и ставит её дома, если дом не дальше 128 блоков, иначе на месте; большую партию раскладывает по нескольким свободным печам рядом и печам из своей сумки, чтобы было быстрее. "
                 + "Кладёт сырьё и топливо из сумки (уголь, доски, брёвна, палки; если топить нечем — рубит дерево), ждёт 10 секунд на каждый предмет и забирает результат и несгоревшее топливо. Чужую занятую печь не трогает. "
                 + "Сырьё должно быть в сумке: если его нет, перед smelt_items добавь шаг, который его достанет (take_items из сундука, gather_stone для булыжника, gather_wood для брёвен, mine_ore для сырого железа, меди или золота: «добудь и переплавь железо» — mine_ore minecraft:iron_ore, потом smelt_items minecraft:raw_iron без count). Пока печь не отдала результат, не говори, что переплавлено. "
-                + "Не добавляй добычу и сундук, если о них не просили: craft_item сам добывает нужный камень и дерево. "
+                + "Не добавляй добычу и сундук, если о них не просили: craft_item сам добывает нужный камень и дерево. " + CONTAINER_LOCATIONS_HINT
                 + "Всегда учитывай текущий статус задачи и сумку из свежего снимка мира, чтобы не соврать: если сбор завершён или стоит, не говори, что продолжаешь рубить. "
                 + "Но это справка для тебя, а не тема разговора: о ходе своих дел (сколько готово, что в печах, как идёт сбор, какая цель) говори, только если товарищ сам спросил о них или без этого нельзя честно ответить на его просьбу. "
                 + "Говорят о другом — отвечай только о другом, не добавляй в конце «кстати, дожарилось 12 из 16» и других сводок о работе. "
@@ -659,7 +664,7 @@ public final class OpenRouterClient {
         private UnsupportedToolsException(String message) { super(message); }
     }
 
-    private static JsonObject planTool() {
+    public static JsonObject planTool() {
         JsonObject parameters = new JsonObject();
         parameters.addProperty("type", "object");
         JsonObject properties = new JsonObject();
@@ -695,7 +700,7 @@ public final class OpenRouterClient {
         JsonObject location = new JsonObject();
         location.addProperty("type", "string");
         JsonArray locationNames = new JsonArray();
-        List.of("near_player", "inside_house").forEach(locationNames::add);
+        CompanionPlanCodec.LOCATIONS.forEach(locationNames::add);
         location.add("enum", locationNames);
         location.addProperty("description", "Место установки/хранения. Для просьбы внутри дома обязательно inside_house. Снаружи вместо внутри ставить запрещено.");
         itemProperties.add("location", location);

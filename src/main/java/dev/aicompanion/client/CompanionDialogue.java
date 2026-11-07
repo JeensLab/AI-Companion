@@ -1,5 +1,7 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionContainers;
+
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -59,9 +61,9 @@ public final class CompanionDialogue {
             case "gather_dirt" -> "Окей, накопаю земли.";
             case "gather_loose" -> "Ладно, возьму лопату и накопаю " + looseWord(actions.getFirst()) + ".";
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
-            case "store_items" -> "Сейчас сложу в сундук.";
+            case "store_items" -> "Сейчас сложу " + CompanionContainers.into(actions.getFirst().location()) + ".";
             case "sort_chests" -> "Сейчас разложу по сундукам.";
-            case "take_items" -> "Сейчас заберу из сундука.";
+            case "take_items" -> "Сейчас заберу " + CompanionContainers.from(actions.getFirst().location()) + ".";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";
@@ -141,9 +143,9 @@ public final class CompanionDialogue {
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";
             case "unequip_item" -> "убрать предмет из руки";
-            case "store_items" -> "сложить вещи в сундук";
+            case "store_items" -> "сложить вещи " + CompanionContainers.into(action.location());
             case "sort_chests" -> "разложить по сундукам";
-            case "take_items" -> "забрать вещи из сундука";
+            case "take_items" -> "забрать вещи " + CompanionContainers.from(action.location());
             case "build_house" -> "построить дом";
             case "hunt_mobs" -> "разобраться с монстрами";
             case "give_wood" -> "отдать тебе дерево";
@@ -361,7 +363,7 @@ public final class CompanionDialogue {
                     + (report.contains("наверх пока не выбрался") ? " Я пока внизу, на своей лестнице." : "");
         }
         if (actions.stream().anyMatch(action -> "sort_chests".equals(action.type()))) return last.strip();
-        if (actions.stream().anyMatch(action -> "store_items".equals(action.type()))) return last.contains("Лишних вещей") ? "Лишних вещей для сундука сейчас нет." : "Сложил вещи в сундук.";
+        if (actions.stream().anyMatch(action -> "store_items".equals(action.type()))) return storedReply(actions, last);
         if (actions.stream().anyMatch(action -> "take_items".equals(action.type()))) return "Забрал вещи, они у меня в сумке.";
         if (actions.stream().anyMatch(action -> "place_block".equals(action.type()) && "minecraft:chest".equals(action.item()))) {
             int placed = Pattern.compile("Поставил сундуков: (\\d+)").matcher(report).results().mapToInt(match -> Integer.parseInt(match.group(1))).sum();
@@ -374,6 +376,13 @@ public final class CompanionDialogue {
     }
 
     /** «Добыл 1 из 5» for ore or stone, said like a person: how many, of how many, and the plain reason. */
+    /** The outcome of a store order, in the words of the container it named. */
+    private static String storedReply(List<PlannedAction> actions, String last) {
+        String place = actions.stream().filter(action -> "store_items".equals(action.type())).findFirst().orElseThrow().location();
+        return last.contains("Лишних вещей") ? "Лишних вещей для " + CompanionContainers.nameOf(place) + " сейчас нет."
+                : "Сложил вещи " + CompanionContainers.into(place) + ".";
+    }
+
     private static String partialGather(List<PlannedAction> actions, String last) {
         var hunt = HUNTED.matcher(last);
         boolean hunted = hunt.find();

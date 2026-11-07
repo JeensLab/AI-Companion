@@ -5,6 +5,12 @@ package dev.aicompanion.client;
  * No client classes, so the chat screen and the GameTests route a phrase the same way.
  */
 public final class CompanionLocalCommands {
+    private static final String NEAR_PLAYER = "near_player";
+    /** Token positions of "companion work <type> <count> <item> [location]"; the location is optional. */
+    private static final int WORK_COUNT = 3;
+    private static final int WORK_ITEM = 4;
+    private static final int WORK_LOCATION = 5;
+
     private CompanionLocalCommands() { }
 
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
@@ -54,7 +60,9 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
-        if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " " + (workAction.item().isEmpty() ? "resources" : workAction.item());
+        if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " "
+                + (workAction.item().isEmpty() ? "resources" : workAction.item())
+                + (NEAR_PLAYER.equals(workAction.location()) ? "" : " " + workAction.location());
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
@@ -97,7 +105,8 @@ public final class CompanionLocalCommands {
             case "summon" -> new PlannedAction("come", 0, 1);
             case "roam" -> new PlannedAction("wander", 0, 1);
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
-            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[3]), parts[4]);
+            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), parts[WORK_ITEM], "auto",
+                    parts.length > WORK_LOCATION ? parts[WORK_LOCATION] : NEAR_PLAYER);
             default -> new PlannedAction(parts[1], 0, 1);
         };
     }
