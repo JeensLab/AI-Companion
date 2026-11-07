@@ -65,4 +65,51 @@ public final class CompanionMineGatherStallTests {
         h.assertTrue(started.success(), "Order not accepted: " + started.message());
         ends(h, c, new long[]{c.activeWorkId()}, stand);
     }
+
+    private static final int LEDGE_X = 15, LEDGE_Z = 15, LEDGE_Y = 8, SEEN_BY = 1200;
+
+    /** A bedrock ledge in a closed ring, six blocks over a floor with a grove of real trees round it: all in his search, none with a way. */
+    private static void ledgeAboveTrees(GameTestHelper h) {
+        box(h, 0, 0, 0, LAST, TOP_Y, LAST, Blocks.AIR);
+        box(h, 0, 0, 0, LAST, 1, LAST, Blocks.DIRT);
+        box(h, LEDGE_X - 1, 0, LEDGE_Z - 1, LEDGE_X + 2, LEDGE_Y - 1, LEDGE_Z + 2, Blocks.BEDROCK);
+        box(h, LEDGE_X - 1, LEDGE_Y, LEDGE_Z - 1, LEDGE_X + 2, LEDGE_Y + 2, LEDGE_Z + 2, Blocks.BEDROCK);
+        box(h, LEDGE_X, LEDGE_Y, LEDGE_Z, LEDGE_X + 1, LEDGE_Y + 2, LEDGE_Z + 1, Blocks.AIR);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true);
+        for (int fx = 2; fx <= 29; fx += 3) for (int fz = 2; fz <= 29; fz += 3) {
+            if (Math.hypot(fx - LEDGE_X, fz - LEDGE_Z) < 7) continue;
+            box(h, fx, 2, fz, fx, 6, fz, Blocks.OAK_LOG);
+            for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) for (int y = 5; y <= 7; y++) {
+                if (x == 0 && z == 0 && y <= 6) continue;
+                h.setBlock(new BlockPos(fx + x, y, fz + z), leaves);
+            }
+        }
+    }
+
+    /**
+     * Probe mine-world-f lava, 4050-4160: a gather_wood order on a ledge over a cliff, every tree below with no way to it. Each approach
+     * failed with «безопасно не добраться, ищу другую» and he stood there until the guard ended it ninety seconds later, only for the plan
+     * to order the same wood again. With no route to any tree the order ends in seconds, with the answer of «no tree».
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = TIMEOUT)
+    public static void aTreeWithNoRouteEndsTheGatherInsteadOfStanding(GameTestHelper h) {
+        ledgeAboveTrees(h);
+        CompanionEntity c = spawn(h, LEDGE_X, LEDGE_Y, LEDGE_Z);
+        c.setFollowing(false);
+        BlockPos stand = h.absolutePos(new BlockPos(LEDGE_X, LEDGE_Y, LEDGE_Z));
+        var started = c.startWork("gather_wood", "", 4);
+        h.assertTrue(started.success(), "Order not accepted: " + started.message());
+        long id = c.activeWorkId();
+        h.onEachTick(() -> {
+            if (h.getTick() == SEEN_BY) {
+                CompanionActionResult result = c.workResult(id);
+                h.assertTrue(result != null && !c.isWorking() && !c.isGatheringTask(),
+                        "Still gathering at tick " + SEEN_BY + ": " + c.getLastTaskResult() + " | " + c.watchDetail() + " at " + h.relativePos(c.blockPosition()).toShortString());
+                h.assertTrue(!result.success() && result.message().contains("Не нашёл доступного дерева"), "Not the answer of «no tree»: " + result.message());
+                h.assertTrue(c.blockPosition().distSqr(stand) <= 9, "Left his ledge to a place he could not have reached: " + h.relativePos(c.blockPosition()).toShortString());
+                h.assertTrue(count(c, Items.OAK_LOG) == 0, "Logs fell into the bag from nowhere");
+                h.succeed();
+            }
+        });
+    }
 }
