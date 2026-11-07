@@ -43,6 +43,8 @@ import java.util.UUID;
 public final class CompanionMineWorldProbe {
     private static final String STAGE = System.getProperty("aicompanion.mineWorldStage", "disabled");
     private static final String SCENARIO = System.getProperty("aicompanion.mineWorldScenario", "descent");
+    /** The goal starts at a fixed time of day (morning, or dusk with -Night), or runs of one seed mix day and night: the night rule changes what the mine takes along. */
+    private static final long START_DAY_TIME = Boolean.getBoolean("aicompanion.mineWorldNight") ? 13_000L : 1_000L;
     private static final UUID PLAYER = UUID.fromString("5a1e7c40-91d3-4b6e-8f27-c0d4a3b96e18");
     private static final Path SITES = Path.of("sites.properties"), MANIFEST = Path.of("mine-world-probe.properties");
     private static final int SCAN_CHUNK_RADIUS = 12, SCAN_SPAN = 160, SCAN_WALL_SECONDS = 900;
@@ -183,6 +185,8 @@ public final class CompanionMineWorldProbe {
         if (ticks < settleUntil) return;
         companion.teleportTo(entrance.getX() + 0.5, entrance.getY(), entrance.getZ() + 0.5);
         companion.setOwnerId(PLAYER); companion.setSearchRadius(16); companion.setLifestyle(false, false);
+        server.overworld().setDayTime(START_DAY_TIME);
+        journal.startDayTime = START_DAY_TIME;
         ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_PICKAXE, 4), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.TORCH, 32),
                 new ItemStack(Items.BREAD, 16), new ItemStack(Items.COBBLESTONE, 32)};
         for (int slot = 0; slot < bag.length; slot++) companion.setItem(slot, bag[slot]);
@@ -204,6 +208,7 @@ public final class CompanionMineWorldProbe {
         check(site.exists() && Long.toString(site.entrance().asLong()).equals(props.getProperty("entrance")), "The mine entrance changed or was lost: " + site.entrance());
         check(standsText().equals(props.getProperty("stands")), "The recorded stairs changed over the restart");
         journal.facts.put("restoredStands", site.stands().size());
+        journal.startDayTime = server.overworld().getDayTime() % 24_000L;
         restartMet = true;
     }
 
@@ -421,7 +426,8 @@ public final class CompanionMineWorldProbe {
             System.out.println("MINE_WORLD_JOURNAL_ERROR " + error);
         }
         System.out.println("MINE_WORLD_" + verdict + " scenario=" + SCENARIO + " stage=" + STAGE + " hazardMet=" + (journal == null || journal.hazardMet == null ? "n/a" : journal.hazardMet) + " climbs=" + (journal == null ? 0 : journal.climbs) + " blocked=" + (journal == null ? 0 : journal.blocked.size())
-                + " floorRefusals=" + (journal == null ? 0 : journal.floorRefusals) + " reason=\"" + reason + "\"");
+                + " floorRefusals=" + (journal == null ? 0 : journal.floorRefusals)
+                + " day=" + (journal == null ? -1 : journal.startDayTime) + " newStairs=" + (journal == null ? 0 : journal.newStairs) + " reason=\"" + reason + "\"");
         server.halt(false);
     }
 

@@ -18,6 +18,8 @@ import java.util.Map;
 final class CompanionMineWorldJournal {
     private static final Gson JSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final String FLOOR_REFUSAL = "неустойчивый пол", UNLOADED_REFUSAL = "незагруженн", STAIR_STOP = "Дальше лестницу не прокопать";
+    /** The status he sets when he has no stairs of his own to the surface and begins to cut new ones; once per cutting, the steps say something else. */
+    private static final String NEW_STAIRS = "прокапываю новую к поверхности";
     private static final String CAVE_MARK = "Наткнулся на пещеру", PATCH_MARK = "Пролом заделал";
     private static final long SLOW_ENTITY_TICK_NANOS = 50_000_000L;
     /** The last rows of each kind kept in the journal: how a death came about is in the end of the run. */
@@ -32,7 +34,9 @@ final class CompanionMineWorldJournal {
     /** Rows of the entity's own diagnostics that explain a death: hits taken, creepers met, very dangerous caves, the deaths themselves. */
     final List<String> hurts = new ArrayList<>(), creeperEvents = new ArrayList<>(), veryDangerous = new ArrayList<>(), deathEvents = new ArrayList<>();
     final Map<String, Object> facts = new LinkedHashMap<>();
-    int resumes, climbs, deaths, maxDepth, diagnosticBlocked, floorRefusals, unloadedRefusals, stairStops, caveSentences, patchSentences;
+    /** Time of day (in ticks, 0..23999) the goal began at, -1 when the probe never got that far. */
+    long startDayTime = -1;
+    int resumes, climbs, deaths, maxDepth, diagnosticBlocked, floorRefusals, unloadedRefusals, stairStops, caveSentences, patchSentences, newStairs;
     long maxEntityTickNanos, slowEntityTicks;
     /** Whether the hazard of the scenario really met Oleg; null for scenarios that have none. */
     Boolean hazardMet;
@@ -60,6 +64,7 @@ final class CompanionMineWorldJournal {
                     case "companion_hurt" -> keep(hurts, row, "tick", "source", "attacker", "damage", "health", "position", "sourcePosition", "distance", "stage", "cavePhase", "air");
                     case "creeper_seen", "creeper_swell" -> keep(creeperEvents, row, "event", "probeTick", "creeperPosition", "distance", "position", "health", "stage", "cavePhase", "air");
                     case "cave_very_dangerous" -> keep(veryDangerous, row, "where", "reasons", "breach", "position");
+                    case "work_status" -> { if (text(row, "message").contains(NEW_STAIRS)) newStairs++; }
                     case "death" -> keep(deathEvents, row, "tick", "source", "attacker", "position", "stage", "cavePhase", "air");
                     default -> { }
                 }
@@ -92,6 +97,8 @@ final class CompanionMineWorldJournal {
         out.put("maxDepth", maxDepth);
         out.put("floorRefusals", floorRefusals);
         out.put("stairStops", stairStops);
+        out.put("day", startDayTime);
+        out.put("newStairs", newStairs);
         out.put("unloadedRefusals", unloadedRefusals);
         out.put("caveSentences", caveSentences);
         out.put("patchSentences", patchSentences);

@@ -129,6 +129,7 @@ neoForge {
             programArgument '--nogui'
             systemProperty 'aicompanion.mineWorldStage', providers.gradleProperty('mineWorldStage').orElse('disabled').get()
             systemProperty 'aicompanion.mineWorldScenario', providers.gradleProperty('mineWorldScenario').orElse('descent').get()
+            systemProperty 'aicompanion.mineWorldNight', providers.gradleProperty('mineWorldNight').orElse('false').get()
         }
 
         // Separate, disposable dedicated world used only by the furnace-batch process-restart probe.
