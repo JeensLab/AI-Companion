@@ -4,6 +4,7 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionParkLink;
 import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionActionResult;
+import dev.aicompanion.entity.CompanionAutonomy;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionGoals;
@@ -37,6 +38,10 @@ public final class CompanionUrgentOrderTests {
     /** Ticks a plain cancel is watched for a dig that should not come back. */
     private static final int PLAIN_WATCH_TICKS = 60;
     private static final int RELOAD_WATCH_TICKS = 40;
+    /** Ticks after an order in which a park would show. */
+    private static final int ORDER_WATCH_TICKS = 10;
+    /** Ticks he stands on «стой здесь» before «за мной»: longer than the grace before a park resumes. */
+    private static final int STAY_TICKS = 30;
 
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void comeInterruptsStoneAndTheRestIsDugOnce(GameTestHelper helper) {
@@ -182,6 +187,53 @@ public final class CompanionUrgentOrderTests {
         Watch watch = new Watch();
         watchOrder(helper, scene, watch, true, () -> CompanionEvents.executeAction(scene.player(), "come", "", 1));
         finishWhen(helper, scene, watch, true);
+    }
+
+    /** The dig of a deed of his own is no order of the player: «ко мне» ends the deed and nothing is put aside to be resumed. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void comeDuringADeedsDigParksNothing(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, CompanionAutonomy.WOOD_STOCK));
+        vein(helper);
+        ServerPlayer player = owner(helper, companion);
+        companion.autonomy().setEnabled(true);
+        long[] orderedAt = {-1};
+        helper.onEachTick(() -> {
+            if (orderedAt[0] < 0) {
+                if (!companion.autonomy().running() || count(companion, Items.COBBLESTONE) < 1) return;
+                orderedAt[0] = helper.getTick();
+                CompanionEvents.executeAction(player, "come", "", 1);
+                return;
+            }
+            CompoundTag data = new CompoundTag();
+            companion.saveWithoutId(data);
+            helper.assertTrue(!data.contains("ParkedAction"), "The dig of his deed was put aside as an order: " + data.getString("ParkedAction"));
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(orderedAt[0] >= 0, "The deed has not dug a block yet");
+            helper.assertTrue(helper.getTick() - orderedAt[0] >= ORDER_WATCH_TICKS, "Watching for a park");
+            helper.assertTrue(!companion.autonomy().running(), "The deed went on after the order");
+        });
+    }
+
+    /** «/companion stay» with a paused goal: the goal's own stop of the work comes after the park, and «за мной» digs what was left. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void stayWithAPausedGoalParksTheDigAndFollowResumesIt(GameTestHelper helper) {
+        Scene scene = digScene(helper, true);
+        Watch watch = new Watch();
+        watchOrder(helper, scene, watch, true, () -> command(scene.player(), "companion stay"));
+        helper.onEachTick(() -> {
+            if (watch.orderedAt < 0 || helper.getTick() - watch.orderedAt != STAY_TICKS) return;
+            helper.assertTrue(!scene.companion().isFollowing(), "He still follows after «стой здесь»");
+            watch.arrived = true;
+            command(scene.player(), "companion follow");
+        });
+        finishWhen(helper, scene, watch, true);
+    }
+
+    private static void command(ServerPlayer player, String line) {
+        player.getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack(), line);
     }
 
     private static void queuedDigThenCancel(GameTestHelper helper, boolean urgent, boolean goalPaused) {

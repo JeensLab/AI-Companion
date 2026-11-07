@@ -27,7 +27,7 @@ final class CompanionParkedOrder {
     /** Puts the active job aside; false when there is none or it cannot be put aside (the caller then stops it as before). */
     boolean park() {
         CompanionWork work = owner.work;
-        if (!work.isActive() || owner.goals.ownsWork(owner.activeWorkId())) return false;
+        if (!work.isActive() || owner.goals.ownsWork(owner.activeWorkId()) || owner.autonomy.running()) return false;
         Parked rest = restOf(work);
         if (rest == null) return false;
         String line = "Отложил " + work.jobName() + " — вернусь после.";

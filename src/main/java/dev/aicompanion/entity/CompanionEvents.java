@@ -121,9 +121,9 @@ public final class CompanionEvents {
     private static int setFollowing(ServerPlayer player, boolean following) {
         CompanionEntity companion = resolveCanonical(player, true);
         if (companion != null) {
-            companion.goals().playerOrder(following ? "follow" : "wait"); companion.autonomy().playerOrder(following ? "follow" : "wait");
             CompanionAgenda.playerOrder(player, companion, following ? "follow" : "wait");
             if (!following) companion.parkWork();
+            companion.goals().playerOrder(following ? "follow" : "wait"); companion.autonomy().playerOrder(following ? "follow" : "wait");
             companion.setFollowing(following);
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
@@ -134,9 +134,9 @@ public final class CompanionEvents {
     private static int setProtecting(ServerPlayer player, boolean protecting) {
         CompanionEntity companion = resolveCanonical(player, true);
         if (companion != null) {
-            companion.goals().playerOrder(protecting ? "protect" : "stop_protect"); companion.autonomy().playerOrder(protecting ? "protect" : "stop_protect");
             CompanionAgenda.playerOrder(player, companion, protecting ? "protect" : "stop_protect");
             if (protecting) companion.parkWork();
+            companion.goals().playerOrder(protecting ? "protect" : "stop_protect"); companion.autonomy().playerOrder(protecting ? "protect" : "stop_protect");
             companion.setProtecting(protecting);
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
@@ -295,7 +295,7 @@ public final class CompanionEvents {
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
             // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
             CompanionAgenda.playerOrder(player, companion, action);
-            // The dig is put aside before the goal or the stop hears the order, which would end it; the agenda's own dig is never parked.
+            // The dig is put aside before the goal hears the order and ends it; neither the agenda's, the goal's nor a deed's dig is parked.
             parkForUrgentOrder(companion, action);
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
