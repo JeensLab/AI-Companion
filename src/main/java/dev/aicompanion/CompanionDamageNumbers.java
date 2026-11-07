@@ -31,10 +31,13 @@ public final class CompanionDamageNumbers {
 
     private final List<Pop> pops = new ArrayList<>();
     private float last = Float.NaN;
+    private @Nullable DamageSource lastCounted;
 
     /**
      * His health as it arrived. The first value, and any before his first tick (the data that comes with him into the
-     * world), only set where counting starts. The kind of a loss is the game's last damage source.
+     * world), only set where counting starts. The kind of a loss is the game's last damage source, but only a new one:
+     * a harder hit inside the cooldown of the one before sends the client no source, and the old one is still there
+     * (a blow while he burns would come out orange). The client makes a new source for each that arrives.
      * ponytail: damage that went into absorption hearts is not seen, they are not synced for a mob; he rarely has any.
      */
     public void health(float health, @Nullable DamageSource source, int tick) {
@@ -44,8 +47,9 @@ public final class CompanionDamageNumbers {
         if (start) return;
         float shown = Math.round(Math.abs(change) * 10) / 10F;
         if (shown == 0) return;
-        if (change > 0) add("+" + amount(shown), Kind.HEAL, tick);
-        else add(amount(shown), kind(source), tick);
+        if (change > 0) { add("+" + amount(shown), Kind.HEAL, tick); return; }
+        add(amount(shown), source == lastCounted ? Kind.HIT : kind(source), tick);
+        lastCounted = source;
     }
 
     /** A shield took the whole hit (the game's entity event 29): his health did not change, so it says nothing itself. */

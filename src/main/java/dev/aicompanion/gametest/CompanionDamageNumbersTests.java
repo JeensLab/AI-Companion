@@ -49,11 +49,17 @@ public final class CompanionDamageNumbersTests {
         seen(numbers, companion, 3);
         expect(h, numbers, 3, "1", Kind.FIRE); // burning goes past armour
 
+        // A harder blow inside the burn's cooldown: the game sends the client no source for it, the burn's is still there.
+        var burn = companion.getLastDamageSource();
+        companion.hurt(sources.mobAttack(zombie), 3);
+        numbers.health(companion.getHealth(), burn, 4);
+        h.assertTrue(numbers.live(4).getLast().kind() == Kind.HIT, "The blow took the burn's colour: " + numbers.live(4));
+
         again(companion);
         companion.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 200));
         companion.hurt(sources.lava(), 4);
         seen(numbers, companion, 4);
-        h.assertTrue(numbers.live(4).size() == 2, "Lava he does not feel is no number: " + numbers.live(4));
+        h.assertTrue(numbers.live(4).size() == 3, "Lava he does not feel is no number: " + numbers.live(4));
 
         again(companion);
         companion.hurt(sources.magic(), 1);
@@ -71,7 +77,7 @@ public final class CompanionDamageNumbersTests {
 
         numbers.blocked(8);
         expect(h, numbers, 8, "блок", Kind.BLOCK);
-        h.assertTrue(numbers.live(8).size() == 6, "One number for each change: " + numbers.live(8));
+        h.assertTrue(numbers.live(8).size() == 7, "One number for each change: " + numbers.live(8));
         h.assertTrue(numbers.live(8 + CompanionDamageNumbers.LIFE_TICKS).isEmpty(), "Still up after a second: " + numbers.live(28));
         h.succeed();
     }
