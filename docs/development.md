@@ -56,6 +56,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Задача | С чего начать |
 | --- | --- |
 | Регистрация, события, владелец компаньона | `AICompanionMod.java`, `entity/CompanionEvents.java` |
+| Гибель компаньона и возвращение памяти | `entity/CompanionMemorial.java` (в мире хранятся не более 20 записей о погибших; сверх лимита вытесняются самые старые), `CompanionEvents.java`; тест `gametest/CompanionMemorialTests.java` |
 | Чат и прямые команды | `client/CompanionChatScreen.java`, `CompanionLocalCommands.java`, `CompanionWorkCommands.java`, `CompanionGoalCommands.java` |
 | Запрос модели, промпт, таймауты | `client/OpenRouterClient.java`, `OpenRouterRetry.java`, `GameContext.java` |
 | Допустимые действия и параметры | `client/CompanionPlanCodec.java`, `CompanionPlanRequirements.java`, `PlannedAction.java` |

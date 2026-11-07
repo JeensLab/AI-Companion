@@ -41,6 +41,8 @@ final class CompanionAmbientClient {
                         monster -> dev.aicompanion.entity.CompanionHostiles.observed(player, monster, 12)).isEmpty();
     }
     private static Object lineWorld;
+    /** The level must not outlive the world the player left. */
+    static void forgetWorld() { world = null; lineWorld = null; }
     private static UUID lineCompanion;
     private static int lineSerial;
     /** His lines about deeds of his own, shown and voiced once each; old ones are not replayed after entering the world. */
