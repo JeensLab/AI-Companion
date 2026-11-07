@@ -20,6 +20,9 @@ public final class OpenRouterConfig {
     public static final ModConfigSpec.BooleanValue MOOD_PANEL = BUILDER
             .comment("Show the companion's mood, bond and character as a thin panel on the right of the screen (toggled with the key N).")
             .define("moodPanel", true);
+    public static final ModConfigSpec.BooleanValue DAMAGE_NUMBERS = BUILDER
+            .comment("Show above the companion, to his owner, the health he lost or regained and «блок» when his shield stopped a hit.")
+            .define("damageNumbers", true);
     public static final ModConfigSpec.BooleanValue CHUNK_LOADING = BUILDER.define("companionChunkLoading", true);
     public static final ModConfigSpec.BooleanValue DIAGNOSTICS = BUILDER
             .comment("Write local diagnostic events, dialogue and game state to logs/aicompanion. May include private conversations and coordinates.")
