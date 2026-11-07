@@ -1,5 +1,6 @@
 package dev.aicompanion.entity;
 
+import dev.aicompanion.CompanionConversation;
 import dev.aicompanion.CompanionPersonality.Trait;
 import dev.aicompanion.CompanionTopics;
 import dev.aicompanion.CompanionTopics.Topic;
@@ -91,7 +92,10 @@ public final class CompanionSoul {
         while (own.size() > OWN_TOPICS) own.removeFirst();
     }
 
-    private static boolean speakable(String text) { return CompanionTopics.speakable(text) && !CompanionMemory.isSensitive(text); }
+    // A topic he cannot say as a murmur must not enter the bank: it would be marked raised and lost.
+    private static boolean speakable(String text) {
+        return CompanionTopics.speakable(text) && CompanionConversation.fitsMurmur(text) && !CompanionMemory.isSensitive(text);
+    }
 
     /** He has this topic, has raised it or has it in the bank, perhaps in other words. */
     private boolean known(String text) {

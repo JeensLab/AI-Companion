@@ -33,6 +33,26 @@ public final class CompanionMurmurTests {
     }
 
     @GameTest(template="empty")
+    public static void expiredUrgentRemarkNoLongerHoldsBackMurmurs(GameTestHelper h) {
+        var c=new CompanionConversation();c.reset(0,0);
+        long t=5_000;
+        h.assertTrue(!c.takeObservation(1,0,t,false,false,0,true)&&c.urgentPending(t)==1,"A fresh urgent remark was not held");
+        h.assertTrue(c.urgentPending(t+CompanionConversation.URGENT_TTL)==1,"The urgent remark expired too early");
+        h.assertTrue(c.urgentPending(t+CompanionConversation.URGENT_TTL+1)==0&&c.urgentPending()==0,"An expired urgent remark still held back murmurs");
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
+    public static void ownTopicThatIsNotAMurmurNeverEntersTheBank(GameTestHelper h) {
+        var soul=new dev.aicompanion.entity.CompanionSoul();
+        var kept=java.util.List.of("Как там Барсик, чилит?");
+        soul.adapt(java.util.Map.of(),java.util.List.of("Как думаешь, зачем мы вообще ходим так далеко от дома, и что нас там ждёт дальше?",
+                "Ты помнишь, как мы нашли алмазы на 12 уровне?",kept.getFirst()));
+        h.assertTrue(soul.ownTopics().equals(kept),"A long or numbered own topic was kept: "+soul.ownTopics());
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
     public static void everyBankTopicFitsAMurmur(GameTestHelper h) {
         for(var topic:CompanionTopics.ALL)
             h.assertTrue(CompanionConversation.fitsMurmur(topic.text()),"Bank topic is not a murmur: "+topic.text());
@@ -50,7 +70,7 @@ public final class CompanionMurmurTests {
     }
 
     @GameTest(template="empty")
-    public static void murmurTempoIsUnchangedAtOneToTwoMinutes(GameTestHelper h) {
+    public static void realMinimumGapBetweenInitiativeMurmursIsSixtySeconds(GameTestHelper h) {
         h.assertTrue(CompanionConversation.MIN_GAP==60*20&&CompanionConversation.MAX_GAP==120*20,"The initiative interval changed");
         var c=new CompanionConversation();c.reset(0,0);
         long t=10_000;

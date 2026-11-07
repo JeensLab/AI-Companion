@@ -129,7 +129,7 @@ final class CompanionAmbientClient {
         int current = speaker.socialSequence();
         boolean fresh = conversation.newObservation(current);
         // An urgent remark waits until the player can hear it; only idle murmurs go on in chat out of earshot.
-        boolean urgentNow = conversation.urgentPending() != 0 || fresh && CompanionConversation.isUrgent(speaker.socialObservation());
+        boolean urgentNow = conversation.urgentPending(now()) != 0 || fresh && CompanionConversation.isUrgent(speaker.socialObservation());
         if (urgentNow && !CompanionVoiceAudio.audible(speaker)) return;
         if (!fresh && conversation.urgentPending() == 0) {
             // A topic needs the model to go on talking, and the memory of the player to know which topics he has raised.
@@ -174,6 +174,7 @@ final class CompanionAmbientClient {
             if (delivery == Delivery.DROP || wasUrgent && delivery != Delivery.VOICE) {
                 discarded(trace, "not_heard", text, wasUrgent); return;
             }
+            // Urgent (HIGH) remarks are exempt from the murmur cap on purpose: a warning must not be cut or dropped.
             String murmur = wasUrgent ? text : CompanionConversation.fitMurmur(text);
             if (murmur == null) { discarded(trace, "too_long", text, false); return; }
             CompanionChatScreen.autonomousReply(murmur, trace, delivery == Delivery.VOICE);

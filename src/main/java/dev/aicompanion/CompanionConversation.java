@@ -130,6 +130,11 @@ public final class CompanionConversation {
         return takePendingUrgent(now, safe, busy, jitter);
     }
     public int urgentPending() { return urgentSerial; }
+    /** The pending urgent remark, forgotten once it is older than {@link #URGENT_TTL}; takePendingUrgent is not reached while nobody can hear it. */
+    public int urgentPending(long now) {
+        if (urgentSerial != 0 && now - urgentSince > URGENT_TTL) urgentSerial = 0;
+        return urgentSerial;
+    }
     /** Never touches awaitingAnswer: an open question stays open while the urgent line is spoken. */
     public boolean takePendingUrgent(long now, boolean safe, boolean busy, int jitter) {
         if (urgentSerial == 0) return false;
