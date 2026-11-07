@@ -22,7 +22,7 @@ import java.util.Set;
 final class CompanionChests {
     final CompanionWork w;
 
-    /** The block id a store or take order named («в бочку»); null for chests and the other storage the player does not name. */
+    /** The block id a store or take order named («в бочку»); null for an order that names none, which means the chests. */
     String kind;
     private static final int ORDER_MAX = 64;
     static final CompanionActionResult COUNT_REFUSED = CompanionActionResult.failed("За раз можно добыть от 1 до 64 блоков.");
@@ -33,6 +33,13 @@ final class CompanionChests {
     static String kindFor(String action, String location) {
         boolean named = location != null && CompanionContainers.KINDS.contains(location);
         return named && ("store_items".equals(action) || "take_items".equals(action)) ? location : null;
+    }
+
+    /** The refusal of a store or take order that names a container other than a chest while the setting is off; null when the order may go on. */
+    static CompanionActionResult switchedOff(CompanionEntity owner, String action, String location) {
+        String named = kindFor(action, location);
+        if (named == null || !CompanionContainers.NAMEABLE.contains(named) || owner.otherContainers()) return null;
+        return CompanionActionResult.failed("Бочки, шалкеры, печи, воронки и раздатчики выключены в настройках мода, я работаю только с сундуками.");
     }
 
     /** 1 to 64; smelt_items, and store_items into a named container, also take ALL_CARRIED: everything, no number said. */
@@ -305,9 +312,9 @@ final class CompanionChests {
         return found;
     }
 
-    /** What this order may use at pos: any storage for an order of «chest», else the block of the kind it names, unless a smelting batch awaits it. */
+    /** What this order may use at pos: a chest for an order that names no container, else the block of the kind it names, unless a smelting batch awaits it. */
     private Container containerAt(ServerLevel level, BlockPos pos) {
-        if (kind == null) return CompanionContainers.storageAt(level, pos);
+        if (kind == null) return CompanionContainers.chestAt(level, pos);
         Container named = CompanionContainers.containerAt(level, pos, kind);
         return named == null || w.owner.batches().reserved(level, pos) ? null : named;
     }

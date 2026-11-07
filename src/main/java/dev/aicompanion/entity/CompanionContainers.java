@@ -22,8 +22,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * What a store or take order may put things in and take things from. Chests, barrels and shulker boxes are storage for every order;
- * furnaces, hoppers and dispensers only when the order names that block (the {@code location} of the step carries its id).
+ * What a store or take order may put things in and take things from. An order that names no block means the chests; a barrel, a shulker
+ * box, a furnace, a hopper or a dispenser only when the order names it (the {@code location} of the step carries its id).
+ * The sorting works on chests and, while the setting allows other containers, on barrels.
  */
 public final class CompanionContainers {
     public static final String SHULKER = "minecraft:shulker_box";
@@ -65,6 +66,13 @@ public final class CompanionContainers {
 
     private static Words words(String kind) { return kind == null ? CHEST_WORDS : WORDS.getOrDefault(kind, CHEST_WORDS); }
 
+    /** A chest (a double one as a whole) or null: what an order without a named container uses. */
+    static Container chestAt(ServerLevel level, BlockPos pos) {
+        if (!level.hasChunkAt(pos)) return null;
+        BlockState state = level.getBlockState(pos);
+        return state.getBlock() instanceof ChestBlock chest ? ChestBlock.getContainer(chest, state, level, pos, false) : null;
+    }
+
     /** A chest (a double one as a whole), a barrel or a shulker box that can be opened now; null for any other block. */
     static Container storageAt(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
@@ -92,9 +100,9 @@ public final class CompanionContainers {
         return level.getBlockState(lid).getCollisionShape(level, lid).isEmpty();
     }
 
-    /** The chests and barrels the sorting works on: not trapped chests, and no shulker boxes (a box inside a box cannot be planned). */
-    static boolean sortable(BlockState state) {
-        return state.is(Blocks.CHEST) || state.is(Blocks.BARREL);
+    /** The chests, and the barrels when allowed, the sorting works on: not trapped chests, and no shulker boxes (a box inside a box cannot be planned). */
+    static boolean sortable(BlockState state, boolean barrels) {
+        return state.is(Blocks.CHEST) || barrels && state.is(Blocks.BARREL);
     }
 
     /** Whether a take order may empty this slot: of a furnace only the result, never the input or the fuel. */

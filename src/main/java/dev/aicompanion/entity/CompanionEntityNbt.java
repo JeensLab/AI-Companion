@@ -40,6 +40,7 @@ final class CompanionEntityNbt {
         c.deeds.save(tag);
         c.autonomy.save(tag);
         tag.putBoolean("DeathRecovery", c.deathRecovery());
+        tag.putBoolean("OtherContainers", c.otherContainers());
         tag.putInt("DeathRecoveryAttempts", c.deathRecoveryAttempts());
         tag.putInt("DeathRecoveryDeaths", c.deathRecoveryDeaths());
         c.goals.save(tag);
@@ -76,6 +77,7 @@ final class CompanionEntityNbt {
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.load(tag);
         c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.setDeathRecovery(!tag.contains("DeathRecovery") || tag.getBoolean("DeathRecovery"));
+        c.setOtherContainers(!tag.contains("OtherContainers") || tag.getBoolean("OtherContainers"));
         c.setDeathRecoveryLimits(tag.contains("DeathRecoveryAttempts") ? tag.getInt("DeathRecoveryAttempts") : 5,
                 tag.contains("DeathRecoveryDeaths") ? tag.getInt("DeathRecoveryDeaths") : 10); c.refreshPlaces();
         c.social.load(tag);

@@ -136,6 +136,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
+    private boolean otherContainers = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -604,6 +605,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he goes back for his own things after a death (the player can turn it off in the settings). */
     public boolean deathRecovery() { return deathRecovery; }
     public void setDeathRecovery(boolean on) { deathRecovery = on; }
+    /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
+    public boolean otherContainers() { return otherContainers; }
+    public void setOtherContainers(boolean on) { otherContainers = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }

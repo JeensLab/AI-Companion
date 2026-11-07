@@ -385,6 +385,8 @@ public final class CompanionWork {
     public CompanionActionResult start(String action, String item, int count, String location) {
         cancel();
         if (!(owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для работы нужен загруженный мир.");
+        CompanionActionResult switchedOff = CompanionChests.switchedOff(owner, action, location);
+        if (switchedOff != null) return switchedOff;
         if (!"walk_heading".equals(action) && !CompanionChests.countOk(action, count, location)) return CompanionChests.COUNT_REFUSED;
         insideHouse = "inside_house".equals(location); chests.kind = CompanionChests.kindFor(action, location);
         if (!insideHouse && chests.kind == null && !"near_player".equals(location)) return CompanionActionResult.failed("Неизвестное место выполнения.");

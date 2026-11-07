@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
@@ -50,6 +51,8 @@ final class CompanionSorting {
     private final List<ItemStack> carried = new ArrayList<>();
     private final Set<BlockPos> opened = new HashSet<>();
     private boolean closing, started, tidyOnly, reordered, left;
+    /** A barrel is in the set: the report then says «хранилище», not «сундук». */
+    private boolean barrels;
     private int idle, trips, tripLimit;
     private long leftAt;
     private ItemStack shown = ItemStack.EMPTY;
@@ -61,8 +64,8 @@ final class CompanionSorting {
     CompanionSorting(CompanionWork w) { this.w = w; }
 
     /**
-     * The set is fixed at the request: ordinary chests and barrels (not trapped, not under a block) within six blocks of the player,
-     * nearest first, a double one once.
+     * The set is fixed at the request: ordinary chests, and barrels while the setting allows other containers (not trapped, not under a block),
+     * within six blocks of the player, nearest first, a double one once.
      */
     void begin(ServerLevel level) {
         // What a stopped sorting left in his bag is still the player's: this one puts it away too, as much of it as the bag still holds (review round 4, finding 3).
@@ -75,12 +78,13 @@ final class CompanionSorting {
         List<BlockPos> found = new ArrayList<>();
         for (BlockPos pos : w.chests.blockEntitiesNear(level, BlockPos.containing(from), (int) RADIUS + 1)) {
             BlockState state = level.getBlockState(pos);
-            if (!CompanionContainers.sortable(state) || state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) == ChestType.RIGHT
+            if (!CompanionContainers.sortable(state, w.owner.otherContainers()) || state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) == ChestType.RIGHT
                     || pos.getCenter().distanceToSqr(from) > RADIUS * RADIUS || CompanionContainers.storageAt(level, pos) == null) continue;
             found.add(pos.immutable());
         }
         found.sort(Comparator.comparingDouble(pos -> pos.getCenter().distanceToSqr(from)));
         chests.addAll(found.subList(0, Math.min(MAX_CHESTS, found.size())));
+        barrels = chests.stream().anyMatch(pos -> level.getBlockState(pos).is(Blocks.BARREL));
     }
 
     void step(ServerLevel level) {
@@ -259,13 +263,13 @@ final class CompanionSorting {
             }
             if (any) used++;
         }
-        if (where.isEmpty()) return "В сундуках пусто, раскладывать нечего." + goneNote(live);
+        if (where.isEmpty()) return (barrels ? "В хранилищах пусто" : "В сундуках пусто") + ", раскладывать нечего." + goneNote(live);
         // The groups of one chest together: «руда и металлы, еда — в ближнем», not the same chest named for each.
         Map<String, List<String>> byChest = new LinkedHashMap<>();
         where.forEach((group, at) -> byChest.computeIfAbsent(String.join(" и ", at.stream().map(i -> NEAR[i]).toList()), chest -> new ArrayList<>()).add(group.label));
         List<String> parts = new ArrayList<>();
         byChest.forEach((chest, groups) -> parts.add(String.join(", ", groups) + " — " + chest));
-        return (w.transferred == 0 && !reordered ? "Всё уже лежит по группам: " : "Разложил по " + used + (used == 1 ? " сундуку: " : " сундукам: ")) + String.join("; ", parts) + "." + goneNote(live);
+        return (w.transferred == 0 && !reordered ? "Всё уже лежит по группам: " : "Разложил по " + used + (barrels ? used == 1 ? " хранилищу: " : " хранилищам: " : used == 1 ? " сундуку: " : " сундукам: ")) + String.join("; ", parts) + "." + goneNote(live);
     }
 
     /** For the answer to the player: the chests of the set that were broken or built over meanwhile. */

@@ -72,6 +72,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.death_recovery")
             .define("deathRecovery", true);
 
+    /** Whether he also stores into and takes from barrels, shulker boxes, furnaces, hoppers and dispensers. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue OTHER_CONTAINERS = BUILDER
+            .comment("Store into and take from barrels, shulker boxes, furnaces, hoppers and dispensers when asked by name, and sort barrels with the chests. Off: chests only.")
+            .translation("config.aicompanion.other_containers")
+            .define("otherContainers", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")

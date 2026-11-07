@@ -16,6 +16,7 @@ import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.Container;
@@ -131,30 +132,97 @@ public final class CompanionContainerTests {
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_barrel_as_storage")
-    public static void anOrderForAChestStillUsesABarrelAsStorage(GameTestHelper helper) {
+    /** The scene of the review of PR 127: a chest 6 blocks away, a shulker box and a barrel next to him; «в сундук» is the chest. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_chest_store")
+    public static void anUnnamedStoreOrderUsesTheChestNotTheNearerBarrelOrShulkerBox(GameTestHelper helper) {
         CompanionEntity companion = setup(helper);
-        Container barrel = container(helper, NEAR, Blocks.BARREL);
-        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        Container chest = container(helper, NEAR, Blocks.CHEST);
+        Container shulker = container(helper, new BlockPos(16, 1, 18), Blocks.SHULKER_BOX);
+        Container barrel = container(helper, new BlockPos(14, 1, 16), Blocks.BARREL);
+        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 16));
         helper.assertTrue(companion.startWork("store_items", "stone", 1, "near_player").success(), "Store order not accepted");
         helper.succeedWhen(() -> {
             done(helper, companion);
             helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
-            helper.assertTrue(count(barrel, Items.COBBLESTONE) == 5 && count(companion, Items.COBBLESTONE) == 0, "The barrel did not take the stone");
+            helper.assertTrue(count(chest, Items.COBBLESTONE) == 16 && count(companion, Items.COBBLESTONE) == 0, "The chest did not take the stone");
+            helper.assertTrue(shulker.isEmpty() && barrel.isEmpty(), "The shulker box or the barrel took what the chest was asked for");
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_shulker_as_storage")
-    public static void takeWithoutAKindReadsAShulkerBox(GameTestHelper helper) {
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_chest_take")
+    public static void anUnnamedTakeOrderEmptiesTheChestAndLeavesTheShulkerBoxAlone(GameTestHelper helper) {
         CompanionEntity companion = setup(helper);
-        Container shulker = container(helper, NEAR, Blocks.SHULKER_BOX);
-        shulker.setItem(3, new ItemStack(Items.OAK_LOG, 4));
-        helper.assertTrue(companion.startWork("take_items", "logs", 4).success(), "Take order not accepted");
+        Container chest = container(helper, NEAR, Blocks.CHEST);
+        Container shulker = container(helper, new BlockPos(16, 1, 18), Blocks.SHULKER_BOX);
+        chest.setItem(0, new ItemStack(Items.IRON_INGOT, 3));
+        shulker.setItem(0, new ItemStack(Items.DIAMOND, 5));
+        helper.assertTrue(companion.startWork("take_items", "all", 64, "near_player").success(), "Take order not accepted");
         helper.succeedWhen(() -> {
             done(helper, companion);
             helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
-            helper.assertTrue(shulker.isEmpty() && count(companion, Items.OAK_LOG) == 4, "The shulker box was not emptied into the bag");
+            helper.assertTrue(chest.isEmpty() && count(companion, Items.IRON_INGOT) == 3, "The chest was not emptied into the bag");
+            helper.assertTrue(count(shulker, Items.DIAMOND) == 5 && count(companion, Items.DIAMOND) == 0, "The shulker box was emptied by an order for a chest");
         });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 100, batch = "containers_switched_off")
+    public static void withTheSettingOffAnOrderForABarrelIsRefusedHonestly(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setOtherContainers(false);
+        Container barrel = container(helper, NEAR, Blocks.BARREL);
+        Container chest = container(helper, new BlockPos(24, 1, 16), Blocks.CHEST);
+        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        var result = companion.startWork("store_items", "stone", 5, "minecraft:barrel");
+        helper.assertTrue(!result.success() && result.message().contains("выключены в настройках"), "The order was not refused honestly: " + result.message());
+        helper.assertTrue(!companion.hasActiveWorkOrder() && barrel.isEmpty() && chest.isEmpty() && count(companion, Items.COBBLESTONE) == 5,
+                "Something moved after the refusal");
+        var take = companion.startWork("take_items", "all", 64, "minecraft:furnace");
+        helper.assertTrue(!take.success() && !companion.hasActiveWorkOrder(), "A take from a furnace was accepted: " + take.message());
+        helper.succeed();
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_switched_off_chest")
+    public static void withTheSettingOffAnOrderForAChestStillWorks(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setOtherContainers(false);
+        Container chest = container(helper, NEAR, Blocks.CHEST);
+        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        helper.assertTrue(companion.startWork("store_items", "stone", 1, "near_player").success(), "The chest order was refused");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed() && count(chest, Items.COBBLESTONE) == 5, companion.getLastTaskResult());
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_switched_off_sort")
+    public static void withTheSettingOffTheSortingLeavesBarrelsAlone(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setOtherContainers(false);
+        Container barrel = container(helper, NEAR, Blocks.BARREL);
+        barrel.setItem(0, new ItemStack(Items.BREAD, 4));
+        companion.startWork("sort_chests", "", 1);
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().equals("Рядом с тобой сундуков не вижу."), companion.getLastTaskResult());
+            helper.assertTrue(count(barrel, Items.BREAD) == 4, "The barrel was touched");
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_setting_save")
+    public static void theSettingIsSavedAndAnOldSaveWithoutItLoadsOn(GameTestHelper helper) {
+        CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 2, 1, 2);
+        helper.assertTrue(companion.otherContainers(), "Not on by default");
+        companion.setOtherContainers(false);
+        CompoundTag saved = new CompoundTag();
+        companion.addAdditionalSaveData(saved);
+        companion.setOtherContainers(true);
+        companion.readAdditionalSaveData(saved);
+        helper.assertTrue(!companion.otherContainers(), "The off setting was not kept in the save");
+        saved.remove("OtherContainers");
+        companion.setOtherContainers(false);
+        companion.readAdditionalSaveData(saved);
+        helper.assertTrue(companion.otherContainers(), "A save without the setting did not load as on");
+        helper.succeed();
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 3000, batch = "containers_sorting")

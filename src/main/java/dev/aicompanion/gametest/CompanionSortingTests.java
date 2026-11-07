@@ -267,6 +267,8 @@ public final class CompanionSortingTests {
             helper.assertTrue(totals(companion, sorted).equals(before), "Items lost or doubled");
             helper.assertTrue(stacksOf(a, Items.BREAD) + stacksOf(barrel, Items.BREAD) == 1,
                 "The barrel was not sorted: " + describe(a) + "| " + describe(barrel));
+            String said = companion.getLastTaskResult();
+            helper.assertTrue(said.startsWith("Разложил по ") && said.contains("хранилищ") && !said.contains("сундук"), "A barrel in the set was called a chest: " + said);
         });
     }
 

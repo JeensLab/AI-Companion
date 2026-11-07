@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 
 /**
  * «Сложи 10 камня в бочку», «забери всё из печи», «положи вещи в сундук»: a store or take order, with the container it names.
- * The block id travels in the step's {@code location}; «сундук» names none (any storage, as before) and keeps its old reading.
+ * The block id travels in the step's {@code location}; «сундук» names none (the chests, as before) and keeps its old reading.
  */
 final class CompanionContainerCommands {
     private static final int MAX_COUNT = 64;
