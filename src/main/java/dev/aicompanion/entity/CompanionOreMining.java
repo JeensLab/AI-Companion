@@ -510,6 +510,8 @@ final class CompanionOreMining {
         BlockPos exit = exitCell();
         w.route.legsEnd(exit == null || w.owner.getY() >= exit.getY() - .5); w.route.abandon();
         int gained = Math.max(0, w.items.countCarried(w.ore.drop) - w.oreDropsBefore);
+        // Whether the surface has coal for torches is kept with the mine: out of light below, he climbs for coal only where some was found.
+        if (w.ore == CompanionOre.Kind.COAL && CompanionExpeditionRecord.underSky(w.owner.level(), w.owner.blockPosition().above())) w.mine.coalAbove(gained > 0);
         String got = "«" + w.ore.oreName + "»: в сумке прибавилось " + gained + " «" + CompanionWork.itemName(w.ore.drop) + "».";
         String below = exit != null && w.owner.getY() < exit.getY() - .5
                 ? " Наверх пока не выбрался: стою на " + w.owner.blockPosition().toShortString() + "." : "";

@@ -26,7 +26,7 @@ import java.util.Set;
  * still open. Saved under {@link #KEY}; a save without the key has no mine.
  */
 public final class CompanionMineSite {
-    public static final String KEY = "MineSite", HELD_KEY = "MineHeld";
+    public static final String KEY = "MineSite", HELD_KEY = "MineHeld", NO_COAL_KEY = "MineNoCoalAbove";
     /** How long after a step that opened nothing the next one still finds the restarts of that step spent. */
     public static final int RESTARTS_CARRIED = 20 * 120;
     /** The ways of getting on from a stop that came again: the stairs anew from the spot, then the way up. Past them the stop is final until he stands elsewhere. */
@@ -86,6 +86,11 @@ public final class CompanionMineSite {
     /** Sealing blocks held back mid-column. They are not part of the mine record: they outlive {@link #clear} and are saved apart, so a quit loses none. */
     private final List<Held> held = new ArrayList<>();
     private boolean loadedHeld;
+    /**
+     * The surface had no coal within the search when he last looked for torches there: out of light below, a climb for coal would find none.
+     * Kept apart from the record (the mine may not exist yet when the kit is gathered) and saved apart; a save from before it loads as unknown.
+     */
+    private boolean noCoalAbove;
 
     /** Drops of one broken cell, kept until the column is done. */
     public record Held(BlockPos pos, List<ItemStack> drops) { }
@@ -112,6 +117,11 @@ public final class CompanionMineSite {
     public boolean loadedHeld() { return loadedHeld; }
 
     public boolean exists() { return entrance != null; }
+
+    public boolean noCoalAbove() { return noCoalAbove; }
+
+    /** Whether the last look for coal on the surface found any. */
+    public void coalAbove(boolean found) { noCoalAbove = !found; }
 
     public void start(BlockPos entranceFeet, Direction stair) {
         clear();
@@ -514,6 +524,8 @@ public final class CompanionMineSite {
         tag.remove(KEY);
         tag.remove(HELD_KEY);
         saveHeld(tag);
+        tag.remove(NO_COAL_KEY);
+        if (noCoalAbove) tag.putBoolean(NO_COAL_KEY, true);
         if (entrance == null) return;
         CompoundTag mine = new CompoundTag();
         mine.putLong("Entrance", entrance.asLong());
@@ -604,6 +616,7 @@ public final class CompanionMineSite {
     public void load(CompoundTag tag) {
         clear();
         loadHeld(tag);
+        noCoalAbove = tag.getBoolean(NO_COAL_KEY);
         if (!tag.contains(KEY, Tag.TAG_COMPOUND)) return;
         CompoundTag mine = tag.getCompound(KEY);
         if (!mine.contains("Entrance", Tag.TAG_LONG)) return;

@@ -2,6 +2,7 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -9,7 +10,7 @@ import java.util.List;
 
 /**
  * The bench he set down on a step of his stairs to make a pickaxe is taken up by hand again before he goes on: in a passage one cell
- * wide it would shut the way. The cells are the mine's temporary blocks, which are saved, so a taking cut short by a quit goes on
+ * wide it would shut the way. On the surface, the bench of the kit he set down himself goes back into the bag before the way down. The cells are the mine's temporary blocks, which are saved, so a taking cut short by a quit goes on
  * after the load. The effort is bounded per step; a bench left standing stays in the record and the next step tries again.
  */
 final class CompanionExpeditionBench {
@@ -60,7 +61,11 @@ final class CompanionExpeditionBench {
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "temporary_left", "entity", owner.getUUID(), "position", bench, "why", why);
     }
 
-    /** The nearest bench of the mine's temporary blocks within reach of a walk; a cell with nothing in it any more is forgotten. */
+    /**
+     * The nearest bench of the mine's temporary blocks within reach of a walk; a cell with nothing in it any more is forgotten.
+     * On the surface with no bench in the bag, a bench he set down himself near by counts too: the kit goes down with him (void-2 of seed 7:
+     * the bench of the kit stayed by the entrance after a craft, and no pickaxe could be made below).
+     */
     private BlockPos nearest(ServerLevel level) {
         BlockPos best = null;
         double bestDistance = NEAR * NEAR;
@@ -70,6 +75,12 @@ final class CompanionExpeditionBench {
             if (state.isAir()) { w.mine.taken(cell); continue; }
             double distance = owner.distanceToSqr(cell.getCenter());
             if (state.is(Blocks.CRAFTING_TABLE) && distance <= bestDistance) { best = cell; bestDistance = distance; }
+        }
+        if (best != null || w.items.countCarried(Items.CRAFTING_TABLE) > 0 || !CompanionExpeditionRecord.underSky(level, owner.blockPosition().above())) return best;
+        for (BlockPos cell : owner.places.placed("minecraft:crafting_table")) {
+            if (!level.hasChunkAt(cell) || !level.getBlockState(cell).is(Blocks.CRAFTING_TABLE)) continue;
+            double distance = owner.distanceToSqr(cell.getCenter());
+            if (distance <= bestDistance) { best = cell; bestDistance = distance; }
         }
         return best;
     }

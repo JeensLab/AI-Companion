@@ -251,7 +251,7 @@ final class CompanionExpedition {
                 return;
             }
             nextLightClimb = level.getGameTime() + LIGHT_CLIMB_RETRY;
-            owner.workStatus("Факелы кончились, а пути наверх нет: копаю дальше в темноте.");
+            owner.workStatus(w.mine.noCoalAbove() ? "Факелы кончились, а угля наверху не было: копаю дальше в темноте." : "Факелы кончились, а пути наверх нет: копаю дальше в темноте.");
         }
         if (plan == null) arm(level);
         if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && stuckUnderwater()) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
@@ -341,9 +341,11 @@ final class CompanionExpedition {
         joining = joinedBelow = false;
         // Nothing to dig with and nothing to make a pickaxe of: the walk down his stairs would end at their foot with the climb back.
         // Not in a pit under the ground (a restarted mine's entrance is the pit itself): there the climb for wood is the way, and ending here would repeat for ever.
+        // Nor in a cave far from the stairs: a mine begun bare-handed there ends buried in a pit (run void-5 of 20261031); below the surface a worn iron pickaxe is still a pickaxe, for ore in sight.
         boolean inPit = mine.buried() && !CompanionExpeditionRecord.underSky(level, here.above());
-        if (mine.exists() && !inPit && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH && !hadStone && !dig.hasRockTool() && !supply.canMakePickaxe()) {
-            end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, false) + " Копать нечем, остался наверху.");
+        boolean above = mine.exists() && here.getY() >= mine.entrance().getY() - UNDERGROUND_DEPTH;
+        if (mine.exists() && !inPit && !hadStone && !dig.hasRockTool() && (above || !dig.ironLeft(0)) && !supply.canMakePickaxe()) {
+            end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, false) + (above ? " Копать нечем, остался наверху." : " Копать нечем, остался на месте."));
             return;
         }
         if (mine.exists()) {
@@ -857,9 +859,9 @@ final class CompanionExpedition {
         climb.begin(why, owner.blockPosition());
     }
 
-    /** The way up for light is only taken when the climb can really start; with none he digs on, and the way is looked for again after a while. */
+    /** The way up for light is only taken when the climb can really start; with none he digs on, and the way is looked for again after a while; nor when the surface had no coal the last time he looked: there is no light to fetch up there. */
     private boolean climbForLight() {
-        if (noWayUp()) return false;
+        if (noWayUp() || w.mine.noCoalAbove()) return false;
         climb.begin(CompanionExpeditionClimb.NO_TORCHES, owner.blockPosition());
         if (!climb.walking()) { climb.reset(); return false; }
         climbTime();
