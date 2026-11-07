@@ -143,9 +143,9 @@ final class CompanionWorkCrafting {
         }
         if (w.craftingStation == null) {
             if (w.owner.hasKnownCraftingTableWithin(CompanionWork.BENCH_TRIP)) {
-                // No route to any remembered bench was found above, so a bench a few steps away does not veto a new one: it cannot be walked to.
-                if (hasWoodForBench()) return useOwnBench("к известному верстаку сейчас нет пути");
-                w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый у меня нет."); return true;
+                if (canMakeBench()) return useOwnBench("к известному верстаку сейчас нет пути");
+                w.finish(false, hasWoodForBench() ? "Помню верстак неподалёку, но пройти к нему сейчас не могу, а второй рядом с ним ставить не буду."
+                        : "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый у меня нет."); return true;
             }
             return false;
         }

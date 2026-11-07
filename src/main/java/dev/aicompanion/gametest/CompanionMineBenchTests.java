@@ -130,25 +130,6 @@ public final class CompanionMineBenchTests {
         });
     }
 
-    /** The remembered bench is a cell in the ground closed on every side, four steps away: there is no walk to it, and with logs in the bag he makes a new one instead of saying there is no wood. */
-    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void makesANewBenchWhenTheKnownOneIsWalledOff(GameTestHelper h) {
-        mountain(h);
-        CompanionEntity c = rig(h);
-        c.setItem(6, new ItemStack(Items.OAK_LOG, 5));
-        BlockPos bench = new BlockPos(CENTER + 4, GROUND - 1, CENTER);
-        for (Direction side : Direction.values()) h.setBlock(bench.relative(side), Blocks.BEDROCK);
-        h.setBlock(bench, Blocks.CRAFTING_TABLE);
-        c.rememberPlaced(h.absolutePos(bench));
-        var player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
-        CompanionActionResult order = CompanionEvents.executeAction(player, "craft_item", "minecraft:stone_pickaxe", 1);
-        h.assertTrue(order.success(), "Craft order not accepted: " + order.message());
-        h.succeedWhen(() -> {
-            h.assertTrue(!c.isWorking(), "Still working | " + report(c));
-            h.assertTrue(c.didLastTaskSucceed() && count(c, Items.STONE_PICKAXE) == 1, "No pickaxe from a new bench | " + report(c));
-        });
-    }
-
     private static long start(GameTestHelper h, CompanionEntity c) {
         h.assertTrue(c.startWork("dig_for_diamonds", "", 1).success(), "Diamond mine not accepted: " + c.getLastTaskResult());
         return c.activeWorkId();
