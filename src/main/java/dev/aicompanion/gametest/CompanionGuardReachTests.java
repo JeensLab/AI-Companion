@@ -209,18 +209,27 @@ public final class CompanionGuardReachTests {
         });
     }
 
-    /** With the switch off the guard order picks as before: the monster nearest to Oleg (4 blocks), not the one nearest to the player (9). */
+    /**
+     * With the switch off the guard order picks as before: the monster nearest to Oleg (right beside him, 9 blocks from the player),
+     * not the one nearest to the player (6 blocks). Both stay within ten blocks of the player, so that the old rule keeps taking them
+     * while he walks back towards the player; the first target he takes and the order of the two are what counts, not the kill time.
+     */
     @GameTest(template = "empty", timeoutTicks = 300, batch = "guard_reach_switch")
     public static void withTheSwitchOffTheTargetIsTheMonsterNearestToHim(GameTestHelper h) {
         h.startSequence().thenExecute(() -> arena(h)).thenIdle(20).thenExecute(() -> {
             CompanionEntity companion = guard(h, 8);
             companion.setGuardByPlayer(false);
-            var nearToPlayer = zombie(h, -9);
-            var nearToHim = zombie(h, 12);
-            h.runAtTickTime(60, () -> {
-                h.assertTrue(companion.getTarget() == nearToHim,
-                        "Target was " + companion.getTarget() + ", wanted the zombie 4 blocks from him; " + spots(h, player(h, companion), companion));
-                h.assertTrue(nearToPlayer.isAlive(), "The zombie nearest to the player fell first");
+            var nearToPlayer = zombie(h, -6);
+            var nearToHim = zombie(h, 9);
+            List<net.minecraft.world.entity.LivingEntity> first = new ArrayList<>();
+            h.onEachTick(() -> {
+                if (first.isEmpty() && companion.getTarget() != null) first.add(companion.getTarget());
+                h.assertTrue(companion.getTarget() != nearToPlayer || !nearToHim.isAlive(),
+                        "He went for the zombie nearest to the player while the one beside him lived; " + spots(h, player(h, companion), companion));
+            });
+            h.runAtTickTime(100, () -> {
+                h.assertTrue(!first.isEmpty() && first.get(0) == nearToHim,
+                        "First target was " + (first.isEmpty() ? null : first.get(0)) + ", wanted the zombie beside him; " + spots(h, player(h, companion), companion));
                 h.succeed();
             });
         });
