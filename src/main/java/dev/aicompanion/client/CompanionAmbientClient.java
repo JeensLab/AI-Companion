@@ -95,8 +95,9 @@ final class CompanionAmbientClient {
                 if (conversation.revision() != activity || speaker == null || !capturedCompanion.equals(speaker.getUUID())) {
                     dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic_dropped", "topic", topic.key()); return;
                 }
-                var delivery = CompanionConversation.decide(safe(speaker), CompanionVoiceAudio.audible(speaker), client.screen != null, client.isPaused());
-                String murmur = delivery == Delivery.DROP ? null : CompanionConversation.fitMurmur(topic.text());
+                boolean shortMurmurs = OpenRouterConfig.SHORT_MURMURS.get();
+                var delivery = CompanionConversation.decide(safe(speaker), CompanionVoiceAudio.audible(speaker), client.screen != null, client.isPaused(), shortMurmurs);
+                String murmur = delivery == Delivery.DROP ? null : CompanionConversation.fitMurmur(topic.text(), shortMurmurs);
                 if (murmur == null) {
                     dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic_dropped", "topic", topic.key(),
                             "reason", delivery == Delivery.DROP ? "not_allowed" : "too_long"); return;
@@ -115,7 +116,10 @@ final class CompanionAmbientClient {
         }
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();
-        if (speaker == null) return;
+        boolean shortMurmurs = OpenRouterConfig.SHORT_MURMURS.get();
+        conversation.setIntervalPercent(OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get());
+        // Out of earshot nothing is said unless short murmurs may go to chat without voice.
+        if (speaker == null || !shortMurmurs && !CompanionVoiceAudio.audible(speaker)) return;
         var scene = scene(speaker);
         // Initial tracking data is a snapshot, not a new event, except an urgent line still fresh.
         if (!speaker.getUUID().equals(companion)) {
@@ -170,12 +174,12 @@ final class CompanionAmbientClient {
             var currentSpeaker = CompanionVoiceAudio.speaker();
             if (currentSpeaker == null || !capturedCompanion.equals(currentSpeaker.getUUID())) { discarded(trace, "not_heard", text, wasUrgent); return; }
             var delivery = CompanionConversation.decide(safe(currentSpeaker), CompanionVoiceAudio.audible(currentSpeaker),
-                    client.screen != null, client.isPaused());
+                    client.screen != null, client.isPaused(), shortMurmurs);
             if (delivery == Delivery.DROP || wasUrgent && delivery != Delivery.VOICE) {
                 discarded(trace, "not_heard", text, wasUrgent); return;
             }
             // Urgent (HIGH) remarks are exempt from the murmur cap on purpose: a warning must not be cut or dropped.
-            String murmur = wasUrgent ? text : CompanionConversation.fitMurmur(text);
+            String murmur = wasUrgent ? text : CompanionConversation.fitMurmur(text, shortMurmurs);
             if (murmur == null) { discarded(trace, "too_long", text, false); return; }
             CompanionChatScreen.autonomousReply(murmur, trace, delivery == Delivery.VOICE);
         }));

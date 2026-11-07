@@ -148,9 +148,11 @@ public final class CompanionBonds extends SavedData {
         return topic;
     }
 
-    public void adapt(UUID owner, Map<CompanionPersonality.Trait, Integer> character, List<String> topics) {
+    public void adapt(UUID owner, Map<CompanionPersonality.Trait, Integer> character, List<String> topics) { adapt(owner, character, topics, true); }
+
+    public void adapt(UUID owner, Map<CompanionPersonality.Trait, Integer> character, List<String> topics, boolean shortMurmurs) {
         if (character.isEmpty() && topics.isEmpty()) return;
-        slot(owner).memory.soul().adapt(character, topics);
+        slot(owner).memory.soul().adapt(character, topics, shortMurmurs);
         setDirty();
     }
 

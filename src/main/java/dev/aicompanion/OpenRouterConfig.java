@@ -14,6 +14,14 @@ public final class OpenRouterConfig {
             .comment("Maximum independent resource-search and roaming distance, in loaded chunks.")
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
+    public static final ModConfigSpec.BooleanValue SHORT_MURMURS = BUILDER
+            .comment("Keep his own idle remarks short (at most 15 words, no digits) and, when you are out of earshot, show them in chat without voice. Off: long remarks are voiced only within earshot.")
+            .translation("config.aicompanion.short_murmurs")
+            .define("shortMurmurs", true);
+    public static final ModConfigSpec.IntValue MURMUR_INTERVAL_PERCENT = BUILDER
+            .comment("How long he waits between remarks of his own, in percent of the usual pause (100 = as designed, 200 = twice as rare).")
+            .translation("config.aicompanion.murmur_interval_percent")
+            .defineInRange("murmurIntervalPercent", 100, 25, 400);
     public static final ModConfigSpec.BooleanValue COMPANION_MARKER = BUILDER
             .comment("Outline the companion through walls when he is out of sight, and mark him on the screen when he is too far to be seen (toggled with the key G).")
             .define("companionMarker", true);

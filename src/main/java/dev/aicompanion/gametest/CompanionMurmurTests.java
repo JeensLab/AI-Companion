@@ -78,4 +78,50 @@ public final class CompanionMurmurTests {
         h.assertTrue(!c.ready(t+CompanionConversation.MIN_GAP-1)&&c.ready(t+CompanionConversation.MIN_GAP),"The minimum gap between murmurs changed");
         h.succeed();
     }
+
+    @GameTest(template="empty")
+    public static void ambientDirectionsTellTheModelTheMurmurLimit(GameTestHelper h) {
+        String limit="не больше "+CompanionConversation.MURMUR_WORDS+" слов";
+        for(boolean question:new boolean[]{true,false}) {
+            String ordinary=dev.aicompanion.client.OpenRouterClient.ambientDirections(false,question);
+            h.assertTrue(ordinary.contains(limit)&&ordinary.contains("без цифр")&&ordinary.contains("одна или две фразы"),"The murmur limit is not in the directions: "+ordinary);
+        }
+        String urgent=dev.aicompanion.client.OpenRouterClient.ambientDirections(true,false);
+        h.assertTrue(!urgent.contains("без цифр"),"An urgent warning was told to avoid digits");
+        String free=dev.aicompanion.client.OpenRouterClient.ambientDirections(false,true,false);
+        h.assertTrue(!free.contains("без цифр")&&!free.contains(limit),"The limit was told to the model with short murmurs off");
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
+    public static void withShortMurmursOffALongMurmurIsNotCutOrRoutedToChat(GameTestHelper h) {
+        String longText="Тихо тут сегодня. "+FIFTEEN+". Я на 120 блоках к северу.";
+        h.assertTrue(longText.equals(CompanionConversation.fitMurmur(longText,false)),"A long murmur was cut with the limit off");
+        h.assertTrue(CompanionConversation.fitMurmur(longText,true)!=null&&!longText.equals(CompanionConversation.fitMurmur(longText,true)),"The limit stopped cutting with it on");
+        h.assertTrue(CompanionConversation.fitMurmur("  ",false)==null,"A blank murmur was kept");
+        h.assertTrue(CompanionConversation.decide(true,false,false,false,false)==Delivery.DROP,"Out of earshot the line went to chat with the limit off");
+        h.assertTrue(CompanionConversation.decide(true,true,false,false,false)==Delivery.VOICE,"Within earshot the line was not voiced with the limit off");
+        h.assertTrue(CompanionConversation.decide(true,false,false,false,true)==Delivery.CHAT,"The chat route is gone with the limit on");
+        var soul=new dev.aicompanion.entity.CompanionSoul();
+        String topic="Как думаешь, зачем мы вообще ходим так далеко от дома, и что нас там ждёт дальше?";
+        soul.adapt(java.util.Map.of(),java.util.List.of(topic),false);
+        h.assertTrue(soul.ownTopics().equals(java.util.List.of(topic)),"A long own topic was refused with the limit off: "+soul.ownTopics());
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
+    public static void murmurIntervalScalesTheGapAndKeepsTheDefault(GameTestHelper h) {
+        for(int j=0;j<2000;j++) {
+            h.assertTrue(CompanionConversation.gap(j,100)==CompanionConversation.gap(j),"The default interval changed the gap");
+            h.assertTrue(CompanionConversation.gap(j,200)==2*CompanionConversation.gap(j),"The interval did not double the gap");
+            h.assertTrue(CompanionConversation.topicGap(CompanionConversation.Scene.IDLE,j,100)==CompanionConversation.topicGap(CompanionConversation.Scene.IDLE,j),"The default interval changed the topic gap");
+            h.assertTrue(CompanionConversation.topicGap(CompanionConversation.Scene.IDLE,j,50)==CompanionConversation.topicGap(CompanionConversation.Scene.IDLE,j)/2,"The interval did not halve the topic gap");
+        }
+        h.assertTrue(CompanionConversation.topicGap(CompanionConversation.Scene.FIGHT,0,400)==Integer.MAX_VALUE,"A fight topic gap overflowed");
+        var c=new CompanionConversation();c.reset(0,0);c.setIntervalPercent(200);
+        long t=10_000;
+        c.initiativeDelivered("Дождь вовремя.",t,0);
+        h.assertTrue(!c.ready(t+2*CompanionConversation.MIN_GAP-1)&&c.ready(t+2*CompanionConversation.MIN_GAP),"The conversation ignored the interval");
+        h.succeed();
+    }
 }
