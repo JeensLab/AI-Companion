@@ -2,6 +2,8 @@ package dev.aicompanion.gametest;
 
 import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionDialogue;
+import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionWorkCommands;
 import dev.aicompanion.client.PlannedAction;
@@ -20,6 +22,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
 
 /**
  * Barrels, shulker boxes, furnaces, hoppers and dispensers as places to put things in and take things from.
@@ -195,6 +199,62 @@ public final class CompanionContainerTests {
             helper.assertTrue(rejected, "Accepted: " + bad);
         }
         helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_chat_path")
+    public static void theChatPathKeepsTheContainerKind(GameTestHelper helper) {
+        Object[][] orders = {
+                {"положи вещи в бочку", "store_items", PlannedAction.ALL_CARRIED, "minecraft:barrel"},
+                {"Олег, сложи 10 камня в бочку", "store_items", 10, "minecraft:barrel"},
+                {"забери всё из печи", "take_items", 64, "minecraft:furnace"},
+                {"забери 5 камня из шалкера", "take_items", 5, "minecraft:shulker_box"},
+                {"сложи камень в сундук", "store_items", 1, "near_player"},
+                {"забери 5 камня из сундука", "take_items", 5, "near_player"}};
+        for (Object[] order : orders) {
+            String command = CompanionLocalCommands.route((String)order[0], "Олег");
+            helper.assertTrue(command != null, "Not routed locally: " + order[0]);
+            PlannedAction step = CompanionLocalCommands.action(command);
+            helper.assertTrue(step.type().equals(order[1]) && step.count() == (int)order[2] && step.location().equals(order[3]),
+                    order[0] + " -> " + command + " -> " + step);
+        }
+        PlannedAction barrelOrder = CompanionLocalCommands.action(CompanionLocalCommands.route("положи вещи в бочку", "Олег"));
+        helper.assertTrue(CompanionDialogue.acknowledge(List.of(barrelOrder)).contains("в бочку")
+                && CompanionDialogue.describe(barrelOrder).contains("в бочку"), "The words still say a chest: " + CompanionDialogue.describe(barrelOrder));
+        PlannedAction chestOrder = CompanionLocalCommands.action(CompanionLocalCommands.route("сложи камень в сундук", "Олег"));
+        helper.assertTrue(CompanionDialogue.acknowledge(List.of(chestOrder)).contains("в сундук"), "The chest wording changed");
+        PlannedAction oldForm = CompanionLocalCommands.action("companion work store_items 1 resources");
+        helper.assertTrue("near_player".equals(oldForm.location()) && oldForm.count() == 1 && "resources".equals(oldForm.item()), "Old form: " + oldForm);
+        helper.succeed();
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_chat_barrel")
+    public static void aSpokenOrderForABarrelReachesTheBarrel(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        Container barrel = container(helper, NEAR, Blocks.BARREL);
+        Container chest = container(helper, new BlockPos(24, 1, 16), Blocks.CHEST);
+        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 16));
+        PlannedAction step = CompanionLocalCommands.action(CompanionLocalCommands.route("сложи 10 камня в бочку", "Олег"));
+        helper.assertTrue(companion.startWork(step.type(), step.item(), step.count(), step.location()).success(), "The spoken order was refused");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(count(barrel, Items.COBBLESTONE) == 10 && count(companion, Items.COBBLESTONE) == 6 && chest.isEmpty(),
+                    "Wrong split: barrel " + count(barrel, Items.COBBLESTONE) + ", bag " + count(companion, Items.COBBLESTONE));
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_blocked_shulker")
+    public static void aShulkerBoxWithABlockOnItsLidIsNotOpened(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        Container shulker = container(helper, NEAR, Blocks.SHULKER_BOX);
+        helper.setBlock(NEAR.above(), Blocks.STONE);
+        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        helper.assertTrue(companion.startWork("store_items", "stone", 5, "minecraft:shulker_box").success(), "The order was refused at the start");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(!companion.didLastTaskSucceed() && shulker.isEmpty() && count(companion, Items.COBBLESTONE) == 5,
+                    "The closed shulker box was opened: " + companion.getLastTaskResult());
+        });
     }
 
     private static Container container(GameTestHelper helper, BlockPos pos, Block block) {

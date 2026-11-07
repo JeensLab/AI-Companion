@@ -29,6 +29,8 @@ public final class CompanionContainers {
     /** The blocks an order may name; a shulker box of any colour counts as {@link #SHULKER}. */
     public static final Set<String> KINDS = Set.of("minecraft:barrel", SHULKER, "minecraft:furnace", "minecraft:blast_furnace", "minecraft:smoker",
             "minecraft:hopper", "minecraft:dispenser", "minecraft:dropper", "minecraft:chest", "minecraft:trapped_chest");
+    /** Blocks `storageAt` decides for (a closed lid or a block above means shut); every other kind is opened as it stands. */
+    private static final Set<String> STORAGE_KINDS = Set.of("minecraft:chest", "minecraft:trapped_chest", "minecraft:barrel", SHULKER);
     private static final int FURNACE_RESULT_SLOT = 2;
     private static final float SOUND_VOLUME = 0.5F;
     private static final float SOUND_PITCH = 1.0F;
@@ -51,11 +53,11 @@ public final class CompanionContainers {
 
     private CompanionContainers() { }
 
-    static String into(String kind) { return words(kind).into(); }
+    public static String into(String kind) { return words(kind).into(); }
 
-    static String from(String kind) { return words(kind).from(); }
+    public static String from(String kind) { return words(kind).from(); }
 
-    static String nameOf(String kind) { return words(kind).name(); }
+    public static String nameOf(String kind) { return words(kind).name(); }
 
     private static Words words(String kind) { return kind == null ? CHEST_WORDS : WORDS.getOrDefault(kind, CHEST_WORDS); }
 
@@ -72,8 +74,7 @@ public final class CompanionContainers {
     /** The container at pos when the block is of the kind the order named (a furnace, a hopper...), else null. */
     static Container containerAt(ServerLevel level, BlockPos pos, String kind) {
         if (!level.hasChunkAt(pos) || !kind.equals(kindOf(level.getBlockState(pos)))) return null;
-        Container storage = storageAt(level, pos);
-        if (storage != null) return storage;
+        if (STORAGE_KINDS.contains(kind)) return storageAt(level, pos);
         return level.getBlockEntity(pos) instanceof Container container ? container : null;
     }
 

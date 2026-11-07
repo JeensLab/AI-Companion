@@ -1,5 +1,7 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionContainers;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -28,7 +30,7 @@ public final class CompanionPlanRequirements {
         String location = inside ? "inside_house" : "near_player";
         List<PlannedAction> result = new ArrayList<>();
         for (PlannedAction step : decoded.actions()) {
-            if (inside && List.of("place_block", "store_items", "take_items").contains(step.type()))
+            if (inside && List.of("place_block", "store_items", "take_items").contains(step.type()) && !CompanionContainers.KINDS.contains(step.location()))
                 step = new PlannedAction(step.type(), step.seconds(), step.count(), step.item(), step.slot(), location);
             result.add(step);
         }
