@@ -374,20 +374,25 @@ public final class CompanionDeathTrip {
         if (!entry.id().equals(target)) { target = entry.id(); entryTicks = 0; approach = 0; closest = Double.MAX_VALUE; repathAt = 0; routedPos = null; }
         c.movementIntent(item.blockPosition());
         // Arrival is the pickup's own reach, not a guess of two blocks: from there the game's pickup takes the stack.
-        if (c.loot.touches(c.position(), item)) {
-            c.getNavigation().stop();
-            if (entryTicks == 0 && !c.canStoreDrops(List.of(item.getItem().copyWithCount(1)))) makeRoom(level);
-            entryTicks++;
-            if (entryTicks > WAIT_IN_REACH) giveUpEntry(entry, item, inReachReason(item));
-            return;
-        }
+        if (c.loot.touches(c.position(), item)) { waitInReach(level, entry, item); return; }
         // A step that brings him nearer is progress, whatever the clock says: a long way to a stack is not a stuck walk.
         double distance = c.distanceToSqr(item);
         if (distance + .05 < closest) { closest = distance; approach = 0; }
         else approach++;
         if (approach > approachPatience(distance)) { giveUpEntry(entry, item, "не дошёл"); return; }
+        if (needsRoute(item)) route(level, entry, item);
+    }
+
+    private void waitInReach(ServerLevel level, CompanionDeathSpots.Entry entry, ItemEntity item) {
+        c.getNavigation().stop();
+        if (entryTicks == 0 && !c.canStoreDrops(List.of(item.getItem().copyWithCount(1)))) makeRoom(level);
+        entryTicks++;
+        if (entryTicks > WAIT_IN_REACH) giveUpEntry(entry, item, inReachReason(item));
+    }
+
+    private boolean needsRoute(ItemEntity item) {
         boolean drifted = routedPos == null || !routedPos.equals(item.blockPosition());
-        if (drifted || ticks >= repathAt || c.getNavigation().isDone() || c.getNavigation().isStuck()) route(level, entry, item);
+        return drifted || ticks >= repathAt || c.getNavigation().isDone() || c.getNavigation().isStuck();
     }
 
     private void route(ServerLevel level, CompanionDeathSpots.Entry entry, ItemEntity item) {
