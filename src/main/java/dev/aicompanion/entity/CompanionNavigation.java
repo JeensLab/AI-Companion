@@ -25,6 +25,25 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
     /** A jump of the route is walked on the tick the game follows the path (CompanionJumps). */
     @Override public void tick() { super.tick(); jumps.tick(path); jumps.climb(path); }
 
+    /**
+     * Down a step the next node is a block lower, and the game counts a node reached only with less than a block of height between
+     * them. On the tick he walks off the edge he is still at the upper height, already past the node's centre: the node stays the
+     * one to walk to though it lies behind him, and the move control turned him back to it, up to 90° in a tick (#105, «лестница
+     * зигзагом»). Over the node's cell and past its centre the way he came, a node at most a block below is reached: he drops into it
+     * or walks on to the next one. The last node keeps the game's rule, so the walk does not end while he is still above it.
+     */
+    @Override protected void followThePath() {
+        int next = path.getNextNodeIndex();
+        if (next > 0 && next + 1 < path.getNodeCount()) {
+            var node = path.getNodePos(next);
+            var from = path.getNodePos(next - 1);
+            double drop = mob.getY() - node.getY(), dx = mob.getX() - (node.getX() + .5), dz = mob.getZ() - (node.getZ() + .5);
+            if (drop > 0 && drop <= 1 && Math.abs(dx) <= .5 && Math.abs(dz) <= .5
+                    && dx * (node.getX() - from.getX()) + dz * (node.getZ() - from.getZ()) >= 0) path.advance();
+        }
+        super.followThePath();
+    }
+
     /** Run up to a jump ahead: read by the stroke, which sets sprinting. */
     boolean sprintsToJump() { return jumps.sprints(); }
     boolean slowsForJump() { return jumps.slows(); }
