@@ -89,12 +89,14 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public void cancelWork() {
         if (!server.isRunning()) return;
         boolean urgent = task != null && task.urgent();
+        boolean byPlayer = task != null && task.byPlayer();
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             var companion = player == null ? null : CompanionEvents.getOwnedCompanion(player);
             if (companion != null && ownedWorkId > 0 && companion.activeWorkId() == ownedWorkId && !(urgent && companion.parkWork())) {
-                if (urgent) companion.stopGathering();
-                else companion.stopGatheringForPlayer();
+                // Only the player's own cancel ends the dig that was put aside; another order on the way («иди за мной») leaves it for later.
+                if (byPlayer && !urgent) companion.stopGatheringForPlayer();
+                else companion.stopGathering();
             }
         });
     }

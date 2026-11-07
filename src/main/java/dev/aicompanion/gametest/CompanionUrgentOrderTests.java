@@ -14,12 +14,15 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LeavesBlock;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -40,8 +43,12 @@ public final class CompanionUrgentOrderTests {
     private static final int RELOAD_WATCH_TICKS = 40;
     /** Ticks after an order in which a park would show. */
     private static final int ORDER_WATCH_TICKS = 10;
-    /** Ticks he stands on «стой здесь» before «за мной»: longer than the grace before a park resumes. */
+    /** Ticks he stands on «стой здесь» before «за мной». */
     private static final int STAY_TICKS = 30;
+    /** Ticks after a park at which an order that was slow to reach the server arrives: past the old grace of 20, inside the new one. */
+    private static final int LATE_ORDER_TICKS = 40;
+    private static final int WOOD_WANTED = 8;
+    private static final int TREE_HEIGHT = 6;
 
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void comeInterruptsStoneAndTheRestIsDugOnce(GameTestHelper helper) {
@@ -232,6 +239,242 @@ public final class CompanionUrgentOrderTests {
         finishWhen(helper, scene, watch, true);
     }
 
+    /** «Иди за мной» said on the way back to the player: the plain cancel of the walk leaves the rest of the dig for later. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void followOrderOnTheWayKeepsThePark(GameTestHelper helper) {
+        Scene scene = digScene(helper, false);
+        Watch watch = new Watch();
+        watchOrder(helper, scene, watch, true, () -> comeUrgently(scene));
+        onTheWay(helper, scene, watch, () -> {
+            scene.link().cancelAll(false, false, false);
+            command(scene.player(), "companion follow");
+            watch.arrived = true;
+        });
+        finishWhen(helper, scene, watch, true);
+    }
+
+    /** The player's cancel on the way back ends the walk and the rest of the dig with it: nothing comes back. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void cancelWordOnTheWayDropsThePark(GameTestHelper helper) {
+        Scene scene = digScene(helper, false);
+        Watch watch = new Watch();
+        long[] cancelledAt = {-1};
+        int[] veinAtCancel = {-1};
+        watchOrder(helper, scene, watch, true, () -> comeUrgently(scene));
+        onTheWay(helper, scene, watch, () -> {
+            CompoundTag parked = new CompoundTag();
+            scene.companion().saveWithoutId(parked);
+            helper.assertTrue(parked.contains("ParkedAction"), "Nothing was parked before the cancel");
+            scene.link().cancelAll(false, true, false);
+            watch.arrived = true;
+            cancelledAt[0] = helper.getTick();
+        });
+        helper.onEachTick(() -> {
+            if (cancelledAt[0] >= 0 && helper.getTick() - cancelledAt[0] == 2) veinAtCancel[0] = veinLeft(helper);
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(cancelledAt[0] >= 0 && helper.getTick() - cancelledAt[0] >= PLAIN_WATCH_TICKS, "Watching the cancel");
+            CompoundTag data = new CompoundTag();
+            scene.companion().saveWithoutId(data);
+            helper.assertTrue(!data.contains("ParkedAction"), "The cancel left the rest of the dig: " + data.getString("ParkedAction"));
+            helper.assertTrue(!scene.companion().isWorking() && veinLeft(helper) == veinAtCancel[0], "He dug after the cancel");
+        });
+    }
+
+    /** Runs {@code next} once, on the first tick the walk to the player is work on the server and he is still on his way. */
+    private static void onTheWay(GameTestHelper helper, Scene scene, Watch watch, Runnable next) {
+        boolean[] done = {false};
+        helper.onEachTick(() -> {
+            if (done[0] || watch.orderedAt < 0 || helper.getTick() - watch.orderedAt < 3 || scene.companion().activeWorkId() == 0) return;
+            done[0] = true;
+            helper.assertTrue(scene.companion().distanceTo(scene.player()) > ARRIVED, "He has come already, nothing to interrupt");
+            next.run();
+        });
+    }
+
+    /** An order that reached the server slowly (up to a second in play) still finds him free of the dig: no second park, no second phrase. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void lateOrderFindsHimStillFreeOfTheDig(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        vein(helper);
+        ServerPlayer player = owner(helper, companion);
+        long[] parkedAt = {-1};
+        boolean[] arrived = {false};
+        helper.onEachTick(() -> {
+            if (parkedAt[0] < 0) {
+                if (count(companion, Items.COBBLESTONE) < 2) return;
+                helper.assertTrue(companion.parkWork(), "The dig was not put aside");
+                parkedAt[0] = helper.getTick();
+                return;
+            }
+            long since = helper.getTick() - parkedAt[0];
+            if (since < LATE_ORDER_TICKS) helper.assertTrue(!companion.isWorking(), "He went back to the dig before the order came, since=" + since);
+            if (since == LATE_ORDER_TICKS) CompanionEvents.executeAction(player, "come", "", 1);
+            if (since > LATE_ORDER_TICKS && companion.distanceTo(player) <= ARRIVED) arrived[0] = true;
+        });
+        helper.assertTrue(companion.startWork("gather_stone", "", WANTED).success(), "Stone work was not accepted");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(parkedAt[0] >= 0 && arrived[0], "He has not come yet");
+            done(helper, companion);
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == WANTED, "The rest was not dug once: " + count(companion, Items.COBBLESTONE));
+            helper.assertTrue(veinLeft(helper) == EXTRA, "Over-dug or under-dug: " + veinLeft(helper) + " blocks left, expected " + EXTRA);
+        });
+    }
+
+    /** A stone just broken lies on the ground when the order comes: he picks it up on the way, and it is not dug a second time. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void stoneOnTheGroundAtTheOrderIsNotDugTwice(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        vein(helper);
+        ServerPlayer player = owner(helper, companion);
+        int[] last = {WANTED + EXTRA};
+        boolean[] ordered = {false, false}; // ordered, arrived
+        helper.onEachTick(() -> {
+            int now = veinLeft(helper);
+            if (!ordered[0] && now < last[0] && count(companion, Items.COBBLESTONE) >= 1) {
+                ordered[0] = true;
+                CompanionEvents.executeAction(player, "come", "", 1);
+            }
+            last[0] = now;
+            if (!ordered[0]) return;
+            CompoundTag data = new CompoundTag();
+            companion.saveWithoutId(data);
+            if (data.contains("ParkedAction")) helper.assertTrue(data.getInt("ParkedCount") + count(companion, Items.COBBLESTONE) == WANTED,
+                    "The rest and the bag do not add up to the order: " + data.getInt("ParkedCount") + " + " + count(companion, Items.COBBLESTONE));
+            if (companion.distanceTo(player) <= ARRIVED) ordered[1] = true;
+        });
+        helper.assertTrue(companion.startWork("gather_stone", "", WANTED).success(), "Stone work was not accepted");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(ordered[1], "He has not come yet");
+            done(helper, companion);
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == WANTED, "Not the ordered amount: " + count(companion, Items.COBBLESTONE));
+            helper.assertTrue(veinLeft(helper) == EXTRA, "Over-dug or under-dug: " + veinLeft(helper) + " blocks left, expected " + EXTRA);
+        });
+    }
+
+    /** The same for wood: a log lying on the ground at the order is part of the order, so the rest and the bag add up to it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void logOnTheGroundAtTheOrderIsCountedOnce(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        trees(helper);
+        ServerPlayer player = owner(helper, companion);
+        int[] last = {-1};
+        boolean[] ordered = {false};
+        int[] checked = {0};
+        helper.onEachTick(() -> {
+            int now = logBlocks(helper);
+            boolean broken = last[0] >= 0 && now < last[0];
+            last[0] = now;
+            if (!ordered[0] && broken) {
+                ordered[0] = true;
+                CompanionEvents.executeAction(player, "come", "", 1);
+            }
+            if (!ordered[0]) return;
+            CompoundTag data = new CompoundTag();
+            companion.saveWithoutId(data);
+            if (!data.contains("ParkedAction")) return;
+            checked[0]++;
+            helper.assertTrue(data.getInt("ParkedCount") + logsIn(companion) == WOOD_WANTED,
+                    "The rest and the bag do not add up to the order: " + data.getInt("ParkedCount") + " + " + logsIn(companion));
+        });
+        helper.assertTrue(companion.startWork("gather_wood", "", WOOD_WANTED).success(), "Wood work was not accepted");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(ordered[0] && checked[0] > 0, "The order did not park the wood: ordered=" + ordered[0] + ", logs=" + last[0]
+                    + ", working=" + companion.isWorking() + ", bag=" + logsIn(companion) + ", " + companion.getLastTaskResult());
+            done(helper, companion);
+        });
+    }
+
+    /** «/companion summon» typed as a command is an urgent order like «иди ко мне»: the dig is put aside and dug once afterwards. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void summonCommandParksTheDigAndTheRestIsDugOnce(GameTestHelper helper) {
+        Scene scene = digScene(helper, false);
+        Watch watch = new Watch();
+        watchOrder(helper, scene, watch, true, () -> command(scene.player(), "companion summon"));
+        finishWhen(helper, scene, watch, true);
+    }
+
+    /** With the setting off an urgent order stops the dig as it did before: nothing is parked, nothing comes back. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void switchedOffUrgentOrderParksNothing(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        companion.setUrgentOrder(false);
+        vein(helper);
+        ServerPlayer player = owner(helper, companion);
+        long[] orderedAt = {-1};
+        int[] veinAtOrder = {-1};
+        helper.onEachTick(() -> {
+            if (orderedAt[0] < 0) {
+                if (count(companion, Items.COBBLESTONE) < 2) return;
+                orderedAt[0] = helper.getTick();
+                helper.assertTrue(!companion.parkWork(), "The dig was put aside with the setting off");
+                CompanionEvents.executeAction(player, "come", "", 1);
+                return;
+            }
+            CompoundTag data = new CompoundTag();
+            companion.saveWithoutId(data);
+            helper.assertTrue(!data.contains("ParkedAction"), "Something was parked with the setting off");
+            if (helper.getTick() - orderedAt[0] == 2) veinAtOrder[0] = veinLeft(helper);
+        });
+        helper.assertTrue(companion.startWork("gather_stone", "", WANTED).success(), "Stone work was not accepted");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(orderedAt[0] >= 0 && helper.getTick() - orderedAt[0] >= PLAIN_WATCH_TICKS, "Watching the order");
+            helper.assertTrue(!companion.isWorking() && veinLeft(helper) == veinAtOrder[0], "He went back to the dig with the setting off");
+        });
+    }
+
+    /** The setting is kept with him; a save from before it existed has it on. */
+    @GameTest(template = "tall_tree")
+    public static void urgentOrderSettingIsSavedAndAnOldSaveHasItOn(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        helper.assertTrue(companion.urgentOrder(), "The setting is not on by default");
+        companion.setUrgentOrder(false);
+        CompoundTag data = new CompoundTag();
+        companion.saveWithoutId(data);
+        CompanionEntity other = AICompanionMod.COMPANION.get().create(helper.getLevel());
+        other.load(data);
+        helper.assertTrue(!other.urgentOrder(), "The switch was not saved");
+        data.remove("UrgentOrder");
+        other.setUrgentOrder(false);
+        other.load(data);
+        helper.assertTrue(other.urgentOrder(), "An old save loaded with the setting off");
+        helper.succeed();
+    }
+
+    private static void comeUrgently(Scene scene) {
+        scene.link().cancelAll(false, false, true);
+        scene.link().submit(List.of(new PlannedAction("come", 0, 1)), "urgent-come", () -> false);
+    }
+
+    /** Two natural oaks beside the walk to the player: leaves that rot away are not his to break, the trunks are. */
+    private static void trees(GameTestHelper helper) {
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int z : new int[]{12, 24}) {
+            for (int y = 1; y <= TREE_HEIGHT; y++) helper.setBlock(new BlockPos(22, y, z), Blocks.OAK_LOG);
+            for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int y = TREE_HEIGHT - 1; y <= TREE_HEIGHT + 1; y++) {
+                BlockPos pos = new BlockPos(22 + dx, y, z + dz);
+                if (helper.getBlockState(pos).isAir()) helper.setBlock(pos, leaves);
+            }
+        }
+    }
+
+    private static int logBlocks(GameTestHelper helper) {
+        int logs = 0;
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 32, 31))) {
+            if (helper.getBlockState(pos).is(BlockTags.LOGS)) logs++;
+        }
+        return logs;
+    }
+
+    private static int logsIn(CompanionEntity companion) {
+        int logs = 0;
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(ItemTags.LOGS)) logs += companion.getItem(slot).getCount();
+        return logs;
+    }
+
     private static void command(ServerPlayer player, String line) {
         player.getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack(), line);
     }
@@ -280,10 +523,7 @@ public final class CompanionUrgentOrderTests {
             long since = helper.getTick() - watch.orderedAt;
             CompoundTag data = new CompoundTag();
             companion.saveWithoutId(data);
-            if (since == 1) {
-                watch.veinAtOrder = veinLeft(helper);
-                watch.parkedCount = data.getInt("ParkedCount");
-            }
+            if (since == 1) watch.veinAtOrder = veinLeft(helper);
             if (!urgent) {
                 helper.assertTrue(!data.contains("ParkedAction"), "A plain cancel left a park");
                 helper.assertTrue(!companion.isWorking() && veinLeft(helper) == watch.veinAtOrder, "He dug right after the plain cancel");
@@ -292,8 +532,8 @@ public final class CompanionUrgentOrderTests {
             if (!watch.arrived) {
                 helper.assertTrue("gather_stone".equals(data.getString("ParkedAction")),
                         "Park eaten by the order: tag='" + data.getString("ParkedAction") + "', since=" + since);
-                helper.assertTrue(data.getInt("ParkedCount") == watch.parkedCount,
-                        "Park re-made with another count: " + data.getInt("ParkedCount") + " instead of " + watch.parkedCount);
+                helper.assertTrue(data.getInt("ParkedCount") + count(companion, Items.COBBLESTONE) == WANTED,
+                        "The rest and the bag do not add up to the order: " + data.getInt("ParkedCount") + " + " + count(companion, Items.COBBLESTONE));
                 helper.assertTrue(veinLeft(helper) == watch.veinAtOrder, "He dug before he came: " + watch.veinAtOrder + " -> " + veinLeft(helper));
             }
             if (companion.distanceTo(scene.player()) <= ARRIVED) watch.arrived = true;
@@ -320,7 +560,6 @@ public final class CompanionUrgentOrderTests {
     private static final class Watch {
         long orderedAt = -1;
         int veinAtOrder;
-        int parkedCount = -1;
         boolean arrived;
     }
 

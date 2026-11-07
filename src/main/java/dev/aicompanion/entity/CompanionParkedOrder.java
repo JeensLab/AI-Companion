@@ -9,12 +9,13 @@ import net.minecraft.nbt.CompoundTag;
  * interrupted ends as always; what is left is server work without a task of its own.
  */
 final class CompanionParkedOrder {
-    record Parked(String action, String item, int remaining, String location, String dimension) { }
+    /** {@code picked}: the pickup counter of the action when the rest was counted; what he picks up after that is no longer left to dig. */
+    record Parked(String action, String item, int remaining, String location, String dimension, int picked) { }
 
     private static final Set<String> ACTIONS = Set.of("gather_stone", "gather_dirt", "gather_loose", "gather_wood", "mine_ore");
     private static final int MAX_REMAINING = 64;
-    /** Ticks after the park before he resumes: the urgent order that caused it is on its way to the server and must find him free of the dig. */
-    private static final int PARK_GRACE_TICKS = 20;
+    /** Ticks after the park before he resumes: the urgent order that caused it is on its way to the server (up to a second in play) and must find him free of the dig. */
+    private static final int PARK_GRACE_TICKS = 60;
     private final CompanionEntity owner;
     private Parked parked;
     /** The work this order was resumed as, whose end he tells; 0 when none. */
@@ -23,11 +24,14 @@ final class CompanionParkedOrder {
     private long parkedAt;
 
     CompanionParkedOrder(CompanionEntity owner) { this.owner = owner; }
+    private boolean enabled = true;
+    boolean enabled() { return enabled; }
+    void enable(boolean on) { enabled = on; }
 
     /** Puts the active job aside; false when there is none or it cannot be put aside (the caller then stops it as before). */
     boolean park() {
         CompanionWork work = owner.work;
-        if (!work.isActive() || owner.goals.ownsWork(owner.activeWorkId()) || owner.autonomy.running()) return false;
+        if (!enabled || !work.isActive() || owner.goals.ownsWork(owner.activeWorkId()) || owner.autonomy.running()) return false;
         Parked rest = restOf(work);
         if (rest == null) return false;
         String line = "Отложил " + work.jobName() + " — вернусь после.";
@@ -57,7 +61,13 @@ final class CompanionParkedOrder {
     }
 
     private Parked rest(String action, String item, int remaining, String location) {
-        return remaining < 1 ? null : new Parked(action, item, Math.min(remaining, MAX_REMAINING), location, dimension());
+        return remaining < 1 ? null : new Parked(action, item, Math.min(remaining, MAX_REMAINING), location, dimension(), owner.planProgress(action));
+    }
+
+    /** What is left to dig now: the rest counted at the park less what he has picked up since (a drop that lay on the ground at the order). */
+    private int leftOf(Parked rest) {
+        int now = owner.planProgress(rest.action());
+        return rest.remaining() - (now < 0 ? 0 : Math.max(0, now - rest.picked()));
     }
 
     private String dimension() { return owner.level().dimension().location().toString(); }
@@ -65,7 +75,7 @@ final class CompanionParkedOrder {
     void tick() {
         if (resumedTask != 0 && !owner.work.isActive()) tellEnd();
         // The rest of a dig belongs to the world it was made in: a summon, a portal or a save loaded elsewhere drops it, silently.
-        if (parked != null && !parked.dimension().equals(dimension())) parked = null;
+        if (parked != null && (!enabled || !parked.dimension().equals(dimension()))) parked = null;
         if (parked != null && free()) resume();
     }
 
@@ -89,13 +99,19 @@ final class CompanionParkedOrder {
         if (owner.hasActiveWorkOrder()) return CompanionActionResult.blocked("Сначала закончу текущую работу.");
         Parked rest = parked;
         parked = null;
-        CompanionActionResult result = owner.startWork(rest.action(), rest.item(), rest.remaining(), rest.location());
+        int left = leftOf(rest);
+        if (left < 1) {
+            String line = "Отложенную " + name(rest, false) + " уже не нужно: остаток подобрал по дороге.";
+            owner.autonomySay(line, false);
+            return CompanionActionResult.ok(line);
+        }
+        CompanionActionResult result = owner.startWork(rest.action(), rest.item(), left, rest.location());
         if (!result.success()) {
             owner.autonomySay(result.message(), false);
             return result;
         }
         resumedTask = owner.activeWorkId();
-        String line = "Возвращаюсь к " + name(rest, true) + ", осталось " + rest.remaining() + ".";
+        String line = "Возвращаюсь к " + name(rest, true) + ", осталось " + left + ".";
         owner.autonomySay(line, false);
         return CompanionActionResult.accepted(line);
     }
@@ -116,10 +132,12 @@ final class CompanionParkedOrder {
         parked = null;
     }
 
-    /** The deed that keeps him from a new order, for the refusal. */
-    String currentDeed() {
-        if (owner.work.isActive()) return owner.work.jobName();
-        return owner.gatheringLogs ? "рубку дерева" : owner.gatheringDirt ? "добычу " + owner.gathering.ground.genitive() : "спуск с опоры";
+    /** The refusal of a second work order: it names the deed he finishes first; with the setting off it is the plain refusal as before. */
+    String refusal() {
+        if (!enabled) return "Сначала нужно завершить или отменить текущую работу.";
+        String deed = owner.work.isActive() ? owner.work.jobName()
+                : owner.gatheringLogs ? "рубку дерева" : owner.gatheringDirt ? "добычу " + owner.gathering.ground.genitive() : "спуск с опоры";
+        return "Погоди, доделаю " + deed + " — потом.";
     }
 
     /** «добычу камня» ({@code toward} false) or «добыче камня» (after «к»). */
@@ -134,16 +152,20 @@ final class CompanionParkedOrder {
     }
 
     void save(CompoundTag tag) {
+        tag.putBoolean("UrgentOrder", enabled);
         if (parked == null) return;
+        int left = Math.min(leftOf(parked), MAX_REMAINING);
+        if (left < 1) return;
         tag.putString("ParkedAction", parked.action());
         tag.putString("ParkedItem", parked.item());
-        tag.putInt("ParkedCount", parked.remaining());
+        tag.putInt("ParkedCount", left);
         tag.putString("ParkedLocation", parked.location());
         tag.putString("ParkedDimension", parked.dimension());
     }
 
     /** A save from before this existed has none of the tags: nothing is parked. */
     void load(CompoundTag tag) {
+        enabled = !tag.contains("UrgentOrder") || tag.getBoolean("UrgentOrder");
         parked = null;
         resumedTask = 0;
         String action = tag.getString("ParkedAction");
@@ -153,7 +175,7 @@ final class CompanionParkedOrder {
                 && (!action.equals("mine_ore") || CompanionOre.Kind.of(item) != null);
         // A save from before the dimension was kept is taken as made here.
         String dimension = tag.contains("ParkedDimension") ? tag.getString("ParkedDimension") : dimension();
-        if (known) parked = new Parked(action, item, count, tag.getString("ParkedLocation"), dimension);
+        if (known) parked = new Parked(action, item, count, tag.getString("ParkedLocation"), dimension, owner.planProgress(action));
         parkedAt = owner.level().getGameTime() - PARK_GRACE_TICKS;
     }
 }

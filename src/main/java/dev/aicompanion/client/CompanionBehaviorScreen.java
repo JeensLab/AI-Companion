@@ -3,6 +3,7 @@ package dev.aicompanion.client;
 import dev.aicompanion.OpenRouterConfig;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -43,8 +44,14 @@ final class CompanionBehaviorScreen extends Screen {
                 client.execute(() -> b.setMessage(autonomyLabel(on)));
             });
         }).bounds(left, top + 120, 300, 20).build());
+        addRenderableWidget(Button.builder(urgentLabel(), b -> {
+            OpenRouterConfig.URGENT_ORDER.set(!OpenRouterConfig.URGENT_ORDER.get()); OpenRouterConfig.URGENT_ORDER.save();
+            b.setMessage(urgentLabel()); CompanionPreferences.sync();
+        }).bounds(left, top + 150, 300, 20).tooltip(Tooltip.create(Component.literal(
+                "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
     }
+    private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }

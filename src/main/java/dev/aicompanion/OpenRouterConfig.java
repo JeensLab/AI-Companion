@@ -72,6 +72,12 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.death_recovery")
             .define("deathRecovery", true);
 
+    /** Whether an urgent order («иди ко мне», «стой», «защищай») puts a dig aside for later instead of ending it. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue URGENT_ORDER = BUILDER
+            .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
+            .translation("config.aicompanion.urgent_order")
+            .define("urgentOrder", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")

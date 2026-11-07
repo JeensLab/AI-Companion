@@ -67,7 +67,7 @@ public final class CompanionEvents {
                         companion.goals().playerOrder("follow"); companion.autonomy().playerOrder("follow");
                         CompanionAgenda.playerOrder(player, companion, "follow"); companion.setFollowing(true);
                         companion.teleportTo(player.serverLevel(), at.x, at.y, at.z, Set.of(), companion.getYRot(), companion.getXRot());
-                    } else if (at != null) { companion.portals.stop(); companion.teleportTo(at.x, at.y, at.z); }
+                    } else if (at != null) { companion.parkWork(); companion.portals.stop(); companion.teleportTo(at.x, at.y, at.z); }
                     context.getSource().sendSuccess(() -> Component.literal(companion == null
                             ? "Компаньон сейчас выгружен из мира; он не создан повторно."
                             : at == null ? "Рядом с тобой ему негде встать: нужен твёрдый пол без воды и лавы." : "Компаньон рядом."), false);

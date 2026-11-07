@@ -68,6 +68,8 @@ public final class CompanionTaskQueue {
         public boolean cancelled() { return cancelled; }
         /** Cancelled for an order that cannot wait: the dig is put aside for later, not ended. */
         public boolean urgent() { return urgent; }
+        /** Cancelled by the player's own cancel (the word «отмена», the tasks window), not by the next order. */
+        public boolean byPlayer() { return byPlayer; }
         public CompletableFuture<String> completion() { return completion; }
         public void onCancel(Runnable stop) {
             synchronized (CompanionTaskQueue.this) { this.stop = stop; if (cancelled) stop.run(); }

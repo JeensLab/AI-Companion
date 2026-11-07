@@ -165,6 +165,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public CompanionGoals goals() { return goals; }
     final CompanionParkedOrder parked = new CompanionParkedOrder(this);
     public boolean parkWork() { return parked.park(); }
+    /** Whether an urgent order of the player puts the dig aside (the setting); off, it stops the dig as before. */
+    public boolean urgentOrder() { return parked.enabled(); }
+    public void setUrgentOrder(boolean on) { parked.enable(on); }
     private final CompanionLighting lighting = new CompanionLighting(this);
     public CompanionLighting lighting() { return lighting; }
     /** «Порядок и запас»: deeds of his own while the player asks for nothing (CompanionAutonomy). */
@@ -677,7 +680,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {
         boolean canWaitForDescent = (action.equals("come") || action.equals("hunt_mobs")) && !work.isActive() && !gatheringLogs && !gatheringDirt;
-        if (hasActiveWorkOrder() && !canWaitForDescent) return CompanionActionResult.failed("Погоди, доделаю " + parked.currentDeed() + " — потом.");
+        if (hasActiveWorkOrder() && !canWaitForDescent) return CompanionActionResult.failed(parked.refusal());
         places.discoverTables(); refreshPlaces();
         // Drops of the last order still on the ground are picked up first, not forgotten (review 22.10, М2).
         setFollowing(false, true);
