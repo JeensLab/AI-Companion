@@ -130,21 +130,15 @@ public final class CompanionMineBenchTests {
         c.mineSite().start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
         c.mineSite().restart(pit, Direction.NORTH);
         c.mineSite().buried(true);
-        // A search from a body that has just been moved is not run while it is "in the air": a few ticks on the pit's floor first.
-        boolean[] begun = {false};
-        h.runAfterDelay(SETTLED / 4, () -> {
-            if (begun[0]) return;
-            begun[0] = true;
-            long id = start(h, c);
-            h.onEachTick(() -> {
-                boolean carried = count(c, Items.CRAFTING_TABLE) == 1;
-                if (c.mineSite().stands().size() >= 2) h.assertTrue(carried, "He went down without the bench of the kit | " + report(c));
-                if (!c.isWorking() && !c.isGatheringTask()) {
-                    CompanionActionResult result = c.workResult(id);
-                    h.assertTrue(carried, "The order ended without the bench in the bag: " + (result == null ? "no result" : result.status() + " " + result.message()) + " | " + report(c));
-                }
-                if (carried && c.mineSite().stands().size() >= 2 && level.getBlockState(benchPos).isAir()) h.succeed();
-            });
+        long id = start(h, c);
+        h.onEachTick(() -> {
+            boolean carried = count(c, Items.CRAFTING_TABLE) == 1;
+            if (c.mineSite().stands().size() >= 2) h.assertTrue(carried, "He went down without the bench of the kit | " + report(c));
+            if (!c.isWorking() && !c.isGatheringTask()) {
+                CompanionActionResult result = c.workResult(id);
+                h.assertTrue(carried, "The order ended without the bench in the bag: " + (result == null ? "no result" : result.status() + " " + result.message()) + " | " + report(c));
+            }
+            if (carried && c.mineSite().stands().size() >= 2 && level.getBlockState(benchPos).isAir()) h.succeed();
         });
     }
 
