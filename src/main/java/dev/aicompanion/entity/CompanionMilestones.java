@@ -46,7 +46,7 @@ public final class CompanionMilestones {
      * they are used up below). Blocks to plug caves with, a bench and sticks for a pickaxe made on the spot belong to the kit.
      */
     static final int TORCHES_STOCK = 64;
-    private static final int TORCHES_MIN = 32, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 6, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
+    private static final int TORCHES_MIN = 32, TORCHES_NIGHT = 8, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 6, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
     private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 8, STICKS_STOCK = 32, STICKS_PER_PICKAXE = 2;
     /** Ingots beyond the sword's that buy a second iron pickaxe, so that a broken first one does not send him to smelt iron. */
     private static final int SPARE_PICKAXE_INGOTS = 3;
@@ -161,6 +161,11 @@ public final class CompanionMilestones {
         /** Food is what the kit lacks above the ground: a top-up that found no game waits and tries again, like a hurt goal that cannot eat. */
         public boolean foodShort(CompanionFacts facts) {
             return !facts.inMine() && facts.carried(READY_FOOD::contains) < FOOD_MIN;
+        }
+
+        /** The least he goes down with at dusk: the minimum of the kit and torches for the first steps; the rest of the top-up waits for the day, and the night is spent below. */
+        public boolean nightKit(CompanionFacts facts) {
+            return kitMinimum(facts) && facts.carried(Items.TORCH) >= TORCHES_NIGHT;
         }
 
         private static List<Step> supplySteps(CompanionFacts facts) {
