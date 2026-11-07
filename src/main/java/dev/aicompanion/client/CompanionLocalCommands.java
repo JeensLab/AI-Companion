@@ -127,7 +127,10 @@ public final class CompanionLocalCommands {
     /** The reason {@code cancelPendingPlans} gets for a cancel word: the queue ends its tasks as the player's cancel, so a parked smelt is released. */
     public static final String PLAYER_CANCEL = "player_cancel";
 
-    /** «Отмена» and «отмени…» cancel for good; «стоп» and the other stop words only stop, and a smelt parked meanwhile is orphaned for him to collect. */
+    /**
+     * «Отмена» and «отмени…» cancel for good; «стоп» and the other stop words only stop, and a smelt parked meanwhile is orphaned for him to collect.
+     * «Иди сюда», «стой» and «защищай» give URGENT_ORDER: the dig that is running is put aside for later instead.
+     */
     public static String cancelReason(String text, String action) {
         boolean cancel = "companion stop".equals(action) && text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').matches("(?sU).*\\b(отмена|отмени)\\b.*");
         return cancel ? PLAYER_CANCEL : URGENT_COMMANDS.contains(action) ? URGENT_ORDER : "local_command";

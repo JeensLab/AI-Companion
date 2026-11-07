@@ -1,8 +1,11 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionParkLink;
+import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -18,15 +21,22 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * the player, issue #105: «стой»/«ко мне»/«защищай» in the middle of a dig is an urgent order, not the end of the dig. He puts the
+ * Issue #105: «стой»/«ко мне»/«защищай» in the middle of a dig is an urgent order, not the end of the dig. He puts the
  * rest of the work aside, does the order, and digs exactly what was left once he is free; a second work order meanwhile is refused
- * by name of the deed.
+ * by name of the deed. The park is local to the world it was made in, and an urgent cancel of the queue parks like the order itself.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionUrgentOrderTests {
     private static final int WANTED = 6;
+    /** Stone in the vein beyond the order: an over-dig shows as a block missing at the end. */
+    private static final int EXTRA = 4;
     private static final double ARRIVED = 3.0D;
+    /** Ticks after the cancel in which an urgent park must stay quiet (the grace is longer than this). */
+    private static final int QUIET_TICKS = 10;
+    /** Ticks a plain cancel is watched for a dig that should not come back. */
+    private static final int PLAIN_WATCH_TICKS = 60;
+    private static final int RELOAD_WATCH_TICKS = 40;
 
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void comeInterruptsStoneAndTheRestIsDugOnce(GameTestHelper helper) {
@@ -36,7 +46,7 @@ public final class CompanionUrgentOrderTests {
         ServerPlayer player = owner(helper, companion);
         boolean[] called = {false};
         double[] minDist = {Double.MAX_VALUE};
-        int[] left = {WANTED};
+        int[] left = {WANTED + EXTRA};
         helper.onEachTick(() -> {
             int now = veinLeft(helper);
             helper.assertTrue(now >= left[0] || !companion.isFollowing() || companion.isWorking(), "A block was dug while he was only following");
@@ -54,6 +64,7 @@ public final class CompanionUrgentOrderTests {
             done(helper, companion);
             helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
             helper.assertTrue(count(companion, Items.COBBLESTONE) == WANTED, "The rest of the dig was not done once: " + count(companion, Items.COBBLESTONE));
+            helper.assertTrue(veinLeft(helper) == EXTRA, "Over-dug or under-dug: " + veinLeft(helper) + " blocks left, expected " + EXTRA);
         });
     }
 
@@ -89,6 +100,7 @@ public final class CompanionUrgentOrderTests {
             CompanionEntity loaded = current[0];
             done(helper, loaded);
             helper.assertTrue(count(loaded, Items.COBBLESTONE) == WANTED, "The rest was not dug after the reload: " + count(loaded, Items.COBBLESTONE));
+            helper.assertTrue(veinLeft(helper) == EXTRA, "Over-dug or under-dug: " + veinLeft(helper) + " blocks left, expected " + EXTRA);
         });
     }
 
@@ -100,7 +112,105 @@ public final class CompanionUrgentOrderTests {
         var refused = companion.startWork("gather_wood", "", 2);
         helper.assertTrue(!refused.success() && refused.message().startsWith("Погоди, доделаю добычу камня"),
                 "Refusal does not name the deed: " + refused.message());
+        helper.assertTrue(companion.isWorking(), "The refusal stopped the stone dig");
         helper.succeed();
+    }
+
+    /** Summon into another world, a portal, a save loaded elsewhere: the rest of a dig of one world is not dug in another. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void parkFromAnotherDimensionIsDroppedQuietly(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        vein(helper);
+        ServerPlayer player = owner(helper, companion);
+        CompanionEntity[] current = {companion};
+        int[] stage = {0, 0}; // stage, vein blocks left at the reload
+        long[] reloadedAt = {0};
+        helper.onEachTick(() -> {
+            if (stage[0] != 0 || count(companion, Items.COBBLESTONE) < 2) return;
+            stage[0] = 1;
+            CompanionEvents.executeAction(player, "come", "", 1);
+            CompoundTag data = new CompoundTag();
+            companion.saveWithoutId(data);
+            helper.assertTrue("gather_stone".equals(data.getString("ParkedAction")), "The rest of the dig was not saved: " + data.getString("ParkedAction"));
+            data.putString("ParkedDimension", "minecraft:the_nether");
+            companion.discard();
+            stage[1] = veinLeft(helper);
+            helper.runAfterDelay(1, () -> {
+                CompanionEntity replacement = AICompanionMod.COMPANION.get().create(helper.getLevel());
+                replacement.load(data);
+                helper.getLevel().addFreshEntity(replacement);
+                current[0] = replacement;
+                reloadedAt[0] = helper.getTick();
+                stage[0] = 2;
+            });
+        });
+        helper.assertTrue(companion.startWork("gather_stone", "", WANTED).success(), "Stone work was not accepted");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stage[0] == 2 && helper.getTick() - reloadedAt[0] >= RELOAD_WATCH_TICKS, "Not reloaded long enough yet");
+            CompanionEntity loaded = current[0];
+            helper.assertTrue(!loaded.isWorking() && !loaded.isGatheringTask(), "He went on with the dig of another world: " + loaded.getLastTaskResult());
+            CompoundTag after = new CompoundTag();
+            loaded.saveWithoutId(after);
+            helper.assertTrue(!after.contains("ParkedAction"), "The park of another world is kept: " + after.getString("ParkedAction"));
+            helper.assertTrue(veinLeft(helper) == stage[1], "A block was dug: " + stage[1] + " -> " + veinLeft(helper));
+        });
+    }
+
+    /** The queue's urgent cancel (what «иди сюда» sends) parks the dig, waits out the grace, and the rest is dug once. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void urgentQueueCancelParksAndTheRestIsDugOnce(GameTestHelper helper) {
+        queuedDigThenCancel(helper, true);
+    }
+
+    /** A plain cancel («стоп») through the same queue stops the dig for good: nothing is parked and nothing comes back. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void plainQueueCancelStopsTheDigWithoutAPark(GameTestHelper helper) {
+        queuedDigThenCancel(helper, false);
+    }
+
+    private static void queuedDigThenCancel(GameTestHelper helper, boolean urgent) {
+        CompanionEntity companion = setup(helper);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        vein(helper);
+        ServerPlayer player = owner(helper, companion);
+        CompanionParkLink link = new CompanionParkLink();
+        link.bind(helper.getLevel().getServer(), player.getUUID());
+        link.submit(List.of(new PlannedAction("gather_stone", 0, WANTED)), "urgent-queue-test", () -> false);
+        long[] cancelledAt = {-1};
+        int[] veinAtCancel = {0};
+        helper.onEachTick(() -> {
+            if (cancelledAt[0] < 0) {
+                if (count(companion, Items.COBBLESTONE) < 2) return;
+                cancelledAt[0] = helper.getTick();
+                link.cancelAll(false, false, urgent);
+                return;
+            }
+            long since = helper.getTick() - cancelledAt[0];
+            CompoundTag data = new CompoundTag();
+            companion.saveWithoutId(data);
+            if (since == 1) {
+                veinAtCancel[0] = veinLeft(helper);
+                helper.assertTrue(data.contains("ParkedAction") == urgent,
+                        "Park after the cancel: urgent=" + urgent + ", tag='" + data.getString("ParkedAction") + "'");
+            }
+            helper.assertTrue(urgent || !data.contains("ParkedAction"), "A plain cancel left a park");
+            if (since >= 1 && (!urgent || since <= QUIET_TICKS)) {
+                helper.assertTrue(!companion.isWorking() && veinLeft(helper) == veinAtCancel[0], "He dug right after the cancel, urgent=" + urgent);
+            }
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(cancelledAt[0] >= 0, "The dig has not gone far enough to be cancelled yet");
+            long since = helper.getTick() - cancelledAt[0];
+            if (!urgent) {
+                helper.assertTrue(since >= PLAIN_WATCH_TICKS, "Watching the plain cancel");
+                return;
+            }
+            helper.assertTrue(since > QUIET_TICKS, "Waiting for the resume");
+            done(helper, companion);
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == WANTED, "The rest was not dug once: " + count(companion, Items.COBBLESTONE));
+            helper.assertTrue(veinLeft(helper) == EXTRA, "Over-dug or under-dug: " + veinLeft(helper) + " blocks left, expected " + EXTRA);
+        });
     }
 
     private static CompanionEntity setup(GameTestHelper helper) {
@@ -116,24 +226,31 @@ public final class CompanionUrgentOrderTests {
     }
 
     private static void vein(GameTestHelper helper) {
-        for (int z = 16; z < 22; z++) helper.setBlock(new BlockPos(20, 1, z), Blocks.STONE);
+        for (int z = 16; z < 16 + WANTED + EXTRA; z++) helper.setBlock(new BlockPos(20, 1, z), Blocks.STONE);
     }
 
     private static int veinLeft(GameTestHelper helper) {
         int left = 0;
-        for (int z = 16; z < 22; z++) if (helper.getBlockState(new BlockPos(20, 1, z)).is(Blocks.STONE)) left++;
+        for (int z = 16; z < 16 + WANTED + EXTRA; z++) if (helper.getBlockState(new BlockPos(20, 1, z)).is(Blocks.STONE)) left++;
         return left;
     }
 
     private static int count(Container container, Item item) {
         int count = 0;
-        for (int slot = 0; slot < container.getContainerSize(); slot++) if (container.getItem(slot).is(item)) count += container.getItem(slot).getCount();
-        if (container instanceof CompanionEntity companion) for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
+        for (int slot = 0; slot < container.getContainerSize(); slot++) {
+            if (container.getItem(slot).is(item)) count += container.getItem(slot).getCount();
+        }
+        if (container instanceof CompanionEntity companion) {
+            for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) {
+                if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
+            }
+        }
         return count;
     }
 
     private static void done(GameTestHelper helper, CompanionEntity companion) {
-        helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult() + " at " + companion.position());
+        helper.assertTrue(!companion.isGatheringTask() && !companion.isWorking(),
+                "Work still active: " + companion.getLastTaskResult() + " at " + companion.position());
     }
 
     private static ServerPlayer owner(GameTestHelper helper, CompanionEntity companion) {
