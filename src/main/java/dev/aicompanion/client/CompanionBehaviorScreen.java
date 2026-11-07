@@ -61,6 +61,10 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.MURMUR_INTERVAL_PERCENT.save(); b.setMessage(intervalLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Насколько редко он заговаривает сам: 100% как задумано, 200% вдвое реже, 50% вдвое чаще."))).build());
+        addRenderableWidget(Button.builder(guardLabel(), b -> {
+            OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.set(!OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get()); OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.save();
+            b.setMessage(guardLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -70,6 +74,7 @@ final class CompanionBehaviorScreen extends Screen {
     }
     private Component shortLabel() { return Component.literal("Короткие реплики (до 15 слов): " + (OpenRouterConfig.SHORT_MURMURS.get() ? "вкл." : "выкл.")); }
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }
+    private Component guardLabel() { return Component.literal("Охрана: цель ближе к игроку: " + (OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }

@@ -136,6 +136,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
+    private boolean guardByPlayer = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -369,7 +370,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
-                true, false, target -> protecting ? combat.isThreateningOwner(target) : combat.comesForOwner(target)));
+                true, false, target -> protecting ? (!guardByPlayer || work.isHunting()) && combat.isThreateningOwner(target) : combat.comesForOwner(target)));
+        this.targetSelector.addGoal(2, new CompanionGuardWatch(this));
         // Who flies is out of the blade's reach: only with a bow (ghasts, phantoms).
         this.targetSelector.addGoal(2, new CompanionArchery.FlierTargetGoal(this));
     }
@@ -608,6 +610,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he goes back for his own things after a death (the player can turn it off in the settings). */
     public boolean deathRecovery() { return deathRecovery; }
     public void setDeathRecovery(boolean on) { deathRecovery = on; }
+    /** Whether the guard order picks the monster nearest to the player (the player can turn it off: then, as before, the nearest to him). */
+    public boolean guardByPlayer() { return guardByPlayer; }
+    public void setGuardByPlayer(boolean on) { guardByPlayer = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
@@ -900,8 +905,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
         var guardedOwner = protecting || !work.isHunting() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
-        if (guardedOwner != null && getTarget() != null && distanceToSqr(guardedOwner) > 16 * 16
-                && getTarget().distanceToSqr(guardedOwner) > 14 * 14) setTarget(null);
+        if (guardedOwner != null && getTarget() != null && CompanionGuardWatch.strayed(this, guardedOwner, getTarget())) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
         shieldDefense.tick();

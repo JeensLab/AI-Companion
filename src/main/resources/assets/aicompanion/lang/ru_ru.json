@@ -15,5 +15,6 @@
   "config.aicompanion.inworld_voice_id": "ID голоса Inworld",
   "config.aicompanion.long_term_memory": "Долговременная память",
   "config.aicompanion.short_murmurs": "Короткие самостоятельные реплики",
-  "config.aicompanion.murmur_interval_percent": "Пауза между репликами, %"
+  "config.aicompanion.murmur_interval_percent": "Пауза между репликами, %",
+  "config.aicompanion.guard_nearest_to_player": "Охрана: монстр ближе к игроку"
 }
