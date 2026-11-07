@@ -36,7 +36,8 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.state;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineNightTests {
     private static final String DUSK = "Темнеет — спускаюсь, факелов хватит на начало.";
-    private static final int TIMEOUT = 24000, BENCH_TIMEOUT = 12000, NIGHT = 18000, TORCHES_FEW = 8, BREAD_MIN = 4, STICKS_MIN = 4, STICKS_NIGHT = 6, STONE_PICKAXE_STONE = 3;
+    private static final int TIMEOUT = 24000, BENCH_TIMEOUT = 12000, NIGHT = 18000, TORCHES_FEW = 8, BREAD_MIN = 4, STICKS_MIN = 4, STICKS_NIGHT = 6, STONE_PICKAXE_STONE = 3,
+            COAL_NIGHT = 8, STICKS_COAL = 14, TORCHES_FULL = 32;
     private static long clock;
 
     private CompanionMineNightTests() { }
@@ -61,6 +62,52 @@ public final class CompanionMineNightTests {
             h.assertTrue(said[0], "Nothing said about the dusk | " + report(h, r));
             h.assertTrue(r.c().mineSite().exists(), "No mine begun | " + report(h, r));
         });
+    }
+
+    /** Dusk with the minimum of the kit and coal in the bag: the coal becomes torches before the descent, so he goes down with the full stock, not with the few he held. */
+    @GameTest(template = "marathon_cave", batch = "mine_night", timeoutTicks = TIMEOUT)
+    public static void theNightKitMakesTorchesFromTheCoalHeCarries(GameTestHelper h) {
+        Rig r = rig(h, true, new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.BREAD, BREAD_MIN), new ItemStack(Items.TORCH, TORCHES_FEW),
+                new ItemStack(Items.COAL, COAL_NIGHT), new ItemStack(Items.STICK, STICKS_COAL), new ItemStack(Items.COBBLESTONE, 32), new ItemStack(Items.CRAFTING_TABLE),
+                new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE));
+        start(h, r, 1);
+        boolean[] said = {false}, down = {false};
+        h.onEachTick(() -> {
+            CompanionEntity c = r.c();
+            said[0] |= DUSK.equals(c.autonomyLine());
+            h.assertTrue(state(h, r) != CompanionAgenda.State.BLOCKED, "The goal stopped: " + report(h, r));
+            if (c.mineSite().exists() && !down[0]) {
+                down[0] = true;
+                h.assertTrue(count(c, Items.TORCH) >= TORCHES_FULL, "He went down with " + count(c, Items.TORCH) + " torches and coal in the bag | " + report(h, r));
+            }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(said[0], "Nothing said about the dusk | " + report(h, r));
+            h.assertTrue(r.c().mineSite().exists() && count(r.c(), Items.TORCH) >= TORCHES_FULL, "No mine begun with the full torches | " + report(h, r));
+        });
+    }
+
+    /** The torches of the night are made only within the sticks to spare: the sticks of the pickaxes below are not spent on them. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    public static void theNightPlanKeepsTheSticksOfThePickaxes(GameTestHelper h) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 2, 2, 2);
+        var mine = CompanionPlaybooks.of("find_diamonds", 1).milestones().getLast();
+        c.setItem(0, new ItemStack(Items.BREAD, BREAD_MIN));
+        c.setItem(1, new ItemStack(Items.TORCH, TORCHES_FEW));
+        c.setItem(2, new ItemStack(Items.COAL, COAL_NIGHT));
+        c.setItem(3, new ItemStack(Items.STICK, STICKS_COAL));
+        c.setItem(4, new ItemStack(Items.CRAFTING_TABLE));
+        c.setItem(5, new ItemStack(Items.COBBLESTONE, STONE_PICKAXE_STONE));
+        var steps = mine.nightSteps(CompanionFacts.of(c));
+        h.assertTrue(steps.size() == 2, "The coal of the bag does not make torches before the descent: " + steps);
+        h.assertTrue("obtain_item".equals(steps.getFirst().type()) && "minecraft:torch".equals(steps.getFirst().item()) && steps.getFirst().count() == TORCHES_FULL, "The first step is not the torches: " + steps);
+        h.assertTrue("dig_for_diamonds".equals(steps.getLast().type()), "The last step is not the mine: " + steps);
+        c.setItem(3, new ItemStack(Items.STICK, STICKS_NIGHT));
+        h.assertTrue(mine.nightSteps(CompanionFacts.of(c)).size() == 1, "The sticks of the pickaxes were spent on torches: " + mine.nightSteps(CompanionFacts.of(c)));
+        c.setItem(1, new ItemStack(Items.TORCH, TORCHES_FULL));
+        c.setItem(3, new ItemStack(Items.STICK, STICKS_COAL));
+        h.assertTrue(mine.nightSteps(CompanionFacts.of(c)).size() == 1, "Torches were made with a full stock: " + mine.nightSteps(CompanionFacts.of(c)));
+        h.succeed();
     }
 
     /**

@@ -457,8 +457,11 @@ public final class CompanionAgenda {
         if (goal.workTicks >= STALL_TICKS) { block(data, owner, goal, c, "давно нет продвижения: " + pick.label(goal.fallback) + "."); return; }
         // Dusk on the surface with the least the mine needs: the rest of the top-up waits for the day, and the night is spent below, as a miner
         // does, not hunting or felling on the surface among the monsters (runs of 07.11: deaths on the top-up at night, void and water).
+        // The coal in the bag becomes torches first: that takes seconds and needs nothing from outside.
+        List<Step> night = null;
         if (pick.kind() == Kind.EXPEDITION && !goal.mineAsIs && !facts.belowMine() && c.level().isNight() && pick.nightKit(facts)) {
             goal.mineAsIs = true;
+            night = pick.nightSteps(facts);
             c.autonomySay("Темнеет — спускаюсь, факелов хватит на начало.");
         }
         List<Step> shield = pick.kind() == Kind.EXPEDITION && !goal.mineAsIs ? Milestone.shieldTrekSteps(facts) : List.of();
@@ -471,7 +474,9 @@ public final class CompanionAgenda {
         }
         List<PlannedAction> plan = pick.method(facts, goal.fallback, all).stream()
                 .map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList();
-        if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) plan = List.of(plan.getLast());
+        if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) {
+            plan = night != null ? night.stream().map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList() : List.of(plan.getLast());
+        }
         goal.mineAsIs = false;
         if (!pick.key().equals(goal.announced)) {
             if (!goal.announced.isEmpty()) c.autonomySay("Дальше: " + pick.label(goal.fallback) + ".");

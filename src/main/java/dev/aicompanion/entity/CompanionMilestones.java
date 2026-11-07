@@ -145,7 +145,7 @@ public final class CompanionMilestones {
                     // go on bare-handed); the rest of the kit waits, the way up is for a retreat or a pickaxe he cannot make there.
                     List<Step> steps = facts.inMine() ? swordSteps(facts) : supplySteps(facts);
                     if (facts.inMine()) steps.addAll(shieldSteps(facts, false));
-                    steps.add(new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto"));
+                    steps.add(digStep(facts));
                     yield steps;
                 }
                 case STOCK -> supported ? List.of(obtain(item, count)) : List.of();
@@ -176,6 +176,22 @@ public final class CompanionMilestones {
          */
         public boolean nightKit(CompanionFacts facts) {
             return kitMinimum(facts) && facts.carried(Items.TORCH) >= TORCHES_NIGHT && (facts.inMine() || facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * (STONE_PICKAXES_MIN + 1));
+        }
+
+        private Step digStep(CompanionFacts facts) {
+            return new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto");
+        }
+
+        /**
+         * The night's short plan: only what the bag makes in seconds (torches from its coal, within the sticks of the pickaxes kept apart), then the mine;
+         * nothing that leaves the surface at night.
+         */
+        public List<Step> nightSteps(CompanionFacts facts) {
+            int torches = facts.carried(Items.TORCH);
+            int spareSticks = facts.carried(Items.STICK) - STICKS_PER_PICKAXE * (STONE_PICKAXES_MIN + 1);
+            int target = (int) Math.min(TORCHES_MIN, torches + Math.min(4L * facts.carried(Items.COAL), 4L * Math.max(0, spareSticks)));
+            if (torches >= TORCHES_MIN || target <= torches) return List.of(digStep(facts));
+            return List.of(obtain(Items.TORCH, target), digStep(facts));
         }
 
         private static List<Step> supplySteps(CompanionFacts facts) {
