@@ -380,7 +380,7 @@ public final class CompanionAutonomy {
             case SMELT_IRON -> "minecraft:raw_iron";
             case HUNT -> "food";
             case COOK -> CompanionGame.ANY_MEAT;
-            default -> "";
+            case WOOD, STONE, COLLECT -> "";
         };
         starting = true;
         CompanionActionResult result;

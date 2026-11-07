@@ -52,7 +52,7 @@ public final class CompanionMilestones {
             return switch (kind) {
                 case PIECE -> (piece.slot == null ? "" : "надеть ") + "«" + CompanionWork.itemName(piece.item(effective(tier, fallback))) + "»";
                 case MATERIALS -> "материал на снаряжение: «" + CompanionWork.itemName(effective(tier, fallback).material) + "»";
-                default -> label;
+                case FOOD, STOCK, SKILL, DRAGON -> label;
             };
         }
 
