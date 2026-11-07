@@ -455,9 +455,11 @@ final class CompanionExpedition {
         w.route.legsEnd(false);
         owner.getNavigation().stop();
         dig.forget();
-        wadeStairs.begin(route.get(joining ? route.size() - 1 : 0));
+        // A staircase begun already goes on from its last step: begun anew on every failed search, it would cut its first step over and over.
+        if (wadeStairs.steps() == 0) wadeStairs.begin(route.get(joining ? route.size() - 1 : 0));
         wading = true;
-        wadeTicks = wadeSteps = 0;
+        wadeTicks = 0;
+        wadeSteps = wadeStairs.steps();
         owner.workStatus(owner.isInWater() ? "Я в воде, а на берег не выйти: кладу блок под ноги и прокапываю лестницу наверх." : "Дороги к цели и отсюда нет, прокапываю лестницу дальше.");
         return true;
     }
