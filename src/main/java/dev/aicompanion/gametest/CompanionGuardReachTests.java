@@ -45,6 +45,10 @@ public final class CompanionGuardReachTests {
     public static void releaseNearest(ServerLevel level) { release(level); }
     @AfterBatch(batch = "guard_reach_pet")
     public static void releasePet(ServerLevel level) { release(level); }
+    @AfterBatch(batch = "guard_reach_wall")
+    public static void releaseWall(ServerLevel level) { release(level); }
+    @AfterBatch(batch = "guard_reach_leave")
+    public static void releaseLeave(ServerLevel level) { release(level); }
     @AfterBatch(batch = "guard_reach_creeper")
     public static void releaseCreeper(ServerLevel level) { release(level); }
 
@@ -128,6 +132,48 @@ public final class CompanionGuardReachTests {
             h.onEachTick(() -> h.assertTrue(companion.getTarget() != creeper, "He went for a creeper 30 blocks from the player"));
             h.runAtTickTime(120, h::succeed);
         });
+    }
+
+    /** The nearest zombie is walled in after he chose it: neither he nor the player sees it, so he lets it go for the one in the open. */
+    @GameTest(template = "empty", timeoutTicks = 400, batch = "guard_reach_wall")
+    public static void aMonsterNobodySeesAnyMoreIsLetGoForOneInTheOpen(GameTestHelper h) {
+        h.startSequence().thenExecute(() -> arena(h)).thenIdle(20).thenExecute(() -> {
+            CompanionEntity companion = guard(h, 1);
+            var walled = zombie(h, 10);
+            var open = zombie(h, -30);
+            h.startSequence()
+                    .thenWaitUntil(() -> h.assertTrue(companion.getTarget() == walled, "He did not choose the nearest zombie: " + companion.getTarget()))
+                    .thenExecute(() -> wallIn(h, 10))
+                    .thenWaitUntil(() -> h.assertTrue(companion.getTarget() == open, "He kept the zombie nobody sees: target=" + companion.getTarget()))
+                    .thenSucceed();
+        });
+    }
+
+    /** A creeper that was by the player and walks off to thirty blocks is let go: a blow out there may end in its blast. */
+    @GameTest(template = "empty", timeoutTicks = 300, batch = "guard_reach_leave")
+    public static void aCreeperThatLeavesThePlayerIsLetGo(GameTestHelper h) {
+        h.startSequence().thenExecute(() -> arena(h)).thenIdle(20).thenExecute(() -> {
+            CompanionEntity companion = guard(h, 1);
+            var creeper = h.spawn(EntityType.CREEPER, at(-6));
+            creeper.setNoAi(true);
+            h.startSequence()
+                    .thenWaitUntil(() -> h.assertTrue(companion.getTarget() == creeper, "He did not choose the creeper: " + companion.getTarget()))
+                    .thenExecute(() -> {
+                        BlockPos far = h.absolutePos(at(-30));
+                        creeper.teleportTo(far.getX() + .5, far.getY(), far.getZ() + .5);
+                    })
+                    .thenIdle(40)
+                    .thenExecute(() -> h.assertTrue(companion.getTarget() == null, "He kept the creeper that left: target=" + companion.getTarget()))
+                    .thenSucceed();
+        });
+    }
+
+    /** Stone round the foot of the road at x, up to the roof, leaving the one cell the mob stands in. */
+    private static void wallIn(GameTestHelper h, int x) {
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int y = 1; y <= 4; y++) {
+            boolean mobCell = dx == 0 && dz == 0 && y < 4;
+            if (!mobCell) h.getLevel().setBlockAndUpdate(h.absolutePos(at(x).offset(dx, y - 1, dz)), Blocks.STONE.defaultBlockState());
+        }
     }
 
     /** Stone road with air above it, in chunks held loaded for the test. */
