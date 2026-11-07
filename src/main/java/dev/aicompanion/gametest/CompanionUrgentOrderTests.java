@@ -3,8 +3,10 @@ package dev.aicompanion.gametest;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionParkLink;
 import dev.aicompanion.client.PlannedAction;
+import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
+import dev.aicompanion.entity.CompanionGoals;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
@@ -32,8 +34,6 @@ public final class CompanionUrgentOrderTests {
     /** Stone in the vein beyond the order: an over-dig shows as a block missing at the end. */
     private static final int EXTRA = 4;
     private static final double ARRIVED = 3.0D;
-    /** Ticks after the cancel in which an urgent park must stay quiet (the grace is longer than this). */
-    private static final int QUIET_TICKS = 10;
     /** Ticks a plain cancel is watched for a dig that should not come back. */
     private static final int PLAIN_WATCH_TICKS = 60;
     private static final int RELOAD_WATCH_TICKS = 40;
@@ -157,60 +157,119 @@ public final class CompanionUrgentOrderTests {
         });
     }
 
-    /** The queue's urgent cancel (what «иди сюда» sends) parks the dig, waits out the grace, and the rest is dug once. */
+    /** The queue's urgent cancel (what «иди сюда» sends) parks the dig; the come that follows leaves the park alone and the rest is dug once. */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void urgentQueueCancelParksAndTheRestIsDugOnce(GameTestHelper helper) {
-        queuedDigThenCancel(helper, true);
+        queuedDigThenCancel(helper, true, false);
     }
 
     /** A plain cancel («стоп») through the same queue stops the dig for good: nothing is parked and nothing comes back. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void plainQueueCancelStopsTheDigWithoutAPark(GameTestHelper helper) {
-        queuedDigThenCancel(helper, false);
+        queuedDigThenCancel(helper, false, false);
     }
 
-    private static void queuedDigThenCancel(GameTestHelper helper, boolean urgent) {
+    /** A goal paused by an earlier player order must not swallow the park when the come order runs its own stop of the work. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void pausedGoalDoesNotEatThePark(GameTestHelper helper) {
+        queuedDigThenCancel(helper, true, true);
+    }
+
+    /** The server entry of «come» parks the dig before the paused goal's own stop can end it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void aServerEntryComeWithAPausedGoalParksTheDig(GameTestHelper helper) {
+        Scene scene = digScene(helper, true);
+        Watch watch = new Watch();
+        watchOrder(helper, scene, watch, true, () -> CompanionEvents.executeAction(scene.player(), "come", "", 1));
+        finishWhen(helper, scene, watch, true);
+    }
+
+    private static void queuedDigThenCancel(GameTestHelper helper, boolean urgent, boolean goalPaused) {
+        Scene scene = digScene(helper, goalPaused);
+        Watch watch = new Watch();
+        watchOrder(helper, scene, watch, urgent, () -> {
+            scene.link().cancelAll(false, false, urgent);
+            if (urgent) scene.link().submit(List.of(new PlannedAction("come", 0, 1)), "urgent-come", () -> false);
+        });
+        finishWhen(helper, scene, watch, urgent);
+    }
+
+    /** Dig started through the queue (so it is a player order), with a pickaxe goal outstanding when asked. */
+    private static Scene digScene(GameTestHelper helper, boolean goalPaused) {
         CompanionEntity companion = setup(helper);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         vein(helper);
         ServerPlayer player = owner(helper, companion);
+        if (goalPaused) pauseGoal(helper, companion, player);
         CompanionParkLink link = new CompanionParkLink();
         link.bind(helper.getLevel().getServer(), player.getUUID());
         link.submit(List.of(new PlannedAction("gather_stone", 0, WANTED)), "urgent-queue-test", () -> false);
-        long[] cancelledAt = {-1};
-        int[] veinAtCancel = {0};
+        return new Scene(companion, player, link);
+    }
+
+    private static void pauseGoal(GameTestHelper helper, CompanionEntity companion, ServerPlayer player) {
+        var accepted = CompanionEvents.executeAction(player, "goal_pickaxes", "", 1);
+        helper.assertTrue(accepted.status() == CompanionActionResult.Status.ACCEPTED, "Goal not accepted: " + accepted.message());
+        helper.assertTrue(CompanionEvents.executeAction(player, "wait", "", 1).success(), "The wait order failed");
+        companion.setFollowing(true);
+        helper.assertTrue(companion.goals().state() == CompanionGoals.State.PAUSED_PLAYER, "Goal not paused: " + companion.goals().state());
+    }
+
+    /** Runs {@code order} once two stones are dug, then checks the park (urgent) or its absence (plain) on every tick. */
+    private static void watchOrder(GameTestHelper helper, Scene scene, Watch watch, boolean urgent, Runnable order) {
+        CompanionEntity companion = scene.companion();
         helper.onEachTick(() -> {
-            if (cancelledAt[0] < 0) {
+            if (watch.orderedAt < 0) {
                 if (count(companion, Items.COBBLESTONE) < 2) return;
-                cancelledAt[0] = helper.getTick();
-                link.cancelAll(false, false, urgent);
+                watch.orderedAt = helper.getTick();
+                order.run();
                 return;
             }
-            long since = helper.getTick() - cancelledAt[0];
+            long since = helper.getTick() - watch.orderedAt;
             CompoundTag data = new CompoundTag();
             companion.saveWithoutId(data);
             if (since == 1) {
-                veinAtCancel[0] = veinLeft(helper);
-                helper.assertTrue(data.contains("ParkedAction") == urgent,
-                        "Park after the cancel: urgent=" + urgent + ", tag='" + data.getString("ParkedAction") + "'");
+                watch.veinAtOrder = veinLeft(helper);
+                watch.parkedCount = data.getInt("ParkedCount");
             }
-            helper.assertTrue(urgent || !data.contains("ParkedAction"), "A plain cancel left a park");
-            if (since >= 1 && (!urgent || since <= QUIET_TICKS)) {
-                helper.assertTrue(!companion.isWorking() && veinLeft(helper) == veinAtCancel[0], "He dug right after the cancel, urgent=" + urgent);
-            }
-        });
-        helper.succeedWhen(() -> {
-            helper.assertTrue(cancelledAt[0] >= 0, "The dig has not gone far enough to be cancelled yet");
-            long since = helper.getTick() - cancelledAt[0];
             if (!urgent) {
-                helper.assertTrue(since >= PLAIN_WATCH_TICKS, "Watching the plain cancel");
+                helper.assertTrue(!data.contains("ParkedAction"), "A plain cancel left a park");
+                helper.assertTrue(!companion.isWorking() && veinLeft(helper) == watch.veinAtOrder, "He dug right after the plain cancel");
                 return;
             }
-            helper.assertTrue(since > QUIET_TICKS, "Waiting for the resume");
+            if (!watch.arrived) {
+                helper.assertTrue("gather_stone".equals(data.getString("ParkedAction")),
+                        "Park eaten by the order: tag='" + data.getString("ParkedAction") + "', since=" + since);
+                helper.assertTrue(data.getInt("ParkedCount") == watch.parkedCount,
+                        "Park re-made with another count: " + data.getInt("ParkedCount") + " instead of " + watch.parkedCount);
+                helper.assertTrue(veinLeft(helper) == watch.veinAtOrder, "He dug before he came: " + watch.veinAtOrder + " -> " + veinLeft(helper));
+            }
+            if (companion.distanceTo(scene.player()) <= ARRIVED) watch.arrived = true;
+        });
+    }
+
+    private static void finishWhen(GameTestHelper helper, Scene scene, Watch watch, boolean urgent) {
+        CompanionEntity companion = scene.companion();
+        helper.succeedWhen(() -> {
+            helper.assertTrue(watch.orderedAt >= 0, "The dig has not gone far enough to be ordered away yet");
+            if (!urgent) {
+                helper.assertTrue(helper.getTick() - watch.orderedAt >= PLAIN_WATCH_TICKS, "Watching the plain cancel");
+                return;
+            }
+            helper.assertTrue(watch.arrived, "He has not come to the player yet");
             done(helper, companion);
             helper.assertTrue(count(companion, Items.COBBLESTONE) == WANTED, "The rest was not dug once: " + count(companion, Items.COBBLESTONE));
             helper.assertTrue(veinLeft(helper) == EXTRA, "Over-dug or under-dug: " + veinLeft(helper) + " blocks left, expected " + EXTRA);
         });
+    }
+
+    private record Scene(CompanionEntity companion, ServerPlayer player, CompanionParkLink link) {}
+
+    private static final class Watch {
+        long orderedAt = -1;
+        int veinAtOrder;
+        int parkedCount = -1;
+        boolean arrived;
     }
 
     private static CompanionEntity setup(GameTestHelper helper) {
