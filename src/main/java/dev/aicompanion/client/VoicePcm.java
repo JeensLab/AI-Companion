@@ -12,7 +12,7 @@ public final class VoicePcm {
             AudioFormat mono = new AudioFormat(AudioFormat.Encoding.PCM_SIGNED, source.getFormat().getSampleRate(), 16, 1, 2, source.getFormat().getSampleRate(), false);
             try (AudioInputStream converted = AudioSystem.getAudioInputStream(mono, source)) {
                 byte[] bytes = converted.readAllBytes();
-                if (bytes.length == 0) throw new IOException("Inworld returned empty audio");
+                if (bytes.length == 0) throw new IOException("The voice returned empty audio");
                 return new Pcm(mono, bytes);
             }
         }
