@@ -27,7 +27,7 @@ public final class CompanionStairDescentTests {
     private static final int LANES = 8;
 
     private static final class Lane {
-        final CompanionEntity c; final int z; float worst, last = Float.NaN; String worstAt = "";
+        final CompanionEntity c; final int z; float worst, last = Float.NaN; String worstAt = ""; int edges;
         Lane(CompanionEntity c, int z) { this.c = c; this.z = z; }
     }
 
@@ -60,13 +60,20 @@ public final class CompanionStairDescentTests {
                     if (turn > l.worst) { l.worst = turn; l.worstAt = String.format("x=%.2f y=%.2f", x, l.c.getY() - corner.getY()); }
                 }
                 l.last = l.c.getYRot();
+                // The case itself: past the centre of a lower cell while still at the height of the step before it.
+                int cell = Mth.floor(x);
+                if (cell >= 8 && cell <= 12 && x - cell >= .5 && Math.abs(l.c.getY() - corner.getY() - standing(cell - 1)) < 1e-6) l.edges++;
             }
         });
         h.succeedWhen(() -> {
             StringBuilder all = new StringBuilder();
             for (Lane l : lanes) all.append(" lane ").append(l.z).append(": ").append(Math.round(l.worst)).append("° at ").append(l.worstAt);
             for (Lane l : lanes) h.assertTrue(l.c.getX() - corner.getX() > 17 && l.c.getY() - corner.getY() < 1.5, "Not down yet:" + all);
+            h.assertTrue(lanes.stream().anyMatch(l -> l.edges > 0), "No walker was past a lower cell's centre at the upper height: the case was not met");
             for (Lane l : lanes) h.assertTrue(l.worst < MOST_TICK_TURN, "He turned back on a step:" + all);
         });
     }
+
+    /** The height he stands at in a lane's column: the landing, the four steps, the floor. */
+    private static int standing(int x) { return Math.max(1, Math.min(6, 13 - x)); }
 }

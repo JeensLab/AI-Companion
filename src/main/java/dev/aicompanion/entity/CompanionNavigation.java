@@ -29,8 +29,8 @@ public final class CompanionNavigation extends net.minecraft.world.entity.ai.nav
      * Down a step the next node is a block lower, and the game counts a node reached only with less than a block of height between
      * them. On the tick he walks off the edge he is still at the upper height, already past the node's centre: the node stays the
      * one to walk to though it lies behind him, and the move control turned him back to it, up to 90° in a tick (#105, «лестница
-     * зигзагом»). Over the node's cell and past its centre the way he came, a node at most a block below is reached: the fall takes
-     * him into it. The last node keeps the game's rule, so the walk does not end while he is still above it.
+     * зигзагом»). Over the node's cell and past its centre the way he came, a node at most a block below is reached: he drops into it
+     * or walks on to the next one. The last node keeps the game's rule, so the walk does not end while he is still above it.
      */
     @Override protected void followThePath() {
         int next = path.getNextNodeIndex();
