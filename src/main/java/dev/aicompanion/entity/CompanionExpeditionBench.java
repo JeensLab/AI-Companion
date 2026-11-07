@@ -66,7 +66,8 @@ final class CompanionExpeditionBench {
     /**
      * The nearest bench of the mine's temporary blocks within reach of a walk; a cell with nothing in it any more is forgotten.
      * On the surface with no bench in the bag, a bench he set down himself near by counts too: the kit goes down with him (void-2 of seed 7:
-     * the bench of the kit stayed by the entrance after a craft, and no pickaxe could be made below).
+     * the bench of the kit stayed by the entrance after a craft, and no pickaxe could be made below). The kit's bench counts from a pit the mine
+     * begins in too, not only under the sky (retreat of seed 7: the mine was started again in a roofed pit, and the descent went on without the bench).
      */
     private BlockPos nearest(ServerLevel level) {
         BlockPos best = null;
@@ -78,7 +79,7 @@ final class CompanionExpeditionBench {
             double distance = owner.distanceToSqr(cell.getCenter());
             if (state.is(Blocks.CRAFTING_TABLE) && distance <= bestDistance) { best = cell; bestDistance = distance; }
         }
-        if (best != null || w.items.countCarried(Items.CRAFTING_TABLE) > 0 || !CompanionExpeditionRecord.underSky(level, owner.blockPosition().above())) return best;
+        if (best != null || w.items.countCarried(Items.CRAFTING_TABLE) > 0 || !atTopOfTheMine(level)) return best;
         bestDistance = (double) KIT_NEAR * KIT_NEAR;
         for (BlockPos cell : owner.places.placed("minecraft:crafting_table")) {
             if (!level.hasChunkAt(cell) || !level.getBlockState(cell).is(Blocks.CRAFTING_TABLE)) continue;
@@ -86,5 +87,11 @@ final class CompanionExpeditionBench {
             if (distance <= bestDistance) { best = cell; bestDistance = distance; }
         }
         return best;
+    }
+
+    /** Still at the top of the mine, where the way down has not begun: the cells of its first steps, or the open sky while there is no mine. */
+    private boolean atTopOfTheMine(ServerLevel level) {
+        if (!w.mine.exists()) return CompanionExpeditionRecord.underSky(level, owner.blockPosition().above());
+        return owner.getY() >= w.mine.entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH;
     }
 }

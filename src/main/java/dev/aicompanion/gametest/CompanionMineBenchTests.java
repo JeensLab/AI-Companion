@@ -112,6 +112,42 @@ public final class CompanionMineBenchTests {
         });
     }
 
+    /** The mine begins again in a roofed pit and the bench of the kit stands on the surface: he walks up out of the pit, takes it into the bag and goes down with it. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void theKitBenchIsFetchedFromThePitTheMineBeginsIn(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        c.setItem(6, ItemStack.EMPTY);
+        var level = h.getLevel();
+        BlockPos benchPos = h.absolutePos(new BlockPos(CENTER - 20, GROUND + 1, CENTER - 20));
+        level.setBlock(benchPos, Blocks.CRAFTING_TABLE.defaultBlockState(), 2 | 16);
+        c.rememberPlaced(benchPos);
+        // A pit three cells deep under the grass roof (room to jump out of it), and a ramp of one-block steps open to the sky beside it.
+        BlockPos pit = h.absolutePos(new BlockPos(CENTER, GROUND - 3, CENTER));
+        for (int y = 0; y < 3; y++) level.setBlock(pit.above(y), Blocks.AIR.defaultBlockState(), 2 | 16);
+        for (int step = 1; step <= 3; step++) for (int y = GROUND - 3 + step; y <= GROUND; y++) level.setBlock(h.absolutePos(new BlockPos(CENTER + step, y, CENTER)), Blocks.AIR.defaultBlockState(), 2 | 16);
+        c.teleportTo(pit.getX() + .5, pit.getY(), pit.getZ() + .5);
+        c.mineSite().start(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER)), Direction.NORTH);
+        c.mineSite().restart(pit, Direction.NORTH);
+        c.mineSite().buried(true);
+        // A search from a body that has just been moved is not run while it is "in the air": a few ticks on the pit's floor first.
+        boolean[] begun = {false};
+        h.runAfterDelay(SETTLED / 4, () -> {
+            if (begun[0]) return;
+            begun[0] = true;
+            long id = start(h, c);
+            h.onEachTick(() -> {
+                boolean carried = count(c, Items.CRAFTING_TABLE) == 1;
+                if (c.mineSite().stands().size() >= 2) h.assertTrue(carried, "He went down without the bench of the kit | " + report(c));
+                if (!c.isWorking() && !c.isGatheringTask()) {
+                    CompanionActionResult result = c.workResult(id);
+                    h.assertTrue(carried, "The order ended without the bench in the bag: " + (result == null ? "no result" : result.status() + " " + result.message()) + " | " + report(c));
+                }
+                if (carried && c.mineSite().stands().size() >= 2 && level.getBlockState(benchPos).isAir()) h.succeed();
+            });
+        });
+    }
+
     /** A bench that cannot be taken up (the bag has no room for it) does not hold the order: the effort is bounded and the digging goes on, the bench stays in the record. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void givesUpOnABenchItCannotTakeAndDigsOn(GameTestHelper h) {
