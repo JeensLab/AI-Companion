@@ -186,6 +186,8 @@ final class CompanionPlacement {
                 // A step dug already has left quarrySoil, but the block it stands on is still in quarrySupports.
                 if (pos.equals(c.work.exitCell) || c.work.quarrySoil.contains(pos) || c.work.quarrySupports.contains(pos.below())) continue;
                 if (!serverLevel.hasChunkAt(pos) || !serverLevel.getBlockState(pos).canBeReplaced()) continue;
+                // Not on top of a bench: in a one-cell pocket that block hides the bench from his eyes and he can no longer craft at it.
+                if (serverLevel.getBlockState(pos.below()).is(Blocks.CRAFTING_TABLE)) continue;
                 if (!serverLevel.getFluidState(pos).isEmpty() || !serverLevel.getWorldBorder().isWithinBounds(pos)) continue;
                 if (!serverLevel.getBlockState(pos.below()).isFaceSturdy(serverLevel, pos.below(), Direction.UP)) continue;
                 if (!state.canSurvive(serverLevel, pos)) continue;
