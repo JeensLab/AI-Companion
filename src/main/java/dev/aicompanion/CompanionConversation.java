@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Local admission/deduplication policy, shared by the client and deterministic tests. No model call to decide to talk. */
 public final class CompanionConversation {
@@ -12,6 +13,12 @@ public final class CompanionConversation {
     public static final int ANSWER_WAIT = 20 * 90;
     /** What is going on sets how soon he opens a topic of his own: never in a fight, soon on the road or in a mine. */
     public enum Scene { FIGHT, TRAVEL, MINE, IDLE, WORK }
+    /** What becomes of an idle murmur: nothing, a line in chat only, or a line in chat and in his voice. */
+    public enum Delivery { DROP, CHAT, VOICE }
+    /** An idle murmur is a short remark, not a speech. */
+    public static final int MURMUR_WORDS = 15;
+    private static final Pattern DIGIT = Pattern.compile("\\p{N}");
+    private static final Pattern SENTENCE = Pattern.compile("[^.!?…]+[.!?…]*");
     private long nextOpportunity;
     private long quietUntil;
     private boolean awaitingAnswer;
@@ -34,6 +41,29 @@ public final class CompanionConversation {
 
     public static boolean isUrgent(String text) { return text != null && text.startsWith(URGENT_MARK); }
     public static String stripUrgent(String text) { return isUrgent(text) ? text.substring(URGENT_MARK.length()).stripLeading() : text; }
+    /** A murmur out of earshot is not lost, only unvoiced; the player can still read it. */
+    public static Delivery decide(boolean safe, boolean audible, boolean screenOpen, boolean paused) {
+        if (!safe || screenOpen || paused) return Delivery.DROP;
+        return audible ? Delivery.VOICE : Delivery.CHAT;
+    }
+    /** At most {@link #MURMUR_WORDS} words and no digit anywhere, which also rules out coordinates. */
+    public static boolean fitsMurmur(String text) {
+        if (text == null || text.isBlank() || DIGIT.matcher(text).find()) return false;
+        return text.strip().split("\\s+").length <= MURMUR_WORDS;
+    }
+    /** The murmur as it is, or its longest opening of whole sentences that fits; null when not even the first sentence does. */
+    public static String fitMurmur(String text) {
+        if (fitsMurmur(text)) return text.strip();
+        if (text == null) return null;
+        StringBuilder kept = new StringBuilder();
+        var sentences = SENTENCE.matcher(text);
+        while (sentences.find()) {
+            String candidate = kept + sentences.group();
+            if (!fitsMurmur(candidate)) break;
+            kept.setLength(0); kept.append(candidate);
+        }
+        return kept.isEmpty() ? null : kept.toString().strip();
+    }
     public static int gap(int jitter) { return MIN_GAP + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1); }
     public static Scene scene(boolean fighting, boolean underground, boolean travelling, boolean working, long idleTicks) {
         if (fighting) return Scene.FIGHT;
@@ -100,6 +130,11 @@ public final class CompanionConversation {
         return takePendingUrgent(now, safe, busy, jitter);
     }
     public int urgentPending() { return urgentSerial; }
+    /** The pending urgent remark, forgotten once it is older than {@link #URGENT_TTL}; takePendingUrgent is not reached while nobody can hear it. */
+    public int urgentPending(long now) {
+        if (urgentSerial != 0 && now - urgentSince > URGENT_TTL) urgentSerial = 0;
+        return urgentSerial;
+    }
     /** Never touches awaitingAnswer: an open question stays open while the urgent line is spoken. */
     public boolean takePendingUrgent(long now, boolean safe, boolean busy, int jitter) {
         if (urgentSerial == 0) return false;

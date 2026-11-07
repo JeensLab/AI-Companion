@@ -4,6 +4,7 @@ import dev.aicompanion.OpenRouterConfig;
 import net.minecraft.client.Minecraft;
 import java.util.UUID;
 import dev.aicompanion.CompanionConversation;
+import dev.aicompanion.CompanionConversation.Delivery;
 
 /** Nearby comments. Background requests cannot execute actions or interrupt a conversation. */
 final class CompanionAmbientClient {
@@ -91,13 +92,18 @@ final class CompanionAmbientClient {
                 pending = false;
                 String trace = dev.aicompanion.CompanionDiagnostics.newTrace();
                 var speaker = CompanionVoiceAudio.speaker();
-                if (conversation.revision() != activity || speaker == null || !capturedCompanion.equals(speaker.getUUID()) || !safe(speaker)
-                        || !CompanionVoiceAudio.audible(speaker) || client.screen != null || client.isPaused()) {
+                if (conversation.revision() != activity || speaker == null || !capturedCompanion.equals(speaker.getUUID())) {
                     dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic_dropped", "topic", topic.key()); return;
+                }
+                var delivery = CompanionConversation.decide(safe(speaker), CompanionVoiceAudio.audible(speaker), client.screen != null, client.isPaused());
+                String murmur = delivery == Delivery.DROP ? null : CompanionConversation.fitMurmur(topic.text());
+                if (murmur == null) {
+                    dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic_dropped", "topic", topic.key(),
+                            "reason", delivery == Delivery.DROP ? "not_allowed" : "too_long"); return;
                 }
                 conversation.talked(now(), jitter());
                 dev.aicompanion.CompanionDiagnostics.event(trace, "soul_topic", "scene", scene.name(), "topic", topic.key());
-                CompanionChatScreen.ownTopic(topic.text(), trace);
+                CompanionChatScreen.ownTopic(murmur, trace, delivery == Delivery.VOICE);
             });
         });
     }
@@ -109,7 +115,7 @@ final class CompanionAmbientClient {
         }
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();
-        if (speaker == null || !CompanionVoiceAudio.audible(speaker)) return;
+        if (speaker == null) return;
         var scene = scene(speaker);
         // Initial tracking data is a snapshot, not a new event, except an urgent line still fresh.
         if (!speaker.getUUID().equals(companion)) {
@@ -122,6 +128,9 @@ final class CompanionAmbientClient {
         }
         int current = speaker.socialSequence();
         boolean fresh = conversation.newObservation(current);
+        // An urgent remark waits until the player can hear it; only idle murmurs go on in chat out of earshot.
+        boolean urgentNow = conversation.urgentPending(now()) != 0 || fresh && CompanionConversation.isUrgent(speaker.socialObservation());
+        if (urgentNow && !CompanionVoiceAudio.audible(speaker)) return;
         if (!fresh && conversation.urgentPending() == 0) {
             // A topic needs the model to go on talking, and the memory of the player to know which topics he has raised.
             if (conversation.topicReady(now(), scene) && !busy() && safe(speaker) && OpenRouterConfig.LONG_TERM_MEMORY.get()
@@ -159,9 +168,16 @@ final class CompanionAmbientClient {
                     client.screen != null || client.isPaused() || busy(), wasUrgent);
             if (!rejection.isEmpty()) { discarded(trace, rejection, text, wasUrgent); return; }
             var currentSpeaker = CompanionVoiceAudio.speaker();
-            if (currentSpeaker == null || !capturedCompanion.equals(currentSpeaker.getUUID())
-                    || !safe(currentSpeaker) || !CompanionVoiceAudio.audible(currentSpeaker)) { discarded(trace, "not_heard", text, wasUrgent); return; }
-            CompanionChatScreen.autonomousReply(text, trace);
+            if (currentSpeaker == null || !capturedCompanion.equals(currentSpeaker.getUUID())) { discarded(trace, "not_heard", text, wasUrgent); return; }
+            var delivery = CompanionConversation.decide(safe(currentSpeaker), CompanionVoiceAudio.audible(currentSpeaker),
+                    client.screen != null, client.isPaused());
+            if (delivery == Delivery.DROP || wasUrgent && delivery != Delivery.VOICE) {
+                discarded(trace, "not_heard", text, wasUrgent); return;
+            }
+            // Urgent (HIGH) remarks are exempt from the murmur cap on purpose: a warning must not be cut or dropped.
+            String murmur = wasUrgent ? text : CompanionConversation.fitMurmur(text);
+            if (murmur == null) { discarded(trace, "too_long", text, false); return; }
+            CompanionChatScreen.autonomousReply(murmur, trace, delivery == Delivery.VOICE);
         }));
     }
     /** A dropped urgent remark waits for its one retry; an ordinary one is simply lost. */

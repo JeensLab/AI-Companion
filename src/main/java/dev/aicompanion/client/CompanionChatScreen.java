@@ -248,6 +248,10 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private static void addVoiceReply(String text, String trace, String source) {
+        addVoiceReply(text, trace, source, true);
+    }
+
+    private static void addVoiceReply(String text, String trace, String source, boolean voiced) {
         CompanionMemoryFlow.companionSaid(source, text);
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
         if ("autonomous".equals(source) || "topic".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
@@ -256,6 +260,7 @@ public final class CompanionChatScreen extends Screen {
         Component reply = Component.literal(companionName() + ": " + text).withStyle(ChatFormatting.AQUA);
         appendHistory(reply);
         minecraft.gui.getChat().addMessage(reply);
+        if (!voiced) return;
         InworldTtsClient.speak(text, trace).exceptionally(speechError -> {
             dev.aicompanion.AICompanionMod.LOGGER.warn("Inworld speech could not be played: {}", speechError.getMessage());
             return null;
@@ -263,7 +268,7 @@ public final class CompanionChatScreen extends Screen {
     }
 
     public static void autonomousReply(String text) {
-        autonomousReply(text, CompanionDiagnostics.newTrace());
+        autonomousReply(text, CompanionDiagnostics.newTrace(), true);
     }
 
     /** His own line before or after a deed of his own (CompanionAutonomy): his words as the server wrote them, no model request. */
@@ -273,15 +278,15 @@ public final class CompanionChatScreen extends Screen {
         addVoiceReply(text, trace, "autonomy");
     }
 
-    public static void autonomousReply(String text, String trace) {
+    public static void autonomousReply(String text, String trace, boolean voiced) {
         OpenRouterClient.recordSpokenLine(text);
-        addVoiceReply(text, trace, "autonomous");
+        addVoiceReply(text, trace, "autonomous", voiced);
     }
 
     /** A topic of his own: unlike a remark on an event, it goes to the memory journal with the player's answers to it. */
-    static void ownTopic(String text, String trace) {
+    static void ownTopic(String text, String trace, boolean voiced) {
         OpenRouterClient.recordSpokenLine(text);
-        addVoiceReply(text, trace, "topic");
+        addVoiceReply(text, trace, "topic", voiced);
     }
 
     /** A fight is no time to chat: small talk gets a short brush-off without a model request; orders still go through. */
