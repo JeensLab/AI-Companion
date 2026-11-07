@@ -94,29 +94,9 @@ public final class CompanionWorkCommands {
                 return count >= 1 && count <= 64 ? new PlannedAction("place_block", 0, count, "minecraft:chest") : null;
             } catch (NumberFormatException ignored) { return null; }
         }
-        var take = Pattern.compile("^(?:забери|возьми|достань)(?:\\s+(\\d+))?\\s+(все|все вещи|вещи|ресурсы|дерево|бревна|бревен|камень|камня|булыжник|булыжника|землю|земли)\\s+из сундука$").matcher(value);
-        if (take.matches()) {
-            String filter = switch (take.group(2)) {
-                case "все", "все вещи", "вещи" -> "all";
-                case "дерево", "бревна", "бревен" -> "logs";
-                case "камень", "камня", "булыжник", "булыжника" -> "stone";
-                case "землю", "земли" -> "minecraft:dirt";
-                default -> "resources";
-            };
-            try { int count = take.group(1) == null ? 64 : Integer.parseInt(take.group(1));
-                return count > 0 && count <= 64 ? new PlannedAction("take_items", 0, count, filter) : null;
-            } catch (NumberFormatException ignored) { return null; }
-        }
-        var store = Pattern.compile("^(?:сложи|положи|выгрузи|убери) (ресурсы|вещи|все вещи|все|дерево|бревна|камень|булыжник) в сундук$").matcher(value);
-        if (store.matches()) {
-            String filter = switch (store.group(1)) {
-                case "все", "все вещи" -> "all";
-                case "дерево", "бревна" -> "logs";
-                case "камень", "булыжник" -> "stone";
-                default -> "resources";
-            };
-            return new PlannedAction("store_items", 0, 1, filter);
-        }
+        // Store and take orders, with the container they name («в бочку», «из печи»; «в сундук» as it always was).
+        PlannedAction container = CompanionContainerCommands.parse(value);
+        if (container != null) return container;
         // The field and the harvest need no model either: «собери урожай», «сделай огород», «посади морковь».
         if (bare.matches("^(?:собери|сними|убери)(?: мне| нам)?(?: весь| созревший)? урожай(?: рядом| вокруг| с огорода| с грядок| с фермы)?$"))
             return new PlannedAction("harvest_crops", 0, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, "any");
