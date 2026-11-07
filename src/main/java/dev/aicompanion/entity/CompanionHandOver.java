@@ -95,7 +95,7 @@ final class CompanionHandOver {
                 if (step == CompanionTravel.Step.FAILED && walked) {
                     Boolean none = w.route.noWay(player.blockPosition());
                     if (none == null) { legsWalked = true; return; }
-                    if (none && climb.start(player)) return;
+                    if (climb.startWhenStuck(player, none)) return;
                     w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня."
                             : "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
                     return;
@@ -107,7 +107,7 @@ final class CompanionHandOver {
             if (w.orderHasStalled(level, 240)) {
                 Boolean none = w.route.noWay(player.blockPosition());
                 if (none == null) return;
-                if (none && climb.start(player)) return;
+                if (climb.startWhenStuck(player, none)) return;
                 w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня." : "Не смог к тебе подойти, вещи остались у меня.");
                 return;
             }

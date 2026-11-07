@@ -1,5 +1,7 @@
 package dev.aicompanion.entity;
 
+import java.util.Set;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
@@ -12,7 +14,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
  * honest text. It is kept by the hand-over and used by «иди ко мне» too, and writes nothing into the mine's record.
  */
 final class CompanionClimbToPlayer {
-    private static final int MAX_STEPS = 48, RECHECK_TICKS = 40;
+    private static final int MAX_STEPS = 48, RECHECK_TICKS = 40, ABOVE = 3;
     private static final String STATUS = "Пути к тебе нет, прорубаю ступени наверх.";
 
     private final CompanionWork w;
@@ -26,6 +28,14 @@ final class CompanionClimbToPlayer {
 
     /** The climb is cutting stairs for the order that is on now; the self-rescue leaves him alone then. */
     boolean running() { return running && task == w.taskId; }
+
+    /**
+     * Begins the climb where the walk has no way, or has failed with the player well above him: farther off than the search sees
+     * («no way» is told only within one and a half follow ranges) a pit is a failed walk, never a proven lack of one.
+     */
+    boolean startWhenStuck(Player player, boolean noWay) {
+        return (noWay || player.getBlockY() >= w.owner.getBlockY() + ABOVE) && start(player);
+    }
 
     /** Begins the climb if the player stands no lower and this order had none yet. False: the order goes on to its own ending. */
     boolean start(Player player) {
@@ -62,7 +72,8 @@ final class CompanionClimbToPlayer {
         // In the air the search is skipped and says «no way» to nobody: asked on the ground only.
         if (level.getGameTime() >= nextCheck && w.owner.onGround()) {
             nextCheck = level.getGameTime() + RECHECK_TICKS;
-            if (Boolean.FALSE.equals(w.route.noWay(player.blockPosition()))) return over();
+            var reach = w.route.cells(Set.of(player.blockPosition()), 1);
+            if (reach.found()) return over();
         }
         if (stairs.tick(level) != CompanionExpeditionStairsUp.Result.WORKING || stairs.steps() >= MAX_STEPS) return over();
         return true;

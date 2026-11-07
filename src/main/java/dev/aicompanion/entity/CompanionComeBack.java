@@ -44,7 +44,8 @@ final class CompanionComeBack {
             // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
             Boolean none = w.route.noWay(player.blockPosition());
             if (none == null) return;
-            if (none) { if (w.handOver.climb.start(player)) return; w.finish(false, "Не могу к тебе пройти."); return; }
+            if (w.handOver.climb.startWhenStuck(player, none)) return;
+            if (none) { w.finish(false, "Не могу к тебе пройти."); return; }
             w.finish(false, "Не смог добраться до тебя. Застрял на " + w.owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
         }
     }
