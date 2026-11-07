@@ -226,7 +226,7 @@ public final class CompanionEnduranceTests {
         a.oleg.startWork("gather_stone","",32);Object work=field(a.oleg,"work");
         BlockPos under=a.oleg.blockPosition().below();h.getLevel().setBlock(under,Blocks.STONE.defaultBlockState(),2);
         set(work,"target",under);set(work,"stoneCandidates",new ArrayList<>(List.of(under)));
-        ((java.util.Deque<BlockPos>)field(work,"quarrySoil")).add(under);
+        quarrySoil(work).add(under);
         var mine=field(work,"stoneMining").getClass().getDeclaredMethod("mine",net.minecraft.server.level.ServerLevel.class);mine.setAccessible(true);mine.invoke(field(work,"stoneMining"),h.getLevel());
         h.assertTrue((int)field(field(work,"breaking"),"ticks")==0,"Queued stair under own feet was swung at");
         h.assertTrue(h.getLevel().getBlockState(under).is(Blocks.STONE),"Own support destroyed");h.succeed();
@@ -274,14 +274,14 @@ public final class CompanionEnduranceTests {
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_PICKAXE));
         a.oleg.autonomy().setEnabled(true);set(a.oleg.autonomy(),"workArea",h.absolutePos(a.cell(51,17,48)));set(a.oleg.autonomy(),"starting",true);
         a.oleg.startWork("gather_stone","",32);Object work=field(a.oleg,"work");BlockPos stair=h.absolutePos(a.cell(47,12,48));
-        set(work,"target",stair);set(work,"stoneCandidates",new ArrayList<>(List.of(stair)));((java.util.Deque<BlockPos>)field(work,"quarrySoil")).add(stair);
+        set(work,"target",stair);set(work,"stoneCandidates",new ArrayList<>(List.of(stair)));quarrySoil(work).add(stair);
         var mine=field(work,"stoneMining").getClass().getDeclaredMethod("mine",net.minecraft.server.level.ServerLevel.class);mine.setAccessible(true);mine.invoke(field(work,"stoneMining"),h.getLevel());
         h.assertTrue((int)field(field(work,"breaking"),"ticks")==0,"New quarry started destroying the existing return stair");
         h.assertTrue(h.getLevel().getBlockState(stair).is(Blocks.STONE),"Return stair gone");
         // The final step needs the same protection even when he is only one block below the surface.
         var upper=h.absolutePos(a.cell(50,16,48));a.oleg.setPos(upper.getX()+.5,upper.getY(),upper.getZ()+.5);a.oleg.setOnGround(true);
         a.oleg.startWork("gather_stone","",32);stair=h.absolutePos(a.cell(51,16,48));
-        set(work,"target",stair);set(work,"stoneCandidates",new ArrayList<>(List.of(stair)));((java.util.Deque<BlockPos>)field(work,"quarrySoil")).add(stair);
+        set(work,"target",stair);set(work,"stoneCandidates",new ArrayList<>(List.of(stair)));quarrySoil(work).add(stair);
         mine.invoke(field(work,"stoneMining"),h.getLevel());h.assertTrue((int)field(field(work,"breaking"),"ticks")==0,"Final return step one below the surface was swung at");h.succeed();
     }
 
@@ -418,7 +418,7 @@ public final class CompanionEnduranceTests {
         for(int y=8;y<=10;y++)h.setBlock(a.cell(47,y,48),Blocks.AIR);
         BlockPos plug=h.absolutePos(a.cell(47,11,48));a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_SHOVEL));
         a.oleg.autonomy().setEnabled(true);set(a.oleg.autonomy(),"starting",true);a.oleg.startWork("gather_stone","",32);
-        Object work=field(a.oleg,"work");set(work,"target",plug);set(work,"stoneCandidates",new ArrayList<BlockPos>());((java.util.Deque<BlockPos>)field(work,"quarrySoil")).add(plug);
+        Object work=field(a.oleg,"work");set(work,"target",plug);set(work,"stoneCandidates",new ArrayList<BlockPos>());quarrySoil(work).add(plug);
         var mine=field(work,"stoneMining").getClass().getDeclaredMethod("mine",net.minecraft.server.level.ServerLevel.class);mine.setAccessible(true);mine.invoke(field(work,"stoneMining"),h.getLevel());
         h.assertTrue((int)field(field(work,"breaking"),"ticks")==0,"Surface quarry started opening a plug whose pickup falls into an old shaft");
         h.assertTrue(h.getLevel().getBlockState(plug).is(Blocks.DIRT),"Unsafe shaft plug was mined");h.succeed();
@@ -494,7 +494,7 @@ public final class CompanionEnduranceTests {
     public static void aQueuedStoneStepLosingItsCornerViewChoosesAnotherDescent(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_PICKAXE));a.oleg.startWork("gather_stone","",32);
         BlockPos target=h.absolutePos(a.cell(47,13,49));h.getLevel().setBlock(target,Blocks.STONE.defaultBlockState(),2);
-        Object work=field(a.oleg,"work");set(work,"target",target);set(work,"stoneCandidates",new ArrayList<>(List.of(target)));((java.util.Deque<BlockPos>)field(work,"quarrySoil")).add(target);
+        Object work=field(a.oleg,"work");set(work,"target",target);set(work,"stoneCandidates",new ArrayList<>(List.of(target)));quarrySoil(work).add(target);
         var mine=field(work,"stoneMining").getClass().getDeclaredMethod("mine",net.minecraft.server.level.ServerLevel.class);mine.setAccessible(true);mine.invoke(field(work,"stoneMining"),h.getLevel());
         h.assertTrue((int)field(field(work,"breaking"),"ticks")>0,"Fixture did not begin a real queued diagonal swing");
         h.setBlock(a.cell(47,13,48),Blocks.STONE);h.setBlock(a.cell(46,13,49),Blocks.STONE);mine.invoke(field(work,"stoneMining"),h.getLevel());
@@ -522,4 +522,6 @@ public final class CompanionEnduranceTests {
     }
     static Object field(Object object,String name)throws Exception{var f=object.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(object);}
     static void set(Object object,String name,Object value)throws Exception{var f=object.getClass().getDeclaredField(name);f.setAccessible(true);f.set(object,value);}
+    @SuppressWarnings("unchecked") // reflective read of a private Deque<BlockPos>; the element type is not visible at run time
+    static Deque<BlockPos> quarrySoil(Object work)throws Exception{return (Deque<BlockPos>)field(work,"quarrySoil");}
 }

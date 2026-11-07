@@ -107,7 +107,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Изменение | Проверка |
 | --- | --- |
 | Документация и инструкции | Проверить пути, команды и `git diff --check`; игровой запуск не требуется |
-| Java, ресурсы или сборка | `.\gradlew.bat build` плюс подходящая проверка поведения |
+| Java, ресурсы или сборка | `.\gradlew.bat build` плюс подходящая проверка поведения. Компилятор падает на `unchecked`, `rawtypes` и категории javac по умолчанию (`-Werror` в `build.gradle`); необязательные `deprecation`/`removal` не включены |
 | Игровая механика, планы, навигация | Повседневно `.\scripts\verify-fast.ps1` на Windows или `./scripts/verify-fast.sh` на Linux/macOS: все тесты без трёх длинных сценариев `endurance` в нескольких процессах, итог в `build/diagnostics/fast-summary.json`. Число процессов считается по ядрам и свободной памяти, по умолчанию не больше 4 на обеих ОС; `-Shards <1-4>` (Windows) или `--shards <1-4>` (Linux/macOS) задаёт его явно, 5–8 — только с `-Force` / `--force` и без гарантии стабильности (6 не всегда быстрее, 8 флакуют); `-DryRun` / `--dry-run` только печатает выбранное число. Миры `run/shard-N/world` удаляются перед каждым прогоном. Перед PR один раз полный `.\gradlew.bat runGameTestServer` |
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
