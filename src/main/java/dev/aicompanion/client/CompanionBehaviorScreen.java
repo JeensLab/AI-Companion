@@ -103,16 +103,29 @@ final class CompanionBehaviorScreen extends Screen {
     }
     @Override public void onClose() { minecraft.setScreen(parent); }
 
-    private static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 30, NOTE_FROM_BOTTOM = 64;
+    private static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 30, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
+    /** The page of switches shown when they do not all fit above the note. */
+    private int page;
     /**
      * The switches, every button as wide as a row, stand one under another in the order they were added: from the
      * usual top and 30 apart while there is room, higher up and closer (down to touching) when they would reach the
      * note. So a switch added anywhere in init needs no place of its own, and seven rows fit at a GUI height of 240.
+     * More than fit 24 apart go on pages, turned by a button beside «Назад».
      */
     private void fitRows(int top) {
-        var rows = children().stream().filter(child -> child instanceof Button button && button.getWidth() == ROW_WIDTH)
+        var all = children().stream().filter(child -> child instanceof Button button && button.getWidth() == ROW_WIDTH)
                 .map(Button.class::cast).toList();
-        int bottom = height - NOTE_FROM_BOTTOM - 4, gaps = Math.max(1, rows.size() - 1);
+        int bottom = height - NOTE_FROM_BOTTOM - 4, perPage = Math.max(1, (bottom - HIGHEST_ROW - ROW_HEIGHT) / PAGED_STEP + 1);
+        var rows = all;
+        if (all.size() > perPage) {
+            int pages = (all.size() + perPage - 1) / perPage, shown = page % pages, from = shown * perPage;
+            rows = all.subList(from, Math.min(all.size(), from + perPage));
+            for (Button row : all) row.visible = rows.contains(row);
+            addRenderableWidget(Button.builder(Component.literal("Ещё (" + (shown + 1) + "/" + pages + ")"), b -> {
+                page = shown + 1; rebuildWidgets();
+            }).bounds(width / 2 + 54, height - 35, 100, 20).build());
+        }
+        int gaps = Math.max(1, rows.size() - 1);
         int step = Math.max(ROW_HEIGHT, Math.min(ROW_STEP, (bottom - HIGHEST_ROW - ROW_HEIGHT) / gaps));
         int y = Math.max(HIGHEST_ROW, Math.min(top, bottom - ROW_HEIGHT - step * gaps));
         for (Button row : rows) { row.setY(y); y += step; }
