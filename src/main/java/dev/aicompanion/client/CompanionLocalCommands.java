@@ -55,6 +55,8 @@ public final class CompanionLocalCommands {
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
         if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " " + (workAction.item().isEmpty() ? "resources" : workAction.item());
+        String water = CompanionWorkCommands.water(text, companionName);
+        if (water != null) return water;
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
@@ -100,6 +102,12 @@ public final class CompanionLocalCommands {
             case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[3]), parts[4]);
             default -> new PlannedAction(parts[1], 0, 1);
         };
+    }
+
+    /** The plan a local command runs: its step, and for «принеси воды» the hand-over of what it got after it. */
+    public static java.util.List<PlannedAction> actions(String command) {
+        PlannedAction action = action(command);
+        return command.endsWith(" give") ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
     }
 
     /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
