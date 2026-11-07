@@ -10,11 +10,13 @@ import java.util.List;
 
 /**
  * The bench he set down on a step of his stairs to make a pickaxe is taken up by hand again before he goes on: in a passage one cell
- * wide it would shut the way. On the surface, the bench of the kit he set down himself goes back into the bag before the way down. The cells are the mine's temporary blocks, which are saved, so a taking cut short by a quit goes on
- * after the load. The effort is bounded per step; a bench left standing stays in the record and the next step tries again.
+ * wide it would shut the way. On the surface, the bench of the kit he set down himself goes back into the bag before the way down, from as
+ * far as the kit was made (void of seed 7: forty-eight blocks from the entrance). The cells are the mine's temporary blocks, which are saved,
+ * so a taking cut short by a quit goes on after the load. The effort is bounded per step; a bench left standing stays in the record and the
+ * next step tries again.
  */
 final class CompanionExpeditionBench {
-    private static final int PATIENCE = 20 * 15, PICKUP_WAIT = 20 * 3, NEAR = 24;
+    private static final int PATIENCE = 20 * 30, PICKUP_WAIT = 20 * 3, NEAR = 24, KIT_NEAR = 64;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -77,6 +79,7 @@ final class CompanionExpeditionBench {
             if (state.is(Blocks.CRAFTING_TABLE) && distance <= bestDistance) { best = cell; bestDistance = distance; }
         }
         if (best != null || w.items.countCarried(Items.CRAFTING_TABLE) > 0 || !CompanionExpeditionRecord.underSky(level, owner.blockPosition().above())) return best;
+        bestDistance = (double) KIT_NEAR * KIT_NEAR;
         for (BlockPos cell : owner.places.placed("minecraft:crafting_table")) {
             if (!level.hasChunkAt(cell) || !level.getBlockState(cell).is(Blocks.CRAFTING_TABLE)) continue;
             double distance = owner.distanceToSqr(cell.getCenter());

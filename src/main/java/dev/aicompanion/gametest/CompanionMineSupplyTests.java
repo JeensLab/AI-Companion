@@ -39,7 +39,8 @@ public final class CompanionMineSupplyTests {
     private static final int COAL_STEP = 5, TORCHES_SHORT = 32;
     /** The cave he is found in: below the entrance and aside of it, a chamber of three by three. */
     private static final int CAVE_BELOW = 20, CAVE_ASIDE = 10, CAVE_HALF = 1, CAVE_HEIGHT = 2, CAVE_TIMEOUT = 400;
-    private static final int BENCH_ASIDE = 6, SETTLE = 5;
+    /** The bench of the kit stands where the kit was made, beyond the reach the mine's own temporary blocks are looked for in (void of seed 7: forty-eight blocks from the entrance). */
+    private static final int BENCH_ASIDE = 20, SETTLE = 5;
 
     private CompanionMineSupplyTests() { }
 
@@ -96,19 +97,19 @@ public final class CompanionMineSupplyTests {
         });
     }
 
-    /** The bench of the kit stayed by the entrance after a craft on the surface: before the way down it goes back into the bag, so that pickaxes can be made below. */
+    /** The bench of the kit stayed where the kit was made, a walk from the entrance: before the way down it goes back into the bag, so that pickaxes can be made below. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void takesHisOwnBenchUpBeforeGoingDown(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
-        BlockPos bench = new BlockPos(CENTER + BENCH_ASIDE, GROUND + 1, CENTER);
+        BlockPos bench = new BlockPos(CENTER + BENCH_ASIDE, GROUND + 1, CENTER + BENCH_ASIDE);
         h.setBlock(bench, Blocks.CRAFTING_TABLE);
         BlockPos at = h.absolutePos(bench);
         c.rememberPlaced(at);
         // A tick on the ground first: a fresh spawn is still in the air, and no walk to the bench is searched from there.
         h.runAfterDelay(SETTLE, () -> start(h, c, 1));
         h.succeedWhen(() -> h.assertTrue(count(c, Items.CRAFTING_TABLE) == 1 && !h.getLevel().getBlockState(at).is(Blocks.CRAFTING_TABLE),
-                "The bench by the entrance is not in his bag | " + report(c)));
+                "The bench of the kit is not in his bag | " + report(c)));
     }
 
     /** The fact about the surface coal is saved with and without a mine on record, survives the start of a mine, and an old save loads it as unknown. */
