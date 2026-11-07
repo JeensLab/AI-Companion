@@ -5,6 +5,9 @@ import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionDialogue;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
+import dev.aicompanion.client.CompanionPlanRequirements;
+import dev.aicompanion.client.CompanionReply;
+import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.client.CompanionWorkCommands;
 import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
@@ -255,6 +258,27 @@ public final class CompanionContainerTests {
             helper.assertTrue(!companion.didLastTaskSucceed() && shulker.isEmpty() && count(companion, Items.COBBLESTONE) == 5,
                     "The closed shulker box was opened: " + companion.getLastTaskResult());
         });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_model_path")
+    public static void theModelCanNameAContainer(GameTestHelper helper) {
+        String schema = OpenRouterClient.planTool().toString();
+        for (String kind : new String[] {"minecraft:barrel", "minecraft:furnace", "minecraft:hopper", "minecraft:shulker_box", "near_player", "inside_house"})
+            helper.assertTrue(schema.contains("\"" + kind + "\""), "The plan schema does not offer " + kind);
+        String barrelPlan = "[{\"action\":\"store_items\",\"item\":\"stone\",\"count\":4,\"location\":\"minecraft:barrel\"}]";
+        PlannedAction parsed = CompanionPlanCodec.parsePlan(JsonParser.parseString(barrelPlan)).get(0);
+        helper.assertTrue("minecraft:barrel".equals(parsed.location()), "The codec dropped the barrel: " + parsed);
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_requirements")
+    public static void aPlacementRequestKeepsTheNamedContainerStep(GameTestHelper helper) {
+        PlannedAction named = new PlannedAction("store_items", 0, 1, "all", "auto", "minecraft:barrel");
+        CompanionReply reply = CompanionPlanRequirements.apply("поставь верстак и сложи вещи в бочку", new CompanionReply("", List.of(named)));
+        long stores = reply.actions().stream().filter(step -> "store_items".equals(step.type())).count();
+        helper.assertTrue(stores == 1 && reply.actions().stream().anyMatch(step -> "minecraft:barrel".equals(step.location())),
+                "The barrel step was replaced: " + reply.actions());
+        helper.succeed();
     }
 
     private static Container container(GameTestHelper helper, BlockPos pos, Block block) {

@@ -75,6 +75,15 @@ public final class CompanionPlanCodec {
         return new CompanionReply(reply, List.copyOf(actions));
     }
 
+    /** The `location` values the model is offered: the two places and every container a store or take order may name. */
+    public static final List<String> LOCATIONS = locations();
+
+    private static List<String> locations() {
+        List<String> names = new ArrayList<>(List.of("near_player", "inside_house"));
+        names.addAll(dev.aicompanion.entity.CompanionContainers.KINDS.stream().sorted().toList());
+        return List.copyOf(names);
+    }
+
     /** near_player for any step; inside_house for placing and storing; a container block id for store_items and take_items only. */
     private static boolean validLocation(String location, String type) {
         boolean storage = Set.of("store_items", "take_items").contains(type);

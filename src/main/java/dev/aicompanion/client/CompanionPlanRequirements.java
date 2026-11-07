@@ -44,8 +44,9 @@ public final class CompanionPlanRequirements {
         }
         if (text.matches("(?sU).*\\b(сложи|сложить|убери|убрать)\\b.*(вещ|предмет|ресурс).*")) {
             String filter = text.matches("(?sU).*\\b(все|свои)\\b.*") ? "all" : "resources";
-            result.removeIf(step -> step.type().equals("store_items"));
-            result.add(new PlannedAction("store_items", 0, 1, filter, "auto", location));
+            result.removeIf(step -> step.type().equals("store_items") && !CompanionContainers.KINDS.contains(step.location()));
+            if (result.stream().noneMatch(step -> step.type().equals("store_items")))
+                result.add(new PlannedAction("store_items", 0, 1, filter, "auto", location));
         }
         if (result.size() > CompanionPlanCodec.MAX_STEPS) throw new IllegalStateException("Просьба содержит слишком много шагов. Раздели ее на части.");
         return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result), List.copyOf(result));
