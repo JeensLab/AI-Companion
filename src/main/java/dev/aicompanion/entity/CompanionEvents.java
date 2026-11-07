@@ -121,8 +121,10 @@ public final class CompanionEvents {
     private static int setFollowing(ServerPlayer player, boolean following) {
         CompanionEntity companion = resolveCanonical(player, true);
         if (companion != null) {
+            CompanionAgenda.playerOrder(player, companion, following ? "follow" : "wait");
+            if (!following) companion.parkWork();
             companion.goals().playerOrder(following ? "follow" : "wait"); companion.autonomy().playerOrder(following ? "follow" : "wait");
-            CompanionAgenda.playerOrder(player, companion, following ? "follow" : "wait"); companion.setFollowing(following);
+            companion.setFollowing(following);
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
                 : following ? "Компаньон следует за тобой." : "Компаньон ждёт здесь."));
@@ -132,8 +134,10 @@ public final class CompanionEvents {
     private static int setProtecting(ServerPlayer player, boolean protecting) {
         CompanionEntity companion = resolveCanonical(player, true);
         if (companion != null) {
+            CompanionAgenda.playerOrder(player, companion, protecting ? "protect" : "stop_protect");
+            if (protecting) companion.parkWork();
             companion.goals().playerOrder(protecting ? "protect" : "stop_protect"); companion.autonomy().playerOrder(protecting ? "protect" : "stop_protect");
-            CompanionAgenda.playerOrder(player, companion, protecting ? "protect" : "stop_protect"); companion.setProtecting(protecting);
+            companion.setProtecting(protecting);
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
                 : protecting ? "Компаньон будет защищать тебя от монстров."
@@ -239,11 +243,24 @@ public final class CompanionEvents {
         CompanionEntity companion = resolveCanonical(player, false);
         if (companion != null) {
             companion.goals().playerOrder("stop"); companion.autonomy().playerOrder("stop");
-            CompanionAgenda.playerOrder(player, companion, "stop"); companion.stopGathering();
+            CompanionAgenda.playerOrder(player, companion, "stop"); companion.stopGatheringForPlayer();
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон сейчас не загружен в мир."
                 : "Компаньон остановил текущую задачу."));
         return companion == null ? 0 : 1;
+    }
+
+    /** An order that cannot wait puts the rest of the dig aside before the order stops it; he digs it once he is free (CompanionParkedOrder). */
+    private static void parkForUrgentOrder(CompanionEntity companion, String action) {
+        if (action.equals("come") || action.equals("wait") || action.equals("protect")) companion.parkWork();
+    }
+
+    /** «Продолжай»: a long goal first, then the pickaxe order, then the dig that an urgent order put aside. */
+    private static CompanionActionResult resumeGoalOrParked(ServerPlayer player, CompanionEntity companion) {
+        CompanionActionResult resumed = CompanionAgenda.resume(player, companion);
+        if (resumed != null) return resumed;
+        CompanionActionResult back = companion.goals().outstanding() ? null : companion.parked.resume();
+        return back != null ? back : companion.goals().resume();
     }
 
     /** Called on the integrated server thread; the returned result reflects completed mutations. */
@@ -276,6 +293,10 @@ public final class CompanionEvents {
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         // Naming the home is a word, not an order: whatever he is busy with goes on.
         if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
+            // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
+            CompanionAgenda.playerOrder(player, companion, action);
+            // The dig is put aside before the goal hears the order and ends it; neither the agenda's, the goal's nor a deed's dig is parked.
+            parkForUrgentOrder(companion, action);
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
@@ -284,8 +305,6 @@ public final class CompanionEvents {
                 // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
-            // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
-            CompanionAgenda.playerOrder(player, companion, action);
         }
         String previousTrace = companion.diagnosticTrace();
         boolean wasWorking = companion.isGatheringTask();
@@ -296,10 +315,7 @@ public final class CompanionEvents {
             case "goal_pickaxes" -> CompanionAgenda.working(player)
                     ? CompanionActionResult.blocked("Сначала закончу долгую цель. Скажи «отмени цель», если кирки важнее.")
                     : companion.goals().accept(player);
-            case "goal_resume" -> {
-                CompanionActionResult resumed = CompanionAgenda.resume(player, companion);
-                yield resumed != null ? resumed : companion.goals().resume();
-            }
+            case "goal_resume" -> resumeGoalOrParked(player, companion);
             case "goal_cancel" -> {
                 CompanionActionResult cancelled = CompanionAgenda.cancel(player, companion);
                 if (cancelled != null) yield cancelled;
@@ -342,7 +358,7 @@ public final class CompanionEvents {
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
             case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
-            case "stop" -> { companion.stopGathering(); yield CompanionActionResult.ok("Ладно, остановился."); }
+            case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok("Ладно, остановился."); }
             case "come" -> {
                 companion.setFollowing(false);
                 yield companion.startWork("come", "", 1);

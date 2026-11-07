@@ -45,7 +45,7 @@ public final class CompanionTaskBoard {
                 if (shown.work() <= 0 || c.activeWorkId() != shown.work()) return;
                 if (c.goals().ownsWork(shown.work())) c.goals().cancel();
                 else if (c.autonomy().running()) c.autonomy().setEnabled(false);
-                else c.stopGathering();
+                else c.stopGatheringForPlayer();
             }
             case "cancel_autonomy" -> { if (shown.autonomous()) c.autonomy().setEnabled(false); }
             default -> { }

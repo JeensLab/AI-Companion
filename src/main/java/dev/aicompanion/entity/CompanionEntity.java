@@ -163,6 +163,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionAutonomy autonomy = new CompanionAutonomy(this);
     final CompanionGoals goals = new CompanionGoals(this);
     public CompanionGoals goals() { return goals; }
+    final CompanionParkedOrder parked = new CompanionParkedOrder(this);
+    public boolean parkWork() { return parked.park(); }
     private final CompanionLighting lighting = new CompanionLighting(this);
     public CompanionLighting lighting() { return lighting; }
     /** «Порядок и запас»: deeds of his own while the player asks for nothing (CompanionAutonomy). */
@@ -675,13 +677,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {
         boolean canWaitForDescent = (action.equals("come") || action.equals("hunt_mobs")) && !work.isActive() && !gatheringLogs && !gatheringDirt;
-        if (hasActiveWorkOrder() && !canWaitForDescent) return CompanionActionResult.failed("Сначала нужно завершить или отменить текущую работу.");
+        if (hasActiveWorkOrder() && !canWaitForDescent) return CompanionActionResult.failed("Погоди, доделаю " + parked.currentDeed() + " — потом.");
         places.discoverTables(); refreshPlaces();
         // Drops of the last order still on the ground are picked up first, not forgotten (review 22.10, М2).
         setFollowing(false, true);
         loot.resumeCollection();
         CompanionActionResult result = work.start(action, item, count, location);
-        if (!result.success()) finishFollowing();
+        if (result.success()) parked.replacedBy(action); else finishFollowing();
         recordActionResult(result);
         syncWorkState();
         return result;
@@ -858,6 +860,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         lighting.tick();
         if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
         goals.tick();
+        parked.tick();
         // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
         // (CompanionGaze, owner 29.10). Work and hunting keep the eyes entirely: he does not turn even to talk (owner 31.10).
         if (gazeTalkTicks > 0) {
@@ -990,6 +993,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void startGatheringDirtForWork(int count) { gathering.startGatheringDirtForWork(count); }
     void startGatheringDirtForWork(int count, CompanionGround ground) { gathering.startGatheringDirtForWork(count, ground); }
     public void stopGathering() { gathering.stopGathering(); }
+    public void stopGatheringForPlayer() { parked.drop(); gathering.stopGathering(); }
 
     ServerPlayer getOwnerPlayer() {
         if (!(level() instanceof ServerLevel serverLevel) || ownerId == null) return null;

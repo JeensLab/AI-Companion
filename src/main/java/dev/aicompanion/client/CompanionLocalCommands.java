@@ -127,10 +127,23 @@ public final class CompanionLocalCommands {
     /** The reason {@code cancelPendingPlans} gets for a cancel word: the queue ends its tasks as the player's cancel, so a parked smelt is released. */
     public static final String PLAYER_CANCEL = "player_cancel";
 
-    /** «Отмена» and «отмени…» cancel for good; «стоп» and the other stop words only stop, and a smelt parked meanwhile is orphaned for him to collect. */
+    /**
+     * «Отмена» and «отмени…» cancel for good; «стоп» and the other stop words only stop, and a smelt parked meanwhile is orphaned for him to collect.
+     * «Иди сюда», «стой» and «защищай» give URGENT_ORDER: the dig that is running is put aside for later instead.
+     */
     public static String cancelReason(String text, String action) {
         boolean cancel = "companion stop".equals(action) && text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').matches("(?sU).*\\b(отмена|отмени)\\b.*");
-        return cancel ? PLAYER_CANCEL : "local_command";
+        return cancel ? PLAYER_CANCEL : URGENT_COMMANDS.contains(action) ? URGENT_ORDER : "local_command";
+    }
+
+    /** The reason for an order that cannot wait for the dig to end («иди сюда», «стой», «защищай»): the dig is put aside for later, not stopped. */
+    public static final String URGENT_ORDER = "urgent_order";
+    private static final java.util.Set<String> URGENT_COMMANDS = java.util.Set.of("companion summon", "companion stay", "companion guard");
+    private static final java.util.Set<String> URGENT_ACTIONS = java.util.Set.of("come", "wait", "protect");
+
+    /** The reason a model's plan that starts with a priority order cancels the queue for. */
+    public static String priorityReason(java.util.List<PlannedAction> actions) {
+        return URGENT_ACTIONS.contains(actions.getFirst().type()) ? URGENT_ORDER : "priority_player_order";
     }
 
     public static final String FIGHT_HUSH = "Помолчи, я тут занят мобом.";
