@@ -16,11 +16,15 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A stone pickaxe made on the stairs: the passage is one cell wide and a stone lies on every step, so the bench goes on a step, the
@@ -71,9 +75,9 @@ public final class CompanionMineBenchTests {
         });
     }
 
-    /** Items lie in the only free cell and do not matter; a mob standing there does. */
+    /** A mob on the only free step neither stops the craft nor gets a bench over it: the bench goes into the wall beside the stairs. */
     @GameTest(template = "marathon_cave", timeoutTicks = 200)
-    public static void aBenchGoesOverAnItemButNotOverAMob(GameTestHelper h) {
+    public static void aBenchGoesIntoTheWallNotOverAMobOnTheStep(GameTestHelper h) {
         mountain(h);
         CompanionEntity c = rig(h);
         List<BlockPos> stairs = carve(h, c);
@@ -82,11 +86,10 @@ public final class CompanionMineBenchTests {
         Cow cow = h.spawn(EntityType.COW, rel(h, behind));
         cow.setNoAi(true);
         cow.setPersistenceRequired();
-        CompanionActionResult blocked = c.craftItemResult("minecraft:stone_pickaxe", 1);
-        h.assertTrue(!blocked.success() && count(c, Items.STONE_PICKAXE) == 0 && tables(h) == 0, "A bench was set down over a cow: " + blocked.message() + " | " + report(c));
-        cow.discard();
         CompanionActionResult made = c.craftItemResult("minecraft:stone_pickaxe", 1);
-        h.assertTrue(made.success() && count(c, Items.STONE_PICKAXE) == 1 && tables(h) == 1, "No bench over the stone lying on the step: " + made.message() + " | " + report(c));
+        h.assertTrue(made.success() && count(c, Items.STONE_PICKAXE) == 1, "The pickaxe was not made beside the cow: " + made.message() + " | " + report(c));
+        h.assertTrue(!h.getBlockState(rel(h, behind)).is(Blocks.CRAFTING_TABLE) && cow.isAlive(), "A bench was set down over the cow | " + report(c));
+        assertInNiche(h, c, stairs, Blocks.CRAFTING_TABLE);
         h.succeed();
     }
 
@@ -128,6 +131,53 @@ public final class CompanionMineBenchTests {
             h.assertTrue(c.mineSite().stands().size() > STAIRS, "The bench he cannot take holds the order: " + c.mineSite().stands().size() + " stands | " + report(c));
             h.assertTrue(tables(h) == 1 && c.mineSite().temporary().contains(left), "The bench left standing is not in the record: " + c.mineSite().temporary());
         });
+    }
+
+    /** The plan's craft in his mine: the bench goes into a niche cut in the wall beside the stairs, not onto a step, and is a temporary block of the mine. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    public static void aPlanBenchInTheMineGoesIntoAWallNicheAndIsTemporary(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carve(h, c);
+        BlockPos at = stairs.get(STAIRS);
+        c.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        CompanionActionResult made = c.craftItemResult("minecraft:stone_pickaxe", 1);
+        h.assertTrue(made.success() && count(c, Items.STONE_PICKAXE) == 1, "The pickaxe was not made: " + made.message() + " | " + report(c));
+        assertInNiche(h, c, stairs, Blocks.CRAFTING_TABLE);
+        h.succeed();
+    }
+
+    /** The same for a furnace set down by the place-block order. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 200)
+    public static void aPlanFurnaceInTheMineGoesIntoAWallNicheAndIsTemporary(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        c.setItem(7, new ItemStack(Items.FURNACE));
+        List<BlockPos> stairs = carve(h, c);
+        BlockPos at = stairs.get(STAIRS);
+        c.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        CompanionActionResult placed = c.placeBlockResult("minecraft:furnace");
+        h.assertTrue(placed.success() && count(c, Items.FURNACE) == 0, "The furnace was not set down: " + placed.message() + " | " + report(c));
+        assertInNiche(h, c, stairs, Blocks.FURNACE);
+        h.succeed();
+    }
+
+    /** One block of this kind stands, on rock beside a cell of the stairs and not on any of them, and the mine's record holds it as temporary. */
+    private static void assertInNiche(GameTestHelper h, CompanionEntity c, List<BlockPos> stairs, Block block) {
+        Set<BlockPos> way = new HashSet<>();
+        for (BlockPos stand : stairs) way.addAll(CompanionShaftPlan.column(stand));
+        List<BlockPos> found = new ArrayList<>();
+        for (int x = 1; x < SIZE - 1; x++) for (int z = 1; z < SIZE - 1; z++) for (int y = 1; y <= GROUND + 1; y++) {
+            BlockPos rel = new BlockPos(x, y, z);
+            if (h.getBlockState(rel).is(block)) found.add(h.absolutePos(rel));
+        }
+        h.assertTrue(found.size() == 1, "Expected one " + block + ", found " + found + " | " + report(c));
+        BlockPos at = found.get(0);
+        h.assertTrue(!way.contains(at), "The block stands on a cell of the stairs: " + rel(h, at).toShortString());
+        boolean beside = false;
+        for (Direction side : Direction.Plane.HORIZONTAL) beside |= way.contains(at.relative(side));
+        h.assertTrue(beside, "The block is not beside the stairs: " + rel(h, at).toShortString());
+        h.assertTrue(c.mineSite().temporary().contains(at), "The block is not a temporary one of the mine: " + c.mineSite().temporary());
     }
 
     private static long start(GameTestHelper h, CompanionEntity c) {
