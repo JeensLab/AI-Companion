@@ -25,6 +25,10 @@ final class CompanionComeBack {
         if (meet == null || !meet.equals(player.blockPosition()) || w.owner.dragonBreath.onTheWay(player.blockPosition())) w.orderProgressPosition = null;
         if (meet == null) { w.owner.getNavigation().stop(); return; }
         if (!meet.equals(player.blockPosition())) { if (w.route.follow(meet, 3) != CompanionTravel.Step.WALKING) w.owner.travel().reset(); return; }
+        if (w.handOver.climb.running()) {
+            if (w.handOver.climb.tick(level, player)) return;
+            comeFailedAt = null;
+        }
         w.owner.workStatus("Пытаюсь добраться до игрока.");
         // In legs round walls and ridges, as far as the way goes (CompanionTravel): the player may be near by the straight line and
         // far by the way. Legs that came to nothing are not started again from the same spot at once: the self-rescue takes him over
@@ -40,7 +44,7 @@ final class CompanionComeBack {
             // No way at all is told as such; «застрял» is for a way that exists and that he could not get on along.
             Boolean none = w.route.noWay(player.blockPosition());
             if (none == null) return;
-            if (none) { w.finish(false, "Не могу к тебе пройти."); return; }
+            if (none) { if (w.handOver.climb.start(player)) return; w.finish(false, "Не могу к тебе пройти."); return; }
             w.finish(false, "Не смог добраться до тебя. Застрял на " + w.owner.blockPosition().toShortString() + ". Иду за тобой дальше, как получится."); return;
         }
     }
