@@ -56,6 +56,8 @@ public final class CompanionAgendaData extends SavedData {
         boolean idleSaid;
         /** The top-up of supplies for the mine failed (no game to hunt): the next mine step goes down with what he has, once. */
         boolean mineAsIs;
+        /** The top-up for food found no game while diamonds are already in the bag: they go to the player and the goal ends with them. Not saved: a reload hunts once more. */
+        boolean handOverShort;
         /** The iron is out of the ore search's reach (too far down, or none seen): the next step digs down, then the search looks again. Not saved: a reload finds out again. */
         boolean descendForOre;
         /** The goal has gone out once for the iron of a shield, finished or not: it does not go again, and a reload does not give it back. */
