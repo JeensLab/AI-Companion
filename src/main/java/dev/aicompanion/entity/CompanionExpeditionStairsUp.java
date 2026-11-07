@@ -27,6 +27,9 @@ final class CompanionExpeditionStairsUp {
     private final CompanionWork w;
     private final CompanionEntity owner;
     private final CompanionExpeditionDig dig;
+    /** The mine's steps go into its record of the way up; a climb for another goal (to the player) leaves the record alone and says its own line. */
+    private final boolean recordsWay;
+    private final String status;
     private final Set<Long> refused = new HashSet<>();
     private BlockPos goal, from, to;
     private Direction dir;
@@ -36,10 +39,14 @@ final class CompanionExpeditionStairsUp {
     private CompanionExpeditionFloor laying;
     private String why = "";
 
-    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig) {
+    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig) { this(w, dig, true, null); }
+
+    CompanionExpeditionStairsUp(CompanionWork w, CompanionExpeditionDig dig, boolean recordsWay, String status) {
         this.w = w;
         this.owner = w.owner;
         this.dig = dig;
+        this.recordsWay = recordsWay;
+        this.status = status;
     }
 
     void begin(BlockPos goal) {
@@ -74,10 +81,10 @@ final class CompanionExpeditionStairsUp {
             moved = true;
         }
         dig.flush();
-        w.mine.wayCut(to);
+        if (recordsWay) w.mine.wayCut(to);
         steps++;
         stuck = 0;
-        owner.workStatus("Своей лестницы наверх нет, прокапываю новую: ступень " + steps + ", ноги на высоте " + to.getY() + ".");
+        owner.workStatus(status != null ? status : "Своей лестницы наверх нет, прокапываю новую: ступень " + steps + ", ноги на высоте " + to.getY() + ".");
         to = null;
         return steps >= MAX_STEPS ? stop("лестница наверх вышла слишком длинной") : Result.WORKING;
     }

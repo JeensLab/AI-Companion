@@ -21,7 +21,10 @@ final class CompanionHandOver {
     /** Near by the legs' measure but not yet within reach and sight: the last short step to the player's feet is being walked. */
     private boolean closing;
 
-    CompanionHandOver(CompanionWork w) { this.w = w; }
+    /** Stairs cut up to a player who stands higher when no way leads to him; «иди ко мне» uses it too. */
+    final CompanionClimbToPlayer climb;
+
+    CompanionHandOver(CompanionWork w) { this.w = w; this.climb = new CompanionClimbToPlayer(w); }
 
     private boolean giftMatches(ItemStack stack) {
         if (stack.isEmpty()) return false;
@@ -48,6 +51,10 @@ final class CompanionHandOver {
         w.owner.movementIntent(player.blockPosition());
         w.owner.getLookControl().setLookAt(player, 30, 30);
         if (w.owner.distanceToSqr(player) > 3.2 * 3.2 || !w.owner.hasLineOfSight(player)) {
+            if (climb.running()) {
+                if (climb.tick(level, player)) return;
+                legsFailedAt = null; legsWalked = false; closing = false;
+            }
             boolean walking = w.owner.travel().goal() != null;
             // In a jump the leg stays as it is.
             if (walking && !w.owner.onGround() && !w.owner.isInWater()) return;
@@ -88,6 +95,7 @@ final class CompanionHandOver {
                 if (step == CompanionTravel.Step.FAILED && walked) {
                     Boolean none = w.route.noWay(player.blockPosition());
                     if (none == null) { legsWalked = true; return; }
+                    if (none && climb.start(player)) return;
                     w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня."
                             : "Не смог к тебе подойти: застрял на " + w.owner.blockPosition().toShortString() + ". Вещи остались у меня.");
                     return;
@@ -99,6 +107,7 @@ final class CompanionHandOver {
             if (w.orderHasStalled(level, 240)) {
                 Boolean none = w.route.noWay(player.blockPosition());
                 if (none == null) return;
+                if (none && climb.start(player)) return;
                 w.finish(false, none ? "Не могу к тебе пройти, вещи остались у меня." : "Не смог к тебе подойти, вещи остались у меня.");
                 return;
             }

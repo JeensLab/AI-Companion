@@ -287,6 +287,8 @@ public final class CompanionWork {
         if (isActive() && phase == Phase.ORE && oreExit != null) return false;
         // The mine expedition walks and digs its own cells: its walls are the plan, not a trap, unless rock shuts the climb.
         if (isActive() && job == Job.EXPEDITION) return expedition.cuttingOut();
+        // The stairs cut up to a player who stands higher are the plan too.
+        if (isActive() && handOver.climb.running()) return false;
         // Roofs and crowns are interaction targets, not movement destinations.
         return !isActive() || job != Job.HOUSE && job != Job.PEN && phase != Phase.WOOD
                 || workOrigin != null && owner.getY() < workOrigin.getY() - 1.25;
