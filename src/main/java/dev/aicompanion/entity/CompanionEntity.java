@@ -137,6 +137,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
     private boolean guardByPlayer = true;
+    private boolean otherContainers = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -613,6 +614,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether the guard order picks the monster nearest to the player (the player can turn it off: then, as before, the nearest to him). */
     public boolean guardByPlayer() { return guardByPlayer; }
     public void setGuardByPlayer(boolean on) { guardByPlayer = on; }
+    /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
+    public boolean otherContainers() { return otherContainers; }
+    public void setOtherContainers(boolean on) { otherContainers = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }

@@ -6,8 +6,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -387,9 +385,11 @@ public final class CompanionWork {
     public CompanionActionResult start(String action, String item, int count, String location) {
         cancel();
         if (!(owner.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для работы нужен загруженный мир.");
-        if (!"walk_heading".equals(action) && (count < 1 && !("smelt_items".equals(action) && count == ALL_CARRIED) || count > 64)) return CompanionActionResult.failed("За раз можно добыть от 1 до 64 блоков.");
-        insideHouse = "inside_house".equals(location);
-        if (!insideHouse && !"near_player".equals(location)) return CompanionActionResult.failed("Неизвестное место выполнения.");
+        CompanionActionResult switchedOff = CompanionChests.switchedOff(owner, action, location);
+        if (switchedOff != null) return switchedOff;
+        if (!"walk_heading".equals(action) && !CompanionChests.countOk(action, count, location)) return CompanionChests.COUNT_REFUSED;
+        insideHouse = "inside_house".equals(location); chests.kind = CompanionChests.kindFor(action, location);
+        if (!insideHouse && chests.kind == null && !"near_player".equals(location)) return CompanionActionResult.failed("Неизвестное место выполнения.");
         if (insideHouse && !house.interiorAvailable(level)) return CompanionActionResult.blocked("Не могу подтвердить, где сейчас наш дом. Снаружи вместо этого ставить не буду.");
         switch (action) {
             case "gather_stone" -> { job = Job.STONE; phase = Phase.PICKAXE; wantedStone = count; }
@@ -545,7 +545,7 @@ public final class CompanionWork {
             completedResult = CompanionActionResult.cancelled("Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote());
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
-        lots.clear(); heading = null;
+        lots.clear(); heading = null; chests.kind = null;
         clearCracks();
         closeChest();
         house.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset();
@@ -763,15 +763,15 @@ public final class CompanionWork {
     void clearCracks() { breaking.reset(); }
     void closeChest() {
         if (openedChest != null && owner.level() instanceof ServerLevel level && level.hasChunkAt(openedChest)
-                && level.getBlockState(openedChest).getBlock() instanceof ChestBlock) {
+                && CompanionContainers.opens(level.getBlockState(openedChest))) {
             animateChest(level, openedChest, 0);
-            level.playSound(null, openedChest, SoundEvents.CHEST_CLOSE, SoundSource.BLOCKS, 0.5F, 1.0F);
+            CompanionContainers.playClose(level, openedChest);
         }
         openedChest = null;
     }
     void animateChest(ServerLevel level, BlockPos pos, int open) {
         BlockState state = level.getBlockState(pos);
-        level.blockEvent(pos, state.getBlock(), 1, open);
+        level.blockEvent(pos, state.getBlock(), 1, open); CompanionContainers.showBarrel(level, pos, state, open != 0);
         if (state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
             BlockPos other = pos.relative(ChestBlock.getConnectedDirection(state));
             if (level.hasChunkAt(other) && level.getBlockState(other).getBlock() == state.getBlock()) level.blockEvent(other, state.getBlock(), 1, open);

@@ -249,21 +249,26 @@ public final class CompanionSortingTests {
         });
     }
 
-    /** Protective: a trapped chest and a barrel are not in the set, whatever lies in them. */
+    /** A trapped chest is not in the set, whatever lies in it; a barrel is sort storage like a chest: its items are merged and ordered, none lost. */
     @GameTest(template = "tall_tree", timeoutTicks = 2000)
-    public static void trappedChestAndBarrelAreLeftAlone(GameTestHelper helper) {
+    public static void trappedChestIsLeftAloneAndBarrelIsSorted(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); bagOf(companion);
         Container a = chest(helper, 9);
         helper.setBlock(new BlockPos(12, 1, 13), Blocks.TRAPPED_CHEST); helper.setBlock(new BlockPos(15, 1, 13), Blocks.BARREL);
         Container trap = (Container)helper.getBlockEntity(new BlockPos(12, 1, 13)), barrel = (Container)helper.getBlockEntity(new BlockPos(15, 1, 13));
         a.setItem(0, new ItemStack(Items.COBBLESTONE, 10)); a.setItem(1, new ItemStack(Items.OAK_LOG, 5)); a.setItem(2, new ItemStack(Items.COBBLESTONE, 20));
         trap.setItem(0, new ItemStack(Items.BONE, 3)); trap.setItem(1, new ItemStack(Items.COBBLESTONE, 9)); barrel.setItem(0, new ItemStack(Items.BREAD, 4)); barrel.setItem(1, new ItemStack(Items.BONE, 2)); barrel.setItem(2, new ItemStack(Items.BREAD, 1));
+        Container[] sorted = {a, barrel}; Map<Item, Integer> before = totals(companion, sorted);
         companion.startWork("sort_chests", "", 1);
         helper.succeedWhen(() -> {
             helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
-            helper.assertTrue(stacksOf(a, Items.COBBLESTONE) == 1 && inOrder(a), "The plain chest is not in order: " + describe(a));
+            helper.assertTrue(inOrder(a) && inOrder(barrel), "Not in order: " + describe(a) + "| " + describe(barrel));
             helper.assertTrue(trap.getItem(0).is(Items.BONE) && trap.getItem(1).is(Items.COBBLESTONE) && trap.getItem(0).getCount() == 3 && trap.getItem(1).getCount() == 9, "The trapped chest was touched: " + describe(trap));
-            helper.assertTrue(barrel.getItem(0).is(Items.BREAD) && barrel.getItem(1).is(Items.BONE) && barrel.getItem(2).is(Items.BREAD) && count(barrel, Items.BREAD) == 5, "The barrel was touched: " + describe(barrel));
+            helper.assertTrue(totals(companion, sorted).equals(before), "Items lost or doubled");
+            helper.assertTrue(stacksOf(a, Items.BREAD) + stacksOf(barrel, Items.BREAD) == 1,
+                "The barrel was not sorted: " + describe(a) + "| " + describe(barrel));
+            String said = companion.getLastTaskResult();
+            helper.assertTrue(said.startsWith("Разложил по ") && said.contains("хранилищ") && !said.contains("сундук"), "A barrel in the set was called a chest: " + said);
         });
     }
 

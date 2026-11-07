@@ -75,6 +75,22 @@ public final class CompanionPlanCodec {
         return new CompanionReply(reply, List.copyOf(actions));
     }
 
+    /** The `location` values the model is offered: the two places and every container a store or take order may name. */
+    public static final List<String> LOCATIONS = locations();
+
+    private static List<String> locations() {
+        List<String> names = new ArrayList<>(List.of("near_player", "inside_house"));
+        names.addAll(dev.aicompanion.entity.CompanionContainers.NAMEABLE.stream().sorted().toList());
+        return List.copyOf(names);
+    }
+
+    /** near_player for any step; inside_house for placing and storing; a container block id for store_items and take_items only. */
+    private static boolean validLocation(String location, String type) {
+        boolean storage = Set.of("store_items", "take_items").contains(type);
+        if (dev.aicompanion.entity.CompanionContainers.KINDS.contains(location)) return storage;
+        return location.equals("near_player") || location.equals("inside_house") && (storage || type.equals("place_block"));
+    }
+
     public static List<PlannedAction> parsePlan(JsonElement input) {
         try {
             JsonArray steps = input.isJsonArray() ? input.getAsJsonArray() : input.getAsJsonObject().getAsJsonArray("steps");
@@ -116,8 +132,7 @@ public final class CompanionPlanCodec {
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";
-                if (!Set.of("near_player", "inside_house").contains(location)) throw invalid();
-                if (!location.equals("near_player") && !Set.of("place_block", "store_items", "take_items").contains(type)) throw invalid();
+                if (!validLocation(location, type)) throw invalid();
                 if ("mine_ore".equals(type)) {
                     var kind = dev.aicompanion.entity.CompanionOre.Kind.of(item);
                     if (kind == null) throw invalid();
