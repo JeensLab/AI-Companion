@@ -88,10 +88,11 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     /** Ordered on the same server executor as dispatch, restricted to this request's own work ID. */
     public void cancelWork() {
         if (!server.isRunning()) return;
+        boolean urgent = task != null && task.urgent();
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             var companion = player == null ? null : CompanionEvents.getOwnedCompanion(player);
-            if (companion != null && ownedWorkId > 0 && companion.activeWorkId() == ownedWorkId) companion.stopGathering();
+            if (companion != null && ownedWorkId > 0 && companion.activeWorkId() == ownedWorkId && !(urgent && companion.parkWork())) companion.stopGathering();
         });
     }
 

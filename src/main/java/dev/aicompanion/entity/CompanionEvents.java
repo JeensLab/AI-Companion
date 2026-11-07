@@ -122,7 +122,9 @@ public final class CompanionEvents {
         CompanionEntity companion = resolveCanonical(player, true);
         if (companion != null) {
             companion.goals().playerOrder(following ? "follow" : "wait"); companion.autonomy().playerOrder(following ? "follow" : "wait");
-            CompanionAgenda.playerOrder(player, companion, following ? "follow" : "wait"); companion.setFollowing(following);
+            CompanionAgenda.playerOrder(player, companion, following ? "follow" : "wait");
+            if (!following) companion.parkWork();
+            companion.setFollowing(following);
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
                 : following ? "Компаньон следует за тобой." : "Компаньон ждёт здесь."));
@@ -133,7 +135,9 @@ public final class CompanionEvents {
         CompanionEntity companion = resolveCanonical(player, true);
         if (companion != null) {
             companion.goals().playerOrder(protecting ? "protect" : "stop_protect"); companion.autonomy().playerOrder(protecting ? "protect" : "stop_protect");
-            CompanionAgenda.playerOrder(player, companion, protecting ? "protect" : "stop_protect"); companion.setProtecting(protecting);
+            CompanionAgenda.playerOrder(player, companion, protecting ? "protect" : "stop_protect");
+            if (protecting) companion.parkWork();
+            companion.setProtecting(protecting);
         }
         player.sendSystemMessage(Component.literal(companion == null ? "Компаньон пока не загружен в мир."
                 : protecting ? "Компаньон будет защищать тебя от монстров."
@@ -246,6 +250,19 @@ public final class CompanionEvents {
         return companion == null ? 0 : 1;
     }
 
+    /** An order that cannot wait puts the rest of the dig aside before the order stops it; he digs it once he is free (CompanionParkedOrder). */
+    private static void parkForUrgentOrder(CompanionEntity companion, String action) {
+        if (action.equals("come") || action.equals("wait") || action.equals("protect")) companion.parkWork();
+    }
+
+    /** «Продолжай»: a long goal first, then the pickaxe order, then the dig that an urgent order put aside. */
+    private static CompanionActionResult resumeGoalOrParked(ServerPlayer player, CompanionEntity companion) {
+        CompanionActionResult resumed = CompanionAgenda.resume(player, companion);
+        if (resumed != null) return resumed;
+        CompanionActionResult back = companion.goals().outstanding() ? null : companion.parked.resume();
+        return back != null ? back : companion.goals().resume();
+    }
+
     /** Called on the integrated server thread; the returned result reflects completed mutations. */
     public static CompanionActionResult executeAction(ServerPlayer player, String action, String item, int count) {
         return executeAction(player, action, item, count, "auto");
@@ -291,15 +308,13 @@ public final class CompanionEvents {
         boolean wasWorking = companion.isGatheringTask();
         companion.diagnosticBind(trace);
         companion.diagnosticSnapshot("action_before");
+        parkForUrgentOrder(companion, action);
         CompanionActionResult dispatchResult = switch (action) {
             case "pursue_goal" -> CompanionAgenda.accept(player, companion, item, count);
             case "goal_pickaxes" -> CompanionAgenda.working(player)
                     ? CompanionActionResult.blocked("Сначала закончу долгую цель. Скажи «отмени цель», если кирки важнее.")
                     : companion.goals().accept(player);
-            case "goal_resume" -> {
-                CompanionActionResult resumed = CompanionAgenda.resume(player, companion);
-                yield resumed != null ? resumed : companion.goals().resume();
-            }
+            case "goal_resume" -> resumeGoalOrParked(player, companion);
             case "goal_cancel" -> {
                 CompanionActionResult cancelled = CompanionAgenda.cancel(player, companion);
                 if (cancelled != null) yield cancelled;

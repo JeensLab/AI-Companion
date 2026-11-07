@@ -38,7 +38,7 @@ public final class CompanionActionExecutor {
     public static void cancelPendingPlans() { cancelPendingPlans("", "world_or_command_change"); }
     public static synchronized void cancelPendingPlans(String trace, String reason) {
         planGeneration.incrementAndGet();
-        link.cancelAll(reason.equals("world_changed"), reason.equals(CompanionLocalCommands.PLAYER_CANCEL));
+        link.cancelAll(reason.equals("world_changed"), reason.equals(CompanionLocalCommands.PLAYER_CANCEL), reason.equals(CompanionLocalCommands.URGENT_ORDER));
         CompanionDiagnostics.event(trace, "plans_invalidated", "generation", planGeneration.get(), "reason", reason);
     }
 }
