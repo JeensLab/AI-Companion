@@ -155,6 +155,15 @@ public final class CompanionMineNightTests {
         h.assertTrue(mine.kitMinimum(CompanionFacts.of(c)) && !mine.nightKit(CompanionFacts.of(c)), "The sticks of two pickaxes make the kit he goes down with at dusk");
         c.setItem(2, new ItemStack(Items.STICK, STICKS_NIGHT));
         h.assertTrue(mine.nightKit(CompanionFacts.of(c)), "The sticks of three pickaxes do not make the kit he goes down with at dusk");
+        // Pickaxes already made need no sticks, bench or stone of their own.
+        c.clearContent();
+        c.setItem(0, new ItemStack(Items.BREAD, BREAD_MIN));
+        c.setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(2, new ItemStack(Items.STONE_PICKAXE));
+        h.assertTrue(mine.kitMinimum(CompanionFacts.of(c)), "Two made stone pickaxes with food are held back for sticks, a bench and stone");
+        c.setItem(3, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(4, new ItemStack(Items.TORCH, 8));
+        h.assertTrue(mine.nightKit(CompanionFacts.of(c)), "Three made stone pickaxes with torches are held back for sticks");
         h.succeed();
     }
 

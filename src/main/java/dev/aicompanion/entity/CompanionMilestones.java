@@ -154,15 +154,17 @@ public final class CompanionMilestones {
         }
 
         /**
-         * Food and the sticks of a pickaxe or two are what he cannot do without below (the stock of {@link #STICKS_MIN} is only a top-up target): a top-up that stopped short of them does not let the descent start.
-         * So are a bench (or its wood) and a stone pickaxe (or its stone): a pickaxe is made below only with both (runs of 07.11, seed 7, retreat and void-5).
+         * Food always, and below the least is two stone pickaxes' worth, carried or makeable: a bench (or its wood), two sticks and three stone each (the stock of {@link #STICKS_MIN} is only a top-up target).
+         * What is already made needs neither sticks nor a bench: a bag of made pickaxes was held back for sticks (runs of 07.11); a pickaxe is made below only with them (seed 7, retreat and void-5).
          */
         public boolean kitMinimum(CompanionFacts facts) {
             if (facts.inMine()) return true;
+            int need = Math.max(0, STONE_PICKAXES_MIN - facts.carried(Items.STONE_PICKAXE));
             boolean bench = facts.carried(Items.CRAFTING_TABLE) > 0 || facts.carried(held -> new ItemStack(held).is(ItemTags.PLANKS)) >= BENCH_PLANKS
                     || facts.carried(held -> new ItemStack(held).is(ItemTags.LOGS)) >= 1;
-            boolean pickaxe = facts.carried(Items.STONE_PICKAXE) > 0 || facts.carried(held -> new ItemStack(held).is(ItemTags.STONE_TOOL_MATERIALS)) >= PICKAXE_STONE;
-            return facts.carried(READY_FOOD::contains) >= FOOD_MIN && facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * STONE_PICKAXES_MIN && bench && pickaxe;
+            boolean makeable = bench && facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * need
+                    && facts.carried(held -> new ItemStack(held).is(ItemTags.STONE_TOOL_MATERIALS)) >= PICKAXE_STONE;
+            return facts.carried(READY_FOOD::contains) >= FOOD_MIN && (need == 0 || makeable);
         }
 
         /** Food is what the kit lacks above the ground: a top-up that found no game waits and tries again, like a hurt goal that cannot eat. */
@@ -172,10 +174,11 @@ public final class CompanionMilestones {
 
         /**
          * The least he goes down with at dusk: the minimum of the kit and torches for the first steps; the rest of the top-up waits for the day, and the night is spent below.
-         * The sticks are those of one pickaxe more than the minimum's: the tunnels below stop at the last pickaxe, and that one is for the way up.
+         * The sticks are those of the pickaxes still missing up to one more than the minimum's: the tunnels below stop at the last pickaxe, and that one is for the way up.
          */
         public boolean nightKit(CompanionFacts facts) {
-            return kitMinimum(facts) && facts.carried(Items.TORCH) >= TORCHES_NIGHT && (facts.inMine() || facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * (STONE_PICKAXES_MIN + 1));
+            return kitMinimum(facts) && facts.carried(Items.TORCH) >= TORCHES_NIGHT
+                    && (facts.inMine() || facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * Math.max(0, STONE_PICKAXES_MIN + 1 - facts.carried(Items.STONE_PICKAXE)));
         }
 
         private Step digStep(CompanionFacts facts) {
