@@ -6,7 +6,9 @@ package dev.aicompanion.client;
  */
 public final class CompanionLocalCommands {
     private static final String NEAR_PLAYER = "near_player";
-    /** Index of the optional container id in "companion work <type> <count> <item> [location]". */
+    /** Token positions of "companion work <type> <count> <item> [location]"; the location is optional. */
+    private static final int WORK_COUNT = 3;
+    private static final int WORK_ITEM = 4;
     private static final int WORK_LOCATION = 5;
 
     private CompanionLocalCommands() { }
@@ -103,7 +105,7 @@ public final class CompanionLocalCommands {
             case "summon" -> new PlannedAction("come", 0, 1);
             case "roam" -> new PlannedAction("wander", 0, 1);
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
-            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[3]), parts[4], "auto",
+            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), parts[WORK_ITEM], "auto",
                     parts.length > WORK_LOCATION ? parts[WORK_LOCATION] : NEAR_PLAYER);
             default -> new PlannedAction(parts[1], 0, 1);
         };
