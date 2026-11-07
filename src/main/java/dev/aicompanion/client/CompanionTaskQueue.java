@@ -53,7 +53,7 @@ public final class CompanionTaskQueue {
         private int priority = 1, step = -1;
         private Status status = Status.QUEUED;
         private String report = "";
-        private volatile boolean cancelled;
+        private volatile boolean cancelled, urgent;
         private boolean hidden, finished, byPlayer = true, ready;
         /** The task that gave up the slot for this one and gets it back at this one's next boundary; null when none did. */
         private Task lender;
@@ -66,6 +66,10 @@ public final class CompanionTaskQueue {
             this.id = id; this.original = List.copyOf(steps); this.steps = original; this.runner = runner;
         }
         public boolean cancelled() { return cancelled; }
+        /** Cancelled for an order that cannot wait: the dig is put aside for later, not ended. */
+        public boolean urgent() { return urgent; }
+        /** Cancelled by the player's own cancel (the word «отмена», the tasks window), not by the next order. */
+        public boolean byPlayer() { return byPlayer; }
         public CompletableFuture<String> completion() { return completion; }
         public void onCancel(Runnable stop) {
             synchronized (CompanionTaskQueue.this) { this.stop = stop; if (cancelled) stop.run(); }
@@ -276,12 +280,15 @@ public final class CompanionTaskQueue {
     private void remember(Task task) { history.addFirst(task); while (history.size() > 12) history.removeLast(); }
     /** A request is running or waits for its turn: parked ones, which wait for their furnaces and not for him, do not count. */
     public synchronized boolean busy() { return active != null || !waiting.isEmpty() || !yielded.isEmpty(); }
-    public boolean cancel(long id) { return cancel(id, true); }
-    private boolean cancel(long id, boolean byPlayer) {
+    public boolean cancel(long id) { return cancel(id, true, false); }
+    private boolean cancel(long id, boolean byPlayer, boolean urgent) {
         Task parked = null, dropped = null;
         synchronized (this) {
             if (active != null && active.id == id) {
-                if (!active.cancelled) { active.cancelled = true; active.byPlayer = byPlayer; active.status = Status.CANCELLING; active.stop.run(); }
+                if (!active.cancelled) {
+                    active.cancelled = true; active.byPlayer = byPlayer; active.urgent = urgent;
+                    active.status = Status.CANCELLING; active.stop.run();
+                }
                 return true;
             }
             for (Task task : List.copyOf(waiting)) if (task.id == id) {
@@ -312,13 +319,14 @@ public final class CompanionTaskQueue {
         return false;
     }
     public void cancelAll(boolean clearHistory) { cancelAll(clearHistory, false); }
-    public void cancelAll(boolean clearHistory, boolean byPlayer) {
+    public void cancelAll(boolean clearHistory, boolean byPlayer) { cancelAll(clearHistory, byPlayer, false); }
+    public void cancelAll(boolean clearHistory, boolean byPlayer, boolean urgent) {
         List<Long> queued;
         synchronized (this) { queued = new ArrayList<>(); waiting.forEach(task -> queued.add(task.id)); awaiting.forEach(task -> queued.add(task.id)); yielded.forEach(task -> queued.add(task.id)); }
-        for (long id : queued) cancel(id, byPlayer);
+        for (long id : queued) cancel(id, byPlayer, urgent);
         Long running;
         synchronized (this) { running = active == null ? null : active.id; }
-        if (running != null) cancel(running, byPlayer);
+        if (running != null) cancel(running, byPlayer, urgent);
         if (!clearHistory) return;
         synchronized (this) { history.clear(); if (active != null) active.hidden = true; }
     }

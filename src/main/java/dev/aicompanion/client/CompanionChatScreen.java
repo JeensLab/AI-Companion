@@ -227,7 +227,7 @@ public final class CompanionChatScreen extends Screen {
 
     private static long actionGeneration(List<PlannedAction> actions, long captured, String trace) {
         if (CompanionLocalCommands.priorityOrder(actions)) {
-            CompanionActionExecutor.cancelPendingPlans(trace, "priority_player_order");
+            CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.priorityReason(actions));
             return CompanionActionExecutor.currentPlanGeneration();
         }
         return captured;

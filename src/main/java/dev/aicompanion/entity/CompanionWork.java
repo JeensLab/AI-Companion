@@ -314,7 +314,7 @@ public final class CompanionWork {
         return "Выполняет " + jobName() + " · " + stage;
     }
     /** The work in words for the journal of deeds. */
-    private String jobName() {
+    String jobName() {
         String item = requestedItem.isEmpty() || requestedItem.equals("all") || requestedItem.equals("logs") ? "" : " «" + itemName(requestedItem) + "»";
         return switch (job) {
             case STONE -> "добычу камня (" + gathered + " из " + wantedStone + ")";

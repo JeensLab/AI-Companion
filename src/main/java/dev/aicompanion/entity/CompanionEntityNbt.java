@@ -35,6 +35,7 @@ final class CompanionEntityNbt {
         c.playersThings.save(tag);
         c.temporaryPillar.save(tag);
         c.work.save(tag);
+        c.parked.save(tag);
         c.batches().save(tag);
         c.places.save(tag);
         c.deeds.save(tag);
@@ -95,6 +96,7 @@ final class CompanionEntityNbt {
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, c.gatheringLogs || c.gatheringDirt);
         c.temporaryPillar.load(tag);
         c.work.load(tag);
+        c.parked.load(tag);
         c.batches().load(tag);
         c.setCanPickUpLoot(false);
         if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {

@@ -96,6 +96,11 @@ public final class OpenRouterConfig {
             .comment("Store into and take from barrels, shulker boxes, furnaces, hoppers and dispensers when asked by name, and sort barrels with the chests. Off: chests only.")
             .translation("config.aicompanion.other_containers")
             .define("otherContainers", true);
+    /** Whether an urgent order («иди ко мне», «стой», «защищай») puts a dig aside for later instead of ending it. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue URGENT_ORDER = BUILDER
+            .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
+            .translation("config.aicompanion.urgent_order")
+            .define("urgentOrder", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")

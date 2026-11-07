@@ -70,6 +70,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(containersLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Класть в бочки, шалкеры, печи, воронки и раздатчики и брать из них, когда названо; бочки входят в раскладку. Выключено: только сундуки."))).build());
+        addRenderableWidget(Button.builder(urgentLabel(), b -> {
+            OpenRouterConfig.URGENT_ORDER.set(!OpenRouterConfig.URGENT_ORDER.get()); OpenRouterConfig.URGENT_ORDER.save();
+            b.setMessage(urgentLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -81,6 +86,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }
     private Component guardLabel() { return Component.literal("Охрана: цель ближе к игроку: " + (OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get() ? "вкл." : "выкл.")); }
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
+    private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }
