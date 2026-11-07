@@ -112,11 +112,11 @@ public final class CompanionChatScreen extends Screen {
 
     private static void runLocalCommand(String command, String trace) {
         CompanionDiagnostics.event(trace, "message_route", "route", "local_parser", "command", command);
-        PlannedAction action = CompanionLocalCommands.action(command);
+        List<PlannedAction> actions = CompanionLocalCommands.actions(command);
         long generation = CompanionActionExecutor.currentPlanGeneration();
-        if ("build_house".equals(action.type())) addVoiceReply(CompanionDialogue.acknowledge(List.of(action)), trace, "local_acknowledgement");
-        CompanionActionExecutor.execute(List.of(action), generation, trace).whenComplete((report, error) -> Minecraft.getInstance().execute(() -> {
-            if (generation == CompanionActionExecutor.currentPlanGeneration()) finishActions(List.of(action), report, error, true, trace);
+        if ("build_house".equals(actions.getFirst().type())) addVoiceReply(CompanionDialogue.acknowledge(actions), trace, "local_acknowledgement");
+        CompanionActionExecutor.execute(actions, generation, trace).whenComplete((report, error) -> Minecraft.getInstance().execute(() -> {
+            if (generation == CompanionActionExecutor.currentPlanGeneration()) finishActions(actions, report, error, true, trace);
         }));
     }
 

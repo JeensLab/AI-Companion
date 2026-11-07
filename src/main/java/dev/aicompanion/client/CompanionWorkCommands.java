@@ -7,10 +7,37 @@ import java.util.regex.Pattern;
 public final class CompanionWorkCommands {
     private CompanionWorkCommands() { }
 
-    public static PlannedAction parse(String text, String name) {
+    /** Buckets of water fetched at most without the model: a stack of empty buckets. */
+    private static final int MAX_WATER = 16;
+    private static final Pattern WATER = Pattern.compile("^(?:(принеси|дай|набери)( мне)?(?: (?:ведро|ведра|ведер))? воды(?: в (?:ведро|ведра))?( и (?:принеси|дай|отдай)(?: мне)?)?"
+            + "|(сходи) за водой|наполни (?:ведро|ведра)(?: водой)?)$");
+
+    /**
+     * «Принеси воды», «набери мне ведро воды», «набери воды» (FWR29, decided 07.11): "companion work obtain_item N minecraft:water_bucket",
+     * with " give" when the water is for the player («принеси», «дай», «сходи за водой», «мне», «…и отдай»). Null for anything else,
+     * which is the model's: «во все вёдра» (only the server knows his buckets), «сколько сможешь», more than {@link #MAX_WATER}.
+     */
+    public static String water(String text, String name) {
+        var said = CompanionNumbers.parse(plain(text, name));
+        String rest = said.rest().replaceAll("\\s+", " ").trim();
+        // «Наполни вёдра» with no number (ё is е here) means all his buckets, as «во все вёдра»; «0 вёдер» is no order of one.
+        if (said.count() == 0 && rest.matches("(?U).*\\b(?:ведра|ведер)\\b.*")) return null;
+        int count = said.count() == 0 ? 1 : said.count();
+        var water = WATER.matcher(rest);
+        if (!water.matches() || count < 1 || count > MAX_WATER) return null;
+        boolean give = "принеси".equals(water.group(1)) || "дай".equals(water.group(1)) || water.group(2) != null || water.group(3) != null || water.group(4) != null;
+        return "companion work obtain_item " + count + " minecraft:water_bucket" + (give ? " give" : "");
+    }
+
+    /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
+    private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
-        value = value.replaceAll("[.!]+$", "").trim();
+        return value.replaceAll("[.!]+$", "").trim();
+    }
+
+    public static PlannedAction parse(String text, String name) {
+        String value = plain(text, name);
         if (value.matches("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1);
         // Said of the place the player stands on. A question («это наш дом?») keeps its mark and stays talk for the model.
         if (value.matches("^(?:(?:это|вот|здесь|тут)(?: и есть| теперь| будет)? (?:наш|мой) дом|наш дом (?:здесь|тут)|(?:здесь|тут) (?:будет|теперь)(?: наш)? дом|запомни(?:,)? (?:где наш дом|(?:здесь|тут) наш дом|(?:это|этот дом|это место) как (?:наш )?дом))$"))

@@ -2,6 +2,7 @@ package dev.aicompanion.gametest;
 
 import com.google.gson.JsonParser;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
@@ -75,6 +76,53 @@ public final class CompanionWaterFillTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.BUCKET) == 0, "No water in his bucket: " + future.join().report());
+            for (BlockPos cell : lake) h.assertTrue(h.getLevel().getFluidState(h.absolutePos(cell)).isSourceOfType(Fluids.WATER), "The lake lost " + cell);
+        });
+    }
+
+    /**
+     * «Принеси воды» and «набери воды» need no model (FWR29, decided 07.11): the same plan the model makes, a bucket of water got and,
+     * when it is for the player («принеси», «дай», «мне»), handed over; up to sixteen. What else is said goes to the model.
+     */
+    @GameTest(template = "empty", timeoutTicks = 20)
+    public static void fetchingWaterNeedsNoModel(GameTestHelper h) {
+        String give = "[{\"action\":\"obtain_item\",\"item\":\"minecraft:water_bucket\",\"count\":%d},{\"action\":\"give_items\",\"item\":\"minecraft:water_bucket\",\"count\":%<d}]";
+        String keep = "[{\"action\":\"obtain_item\",\"item\":\"minecraft:water_bucket\",\"count\":%d}]";
+        Object[][] said = {
+                {"Олег, принеси воды", give, 1}, {"принеси мне ведро воды", give, 1}, {"Принеси 3 ведра воды", give, 3}, {"принеси шестнадцать ведер воды", give, 16},
+                {"Олег, набери воды и принеси", give, 1}, {"набери мне воды", give, 1}, {"набери ведро воды и дай", give, 1}, {"набери воды и отдай мне", give, 1},
+                {"дай мне воды", give, 1}, {"дай ведро воды", give, 1}, {"сходи за водой", give, 1},
+                {"Олег, набери воды", keep, 1}, {"набери ведро воды", keep, 1}, {"набери воды в ведро", keep, 1}, {"наполни ведро водой", keep, 1},
+                {"набери два ведра воды", keep, 2}};
+        for (Object[] phrase : said) {
+            var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString(String.format((String) phrase[1], (int) phrase[2])));
+            String route = CompanionLocalCommands.route((String) phrase[0], "Олег");
+            h.assertTrue(route != null && CompanionLocalCommands.actions(route).equals(plan), "«" + phrase[0] + "» is not " + plan + " but " + route);
+            h.assertTrue(!CompanionLocalCommands.cancelsPlans(route), "«" + phrase[0] + "» drops the plans in the queue");
+        }
+        // «Вёдра» with no number are all his buckets, as «во все вёдра»: how many only the server knows.
+        for (String model : List.of("набери воды во все ведра", "наполни вёдра водой", "набери воды в вёдра", "принеси вёдер воды", "принеси 0 ведер воды",
+                "принеси 20 ведер воды", "принеси воды сколько сможешь", "принеси еще воды", "не набирай воды", "набери воды и полей огород", "набери воды или принеси молока"))
+            h.assertTrue(CompanionLocalCommands.route(model, "Олег") == null, "«" + model + "» is not left to the model: " + CompanionLocalCommands.route(model, "Олег"));
+        h.succeed();
+    }
+
+    /** «Олег, принеси воды» without the model: his empty bucket filled at the lake and tossed to the player's feet, the lake whole. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void bringWaterFillsHisBucketAndTossesItToThePlayer(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> lake = lake(h, 21, 14, 3, 5);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.BUCKET));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
+        var plan = CompanionLocalCommands.actions(CompanionLocalCommands.route("Олег, принеси воды", "Олег"));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-water-fetch", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 0 && count(c, Items.BUCKET) == 0, "His bucket is still his: " + c.getStoredItemsSummary() + " · " + future.join().report());
+            boolean tossed = !h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, owner.getBoundingBox().inflate(4),
+                    item -> item.getItem().is(Items.WATER_BUCKET)).isEmpty();
+            h.assertTrue(tossed || owner.getInventory().contains(new ItemStack(Items.WATER_BUCKET)), "No bucket of water at the player's feet: " + future.join().report());
             for (BlockPos cell : lake) h.assertTrue(h.getLevel().getFluidState(h.absolutePos(cell)).isSourceOfType(Fluids.WATER), "The lake lost " + cell);
         });
     }
