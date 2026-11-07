@@ -26,6 +26,8 @@ import java.util.List;
 /** Finished fixtures must not keep walking/loading chunks during the next batch's thirty-minute scenario. */
 @GameTestHolder(AICompanionMod.MOD_ID)
 public final class CompanionFixtureCleanup {
+    private static final long MORNING = 1000L;
+
     @AfterBatch(batch = "defaultBatch")
     public static void afterAtomicTests(ServerLevel level) { clean(level); }
     @AfterBatch(batch = "marathon")
@@ -50,6 +52,8 @@ public final class CompanionFixtureCleanup {
             if (player.getGameProfile().getName().equals("test-mock-player")) level.getServer().getPlayerList().remove(player);
         CompanionChunks.stop();
         clearTrees(level);
+        // The server keeps its daylight cycle and a batch restores the clock "as it was": a late batch would start at night.
+        level.setDayTime(MORNING);
     }
 
     /**
