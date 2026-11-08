@@ -13,6 +13,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -56,6 +57,7 @@ final class CompanionPortalBuild {
     static final String NO_FLINT = "Нечем зажечь портал — нужно огниво.";
     static final String NO_PROP = "Нечем подпереть верх рамки — дай мне любой блок.";
     static final String NOT_LIT = "Рамка не зажглась.";
+    static final String LYING = "Не могу забрать то, что лежит в рамке, — убери, и я зажгу портал.";
     /** A frame without its corners. */
     static final int OBSIDIAN = 10;
     /** A lit portal this near the player is his way to the Nether already; the frame goes up this near him (blocks). */
@@ -69,8 +71,10 @@ final class CompanionPortalBuild {
     /** A player's reach for a block; walks to the place before he gives it up; ticks a block he set takes; how long he waits for someone in the way. */
     private static final double REACH = 4.5;
     private static final int LEGS = 8, PLACE_TICKS = 4, WAIT_TICKS = 100;
+    /** How long he tries to pick up what lies in the frame before he says he cannot (ticks). */
+    private static final int PICK_TICKS = 200;
 
-    private enum Kind { DIG, PROP, OBSIDIAN, CLEAR, LIGHT }
+    private enum Kind { DIG, PROP, OBSIDIAN, CLEAR, PICK, LIGHT }
     private record Step(Kind kind, BlockPos cell) { }
 
     /** The frame: its column 0 stands on {@code base}, it runs {@code along}, the way in is on the {@code front} side. */
@@ -88,10 +92,11 @@ final class CompanionPortalBuild {
     private final CompanionWork w;
     private final CompanionEntity c;
     private Frame frame;
-    private Set<BlockPos> stands = Set.of();
+    private Set<BlockPos> stands = Set.of(), walkingTo = Set.of();
     private Path path;
     private int legs;
-    private long waitingSince;
+    private long waitingSince, pickingSince;
+    private boolean retried;
 
     CompanionPortalBuild(CompanionWork w) { this.w = w; this.c = w.owner; }
 
@@ -144,7 +149,7 @@ final class CompanionPortalBuild {
 
     void cancel() { reset(); }
 
-    private void reset() { frame = null; stands = Set.of(); path = null; legs = 0; waitingSince = 0; }
+    private void reset() { frame = null; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
 
     /** One tick: the next thing the frame lacks, from where he can reach it; lit once whole. */
     void tick(ServerLevel level) {
@@ -152,20 +157,23 @@ final class CompanionPortalBuild {
         if (level.getBlockState(frame.fire()).is(Blocks.NETHER_PORTAL)) { done(level); return; }
         Step step = next(level);
         if (step == null) return;
-        // Out of the frame, with the cell in his reach and sight: from inside it the fire would take him to the Nether.
+        if (step.kind() != Kind.PICK) { pickingSince = 0; retried = false; }
+        // Out of the frame, with the cell in his reach and sight: from inside it the fire would take him to the Nether. What lies in
+        // the frame he steps in for, the frame not lit yet.
         Vec3 eyes = c.getEyePosition();
-        if (!c.onGround() || frame.box().intersects(c.getBoundingBox()) || new AABB(step.cell()).distanceToSqr(eyes) > REACH * REACH || !visible(level, eyes, step.cell())) {
+        if (step.kind() != Kind.PICK && (!c.onGround() || frame.box().intersects(c.getBoundingBox()) || new AABB(step.cell()).distanceToSqr(eyes) > REACH * REACH || !visible(level, eyes, step.cell()))) {
             c.workStatus("Иду строить портал.");
             // Come to a place it is still not seen from (a column set since hides it): that place is no good any more.
             if (path != null && w.route.legOver() && stands.remove(c.blockPosition())) path = null;
-            if (!walk()) { event("portal_no_way", "step", step); w.finish(false, NO_WAY); }
+            if (!walk(stands)) { event("portal_no_way", "step", step); w.finish(false, NO_WAY); }
             return;
         }
-        w.route.stop();
+        if (step.kind() != Kind.PICK) w.route.stop();
         switch (step.kind()) {
             case DIG, CLEAR -> dig(level, step.cell());
             case PROP -> prop(level, step.cell());
             case OBSIDIAN -> set(level, step.cell(), Items.OBSIDIAN);
+            case PICK -> pick(level, step.cell());
             case LIGHT -> light(level);
         }
     }
@@ -192,6 +200,8 @@ final class CompanionPortalBuild {
             if (!free(level, cell) && !diggable(state, level, cell)) { w.finish(false, TAKEN); return null; }
             return new Step(Kind.CLEAR, cell);
         }
+        List<ItemEntity> lying = lying(level);
+        if (!lying.isEmpty()) return new Step(Kind.PICK, lying.getFirst().blockPosition());
         return new Step(Kind.LIGHT, frame.fire());
     }
 
@@ -209,6 +219,25 @@ final class CompanionPortalBuild {
         tool.getItem().mineBlock(tool, level, state, cell, c);
         c.dropHarvest(cell, drops);
         event("portal_dug", "cell", cell.toShortString(), "block", BuiltInRegistries.BLOCK.getKey(state.getBlock()));
+    }
+
+    /** What lies inside the frame: lit, the portal would take it, and his pickup would follow it in (in game 08.11, the prop's drop). */
+    private List<ItemEntity> lying(ServerLevel level) {
+        return level.getEntitiesOfClass(ItemEntity.class, new AABB(frame.cell(1, 1)).minmax(new AABB(frame.cell(2, 3))), ItemEntity::isAlive);
+    }
+
+    /**
+     * What lies inside the frame is picked up before it is lit: once it lies, his own drop is chased again (falling, it was given up as
+     * out of reach), and he steps into the frame, not lit yet, onto it. Not in his bag after {@link #PICK_TICKS}: he says so, unlit.
+     */
+    private void pick(ServerLevel level, BlockPos cell) {
+        if (pickingSince == 0) pickingSince = level.getGameTime();
+        if (level.getGameTime() - pickingSince > PICK_TICKS) { event("portal_items_left", "cell", cell.toShortString()); w.finish(false, LYING); return; }
+        c.workStatus("Подбираю то, что упало в рамку.");
+        if (lying(level).stream().anyMatch(item -> !item.onGround())) return;
+        if (!retried) { retried = true; c.retryHarvestPickup(); return; }
+        if (c.blockPosition().equals(cell)) w.route.stop();
+        else walk(Set.of(cell));
     }
 
     /** A block of his own under a top block, so it has a face to be set against; taken away with the rest of what is inside. */
@@ -373,12 +402,13 @@ final class CompanionPortalBuild {
         return cells;
     }
 
-    /** One tick of the walk to the place before the frame: false when there is no way (or no progress after {@link #LEGS} walks). */
-    private boolean walk() {
+    /** One tick of the walk to these cells: false when there is no way (or no progress after {@link #LEGS} walks). */
+    private boolean walk(Set<BlockPos> cells) {
         CompanionRoute route = w.route;
+        if (!cells.equals(walkingTo)) { walkingTo = Set.copyOf(cells); path = null; legs = 0; }
         if (path != null && !route.legOver()) return true;
-        if (stands.isEmpty() || ++legs > LEGS) return false;
-        CompanionRoute.Reach reach = route.cells(stands, 0);
+        if (cells.isEmpty() || ++legs > LEGS) return false;
+        CompanionRoute.Reach reach = route.cells(cells, 0);
         if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return true; }
         if (!reach.found()) return false;
         path = reach.path();

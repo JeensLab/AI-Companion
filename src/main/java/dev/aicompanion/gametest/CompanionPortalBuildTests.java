@@ -69,6 +69,33 @@ public final class CompanionPortalBuildTests {
         });
     }
 
+    /**
+     * A frame left unlit, with something lying in it: the frame is his to finish with no obsidian more, and nothing is lit while a drop
+     * lies inside (the portal would take it, and his pickup went in after it: in game 08.11 he walked into the Nether for his prop).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void anUnlitFrameIsLitOnlyOnceWhatLiesInItIsPickedUp(GameTestHelper h) {
+        ground(h);
+        for (BlockPos cell : List.of(new BlockPos(15, GROUND, 20), new BlockPos(16, GROUND, 20), new BlockPos(15, GROUND + 4, 20), new BlockPos(16, GROUND + 4, 20)))
+            h.setBlock(cell, Blocks.OBSIDIAN);
+        for (int y = GROUND + 1; y <= GROUND + 3; y++) { h.setBlock(new BlockPos(14, y, 20), Blocks.OBSIDIAN); h.setBlock(new BlockPos(17, y, 20), Blocks.OBSIDIAN); }
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.FLINT_AND_STEEL));
+        BlockPos inside = h.absolutePos(new BlockPos(16, GROUND + 1, 20));
+        ItemEntity lying = new ItemEntity(h.getLevel(), inside.getX() + .5, inside.getY() + .1, inside.getZ() + .5, new ItemStack(Items.COBBLESTONE));
+        lying.setDeltaMovement(0, 0, 0);
+        lying.setPickUpDelay(40);
+        h.getLevel().addFreshEntity(lying);
+        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Портал готов.") && blocks(h, Blocks.NETHER_PORTAL).size() == 6 && blocks(h, Blocks.OBSIDIAN).size() == 10, "Not lit as it stood: " + report);
+            h.assertTrue(count(c, Items.COBBLESTONE) == 1, "What lay in the frame is not in his bag: " + c.getStoredItemsSummary());
+            h.assertTrue(c.level() == h.getLevel() && !blocks(h, Blocks.NETHER_PORTAL).contains(h.relativePos(c.blockPosition())), "He went into the portal");
+        });
+    }
+
     /** A lit portal within sixteen blocks of the player: nothing built, no obsidian spent, and he says so. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void aLitPortalNearThePlayerIsEnough(GameTestHelper h) {
