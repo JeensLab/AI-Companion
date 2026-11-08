@@ -136,6 +136,30 @@ public final class CompanionBoatClutchTests {
         });
     }
 
+    /** A fight first: an enemy at him as he steps out of the boat is dealt with before the boat is broken, then the boat is taken. */
+    @GameTest(template = "empty", timeoutTicks = 400, skyAccess = true)
+    public static void anEnemyAtHimIsFoughtBeforeTheBoatIsBroken(GameTestHelper h) {
+        floor(h);
+        CompanionEntity c = spawn(h, 4, 31, 4);
+        c.setItem(0, new ItemStack(Items.OAK_BOAT));
+        boolean[] seated = watchSeat(h, c), boatStoodAtTheBlow = {false};
+        net.minecraft.world.entity.monster.Husk[] husk = {null};
+        h.onEachTick(() -> {
+            if (husk[0] == null && seated[0] && !c.isPassenger()) {
+                husk[0] = h.spawn(net.minecraft.world.entity.EntityType.HUSK, h.relativeVec(c.position()).add(1.5, 0, 0));
+                husk[0].setNoAi(true);
+                husk[0].setHealth(1);
+                c.setTarget(husk[0]);
+            }
+            if (husk[0] != null && !husk[0].isAlive() && !boatStoodAtTheBlow[0]) boatStoodAtTheBlow[0] = !boats(h.getLevel(), h.getBounds()).isEmpty();
+        });
+        h.succeedWhen(() -> {
+            check(husk[0] != null && !husk[0].isAlive(), "The enemy is not dealt with");
+            check(boatStoodAtTheBlow[0], "The boat was broken before the enemy");
+            unhurtWithTheBoatBack(c, seated[0], h.getLevel(), h.getBounds());
+        });
+    }
+
     /** With a water bucket too, in the Overworld the water goes first: the boat never leaves his bag. */
     @GameTest(template = "empty", timeoutTicks = 300, skyAccess = true)
     public static void withABucketTooTheWaterGoesFirst(GameTestHelper h) {

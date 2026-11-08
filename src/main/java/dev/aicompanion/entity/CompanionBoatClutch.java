@@ -99,7 +99,7 @@ final class CompanionBoatClutch {
                 || !level.getWorldBorder().isWithinBounds(box) || level.containsAnyLiquid(box)) return;
         if (!level.addFreshEntity(made)) return;
         if (!c.startRiding(made)) { made.discard(); return; }
-        if (boat != null) leave("again");
+        if (boat != null || drop != null) leave("again");
         made.getPersistentData().putUUID(MARK, c.getUUID());
         level.gameEvent(c, GameEvent.ENTITY_PLACE, spot);
         c.animateAction(1, landing.on(), stack);
@@ -134,10 +134,12 @@ final class CompanionBoatClutch {
     private void settle(ServerLevel level) {
         long now = level.getGameTime();
         if (boat.isRemoved()) { event("boat_clutch_gone"); boat = null; return; }
-        // A player got into it: it is their ride now, and no more his to take back. A mob that got in is put out as it breaks.
+        // A player got into it: it is their ride now, no more his to take back, and he steps out (the first rider steers it). A mob
+        // that got in is put out as it breaks.
         if (boat.getPassengers().stream().anyMatch(rider -> rider instanceof Player)) {
             event("boat_clutch_taken");
             boat.getPersistentData().remove(MARK);
+            if (c.getVehicle() == boat) c.stopRiding();
             boat = null;
             return;
         }
@@ -147,7 +149,8 @@ final class CompanionBoatClutch {
         }
         if (c.isPassenger()) return;
         if (boat.getBoundingBox().distanceToSqr(c.getEyePosition()) > SEAT_REACH * SEAT_REACH) { leave("far"); return; }
-        if (now - at < HIT_EVERY) return;
+        // A fight comes first: the boat waits.
+        if (now - at < HIT_EVERY || fighting()) return;
         at = now;
         Item item = boat.getDropItem();
         c.getLookControl().setLookAt(boat);
@@ -164,9 +167,13 @@ final class CompanionBoatClutch {
         } else if (hits >= HITS) leave("hits");
     }
 
-    /** The boat he broke, lying: in a bag now (his, or the player's who took it), or after ten seconds not his to wait for. */
+    /**
+     * The boat he broke, lying: gone (into a bag, his or the player's, or burnt, or with its chunk), or after ten seconds not his to
+     * wait for. While the player has his bag open he takes nothing up, and the ten seconds start again.
+     */
     private void lying(ServerLevel level) {
-        if (!drop.isAlive()) { event("boat_clutch_picked"); drop = null; }
+        if (!drop.isAlive()) { event("boat_clutch_drop_gone", "why", String.valueOf(drop.getRemovalReason())); drop = null; }
+        else if (c.inventoryViewers > 0) at = level.getGameTime();
         else if (level.getGameTime() - at > PICK) leave("lying");
     }
 
@@ -181,9 +188,16 @@ final class CompanionBoatClutch {
         if (path != null) c.work.route.walk(path);
     }
 
-    /** Out of it and at it till it is broken and picked up: whatever else moves him waits (the following, the work), as he takes it
-     * back (decided 08.11). */
-    boolean breaking() { return boat != null && !c.isPassenger() || drop != null; }
+    /**
+     * Out of it and at it till it is broken and picked up: the following and the work wait, as he takes it back (decided 08.11). Not
+     * in a fight, nor with his bag open (he takes nothing up then), nor riding.
+     */
+    boolean breaking() {
+        return !fighting() && c.inventoryViewers == 0 && !c.isPassenger() && (boat != null || drop != null);
+    }
+
+    /** A live enemy before him: a dead one stays his target till a goal lets it go. */
+    private boolean fighting() { return c.getTarget() != null && c.getTarget().isAlive(); }
 
     /** He leaves the boat where it stands and says so (as the bucket's water, decided 05.11). */
     private void leave(String why) {
