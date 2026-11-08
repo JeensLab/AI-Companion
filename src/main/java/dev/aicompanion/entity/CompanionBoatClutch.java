@@ -104,9 +104,11 @@ final class CompanionBoatClutch {
         level.gameEvent(c, GameEvent.ENTITY_PLACE, spot);
         c.animateAction(1, landing.on(), stack);
         c.removeItem(slot, 1);
-        // Seated: the rest of this tick's move is not his to make, and a rider's fall is reset each tick (LivingEntity.rideTick).
+        // Seated: the rest of this tick's move is not his to make, and a rider's fall is reset each tick (LivingEntity.rideTick). He is
+        // put on the seat now, not a tick later: the client gets him there with the boat, not still in the air over it.
         c.setDeltaMovement(Vec3.ZERO);
         c.resetFallDistance();
+        made.positionRider(c);
         boat = made;
         at = level.getGameTime();
         hits = 0;
