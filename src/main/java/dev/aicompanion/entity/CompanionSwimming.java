@@ -42,7 +42,8 @@ final class CompanionSwimming {
             // Like the dive for a foe under water: down to it while the pickup is active and there is breath to come up.
             var chased = c.work.job == CompanionWork.Job.PICK_UP ? c.loot.chaseTarget() : null;
             boolean sinks = chased != null && chased.isAlive() && chased.isInWater() && c.isInWater() && !c.isInLava()
-                    && chased.getY() < c.getY() - .4 && c.getAirSupply() > c.getMaxAirSupply() / 3;
+                    && chased.getY() < c.getY() - .4
+                    && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
             // The game's own sinking for a player's Shift in water (LivingEntity.goDownInWater).
             if (dives || sinks) c.setDeltaMovement(c.getDeltaMovement().add(0, -.04, 0));
             else super.tick();

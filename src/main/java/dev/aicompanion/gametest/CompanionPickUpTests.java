@@ -503,14 +503,18 @@ public final class CompanionPickUpTests {
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:porkchop", 64);
         h.assertTrue(result.success(), "The order was refused: " + result.message());
         h.assertTrue(companion.workPhase().startsWith("PICK_UP"), "Not the pickup: " + companion.workPhase());
+        long work = companion.activeWorkId();
         h.succeedWhen(() -> {
             h.assertTrue(pork.isRemoved() && stored(companion, Items.COOKED_PORKCHOP) == 1 && companion.workPhase().isEmpty(),
                     "The pork at the bottom of the deep pool was not taken: bag " + stored(companion, Items.COOKED_PORKCHOP)
                             + ", drop removed " + pork.isRemoved() + ", drop y " + pork.getY() + ", phase "
                             + companion.workPhase() + ", " + companion.getLastTaskResult() + "; " + companion.watchDetail()
                             + "; " + String.join(" | ", trail));
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал свинину (1 шт.)"),
-                    "The report is wrong: " + companion.getLastTaskResult());
+            // The order's own result, not the last status: the chase's «Подбираю добытые вещи.» overwrites the status
+            // after the order ends, and the pork may be taken by the loose pickup just after it (judge, round 2).
+            var recorded = companion.workResult(work);
+            h.assertTrue(recorded != null && recorded.success() && recorded.message().contains("Подобрал свинину (1 шт.)"),
+                    "The order's own result is wrong: " + recorded + "; last status " + companion.getLastTaskResult());
         });
     }
 
@@ -544,6 +548,81 @@ public final class CompanionPickUpTests {
             h.assertTrue(!companion.getLastTaskResult().contains("Не смог подобрать"),
                     "A drop still lying was reported as «не смог подобрать»: " + companion.getLastTaskResult());
         });
+    }
+
+    /**
+     * A drop floating in a flooded pocket under a stone roof: its cell has no stand (the body does not fit under the
+     * roof) and no cell beside it is within reach, so there is no way to it at all. It bobs on the water every tick;
+     * that bob is no progress of the chase by itself, so the attempts count and the order ends with «Не достал свинину,
+     * осталось 1 шт.» instead of swimming the whole minute and saying «Не успел подобрать» (judge, round 2).
+     */
+    @GameTest(template = "large_search", timeoutTicks = 1400)
+    public static void aBobbingDropWithNoStandIsGivenUpHonestly(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        // A flooded pocket under a stone roof, walled in two high: its cell has no stand (the body does not fit under
+        // the roof), and the nearest stand beside it is on the wall top, too high to reach. Four blocks from him, so the
+        // missing way is the chase's own business and no route recovery is started over it.
+        h.setBlock(new BlockPos(12, 1, 8), Blocks.WATER);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int dy = 1; dy <= 2; dy++)
+            if (dx != 0 || dz != 0) h.setBlock(new BlockPos(12 + dx, dy, 8 + dz), Blocks.STONE);
+        h.setBlock(new BlockPos(12, 2, 8), Blocks.STONE);
+        ItemEntity pork = bobbing(h, 12, 1, 8, Items.COOKED_PORKCHOP, 1);
+        long[] work = {0};
+        h.startSequence().thenExecute(() -> {
+            var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:porkchop", 64);
+            h.assertTrue(result.success(), "The order was refused: " + result.message());
+            work[0] = companion.activeWorkId();
+        }).thenWaitUntil(() -> h.assertTrue(companion.workPhase().isEmpty(),
+                "The order never ended: phase " + companion.workPhase() + " at tick " + h.getTick()
+                        + ", " + companion.workResult(work[0]) + "; " + companion.watchDetail()))
+          .thenExecute(() -> {
+              var recorded = companion.workResult(work[0]);
+              h.assertTrue(recorded != null && recorded.message().contains("Не достал свинину, осталось 1 шт."),
+                      "The drop was not reported as left: " + recorded + "; last status " + companion.getLastTaskResult());
+              h.assertTrue(!recorded.message().contains("Не успел подобрать"), "The order swam the whole minute: " + recorded);
+              h.assertTrue(!pork.isRemoved() && stored(companion, Items.COOKED_PORKCHOP) == 0,
+                      "The pork was taken through the roof");
+          }).thenSucceed();
+    }
+
+    /**
+     * Several drops of one kind in the water with one sealed in a stone pocket beside the pool: the two in the water are
+     * taken and the one he cannot reach is counted — «Подобрал свинину (2 шт.), осталось 1 шт.» (game 08.11: only the
+     * sealed dry pocket covered a leftover count).
+     */
+    @GameTest(template = "large_search", timeoutTicks = 800)
+    public static void aPoolWithOneSealedDropCountsTheLeftover(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        pool(h, 12, 6, 5, 2);
+        ItemEntity first = floating(h, 13, 2, 8, Items.COOKED_PORKCHOP, 1);
+        ItemEntity second = floating(h, 14, 2, 8, Items.COOKED_PORKCHOP, 1);
+        // A sealed dry pocket on the floor beside the pool: walled in on every side and roofed over, so there is no
+        // stand within reach of the drop in it.
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
+            if (dx != 0 || dz != 0) h.setBlock(new BlockPos(19 + dx, 1, 8 + dz), Blocks.STONE);
+        h.setBlock(new BlockPos(19, 2, 8), Blocks.STONE);
+        ItemEntity sealed = item(h, 19, 1, 8, Items.COOKED_PORKCHOP, 1);
+        long[] work = {0};
+        h.startSequence().thenExecute(() -> {
+            var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:porkchop", 64);
+            h.assertTrue(result.success(), "The order was refused: " + result.message());
+            work[0] = companion.activeWorkId();
+        }).thenWaitUntil(() -> h.assertTrue(companion.workPhase().isEmpty(),
+                "The order never ended: phase " + companion.workPhase() + ", bag " + stored(companion, Items.COOKED_PORKCHOP)
+                        + ", " + companion.workResult(work[0])))
+          .thenExecute(() -> {
+              var recorded = companion.workResult(work[0]);
+              h.assertTrue(first.isRemoved() && second.isRemoved() && stored(companion, Items.COOKED_PORKCHOP) == 2,
+                      "The two in the water were not taken: bag " + stored(companion, Items.COOKED_PORKCHOP) + ", drops "
+                              + first.isRemoved() + "/" + second.isRemoved() + ", " + recorded);
+              h.assertTrue(!sealed.isRemoved(), "The sealed pork was taken through the stone");
+              h.assertTrue(recorded != null && recorded.message().contains("Подобрал свинину (2 шт.), осталось 1 шт."),
+                      "The leftover is not counted: " + recorded + "; last status " + companion.getLastTaskResult());
+          }).thenSucceed();
     }
 
     /** A drop on a ledge two blocks over his feet: he takes it from the ground below it, as a player reaches up. */
@@ -860,6 +939,19 @@ public final class CompanionPickUpTests {
         double px = at.getX() + .5, py = at.getY() + .6, pz = at.getZ() + .5;
         drop.setPos(px, py, pz);
         h.onEachTick(() -> drop.setPos(px, py, pz));
+        return drop;
+    }
+
+    /**
+     * A drop floating on the water under a roof, bobbing on the surface: it moves more than a twentieth of a block every
+     * tick, as a floating drop does, so the chase's route to it is stale every tick. The position is pinned tick by tick
+     * so the bob is the same in every run.
+     */
+    private static ItemEntity bobbing(GameTestHelper h, int x, int y, int z, Item item, int count) {
+        ItemEntity drop = item(h, x, y, z, item, count);
+        BlockPos at = h.absolutePos(new BlockPos(x, y, z));
+        double px = at.getX() + .5, py = at.getY() + .55, pz = at.getZ() + .5;
+        h.onEachTick(() -> drop.setPos(px, py + (h.getTick() % 2 == 0 ? .07 : -.07), pz));
         return drop;
     }
 

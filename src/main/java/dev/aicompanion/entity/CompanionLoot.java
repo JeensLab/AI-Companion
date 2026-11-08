@@ -53,6 +53,8 @@ final class CompanionLoot {
     private final Map<UUID, Long> retryAt = new HashMap<>();
     private long nextRoute;
     private Vec3 routedItem;
+    /** Where the drop lay when the chase for it began: a bob there is still the same try, a drift away is not. */
+    private Vec3 chaseFrom;
     // The way to the drop is longer than one search: walked in legs, and where he was when last seen moving on.
     private boolean farRoute;
     private long farUntil;
@@ -260,6 +262,7 @@ final class CompanionLoot {
         if (target == null || !target.isAlive() || !pending.contains(target.getUUID()) || unreachable.contains(target.getUUID())) {
             target = pending.stream().filter(id -> chaseable(level, id)).map(level::getEntity).filter(e -> e instanceof ItemEntity).map(e -> (ItemEntity)e)
                     .min(java.util.Comparator.comparingDouble(owner::distanceToSqr)).orElse(null);
+            chaseFrom = target == null ? null : target.position();
             path = null; pickupPoint = null; nextRoute = 0; routedItem = null; farRoute = false; farUntil = 0; farMoved = null; lastProgress = level.getGameTime(); bestDistance = Double.MAX_VALUE;
             dropLeaf();
         }
@@ -288,9 +291,16 @@ final class CompanionLoot {
         // Swimming after a drop in the water is walking too; only in the air no route is made.
         if (!owner.onGround() && !owner.isInWater()) return;
         // A drop floating on the water drifts with the current (and one under it rises to the surface): the chase follows
-        // the drop itself, and the drop's own movement is progress — a floating drop is not «out of reach» for moving away.
+        // the drop itself, so its movement only makes the route stale. That is no progress of the chase by itself: it
+        // counts while the drop still lies near where the chase began and a way to it was found — the same try goes on.
+        // A drop that has drifted off, or one with no stand at all, keeps its attempts and is given up honestly
+        // (judge 2: a drop bobbing in water with no stand was swum after for the whole order, «Не успел подобрать»).
         if (routedItem != null && routedItem.distanceToSqr(target.position()) > (target.isInWater() ? .0025 : .16)) {
-            path = null; pickupPoint = null; lastProgress = level.getGameTime(); attempts.remove(target.getUUID());
+            boolean hadWay = path != null && path.canReach();
+            path = null; pickupPoint = null; routedItem = null;
+            if (hadWay && chaseFrom != null && target.position().distanceToSqr(chaseFrom) <= 1) {
+                lastProgress = level.getGameTime(); attempts.remove(target.getUUID());
+            }
         }
         if (pickupPoint != null && path != null && path.getEndNode() != null
                 && owner.blockPosition().equals(path.getTarget()) && owner.position().distanceToSqr(pickupPoint) < 2.25) {
