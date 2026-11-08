@@ -95,6 +95,8 @@ public final class CompanionObsidianTests {
         c.setItem(0, new ItemStack(Items.GOLDEN_PICKAXE));
         c.setItem(2, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        // Two cobblestones the player set by the pond are no building of his: the lava is still to be had (second review 08.11).
+        for (BlockPos cell : List.of(new BlockPos(17, GROUND + 1, 14), new BlockPos(17, GROUND + 1, 18))) placedByPlayer(h, c, cell, Blocks.COBBLESTONE);
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":3}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
@@ -107,7 +109,7 @@ public final class CompanionObsidianTests {
         });
     }
 
-    /** The player's lit portal nearer to him than the lava: its frame is no obsidian lying about, he leaves it whole. */
+    /** The player's portals nearer to him than the lava, a lit one and one not lit yet: their frames are no obsidian lying about. */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void thePlayersPortalBesideTheLavaIsLeftWhole(GameTestHelper h) {
         ground(h);
@@ -117,6 +119,9 @@ public final class CompanionObsidianTests {
             if (x == 8 || x == 11 || y == GROUND + 1 || y == GROUND + 5) { h.setBlock(new BlockPos(x, y, 21), Blocks.OBSIDIAN); frame.add(new BlockPos(x, y, 21)); }
         h.setBlock(new BlockPos(9, GROUND + 2, 21), Blocks.FIRE);
         h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(10, GROUND + 4, 21));
+        // And one not lit, without its corners, as a player leaves it before the flint and steel (second review 08.11).
+        for (int z = 8; z <= 11; z++) for (int y = GROUND + 1; y <= GROUND + 5; y++)
+            if ((z == 8 || z == 11) != (y == GROUND + 1 || y == GROUND + 5)) { h.setBlock(new BlockPos(13, y, z), Blocks.OBSIDIAN); frame.add(new BlockPos(13, y, z)); }
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
@@ -181,18 +186,16 @@ public final class CompanionObsidianTests {
         });
     }
 
-    /** Lava and obsidian on a site where the player builds are his: no water poured there, nothing mined, and he says he found no lava. */
+    /** Lava and obsidian where the player has a building are his: no water poured there, nothing mined, and he says he found no lava. */
     @GameTest(template = "tall_tree", timeoutTicks = 600)
     public static void lavaAndObsidianWhereThePlayerBuildsAreLeftAlone(GameTestHelper h) {
         ground(h);
         List<BlockPos> pond = lava(h, 18, 15, 3, 1);
         CompanionEntity c = spawn(h);
-        var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
+        // A chest of his on the surface makes it a building of his (CompanionPlayerBuilds.HOME_SCORE), the obsidian wall is part of it.
+        placedByPlayer(h, c, new BlockPos(16, GROUND + 1, 22), Blocks.CHEST);
         List<BlockPos> wall = List.of(new BlockPos(14, GROUND + 1, 20), new BlockPos(15, GROUND + 1, 20), new BlockPos(16, GROUND + 1, 20), new BlockPos(17, GROUND + 1, 20));
-        for (BlockPos cell : wall) {
-            h.setBlock(cell, Blocks.OBSIDIAN);
-            NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)), Blocks.GRASS_BLOCK.defaultBlockState(), player));
-        }
+        for (BlockPos cell : wall) placedByPlayer(h, c, cell, Blocks.OBSIDIAN);
         c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
@@ -215,6 +218,13 @@ public final class CompanionObsidianTests {
             cells.add(cell);
         }
         return cells;
+    }
+
+    /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */
+    private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos cell, net.minecraft.world.level.block.Block block) {
+        h.setBlock(cell, block);
+        var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
+        NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)), Blocks.GRASS_BLOCK.defaultBlockState(), player));
     }
 
     private static void ground(GameTestHelper h) {

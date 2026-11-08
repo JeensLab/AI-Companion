@@ -66,6 +66,8 @@ final class CompanionObsidian {
     private Path path;
     /** Where he stood when the block came within his reach and sight. */
     private Vec3 foothold;
+    /** How the order ends, held while his water is scooped first. */
+    private CompanionActionResult ending;
     /** The player's building sites here, taken once a tick (a block scan asks about many cells). */
     private java.util.function.Predicate<BlockPos> site = pos -> false;
     /** Cells of lava his water set or is setting: their obsidian is his even beside a portal. */
@@ -90,7 +92,7 @@ final class CompanionObsidian {
         String refusal = refusal(c.level(), w.items.carriedItems());
         if (refusal != null) return CompanionActionResult.failed(refusal);
         reset();
-        wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; nextLook = settleAt = 0; retried = false;
+        wanted = count; before = w.items.countCarried(Items.OBSIDIAN); mined = pours = 0; water = null; ending = null; nextLook = settleAt = 0; retried = false;
         his.clear(); passed.clear();
         return null;
     }
@@ -104,6 +106,7 @@ final class CompanionObsidian {
 
     /** One tick of the order: obsidian mined while there is some, else his water back, else on to the next lava and over it. */
     void tick(ServerLevel level) {
+        if (ending != null) { if (takeWaterBack(level)) end(ending); return; }
         site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         int got = got();
         if (got >= wanted) { if (takeWaterBack(level)) end(true, "Накопал обсидиана: " + got + "."); return; }
@@ -137,13 +140,25 @@ final class CompanionObsidian {
 
     private String short_(int got) { return got == 0 ? "" : " Накопал " + got + " из " + wanted + "."; }
 
-    /** A failure ends obtain_item at once with what he says (BLOCKED): planned again, the same lava was looked for twice more. */
-    private void end(boolean success, String message) { reset(); w.finish(success ? CompanionActionResult.ok(message) : CompanionActionResult.blocked(message)); }
+    /**
+     * A failure ends obtain_item at once with what he says (BLOCKED): planned again, the same lava was looked for twice more. With
+     * his water out it is scooped first, and the drops let lie in it are given back to the pickup (left for the order's end, they
+     * lay until they were gone).
+     */
+    private void end(boolean success, String message) { end(success ? CompanionActionResult.ok(message) : CompanionActionResult.blocked(message)); }
+
+    private void end(CompanionActionResult result) {
+        if (water != null) { ending = result; return; }
+        if (mined > got()) c.retryHarvestPickup();
+        ending = null;
+        reset();
+        w.finish(result);
+    }
 
     /** Stopped or given another order: his water is scooped if his hand reaches it, else it stays (stop means stop). */
     void cancel() {
         if (water != null && c.level() instanceof ServerLevel level && inReach(level, water)) CompanionWaterBucket.scoopInto(c, level, water);
-        water = null;
+        water = null; ending = null;
         reset();
     }
 
@@ -154,7 +169,7 @@ final class CompanionObsidian {
         if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN) || passed.contains(pos) || pos.equals(c.blockPosition().below())) return false;
         // While his water is out, only what it sets: a walk to obsidian far off would leave the water behind him.
         if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
-        if (site.test(pos) || !his.contains(pos) && portal(level, pos)) return false;
+        if (site.test(pos) || !his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
         if (wet(level, pos)) return true;
         for (Direction side : new Direction[]{Direction.UP, Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST})
             if (CompanionLava.at(level, pos.relative(side))) return false;
@@ -170,14 +185,30 @@ final class CompanionObsidian {
         return false;
     }
 
+    /**
+     * A portal's frame not lit yet, corners or not: an empty frame stands beside it (PortalShape, as the flint and steel finds it).
+     * The player's, built before the mod knew his buildings, or anyone's; the broken frame of ruined portals is no frame.
+     */
+    private static boolean frame(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) {
+            BlockPos inside = pos.relative(side);
+            if (!level.getBlockState(inside).isAir()) continue;
+            if (net.minecraft.world.level.portal.PortalShape.findEmptyPortalShape(level, inside, Direction.Axis.X).isPresent()
+                    || net.minecraft.world.level.portal.PortalShape.findEmptyPortalShape(level, inside, Direction.Axis.Z).isPresent()) return true;
+        }
+        return false;
+    }
+
     private void mine(ServerLevel level, int got) {
         BlockState state = level.getBlockState(target);
         // Once he stands where he sees it he mines from there: in his running water he sways a few hundredths of a block, and the
         // shore's edge took a block level with it in and out of his sight every other tick (GameTest 08.11).
         // The next block within his reach and sight where he stands is mined from there, as a player does: walked to anew, he went
         // against his running water for seconds (in game 08.11). Dry, the drop must also rest where he picks it up (the approach).
-        if (foothold == null && wet(level, target) && inReach(c.getEyePosition(), target) && CompanionMiningNavigation.visible(c, c.getEyePosition(), target))
+        if (foothold == null && wet(level, target) && inReach(c.getEyePosition(), target) && CompanionMiningNavigation.visible(c, c.getEyePosition(), target)) {
             foothold = c.position();
+            w.route.stop();
+        }
         boolean holds = foothold != null && c.position().distanceToSqr(foothold) < HOLD * HOLD;
         // Dry, its drop must rest where he can pick it up; under his water it floats until the water is back in his bucket (collect).
         int reach = holds ? 1 : w.items.reachBlock(level, target, !wet(level, target));
@@ -218,7 +249,8 @@ final class CompanionObsidian {
             aim = lava.above(); stands = CompanionWaterFill.standsFor(c, level, List.of(aim)); legs = 0; path = null;
         }
         int slot = slot(Items.WATER_BUCKET);
-        if (slot < 0) { end(false, NO_WATER + short_(got)); return; }
+        // Planned again, obtain_item gets water first (his was left, or a fall took it): no BLOCKED here.
+        if (slot < 0) { end(CompanionActionResult.failed(NO_WATER + short_(got))); return; }
         if (!inReach(level, aim)) {
             c.workStatus("Иду к лаве.");
             // No cell to pour it from (the middle of a lake): only this lava is passed over; no way there: all of it.
@@ -226,9 +258,12 @@ final class CompanionObsidian {
             return;
         }
         if (!level.getBlockState(aim).isAir() || !CompanionLava.at(level, aim.below())) { aim = null; return; }
+        Set<BlockPos> under = lavaUnder(level, aim);
+        // His water runs seven cells: lava of a building of the player's within its run is not poured over (second review 08.11).
+        if (under.stream().anyMatch(site)) { passed.addAll(pond(level, aim.below())); aim = null; return; }
         ItemStack bucket = c.getItem(slot);
         c.getLookControl().setLookAt(Vec3.atCenterOf(aim));
-        his.addAll(lavaUnder(level, aim));
+        his.addAll(under);
         if (!((BucketItem) bucket.getItem()).emptyContents(null, level, aim, null, bucket)) { passed.addAll(pond(level, aim.below())); aim = null; return; }
         c.setItem(slot, new ItemStack(Items.BUCKET));
         c.animateAction(1, aim, bucket);
