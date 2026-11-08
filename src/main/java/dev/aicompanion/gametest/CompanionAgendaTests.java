@@ -318,6 +318,7 @@ public final class CompanionAgendaTests {
             h.assertTrue(!f.c.goals().outstanding(), "The second cancel did not end the pickaxe order");
             var none = CompanionEvents.executeAction(f.p, "goal_cancel", "", 1);
             h.assertTrue(!none.success() && none.message().contains("Нет цели"), "A third cancel found a goal: " + none.message());
+            CompanionPortalBuildTests.putOut(h);
             h.succeed();
         });
     }
@@ -675,6 +676,7 @@ public final class CompanionAgendaTests {
             h.assertTrue(seen[1], "The batch was not collected by a deed of his own");
             h.assertTrue(count(f.c, Items.IRON_INGOT) == 4 && f.c.batches().summaries().isEmpty(), "The blocked goal froze his deeds: " + f.c.getStoredItemsSummary() + " " + f.goal().state());
             h.assertTrue(f.goal().state() == CompanionAgenda.State.BLOCKED, "The goal is not blocked any more: " + f.goal().state() + " " + f.goal().reason());
+            CompanionPortalBuildTests.putOut(h);
         });
     }
 

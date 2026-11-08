@@ -11,18 +11,18 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.EntityBlock;
-import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.pathfinder.Path;
@@ -33,35 +33,45 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Predicate;
 
 /**
  * «Построй портал» (decided 08.11): a Nether portal's frame without its corners, ten obsidian, on the nearest level free place within
  * {@link #SITE} blocks of the player, its two bottom blocks set into the ground in place of what was there (he picks that up), so the
  * way in has no step; lit at once with his flint and steel, which wears as a player's does. A lit portal within {@link #NEAR} blocks of
- * the player is his way to the Nether already: none is built. Short of obsidian or of a flint and steel the order is refused at once
- * as a shortage, and the plan gets them first (CompanionPlanRunner). What stands of the frame is read from the world, so an order
- * stopped half way goes on with the same frame. The top of a frame without corners hangs in the air: as a player does, he props it
- * with a block of his under it and takes the prop away after. He never steps into the portal himself.
+ * the player is his way to the Nether already: none is built; one he knows farther off he leads the player to (decided 09.11), unless
+ * the player asked for a new one. A portal is known by its own block: one he built or saw, wherever the player has gone since. Short
+ * of obsidian or of a flint and steel the order is refused at once as a shortage, and the plan gets them first (CompanionPlanRunner).
+ * What stands of the frame is read from the world, so an order stopped half way goes on with the same frame; the obsidian he set is
+ * not mined again for it (CompanionObsidian). He digs only natural ground and sets the frame in air: the player's blocks stay. The top
+ * of a frame without corners hangs in the air: as a player does, he props it with a block of his under it and takes it away after.
+ * He never steps into the portal himself (CompanionNodeEvaluator); its way in faces the player.
  */
 final class CompanionPortalBuild {
     static final String THERE = "Рядом уже есть портал.";
     static final String DONE = "Портал готов.";
+    static final String LED = "Пришли — вот портал.";
     static final String END = "В Энде портал не зажечь.";
+    static final String ELSEWHERE = "Здесь портал не зажечь.";
     static final String NO_PLACE = "Не нашёл ровного свободного места под портал рядом с тобой.";
     static final String NO_WAY = "Не могу подойти туда, где строю портал.";
     static final String TAKEN = "Место под портал заняли — дострою по новой просьбе.";
     static final String NO_FLINT = "Нечем зажечь портал — нужно огниво.";
-    static final String NO_PROP = "Нечем подпереть верх рамки — дай мне любой блок.";
+    static final String NO_PROP = "Нечем подпереть верх рамки — нужен блок земли, булыжника или досок.";
     static final String NOT_LIT = "Рамка не зажглась.";
     static final String LYING = "Не могу забрать то, что лежит в рамке, — убери, и я зажгу портал.";
+    static final String CROWDED = "В рамке кто-то стоит — отойди, и я зажгу портал.";
+    static final String FLUID = "К рамке подтекает вода или лава — место не годится.";
+    static final String PORTAL = "minecraft:nether_portal";
     /** A frame without its corners. */
     static final int OBSIDIAN = 10;
     /** A lit portal this near the player is his way to the Nether already; the frame goes up this near him (blocks). */
     private static final int NEAR = 16, SITE = 10;
+    /** A portal he knows this far from the player is led to instead of built; a player this far behind is waited for, this long. */
+    private static final int FAR = 150, LAG = 16, LEAD_WAIT = 20 * 60;
     /** Ground levels looked at below and above the ground under the player. */
     private static final int BELOW = 3, ABOVE = 3;
     /** The hardest ground he digs out for the bottom of the frame (deepslate); harder is no place for it. */
@@ -73,6 +83,8 @@ final class CompanionPortalBuild {
     private static final int LEGS = 8, PLACE_TICKS = 4, WAIT_TICKS = 100;
     /** How long he tries to pick up what lies in the frame before he says he cannot (ticks). */
     private static final int PICK_TICKS = 200;
+    /** What he props the top with besides planks and logs: blocks that come back as they were when broken (glass would not, review 09.11). */
+    private static final Set<Item> PROPS = Set.of(Items.DIRT, Items.COARSE_DIRT, Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.NETHERRACK);
 
     private enum Kind { DIG, PROP, OBSIDIAN, CLEAR, PICK, LIGHT }
     private record Step(Kind kind, BlockPos cell) { }
@@ -85,6 +97,7 @@ final class CompanionPortalBuild {
             return List.of(cell(1, 0), cell(2, 0), cell(0, 1), cell(0, 2), cell(0, 3), cell(3, 1), cell(3, 2), cell(3, 3), cell(1, 4), cell(2, 4));
         }
         List<BlockPos> inside() { return List.of(cell(1, 1), cell(2, 1), cell(1, 2), cell(2, 2), cell(1, 3), cell(2, 3)); }
+        AABB opening() { return new AABB(cell(1, 1)).minmax(new AABB(cell(2, 3))); }
         BlockPos fire() { return cell(1, 1); }
         AABB box() { return new AABB(cell(0, 0)).minmax(new AABB(cell(3, 4))); }
     }
@@ -92,6 +105,11 @@ final class CompanionPortalBuild {
     private final CompanionWork w;
     private final CompanionEntity c;
     private Frame frame;
+    /** The portal he leads the player to, and since when he waits for the player. */
+    private BlockPos leadTo;
+    private long leadWait;
+    /** The obsidian he set for a frame not lit yet: no obsidian order mines it (kept over orders, not over a reload). */
+    private final Set<BlockPos> laid = new HashSet<>();
     private Set<BlockPos> stands = Set.of(), walkingTo = Set.of();
     private Path path;
     private int legs;
@@ -106,32 +124,61 @@ final class CompanionPortalBuild {
         return player != null && player.level() == c.level() ? player.blockPosition() : c.blockPosition();
     }
 
-    /** A lit Nether portal within {@link #NEAR} blocks of the cell, whoever lit it. */
-    static boolean litNear(ServerLevel level, BlockPos center) {
-        return level.getPoiManager().findClosest(type -> type.is(PoiTypes.NETHER_PORTAL),
-                pos -> level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.NETHER_PORTAL), center, NEAR, PoiManager.Occupancy.ANY).isPresent();
+    /**
+     * The nearest lit portal he knows in this world within {@code within} blocks of the cell: one lit near the cell or near him is seen
+     * now and remembered; others are remembered (built or seen), the block still a portal where it is loaded, trusted where it is not.
+     */
+    static BlockPos known(CompanionEntity c, ServerLevel level, BlockPos center, int within) {
+        for (BlockPos near : List.of(center, c.blockPosition())) {
+            var seen = level.getPoiManager().findClosest(type -> type.is(PoiTypes.NETHER_PORTAL),
+                    pos -> level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.NETHER_PORTAL), near, NEAR, PoiManager.Occupancy.ANY);
+            // One block of a portal is enough to know it by: not one more for each of its six.
+            if (seen.isPresent() && c.knownPlaces(PORTAL).stream().noneMatch(pos -> pos.closerThan(seen.get(), 4))) c.rememberObserved(seen.get());
+        }
+        return c.knownPlaces(PORTAL).stream().filter(pos -> pos.closerThan(center, within))
+                .filter(pos -> !level.hasChunkAt(pos) || level.getBlockState(pos).is(Blocks.NETHER_PORTAL))
+                .min(Comparator.comparingDouble(pos -> pos.distSqr(center))).orElse(null);
     }
 
+    /** Obsidian he set for a frame still being built: not his to mine for it. */
+    boolean laid(BlockPos pos) { return laid.contains(pos); }
+
     /**
-     * build_portal: null when the work may start, else the answer: a portal there already (a success), the End, no place, or a
-     * shortage of obsidian or of a flint and steel, its evidence naming what to get and how many he must carry.
+     * build_portal: null when the work may start (a build, or the walk to a portal he knows), else the answer: a portal near already
+     * (a success), a world no portal lights in, no place, or a shortage of obsidian or of a flint and steel, its evidence naming what
+     * to get and how many he must carry. {@code item} "new": the player wants one here; an item id: the plan got what the step lacked
+     * (CompanionPlanRunner) and the portals were looked for before. Either way none is looked for now.
      */
-    CompanionActionResult begin() {
+    CompanionActionResult begin(String item) {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для работы нужен загруженный мир.");
         reset();
         if (level.dimension() == Level.END) return CompanionActionResult.failed(END);
+        if (level.dimension() != Level.OVERWORLD && level.dimension() != Level.NETHER) return CompanionActionResult.failed(ELSEWHERE);
         BlockPos center = center(c);
-        if (litNear(level, center)) return CompanionActionResult.ok(THERE);
+        if (!"new".equals(item) && !item.contains(":")) {
+            BlockPos portal = known(c, level, center, FAR);
+            if (portal != null && portal.closerThan(center, NEAR)) return CompanionActionResult.ok(THERE);
+            if (portal != null) {
+                leadTo = portal;
+                int far = (int) Math.round(Math.sqrt(portal.distSqr(center)));
+                c.autonomySay("Портал уже есть — " + CompanionWorkItems.blocks(far) + " " + where(center, portal)
+                        + ". Пойдём, отведу. Нужен здесь — скажи «построй новый».", true);
+                event("portal_lead", "portal", portal.toShortString(), "far", far);
+                return null;
+            }
+        }
         ServerPlayer player = c.getOwnerPlayer();
-        Predicate<BlockPos> site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         long started = System.nanoTime();
-        List<BlockPos> chests = w.chests.blockEntitiesNear(level, center, SITE + 4 + CHESTS).stream().filter(pos -> level.getBlockEntity(pos) instanceof net.minecraft.world.Container).toList();
-        frame = choose(level, center, site, chests, player == null || player.level() != level ? null : player.getBoundingBox());
+        List<BlockPos> chests = w.chests.blockEntitiesNear(level, center, SITE + 4 + CHESTS).stream()
+                .filter(pos -> level.getBlockEntity(pos) instanceof net.minecraft.world.Container).toList();
+        frame = choose(level, center, chests, player == null || player.level() != level ? null : player.getBoundingBox());
         if (frame == null) return CompanionActionResult.failed(NO_PLACE);
         int need = (int) frame.obsidian().stream().filter(cell -> !level.getBlockState(cell).is(Blocks.OBSIDIAN)).count();
         int have = w.items.countCarried(Items.OBSIDIAN);
         if (have < need) return shortage("Для портала нужно " + need + " обсидиана, у меня " + have + ".", "minecraft:obsidian", need);
         if (!lighter()) return shortage(NO_FLINT, "minecraft:flint_and_steel", 1);
+        // In sand there is no block to prop the top with: said now, not with eight obsidian set.
+        if (!propped(level)) return CompanionActionResult.failed(NO_PROP);
         stands = standsFor(level, frame);
         if (stands.isEmpty()) return CompanionActionResult.failed(NO_WAY);
         event("portal_site", "frame", frame.base().toShortString(), "along", frame.along(), "front", frame.front(), "need", need, "searchMs", (System.nanoTime() - started) / 1_000_000);
@@ -143,16 +190,25 @@ final class CompanionPortalBuild {
     }
 
     String jobName() {
+        if (leadTo != null) return "дорогу к порталу";
         if (frame == null || !(c.level() instanceof ServerLevel level)) return "постройку портала";
         return "постройку портала (" + frame.obsidian().stream().filter(cell -> level.getBlockState(cell).is(Blocks.OBSIDIAN)).count() + " из " + OBSIDIAN + ")";
     }
 
     void cancel() { reset(); }
 
-    private void reset() { frame = null; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
+    private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
 
-    /** One tick: the next thing the frame lacks, from where he can reach it; lit once whole. */
+    /** «На север», «на юго-запад»: where the cell lies from the other, as he says it (north is −z). */
+    private static String where(BlockPos from, BlockPos to) {
+        String[] names = {"на юг", "на юго-запад", "на запад", "на северо-запад", "на север", "на северо-восток", "на восток", "на юго-восток"};
+        double angle = Math.toDegrees(Math.atan2(-(to.getX() - from.getX()), to.getZ() - from.getZ()));
+        return names[Math.floorMod(Math.round(angle / 45), 8)];
+    }
+
+    /** One tick: to the portal he knows, or the next thing the frame lacks from where he can reach it; lit once whole. */
     void tick(ServerLevel level) {
+        if (leadTo != null) { lead(level); return; }
         if (frame == null) { w.finish(false, NO_PLACE); return; }
         if (level.getBlockState(frame.fire()).is(Blocks.NETHER_PORTAL)) { done(level); return; }
         Step step = next(level);
@@ -161,7 +217,8 @@ final class CompanionPortalBuild {
         // Out of the frame, with the cell in his reach and sight: from inside it the fire would take him to the Nether. What lies in
         // the frame he steps in for, the frame not lit yet.
         Vec3 eyes = c.getEyePosition();
-        if (step.kind() != Kind.PICK && (!c.onGround() || frame.box().intersects(c.getBoundingBox()) || new AABB(step.cell()).distanceToSqr(eyes) > REACH * REACH || !visible(level, eyes, step.cell()))) {
+        if (step.kind() != Kind.PICK && (!c.onGround() || frame.box().intersects(c.getBoundingBox())
+                || new AABB(step.cell()).distanceToSqr(eyes) > REACH * REACH || !visible(level, eyes, step.cell()))) {
             c.workStatus("Иду строить портал.");
             // Come to a place it is still not seen from (a column set since hides it): that place is no good any more.
             if (path != null && w.route.legOver() && stands.remove(c.blockPosition())) path = null;
@@ -179,12 +236,46 @@ final class CompanionPortalBuild {
     }
 
     /**
+     * To the portal he knows, the player after him: a player left behind is waited for, a minute at most, as on a walk along a heading
+     * (CompanionCourse). He stops before it: a portal is a wall to his own feet.
+     */
+    private void lead(ServerLevel level) {
+        if (level.hasChunkAt(leadTo) && !level.getBlockState(leadTo).is(Blocks.NETHER_PORTAL)) { w.finish(false, "Портала там больше нет."); return; }
+        ServerPlayer player = c.getOwnerPlayer();
+        long now = level.getGameTime();
+        if (player != null && player.level() == level && player.distanceTo(c) > LAG && player.distanceToSqr(leadTo.getCenter()) > c.distanceToSqr(leadTo.getCenter())) {
+            if (leadWait == 0) leadWait = now;
+            w.route.stop();
+            c.getLookControl().setLookAt(player, 30, 30);
+            c.workStatus("Жду тебя — веду к порталу.");
+            if (now - leadWait > LEAD_WAIT) w.finish(false, "Ты отстал. Портал вон там: " + leadTo.toShortString() + ".");
+            return;
+        }
+        leadWait = 0;
+        c.workStatus("Веду к порталу.");
+        var step = w.route.legs(leadTo, 3);
+        if (step == CompanionTravel.Step.FAILED) {
+            w.route.legsEnd(false);
+            w.finish(false, "Не могу пройти к порталу. Он вон там: " + leadTo.toShortString() + ".");
+        } else if (step == CompanionTravel.Step.NEAR) {
+            w.route.legsEnd(true);
+            event("portal_led", "portal", leadTo.toShortString());
+            w.finish(true, LED);
+        }
+    }
+
+    /**
      * What the frame lacks first, read from the world: the ground where its bottom goes, then the obsidian in order (a prop under a
-     * top block that has nothing to rest on), then whatever is inside it (the prop too), then the fire. Null when he cannot go on.
+     * top block that has nothing to rest on), then whatever is inside it (the prop too), then what lies in it, then the fire. Null
+     * when he cannot go on.
      */
     private Step next(ServerLevel level) {
-        for (BlockPos ground : List.of(frame.cell(1, 0), frame.cell(2, 0)))
+        // Water or lava come in (a hidden spring, a lake behind): no frame here, and no swinging at the water.
+        for (BlockPos cell : frame.inside()) if (!level.getFluidState(cell).isEmpty()) { w.finish(false, FLUID); return null; }
+        for (BlockPos ground : List.of(frame.cell(1, 0), frame.cell(2, 0))) {
+            if (!level.getFluidState(ground).isEmpty()) { w.finish(false, FLUID); return null; }
             if (!level.getBlockState(ground).isAir() && !level.getBlockState(ground).is(Blocks.OBSIDIAN)) return new Step(Kind.DIG, ground);
+        }
         for (BlockPos cell : frame.obsidian()) {
             if (level.getBlockState(cell).is(Blocks.OBSIDIAN)) continue;
             if (!free(level, cell)) { w.finish(false, TAKEN); return null; }
@@ -222,9 +313,7 @@ final class CompanionPortalBuild {
     }
 
     /** What lies inside the frame: lit, the portal would take it, and his pickup would follow it in (in game 08.11, the prop's drop). */
-    private List<ItemEntity> lying(ServerLevel level) {
-        return level.getEntitiesOfClass(ItemEntity.class, new AABB(frame.cell(1, 1)).minmax(new AABB(frame.cell(2, 3))), ItemEntity::isAlive);
-    }
+    private List<ItemEntity> lying(ServerLevel level) { return level.getEntitiesOfClass(ItemEntity.class, frame.opening(), ItemEntity::isAlive); }
 
     /**
      * What lies inside the frame is picked up before it is lit: once it lies, his own drop is chased again (falling, it was given up as
@@ -248,17 +337,29 @@ final class CompanionPortalBuild {
         set(level, cell, best.getItem());
     }
 
-    /** A whole block that stays where it is set and comes away with what he carries: no obsidian, nothing that falls or holds things. */
+    /** A block that comes back as it was when he breaks it with what he carries: dirt, cobblestone, netherrack, planks, logs. */
     private boolean propping(ItemStack stack, ServerLevel level, BlockPos cell) {
-        if (!(stack.getItem() instanceof BlockItem item) || stack.is(Items.OBSIDIAN) || item.getBlock() instanceof FallingBlock || item.getBlock() instanceof EntityBlock) return false;
-        BlockState state = item.getBlock().defaultBlockState();
-        return state.isCollisionShapeFullBlock(level, cell) && diggable(state, level, cell);
+        if (!(stack.getItem() instanceof BlockItem item) || !(PROPS.contains(item) || stack.is(ItemTags.PLANKS) || stack.is(ItemTags.LOGS))) return false;
+        return diggable(item.getBlock().defaultBlockState(), level, cell);
     }
 
     private static float hardness(ItemStack stack) { return ((BlockItem) stack.getItem()).getBlock().defaultDestroyTime(); }
 
+    /** The top has something to rest on, or he can prop it: a prop in his bag, or one the ground dug out for the bottom gives him. */
+    private boolean propped(ServerLevel level) {
+        BlockPos prop = frame.cell(1, 3);
+        if (level.getBlockState(frame.cell(1, 4)).is(Blocks.OBSIDIAN) || level.getBlockState(frame.cell(2, 4)).is(Blocks.OBSIDIAN)) return true;
+        if (w.items.carriedItems().stream().anyMatch(stack -> propping(stack, level, prop))) return true;
+        for (BlockPos ground : List.of(frame.cell(1, 0), frame.cell(2, 0))) {
+            BlockState state = level.getBlockState(ground);
+            ItemStack tool = w.items.carriedItems().stream().filter(stack -> stack.isCorrectToolForDrops(state)).findFirst().orElse(ItemStack.EMPTY);
+            if (CompanionTools.drops(state, level, ground, null, c, tool).stream().anyMatch(drop -> propping(drop, level, prop))) return true;
+        }
+        return false;
+    }
+
     /** The block in his hand set in the cell as a player sets it: against a face, with no one in it, one from the stack. */
-    private void set(ServerLevel level, BlockPos cell, net.minecraft.world.item.Item item) {
+    private void set(ServerLevel level, BlockPos cell, Item item) {
         BlockState state = ((BlockItem) item).getBlock().defaultBlockState();
         if (!level.isUnobstructed(state, cell, CollisionContext.empty())) {
             if (waitingSince == 0) waitingSince = level.getGameTime();
@@ -271,6 +372,7 @@ final class CompanionPortalBuild {
         if (!c.getMainHandItem().is(item) && !c.equipForWork(id).success()) { w.finish(false, "Не могу взять в руку «" + CompanionWork.itemName(item) + "»."); return; }
         ItemStack held = c.getMainHandItem();
         if (!held.is(item) || !level.setBlock(cell, state, 3)) { w.finish(false, TAKEN); return; }
+        if (item == Items.OBSIDIAN) laid.add(cell.immutable());
         c.animateAction(1, cell, held);
         held.shrink(1);
         c.setChanged();
@@ -285,6 +387,14 @@ final class CompanionPortalBuild {
     private void light(ServerLevel level) {
         if (!lighter() || !c.getMainHandItem().is(Items.FLINT_AND_STEEL) && !c.equipForWork("minecraft:flint_and_steel").success()
                 || !CompanionFacts.usable(c.getMainHandItem())) { w.finish(false, NO_FLINT); return; }
+        // Somebody in the frame would go to the Nether with the fire: waited for, as for a block (set).
+        if (!level.getEntitiesOfClass(LivingEntity.class, frame.opening(), LivingEntity::isAlive).isEmpty()) {
+            if (waitingSince == 0) waitingSince = level.getGameTime();
+            if (level.getGameTime() - waitingSince > WAIT_TICKS) w.finish(false, CROWDED);
+            else c.workStatus("Жду, пока из рамки выйдут.");
+            return;
+        }
+        waitingSince = 0;
         ItemStack steel = c.getMainHandItem();
         BlockPos fire = frame.fire();
         if (!BaseFireBlock.canBePlacedAt(level, fire, frame.front().getOpposite())) { w.finish(false, NOT_LIT); return; }
@@ -300,6 +410,7 @@ final class CompanionPortalBuild {
 
     private void done(ServerLevel level) {
         c.rememberPlaced(frame.fire());
+        laid.removeAll(frame.obsidian());
         event("portal_lit", "fire", frame.fire().toShortString());
         reset();
         w.finish(true, DONE);
@@ -313,9 +424,9 @@ final class CompanionPortalBuild {
 
     /**
      * The nearest frame that fits, the one most of whose obsidian already stands first (his own, stopped half way): both ways round,
-     * the way in on either side, its ground a few levels above or below the player's.
+     * its ground a few levels above or below the player's, the way in on the player's side (behind it, the way to him led through it).
      */
-    private Frame choose(ServerLevel level, BlockPos center, Predicate<BlockPos> site, List<BlockPos> chests, AABB player) {
+    private Frame choose(ServerLevel level, BlockPos center, List<BlockPos> chests, AABB player) {
         Frame best = null;
         int bestPlaced = -1;
         double bestFar = 0;
@@ -323,9 +434,10 @@ final class CompanionPortalBuild {
             BlockPos base = center.offset(dx, dy - 1, dz);
             for (Direction along : new Direction[]{Direction.EAST, Direction.SOUTH}) for (Direction front : new Direction[]{along.getClockWise(), along.getCounterClockWise()}) {
                 Frame f = new Frame(base, along, front);
-                double far = Vec3.atCenterOf(f.cell(1, 2)).add(Vec3.atLowerCornerOf(along.getNormal()).scale(.5)).distanceToSqr(Vec3.atBottomCenterOf(center));
-                if (far > SITE * SITE) continue;
-                int placed = fits(level, f, site, chests, player);
+                Vec3 middle = Vec3.atCenterOf(f.cell(1, 2)).add(Vec3.atLowerCornerOf(along.getNormal()).scale(.5));
+                double far = middle.distanceToSqr(Vec3.atBottomCenterOf(center));
+                if (far > SITE * SITE || Vec3.atBottomCenterOf(center).subtract(middle).dot(Vec3.atLowerCornerOf(front.getNormal())) < 0) continue;
+                int placed = fits(level, f, chests, player);
                 if (placed > bestPlaced || placed >= 0 && placed == bestPlaced && far < bestFar) { best = f; bestPlaced = placed; bestFar = far; }
             }
         }
@@ -334,37 +446,49 @@ final class CompanionPortalBuild {
 
     /**
      * How many of the frame's obsidian stand already, or -1 when it does not fit: its columns on firm ground, the ground for its bottom
-     * his to dig, the rest free and dry (a prop of his may still stand inside), a level way in on its front, no building of the
-     * player's, no chest near, not where the player stands (null: he is not in this world).
+     * natural and his to dig with no water or lava beside it to run in, the rest free and dry (his prop may still stand under the top),
+     * a level way in on its front, no chest near, no obsidian right outside it (a bigger frame of the player's), not where the player
+     * stands (null: he is not in this world). Air is all it takes of the player's: none of his blocks is dug (decided 09.11).
      */
-    private int fits(ServerLevel level, Frame f, Predicate<BlockPos> site, List<BlockPos> chests, AABB player) {
+    private int fits(ServerLevel level, Frame f, List<BlockPos> chests, AABB player) {
         if (player != null && f.box().intersects(player)) return -1;
         AABB near = f.box().inflate(CHESTS);
         if (chests.stream().anyMatch(chest -> near.contains(Vec3.atCenterOf(chest)))) return -1;
         int placed = 0;
         for (int i = 0; i < 4; i++) {
             BlockPos ground = f.cell(i, 0);
-            if (!level.hasChunkAt(ground) || site.test(ground)) return -1;
+            if (!level.hasChunkAt(ground)) return -1;
             BlockState state = level.getBlockState(ground);
             boolean column = i == 0 || i == 3;
             if (column) { if (!state.isFaceSturdy(level, ground, Direction.UP) || !state.getFluidState().isEmpty()) return -1; }
             else if (state.is(Blocks.OBSIDIAN)) placed++;
-            else if (!free(level, ground) && !diggable(state, level, ground)) return -1;
+            else if (!free(level, ground) && !(natural(state) && diggable(state, level, ground))) return -1;
             if (!column) {
                 BlockPos before = ground.relative(f.front());
-                if (!level.getBlockState(before).isFaceSturdy(level, before, Direction.UP) || !free(level, before.above()) || !free(level, before.above(2)) || site.test(before)) return -1;
+                if (!level.getBlockState(before).isFaceSturdy(level, before, Direction.UP) || !free(level, before.above()) || !free(level, before.above(2))) return -1;
+                for (BlockPos beside : List.of(before, ground.relative(f.front().getOpposite()), ground.below()))
+                    if (!level.getFluidState(beside).isEmpty()) return -1;
             }
             for (int j = 1; j <= 4; j++) {
                 if (column && j == 4) continue;
                 BlockPos cell = f.cell(i, j);
-                if (site.test(cell)) return -1;
                 BlockState here = level.getBlockState(cell);
-                if (!column && j <= 3) { if (!free(level, cell) && !(j == 3 && diggable(here, level, cell) && !here.is(Blocks.OBSIDIAN))) return -1; }
+                boolean prop = cell.equals(f.cell(1, 3)) && level.getBlockState(f.cell(1, 4)).is(Blocks.OBSIDIAN) && PROPS.contains(here.getBlock().asItem());
+                if (!column && j <= 3) { if (!free(level, cell) && !prop) return -1; }
                 else if (here.is(Blocks.OBSIDIAN)) placed++;
                 else if (!free(level, cell)) return -1;
             }
         }
+        for (int j = 0; j <= 4; j++) if (level.getBlockState(f.cell(-1, j)).is(Blocks.OBSIDIAN) || level.getBlockState(f.cell(4, j)).is(Blocks.OBSIDIAN)) return -1;
+        for (int i = 0; i <= 3; i++) if (level.getBlockState(f.cell(i, 5)).is(Blocks.OBSIDIAN)) return -1;
         return placed;
+    }
+
+    /** Ground as the world made it: earth, sand, gravel, stone, netherrack and the like; the player's floors are not dug. */
+    private static boolean natural(BlockState state) {
+        return state.is(BlockTags.DIRT) || state.is(BlockTags.SAND) || state.is(Blocks.GRAVEL) || state.is(BlockTags.BASE_STONE_OVERWORLD)
+                || state.is(BlockTags.BASE_STONE_NETHER) || state.is(BlockTags.NYLIUM) || state.is(Blocks.SOUL_SAND) || state.is(Blocks.SOUL_SOIL)
+                || state.is(Blocks.CLAY) || state.is(Blocks.SANDSTONE) || state.is(Blocks.RED_SANDSTONE) || state.is(BlockTags.TERRACOTTA);
     }
 
     /** Air or a plant a block is set over, without water or lava. */

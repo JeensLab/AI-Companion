@@ -110,7 +110,7 @@ public final class CompanionObsidianTests {
     }
 
     /** The player's portals nearer to him than the lava, a lit one and one not lit yet: their frames are no obsidian lying about. */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = CompanionPortalBuildTests.PORTALS)
     public static void thePlayersPortalBesideTheLavaIsLeftWhole(GameTestHelper h) {
         ground(h);
         lava(h, 18, 15, 3, 2);
@@ -131,6 +131,7 @@ public final class CompanionObsidianTests {
             h.assertTrue(count(c, Items.OBSIDIAN) == 2, "Not two obsidian: " + future.join().report());
             for (BlockPos cell : frame) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
             for (int x = 9; x <= 10; x++) for (int y = GROUND + 2; y <= GROUND + 4; y++) h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(x, y, 21));
+            CompanionPortalBuildTests.putOut(h);
         });
     }
 

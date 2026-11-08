@@ -214,10 +214,11 @@ public final class CompanionPlanRunner {
                 });
             }
             // A portal short of obsidian or of a flint and steel gets it first and is built after. The step names what it was short of,
-            // so an obtain_item given up drops it too; each thing is got once: a second shortage of it stops the plan.
+            // so an obtain_item given up drops it too; each thing is got once for each count: the same shortage again stops the plan,
+            // a larger one (another frame, the player walked off meanwhile) is got once more.
             var short_ = result.evidence();
             if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "build_portal".equals(action.type()) && short_ != null
-                    && run.gotForPortal.add(short_.item())) {
+                    && run.gotForPortal.add(short_.item() + " " + short_.count())) {
                 PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
                 CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
                 run.plan.set(index, new PlannedAction(action.type(), 0, action.count(), short_.item()));

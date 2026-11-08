@@ -11,6 +11,18 @@ final class CompanionNodeEvaluator extends WalkNodeEvaluator {
     void keepOffBreath(java.util.List<net.minecraft.world.entity.AreaEffectCloud> clouds) {
         breath = clouds.stream().filter(cloud -> !CompanionDragonBreath.near(cloud, mob.getX(), mob.getY(), mob.getZ(), CompanionDragonBreath.MARGIN)).toList();
     }
+    /**
+     * A lit Nether portal is a wall for his own ways, but for the cells he stands in (a way out of the portal he came through). Strolling
+     * by the player he stepped into the one he had just built and was in the Nether (in game 08.11). He goes in only after the player
+     * or by order, and then the last step is straight in, past the end of any route (CompanionPortals).
+     */
+    @Override
+    public net.minecraft.world.level.pathfinder.PathType getPathType(net.minecraft.world.level.pathfinder.PathfindingContext context, int x, int y, int z) {
+        var cell = new net.minecraft.core.BlockPos(x, y, z);
+        if (context.getBlockState(cell).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL) && !mob.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(cell)))
+            return net.minecraft.world.level.pathfinder.PathType.BLOCKED;
+        return super.getPathType(context, x, y, z);
+    }
     // What the companion's own search (CompanionSearch) asks of the game's judgement of cells; a cell is one Node for the search.
     net.minecraft.world.level.pathfinder.PathType typeAt(int x, int y, int z) { return getCachedPathType(x, y, z); }
     /** The mob's malus for the cell's type; by lava that stands still (and nothing else hot) the game's malus of «fire near» is cut to a wall's. */

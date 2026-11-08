@@ -65,7 +65,7 @@ public final class CompanionDialogue {
             case "sort_chests" -> "Сейчас разложу по сундукам.";
             case "take_items" -> "Сейчас заберу " + CompanionContainers.from(actions.getFirst().location()) + ".";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
-            case "build_portal" -> "Окей, построю портал в Незер.";
+            case "build_portal" -> "Окей, займусь порталом в Незер.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";
             case "unequip_item" -> "Ага, уберу.";

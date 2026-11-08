@@ -134,6 +134,29 @@ public final class CompanionPortalTests {
         });
     }
 
+    /**
+     * A lit portal is no way for his own feet: called to the player behind a wall, the only gap in it a portal (its bottom level with the
+     * ground, as he builds them), he stays this side. Strolling by the player he stepped into the one he had just built (in game 08.11).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 500, batch = "portal")
+    public static void calledThroughALitPortalHeDoesNotStepIn(GameTestHelper h) {
+        ground(h);
+        for (int x = 1; x <= 30; x++) for (int y = GROUND + 1; y <= GROUND + 4; y++) if (x < 14 || x > 17) h.setBlock(new BlockPos(x, y, 16), Blocks.STONE);
+        for (int x = 14; x <= 17; x++) for (int y = GROUND; y <= GROUND + 4; y++)
+            if ((x == 14 || x == 17) != (y == GROUND || y == GROUND + 4)) h.setBlock(new BlockPos(x, y, 16), Blocks.OBSIDIAN);
+        h.setBlock(new BlockPos(15, GROUND + 1, 16), Blocks.FIRE);
+        h.assertBlockPresent(Blocks.NETHER_PORTAL, new BlockPos(16, GROUND + 1, 16));
+        CompanionEntity companion = spawn(h, 15, 11);
+        UUID id = companion.getUUID();
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        Player owner = stepInto(h, companion, new BlockPos(15, GROUND + 1, 22));
+        h.runAfterDelay(2, () -> CompanionEvents.executeAction((net.minecraft.server.level.ServerPlayer) owner, "come", "", 1));
+        h.runAtTickTime(300, () -> h.succeedIf(() -> {
+            h.assertTrue(h.getLevel().getEntity(id) == companion && nether.getEntity(id) == null, "He went in");
+            CompanionPortalBuildTests.putOut(h);
+        }));
+    }
+
     /** Asked in the End, the one place no test beside this one has a Nether portal within his reach. */
     @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "portal")
     public static void withNoPortalNearHeSaysSo(GameTestHelper h) {

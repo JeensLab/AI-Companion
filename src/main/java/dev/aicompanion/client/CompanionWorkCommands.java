@@ -64,8 +64,11 @@ public final class CompanionWorkCommands {
             return new PlannedAction("sort_chests", 0, 1);
         if (value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$")) return new PlannedAction("build_house", 0, 1);
         // «Построй портал (в Незер)» (decided 08.11): the frame without its corners near the player, lit; more said is the model's.
-        if (value.matches("^(?:построй|сделай|поставь)(?: мне| нам| себе)?(?: новый)? портал(?: в (?:незер|ад|нижний мир))?(?: из обсидиана)?(?: (?:рядом|здесь|тут))?$"))
-            return new PlannedAction("build_portal", 0, 1);
+        // «Новый», «здесь», «не хочу идти» (decided 09.11): built here, though a portal stands near or he knows one to lead to.
+        if (value.matches("^(?:(?:не хочу (?:идти|туда)|не пойду|не надо)[, ]+)?(?:построй|сделай|поставь)(?: мне| нам| себе)?(?: (?:новый|другой|еще один))? портал"
+                + "(?: в (?:незер|ад|нижний мир))?(?: из обсидиана)?(?: (?:рядом|здесь|тут|возле меня|рядом со мной))?$"))
+            return new PlannedAction("build_portal", 0, 1,
+                    value.matches(".*(?:новый|другой|еще один|здесь|тут|возле меня|рядом со мной|не хочу|не пойду|не надо).*") ? "new" : "");
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;

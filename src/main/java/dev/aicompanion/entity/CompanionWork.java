@@ -426,7 +426,7 @@ public final class CompanionWork {
             case "walk_heading" -> { CompanionActionResult refusal = course.begin(item, count); if (refusal != null) return refusal; job = Job.COURSE; phase = Phase.COURSE; }
             case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
-            case "build_portal" -> { CompanionActionResult answer = portal.begin(); if (answer != null) return answer; job = Job.PORTAL; phase = Phase.PORTAL; }
+            case "build_portal" -> { CompanionActionResult answer = portal.begin(item); if (answer != null) return answer; job = Job.PORTAL; phase = Phase.PORTAL; }
             case "give_items" -> {
                 if (!"logs".equals(item) && (ResourceLocation.tryParse(item) == null || !BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse(item))))
                     return CompanionActionResult.failed("Не понял, какой предмет отдать.");

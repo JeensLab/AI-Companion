@@ -169,7 +169,7 @@ final class CompanionObsidian {
         if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN) || passed.contains(pos) || pos.equals(c.blockPosition().below())) return false;
         // While his water is out, only what it sets: a walk to obsidian far off would leave the water behind him.
         if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
-        if (site.test(pos) || !his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
+        if (site.test(pos) || w.portal.laid(pos) || !his.contains(pos) && (portal(level, pos) || frame(level, pos))) return false;
         if (wet(level, pos)) return true;
         for (Direction side : new Direction[]{Direction.UP, Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST})
             if (CompanionLava.at(level, pos.relative(side))) return false;
