@@ -342,6 +342,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
+        this.goalSelector.addGoal(1, new CompanionBoatClutch.BreakGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));

@@ -49,6 +49,45 @@ public final class CompanionBoatClutchTests {
         });
     }
 
+    /**
+     * The most common hurtful falls, eight to eleven blocks (and fifteen): in the tick he lands his feet are often lower than a boat is
+     * high, his body where the boat goes. A player puts it down a tick before and gets in as he comes down; he is caught all the same.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 300, skyAccess = true)
+    public static void fallsOfEightToElevenAndFifteenAreCaughtToo(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        int[] heights = {8, 9, 10, 11, 15};
+        List<CompanionEntity> all = new java.util.ArrayList<>();
+        List<boolean[]> seats = new java.util.ArrayList<>();
+        for (int i = 0; i < heights.length; i++) {
+            CompanionEntity c = spawn(h, 3 + 6 * i, 1 + heights[i], 16);
+            own(h, c, new Vec3(5.5 + 6 * i, 1, 16.5));
+            c.setItem(0, new ItemStack(Items.OAK_BOAT));
+            all.add(c);
+            seats.add(watchSeat(h, c));
+        }
+        h.succeedWhen(() -> {
+            for (int i = 0; i < heights.length; i++) {
+                CompanionEntity c = all.get(i);
+                check(seats.get(i)[0] && c.isAlive() && c.onGround() && !c.isPassenger() && c.getHealth() == c.getMaxHealth()
+                        && count(c, Items.OAK_BOAT) == 1, "Fall of " + heights[i] + ": seated " + seats.get(i)[0] + ", health "
+                        + c.getHealth() + ", bag " + c.getStoredItemsSummary());
+            }
+            check(boats(h.getLevel(), h.getBounds()).isEmpty(), "A boat is left: " + boats(h.getLevel(), h.getBounds()));
+        });
+    }
+
+    /** The player far off: once down he would go after them, but the boat is broken and back in his bag first. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400, skyAccess = true)
+    public static void withThePlayerFarOffHeStillTakesTheBoatBack(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(x, 0, z, Blocks.STONE);
+        CompanionEntity c = spawn(h, 4, 31, 4);
+        own(h, c, new Vec3(28.5, 1, 28.5));
+        c.setItem(0, new ItemStack(Items.OAK_BOAT));
+        boolean[] seated = watchSeat(h, c);
+        h.succeedWhen(() -> unhurtWithTheBoatBack(c, seated[0], h.getLevel(), h.getBounds()));
+    }
+
     /** With a water bucket too, in the Overworld the water goes first: the boat never leaves his bag. */
     @GameTest(template = "empty", timeoutTicks = 300, skyAccess = true)
     public static void withABucketTooTheWaterGoesFirst(GameTestHelper h) {
@@ -159,16 +198,19 @@ public final class CompanionBoatClutchTests {
         return count;
     }
 
+    /** Him, with a player of his own at the template's corner. */
     private static CompanionEntity spawn(GameTestHelper h, int x, int y, int z) {
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), new Vec3(x + .5, y, z + .5));
         own(h, companion);
         return companion;
     }
 
-    /** A player of his own, standing at the template's corner: he is the one Oleg of that player. */
-    private static void own(GameTestHelper h, CompanionEntity companion) {
+    private static void own(GameTestHelper h, CompanionEntity companion) { own(h, companion, new Vec3(1.5, 1, 1.5)); }
+
+    /** A player of his own, standing there in the template: he is the one Oleg of that player (one player each is set again). */
+    private static void own(GameTestHelper h, CompanionEntity companion, Vec3 where) {
         var owner = h.makeMockServerPlayerInLevel();
-        var at = h.absoluteVec(new Vec3(1.5, 1, 1.5));
+        var at = h.absoluteVec(where);
         owner.teleportTo(at.x, at.y, at.z);
         companion.setOwnerId(owner.getUUID());
         owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());

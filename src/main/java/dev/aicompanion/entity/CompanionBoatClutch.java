@@ -2,20 +2,24 @@ package dev.aicompanion.entity;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.entity.vehicle.ChestBoat;
 import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.EnumSet;
 import java.util.List;
 
 /**
  * The speedrunners' boat, for a fall the water bucket does not catch: in the Nether, where water boils away, or with no water bucket in
- * his bag, or none that reaches (decided 08.11). Falling to a landing that would hurt, with a boat in his bag, he puts it down where he
+ * his bag (decided 08.11). Falling to a landing that would hurt, with a boat in his bag, he puts it down where he
  * lands and gets into it in the tick he lands, as a player's two clicks do; a rider's fall is reset (LivingEntity.rideTick), so the
  * landing costs nothing. A moment in it, he steps out, breaks it and picks it up. The bucket goes first: water it poured in this tick
  * is about his body as he lands, so no landing is found for the boat.
@@ -31,8 +35,8 @@ final class CompanionBoatClutch {
     private static final int TALK = 1200;
     /** Whose clutch a boat is, kept with the boat: one he sits in after a reload is still his to take back. */
     private static final String MARK = "aicompanion:clutch_boat";
-    static final String LEFT = "Лодку не забрал, так и стоит.";
-    static final List<String> SAVED = List.of("Лодка лучше парашюта, видал?", "Спидранерская лодка — и ни царапины.",
+    private static final String LEFT = "Лодку не забрал, так и стоит.";
+    private static final List<String> SAVED = List.of("Лодка лучше парашюта, видал?", "Спидранерская лодка — и ни царапины.",
             "Лодочный клатч, как у спидранеров.");
 
     private final CompanionEntity c;
@@ -48,7 +52,7 @@ final class CompanionBoatClutch {
     /** Every server tick, after the bucket's: no order or «стоп» holds a reflex back. */
     void tick() {
         if (!(c.level() instanceof ServerLevel level) || !c.isAlive()) return;
-        if (boat == null && c.getVehicle() instanceof Boat seat && ours(seat)) { boat = seat; at = level.getGameTime(); }
+        if (boat == null && c.getVehicle() instanceof Boat seat && ours(seat)) { boat = seat; at = level.getGameTime(); } // after a reload
         if (boat != null) settle(level);
         if (c.onGround() || c.isInWater() || c.isPassenger() || c.isFallFlying() || c.getDeltaMovement().y >= 0) return;
         int slot = boatSlot();
@@ -74,7 +78,8 @@ final class CompanionBoatClutch {
     /**
      * Puts the boat down where he lands, as a player's goes onto the block clicked (BoatItem), and gets into it. Not where it has no
      * room, nor in lava, nor beyond a player's reach for getting in: then it stays in his bag. Within that reach of the boat the block
-     * under it is within a player's reach for a block too.
+     * under it is within a player's reach for a block too. His own body is left out of the room it needs: a player puts the boat down a
+     * tick before, still above it, and gets in as he comes down; here both are done in the landing tick.
      */
     private void put(ServerLevel level, int slot, CompanionWaterBucket.Landing landing, float loss) {
         ItemStack stack = c.getItem(slot);
@@ -82,11 +87,13 @@ final class CompanionBoatClutch {
         Boat made = boatOf(level, stack, spot);
         if (made == null) return;
         made.setYRot(c.getYRot());
-        if (made.getBoundingBox().distanceToSqr(c.getEyePosition()) > SEAT_REACH * SEAT_REACH
-                || !level.noCollision(made, made.getBoundingBox()) || level.containsAnyLiquid(made.getBoundingBox())) return;
-        if (boat != null) leave("again");
-        level.addFreshEntity(made);
+        AABB box = made.getBoundingBox();
+        if (box.distanceToSqr(c.getEyePosition()) > SEAT_REACH * SEAT_REACH || !level.noBlockCollision(made, box)
+                || !level.getEntities(made, box, other -> other != c && made.canCollideWith(other)).isEmpty()
+                || !level.getWorldBorder().isWithinBounds(box) || level.containsAnyLiquid(box)) return;
+        if (!level.addFreshEntity(made)) return;
         if (!c.startRiding(made)) { made.discard(); return; }
+        if (boat != null) leave("again");
         made.getPersistentData().putUUID(MARK, c.getUUID());
         level.gameEvent(c, GameEvent.ENTITY_PLACE, spot);
         c.animateAction(1, landing.on(), stack);
@@ -111,6 +118,7 @@ final class CompanionBoatClutch {
             boat.setVariant(type);
             if (boat.getDropItem() != stack.getItem()) continue;
             EntityType.<Boat>createDefaultStackConfig(level, stack, null).accept(boat);
+            boat.setVariant(type); // the item's wood over its entity data, as BoatItem sets it last
             return boat;
         }
         return null;
@@ -120,8 +128,13 @@ final class CompanionBoatClutch {
     private void settle(ServerLevel level) {
         long now = level.getGameTime();
         if (boat.isRemoved()) { event("boat_clutch_gone"); boat = null; return; }
-        // The player sat down in it with him: it is their ride now.
-        if (boat.getPassengers().stream().anyMatch(rider -> rider != c)) { event("boat_clutch_taken"); boat = null; return; }
+        // A player got into it: it is their ride now, and no more his to take back. A mob that got in is put out as it breaks.
+        if (boat.getPassengers().stream().anyMatch(rider -> rider instanceof Player)) {
+            event("boat_clutch_taken");
+            boat.getPersistentData().remove(MARK);
+            boat = null;
+            return;
+        }
         if (c.getVehicle() == boat) {
             if (now - at >= SIT) { c.stopRiding(); at = now - HIT_EVERY; }
             return;
@@ -143,11 +156,26 @@ final class CompanionBoatClutch {
         } else if (hits >= HITS) leave("hits");
     }
 
+    /** Out of it and at it till it is broken: whatever moves him waits (the following, the work), as he takes it back (decided 08.11). */
+    boolean breaking() { return boat != null && !c.isPassenger(); }
+
     /** He leaves the boat where it stands and says so (as the bucket's water, decided 05.11). */
     private void leave(String why) {
         event("boat_clutch_left", "why", why);
         c.autonomySay(LEFT, false);
         boat = null;
+    }
+
+    /**
+     * Beside the boat he stepped out of while he breaks it (its hits are given in tick): the follow and the work would walk him out of
+     * reach first. Beside the bucket's fetch in rank, under his air.
+     */
+    static final class BreakGoal extends Goal {
+        private final CompanionEntity c;
+        BreakGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK)); }
+        @Override public boolean canUse() { return c.boatClutch.breaking(); }
+        @Override public boolean canContinueToUse() { return canUse(); }
+        @Override public void start() { c.getNavigation().stop(); }
     }
 
     /** The journal's line: where he is, where his boat is, his health and fall. */
