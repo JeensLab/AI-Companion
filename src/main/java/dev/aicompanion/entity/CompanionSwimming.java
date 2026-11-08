@@ -37,8 +37,14 @@ final class CompanionSwimming {
                     && target.getY() < c.getY() - .5 && c.getHealth() > c.getMaxHealth() / 2
                     && (hand.is(net.minecraft.tags.ItemTags.SWORDS) || hand.is(net.minecraft.tags.ItemTags.AXES)) && !c.archery.armed()
                     && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
+            // «Подбери»: a drop that sank to the bottom of a pool is under him, and the float held him at the surface
+            // over it, out of reach (game 08.11: the pork on the bottom of a four-deep pond was given up as out of reach).
+            // Like the dive for a foe under water: down to it while the pickup is active and there is breath to come up.
+            var chased = c.work.job == CompanionWork.Job.PICK_UP ? c.loot.chaseTarget() : null;
+            boolean sinks = chased != null && chased.isAlive() && chased.isInWater() && c.isInWater() && !c.isInLava()
+                    && chased.getY() < c.getY() - .4 && c.getAirSupply() > c.getMaxAirSupply() / 3;
             // The game's own sinking for a player's Shift in water (LivingEntity.goDownInWater).
-            if (dives) c.setDeltaMovement(c.getDeltaMovement().add(0, -.04, 0));
+            if (dives || sinks) c.setDeltaMovement(c.getDeltaMovement().add(0, -.04, 0));
             else super.tick();
         }
     }

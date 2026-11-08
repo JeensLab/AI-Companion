@@ -195,6 +195,8 @@ final class CompanionLoot {
         if (left <= 0) places.pruneEntry(ownerId, spotId, item.getUUID());
         else places.setEntryCount(ownerId, spotId, item.getUUID(), left);
     }
+    /** The drop the chase is going for now, or null: the swimmer sinks to a drop under him while the pickup is active. */
+    ItemEntity chaseTarget() { return target; }
     boolean hasPending() {
         if (!(owner.level() instanceof ServerLevel level)) return false;
         // Never finish a task in the gap between a vanilla merge deleting our original
@@ -273,7 +275,10 @@ final class CompanionLoot {
         if (distance + .05 < bestDistance) { bestDistance = distance; lastProgress = level.getGameTime(); }
         // Along a route longer than one search the distance to the drop first grows: walking on is progress there.
         if (farRoute && path != null && level.getGameTime() < farUntil && (farMoved == null || owner.position().distanceToSqr(farMoved) > .7 * .7)) { farMoved = owner.position(); lastProgress = level.getGameTime(); }
-        if (level.getGameTime() - lastProgress > (path == null ? 16 : 45)) {
+        // A drop floating on the water rises to the surface and drifts with the current: while it is moving, the chase is
+        // keeping up with it, not stuck, and it gets the patience of a routed drop instead of sixteen ticks.
+        int patience = path == null && !target.isInWater() ? 16 : 45;
+        if (level.getGameTime() - lastProgress > patience) {
             UUID id = target.getUUID();
             if (attempts.merge(id, 1, Integer::sum) >= 3) giveUpFromHere(level, id);
             retryAt.put(id, level.getGameTime() + 20);
@@ -282,7 +287,11 @@ final class CompanionLoot {
         if (touches(owner.position(), target)) { owner.work.route.stop(); return; }
         // Swimming after a drop in the water is walking too; only in the air no route is made.
         if (!owner.onGround() && !owner.isInWater()) return;
-        if (routedItem != null && routedItem.distanceToSqr(target.position()) > .16) { path = null; pickupPoint = null; }
+        // A drop floating on the water drifts with the current (and one under it rises to the surface): the chase follows
+        // the drop itself, and the drop's own movement is progress — a floating drop is not «out of reach» for moving away.
+        if (routedItem != null && routedItem.distanceToSqr(target.position()) > (target.isInWater() ? .0025 : .16)) {
+            path = null; pickupPoint = null; lastProgress = level.getGameTime(); attempts.remove(target.getUUID());
+        }
         if (pickupPoint != null && path != null && path.getEndNode() != null
                 && owner.blockPosition().equals(path.getTarget()) && owner.position().distanceToSqr(pickupPoint) < 2.25) {
             owner.work.route.stop();
@@ -293,8 +302,10 @@ final class CompanionLoot {
             nextRoute = level.getGameTime() + 5; routedItem = target.position();
             Set<BlockPos> feet = new HashSet<>(); BlockPos center = target.blockPosition();
             Map<BlockPos, Vec3> points = new HashMap<>();
-            // From two below (a drop on a ledge at head height) to one above (a drop in a dip).
-            for (int dy = -2; dy <= 1; dy++) for (int ox = -1; ox <= 1; ox++) for (int oz = -1; oz <= 1; oz++) {
+            // From two below (a drop on a ledge at head height) to one above (a drop in a dip). A drop in the water is
+            // taken from its own cell: the swimmer's stand there, and a route from the top of the water column can reach it.
+            // A cell below it is no use to the swimmer: the search starts at the surface and does not go down the water.
+            for (int dy = target.isInWater() ? 0 : -2; dy <= 1; dy++) for (int ox = -1; ox <= 1; ox++) for (int oz = -1; oz <= 1; oz++) {
                 BlockPos spot = center.offset(ox, dy, oz);
                 // The drop pushed out of a landed block lies clear, while the cell it came from still has the rest of the
                 // column in the air over it: no stand there.
@@ -321,7 +332,9 @@ final class CompanionLoot {
             // from this spot at once; walking four blocks away gives it another chance.
             boolean atRest = (target.onGround() || target.isInWater()) && !target.hasPickUpDelay()
                     && level.getGameTime() - born.getOrDefault(target.getUUID(), 0L) >= SETTLE;
-            if (atRest && (path == null || !path.canReach())) {
+            // A drop in the water may still be rising to the surface or drifting with the current: no cell to take it
+            // from now is no verdict on it yet — the attempts above give it up only if it really stays out of reach.
+            if (atRest && !target.isInWater() && (path == null || !path.canReach())) {
                 // A drop in a pocket under the leaves of a bush or a crown: a player breaks a leaf or two and takes it (marathon
                 // 23.10, «долина»: a log fell into a dip under a bush, the leaves shut every cell he could take it from).
                 BlockPos blocking = leavesCleared.getOrDefault(target.getUUID(), 0) < LEAVES_PER_DROP ? leafInTheWay(level, target) : null;

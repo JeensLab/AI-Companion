@@ -1,6 +1,8 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionPickUp;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -20,6 +22,9 @@ public final class CompanionPickUpCommands {
     private static final Pattern FILLER = Pattern.compile("(?U)\\b(вон|ту|тот|та|то|эту|этот|эти|лежащ\\p{L}*|плавающ\\p{L}*|мёртв\\p{L}*|дохл\\p{L}*"
             + "|мне|нам|себе|пожалуйста|с|со|в|на|земли|земле|рядом|поблизости|тут|здесь|и|а)\\b");
 
+    /** Words that name everything lying around rather than one thing: «подбери всё», «подбери вещи». */
+    private static final Set<String> ALL_WORDS = Set.of("все", "весь", "вся", "вещи", "вещь", "всякое");
+
     /** The pick-up order for the phrase, or null for the model. */
     public static PlannedAction parse(String text, String name) {
         String value = plain(text, name);
@@ -37,22 +42,38 @@ public final class CompanionPickUpCommands {
             if (!tail.matches()) return null;
             rest = tail.group(1).trim();
         }
-        if (rest.isEmpty() || CONTAINER.matcher(rest).matches()) return null;
+        // A bare «подбери» takes whatever lies around; «подбери из сундука камень» is a take order, not this one.
+        if (rest.isEmpty()) return all(said.count());
+        if (CONTAINER.matcher(rest).matches()) return null;
         String noun = FILLER.matcher(rest).replaceAll(" ").replaceAll("\\s+", " ").trim();
-        if (noun.isEmpty()) return null;
+        if (noun.isEmpty()) return all(said.count());
         // The thing may come after a word about it («жареная свининка», «гнилая плоть», «в воде кусок»): the first word
-        // that names something counts, and an adjective («жареную», «алмазную») only when no noun does.
+        // that names something counts, and an adjective («жареную», «алмазную») only when no noun does. «Всё» names the
+        // whole ground, so a noun after it («все алмазы») still wins.
         String item = null;
         for (String word : noun.split(" ")) {
             String found = itemFor(word);
             if (found == null) continue;
+            if (isAll(word)) { if (item == null) item = found; continue; }
             if (adjective(word)) { if (item == null) item = found; continue; }
             item = found;
             break;
         }
         if (item == null) return null;
-        int count = said.count() > 0 ? Math.min(64, said.count()) : 64;
-        return new PlannedAction("pick_up", 0, count, item);
+        return new PlannedAction("pick_up", 0, count(said.count()), item);
+    }
+
+    private static PlannedAction all(int count) {
+        return new PlannedAction("pick_up", 0, count(count), CompanionPickUp.ANY_ITEM);
+    }
+
+    /** The number the player said, or 64 for «no number»: the route's own «all». */
+    private static int count(int said) {
+        return said > 0 ? Math.min(64, said) : 64;
+    }
+
+    private static boolean isAll(String word) {
+        return ALL_WORDS.contains(word.toLowerCase(Locale.ROOT));
     }
 
     /** A word that describes the thing rather than naming it: «жареную», «гнилую», «алмазную», «вон ту». */
@@ -65,6 +86,7 @@ public final class CompanionPickUpCommands {
     /** The item a Russian word of the ground names, by its stem; null for a thing this order does not know. */
     private static String itemFor(String word) {
         String w = word.toLowerCase(Locale.ROOT);
+        if (isAll(w)) return CompanionPickUp.ANY_ITEM;
         if (w.startsWith("куриц") || w.startsWith("кур")) return "minecraft:chicken";
         if (w.startsWith("говяд")) return "minecraft:beef";
         if (w.startsWith("свинин")) return "minecraft:porkchop";

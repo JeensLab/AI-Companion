@@ -27,16 +27,19 @@ import java.util.function.Predicate;
  * The lines the player reads are Russian: the server's own language is en_us, so an item's hover name is «Rotten Flesh»,
  * «Water Bucket» or «Diamond Pickaxe» there, and the words and their cases come from {@link CompanionItemWords}.
  */
-final class CompanionPickUp {
+public final class CompanionPickUp {
     private CompanionPickUp() { }
+
+    /** «всё»: any drop lying around, taken by «подбери всё» or a bare «подбери». */
+    public static final String ANY_ITEM = "minecraft:any";
 
     /**
      * A named meaning: what counts as it, how to call it in the three cases the lines need («курица лежит», «подобрал
      * курицу», «нет курицы»), and the work that gets it when nothing of it lies near.
      */
-    record Meaning(String name, String accusative, String genitive, Predicate<ItemStack> matches,
+    public record Meaning(String name, String accusative, String genitive, Predicate<ItemStack> matches,
                    String fallbackAction, String fallbackItem, int fallbackCount, String fallbackNote) {
-        boolean is(ItemStack stack) { return !stack.isEmpty() && matches.test(stack); }
+        public boolean is(ItemStack stack) { return !stack.isEmpty() && matches.test(stack); }
     }
 
     /** How long the order walks to a drop before it says so; the pickup chase gives up on its own sooner. */
@@ -53,16 +56,21 @@ final class CompanionPickUp {
     private static final int ORE_COUNT = 4;
 
     /** The meaning of a named item, or null for a name that is no item at all. */
-    static Meaning of(String item) {
+    public static Meaning of(String item) {
         if (item == null) return null;
         String id = item.trim().toLowerCase(Locale.ROOT);
         if (id.isEmpty()) return null;
+        // «Подбери всё» and a bare «подбери»: every drop lying around, taken in one order.
+        if (ANY_ITEM.equals(id) || "any".equals(id)) {
+            return new Meaning("вещи", "вещи", "вещей", stack -> true, null, null, 0, "");
+        }
         var game = CompanionGame.Kind.of(id);
         if (game != null) {
-            var words = CompanionItemWords.of(game.meat);
+            // A meat the word table does not know (a Kind added later) still answers with the animal's own forms.
+            String[] words = meatWords(game.meat, game.subject(), game.one, game.few);
             String meat = key(game.meat);
             Item cooked = item("cooked_" + meat);
-            return new Meaning(words.name(), words.accusative(), words.genitive(),
+            return new Meaning(words[0], words[1], words[2],
                     stack -> stack.is(game.meat) || cooked != null && stack.is(cooked),
                     "hunt_animals", "minecraft:" + game.key, 1, "Иду охотиться.");
         }
@@ -184,12 +192,23 @@ final class CompanionPickUp {
         return drop.position().distanceToSqr(center.getCenter()) <= (double) radius * radius;
     }
 
-    /** What a drop is called in Russian: by the meaning it belongs to, else by the word table, else its own name in quotes. */
+    /**
+     * The three word forms for a meat: the table's, or the animal's own when the table has none. A Kind added later with a
+     * meat the table does not know must still answer — «Подобрал корову», not a NullPointerException on the way to it.
+     */
+    public static String[] meatWords(Item meat, String subject, String accusative, String genitive) {
+        var words = CompanionItemWords.of(meat);
+        return words != null ? new String[]{words.name(), words.accusative(), words.genitive()}
+                : new String[]{subject, accusative, genitive};
+    }
+
+    /** What a drop is called in Russian: by the word table first (a bucket of water is «ведро воды», not «ведро»), else by
+     * the meaning it belongs to, else its own name in quotes. */
     private static String label(ItemStack stack) {
-        var meaning = of(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        if (meaning != null) return meaning.name();
         String word = CompanionItemWords.label(stack);
-        return word != null ? word : "«" + stack.getHoverName().getString() + "»";
+        if (word != null) return word;
+        var meaning = of(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+        return meaning != null ? meaning.name() : "«" + stack.getHoverName().getString() + "»";
     }
 
     private static boolean anyMeat(ItemStack stack) {
