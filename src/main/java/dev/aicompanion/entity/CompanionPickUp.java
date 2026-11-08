@@ -23,12 +23,18 @@ import java.util.function.Predicate;
  * What lies on the ground near the companion, by the meaning the player named: «курица» is the chicken meat (raw or
  * cooked), «алмазы» the gem and its ore, «брёвна» any log, «камни» stone materials. «Подбери» takes what lies here and
  * nothing else; a meaning also names the work to fall back on when nothing of it lies around.
+ *
+ * The lines the player reads are Russian: the server's own language is en_us, so an item's hover name is «Rotten Flesh»,
+ * «Water Bucket» or «Diamond Pickaxe» there, and the words and their cases come from {@link CompanionItemWords}.
  */
 final class CompanionPickUp {
     private CompanionPickUp() { }
 
-    /** A named meaning: what counts as it, what to call it, and the work that gets it when nothing of it lies near. */
-    record Meaning(String name, String genitive, Predicate<ItemStack> matches,
+    /**
+     * A named meaning: what counts as it, how to call it in the three cases the lines need («курица лежит», «подобрал
+     * курицу», «нет курицы»), and the work that gets it when nothing of it lies near.
+     */
+    record Meaning(String name, String accusative, String genitive, Predicate<ItemStack> matches,
                    String fallbackAction, String fallbackItem, int fallbackCount, String fallbackNote) {
         boolean is(ItemStack stack) { return !stack.isEmpty() && matches.test(stack); }
     }
@@ -53,56 +59,71 @@ final class CompanionPickUp {
         if (id.isEmpty()) return null;
         var game = CompanionGame.Kind.of(id);
         if (game != null) {
+            var words = CompanionItemWords.of(game.meat);
             String meat = key(game.meat);
             Item cooked = item("cooked_" + meat);
-            return new Meaning(game.subject(), game.few,
+            return new Meaning(words.name(), words.accusative(), words.genitive(),
                     stack -> stack.is(game.meat) || cooked != null && stack.is(cooked),
                     "hunt_animals", "minecraft:" + game.key, 1, "Иду охотиться.");
         }
-        if (CompanionGame.ANY_MEAT.equals(id)) return new Meaning("мясо", "мяса", CompanionPickUp::anyMeat,
+        if (CompanionGame.ANY_MEAT.equals(id)) return new Meaning("мясо", "мясо", "мяса", CompanionPickUp::anyMeat,
                 "hunt_animals", "food", 1, "Иду охотиться.");
         var ore = CompanionOre.Kind.of(id);
         if (ore != null) {
             var items = oreItems(ore);
-            return new Meaning(ore.word, ore.genitive, stack -> items.contains(stack.getItem()),
+            return new Meaning(ore.word, ore.word, ore.genitive, stack -> items.contains(stack.getItem()),
                     "mine_ore", "minecraft:" + ore.key() + "_ore", ORE_COUNT, "Поищу руду.");
         }
         Item named = itemObject(id);
         if (named == null) return null;
+        // «Ведро» is any bucket: the empty one and the one with water in it, as a player would take either.
+        if (named == Items.BUCKET || key(named).endsWith("_bucket")) {
+            var words = CompanionItemWords.of(Items.BUCKET);
+            return new Meaning(words.name(), words.accusative(), words.genitive(),
+                    stack -> stack.is(Items.BUCKET) || key(stack.getItem()).endsWith("_bucket"), null, null, 0, "");
+        }
+        // «Чернила» and «чернильный мешок» are the ink sac, the squid's own drop.
+        if (named == Items.INK_SAC || named == Items.GLOW_INK_SAC) {
+            var words = CompanionItemWords.of(Items.INK_SAC);
+            return new Meaning(words.name(), words.accusative(), words.genitive(),
+                    stack -> stack.is(Items.INK_SAC) || stack.is(Items.GLOW_INK_SAC), null, null, 0, "");
+        }
         var stack = new ItemStack(named);
-        if (stack.is(ItemTags.LOGS)) return new Meaning("бревно", "бревна", drop -> drop.is(ItemTags.LOGS),
+        if (stack.is(ItemTags.LOGS)) return new Meaning("бревно", "бревно", "бревна", drop -> drop.is(ItemTags.LOGS),
                 "gather_wood", "", WOOD_COUNT, "Пойду за деревом.");
-        if (stack.is(ItemTags.PLANKS)) return new Meaning("доска", "досок", drop -> drop.is(ItemTags.PLANKS),
+        if (stack.is(ItemTags.PLANKS)) return new Meaning("доска", "доску", "досок", drop -> drop.is(ItemTags.PLANKS),
                 "gather_wood", "", WOOD_COUNT, "Пойду за деревом.");
-        if (stack.is(ItemTags.WOOL)) return new Meaning("шерсть", "шерсти", drop -> drop.is(ItemTags.WOOL),
+        if (stack.is(ItemTags.WOOL)) return new Meaning("шерсть", "шерсть", "шерсти", drop -> drop.is(ItemTags.WOOL),
                 "hunt_animals", "minecraft:sheep", 1, "Иду охотиться.");
         if (stack.is(ItemTags.STONE_TOOL_MATERIALS) || named == Items.STONE || named == Items.DEEPSLATE) {
-            return new Meaning("камень", "камня",
+            return new Meaning("камень", "камень", "камня",
                     drop -> drop.is(ItemTags.STONE_TOOL_MATERIALS) || drop.is(Items.STONE) || drop.is(Items.DEEPSLATE),
                     "gather_stone", "", GATHER_COUNT, "Пойду за камнем.");
         }
         if (named == Items.DIRT || named == Items.GRASS_BLOCK || named == Items.COARSE_DIRT || named == Items.ROOTED_DIRT) {
-            return new Meaning("земля", "земли", drop -> drop.is(Items.DIRT) || drop.is(Items.GRASS_BLOCK)
+            return new Meaning("земля", "землю", "земли", drop -> drop.is(Items.DIRT) || drop.is(Items.GRASS_BLOCK)
                     || drop.is(Items.COARSE_DIRT) || drop.is(Items.ROOTED_DIRT), "gather_dirt", "", GATHER_COUNT, "Накопаю земли.");
         }
-        if (named == Items.SAND) return new Meaning("песок", "песка", drop -> drop.is(Items.SAND),
+        if (named == Items.SAND) return new Meaning("песок", "песок", "песка", drop -> drop.is(Items.SAND),
                 "gather_loose", "minecraft:sand", GATHER_COUNT, "Возьму лопату.");
-        if (named == Items.RED_SAND) return new Meaning("красный песок", "красного песка", drop -> drop.is(Items.RED_SAND),
+        if (named == Items.RED_SAND) return new Meaning("красный песок", "красный песок", "красного песка", drop -> drop.is(Items.RED_SAND),
                 "gather_loose", "minecraft:red_sand", GATHER_COUNT, "Возьму лопату.");
-        if (named == Items.GRAVEL) return new Meaning("гравий", "гравия", drop -> drop.is(Items.GRAVEL),
+        if (named == Items.GRAVEL) return new Meaning("гравий", "гравий", "гравия", drop -> drop.is(Items.GRAVEL),
                 "gather_loose", "minecraft:gravel", GATHER_COUNT, "Возьму лопату.");
-        if (named == Items.FLINT) return new Meaning("кремень", "кремня", drop -> drop.is(Items.FLINT),
+        if (named == Items.FLINT) return new Meaning("кремень", "кремень", "кремня", drop -> drop.is(Items.FLINT),
                 "gather_loose", "minecraft:flint", FLINT_COUNT, "Возьму лопату.");
-        if (named == Items.LEATHER) return new Meaning("кожа", "кожи", drop -> drop.is(Items.LEATHER),
+        if (named == Items.LEATHER) return new Meaning("кожа", "кожу", "кожи", drop -> drop.is(Items.LEATHER),
                 "hunt_animals", "minecraft:cow", 1, "Иду охотиться.");
-        if (named == Items.FEATHER) return new Meaning("перо", "пера", drop -> drop.is(Items.FEATHER),
+        if (named == Items.FEATHER) return new Meaning("перо", "перо", "пера", drop -> drop.is(Items.FEATHER),
                 "hunt_animals", "minecraft:chicken", 1, "Иду охотиться.");
-        if (named == Items.EGG) return new Meaning("яйцо", "яйца", drop -> drop.is(Items.EGG),
+        if (named == Items.EGG) return new Meaning("яйцо", "яйцо", "яйца", drop -> drop.is(Items.EGG),
                 "hunt_animals", "minecraft:chicken", 1, "Иду охотиться.");
-        if (named == Items.STICK) return new Meaning("палка", "палки", drop -> drop.is(Items.STICK), null, null, 0, "");
+        if (named == Items.STICK) return new Meaning("палка", "палку", "палки", drop -> drop.is(Items.STICK), null, null, 0, "");
         // Anything else is taken by its own name; with no work to fall back on the honest answer is all there is.
-        String name = "«" + stack.getHoverName().getString() + "»";
-        return new Meaning(name, name, drop -> drop.is(named), null, null, 0, "");
+        var words = CompanionItemWords.of(named);
+        if (words != null) return new Meaning(words.name(), words.accusative(), words.genitive(), drop -> drop.is(named), null, null, 0, "");
+        String quoted = "«" + stack.getHoverName().getString() + "»";
+        return new Meaning(quoted, quoted, quoted, drop -> drop.is(named), null, null, 0, "");
     }
 
     /**
@@ -128,7 +149,8 @@ final class CompanionPickUp {
 
     /**
      * «Лежит рядом: камень (3), курица (1).» — what really lies around, for the honest answer when nothing matched.
-     * The radius is the scan's own: the answer never names a drop the order would not have looked at.
+     * The radius is the scan's own: the answer never names a drop the order would not have looked at. The names are
+     * Russian: the server reads the item's hover name in en_us («Water Bucket», «Diamond Pickaxe»).
      */
     static String lying(ServerLevel level, BlockPos center, int radius, java.util.UUID playerId) {
         Map<String, Integer> counts = new LinkedHashMap<>();
@@ -162,9 +184,12 @@ final class CompanionPickUp {
         return drop.position().distanceToSqr(center.getCenter()) <= (double) radius * radius;
     }
 
+    /** What a drop is called in Russian: by the meaning it belongs to, else by the word table, else its own name in quotes. */
     private static String label(ItemStack stack) {
         var meaning = of(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        return meaning != null ? meaning.name() : "«" + stack.getHoverName().getString() + "»";
+        if (meaning != null) return meaning.name();
+        String word = CompanionItemWords.label(stack);
+        return word != null ? word : "«" + stack.getHoverName().getString() + "»";
     }
 
     private static boolean anyMeat(ItemStack stack) {

@@ -705,20 +705,33 @@ public final class CompanionWork {
      */
     private void pickUp(ServerLevel level) {
         int gained = pickUpCarried() - pickUpBefore;
-        if (gained > 0 && (gained >= requestedCount || !owner.hasPendingLoot())) {
-            finish(true, "Подобрал " + pickUp.name() + " (" + gained + " шт.).");
-            return;
-        }
         if (!owner.hasPendingLoot()) {
-            finish(false, gained > 0 ? "Подобрал " + pickUp.name() + " (" + gained + " шт.), остальное не достал."
-                    : "Не смог подобрать " + pickUp.name() + ". Осталось лежать.");
+            int left = pickUpLeft(level);
+            if (gained == 0 && left == 0) {
+                finish(false, "Не смог подобрать " + pickUp.accusative() + ".");
+                return;
+            }
+            if (left == 0) {
+                finish(true, "Подобрал " + pickUp.accusative() + " (" + gained + " шт.).");
+                return;
+            }
+            // What is left lying is counted, never hidden behind a bare «не смог подобрать»: the pieces are still there,
+            // and the next «подбери» takes them (game 08.11: three pieces in the water, one taken, «Не смог подобрать»).
+            String report = gained > 0 ? "Подобрал " + pickUp.accusative() + " (" + gained + " шт.)" : "Не достал " + pickUp.accusative();
+            finish(gained > 0 && gained >= requestedCount, report + ", осталось " + left + " шт.");
             return;
         }
         if (level.getGameTime() - pickUpSince > CompanionPickUp.ORDER_TICKS) {
-            finish(false, "Не успел подобрать " + pickUp.name() + ".");
+            finish(false, "Не успел подобрать " + pickUp.accusative() + ".");
             return;
         }
-        owner.workStatus("Подхожу к " + pickUp.name() + ".");
+        owner.workStatus("Подбираю " + pickUp.accusative() + ".");
+    }
+
+    /** What of the meaning still lies within the scan radius: the honest count of what the order left behind. */
+    private int pickUpLeft(ServerLevel level) {
+        return CompanionPickUp.total(CompanionPickUp.find(level, owner.blockPosition(), owner.pickUpRadius(), pickUp,
+                CompanionPickUp.ALL_AT_ONCE, owner.getOwnerId()));
     }
 
     /** What the bag holds of the meaning he went for, for the order's own report; the player's own things kept apart count too. */

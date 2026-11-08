@@ -206,11 +206,302 @@ public final class CompanionPickUpTests {
                 "Logs: " + CompanionLocalCommands.route("подбери брёвна", "Олег"));
         h.assertTrue("companion work pick_up 3 minecraft:cobblestone".equals(CompanionLocalCommands.route("подбери 3 камня", "Олег")),
                 "Stone with a number: " + CompanionLocalCommands.route("подбери 3 камня", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:rotten_flesh".equals(CompanionLocalCommands.route("подбери гниль в воде", "Олег")),
+                "Rotten flesh: " + CompanionLocalCommands.route("подбери гниль в воде", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:rotten_flesh".equals(CompanionLocalCommands.route("подбери гнилую плоть", "Олег")),
+                "Rotten flesh: " + CompanionLocalCommands.route("подбери гнилую плоть", "Олег"));
         h.assertTrue(CompanionLocalCommands.route("принеси мне курицу", "Олег") == null, "«Принеси» is not the pickup");
         h.assertTrue(CompanionLocalCommands.route("подбери курицу и брёвна", "Олег") == null, "Two things at once are a plan");
         PlannedAction step = CompanionLocalCommands.action("companion work pick_up 64 minecraft:chicken");
         h.assertTrue("pick_up".equals(step.type()) && step.count() == 64 && "minecraft:chicken".equals(step.item()), "Step: " + step);
         h.succeed();
+    }
+
+    /**
+     * A drop five blocks away in deep water is found by the scan and swum to: water is no hole in the scan, and no cell of
+     * a deep pool has dry ground under it, so a stand on the floor alone would give the drop up as out of reach.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 800)
+    public static void aDropFiveBlocksAwayInDeepWaterIsFoundAndTaken(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        pool(h, 12, 6, 5, 2);
+        ItemEntity flesh = floating(h, 13, 2, 8, Items.ROTTEN_FLESH, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:rotten_flesh", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.assertTrue(companion.workPhase().startsWith("PICK_UP"), "Not the pickup: " + companion.workPhase());
+        h.succeedWhen(() -> {
+            h.assertTrue(flesh.isRemoved() && stored(companion, Items.ROTTEN_FLESH) == 1,
+                    "The drop five blocks away in the water was not taken: bag " + stored(companion, Items.ROTTEN_FLESH)
+                            + ", drop removed " + flesh.isRemoved() + ", phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
+            h.assertTrue(!companion.workPhase().startsWith("GAME"), "A hunt started over a drop in the water: " + companion.workPhase());
+        });
+    }
+
+    /** The surface of a pool three deep lies two blocks over his feet: he swims up to it as a player does and takes it. */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void aDropOnTheSurfaceOfADeepPoolIsSwumTo(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        pool(h, 12, 6, 5, 3);
+        ItemEntity pork = floating(h, 13, 3, 8, Items.COOKED_PORKCHOP, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:porkchop", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(pork.isRemoved() && stored(companion, Items.COOKED_PORKCHOP) == 1 && companion.workPhase().isEmpty(),
+                    "The pork on the surface of the deep pool was not taken: bag " + stored(companion, Items.COOKED_PORKCHOP)
+                            + ", drop removed " + pork.isRemoved() + ", phase " + companion.workPhase() + ", " + companion.getLastTaskResult()
+                            + "; " + companion.watchDetail());
+        });
+    }
+
+    /** Three pieces of rotten flesh in the water: the order takes all three, not one, and says so. */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void everyMatchingPieceInTheWaterIsTaken(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        pool(h, 11, 5, 6, 2);
+        ItemEntity first = floating(h, 12, 2, 8, Items.ROTTEN_FLESH, 1);
+        ItemEntity second = floating(h, 13, 2, 8, Items.ROTTEN_FLESH, 1);
+        ItemEntity third = floating(h, 13, 2, 9, Items.ROTTEN_FLESH, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:rotten_flesh", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.assertTrue(companion.workPhase().startsWith("PICK_UP"), "Not the pickup: " + companion.workPhase());
+        h.succeedWhen(() -> {
+            h.assertTrue(first.isRemoved() && second.isRemoved() && third.isRemoved() && stored(companion, Items.ROTTEN_FLESH) == 3,
+                    "Not all three pieces were taken: bag " + stored(companion, Items.ROTTEN_FLESH) + ", drops left "
+                            + (!first.isRemoved() || !second.isRemoved() || !third.isRemoved()) + ", phase " + companion.workPhase()
+                            + ", " + companion.getLastTaskResult());
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал гнилую плоть (3 шт.)"),
+                    "The report is wrong: " + companion.getLastTaskResult());
+        });
+    }
+
+    /** «Подбери одну» takes one and says how many remain; the repeated order takes the rest instead of claiming failure. */
+    @GameTest(template = "large_search", timeoutTicks = 1200)
+    public static void anOrderForOnePieceLeavesTheRestCounted(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        // Three pieces apart on the ground: the one nearest is taken, the two further on are left and counted.
+        ItemEntity first = item(h, 12, 1, 8, Items.ROTTEN_FLESH, 1);
+        ItemEntity second = item(h, 17, 1, 8, Items.ROTTEN_FLESH, 1);
+        ItemEntity third = item(h, 21, 1, 8, Items.ROTTEN_FLESH, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:rotten_flesh", 1);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.startSequence().thenWaitUntil(() -> {
+            h.assertTrue(stored(companion, Items.ROTTEN_FLESH) == 1 && companion.workPhase().isEmpty(),
+                    "The one piece was not taken: bag " + stored(companion, Items.ROTTEN_FLESH) + ", phase " + companion.workPhase());
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал гнилую плоть (1 шт.), осталось 2 шт."),
+                    "The pieces left are not counted: " + companion.getLastTaskResult());
+            h.assertTrue(!companion.getLastTaskResult().contains("Не смог подобрать"),
+                    "A partial pickup was reported as a failure: " + companion.getLastTaskResult());
+        }).thenExecute(() -> {
+            companion.setFollowing(false);
+            var again = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:rotten_flesh", 64);
+            h.assertTrue(again.success(), "The repeated order was refused: " + again.message());
+        }).thenWaitUntil(() -> {
+            h.assertTrue(first.isRemoved() && second.isRemoved() && third.isRemoved() && stored(companion, Items.ROTTEN_FLESH) == 3,
+                    "The repeated order did not take the rest: bag " + stored(companion, Items.ROTTEN_FLESH) + ", phase " + companion.workPhase()
+                            + ", " + companion.getLastTaskResult());
+            h.assertTrue(!companion.getLastTaskResult().contains("Не смог подобрать"),
+                    "The repeated order claimed failure while it took the rest: " + companion.getLastTaskResult());
+        }).thenSucceed();
+    }
+
+    /** A full bag: the order takes what fits and counts what is left; the repeat names the drop instead of «не смог подобрать». */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void leftoversInAFullBagAreCountedNotFailed(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) companion.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        // One slot with room for a single piece more: rotten flesh stacks, so a bare free slot would take both.
+        companion.setItem(0, new ItemStack(Items.ROTTEN_FLESH, 63));
+        pool(h, 11, 5, 6, 2);
+        ItemEntity first = floating(h, 12, 2, 8, Items.ROTTEN_FLESH, 1);
+        ItemEntity second = floating(h, 13, 2, 8, Items.ROTTEN_FLESH, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:rotten_flesh", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.startSequence().thenWaitUntil(() -> {
+            h.assertTrue(stored(companion, Items.ROTTEN_FLESH) == 64 && companion.workPhase().isEmpty(),
+                    "The piece that fits was not taken: bag " + stored(companion, Items.ROTTEN_FLESH) + ", phase " + companion.workPhase());
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал гнилую плоть (1 шт.), осталось 1 шт."),
+                    "The piece left is not counted: " + companion.getLastTaskResult() + "; drops " + first.isRemoved() + "/" + second.isRemoved()
+                            + " " + first.getItem() + " " + second.getItem() + "; " + companion.watchDetail());
+            h.assertTrue(!companion.getLastTaskResult().contains("Не смог подобрать"),
+                    "A partial pickup was reported as a failure: " + companion.getLastTaskResult());
+            h.assertTrue(!first.isRemoved() || !second.isRemoved(), "The leftover piece disappeared");
+        }).thenExecute(() -> {
+            companion.setFollowing(false);
+            var again = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:rotten_flesh", 64);
+            h.assertTrue(!again.success(), "A pickup into a full bag reported success");
+            h.assertTrue(again.message().contains("гнилая плоть (1)") && again.message().contains("сумка полна"),
+                    "The piece left is not named with its count: " + again.message());
+            h.assertTrue(!again.message().contains("Не смог подобрать"),
+                    "The repeat claimed failure while the piece lies there: " + again.message());
+        }).thenSucceed();
+    }
+
+    /** «Ведро» is a bucket: a bucket of water on the ground is taken for it. */
+    @GameTest(template = "large_search", timeoutTicks = 400)
+    public static void aBucketOfWaterIsTakenForBucket(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        h.assertTrue("companion work pick_up 64 minecraft:bucket".equals(CompanionLocalCommands.route("подбери ведро", "Олег")),
+                "Phrase: " + CompanionLocalCommands.route("подбери ведро", "Олег"));
+        ItemEntity bucket = item(h, 12, 1, 8, Items.WATER_BUCKET, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:bucket", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(bucket.isRemoved() && stored(companion, Items.WATER_BUCKET) == 1,
+                    "The bucket of water was not taken: phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал ведро (1 шт.)"),
+                    "The report does not call it a bucket: " + companion.getLastTaskResult());
+        });
+    }
+
+    /** «Чернила» and «чернильный мешок» are the ink sac: the one five blocks away in the water is taken, not hunted. */
+    @GameTest(template = "large_search", timeoutTicks = 800)
+    public static void anInkSacIsTakenForTheInkWords(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернила", "Олег")),
+                "Phrase: " + CompanionLocalCommands.route("подбери чернила", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернильный мешок", "Олег")),
+                "Phrase: " + CompanionLocalCommands.route("подбери чернильный мешок", "Олег"));
+        pool(h, 12, 6, 5, 2);
+        ItemEntity sac = floating(h, 13, 2, 8, Items.INK_SAC, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:ink_sac", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(sac.isRemoved() && stored(companion, Items.INK_SAC) == 1 && companion.workPhase().isEmpty(),
+                    "The ink sac in the water was not taken: phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал чернильный мешок (1 шт.)"),
+                    "The report does not call it an ink sac: " + companion.getLastTaskResult());
+        });
+    }
+
+    /** «Жареная свинина» and «свининка» are the cooked pork lying in the water: taken, and no hunt starts. */
+    @GameTest(template = "large_search", timeoutTicks = 800)
+    public static void cookedPorkInTheWaterIsTakenInsteadOfHunted(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("подбери свинину жареную", "Олег")),
+                "Phrase: " + CompanionLocalCommands.route("подбери свинину жареную", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег")),
+                "Trailing verb: " + CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег"));
+        boolean[] hunted = {false};
+        h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
+        pool(h, 12, 6, 5, 2);
+        ItemEntity pork = floating(h, 13, 2, 8, Items.COOKED_PORKCHOP, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:porkchop", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.assertTrue(companion.workPhase().startsWith("PICK_UP"), "Not the pickup: " + companion.workPhase());
+        h.succeedWhen(() -> {
+            h.assertTrue(pork.isRemoved() && stored(companion, Items.COOKED_PORKCHOP) == 1,
+                    "The cooked pork in the water was not taken: phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
+            h.assertTrue(!hunted[0], "A hunt started over the cooked pork lying there");
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал свинину (1 шт.)"),
+                    "The report does not name the pork in the right case: " + companion.getLastTaskResult());
+        });
+    }
+
+    /** Four pieces of chicken: one report, in the right case — «Подобрал курицу (4 шт.)», not «Подобрал курица». */
+    @GameTest(template = "large_search", timeoutTicks = 700)
+    public static void theReportNamesTheMeatInTheRightCase(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        ItemEntity first = item(h, 11, 1, 8, Items.CHICKEN, 1);
+        ItemEntity second = item(h, 12, 1, 8, Items.CHICKEN, 1);
+        ItemEntity third = item(h, 12, 1, 9, Items.CHICKEN, 1);
+        ItemEntity fourth = item(h, 11, 1, 9, Items.CHICKEN, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:chicken", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(first.isRemoved() && second.isRemoved() && third.isRemoved() && fourth.isRemoved()
+                            && stored(companion, Items.CHICKEN) == 4,
+                    "Not all four pieces were taken: bag " + stored(companion, Items.CHICKEN) + ", phase " + companion.workPhase()
+                            + ", " + companion.getLastTaskResult());
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал курицу (4 шт.)"),
+                    "The report uses the wrong case: " + companion.getLastTaskResult());
+        });
+    }
+
+    /** The honest list of what lies around is in Russian, not the server's English item names. */
+    @GameTest(template = "large_search", timeoutTicks = 300)
+    public static void theHonestListNamesThingsInRussian(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        item(h, 12, 1, 8, Items.WATER_BUCKET, 1);
+        item(h, 11, 1, 9, Items.DIAMOND_PICKAXE, 1);
+        item(h, 12, 1, 10, Items.ROTTEN_FLESH, 2);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:chicken", 64);
+        h.assertTrue(!result.success(), "A pickup with nothing of it near reported success");
+        h.assertTrue(result.message().contains("Рядом нет курицы"), "No honest answer: " + result.message());
+        h.assertTrue(result.message().contains("ведро"), "The bucket is not named in Russian: " + result.message());
+        h.assertTrue(result.message().contains("алмазная кирка"), "The pickaxe is not named in Russian: " + result.message());
+        h.assertTrue(result.message().contains("гнилая плоть (2)"), "The rotten flesh is not named in Russian: " + result.message());
+        h.assertTrue(!result.message().contains("Water Bucket") && !result.message().contains("Diamond Pickaxe")
+                        && !result.message().contains("Rotten Flesh"),
+                "The list names English item names: " + result.message());
+        h.succeed();
+    }
+
+    /** A chicken lying five blocks away in the water: the pickup takes it, and the hunt never starts. */
+    @GameTest(template = "large_search", timeoutTicks = 800)
+    public static void noHuntStartsWhenAMatchingDropLiesNear(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        boolean[] hunted = {false};
+        h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
+        pool(h, 12, 6, 5, 2);
+        ItemEntity chicken = floating(h, 13, 2, 8, Items.CHICKEN, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:chicken", 1);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.assertTrue(companion.workPhase().startsWith("PICK_UP"), "Not the pickup: " + companion.workPhase());
+        h.succeedWhen(() -> {
+            h.assertTrue(chicken.isRemoved() && stored(companion, Items.CHICKEN) == 1,
+                    "The chicken in the water was not taken: phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
+            h.assertTrue(!hunted[0], "A hunt started while the chicken lay within the scan radius");
+        });
+    }
+
+    /**
+     * A drop floating in the water at a spot: the test pool's water flows out over the flat floor and carries what floats
+     * in it away, so the drop is held where it was put (a pond of still water holds it there just the same).
+     */
+    private static ItemEntity floating(GameTestHelper h, int x, int y, int z, Item item, int count) {
+        ItemEntity drop = item(h, x, y, z, item, count);
+        BlockPos at = h.absolutePos(new BlockPos(x, y, z));
+        double px = at.getX() + .5, py = at.getY() + .6, pz = at.getZ() + .5;
+        drop.setPos(px, py, pz);
+        h.onEachTick(() -> drop.setPos(px, py, pz));
+        return drop;
+    }
+
+    /**
+     * A pool in a stone bank as high as its water, with steps up to it: a pool laid on the flat floor drains into a shallow
+     * puddle over it and carries what floats in it away with the flow, so the drop would not stay where the test put it. The
+     * bank keeps the water deep and still; every step up is one block, as the companion can climb.
+     */
+    private static void pool(GameTestHelper h, int x, int z, int size, int depth) {
+        for (int step = 0; step < depth; step++) {
+            int margin = depth - step;
+            for (int dx = -margin; dx < size + margin; dx++) for (int dz = -margin; dz < size + margin; dz++)
+                for (int dy = 1; dy <= step + 1; dy++) h.setBlock(new BlockPos(x + dx, dy, z + dz), Blocks.STONE);
+        }
+        for (int dx = 0; dx < size; dx++) for (int dz = 0; dz < size; dz++) for (int dy = 1; dy <= depth; dy++)
+            h.setBlock(new BlockPos(x + dx, dy, z + dz), Blocks.WATER);
     }
 
     private static ItemEntity item(GameTestHelper h, int x, int y, int z, Item item, int count) {

@@ -298,7 +298,7 @@ final class CompanionLoot {
                 BlockPos spot = center.offset(ox, dy, oz);
                 // The drop pushed out of a landed block lies clear, while the cell it came from still has the rest of the
                 // column in the air over it: no stand there.
-                if (!CompanionMiningNavigation.standable(owner, spot) || fallingInto(level, new AABB(spot), spot)) continue;
+                if (!CompanionMiningNavigation.pickupStand(owner, spot) || fallingInto(level, new AABB(spot), spot)) continue;
                 var standing = Vec3.atBottomCenterOf(spot);
                 var toward = target.position().subtract(standing).multiply(1, 0, 1).normalize().scale(.3);
                 // A reachable adjacent cell can still be outside pickup range. Route to a point

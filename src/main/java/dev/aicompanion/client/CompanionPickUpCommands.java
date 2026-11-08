@@ -12,6 +12,8 @@ public final class CompanionPickUpCommands {
     private CompanionPickUpCommands() { }
 
     private static final Pattern VERB = Pattern.compile("(?U)^(?:подбери|подберите|подобрать|подними|поднимите|поднять|подхвати)(?:-?ка)?\\b\\s*(.*)$");
+    /** The same verb at the end: «жареная свининка в воде кусок подбери» is the same order as «подбери свининку». */
+    private static final Pattern VERB_TAIL = Pattern.compile("(?U)^(.*?)\\s+(?:подбери|подберите|подобрать|подними|поднимите|поднять|подхвати)(?:-?ка)?\\s*$");
     /** «Подбери из сундука камень» is a take order, not this one. */
     private static final Pattern CONTAINER = Pattern.compile("(?U).*\\b(из|в)\\b\\s+(сундук|бочк|печ|шкаф|воронк|раздатчик|контейнер)\\p{L}*.*");
     /** Words around the thing: «вон ту курицу плавающую», «мне», «рядом», «с земли». */
@@ -26,16 +28,38 @@ public final class CompanionPickUpCommands {
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;
         String bare = said.rest().replaceAll("\\s+", " ").trim();
+        String rest;
         var verb = VERB.matcher(bare);
-        if (!verb.matches()) return null;
-        String rest = verb.group(1).trim();
+        if (verb.matches()) rest = verb.group(1).trim();
+        else {
+            // The verb last is the same order: «жареная свининка в воде кусок подбери».
+            var tail = VERB_TAIL.matcher(bare);
+            if (!tail.matches()) return null;
+            rest = tail.group(1).trim();
+        }
         if (rest.isEmpty() || CONTAINER.matcher(rest).matches()) return null;
         String noun = FILLER.matcher(rest).replaceAll(" ").replaceAll("\\s+", " ").trim();
         if (noun.isEmpty()) return null;
-        String item = itemFor(noun.split(" ")[0]);
+        // The thing may come after a word about it («жареная свининка», «гнилая плоть», «в воде кусок»): the first word
+        // that names something counts, and an adjective («жареную», «алмазную») only when no noun does.
+        String item = null;
+        for (String word : noun.split(" ")) {
+            String found = itemFor(word);
+            if (found == null) continue;
+            if (adjective(word)) { if (item == null) item = found; continue; }
+            item = found;
+            break;
+        }
         if (item == null) return null;
         int count = said.count() > 0 ? Math.min(64, said.count()) : 64;
         return new PlannedAction("pick_up", 0, count, item);
+    }
+
+    /** A word that describes the thing rather than naming it: «жареную», «гнилую», «алмазную», «вон ту». */
+    private static boolean adjective(String word) {
+        for (String ending : new String[]{"ая", "яя", "ое", "ее", "ый", "ий", "ой", "ую", "юю", "ые", "ие", "ых", "их", "ого", "его", "ому", "ему", "ым", "им"})
+            if (word.endsWith(ending)) return true;
+        return false;
     }
 
     /** The item a Russian word of the ground names, by its stem; null for a thing this order does not know. */
@@ -44,6 +68,9 @@ public final class CompanionPickUpCommands {
         if (w.startsWith("куриц") || w.startsWith("кур")) return "minecraft:chicken";
         if (w.startsWith("говяд")) return "minecraft:beef";
         if (w.startsWith("свинин")) return "minecraft:porkchop";
+        if (w.startsWith("гнил") || w.startsWith("плот")) return "minecraft:rotten_flesh";
+        if (w.startsWith("ведр")) return "minecraft:bucket";
+        if (w.startsWith("чернил")) return "minecraft:ink_sac";
         if (w.startsWith("баранин")) return "minecraft:mutton";
         if (w.startsWith("крол")) return "minecraft:rabbit";
         if (w.startsWith("мяс")) return "minecraft:meat";
