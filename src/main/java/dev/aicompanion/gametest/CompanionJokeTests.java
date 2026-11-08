@@ -15,7 +15,7 @@ import java.util.HashSet;
 @PrefixGameTestTemplate(false)
 public final class CompanionJokeTests {
     @GameTest(template = "empty")
-    public static void jokesAreShortOriginalBankLinesWithoutNumbers(GameTestHelper h) {
+    public static void jokesAreShortBankLinesWithoutNumbers(GameTestHelper h) {
         h.assertTrue(new HashSet<>(CompanionJokes.ALL).size() == CompanionJokes.ALL.size(), "Duplicate bank lines");
         for (String joke : CompanionJokes.ALL) {
             h.assertTrue(CompanionConversation.fitsMurmur(joke), "Not a short murmur: " + joke);
