@@ -21,6 +21,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -81,14 +84,16 @@ public final class CompanionObsidianTests {
 
     /**
      * «Добудь 3 обсидиана» by a pond of lava two deep: his water over it, three blocks mined and all three in his bag (none burnt in
-     * the lava under them), his water back in the bucket and none of it left about.
+     * the lava under them), his water back in the bucket and none of it left about; mined with his diamond pickaxe, not the golden one.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void anOrderSetsLavaWithHisWaterMinesTheObsidianAndScoopsTheWaterBack(GameTestHelper h) {
         ground(h);
         List<BlockPos> pond = lava(h, 18, 15, 3, 2);
         CompanionEntity c = spawn(h);
-        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        // A golden pickaxe is faster on obsidian and drops none: the diamond one is taken (review 08.11).
+        c.setItem(0, new ItemStack(Items.GOLDEN_PICKAXE));
+        c.setItem(2, new ItemStack(Items.DIAMOND_PICKAXE));
         c.setItem(1, new ItemStack(Items.WATER_BUCKET));
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":3}]");
         h.succeedWhen(() -> {
@@ -147,7 +152,7 @@ public final class CompanionObsidianTests {
     @GameTest(template = "empty", timeoutTicks = 20)
     public static void gettingObsidianNeedsNoModel(GameTestHelper h) {
         Object[][] said = {{"Олег, добудь обсидиан", 10}, {"накопай обсидиана", 10}, {"накопай 5 обсидиана", 5}, {"Добудь десять обсидиана!", 10},
-                {"выкопай 14 блоков обсидиана", 14}, {"сделай обсидиан", 10}, {"набери 64 обсидиана", 64}};
+                {"выкопай 14 блоков обсидиана", 14}, {"выкопай блок обсидиана", 1}, {"сделай обсидиан", 10}, {"набери 64 обсидиана", 64}};
         for (Object[] phrase : said) {
             var plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":" + phrase[1] + "}]"));
             String route = CompanionLocalCommands.route((String) phrase[0], "Олег");
@@ -157,6 +162,48 @@ public final class CompanionObsidianTests {
                 "где обсидиан", "добудь обсидиан и железо", "принеси обсидиан", "добудь 0 обсидиана"))
             h.assertTrue(CompanionLocalCommands.route(model, "Олег") == null, "«" + model + "» is not left to the model: " + CompanionLocalCommands.route(model, "Олег"));
         h.succeed();
+    }
+
+    /** The lava ran out short of the order: what he got is in his bag and he says how far he got, at once, without looking again. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void whenTheLavaRunsOutHeSaysHowFarHeGot(GameTestHelper h) {
+        ground(h);
+        lava(h, 18, 15, 1, 1);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Накопал 1 из 3: лава рядом кончилась.") && !report.contains("Не нашёл лавы"), "Not how far he got: " + report);
+            h.assertTrue(count(c, Items.OBSIDIAN) == 1 && count(c, Items.WATER_BUCKET) == 1, "Not the one obsidian and his water: " + report);
+        });
+    }
+
+    /** Lava and obsidian on a site where the player builds are his: no water poured there, nothing mined, and he says he found no lava. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void lavaAndObsidianWhereThePlayerBuildsAreLeftAlone(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> pond = lava(h, 18, 15, 3, 1);
+        CompanionEntity c = spawn(h);
+        var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
+        List<BlockPos> wall = List.of(new BlockPos(14, GROUND + 1, 20), new BlockPos(15, GROUND + 1, 20), new BlockPos(16, GROUND + 1, 20), new BlockPos(17, GROUND + 1, 20));
+        for (BlockPos cell : wall) {
+            h.setBlock(cell, Blocks.OBSIDIAN);
+            NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)), Blocks.GRASS_BLOCK.defaultBlockState(), player));
+        }
+        c.setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:obsidian\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Не нашёл лавы рядом — отведи меня к ней."), "He does not say he found no lava: " + report);
+            h.assertTrue(count(c, Items.WATER_BUCKET) == 1 && count(c, Items.OBSIDIAN) == 0, "He poured or mined: " + report);
+            for (BlockPos cell : wall) h.assertBlockPresent(Blocks.OBSIDIAN, cell);
+            for (BlockPos cell : pond) h.assertBlockPresent(Blocks.LAVA, cell);
+        });
     }
 
     /** A pond of lava sources {@code depth} deep and {@code size} square, its top level with the ground, its cells (relative). */

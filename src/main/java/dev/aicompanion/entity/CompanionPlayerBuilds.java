@@ -152,9 +152,10 @@ public final class CompanionPlayerBuilds extends SavedData {
         return here(player, level).stream().flatMap(site -> Stream.concat(site.chests.stream(), site.stashes.stream())).toList();
     }
 
-    /** On one of the sites where he builds in this dimension: what lies there is his (CompanionObsidian leaves it). */
-    boolean onSite(UUID player, ServerLevel level, BlockPos pos) {
-        return here(player, level).stream().anyMatch(site -> site.takesIn(pos));
+    /** The sites where he builds in this dimension, as a test of a cell: what lies there is his (CompanionObsidian leaves it). Taken once for many cells. */
+    java.util.function.Predicate<BlockPos> sites(UUID player, ServerLevel level) {
+        List<Site> here = here(player, level);
+        return pos -> here.stream().anyMatch(site -> site.takesIn(pos));
     }
 
     private List<Site> here(UUID player, ServerLevel level) {

@@ -66,7 +66,9 @@ final class CompanionObsidian {
     private Path path;
     /** Where he stood when the block came within his reach and sight. */
     private Vec3 foothold;
-    /** Cells of lava his water set or is setting: their obsidian is his, a site of the player's or not. */
+    /** The player's building sites here, taken once a tick (a block scan asks about many cells). */
+    private java.util.function.Predicate<BlockPos> site = pos -> false;
+    /** Cells of lava his water set or is setting: their obsidian is his even beside a portal. */
     private final Set<BlockPos> his = new HashSet<>();
     /** Obsidian and lava he found no way to. */
     private final Set<BlockPos> passed = new HashSet<>();
@@ -93,12 +95,16 @@ final class CompanionObsidian {
         return null;
     }
 
+    /** Blocks mined for the order: progress for the watchdog while the drops wait in his water. */
+    int mined() { return mined; }
+
     String jobName() { return "добычу обсидиана (" + got() + " из " + wanted + ")"; }
 
     private int got() { return Math.max(0, w.items.countCarried(Items.OBSIDIAN) - before); }
 
     /** One tick of the order: obsidian mined while there is some, else his water back, else on to the next lava and over it. */
     void tick(ServerLevel level) {
+        site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         int got = got();
         if (got >= wanted) { if (takeWaterBack(level)) end(true, "Накопал обсидиана: " + got + "."); return; }
         if (refusal(level, w.items.carriedItems()) != null) { end(false, NO_PICKAXE + short_(got)); return; }
@@ -125,13 +131,14 @@ final class CompanionObsidian {
         if (settleAt == 0) { settleAt = now + SETTLE; return; }
         if (now < settleAt) return;
         if (!retried) { retried = true; c.retryHarvestPickup(); return; }
-        event("obsidian_drops_lost", "mined", mined);
+        event("obsidian_drops_lost", "mined", mined, "loot", c.loot.diagnosticState());
         mined = got; settleAt = 0; retried = false;
     }
 
     private String short_(int got) { return got == 0 ? "" : " Накопал " + got + " из " + wanted + "."; }
 
-    private void end(boolean success, String message) { reset(); w.finish(success, message); }
+    /** A failure ends obtain_item at once with what he says (BLOCKED): planned again, the same lava was looked for twice more. */
+    private void end(boolean success, String message) { reset(); w.finish(success ? CompanionActionResult.ok(message) : CompanionActionResult.blocked(message)); }
 
     /** Stopped or given another order: his water is scooped if his hand reaches it, else it stays (stop means stop). */
     void cancel() {
@@ -145,9 +152,11 @@ final class CompanionObsidian {
     /** Obsidian he may mine now: his own or lying about but no portal's nor on a site of the player's, and its drop safe from lava. */
     private boolean minable(ServerLevel level, BlockPos pos) {
         if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(Blocks.OBSIDIAN) || passed.contains(pos) || pos.equals(c.blockPosition().below())) return false;
-        if (!his.contains(pos) && (portal(level, pos) || c.getOwnerId() != null && CompanionPlayerBuilds.get(level.getServer()).onSite(c.getOwnerId(), level, pos))) return false;
+        // While his water is out, only what it sets: a walk to obsidian far off would leave the water behind him.
+        if (water != null && !pos.closerThan(water, SPREAD + 1)) return false;
+        if (site.test(pos) || !his.contains(pos) && portal(level, pos)) return false;
         if (wet(level, pos)) return true;
-        for (Direction side : new Direction[]{Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST})
+        for (Direction side : new Direction[]{Direction.UP, Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST})
             if (CompanionLava.at(level, pos.relative(side))) return false;
         return true;
     }
@@ -173,13 +182,12 @@ final class CompanionObsidian {
         // In his running water he keeps his place, as a player walks against the stream.
         if (foothold == null) foothold = c.position();
         if (c.isInWater()) c.getMoveControl().setWantedPosition(foothold.x, foothold.y, foothold.z, 1.0);
-        c.selectToolForBlock(state);
+        if (!pickaxe()) { end(false, NO_PICKAXE + short_(got)); return; }
         ItemStack tool = c.getMainHandItem();
-        if (!takesObsidian(tool)) { end(false, NO_PICKAXE + short_(got)); return; }
+        if (!w.items.canStore(List.of(new ItemStack(Items.OBSIDIAN)))) { end(false, FULL_BAG + short_(got)); return; }
         c.workStatus("Копаю обсидиан.");
         if (!w.breaking.tick(level, target)) return;
         var drops = CompanionTools.drops(state, level, target, null, c, tool);
-        if (!drops.isEmpty() && !w.items.canStore(drops)) { end(false, FULL_BAG + short_(got)); return; }
         if (!level.destroyBlock(target, false, c, 512)) { passed.add(target); target = null; return; }
         tool.getItem().mineBlock(tool, level, state, target, c);
         c.dropHarvest(target, drops);
@@ -196,7 +204,7 @@ final class CompanionObsidian {
     private void pour(ServerLevel level, int got) {
         if (aim == null) {
             BlockPos lava = pours >= POURS ? null
-                    : nearest(level, Blocks.LAVA, pos -> !passed.contains(pos) && level.getFluidState(pos).isSource() && level.getBlockState(pos.above()).isAir());
+                    : nearest(level, Blocks.LAVA, pos -> !passed.contains(pos) && level.getFluidState(pos).isSource() && level.getBlockState(pos.above()).isAir() && !site.test(pos));
             if (lava == null) {
                 // What he mined and has not picked up yet is picked up before he says how far he got.
                 if (mined > got) { collect(level, got); return; }
@@ -209,7 +217,8 @@ final class CompanionObsidian {
         if (slot < 0) { end(false, NO_WATER + short_(got)); return; }
         if (!inReach(level, aim)) {
             c.workStatus("Иду к лаве.");
-            if (!walk()) { passed.addAll(pond(level, aim.below())); aim = null; }
+            // No cell to pour it from (the middle of a lake): only this lava is passed over; no way there: all of it.
+            if (!walk()) { if (stands.isEmpty()) passed.add(aim.below()); else passed.addAll(pond(level, aim.below())); aim = null; }
             return;
         }
         if (!level.getBlockState(aim).isAir() || !CompanionLava.at(level, aim.below())) { aim = null; return; }
@@ -243,7 +252,34 @@ final class CompanionObsidian {
         return true;
     }
 
-    private boolean inReach(ServerLevel level, BlockPos cell) { return CompanionWaterFill.seen(c, level, c.getEyePosition(), cell, REACH); }
+    /**
+     * A pickaxe that takes obsidian in his hand: the fastest of his that does (a golden one is faster on it and drops nothing, so the
+     * game's choice of the fastest tool took it and he said he had no diamond pickaxe).
+     */
+    private boolean pickaxe() {
+        if (takesObsidian(c.getMainHandItem())) return true;
+        if (takesObsidian(c.getOffhandItem())) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(c.getOffhandItem().getItem()).toString();
+            return c.unequipForSupport("offhand").success() && c.equipForWork(id).success() && takesObsidian(c.getMainHandItem());
+        }
+        BlockState obsidian = Blocks.OBSIDIAN.defaultBlockState();
+        ItemStack best = ItemStack.EMPTY;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            ItemStack stack = c.getItem(slot);
+            if (takesObsidian(stack) && (best.isEmpty() || stack.getDestroySpeed(obsidian) > best.getDestroySpeed(obsidian))) best = stack;
+        }
+        return !best.isEmpty() && c.equipForWork(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(best.getItem()).toString()).success()
+                && takesObsidian(c.getMainHandItem());
+    }
+
+    /**
+     * As a player's hand reaches a block: to its nearest face, not its middle (in his running water he stood 4.8 from the middle of
+     * his own water, walked at it eight times against the stream and left it, GameTest 08.11); and in sight.
+     */
+    private boolean inReach(ServerLevel level, BlockPos cell) {
+        Vec3 eyes = c.getEyePosition();
+        return new net.minecraft.world.phys.AABB(cell).distanceToSqr(eyes) <= REACH * REACH && CompanionWaterFill.seen(c, level, eyes, cell, REACH + 1);
+    }
 
     /** One tick of the walk to the stand cells: false when there is no way (or no progress after {@link #LEGS} walks). */
     private boolean walk() {

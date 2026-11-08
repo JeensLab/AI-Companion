@@ -40,8 +40,8 @@ public final class CompanionWorkCommands {
     public static String obsidian(String text, String name) {
         String value = plain(text, name).replaceAll("\s+", " ");
         var said = CompanionNumbers.parse(value);
-        // Nothing taken out of what was said: no number at all, so ten; a «0» taken out is no order of one.
-        int count = said.rest().equals(value) ? OBSIDIAN : said.count();
+        // Nothing taken out of what was said: no number at all, so ten («блок» alone is one); a «0» taken out is no order of one.
+        int count = said.rest().equals(value) ? ((" " + value + " ").contains(" блок ") ? 1 : OBSIDIAN) : said.count();
         if (!OBSIDIAN_ORDER.matcher(said.rest()).matches() || count < 1 || count > MAX_OBSIDIAN) return null;
         return "companion work obtain_item " + count + " minecraft:obsidian";
     }
