@@ -121,7 +121,10 @@ final class CompanionLoot {
             if (!(level.getEntity(id) instanceof ItemEntity item) || item.hasPickUpDelay()) continue;
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
-            int before = offered.getCount(); owner.storeLoot(offered);
+            int before = offered.getCount();
+            // What fell out of the dead player is kept apart for him, as the loose pickup does.
+            if (item.getPersistentData().getBoolean(CompanionPlayersThings.MARK)) owner.playersThings.keep(offered);
+            else owner.storeLoot(offered);
             int moved = before - offered.getCount();
             if (moved == 0) continue;
             if (item.getItem().is(ItemTags.LOGS)) collectedLogs += moved;

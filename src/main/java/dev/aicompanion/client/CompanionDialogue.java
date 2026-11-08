@@ -86,6 +86,7 @@ public final class CompanionDialogue {
             case "farm_crops" -> "Ага, сделаю грядки у воды.";
             case "harvest_crops" -> "Ага, пойду соберу урожай.";
             case "obtain_item" -> "Ага, добуду.";
+            case "pick_up" -> "Ага, подберу, что лежит рядом.";
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
@@ -137,6 +138,7 @@ public final class CompanionDialogue {
             }
             case "harvest_crops" -> "собрать урожай";
             case "obtain_item" -> "добыть «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "pick_up" -> "подобрать «" + itemName(action.item()) + "» (до " + action.count() + " шт.)";
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
             case "fill_bucket" -> "набрать воды в ведро (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
@@ -280,6 +282,11 @@ public final class CompanionDialogue {
     private static String summarizeSteps(List<PlannedAction> actions, String report) {
         if (report.isBlank()) return "";
         if (actions.stream().anyMatch(CompanionDialogue::isGoalAction)) return report.replace("План остановлен: ", "");
+        // «Подбери» says its own facts: what was taken, or what really lies around instead (the honest answer).
+        if (!actions.isEmpty() && actions.stream().allMatch(action -> "pick_up".equals(action.type()))) {
+            int stoppedAt = report.lastIndexOf("План остановлен:");
+            return speakable(stoppedAt >= 0 ? report.substring(stoppedAt + "План остановлен:".length()) : report);
+        }
         String lower = report.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains("такое поручение уже выполняется")) return "Я уже занимаюсь этим поручением.";
         boolean sorting = actions.stream().anyMatch(action -> "sort_chests".equals(action.type()));

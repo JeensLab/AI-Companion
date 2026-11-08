@@ -59,6 +59,9 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU)\\s*(?:" + java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е')) + "[\\s,!]+)?(?:давай\\s+|ну\\s+)?(?:продолжай|продолжи|продолжаем)[\\s.!]*")) return "companion goal resume";
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
+        // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
+        PlannedAction picked = CompanionPickUpCommands.parse(text, companionName);
+        if (picked != null) return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
         if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " "
                 + (workAction.item().isEmpty() ? "resources" : workAction.item())

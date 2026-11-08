@@ -75,6 +75,17 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(urgentLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
+        addRenderableWidget(Button.builder(pickUpLabel(), b -> {
+            OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
+            b.setMessage(pickUpLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "«Подбери курицу» — взять то, что уже лежит рядом, в том числе в воде и на другой высоте, а не начинать охоту или добычу. Выключено: сразу обычная охота или добыча."))).build());
+        addRenderableWidget(Button.builder(pickUpRadiusLabel(), b -> {
+            int next = OpenRouterConfig.PICK_UP_RADIUS.get() + 8;
+            OpenRouterConfig.PICK_UP_RADIUS.set(next > 32 ? 4 : next);
+            OpenRouterConfig.PICK_UP_RADIUS.save(); b.setMessage(pickUpRadiusLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Насколько далеко он осматривает землю вокруг себя, блоков."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -91,6 +102,8 @@ final class CompanionBehaviorScreen extends Screen {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }
     private Component damageNumbersLabel() { return Component.literal("Цифры урона над Олегом: " + (OpenRouterConfig.DAMAGE_NUMBERS.get() ? "вкл." : "выкл.")); }
+    private Component pickUpLabel() { return Component.literal("Подбирать лежащее рядом: " + (OpenRouterConfig.PICK_UP_NEARBY.get() ? "вкл." : "выкл.")); }
+    private Component pickUpRadiusLabel() { return Component.literal("Радиус подбора: " + OpenRouterConfig.PICK_UP_RADIUS.get() + " блоков"); }
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }

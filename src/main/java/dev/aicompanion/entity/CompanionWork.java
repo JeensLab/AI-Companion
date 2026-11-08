@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, PICK_UP }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, PICKUP }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -257,6 +257,10 @@ public final class CompanionWork {
             if (!animal.isAlive() && huntDead.add(animal.getUUID())) { gameKills++; gameTravels = 0; gameLastKind = CompanionGame.Kind.of(animal); gameKinds.add(gameLastKind); }
         }
     }
+    /** pick_up_nearby: what he went for, the bag count before, and when the order began. */
+    CompanionPickUp.Meaning pickUp;
+    int pickUpBefore;
+    long pickUpSince;
     long taskId;
     long completedId = -1;
     CompanionActionResult completedResult;
@@ -286,7 +290,7 @@ public final class CompanionWork {
                 || workOrigin != null && owner.getY() < workOrigin.getY() - 1.25;
     }
     String currentDescription() {
-        return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
+        return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.PICK_UP ? "подбирает лежащее рядом" : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
                 : job == Job.SORT ? "раскладывает по сундукам" : job == Job.FARM ? farming.describe() : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
                 : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + furnaces.smeltReady() + " из " + smeltCount : "готовит печь для плавки")
                 : "выполняет работу " + job + ", стадия " + phase;
@@ -310,6 +314,7 @@ public final class CompanionWork {
             case FARM -> "в поле";
             case COURSE -> "в пути";
             case WATER -> "за водой";
+            case PICKUP -> "подбор";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -337,6 +342,7 @@ public final class CompanionWork {
             case FARM -> farming.jobName();
             case COURSE -> course.jobName();
             case WATER -> "набор воды в ведро";
+            case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -471,6 +477,11 @@ public final class CompanionWork {
                 if (count > MAX_ORE) return CompanionActionResult.failed("За раз добываю до " + MAX_ORE + " блоков руды.");
                 job = Job.ORE; phase = Phase.ORE_PICK; oreWanted = count;
             }
+            case "pick_up_nearby" -> {
+                pickUp = CompanionPickUp.of(item);
+                if (pickUp == null) return CompanionActionResult.failed("Не понял, что подобрать: «" + item + "».");
+                job = Job.PICK_UP; phase = Phase.PICKUP;
+            }
             default -> { return CompanionActionResult.failed("Неизвестная работа."); }
         }
         taskId++;
@@ -514,6 +525,7 @@ public final class CompanionWork {
             // A second vein must not turn the first descent into the next job's surface.
             oreExit = owner.autonomy().running() ? owner.autonomy().center() : null;
         }
+        if (job == Job.PICK_UP) { pickUpBefore = pickUpCarried(); pickUpSince = level.getGameTime(); }
         gameKills = 0; gameTarget = null; gameLastKind = null; gameKinds.clear(); gameTravel = null; gameTravels = 0; owner.travel().reset(); gameSkipped.clear(); gameBagBefore.clear();
         gameAnchor = owner.autonomy().running() ? owner.autonomy().center() : owner.blockPosition();
         if (job == Job.GAME) for (ItemStack stack : items.carriedItems()) if (!stack.isEmpty()) gameBagBefore.merge(stack.getItem(), stack.getCount(), Integer::sum);
@@ -563,7 +575,7 @@ public final class CompanionWork {
         if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
         if (stalled()) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
-        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && owner.hasPendingLoot()) return;
+        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && owner.hasPendingLoot()) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }
@@ -607,6 +619,7 @@ public final class CompanionWork {
             case FARM -> farming.tick(level);
             case COURSE -> course.tick(level);
             case WATER -> owner.waterFill.orderTick(level);
+            case PICKUP -> pickUp(level);
             case WOOD -> { }
         }
     }
@@ -685,6 +698,36 @@ public final class CompanionWork {
 
     void watchChase() { hunting.watchChase(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
+
+    /**
+     * pick_up_nearby: the drops of the named meaning were claimed and he walks to them like a player, the game's own
+     * pickup taking them. The order ends when the bag gained what was asked or when nothing is left to walk to.
+     */
+    private void pickUp(ServerLevel level) {
+        int gained = pickUpCarried() - pickUpBefore;
+        if (gained > 0 && (gained >= requestedCount || !owner.hasPendingLoot())) {
+            finish(true, "Подобрал " + pickUp.name() + " (" + gained + " шт.).");
+            return;
+        }
+        if (!owner.hasPendingLoot()) {
+            finish(false, gained > 0 ? "Подобрал " + pickUp.name() + " (" + gained + " шт.), остальное не достал."
+                    : "Не смог подобрать " + pickUp.name() + ". Осталось лежать.");
+            return;
+        }
+        if (level.getGameTime() - pickUpSince > CompanionPickUp.ORDER_TICKS) {
+            finish(false, "Не успел подобрать " + pickUp.name() + ".");
+            return;
+        }
+        owner.workStatus("Подхожу к " + pickUp.name() + ".");
+    }
+
+    /** What the bag holds of the meaning he went for, for the order's own report; the player's own things kept apart count too. */
+    private int pickUpCarried() {
+        int count = 0;
+        for (ItemStack stack : items.carriedItems()) if (pickUp != null && pickUp.is(stack)) count += stack.getCount();
+        for (ItemStack stack : owner.playersThings.held()) if (pickUp != null && pickUp.is(stack)) count += stack.getCount();
+        return count;
+    }
 
     private void buildHouse(ServerLevel level) {
         if (!owner.onGround()) return;

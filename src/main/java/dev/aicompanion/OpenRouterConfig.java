@@ -107,6 +107,16 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.long_term_memory")
             .define("longTermMemory", true);
 
+    /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue PICK_UP_NEARBY = BUILDER
+            .comment("«Подбери <X>» takes what of it lies on the ground around the companion instead of starting a hunt or a dig. Off: the usual hunt or dig starts at once.")
+            .translation("config.aicompanion.pick_up_nearby")
+            .define("pickUpNearby", true);
+    public static final ModConfigSpec.IntValue PICK_UP_RADIUS = BUILDER
+            .comment("How far around the companion the ground is scanned for «подбери», in blocks.")
+            .translation("config.aicompanion.pick_up_radius")
+            .defineInRange("pickUpRadius", 16, 4, 32);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private OpenRouterConfig() {
