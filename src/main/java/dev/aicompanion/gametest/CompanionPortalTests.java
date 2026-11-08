@@ -157,6 +157,55 @@ public final class CompanionPortalTests {
         }));
     }
 
+    /**
+     * After the player through a portal he built (its bottom in the ground), from behind it and off its side: the way to the cell
+     * behind the portal goes past the lit portal, a wall to his routes, and he still gets there and steps in (in game 09.11, from
+     * the Nether, «Не смог дойти до портала» two blocks from it).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "portal")
+    public static void heFollowsThroughAPortalOfHisOwnFromBehindIt(GameTestHelper h) {
+        ground(h);
+        for (int x = 14; x <= 17; x++) for (int y = GROUND; y <= GROUND + 4; y++)
+            if ((x == 14 || x == 17) != (y == GROUND || y == GROUND + 4)) h.setBlock(new BlockPos(x, y, 16), Blocks.OBSIDIAN);
+        h.setBlock(new BlockPos(15, GROUND + 1, 16), Blocks.FIRE);
+        CompanionEntity companion = spawn(h, 18, 15);
+        UUID id = companion.getUUID();
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        Runnable keepLanding = prepareLanding(h, nether, new BlockPos(16, GROUND + 1, 16));
+        Player owner = stepInto(h, companion, new BlockPos(16, GROUND + 1, 16));
+        leaveFor(h, owner, nether, 0, 100, 0);
+        h.succeedWhen(() -> {
+            keepLanding.run();
+            h.assertTrue(nether.getEntity(id) instanceof CompanionEntity, "Still at " + (h.getLevel().getEntity(id) == null ? "nowhere" : h.getLevel().getEntity(id).blockPosition()));
+            CompanionPortalBuildTests.putOut(h);
+        });
+    }
+
+    /**
+     * Led to a portal he knows (decided 09.11), the player ran ahead and went through first: he follows through it, as when the player
+     * goes first on a walk (review 09.11: the walk to it went on and «Пришли» was said to nobody).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400, batch = "portal")
+    public static void ledToAPortalHeFollowsThePlayerWhoWentThroughFirst(GameTestHelper h) {
+        ground(h);
+        for (int x = 24; x <= 27; x++) for (int y = GROUND; y <= GROUND + 4; y++)
+            if ((x == 24 || x == 27) != (y == GROUND || y == GROUND + 4)) h.setBlock(new BlockPos(x, y, 26), Blocks.OBSIDIAN);
+        h.setBlock(new BlockPos(25, GROUND + 1, 26), Blocks.FIRE);
+        CompanionEntity companion = spawn(h, 3, 3);
+        companion.rememberPlaced(h.absolutePos(new BlockPos(25, GROUND + 1, 26)));
+        UUID id = companion.getUUID();
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        Runnable keepLanding = prepareLanding(h, nether, new BlockPos(25, GROUND + 1, 26));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.runAfterDelay(2, () -> h.assertTrue(CompanionEvents.executeAction(owner, "build_portal", "", 1).success(), "The order was refused"));
+        h.runAfterDelay(60, () -> leaveFor(h, stepInto(h, companion, new BlockPos(25, GROUND + 1, 26)), nether, 0, 100, 0));
+        h.succeedWhen(() -> {
+            keepLanding.run();
+            h.assertTrue(nether.getEntity(id) instanceof CompanionEntity, "Still at " + (h.getLevel().getEntity(id) == null ? "nowhere" : h.getLevel().getEntity(id).blockPosition()));
+            CompanionPortalBuildTests.putOut(h);
+        });
+    }
+
     /** Asked in the End, the one place no test beside this one has a Nether portal within his reach. */
     @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "portal")
     public static void withNoPortalNearHeSaysSo(GameTestHelper h) {

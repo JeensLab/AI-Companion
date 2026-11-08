@@ -221,7 +221,9 @@ public final class CompanionPlanRunner {
                     && run.gotForPortal.add(short_.item() + " " + short_.count())) {
                 PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
                 CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
-                run.plan.set(index, new PlannedAction(action.type(), 0, action.count(), short_.item()));
+                // «Новый» or «здесь» said stays; else the step names what it lacked, so an obtain_item given up drops it.
+                String kept = "new".equals(action.item()) || "here".equals(action.item()) ? action.item() : short_.item();
+                run.plan.set(index, new PlannedAction(action.type(), 0, action.count(), kept));
                 run.plan.add(index, obtain);
                 return step(run, index, obtain, false);
             }

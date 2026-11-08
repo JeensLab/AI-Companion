@@ -119,8 +119,8 @@ public final class CompanionPlanCodec {
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
                 if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
-                // A new portal here («построй новый») or none named: then a portal near or known is enough or led to.
-                if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item)) throw invalid();
+                // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
+                if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item) && !"here".equals(item)) throw invalid();
                 // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
                 if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
                 if ("walk_heading".equals(type) && !dev.aicompanion.entity.CompanionCourse.valid(item)) throw invalid();

@@ -43,6 +43,9 @@ final class CompanionPortals {
     /** Any later order of the player ends the walk. */
     void stop() { portal = null; ordered = false; }
 
+    /** The player went through this portal while he was led to it (CompanionPortalBuild): the walk after him is decided next tick. */
+    void playerWentThrough(BlockPos portal) { playerSeen = portal; }
+
     /** The player's order: the nearest Nether portal, whoever lit it. What he works on ends here, as on «иди за мной». */
     CompanionActionResult enter(ServerLevel level) {
         var found = level.getPoiManager().findClosest(type -> type.is(PoiTypes.NETHER_PORTAL),
@@ -132,7 +135,10 @@ final class CompanionPortals {
         if (portal == null) return;
         Vec3 inside = Vec3.atBottomCenterOf(portal), before = Vec3.atBottomCenterOf(entry), here = c.position();
         double near = entry.equals(portal) ? STEP_IN_FROM : BEFORE_THE_PLANE;
-        if (Math.hypot(before.x - here.x, before.z - here.z) <= near && Math.abs(before.y - here.y) <= STEP_IN_FROM) {
+        // A portal set into the ground, as he builds them, is walked into from beside its frame too: the route to the cell before it
+        // ended a block short there (GameTest 09.11, «Не смог дойти до портала» two blocks from it).
+        boolean level = Math.abs(inside.y - here.y) < .6 && Math.hypot(inside.x - here.x, inside.z - here.z) <= STEP_IN_FROM;
+        if (level || Math.hypot(before.x - here.x, before.z - here.z) <= near && Math.abs(before.y - here.y) <= STEP_IN_FROM) {
             c.getNavigation().stop();
             c.getMoveControl().setWantedPosition(inside.x, inside.y, inside.z, 1D);
             if (c.horizontalCollision && c.onGround()) c.getJumpControl().jump();

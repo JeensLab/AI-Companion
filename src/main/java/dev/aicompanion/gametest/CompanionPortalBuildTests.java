@@ -210,11 +210,11 @@ public final class CompanionPortalBuildTests {
         for (String said : List.of("Олег, построй портал", "построй портал в Незер", "сделай портал в ад!", "поставь нам портал рядом", "построй портал из обсидиана",
                 "построй новый портал", "не хочу идти, построй новый портал", "построй портал здесь", "сделай портал возле меня")) {
             String route = CompanionLocalCommands.route(said, "Олег");
-            boolean wanted = said.matches(".*(новый|здесь|возле меня).*");
-            // Said, no item is "resources" in the local command (as for a house); only "new" means anything to the server.
+            String wanted = said.matches(".*новый.*") ? "new" : said.matches(".*(здесь|возле меня).*") ? "here" : "resources";
+            // Said, no item is "resources" in the local command (as for a house); "new" and "here" mean something to the server.
             var step = route == null ? null : CompanionLocalCommands.actions(route);
-            h.assertTrue(step != null && step.size() == 1 && step.getFirst().type().equals("build_portal") && "new".equals(step.getFirst().item()) == wanted,
-                    "«" + said + "» is not build_portal" + (wanted ? " new" : "") + " but " + route);
+            h.assertTrue(step != null && step.size() == 1 && step.getFirst().type().equals("build_portal") && wanted.equals(step.getFirst().item()),
+                    "«" + said + "» is not build_portal " + wanted + " but " + route);
         }
         for (String model : List.of("построй портал и зайди в него", "не строй портал", "сломай портал", "где портал", "построй два портала"))
             h.assertTrue(CompanionLocalCommands.route(model, "Олег") == null || !CompanionLocalCommands.route(model, "Олег").contains("build_portal"),
