@@ -174,13 +174,36 @@ public final class CompanionWorkflowTests {
     /**
      * Recon 04.11 (A3): digging steps up out of his tunnel he opened the floor of a pond, its water ran down the steps, and from the
      * bottom «иди ко мне» was «Не могу к тебе пройти»: a route went only across the water at his level. He swims up the fall into
-     * the pond and out to the player. While the water runs down he is held there, as his self-rescue held him then.
+     * the pond and out to the player, and does not cut steps instead.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1000)
     public static void calledFromStepsAPondRanDownHeSwimsUpToThePlayer(GameTestHelper helper) {
+        CompanionEntity companion = floodedSteps(helper, false);
+        var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        helper.onEachTick(() -> helper.assertFalse(companion.isSelfRescuing(), "Cut steps instead of swimming up"));
+        helper.succeedWhen(() -> helper.assertTrue(helper.getTick() > 200 && companion.didLastTaskSucceed() && companion.distanceTo(player) <= 4, diagnostic(companion)));
+    }
+
+    /** Review 08.11: the same water under a lid of stone is a pocket with no air at its top: nearer the player, but no way to him. He stays where he breathes. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void calledFromStepsUnderAPocketOfWaterHeDoesNotSwimUpIntoIt(GameTestHelper helper) {
+        CompanionEntity companion = floodedSteps(helper, true);
+        double pocket = helper.absolutePos(new BlockPos(16, 8, 15)).getY();
+        helper.onEachTick(() -> helper.assertTrue(companion.getY() < pocket && companion.getAirSupply() > 0, "Swam up into the pocket: " + diagnostic(companion)));
+        helper.runAtTickTime(800, helper::succeed);
+    }
+
+    /**
+     * Stone to y 10 and a pond in it 3 deep (under a lid of stone at y 11 if asked), and the recon's steps under it, 328 56 175 to
+     * 328 58 171 there: the last one is under the pond. He is held at their bottom while the water runs down, as his self-rescue held
+     * him then, and called to the player on the stone east of the pond at tick 200.
+     */
+    private static CompanionEntity floodedSteps(GameTestHelper helper, boolean lid) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 10; y++) helper.setBlock(new BlockPos(x, y, z), y > 0 ? Blocks.STONE : Blocks.BEDROCK);
-        for (int x = 11; x <= 19; x++) for (int z = 9; z <= 15; z++) for (int y = 8; y <= 10; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.WATER);
-        // The recon's steps, 328 56 175 to 328 58 171 there; the last one is under the pond.
+        for (int x = 11; x <= 19; x++) for (int z = 9; z <= 15; z++) {
+            for (int y = 8; y <= 10; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.WATER);
+            if (lid) helper.setBlock(new BlockPos(x, 11, z), Blocks.STONE);
+        }
         for (int[] c : new int[][]{{16, 4, 18}, {16, 3, 17}, {16, 4, 17}, {16, 5, 17}, {16, 4, 16}, {16, 5, 16}, {16, 6, 16}, {16, 5, 15}, {16, 6, 15}, {16, 7, 15}, {16, 6, 14}})
             helper.setBlock(new BlockPos(c[0], c[1], c[2]), Blocks.AIR);
         CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, 4, 16);
@@ -189,7 +212,7 @@ public final class CompanionWorkflowTests {
         companion.setOwnerId(player.getUUID()); player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID()); CompanionEvents.getOwnedCompanion(player);
         helper.runAfterDelay(1, () -> CompanionEvents.executeAction(player, "wait", "", 1));
         helper.runAfterDelay(200, () -> helper.assertTrue(CompanionEvents.executeAction(player, "come", "", 1).success(), "Not accepted"));
-        helper.succeedWhen(() -> helper.assertTrue(helper.getTick() > 200 && companion.didLastTaskSucceed() && companion.distanceTo(player) <= 4, diagnostic(companion)));
+        return companion;
     }
 
     private static void stablePitExit(GameTestHelper helper, CompanionEntity companion) {
