@@ -88,6 +88,54 @@ public final class CompanionBoatClutchTests {
         h.succeedWhen(() -> unhurtWithTheBoatBack(c, seated[0], h.getLevel(), h.getBounds()));
     }
 
+    /**
+     * Told to stay («стой» puts his pickup aside till the next order), he breaks the boat from a couple of blocks off: he walks to
+     * where it fell and takes it all the same.
+     */
+    @GameTest(template = "empty", timeoutTicks = 300, skyAccess = true)
+    public static void toldToStayHeStillWalksToTheBoatHeBrokeAndTakesIt(GameTestHelper h) {
+        floor(h);
+        CompanionEntity c = spawn(h, 4, 31, 4);
+        c.setFollowing(false);
+        c.setItem(0, new ItemStack(Items.OAK_BOAT));
+        boolean[] seated = watchSeat(h, c), moved = {false};
+        // The tick he is out of the boat he is set two and a half blocks off it, still within reach to break it.
+        h.onEachTick(() -> {
+            if (moved[0] || !seated[0] || c.isPassenger()) return;
+            moved[0] = true;
+            c.teleportTo(c.getX() + 2.5, c.getY(), c.getZ());
+        });
+        h.succeedWhen(() -> {
+            check(moved[0], "He never stepped out of the boat");
+            unhurtWithTheBoatBack(c, seated[0], h.getLevel(), h.getBounds());
+        });
+    }
+
+    /**
+     * The boat broken on the edge of a step, its drop falls a block lower beside it (seen in AgentTest 08.11): he steps down and takes
+     * it. The drop is set there the tick it appears; he lands on the upper step.
+     */
+    @GameTest(template = "empty", timeoutTicks = 300, skyAccess = true)
+    public static void theBoatFallenDownAStepIsTakenToo(GameTestHelper h) {
+        for (int x = 0; x < 8; x++) for (int z = 0; z < 8; z++) { h.setBlock(x, 0, z, Blocks.STONE); if (x < 4) h.setBlock(x, 1, z, Blocks.STONE); }
+        CompanionEntity c = spawn(h, 2, 32, 4);
+        c.setItem(0, new ItemStack(Items.OAK_BOAT));
+        boolean[] seated = watchSeat(h, c), moved = {false};
+        h.onEachTick(() -> {
+            if (moved[0]) return;
+            for (var drop : h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, h.getBounds(), e -> e.getItem().is(Items.OAK_BOAT))) {
+                moved[0] = true;
+                var at = h.absoluteVec(new Vec3(5.5, 1, 4.5));
+                drop.teleportTo(at.x, at.y, at.z);
+                drop.setDeltaMovement(Vec3.ZERO);
+            }
+        });
+        h.succeedWhen(() -> {
+            check(moved[0], "No boat was broken");
+            unhurtWithTheBoatBack(c, seated[0], h.getLevel(), h.getBounds());
+        });
+    }
+
     /** With a water bucket too, in the Overworld the water goes first: the boat never leaves his bag. */
     @GameTest(template = "empty", timeoutTicks = 300, skyAccess = true)
     public static void withABucketTooTheWaterGoesFirst(GameTestHelper h) {

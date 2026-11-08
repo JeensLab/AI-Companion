@@ -11,11 +11,13 @@ import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The speedrunners' boat, for a fall the water bucket does not catch: in the Nether, where water boils away, or with no water bucket in
@@ -31,21 +33,24 @@ final class CompanionBoatClutch {
     private static final int SIT = 10;
     /** How often he hits the boat (ticks), as a player's fist recovers; and the hits he gives it before he gives it up. */
     private static final int HIT_EVERY = 5, HITS = 20;
+    /** How long the broken boat may lie before he gives it up (ticks): ten seconds; and how often a way to it is looked for. */
+    private static final int PICK = 200, AGAIN = 10;
     /** He says what the boat did at most this often (ticks), as of the bucket. */
     private static final int TALK = 1200;
     /** Whose clutch a boat is, kept with the boat: one he sits in after a reload is still his to take back. */
     private static final String MARK = "aicompanion:clutch_boat";
-    private static final String LEFT = "Лодку не забрал, так и стоит.";
+    private static final String LEFT = "Лодку не забрал, осталась там.";
     private static final List<String> SAVED = List.of("Лодка лучше парашюта, видал?", "Спидранерская лодка — и ни царапины.",
             "Лодочный клатч, как у спидранеров.");
 
     private final CompanionEntity c;
-    /** The boat of his last clutch, until it is back in his bag or left. */
+    /** The boat of his last clutch, until it is broken or left; then the boat it dropped, until it is in his bag or left. */
     private Boat boat;
-    /** When he sat down in it, then when he last hit it; and how many hits it has had. */
+    private ItemEntity drop;
+    /** When he sat down in it, then when he last hit it, then when it broke; and how many hits it has had. */
     private long at;
     private int hits;
-    private long saidAt = Long.MIN_VALUE / 2;
+    private long lookedAt, saidAt = Long.MIN_VALUE / 2;
 
     CompanionBoatClutch(CompanionEntity c) { this.c = c; }
 
@@ -54,6 +59,7 @@ final class CompanionBoatClutch {
         if (!(c.level() instanceof ServerLevel level) || !c.isAlive()) return;
         if (boat == null && c.getVehicle() instanceof Boat seat && ours(seat)) { boat = seat; at = level.getGameTime(); } // after a reload
         if (boat != null) settle(level);
+        else if (drop != null) lying(level);
         if (c.onGround() || c.isInWater() || c.isPassenger() || c.isFallFlying() || c.getDeltaMovement().y >= 0) return;
         int slot = boatSlot();
         if (slot < 0) return;
@@ -148,27 +154,48 @@ final class CompanionBoatClutch {
         c.doHurtTarget(boat);
         hits++;
         if (boat.isRemoved()) {
-            // Broken, it lies where it stood: his to pick up, as a kill's drops are.
-            c.loot.claim(level.getEntitiesOfClass(ItemEntity.class, boat.getBoundingBox().inflate(1),
-                    drop -> drop.getItem().is(item) && drop.getAge() == 0));
+            // Broken, it lies where it stood, or a step lower: he walks over it and the pickup takes it, as a player's does
+            // (CompanionLoot.collectLoose). Not as his harvest: from a spot with no route that pickup gives a drop up (AgentTest 08.11).
             event("boat_clutch_broken", "hits", hits);
+            drop = level.getEntitiesOfClass(ItemEntity.class, boat.getBoundingBox().inflate(1), it -> it.getItem().is(item) && it.getAge() == 0)
+                    .stream().findFirst().orElse(null);
             boat = null;
+            at = now;
         } else if (hits >= HITS) leave("hits");
     }
 
-    /** Out of it and at it till it is broken: whatever moves him waits (the following, the work), as he takes it back (decided 08.11). */
-    boolean breaking() { return boat != null && !c.isPassenger(); }
+    /** The boat he broke, lying: in a bag now (his, or the player's who took it), or after ten seconds not his to wait for. */
+    private void lying(ServerLevel level) {
+        if (!drop.isAlive()) { event("boat_clutch_picked"); drop = null; }
+        else if (level.getGameTime() - at > PICK) leave("lying");
+    }
+
+    /** Over to the boat he broke, by the single route, till the pickup takes it; a search this tick had no share for is asked again. */
+    void walkToDrop() {
+        long now = c.level().getGameTime();
+        if (drop == null || !c.work.route.legOver() || now - lookedAt < AGAIN) return;
+        int busy = c.work.route.busyAnswers();
+        Path path = c.work.route.toCells(Set.of(drop.blockPosition()), 1);
+        if (c.work.route.busyAnswers() != busy) return;
+        lookedAt = now;
+        if (path != null) c.work.route.walk(path);
+    }
+
+    /** Out of it and at it till it is broken and picked up: whatever else moves him waits (the following, the work), as he takes it
+     * back (decided 08.11). */
+    boolean breaking() { return boat != null && !c.isPassenger() || drop != null; }
 
     /** He leaves the boat where it stands and says so (as the bucket's water, decided 05.11). */
     private void leave(String why) {
         event("boat_clutch_left", "why", why);
         c.autonomySay(LEFT, false);
         boat = null;
+        drop = null;
     }
 
     /**
-     * Beside the boat he stepped out of while he breaks it (its hits are given in tick): the follow and the work would walk him out of
-     * reach first. Beside the bucket's fetch in rank, under his air.
+     * Beside the boat he stepped out of while he breaks it (its hits are given in tick), then over to where it fell: the follow and the
+     * work would walk him off first. Beside the bucket's fetch in rank, under his air.
      */
     static final class BreakGoal extends Goal {
         private final CompanionEntity c;
@@ -176,6 +203,7 @@ final class CompanionBoatClutch {
         @Override public boolean canUse() { return c.boatClutch.breaking(); }
         @Override public boolean canContinueToUse() { return canUse(); }
         @Override public void start() { c.getNavigation().stop(); }
+        @Override public void tick() { c.boatClutch.walkToDrop(); }
     }
 
     /** The journal's line: where he is, where his boat is, his health and fall. */
