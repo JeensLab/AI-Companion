@@ -29,6 +29,23 @@ public final class CompanionWorkCommands {
         return "companion work obtain_item " + count + " minecraft:water_bucket" + (give ? " give" : "");
     }
 
+    /** Obsidian got without the model at most (a stack) and when no number is said (a portal's frame without its corners). */
+    private static final int MAX_OBSIDIAN = 64, OBSIDIAN = 10;
+    private static final Pattern OBSIDIAN_ORDER = Pattern.compile("^(?:добудь|накопай|выкопай|сделай|набери)(?: (?:блоков|блока|блок|штук|штуки))? обсидиана?$");
+
+    /**
+     * «Добудь обсидиан», «накопай 5 обсидиана» (decided 08.11): "companion work obtain_item N minecraft:obsidian", ten when no number is
+     * said. Null for anything else, which is the model's: «принеси», «и …», «0», more than {@link #MAX_OBSIDIAN}.
+     */
+    public static String obsidian(String text, String name) {
+        String value = plain(text, name).replaceAll("\s+", " ");
+        var said = CompanionNumbers.parse(value);
+        // Nothing taken out of what was said: no number at all, so ten; a «0» taken out is no order of one.
+        int count = said.rest().equals(value) ? OBSIDIAN : said.count();
+        if (!OBSIDIAN_ORDER.matcher(said.rest()).matches() || count < 1 || count > MAX_OBSIDIAN) return null;
+        return "companion work obtain_item " + count + " minecraft:obsidian";
+    }
+
     /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
     private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();

@@ -298,13 +298,14 @@ public final class CompanionAgendaTests {
     public static void blockedGoalStaysCancellableAndYieldsToPickaxes(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
-        f.c.setItem(5, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(6, new ItemStack(Items.WATER_BUCKET));
+        f.c.setItem(5, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(6, new ItemStack(Items.WATER_BUCKET)); f.c.setItem(7, new ItemStack(Items.OBSIDIAN, 10));
         f.start("defeat_ender_dragon", 0);
+        String cannot = f.goal().book().milestones().stream().filter(milestone -> !milestone.supported()).findFirst().orElseThrow().label(false);
         boolean[] done = {false};
         h.onEachTick(() -> {
             if (done[0] || f.goal().state() != CompanionAgenda.State.BLOCKED) return;
             done[0] = true;
-            h.assertTrue(f.goal().reason().contains("10 обсидиана"), "The stop does not name the obsidian: " + f.goal().reason());
+            h.assertTrue(f.goal().reason().contains(cannot), "The stop does not name «" + cannot + "»: " + f.goal().reason());
             var pickaxes = CompanionEvents.executeAction(f.p, "goal_pickaxes", "", 1);
             h.assertTrue(pickaxes.status() == CompanionActionResult.Status.ACCEPTED, "A blocked goal held the pickaxe order: " + pickaxes.message());
             CompanionEvents.executeAction(f.p, "goal_resume", "", 1);
@@ -657,7 +658,7 @@ public final class CompanionAgendaTests {
     public static void blockedGoalDoesNotFreezeDeeds(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
-        f.c.setItem(7, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(8, new ItemStack(Items.WATER_BUCKET));
+        f.c.setItem(7, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(8, new ItemStack(Items.WATER_BUCKET)); f.c.setItem(9, new ItemStack(Items.OBSIDIAN, 10));
         f.start("defeat_ender_dragon", 0);
         boolean[] seen = {false, false};
         h.onEachTick(() -> {
