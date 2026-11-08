@@ -51,6 +51,8 @@ final class CompanionObsidian {
     private static final double HOLD = .5;
     /** Ticks his water takes to run off once scooped (seven cells, five ticks each) and the drops to come to rest. */
     private static final int SETTLE = 60;
+    /** How long the drops floating in his water are left alone at most (ticks), as long as his harvest is remembered. */
+    private static final int SHUN = 20 * 300;
 
     private final CompanionWork w;
     private final CompanionEntity c;
@@ -182,6 +184,9 @@ final class CompanionObsidian {
         tool.getItem().mineBlock(tool, level, state, target, c);
         c.dropHarvest(target, drops);
         mined++;
+        // Floating in his running water the drop is no use chasing (in game 08.11 each was chased ten seconds in vain): it waits
+        // until the water is back in the bucket (collect).
+        if (water != null) c.loot.shun(level.getGameTime() + SHUN);
         event("obsidian_mined", "obsidian", target.toShortString(), "his", his.contains(target), "wet", wet(level, target));
         target = null; foothold = null;
         w.resetApproach();
