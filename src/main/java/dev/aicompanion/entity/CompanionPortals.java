@@ -135,10 +135,7 @@ final class CompanionPortals {
         if (portal == null) return;
         Vec3 inside = Vec3.atBottomCenterOf(portal), before = Vec3.atBottomCenterOf(entry), here = c.position();
         double near = entry.equals(portal) ? STEP_IN_FROM : BEFORE_THE_PLANE;
-        // A portal set into the ground, as he builds them, is walked into from beside its frame too: the route to the cell before it
-        // ended a block short there (GameTest 09.11, «Не смог дойти до портала» two blocks from it).
-        boolean level = Math.abs(inside.y - here.y) < .6 && Math.hypot(inside.x - here.x, inside.z - here.z) <= STEP_IN_FROM;
-        if (level || Math.hypot(before.x - here.x, before.z - here.z) <= near && Math.abs(before.y - here.y) <= STEP_IN_FROM) {
+        if (Math.hypot(before.x - here.x, before.z - here.z) <= near && Math.abs(before.y - here.y) <= STEP_IN_FROM) {
             c.getNavigation().stop();
             c.getMoveControl().setWantedPosition(inside.x, inside.y, inside.z, 1D);
             if (c.horizontalCollision && c.onGround()) c.getJumpControl().jump();

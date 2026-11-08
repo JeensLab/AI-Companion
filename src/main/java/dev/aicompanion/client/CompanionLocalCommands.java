@@ -144,7 +144,7 @@ public final class CompanionLocalCommands {
         if (command.startsWith("companion memory ")) return false;
         // «Построй новый портал» answers his offer to lead the player to one: it replaces that walk.
         return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ")
-                || command.equals("companion work build_portal 1 new") || command.equals("companion work build_portal 1 here");
+                || command.equals("companion work build_portal 1 new");
     }
 
     /** The reason {@code cancelPendingPlans} gets for a cancel word: the queue ends its tasks as the player's cancel, so a parked smelt is released. */
@@ -187,6 +187,6 @@ public final class CompanionLocalCommands {
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {
         return !actions.isEmpty() && (java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect", "enter_portal")
                 .contains(actions.getFirst().type())
-                || "build_portal".equals(actions.getFirst().type()) && !actions.getFirst().item().isEmpty());
+                || "build_portal".equals(actions.getFirst().type()) && "new".equals(actions.getFirst().item()));
     }
 }

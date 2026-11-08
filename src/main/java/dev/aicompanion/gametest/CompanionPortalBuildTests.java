@@ -175,7 +175,10 @@ public final class CompanionPortalBuildTests {
         });
     }
 
-    /** No obsidian and no pickaxe that takes it: he says what he needs and sets nothing, the ground left as it was. */
+    /**
+     * No obsidian and no pickaxe that takes it: he says what he needs and sets nothing, the ground left as it was. Asked for a new one,
+     * the last word is still why (review 09.11: «нужно 10 обсидиана» was said after the obtain gave up).
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void withoutObsidianOrItsPickaxeHeSaysWhyAndBuildsNothing(GameTestHelper h) {
         ground(h);
@@ -183,11 +186,12 @@ public final class CompanionPortalBuildTests {
         c.setItem(0, new ItemStack(Items.OBSIDIAN, 4));
         c.setItem(1, new ItemStack(Items.FLINT_AND_STEEL));
         c.setItem(2, new ItemStack(Items.IRON_PICKAXE));
-        var future = run(h, c, "[{\"action\":\"build_portal\"}]");
+        var future = run(h, c, "[{\"action\":\"build_portal\",\"item\":\"new\"}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(report.contains("Обсидиан берёт только алмазная кирка — дай мне её.") && !report.contains("Портал готов"), "Not why: " + report);
+            h.assertTrue(report.contains("План остановлен: Обсидиан берёт только алмазная кирка") && !report.contains("Для портала нужно"), "Not the last word: " + report);
             h.assertTrue(blocks(h, Blocks.OBSIDIAN).isEmpty() && count(c, Items.OBSIDIAN) == 4 && count(c, Items.DIRT) == 0 && steel(c) == 0, "He set or dug: " + report);
         });
     }

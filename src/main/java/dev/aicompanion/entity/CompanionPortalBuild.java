@@ -106,8 +106,8 @@ final class CompanionPortalBuild {
     private final CompanionWork w;
     private final CompanionEntity c;
     private Frame frame;
-    /** The portal he leads the player to, and since when he waits for the player. */
-    private BlockPos leadTo;
+    /** The portal he leads the player to, since when he waits for the player, and the player's last cell in this world. */
+    private BlockPos leadTo, playerLast;
     private long leadWait;
     /** The obsidian he set for a frame not lit yet: no obsidian order mines it (kept over orders, not over a reload). */
     private final Set<BlockPos> laid = new HashSet<>();
@@ -203,7 +203,7 @@ final class CompanionPortalBuild {
 
     void cancel() { reset(); }
 
-    private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
+    private void reset() { frame = null; leadTo = playerLast = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
 
     /** «На север», «на юго-запад»: where the cell lies from the other, as he says it (north is −z). */
     private static String where(BlockPos from, BlockPos to) {
@@ -249,8 +249,14 @@ final class CompanionPortalBuild {
         if (level.hasChunkAt(leadTo) && !level.getBlockState(leadTo).is(Blocks.NETHER_PORTAL)) { w.finish(false, "Портала там больше нет."); return; }
         // From the server's list: the entity's own lookup has no player in another world.
         ServerPlayer player = c.getOwnerId() == null ? null : level.getServer().getPlayerList().getPlayer(c.getOwnerId());
-        // The player knew the way and went through first: the walk after him through it is CompanionPortals', as when he follows.
-        if (player != null && player.level() != level) { c.portals.playerWentThrough(leadTo); w.finish(true, "Ты уже там — иду следом."); return; }
+        // The player knew the way and went through first: the walk after him through it is CompanionPortals', as when he follows. Gone
+        // from anywhere else (a command, death, another portal), it was not this way: he stays (review 09.11).
+        if (player != null && player.level() != level) {
+            if (playerLast != null && playerLast.closerThan(leadTo, 4)) { c.portals.playerWentThrough(leadTo); w.finish(true, "Ты прошёл первым."); }
+            else w.finish(false, "Ты ушёл не через этот портал — я остался здесь.");
+            return;
+        }
+        if (player != null) playerLast = player.blockPosition();
         long now = level.getGameTime();
         if (player != null && player.distanceTo(c) > LAG && player.distanceToSqr(leadTo.getCenter()) > c.distanceToSqr(leadTo.getCenter())) {
             // The walk is given up after half a minute without coming closer (CompanionTravel): it starts anew after the wait.
@@ -359,8 +365,8 @@ final class CompanionPortalBuild {
     /** The top has something to rest on, or he can prop it: a prop in his bag, or one the ground dug out for the bottom gives him. */
     private boolean propped(ServerLevel level) {
         BlockPos prop = frame.cell(1, 3);
-        if (level.getBlockState(frame.cell(1, 4)).is(Blocks.OBSIDIAN) || level.getBlockState(frame.cell(2, 4)).is(Blocks.OBSIDIAN)
-                || supported(level, frame.cell(1, 4)) || supported(level, frame.cell(2, 4))) return true;
+        // (1, 4) is set first (next): only what it rests on spares the prop.
+        if (level.getBlockState(frame.cell(1, 4)).is(Blocks.OBSIDIAN) || supported(level, frame.cell(1, 4))) return true;
         if (w.items.carriedItems().stream().anyMatch(stack -> propping(stack, level, prop))) return true;
         for (BlockPos ground : List.of(frame.cell(1, 0), frame.cell(2, 0))) {
             BlockState state = level.getBlockState(ground);
@@ -442,6 +448,7 @@ final class CompanionPortalBuild {
         Frame best = null;
         int bestPlaced = -1;
         double bestFar = 0;
+        boolean bestFacing = false;
         for (int dy = -BELOW; dy <= ABOVE; dy++) for (int dx = -SITE; dx <= SITE; dx++) for (int dz = -SITE; dz <= SITE; dz++) {
             BlockPos base = center.offset(dx, dy - 1, dz);
             for (Direction along : new Direction[]{Direction.EAST, Direction.SOUTH}) for (Direction front : new Direction[]{along.getClockWise(), along.getCounterClockWise()}) {
@@ -453,7 +460,10 @@ final class CompanionPortalBuild {
                 if (Vec3.atBottomCenterOf(center).subtract(middle).dot(Vec3.atLowerCornerOf(front.getNormal())) < 0
                         && !level.getBlockState(f.cell(1, 0)).is(Blocks.OBSIDIAN) && !level.getBlockState(f.cell(2, 0)).is(Blocks.OBSIDIAN)) continue;
                 int placed = fits(level, f, chests, site, player);
-                if (placed > bestPlaced || placed >= 0 && placed == bestPlaced && far < bestFar) { best = f; bestPlaced = placed; bestFar = far; }
+                boolean facing = Vec3.atBottomCenterOf(center).subtract(middle).dot(Vec3.atLowerCornerOf(front.getNormal())) >= 0;
+                if (placed > bestPlaced || placed >= 0 && placed == bestPlaced && (far < bestFar - 1e-6 || far < bestFar + 1e-6 && facing && !bestFacing)) {
+                    best = f; bestPlaced = placed; bestFar = far; bestFacing = facing;
+                }
             }
         }
         return best;
@@ -470,6 +480,7 @@ final class CompanionPortalBuild {
         AABB near = f.box().inflate(CHESTS);
         if (chests.stream().anyMatch(chest -> near.contains(Vec3.atCenterOf(chest)))) return -1;
         int placed = 0;
+        boolean propped = false;
         for (int i = 0; i < 4; i++) {
             BlockPos ground = f.cell(i, 0);
             if (!level.hasChunkAt(ground)) return -1;
@@ -488,7 +499,8 @@ final class CompanionPortalBuild {
                 if (column && j == 4) continue;
                 BlockPos cell = f.cell(i, j);
                 BlockState here = level.getBlockState(cell);
-                boolean prop = cell.equals(f.cell(1, 3)) && prop(new ItemStack(here.getBlock().asItem()));
+                boolean prop = cell.equals(f.cell(1, 3)) && prop(new ItemStack(here.getBlock().asItem())) && diggable(here, level, cell) && !site.test(cell);
+                if (prop && !free(level, cell)) propped = true;
                 if (!column && j <= 3) { if (!free(level, cell) && !prop) return -1; }
                 else if (here.is(Blocks.OBSIDIAN)) placed++;
                 else if (!free(level, cell)) return -1;
@@ -496,9 +508,10 @@ final class CompanionPortalBuild {
         }
         for (int j = 0; j <= 4; j++) if (level.getBlockState(f.cell(-1, j)).is(Blocks.OBSIDIAN) || level.getBlockState(f.cell(4, j)).is(Blocks.OBSIDIAN)) return -1;
         for (int i = 0; i <= 3; i++) if (level.getBlockState(f.cell(i, 5)).is(Blocks.OBSIDIAN)) return -1;
+        // A block there of a frame not begun is the world's or the player's (a plank of a bridge, a branch): not his prop to take away.
+        if (propped && placed == 0) return -1;
         // Inside a bigger empty frame of the player's, his bottom row standing in this frame's: not finished as a small one.
-        if (placed > 0 && placed < OBSIDIAN && (net.minecraft.world.level.portal.PortalShape.findEmptyPortalShape(level, f.fire(), Direction.Axis.X).isPresent()
-                || net.minecraft.world.level.portal.PortalShape.findEmptyPortalShape(level, f.fire(), Direction.Axis.Z).isPresent())) return -1;
+        if (placed > 0 && placed < OBSIDIAN && net.minecraft.world.level.portal.PortalShape.findEmptyPortalShape(level, f.fire(), Direction.Axis.X).isPresent()) return -1;
         return placed;
     }
 

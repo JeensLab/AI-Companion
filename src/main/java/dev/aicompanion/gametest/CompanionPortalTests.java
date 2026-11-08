@@ -206,6 +206,26 @@ public final class CompanionPortalTests {
         });
     }
 
+    /** Led to a portal, the player sent off by a command from where he walked: not that way, he stays (review 09.11). */
+    @GameTest(template = "tall_tree", timeoutTicks = 500, batch = "portal")
+    public static void ledToAPortalHeStaysWhenThePlayerLeftAnotherWay(GameTestHelper h) {
+        ground(h);
+        for (int x = 24; x <= 27; x++) for (int y = GROUND; y <= GROUND + 4; y++)
+            if ((x == 24 || x == 27) != (y == GROUND || y == GROUND + 4)) h.setBlock(new BlockPos(x, y, 26), Blocks.OBSIDIAN);
+        h.setBlock(new BlockPos(25, GROUND + 1, 26), Blocks.FIRE);
+        CompanionEntity companion = spawn(h, 3, 3);
+        companion.rememberPlaced(h.absolutePos(new BlockPos(25, GROUND + 1, 26)));
+        UUID id = companion.getUUID();
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        h.runAfterDelay(2, () -> h.assertTrue(CompanionEvents.executeAction(owner, "build_portal", "", 1).success(), "The order was refused"));
+        h.runAfterDelay(40, () -> owner.teleportTo(nether, 0, 100, 0, 0, 0));
+        h.runAtTickTime(400, () -> h.succeedIf(() -> {
+            h.assertTrue(h.getLevel().getEntity(id) == companion && nether.getEntity(id) == null, "He went through");
+            CompanionPortalBuildTests.putOut(h);
+        }));
+    }
+
     /** Asked in the End, the one place no test beside this one has a Nether portal within his reach. */
     @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "portal")
     public static void withNoPortalNearHeSaysSo(GameTestHelper h) {

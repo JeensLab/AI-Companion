@@ -223,7 +223,9 @@ public final class CompanionPlanRunner {
                 CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
                 // «Новый» or «здесь» said stays; else the step names what it lacked, so an obtain_item given up drops it.
                 String kept = "new".equals(action.item()) || "here".equals(action.item()) ? action.item() : short_.item();
-                run.plan.set(index, new PlannedAction(action.type(), 0, action.count(), kept));
+                PlannedAction built = new PlannedAction(action.type(), 0, action.count(), kept);
+                run.plan.set(index, built);
+                run.builtAfter = built; run.builtFor = short_.item();
                 run.plan.add(index, obtain);
                 return step(run, index, obtain, false);
             }
@@ -376,6 +378,12 @@ public final class CompanionPlanRunner {
         List<PlannedAction> same = new ArrayList<>();
         for (int i = run.plan.size() - 1; i >= from; i--)
             if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item())) same.addFirst(run.plan.remove(i));
+        // The portal waiting for what this obtain was to get goes too, whatever its own item says (CompanionPortalBuild).
+        if (run.builtAfter != null && !run.builtAfter.item().equals(run.builtFor) && obtain.item() != null && obtain.item().equals(run.builtFor)) {
+            int at = run.plan.subList(from, run.plan.size()).indexOf(run.builtAfter);
+            if (at >= 0) same.add(run.plan.remove(from + at));
+            run.builtAfter = null;
+        }
         boolean earlier = !run.dropped.isEmpty();
         run.dropped.add(obtain);
         run.dropped.addAll(same);
@@ -425,6 +433,9 @@ public final class CompanionPlanRunner {
         Pending pending;
         /** What a build_portal step was short of and is got for it: once each. */
         final java.util.Set<String> gotForPortal = new java.util.HashSet<>();
+        /** The build_portal step put back after the obtain_item inserted for it, and the item it lacked. */
+        PlannedAction builtAfter;
+        String builtFor;
         Run(List<PlannedAction> plan, Port port) { this.plan = new ArrayList<>(plan); this.port = port; }
 
         Outcome outcome(int stoppedAt) {
