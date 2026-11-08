@@ -1,6 +1,8 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionLocalCommands;
+import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
@@ -115,6 +117,24 @@ public final class CompanionPickUpTests {
         h.assertTrue(result.success(), "The hunt was refused: " + result.message());
         h.assertTrue(companion.workPhase().startsWith("GAME"), "Not the hunt: " + companion.workPhase());
         h.assertTrue(!chicken.isRemoved(), "The drop was taken with the setting off");
+        h.succeed();
+    }
+
+    /** «Подбери вон ту курицу плавающую» is the pickup order; «принеси» and two things at once stay the model's. */
+    @GameTest(template = "large_search")
+    public static void thePhraseRoutesToThePickup(GameTestHelper h) {
+        h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("Олег, подбери вон ту курицу плавающую", "Олег")),
+                "Phrase: " + CompanionLocalCommands.route("Олег, подбери вон ту курицу плавающую", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери алмазы", "Олег")),
+                "Gems: " + CompanionLocalCommands.route("подбери алмазы", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:oak_log".equals(CompanionLocalCommands.route("подбери брёвна", "Олег")),
+                "Logs: " + CompanionLocalCommands.route("подбери брёвна", "Олег"));
+        h.assertTrue("companion work pick_up 3 minecraft:cobblestone".equals(CompanionLocalCommands.route("подбери 3 камня", "Олег")),
+                "Stone with a number: " + CompanionLocalCommands.route("подбери 3 камня", "Олег"));
+        h.assertTrue(CompanionLocalCommands.route("принеси мне курицу", "Олег") == null, "«Принеси» is not the pickup");
+        h.assertTrue(CompanionLocalCommands.route("подбери курицу и брёвна", "Олег") == null, "Two things at once are a plan");
+        PlannedAction step = CompanionLocalCommands.action("companion work pick_up 64 minecraft:chicken");
+        h.assertTrue("pick_up".equals(step.type()) && step.count() == 64 && "minecraft:chicken".equals(step.item()), "Step: " + step);
         h.succeed();
     }
 

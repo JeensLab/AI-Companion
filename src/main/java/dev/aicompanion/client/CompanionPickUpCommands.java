@@ -11,9 +11,9 @@ import java.util.regex.Pattern;
 public final class CompanionPickUpCommands {
     private CompanionPickUpCommands() { }
 
-    private static final Pattern VERB = Pattern.compile("^(?:подбери|подберите|подобрать|подними|поднимите|поднять|подхвати)(?:-?ка)?\\b\\s*(.*)$");
+    private static final Pattern VERB = Pattern.compile("(?U)^(?:подбери|подберите|подобрать|подними|поднимите|поднять|подхвати)(?:-?ка)?\\b\\s*(.*)$");
     /** «Подбери из сундука камень» is a take order, not this one. */
-    private static final Pattern CONTAINER = Pattern.compile(".*\\b(из|в)\\b\\s+(сундук|бочк|печ|шкаф|воронк|раздатчик|контейнер)\\p{L}*.*");
+    private static final Pattern CONTAINER = Pattern.compile("(?U).*\\b(из|в)\\b\\s+(сундук|бочк|печ|шкаф|воронк|раздатчик|контейнер)\\p{L}*.*");
     /** Words around the thing: «вон ту курицу плавающую», «мне», «рядом», «с земли». */
     private static final Pattern FILLER = Pattern.compile("(?U)\\b(вон|ту|тот|та|то|эту|этот|эти|лежащ\\p{L}*|плавающ\\p{L}*|мёртв\\p{L}*|дохл\\p{L}*"
             + "|мне|нам|себе|пожалуйста|с|со|в|на|земли|земле|рядом|поблизости|тут|здесь|и|а)\\b");
