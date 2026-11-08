@@ -19,10 +19,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
-/** Synthesizes companion replies with Inworld (without its key, with the Windows voice) and plays the WAV audio. */
+/** Synthesizes companion replies with Inworld (without its key, with a local system voice) and plays the WAV audio. */
 public final class InworldTtsClient {
     private static final URI SYNTHESIZE = URI.create("https://api.inworld.ai/tts/v1/voice");
     private static final WindowsVoiceHint WINDOWS_VOICE_HINT = new WindowsVoiceHint();
+    private static final MacOsVoiceHint MACOS_VOICE_HINT = new MacOsVoiceHint();
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
@@ -38,7 +39,9 @@ public final class InworldTtsClient {
 
     public static synchronized CompletableFuture<Void> speak(String text, String trace) {
         String credential = OpenRouterConfig.INWORLD_API_KEY.get().trim();
-        SpeechEngine engine = SpeechEngine.choose(credential, OpenRouterConfig.WINDOWS_VOICE.get(), WindowsVoice.windows());
+        boolean macos = MacOsVoice.macos();
+        boolean localVoiceOn = macos ? OpenRouterConfig.MACOS_VOICE.get() : OpenRouterConfig.WINDOWS_VOICE.get();
+        SpeechEngine engine = SpeechEngine.choose(credential, localVoiceOn, WindowsVoice.windows(), macos);
         if (engine == SpeechEngine.NONE) {
             CompanionDiagnostics.event(trace, "speech_skipped", "reason", "no_inworld_credential");
             return CompletableFuture.completedFuture(null);
@@ -52,24 +55,32 @@ public final class InworldTtsClient {
         String line = text.length() > 1800 ? text.substring(0, 1800) : text;
         CompanionDiagnostics.event(trace, "speech_requested", "characters", text.length(), "speaker", speakerId,
                 "engine", engine.name().toLowerCase(Locale.ROOT));
-        // A Windows voice that hangs must not hold the queue: the same 60 s as an Inworld request.
-        CompletableFuture<byte[]> synthesis = engine == SpeechEngine.WINDOWS
-                ? WindowsVoice.synthesize(line).orTimeout(60, TimeUnit.SECONDS) : inworld(line, credential, trace);
+        // A local voice that hangs must not hold the queue: the same 60 s as an Inworld request.
+        CompletableFuture<byte[]> synthesis = switch (engine) {
+            case WINDOWS -> WindowsVoice.synthesize(line).orTimeout(60, TimeUnit.SECONDS);
+            case MACOS -> MacOsVoice.synthesize(line).orTimeout(60, TimeUnit.SECONDS);
+            case INWORLD -> inworld(line, credential, trace);
+            case NONE -> throw new IllegalStateException("Speech is disabled");
+        };
         // Reserve the playback position now, so a faster later synthesis cannot overtake this reply.
         playbackQueue = playbackQueue.handle((ignored, error) -> null)
                 .thenCompose(ignored -> synthesis.thenCompose(wav -> {
                     CompanionDiagnostics.event(trace, "speech_playback_queued", "audioBytes", wav.length);
                     return CompanionVoiceAudio.play(wav, speakerId, world);
                 })).handle((unused, error) -> {
-                    String silent = error == null ? null : WindowsVoice.silentReason(error);
+                    String silent = null;
+                    if (error != null) {
+                        silent = engine == SpeechEngine.MACOS
+                                ? MacOsVoice.unavailableReason(error) : WindowsVoice.silentReason(error);
+                    }
                     if (error == null) CompanionDiagnostics.event(trace, "speech_playback_finished");
                     else if (silent == null) {
                         CompanionDiagnostics.failure(trace, "speech_synthesis_or_playback", error);
                         throw error instanceof CompletionException completion ? completion : new CompletionException(error);
                     } else {
-                        // Windows has no Russian voice: silence as without a key, and one line on how to get one.
+                        // A missing local voice must explain itself once rather than fail silently.
                         CompanionDiagnostics.event(trace, "speech_skipped", "reason", silent);
-                        String hint = WINDOWS_VOICE_HINT.take();
+                        String hint = engine == SpeechEngine.MACOS ? MACOS_VOICE_HINT.take() : WINDOWS_VOICE_HINT.take();
                         if (hint != null) Minecraft.getInstance().execute(() ->
                                 Minecraft.getInstance().gui.getChat().addMessage(Component.literal(hint).withStyle(ChatFormatting.GRAY)));
                     }

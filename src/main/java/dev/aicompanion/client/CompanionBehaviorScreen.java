@@ -45,11 +45,12 @@ final class CompanionBehaviorScreen extends Screen {
             });
         }).bounds(left, top + 96, 300, 20).build());
         Button windowsVoice = addRenderableWidget(Button.builder(windowsVoiceLabel(), b -> {
-            OpenRouterConfig.WINDOWS_VOICE.set(!OpenRouterConfig.WINDOWS_VOICE.get()); OpenRouterConfig.WINDOWS_VOICE.save();
+            localVoiceSetting().set(!localVoiceSetting().get()); localVoiceSetting().save();
             b.setMessage(windowsVoiceLabel());
         }).bounds(left, top + 120, 300, 20).build());
         windowsVoice.setTooltip(Tooltip.create(Component.literal(
-                "Без ключа Inworld Олег говорит русским голосом Windows. Нет такого голоса — добавь русский язык с речью в параметрах Windows.")));
+                MacOsVoice.macos() ? "Без ключа Inworld Олег говорит установленным русским голосом macOS. Если голос недоступен, появится подсказка."
+                        : "Без ключа Inworld Олег говорит русским голосом Windows. Нет такого голоса — добавь русский язык с речью в параметрах Windows.")));
         addRenderableWidget(Button.builder(shortLabel(), b -> {
             OpenRouterConfig.SHORT_MURMURS.set(!OpenRouterConfig.SHORT_MURMURS.get()); OpenRouterConfig.SHORT_MURMURS.save();
             b.setMessage(shortLabel());
@@ -94,7 +95,10 @@ final class CompanionBehaviorScreen extends Screen {
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
-    private Component windowsVoiceLabel() { return Component.literal("Голос Windows без ключа Inworld: " + (OpenRouterConfig.WINDOWS_VOICE.get() ? "вкл." : "выкл.")); }
+    private static net.neoforged.neoforge.common.ModConfigSpec.BooleanValue localVoiceSetting() {
+        return MacOsVoice.macos() ? OpenRouterConfig.MACOS_VOICE : OpenRouterConfig.WINDOWS_VOICE;
+    }
+    private Component windowsVoiceLabel() { return Component.literal("Голос " + (MacOsVoice.macos() ? "macOS" : "Windows") + " без ключа Inworld: " + (localVoiceSetting().get() ? "вкл." : "выкл.")); }
     private Component distanceLabel() { return Component.literal("Слышимость голоса: " + OpenRouterConfig.VOICE_DISTANCE.get() + " блоков"); }
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
