@@ -182,7 +182,8 @@ final class CompanionBoatClutch {
         long now = c.level().getGameTime();
         if (drop == null || !c.work.route.legOver() || now - lookedAt < AGAIN) return;
         int busy = c.work.route.busyAnswers();
-        Path path = c.work.route.toCells(Set.of(drop.blockPosition()), 1);
+        // Onto its very cell: from the next one (a route's arrival) a drop half a block beyond is out of the pickup's touch.
+        Path path = c.work.route.toCells(Set.of(drop.blockPosition()), 0);
         if (c.work.route.busyAnswers() != busy) return;
         lookedAt = now;
         if (path != null) c.work.route.walk(path);
