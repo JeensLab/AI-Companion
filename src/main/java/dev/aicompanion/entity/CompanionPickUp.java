@@ -28,7 +28,7 @@ final class CompanionPickUp {
     private CompanionPickUp() { }
 
     /** A named meaning: what counts as it, what to call it, and the work that gets it when nothing of it lies near. */
-    record Meaning(String item, String name, String genitive, Predicate<ItemStack> matches,
+    record Meaning(String name, String genitive, Predicate<ItemStack> matches,
                    String fallbackAction, String fallbackItem, int fallbackCount, String fallbackNote) {
         boolean is(ItemStack stack) { return !stack.isEmpty() && matches.test(stack); }
     }
@@ -38,8 +38,8 @@ final class CompanionPickUp {
     /** How far around him the ground is scanned, as the setting allows it. */
     static final int MIN_RADIUS = 4;
     static final int MAX_RADIUS = 32;
-    /** The honest answer about what lies around reaches at least this far, whatever the scan radius is. */
-    private static final int LOOK_AROUND = 8;
+    /** The count the phrase route gives when the player named no number: the fallback then asks for its own amount. */
+    static final int ALL_AT_ONCE = 64;
     /** What a fallback gather asks for when the player named no number. */
     private static final int GATHER_COUNT = 8;
     private static final int WOOD_COUNT = 16;
@@ -55,54 +55,54 @@ final class CompanionPickUp {
         if (game != null) {
             String meat = key(game.meat);
             Item cooked = item("cooked_" + meat);
-            return new Meaning("minecraft:" + meat, game.one, game.few,
+            return new Meaning(game.subject(), game.few,
                     stack -> stack.is(game.meat) || cooked != null && stack.is(cooked),
                     "hunt_animals", "minecraft:" + game.key, 1, "Иду охотиться.");
         }
-        if (CompanionGame.ANY_MEAT.equals(id)) return new Meaning(CompanionGame.ANY_MEAT, "мясо", "мяса", CompanionPickUp::anyMeat,
+        if (CompanionGame.ANY_MEAT.equals(id)) return new Meaning("мясо", "мяса", CompanionPickUp::anyMeat,
                 "hunt_animals", "food", 1, "Иду охотиться.");
         var ore = CompanionOre.Kind.of(id);
         if (ore != null) {
             var items = oreItems(ore);
-            return new Meaning("minecraft:" + ore.key() + "_ore", ore.word, ore.genitive, stack -> items.contains(stack.getItem()),
+            return new Meaning(ore.word, ore.genitive, stack -> items.contains(stack.getItem()),
                     "mine_ore", "minecraft:" + ore.key() + "_ore", ORE_COUNT, "Поищу руду.");
         }
         Item named = itemObject(id);
         if (named == null) return null;
         var stack = new ItemStack(named);
-        if (stack.is(ItemTags.LOGS)) return new Meaning(id, "бревно", "бревна", drop -> drop.is(ItemTags.LOGS),
+        if (stack.is(ItemTags.LOGS)) return new Meaning("бревно", "бревна", drop -> drop.is(ItemTags.LOGS),
                 "gather_wood", "", WOOD_COUNT, "Пойду за деревом.");
-        if (stack.is(ItemTags.PLANKS)) return new Meaning(id, "доска", "досок", drop -> drop.is(ItemTags.PLANKS),
+        if (stack.is(ItemTags.PLANKS)) return new Meaning("доска", "досок", drop -> drop.is(ItemTags.PLANKS),
                 "gather_wood", "", WOOD_COUNT, "Пойду за деревом.");
-        if (stack.is(ItemTags.WOOL)) return new Meaning(id, "шерсть", "шерсти", drop -> drop.is(ItemTags.WOOL),
+        if (stack.is(ItemTags.WOOL)) return new Meaning("шерсть", "шерсти", drop -> drop.is(ItemTags.WOOL),
                 "hunt_animals", "minecraft:sheep", 1, "Иду охотиться.");
         if (stack.is(ItemTags.STONE_TOOL_MATERIALS) || named == Items.STONE || named == Items.DEEPSLATE) {
-            return new Meaning(id, "камень", "камня",
+            return new Meaning("камень", "камня",
                     drop -> drop.is(ItemTags.STONE_TOOL_MATERIALS) || drop.is(Items.STONE) || drop.is(Items.DEEPSLATE),
                     "gather_stone", "", GATHER_COUNT, "Пойду за камнем.");
         }
         if (named == Items.DIRT || named == Items.GRASS_BLOCK || named == Items.COARSE_DIRT || named == Items.ROOTED_DIRT) {
-            return new Meaning(id, "земля", "земли", drop -> drop.is(Items.DIRT) || drop.is(Items.GRASS_BLOCK)
+            return new Meaning("земля", "земли", drop -> drop.is(Items.DIRT) || drop.is(Items.GRASS_BLOCK)
                     || drop.is(Items.COARSE_DIRT) || drop.is(Items.ROOTED_DIRT), "gather_dirt", "", GATHER_COUNT, "Накопаю земли.");
         }
-        if (named == Items.SAND) return new Meaning(id, "песок", "песка", drop -> drop.is(Items.SAND),
+        if (named == Items.SAND) return new Meaning("песок", "песка", drop -> drop.is(Items.SAND),
                 "gather_loose", "minecraft:sand", GATHER_COUNT, "Возьму лопату.");
-        if (named == Items.RED_SAND) return new Meaning(id, "красный песок", "красного песка", drop -> drop.is(Items.RED_SAND),
+        if (named == Items.RED_SAND) return new Meaning("красный песок", "красного песка", drop -> drop.is(Items.RED_SAND),
                 "gather_loose", "minecraft:red_sand", GATHER_COUNT, "Возьму лопату.");
-        if (named == Items.GRAVEL) return new Meaning(id, "гравий", "гравия", drop -> drop.is(Items.GRAVEL),
+        if (named == Items.GRAVEL) return new Meaning("гравий", "гравия", drop -> drop.is(Items.GRAVEL),
                 "gather_loose", "minecraft:gravel", GATHER_COUNT, "Возьму лопату.");
-        if (named == Items.FLINT) return new Meaning(id, "кремень", "кремня", drop -> drop.is(Items.FLINT),
+        if (named == Items.FLINT) return new Meaning("кремень", "кремня", drop -> drop.is(Items.FLINT),
                 "gather_loose", "minecraft:flint", FLINT_COUNT, "Возьму лопату.");
-        if (named == Items.LEATHER) return new Meaning(id, "кожа", "кожи", drop -> drop.is(Items.LEATHER),
+        if (named == Items.LEATHER) return new Meaning("кожа", "кожи", drop -> drop.is(Items.LEATHER),
                 "hunt_animals", "minecraft:cow", 1, "Иду охотиться.");
-        if (named == Items.FEATHER) return new Meaning(id, "перо", "пера", drop -> drop.is(Items.FEATHER),
+        if (named == Items.FEATHER) return new Meaning("перо", "пера", drop -> drop.is(Items.FEATHER),
                 "hunt_animals", "minecraft:chicken", 1, "Иду охотиться.");
-        if (named == Items.EGG) return new Meaning(id, "яйцо", "яйца", drop -> drop.is(Items.EGG),
+        if (named == Items.EGG) return new Meaning("яйцо", "яйца", drop -> drop.is(Items.EGG),
                 "hunt_animals", "minecraft:chicken", 1, "Иду охотиться.");
-        if (named == Items.STICK) return new Meaning(id, "палка", "палки", drop -> drop.is(Items.STICK), null, null, 0, "");
+        if (named == Items.STICK) return new Meaning("палка", "палки", drop -> drop.is(Items.STICK), null, null, 0, "");
         // Anything else is taken by its own name; with no work to fall back on the honest answer is all there is.
         String name = "«" + stack.getHoverName().getString() + "»";
-        return new Meaning(id, name, name, drop -> drop.is(named), null, null, 0, "");
+        return new Meaning(name, name, drop -> drop.is(named), null, null, 0, "");
     }
 
     /**
@@ -119,13 +119,21 @@ final class CompanionPickUp {
         return found.size() > limit ? new ArrayList<>(found.subList(0, limit)) : found;
     }
 
-    /** «Лежит рядом: камень (3), курица (1).» — what really lies around, for the honest answer when nothing matched. */
+    /** How many items those drops hold: «Рядом лежит курица (2), но сумка полна.» */
+    static int total(List<ItemEntity> drops) {
+        int count = 0;
+        for (ItemEntity drop : drops) count += drop.getItem().getCount();
+        return count;
+    }
+
+    /**
+     * «Лежит рядом: камень (3), курица (1).» — what really lies around, for the honest answer when nothing matched.
+     * The radius is the scan's own: the answer never names a drop the order would not have looked at.
+     */
     static String lying(ServerLevel level, BlockPos center, int radius, java.util.UUID playerId) {
-        // The answer looks a little wider than a narrow scan, so a small radius still says what is right around him.
-        int look = Math.max(radius, LOOK_AROUND);
         Map<String, Integer> counts = new LinkedHashMap<>();
-        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(center).inflate(look))) {
-            if (!within(drop, center, look) || !pickable(drop, playerId)) continue;
+        for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(center).inflate(radius))) {
+            if (!within(drop, center, radius) || !pickable(drop, playerId)) continue;
             String label = label(drop.getItem());
             counts.merge(label, drop.getItem().getCount(), Integer::sum);
         }
@@ -140,10 +148,12 @@ final class CompanionPickUp {
         return line.append('.').toString();
     }
 
-    /** A drop the order may take: alive, not empty, not a gift and not aimed at somebody else. */
+    /** A drop the order may take: alive, not empty, not a gift, not junk he let go and not aimed at somebody else. */
     private static boolean pickable(ItemEntity drop, java.util.UUID playerId) {
         if (!drop.isAlive() || drop.getItem().isEmpty()) return false;
         if (drop.getPersistentData().getBoolean("aicompanion:gift")) return false;
+        // Junk he let go to free a slot: the loose pickup leaves it, so the order must leave it too.
+        if (drop.getPersistentData().getBoolean(CompanionBag.JUNK)) return false;
         return drop.getTarget() == null || drop.getTarget().equals(playerId);
     }
 

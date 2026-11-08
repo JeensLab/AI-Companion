@@ -710,17 +710,24 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (count < 1 || count > 64) return CompanionActionResult.failed("За раз подбираю от 1 до 64 предметов.");
         if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для подбора нужен загруженный мир.");
         boolean fallback = meaning.fallbackAction() != null;
-        if (!pickUpNearby && fallback) return startWork(meaning.fallbackAction(), meaning.fallbackItem(), meaning.fallbackCount());
+        // The order says how much: «подбери 8 брёвен» falls back on 8, the route's 64 («no number») keeps the meaning's own amount.
+        int wanted = count < CompanionPickUp.ALL_AT_ONCE ? count : meaning.fallbackCount();
+        if (!pickUpNearby && fallback) return startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
         var found = CompanionPickUp.find(level, blockPosition(), pickUpRadius, meaning, count, getOwnerId());
-        found.removeIf(drop -> !canStoreDrops(java.util.List.of(drop.getItem().copyWithCount(1))));
-        if (!found.isEmpty()) {
+        var room = new java.util.ArrayList<ItemEntity>();
+        for (ItemEntity drop : found) if (canStoreDrops(java.util.List.of(drop.getItem().copyWithCount(1)))) room.add(drop);
+        if (!room.isEmpty()) {
             CompanionActionResult started = startWork("pick_up_nearby", item, count);
-            if (started.success()) loot.claim(found);
+            if (started.success()) loot.claim(room);
             return started;
+        }
+        if (!found.isEmpty()) {
+            // Matching drops lie there, but none of them fits: the bag is full, not the ground empty.
+            return CompanionActionResult.failed("Лежит рядом: " + meaning.name() + " (" + CompanionPickUp.total(found) + "), но сумка полна.");
         }
         String honest = "Рядом нет " + meaning.genitive() + ". " + CompanionPickUp.lying(level, blockPosition(), pickUpRadius, getOwnerId());
         if (!fallback) return CompanionActionResult.failed(honest);
-        CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), meaning.fallbackCount());
+        CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
         return CompanionActionResult.failed(honest + (taken.success() ? " " + meaning.fallbackNote() : ""));
     }
 

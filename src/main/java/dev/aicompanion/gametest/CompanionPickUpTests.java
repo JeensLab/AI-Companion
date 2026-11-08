@@ -2,6 +2,8 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionLocalCommands;
+import dev.aicompanion.client.CompanionPlanRunner;
+import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
@@ -16,6 +18,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
 
 /**
  * The owner's request: «подбери вон ту курицу плавающую» takes that chicken lying on the ground, in water and at any
@@ -54,7 +58,7 @@ public final class CompanionPickUpTests {
           .thenSucceed();
     }
 
-    /** Only stone around: the honest answer names it and nothing is taken for the chicken. */
+    /** Only stone around: the honest answer names it, nothing is taken for the chicken, and only then the hunt starts. */
     @GameTest(template = "large_search", timeoutTicks = 300)
     public static void nothingOfThatKindNearIsAnsweredHonestly(GameTestHelper h) {
         arena(h);
@@ -65,9 +69,38 @@ public final class CompanionPickUpTests {
         h.assertTrue(!result.success(), "A pickup with nothing of it near reported success");
         h.assertTrue(result.message().contains("нет курицы"), "No honest answer: " + result.message());
         h.assertTrue(result.message().contains("камень"), "What lies around is not named: " + result.message());
+        // The honest answer is not the whole answer: the usual work for a chicken starts right after it.
+        h.assertTrue(companion.workPhase().startsWith("GAME"), "The fallback did not start: " + companion.workPhase());
+        h.assertTrue(result.message().contains("Иду охотиться"), "The fallback is not named: " + result.message());
         h.succeedWhen(() -> {
             h.assertTrue(stored(companion, Items.CHICKEN) == 0, "A chicken appeared from nowhere");
             h.assertTrue(!stone.isRemoved(), "The stone was taken for the chicken");
+        });
+    }
+
+    /**
+     * The plan runner over the same order: the honest answer is reported once, its fallback starts, and the plan stops
+     * without «Повтор шага» — the refusal is the answer, not a busy companion to wait for.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 400)
+    public static void thePlanRunnerReportsTheHonestAnswerWithoutRetrying(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        item(h, 12, 1, 8, Items.COBBLESTONE, 3);
+        boolean[] hunted = {false};
+        h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
+        var plan = CompanionPlanRunner.run(List.of(new PlannedAction("pick_up", 0, 1, "minecraft:chicken")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), companion.getOwnerId(), "gametest-pickup-plan", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The pickup plan is still running: " + companion.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.recoveries() == 0 && !outcome.report().contains("Повтор шага"),
+                    "The honest answer was repeated: " + outcome.report());
+            h.assertTrue(outcome.report().contains("нет курицы") && outcome.report().contains("камень"),
+                    "No honest answer in the plan: " + outcome.report());
+            h.assertTrue(outcome.report().contains("Иду охотиться") && hunted[0],
+                    "The fallback did not start: " + outcome.report() + ", phase " + companion.workPhase());
         });
     }
 
@@ -86,24 +119,66 @@ public final class CompanionPickUpTests {
         });
     }
 
-    /** The scan stops at the radius from the settings; a wider radius takes the same drop. */
+    /** The scan stops at the radius from the settings; the answer names only what lies inside it; a wider radius takes the drop. */
     @GameTest(template = "large_search", timeoutTicks = 400)
     public static void theScanStopsAtTheRadius(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);
+        // The stick lies about 5.7 blocks away: beyond a 4-block scan, inside a 16-block one.
         ItemEntity stick = item(h, 12, 1, 12, Items.STICK, 1);
+        // The stone lies 3 blocks away: inside the 4-block scan and out of the two-block loose pickup, so the honest answer
+        // has something true to name and the drop stays where it is.
+        ItemEntity stone = item(h, 11, 1, 8, Items.COBBLESTONE, 3);
         companion.setPickUpNearby(true, 4);
         var outOfReach = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:stick", 1);
         h.assertTrue(!outOfReach.success(), "A drop beyond the radius was taken: " + outOfReach.message());
         h.assertTrue(outOfReach.message().contains("нет палки"), "No honest answer: " + outOfReach.message());
-        h.assertTrue(outOfReach.message().contains("Лежит рядом"), "What lies around is not named: " + outOfReach.message());
+        h.assertTrue(outOfReach.message().contains("камень (3)"), "What lies inside the radius is not named: " + outOfReach.message());
+        // The answer must not call the stick beyond the radius «рядом» while saying there is no stick: the same radius for both.
+        int listed = outOfReach.message().indexOf("Лежит рядом:");
+        h.assertTrue(listed >= 0 && !outOfReach.message().substring(listed).contains("палка"),
+                "The stick beyond the radius is listed as lying near: " + outOfReach.message());
         h.startSequence().thenIdle(20).thenExecute(() -> {
             h.assertTrue(!stick.isRemoved(), "The stick beyond the radius was taken");
+            h.assertTrue(!stone.isRemoved(), "The stone was taken for the stick");
             companion.setPickUpNearby(true, 16);
             var inReach = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:stick", 1);
             h.assertTrue(inReach.success(), "The wider radius did not take the order: " + inReach.message());
         }).thenWaitUntil(() -> h.assertTrue(stored(companion, Items.STICK) == 1 && stick.isRemoved(),
                 "The stick was not taken with the wider radius: " + companion.workPhase())).thenSucceed();
+    }
+
+    /** «Подбери 8 брёвен» with no log lying: the fallback gathers the number the player named, not its own 16. */
+    @GameTest(template = "large_search", timeoutTicks = 300)
+    public static void theFallbackGathersTheCountThePlayerNamed(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:oak_log", 8);
+        h.assertTrue(!result.success(), "A pickup with nothing of it near reported success");
+        h.assertTrue(result.message().contains("нет бревна"), "No honest answer: " + result.message());
+        h.assertTrue(companion.workPhase().startsWith("WOOD"), "The fallback did not start: " + companion.workPhase());
+        h.assertTrue(companion.watchDetail().contains("count=8"), "The fallback does not gather the named count: " + companion.watchDetail());
+        h.succeed();
+    }
+
+    /** A bag with no room: the chicken lying there is named and the full bag is said, not «нет курицы». */
+    @GameTest(template = "large_search", timeoutTicks = 300)
+    public static void aFullBagIsSaidInsteadOfNoSuchThingNear(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        for (int slot = 0; slot < companion.getContainerSize(); slot++) companion.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        ItemEntity chicken = item(h, 12, 1, 8, Items.CHICKEN, 1);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:chicken", 1);
+        h.assertTrue(!result.success(), "A pickup with a full bag reported success");
+        h.assertTrue(result.message().contains("сумка полна"), "The full bag is not said: " + result.message());
+        h.assertTrue(result.message().contains("Лежит рядом: курица (1)"), "The chicken lying there is not named: " + result.message());
+        h.assertTrue(!result.message().contains("нет курицы"), "A full bag was answered as «nothing lies there»: " + result.message());
+        // Nothing to gather into: the answer is said at once and no fallback work starts.
+        h.assertTrue(companion.workPhase().isEmpty(), "A fallback started for a full bag: " + companion.workPhase());
+        h.assertTrue(!chicken.isRemoved(), "The chicken was taken into a full bag");
+        h.succeed();
     }
 
     /** Switched off, «подбери курицу» starts the usual hunt at once and leaves the drop on the ground. */
