@@ -146,6 +146,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
+    final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -862,6 +863,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             stopRiding();
         }
         waterBucket.tick();
+        boatClutch.tick();
         waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
