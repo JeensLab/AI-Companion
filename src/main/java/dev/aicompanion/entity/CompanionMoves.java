@@ -66,6 +66,12 @@ final class CompanionMoves {
             ladder(from, y + 1, LADDER_UP, sink);
             ladder(from, y - 1, LADDER_DOWN, sink);
         }
+        // Up through the water over him, as a player swims up (recon 04.11, A3: a pond had run down the steps he dug, and the only way
+        // on was up its fall into the pond; across the water at his level there was none, «Не могу к тебе пройти»).
+        if (here == PathType.WATER && eval.typeAt(x, y + 1, z) == PathType.WATER) {
+            float malus = eval.malusAt(PathType.WATER, x, y + 1, z);
+            if (malus >= 0) sink.offer(eval.mark(x, y + 1, z, PathType.WATER, malus), CompanionSwimming.TICKS_UP_A_BLOCK);
+        }
         if (here == PathType.WALKABLE && from.costMalus >= 0) for (Direction d : Direction.Plane.HORIZONTAL) jump(from, d, floor, sink);
     }
 

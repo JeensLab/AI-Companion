@@ -171,6 +171,27 @@ public final class CompanionWorkflowTests {
         stablePitExit(helper, companion);
     }
 
+    /**
+     * Recon 04.11 (A3): digging steps up out of his tunnel he opened the floor of a pond, its water ran down the steps, and from the
+     * bottom «иди ко мне» was «Не могу к тебе пройти»: a route went only across the water at his level. He swims up the fall into
+     * the pond and out to the player. While the water runs down he is held there, as his self-rescue held him then.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1000)
+    public static void calledFromStepsAPondRanDownHeSwimsUpToThePlayer(GameTestHelper helper) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 10; y++) helper.setBlock(new BlockPos(x, y, z), y > 0 ? Blocks.STONE : Blocks.BEDROCK);
+        for (int x = 11; x <= 19; x++) for (int z = 9; z <= 15; z++) for (int y = 8; y <= 10; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.WATER);
+        // The recon's steps, 328 56 175 to 328 58 171 there; the last one is under the pond.
+        for (int[] c : new int[][]{{16, 4, 18}, {16, 3, 17}, {16, 4, 17}, {16, 5, 17}, {16, 4, 16}, {16, 5, 16}, {16, 6, 16}, {16, 5, 15}, {16, 6, 15}, {16, 7, 15}, {16, 6, 14}})
+            helper.setBlock(new BlockPos(c[0], c[1], c[2]), Blocks.AIR);
+        CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, 4, 16);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        var player = helper.makeMockServerPlayerInLevel(); BlockPos at = helper.absolutePos(new BlockPos(26, 11, 13)); player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        companion.setOwnerId(player.getUUID()); player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID()); CompanionEvents.getOwnedCompanion(player);
+        helper.runAfterDelay(1, () -> CompanionEvents.executeAction(player, "wait", "", 1));
+        helper.runAfterDelay(200, () -> helper.assertTrue(CompanionEvents.executeAction(player, "come", "", 1).success(), "Not accepted"));
+        helper.succeedWhen(() -> helper.assertTrue(helper.getTick() > 200 && companion.didLastTaskSucceed() && companion.distanceTo(player) <= 4, diagnostic(companion)));
+    }
+
     private static void stablePitExit(GameTestHelper helper, CompanionEntity companion) {
         double top = helper.absolutePos(new BlockPos(16, 5, 16)).getY();
         int[] stable = {0};
