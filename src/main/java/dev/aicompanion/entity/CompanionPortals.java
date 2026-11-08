@@ -31,7 +31,7 @@ final class CompanionPortals {
     private static final double STEP_IN_FROM = 2.5, BEFORE_THE_PLANE = 1.5;
 
     private final CompanionEntity c;
-    private BlockPos playerSeen, portal, entry;
+    private BlockPos playerSeen, portal, entry, lastHere;
     private long giveUpAt, retryAt;
     /** Sent by the player's order: the walk goes on with the player still here. */
     private boolean ordered;
@@ -45,6 +45,9 @@ final class CompanionPortals {
 
     /** The player went through this portal while he was led to it (CompanionPortalBuild): the walk after him is decided next tick. */
     void playerWentThrough(BlockPos portal) { playerSeen = portal; }
+
+    /** The player's last cell in this world, seen every tick, kept after he left it (CompanionPortalBuild asks where he left from). */
+    BlockPos lastHere() { return lastHere; }
 
     /** The player's order: the nearest Nether portal, whoever lit it. What he works on ends here, as on «иди за мной». */
     CompanionActionResult enter(ServerLevel level) {
@@ -71,6 +74,7 @@ final class CompanionPortals {
         boolean playerHere = owner != null && owner.level() == level;
         if (owner == null || playerHere) {
             playerSeen = owner == null ? null : owner.blockPosition();
+            if (owner != null) lastHere = owner.blockPosition();
             if (owner == null || !ordered) stop();
         }
         if (portal != null) {

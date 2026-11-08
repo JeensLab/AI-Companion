@@ -106,8 +106,8 @@ final class CompanionPortalBuild {
     private final CompanionWork w;
     private final CompanionEntity c;
     private Frame frame;
-    /** The portal he leads the player to, since when he waits for the player, and the player's last cell in this world. */
-    private BlockPos leadTo, playerLast;
+    /** The portal he leads the player to, and since when he waits for the player. */
+    private BlockPos leadTo;
     private long leadWait;
     /** The obsidian he set for a frame not lit yet: no obsidian order mines it (kept over orders, not over a reload). */
     private final Set<BlockPos> laid = new HashSet<>();
@@ -203,7 +203,7 @@ final class CompanionPortalBuild {
 
     void cancel() { reset(); }
 
-    private void reset() { frame = null; leadTo = playerLast = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
+    private void reset() { frame = null; leadTo = null; leadWait = 0; stands = walkingTo = Set.of(); path = null; legs = 0; waitingSince = pickingSince = 0; retried = false; }
 
     /** «На север», «на юго-запад»: where the cell lies from the other, as he says it (north is −z). */
     private static String where(BlockPos from, BlockPos to) {
@@ -252,11 +252,12 @@ final class CompanionPortalBuild {
         // The player knew the way and went through first: the walk after him through it is CompanionPortals', as when he follows. Gone
         // from anywhere else (a command, death, another portal), it was not this way: he stays (review 09.11).
         if (player != null && player.level() != level) {
-            if (playerLast != null && playerLast.closerThan(leadTo, 4)) { c.portals.playerWentThrough(leadTo); w.finish(true, "Ты прошёл первым."); }
+            // Seen every tick by CompanionPortals: the lead does not tick while he fights or picks up drops (review 09.11).
+            BlockPos last = c.portals.lastHere();
+            if (last != null && last.closerThan(leadTo, 4)) { c.portals.playerWentThrough(leadTo); w.finish(true, "Ты прошёл первым."); }
             else w.finish(false, "Ты ушёл не через этот портал — я остался здесь.");
             return;
         }
-        if (player != null) playerLast = player.blockPosition();
         long now = level.getGameTime();
         if (player != null && player.distanceTo(c) > LAG && player.distanceToSqr(leadTo.getCenter()) > c.distanceToSqr(leadTo.getCenter())) {
             // The walk is given up after half a minute without coming closer (CompanionTravel): it starts anew after the wait.
@@ -499,7 +500,7 @@ final class CompanionPortalBuild {
                 if (column && j == 4) continue;
                 BlockPos cell = f.cell(i, j);
                 BlockState here = level.getBlockState(cell);
-                boolean prop = cell.equals(f.cell(1, 3)) && prop(new ItemStack(here.getBlock().asItem())) && diggable(here, level, cell) && !site.test(cell);
+                boolean prop = cell.equals(f.cell(1, 3)) && prop(new ItemStack(here.getBlock().asItem())) && diggable(here, level, cell);
                 if (prop && !free(level, cell)) propped = true;
                 if (!column && j <= 3) { if (!free(level, cell) && !prop) return -1; }
                 else if (here.is(Blocks.OBSIDIAN)) placed++;
