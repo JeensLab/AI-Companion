@@ -163,7 +163,7 @@ public final class CompanionObsidianTests {
             String route = CompanionLocalCommands.route((String) phrase[0], "Олег");
             h.assertTrue(route != null && CompanionLocalCommands.actions(route).equals(plan), "«" + phrase[0] + "» is not " + plan + " but " + route);
         }
-        for (String model : List.of("построй портал из обсидиана", "добудь обсидиан и принеси", "не копай обсидиан", "добудь 100 обсидиана", "сломай обсидиан",
+        for (String model : List.of("построй стену из обсидиана", "добудь обсидиан и принеси", "не копай обсидиан", "добудь 100 обсидиана", "сломай обсидиан",
                 "где обсидиан", "добудь обсидиан и железо", "принеси обсидиан", "добудь 0 обсидиана"))
             h.assertTrue(CompanionLocalCommands.route(model, "Олег") == null, "«" + model + "» is not left to the model: " + CompanionLocalCommands.route(model, "Олег"));
         h.succeed();

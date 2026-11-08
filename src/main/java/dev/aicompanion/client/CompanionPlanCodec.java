@@ -15,7 +15,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -115,10 +115,10 @@ public final class CompanionPlanCodec {
                 if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
-                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type)) && count != 1) throw invalid();
+                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
-                if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
+                if (("set_home".equals(type) || "build_portal".equals(type)) && !item.isEmpty()) throw invalid();
                 // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
                 if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
                 if ("walk_heading".equals(type) && !dev.aicompanion.entity.CompanionCourse.valid(item)) throw invalid();

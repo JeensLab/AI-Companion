@@ -63,6 +63,9 @@ public final class CompanionWorkCommands {
         if (value.matches("^(?:разложи|отсортируй|рассортируй)(?: мне| нам)?(?: (?:все )?(?:вещи|предметы))?(?: (?:по|в) сундук(?:ам|ах)| сундуки)$|^наведи порядок в сундук(?:ах|е)$"))
             return new PlannedAction("sort_chests", 0, 1);
         if (value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$")) return new PlannedAction("build_house", 0, 1);
+        // «Построй портал (в Незер)» (decided 08.11): the frame without its corners near the player, lit; more said is the model's.
+        if (value.matches("^(?:построй|сделай|поставь)(?: мне| нам| себе)?(?: новый)? портал(?: в (?:незер|ад|нижний мир))?(?: из обсидиана)?(?: (?:рядом|здесь|тут))?$"))
+            return new PlannedAction("build_portal", 0, 1);
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;

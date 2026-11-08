@@ -18,10 +18,10 @@ public final class CompanionFacts {
     private static final EquipmentSlot[] ARMOR = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
     private final Map<Item, Integer> carried;
     private final Map<EquipmentSlot, Item> worn;
-    private final boolean dragonDead;
+    private final boolean dragonDead, portal;
 
-    private CompanionFacts(Map<Item, Integer> carried, Map<EquipmentSlot, Item> worn, boolean dragonDead) {
-        this.carried = Map.copyOf(carried); this.worn = Map.copyOf(worn); this.dragonDead = dragonDead;
+    private CompanionFacts(Map<Item, Integer> carried, Map<EquipmentSlot, Item> worn, boolean dragonDead, boolean portal) {
+        this.carried = Map.copyOf(carried); this.worn = Map.copyOf(worn); this.dragonDead = dragonDead; this.portal = portal;
     }
 
     public static CompanionFacts of(CompanionEntity c) {
@@ -33,7 +33,8 @@ public final class CompanionFacts {
         for (EquipmentSlot slot : ARMOR) if (usable(c.getItemBySlot(slot))) worn.put(slot, c.getItemBySlot(slot).getItem());
         var end = c.getServer() == null ? null : c.getServer().getLevel(Level.END);
         boolean dragonDead = end != null && end.getDragonFight() != null && end.getDragonFight().hasPreviouslyKilledDragon();
-        return new CompanionFacts(carried, worn, dragonDead);
+        boolean portal = c.level() instanceof net.minecraft.server.level.ServerLevel level && CompanionPortalBuild.litNear(level, CompanionPortalBuild.center(c));
+        return new CompanionFacts(carried, worn, dragonDead, portal);
     }
 
     /** How many of the item he carries in the bag and in his hands; armour he wears is not counted here. */
@@ -47,6 +48,9 @@ public final class CompanionFacts {
     public Item worn(EquipmentSlot slot) { return worn.get(slot); }
 
     public boolean dragonDead() { return dragonDead; }
+
+    /** A lit Nether portal near the player (or near him with the player in another world), whoever lit it. */
+    public boolean portal() { return portal; }
 
     private static void add(Map<Item, Integer> carried, ItemStack stack) {
         if (usable(stack)) carried.merge(stack.getItem(), stack.getCount(), Integer::sum);

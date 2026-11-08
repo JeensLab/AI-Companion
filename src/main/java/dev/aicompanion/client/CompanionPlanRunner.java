@@ -30,7 +30,7 @@ public final class CompanionPlanRunner {
     public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "fill_bucket", "mine_obsidian");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "fill_bucket", "mine_obsidian", "build_portal");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
@@ -212,6 +212,17 @@ public final class CompanionPlanRunner {
                     run.plan.set(index, obtain);
                     return step(run, index, obtain, false);
                 });
+            }
+            // A portal short of obsidian or of a flint and steel gets it first and is built after. The step names what it was short of,
+            // so an obtain_item given up drops it too; each thing is got once: a second shortage of it stops the plan.
+            var short_ = result.evidence();
+            if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "build_portal".equals(action.type()) && short_ != null
+                    && run.gotForPortal.add(short_.item())) {
+                PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
+                CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
+                run.plan.set(index, new PlannedAction(action.type(), 0, action.count(), short_.item()));
+                run.plan.add(index, obtain);
+                return step(run, index, obtain, false);
             }
             // A blocked step of an obtain chain gives up only this part; the rest of the plan goes on.
             if (inObtain && "blocked".equals(verdict.reason())) return giveUpObtain(run, index, result.message());
@@ -409,6 +420,8 @@ public final class CompanionPlanRunner {
         boolean replan;
         /** The parked batch that is still cooking while the next independent steps run. */
         Pending pending;
+        /** What a build_portal step was short of and is got for it: once each. */
+        final java.util.Set<String> gotForPortal = new java.util.HashSet<>();
         Run(List<PlannedAction> plan, Port port) { this.plan = new ArrayList<>(plan); this.port = port; }
 
         Outcome outcome(int stoppedAt) {
