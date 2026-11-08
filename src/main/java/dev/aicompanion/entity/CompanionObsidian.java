@@ -174,6 +174,10 @@ final class CompanionObsidian {
         BlockState state = level.getBlockState(target);
         // Once he stands where he sees it he mines from there: in his running water he sways a few hundredths of a block, and the
         // shore's edge took a block level with it in and out of his sight every other tick (GameTest 08.11).
+        // The next block within his reach and sight where he stands is mined from there, as a player does: walked to anew, he went
+        // against his running water for seconds (in game 08.11). Dry, the drop must also rest where he picks it up (the approach).
+        if (foothold == null && wet(level, target) && inReach(c.getEyePosition(), target) && CompanionMiningNavigation.visible(c, c.getEyePosition(), target))
+            foothold = c.position();
         boolean holds = foothold != null && c.position().distanceToSqr(foothold) < HOLD * HOLD;
         // Dry, its drop must rest where he can pick it up; under his water it floats until the water is back in his bucket (collect).
         int reach = holds ? 1 : w.items.reachBlock(level, target, !wet(level, target));
@@ -278,8 +282,10 @@ final class CompanionObsidian {
      */
     private boolean inReach(ServerLevel level, BlockPos cell) {
         Vec3 eyes = c.getEyePosition();
-        return new net.minecraft.world.phys.AABB(cell).distanceToSqr(eyes) <= REACH * REACH && CompanionWaterFill.seen(c, level, eyes, cell, REACH + 1);
+        return inReach(eyes, cell) && CompanionWaterFill.seen(c, level, eyes, cell, REACH + 1);
     }
+
+    private static boolean inReach(Vec3 eyes, BlockPos cell) { return new net.minecraft.world.phys.AABB(cell).distanceToSqr(eyes) <= REACH * REACH; }
 
     /** One tick of the walk to the stand cells: false when there is no way (or no progress after {@link #LEGS} walks). */
     private boolean walk() {

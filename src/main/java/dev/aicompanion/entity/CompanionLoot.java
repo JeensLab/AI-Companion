@@ -202,9 +202,10 @@ final class CompanionLoot {
         // held the store order ninety seconds). Wait for what is chased now or still settling: falling, pickup delay, a retry.
         // chaseable also invalidates an old rejection after moving four blocks. Do not filter it out before that check:
         // the last rejected drop otherwise prevents its own reconsideration forever once the rest have been collected.
+        // Nor is a drop let lie (shun): it is waited for neither chased nor settling (obsidian under his water, 08.11).
         return pending.stream().anyMatch(id -> !(level.getEntity(id) instanceof ItemEntity item)
                 || owner.canStoreDrops(List.of(item.getItem().copyWithCount(1)))
-                && (chaseable(level, id) || !unreachable.contains(id) && settling(level, id, item)));
+                && (chaseable(level, id) || !unreachable.contains(id) && shunned.getOrDefault(id, 0L) <= level.getGameTime() && settling(level, id, item)));
     }
     private boolean settling(ServerLevel level, UUID id, ItemEntity item) {
         return item.hasPickUpDelay() || level.getGameTime() - born.getOrDefault(id, 0L) < SETTLE || retryAt.getOrDefault(id, 0L) > level.getGameTime();
