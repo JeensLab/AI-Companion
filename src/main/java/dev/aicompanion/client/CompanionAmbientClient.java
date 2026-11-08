@@ -11,6 +11,7 @@ final class CompanionAmbientClient {
     private static Object world;
     private static UUID companion;
     private static final CompanionConversation conversation = new CompanionConversation();
+    private static final dev.aicompanion.CompanionJokes jokes = new dev.aicompanion.CompanionJokes();
     private static boolean pending;
     private static int transcriptions;
     private static String urgentText = "";
@@ -110,11 +111,24 @@ final class CompanionAmbientClient {
             });
         });
     }
+    /** A joke uses a free initiative slot; no model request and no scan while its slower timer is waiting. */
+    private static boolean tellJoke(dev.aicompanion.entity.CompanionEntity speaker, boolean shortMurmurs) {
+        int minutes = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get();
+        if (now() % 20 != 0 || !OpenRouterConfig.JOKES.get() || !jokes.due(now(), minutes)) return false;
+        if (!conversation.ready(now()) || busy() || InworldTtsClient.isSpeaking() || !safe(speaker)
+                || speaker.isGatheringTask() || speaker.isVisiblyBusy() || speaker.fighting()) return false;
+        String joke = jokes.poll(now(), minutes, true, java.util.concurrent.ThreadLocalRandom.current().nextInt());
+        if (joke == null) return false;
+        var delivery = CompanionConversation.decide(true, CompanionVoiceAudio.audible(speaker), false, false, shortMurmurs);
+        CompanionChatScreen.autonomousReply(joke, dev.aicompanion.CompanionDiagnostics.newTrace(), delivery == Delivery.VOICE);
+        return true;
+    }
     static void tick() {
         var client = Minecraft.getInstance();
         if (client.level != world) {
             world = client.level; companion = null; pending = false; lastSpot = null; travelUntil = 0; idleSince = now();
             conversation.reset(now(), jitter());
+            jokes.reset(now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
         }
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();
@@ -138,6 +152,7 @@ final class CompanionAmbientClient {
         boolean urgentNow = conversation.urgentPending(now()) != 0 || fresh && CompanionConversation.isUrgent(speaker.socialObservation());
         if (urgentNow && !CompanionVoiceAudio.audible(speaker)) return;
         if (!fresh && conversation.urgentPending() == 0) {
+            if (tellJoke(speaker, shortMurmurs)) return;
             // A topic needs the model to go on talking, and the memory of the player to know which topics he has raised.
             if (conversation.topicReady(now(), scene) && !busy() && safe(speaker) && OpenRouterConfig.LONG_TERM_MEMORY.get()
                     && OpenRouterClient.modelConfigured()) raiseTopic(scene);

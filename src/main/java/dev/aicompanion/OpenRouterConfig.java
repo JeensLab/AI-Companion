@@ -14,6 +14,12 @@ public final class OpenRouterConfig {
             .comment("Maximum independent resource-search and roaming distance, in loaded chunks.")
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
+    public static final ModConfigSpec.BooleanValue JOKES = BUILDER
+            .comment("Occasional short local jokes in quiet moments, without a model request.")
+            .define("jokes", true);
+    public static final ModConfigSpec.IntValue JOKE_INTERVAL_MINUTES = BUILDER
+            .comment("Minimum minutes between jokes; a random delay up to the same duration is added. Each joke repeats no sooner than an hour.")
+            .defineInRange("jokeIntervalMinutes", 5, 1, 60);
     public static final ModConfigSpec.BooleanValue SHORT_MURMURS = BUILDER
             .comment("Keep his own idle remarks short (at most 15 words, no digits) and, when you are out of earshot, show them in chat without voice. Off: long remarks are voiced only within earshot.")
             .translation("config.aicompanion.short_murmurs")

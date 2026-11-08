@@ -80,7 +80,22 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
             b.setMessage(damageNumbersLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(jokesLabel(), b -> {
+            OpenRouterConfig.JOKES.set(!OpenRouterConfig.JOKES.get()); OpenRouterConfig.JOKES.save();
+            b.setMessage(jokesLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Короткие анекдоты без запроса к модели, только в спокойный момент. Один и тот же — не чаще раза в час."))).build());
+        addRenderableWidget(Button.builder(jokeIntervalLabel(), b -> {
+            int next = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get() + 5;
+            OpenRouterConfig.JOKE_INTERVAL_MINUTES.set(next > 60 ? 5 : next); OpenRouterConfig.JOKE_INTERVAL_MINUTES.save();
+            b.setMessage(jokeIntervalLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         fitRows(top);
+    }
+    private Component jokesLabel() { return Component.literal("Анекдоты: " + (OpenRouterConfig.JOKES.get() ? "вкл." : "выкл.")); }
+    private Component jokeIntervalLabel() {
+        int minutes = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get();
+        return Component.literal("Пауза между анекдотами: " + minutes + "–" + (minutes * 2) + " мин.");
     }
     private Component shortLabel() { return Component.literal("Короткие реплики (до 15 слов): " + (OpenRouterConfig.SHORT_MURMURS.get() ? "вкл." : "выкл.")); }
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }

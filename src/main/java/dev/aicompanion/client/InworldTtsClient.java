@@ -30,6 +30,7 @@ public final class InworldTtsClient {
 
     private InworldTtsClient() {
     }
+    static synchronized boolean isSpeaking() { return !playbackQueue.isDone(); }
     public static synchronized void resetPlaybackQueue() { playbackQueue = CompletableFuture.completedFuture(null); }
 
     public static synchronized CompletableFuture<Void> speak(String text) {
