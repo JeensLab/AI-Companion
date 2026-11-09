@@ -158,17 +158,19 @@ public final class CompanionPickUp {
 
     /**
      * The plainest form of the thing: the shortest id of its family that is not itself built from a form suffix — the raw
-     * drop «рудное железо» is the word «железо», while the ore is «железная руда». Only a word that names this form names
-     * the whole family; a word naming «угольный блок» or «глубинносланцевая руда» is that one thing.
+     * drop «рудное железо» is the word «железо», while the ore is «железная руда». Lapis lazuli is the exception to the
+     * suffix rule: the game builds its own forms on top of «lapis_lazuli», so «лазурит» is that drop and not an affixed
+     * form of it. Only a word that names this form names the whole family; a word naming «угольный блок» or
+     * «глубинносланцевая руда» is that one thing. A family with no such member at all is no family: each of its forms is
+     * itself alone, so «незеритовый слиток» is the ingot and not the block, though the two ids tie in length and the tie
+     * used to fall to registry order.
      */
     private static Item plainest(List<Item> family) {
         Item plainest = null;
         for (Item member : family) {
-            if (hasFormSuffix(key(member))) continue;
+            if (hasFormSuffix(key(member)) && !key(member).endsWith("_lazuli")) continue;
             if (plainest == null || key(member).length() < key(plainest).length()) plainest = member;
         }
-        if (plainest != null) return plainest;
-        for (Item member : family) if (plainest == null || key(member).length() < key(plainest).length()) plainest = member;
         return plainest;
     }
 

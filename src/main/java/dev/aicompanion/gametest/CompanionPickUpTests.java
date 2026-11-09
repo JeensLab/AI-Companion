@@ -1136,6 +1136,55 @@ public final class CompanionPickUpTests {
         h.succeed();
     }
 
+    /**
+     * Lapis lazuli is the plainest form of lapis, though the game's id carries the «_lazuli» affix: «лазурит» is the
+     * loose drop, the ore, the deepslate ore and the block, while «лазуритовая руда» is the ore alone — as is the ore's
+     * own id, whatever word named it.
+     */
+    @GameTest(template = "large_search")
+    public static void aWordTakesEveryFormOfLapis(GameTestHelper h) {
+        String lapis = CompanionItemLookup.itemFor("лазурит", RU);
+        h.assertTrue("minecraft:lapis_lazuli".equals(lapis), "«Лазурит» is not the loose lapis: " + lapis);
+        var meaning = CompanionPickUp.of(lapis);
+        h.assertTrue(meaning != null, "«Лазурит» has no meaning at all");
+        for (Item form : List.of(Items.LAPIS_LAZULI, Items.LAPIS_ORE, Items.LAPIS_BLOCK, Items.DEEPSLATE_LAPIS_ORE))
+            h.assertTrue(meaning.is(new ItemStack(form)),
+                    "«Лазурит» does not take " + BuiltInRegistries.ITEM.getKey(form) + ": " + meaning);
+        String ore = CompanionItemLookup.itemFor("лазуритовая руда", RU);
+        h.assertTrue("minecraft:lapis_ore".equals(ore), "«Лазуритовая руда» is not the ore: " + ore);
+        var oreOnly = CompanionPickUp.of(ore);
+        h.assertTrue(oreOnly != null && oreOnly.is(new ItemStack(Items.LAPIS_ORE)), "The lapis ore is not itself: " + oreOnly);
+        h.assertTrue(!oreOnly.is(new ItemStack(Items.LAPIS_LAZULI)) && !oreOnly.is(new ItemStack(Items.LAPIS_BLOCK))
+                        && !oreOnly.is(new ItemStack(Items.DEEPSLATE_LAPIS_ORE)),
+                "«Лазуритовая руда» took another form of lapis: " + oreOnly);
+        var byId = CompanionPickUp.of("minecraft:lapis_ore");
+        h.assertTrue(byId != null && byId.is(new ItemStack(Items.LAPIS_ORE)) && !byId.is(new ItemStack(Items.LAPIS_LAZULI)),
+                "The lapis ore narrowed to the loose lapis: " + byId);
+        h.succeed();
+    }
+
+    /**
+     * A family with no suffix-free form is no family: «незеритовый слиток» is the ingot alone, though the ingot and the
+     * block tie in length and the block comes second in the registry — and the block word is the block alone.
+     */
+    @GameTest(template = "large_search")
+    public static void aNetheriteIngotOrderTakesOnlyIngots(GameTestHelper h) {
+        String ingot = CompanionItemLookup.itemFor("незеритовый слиток", RU);
+        h.assertTrue("minecraft:netherite_ingot".equals(ingot), "«Незеритовый слиток» is not the ingot: " + ingot);
+        var meaning = CompanionPickUp.of(ingot);
+        h.assertTrue(meaning != null && meaning.is(new ItemStack(Items.NETHERITE_INGOT)),
+                "The netherite ingot is not itself: " + meaning);
+        h.assertTrue(!meaning.is(new ItemStack(Items.NETHERITE_BLOCK)),
+                "«Незеритовый слиток» took the netherite block: " + meaning);
+        String block = CompanionItemLookup.itemFor("незеритовый блок", RU);
+        h.assertTrue("minecraft:netherite_block".equals(block), "«Незеритовый блок» is not the block: " + block);
+        var blockOnly = CompanionPickUp.of(block);
+        h.assertTrue(blockOnly != null && blockOnly.is(new ItemStack(Items.NETHERITE_BLOCK))
+                        && !blockOnly.is(new ItemStack(Items.NETHERITE_INGOT)),
+                "«Незеритовый блок» took the netherite ingot: " + blockOnly);
+        h.succeed();
+    }
+
     /** «Подбери угольный блок» takes the block lying there and leaves the loose coal four blocks on. */
     @GameTest(template = "large_search", timeoutTicks = 600)
     public static void theCoalBlockOrderLeavesTheLooseCoal(GameTestHelper h) {
@@ -1559,6 +1608,14 @@ public final class CompanionPickUpTests {
             java.util.Map.entry("raw_copper", "Рудная медь"),
             java.util.Map.entry("copper_ingot", "Медный слиток"),
             java.util.Map.entry("copper_block", "Медный блок"),
+            // Lapis is named by its own drop, though every form of it carries an affix in the game's id.
+            java.util.Map.entry("lapis_lazuli", "Лазурит"),
+            java.util.Map.entry("lapis_ore", "Лазуритовая руда"),
+            java.util.Map.entry("deepslate_lapis_ore", "Глубинносланцевая лазуритовая руда"),
+            java.util.Map.entry("lapis_block", "Лазуритовый блок"),
+            // The metal with no suffix-free form: the ingot and the block are each themselves.
+            java.util.Map.entry("netherite_ingot", "Незеритовый слиток"),
+            java.util.Map.entry("netherite_block", "Незеритовый блок"),
             // The things whose id carries an affix that is no form of them: «кирпич» is no nether brick, «рамка» no
             // glowing frame.
             java.util.Map.entry("brick", "Кирпич"),
