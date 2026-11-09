@@ -110,6 +110,7 @@ public final class CompanionJokeClientProbe {
     private static void prepare(Minecraft mc, CompanionEntity speaker) throws Exception {
         mc.setScreen(null); OpenRouterConfig.JOKES.set(true); OpenRouterConfig.AUTONOMOUS_SPEECH.set(true);
         OpenRouterConfig.SHORT_MURMURS.set(true); OpenRouterConfig.JOKE_INTERVAL_MINUTES.set(5);
+        field(ambient(), "jokeBank").set(null, null);
         field(ambient(), "pending").setBoolean(null, false); field(ambient(), "transcriptions").setInt(null, 0);
         flag(speaker, "DATA_SOCIAL_SAFE", true); flag(speaker, "DATA_GATHERING_LOGS", false);
         flag(speaker, "DATA_FIGHTING", false);

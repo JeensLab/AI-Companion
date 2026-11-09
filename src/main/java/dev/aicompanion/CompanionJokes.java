@@ -6,24 +6,17 @@ import java.util.List;
 /** Local jokes share the conversation's free slots, but have their own slower cadence and hourly deduplication. */
 public final class CompanionJokes {
     public static final long HOUR = 20L * 60 * 60;
-    public static final List<String> ALL = List.of(
-            "Крипер пошёл обниматься. Дружба получилась взрывная.",
-            "Скелет решил подкачаться. Но так и остался костлявым.",
-            "Зомби открыл ресторан. Посетителям сразу начали выносить мозг.",
-            "Паук устроился ткачом. Сказал, опыт работы с сетями имеется.",
-            "Ведьма открыла аптеку. Побочные эффекты стали главным товаром.",
-            "Шахтёр нашёл выход из пещеры. Оказалось, это вход в следующую.",
-            "Кирка попросила отпуск. Начальство сказало: сначала разгреби завал.",
-            "Рыбак поймал сапог. Теперь ищет рыбу подходящего размера.",
-            "Курица решила стать шахтёром. С тех пор несёт только породу.",
-            "Лопата решила сменить профессию. Но её опять закопали в работу.",
-            "Факел устроился сторожем. Работает с огоньком.",
-            "Сундук пошёл к психологу. Слишком много всего держал в себе.",
-            "Бухгалтер перепутала зарплаты Пупы и Лупы: Лупа получил за Пупу, а Пупа за Лупу.",
-            "Шли папа-помидор, мама-помидор и сын-помидор. Сын отстал. Папа наступил на него: «Догоняй, кетчуп!»");
-    private final long[] toldAt = new long[ALL.size()];
+    public static final List<String> ALL = CompanionJokeBank.defaults();
+    private List<String> bank = ALL;
+    private long[] toldAt = new long[bank.size()];
     private long lastJoke;
     private int delayJitter, previous = -1;
+
+    public void setBank(List<String> lines, long now, int jitter) {
+        bank = List.copyOf(lines);
+        toldAt = new long[bank.size()];
+        reset(now, jitter);
+    }
 
     public void reset(long now, int jitter) {
         Arrays.fill(toldAt, Long.MIN_VALUE);
@@ -40,12 +33,12 @@ public final class CompanionJokes {
 
     /** Refused opportunities consume neither the interval nor a joke, so a quiet moment can use them later. */
     public String poll(long now, int minutes, boolean allowed, int jitter) {
-        if (!allowed || !due(now, minutes)) return null;
-        int start = Math.floorMod(jitter, ALL.size());
-        for (int offset = 0; offset < ALL.size(); offset++) {
-            int index = (start + offset) % ALL.size();
-            if (index == previous || toldAt[index] != Long.MIN_VALUE && now - toldAt[index] < HOUR) continue;
-            String joke = ALL.get(index);
+        if (!allowed || bank.isEmpty() || !due(now, minutes)) return null;
+        int start = Math.floorMod(jitter, bank.size());
+        for (int offset = 0; offset < bank.size(); offset++) {
+            int index = (start + offset) % bank.size();
+            if ((bank.size() > 1 && index == previous) || toldAt[index] != Long.MIN_VALUE && now - toldAt[index] < HOUR) continue;
+            String joke = bank.get(index);
             // Validate before delivery regardless of the ordinary murmur setting.
             if (!CompanionConversation.fitsMurmur(joke)) continue;
             toldAt[index] = now; previous = index; lastJoke = now; delayJitter = jitter;

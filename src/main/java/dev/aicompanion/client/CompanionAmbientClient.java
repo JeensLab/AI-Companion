@@ -12,6 +12,7 @@ final class CompanionAmbientClient {
     private static UUID companion;
     private static final CompanionConversation conversation = new CompanionConversation();
     private static final dev.aicompanion.CompanionJokes jokes = new dev.aicompanion.CompanionJokes();
+    private static java.util.concurrent.CompletableFuture<java.util.List<String>> jokeBank;
     private static boolean pending;
     private static int transcriptions;
     private static String urgentText = "";
@@ -129,6 +130,12 @@ final class CompanionAmbientClient {
             world = client.level; companion = null; pending = false; lastSpot = null; travelUntil = 0; idleSince = now();
             conversation.reset(now(), jitter());
             jokes.reset(now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
+            jokeBank = client.level == null ? null : java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                    dev.aicompanion.CompanionJokeBank.load(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("aicompanion-jokes.txt")));
+        }
+        if (jokeBank != null && jokeBank.isDone()) {
+            jokes.setBank(jokeBank.join(), now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
+            jokeBank = null;
         }
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();

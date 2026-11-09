@@ -3,6 +3,7 @@ package dev.aicompanion.gametest;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.CompanionConversation;
 import dev.aicompanion.CompanionJokes;
+import dev.aicompanion.CompanionJokeBank;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.neoforged.neoforge.gametest.GameTestHolder;
@@ -14,6 +15,57 @@ import java.util.HashSet;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionJokeTests {
+    @GameTest(template = "empty")
+    public static void customBankAddsUniqueShortLinesAndKeepsDefaults(GameTestHelper h) throws Exception {
+        var folder = java.nio.file.Files.createTempDirectory("joke-bank-test-");
+        var file = folder.resolve("jokes.txt");
+        try {
+            h.assertTrue(CompanionJokeBank.load(file).equals(CompanionJokes.ALL), "Missing file lost defaults");
+            h.assertTrue(!java.nio.file.Files.exists(file), "Optional file was created");
+            String extra = "Утка открыла магазин. Торгует слухами.";
+            String text = "\uFEFF# Comment\r\n\r\n" + extra + "\r\n" + extra + "\n"
+                    + CompanionJokes.ALL.getFirst() + "\nЦифра 123\n" + "слово ".repeat(16) + "\nПлохой\tтекст\n";
+            java.nio.file.Files.writeString(file, text);
+            var loaded = CompanionJokeBank.load(file);
+            h.assertTrue(loaded.size() == CompanionJokes.ALL.size() + 1 && loaded.contains(extra)
+                    && loaded.containsAll(CompanionJokes.ALL), "Merge, validation or deduplication failed");
+            h.assertTrue(java.nio.file.Files.readString(file).equals(text), "Owner's file was changed");
+            java.nio.file.Files.writeString(file, "");
+            h.assertTrue(CompanionJokeBank.load(file).equals(CompanionJokes.ALL), "Empty file lost defaults");
+            java.nio.file.Files.write(file, new byte[]{(byte) 0xc3, (byte) 0x28});
+            h.assertTrue(CompanionJokeBank.load(file).equals(CompanionJokes.ALL), "Invalid UTF-8 lost defaults");
+            java.nio.file.Files.write(file, new byte[CompanionJokeBank.MAX_BYTES + 1]);
+            h.assertTrue(CompanionJokeBank.load(file).equals(CompanionJokes.ALL), "Oversized file lost defaults");
+            var many = new StringBuilder();
+            for (int i = 0; i < 1000; i++) many.append("Шутка ").append((char) ('а' + i / 32))
+                    .append((char) ('а' + i % 32)).append(".\n");
+            java.nio.file.Files.writeString(file, many.toString());
+            h.assertTrue(CompanionJokeBank.load(file).size() == CompanionJokes.ALL.size() + 1000,
+                    "A thousand custom jokes were not loaded");
+        } finally {
+            java.nio.file.Files.deleteIfExists(file);
+            java.nio.file.Files.delete(folder);
+        }
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void customBankIsUsedByTheSchedulerAndReloadResetsItsHistory(GameTestHelper h) {
+        var jokes = new CompanionJokes();
+        String first = "Утка открыла магазин. Торгует слухами.";
+        String second = "Гусь стал дирижёром. Теперь все ходят гуськом.";
+        jokes.setBank(java.util.List.of(first, second), 0, 0);
+        h.assertTrue(first.equals(jokes.poll(6000, 5, true, 0)), "Custom line was not delivered");
+        h.assertTrue(second.equals(jokes.poll(12000, 5, true, 0)), "Custom line repeated consecutively");
+        h.assertTrue(jokes.poll(18000, 5, true, 0) == null, "Custom cooldown ignored");
+        jokes.setBank(java.util.List.of(second), 0, 0);
+        h.assertTrue(second.equals(jokes.poll(6000, 5, true, 0)), "Reload retained old bank or history");
+        h.assertTrue(second.equals(jokes.poll(6000 + CompanionJokes.HOUR, 5, true, 0)), "Singleton never repeats");
+        jokes.setBank(java.util.List.of(), 0, 0);
+        h.assertTrue(jokes.poll(6000, 5, true, 0) == null, "Empty bank did not stay silent");
+        h.succeed();
+    }
+
     @GameTest(template = "empty")
     public static void jokesAreShortBankLinesWithoutNumbers(GameTestHelper h) {
         h.assertTrue(new HashSet<>(CompanionJokes.ALL).size() == CompanionJokes.ALL.size(), "Duplicate bank lines");
