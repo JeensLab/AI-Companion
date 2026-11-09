@@ -3,6 +3,8 @@ package dev.aicompanion.client;
 import dev.aicompanion.CompanionIdentity;
 import dev.aicompanion.CompanionDiagnostics;
 import dev.aicompanion.OpenRouterConfig;
+import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionPickUp;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -65,6 +67,8 @@ public final class CompanionChatScreen extends Screen {
             runLocalCommand(action, trace);
             return;
         }
+        // A «подбери» word the registry cannot answer: the model picks from the drops lying here, not a whole plan.
+        if (pickupByMeaning(text, trace)) return;
         if (hushInFight(text, trace)) return;
         addLine(Component.literal("...").withStyle(ChatFormatting.GRAY));
         String context = GameContext.snapshot(text);
@@ -118,11 +122,71 @@ public final class CompanionChatScreen extends Screen {
     private static void runLocalCommand(String command, String trace) {
         CompanionDiagnostics.event(trace, "message_route", "route", "local_parser", "command", command);
         List<PlannedAction> actions = CompanionLocalCommands.actions(command);
-        long generation = CompanionActionExecutor.currentPlanGeneration();
         if ("build_house".equals(actions.getFirst().type())) addVoiceReply(CompanionDialogue.acknowledge(actions), trace, "local_acknowledgement");
+        runLocalActions(actions, trace);
+    }
+
+    private static void runLocalActions(List<PlannedAction> actions, String trace) {
+        long generation = CompanionActionExecutor.currentPlanGeneration();
         CompanionActionExecutor.execute(actions, generation, trace).whenComplete((report, error) -> Minecraft.getInstance().execute(() -> {
             if (generation == CompanionActionExecutor.currentPlanGeneration()) finishActions(actions, report, error, true, trace);
         }));
+    }
+
+    /**
+     * «Подбери тухлое мясо»: the word is no item of the game's registry, so the model is asked which of the drops lying
+     * here the player meant — one small request, only in this case, and it may only name one of them. Nothing lying here
+     * at all is answered by the ground itself, without a question.
+     */
+    private static boolean pickupByMeaning(String text, String trace) {
+        CompanionPickUpCommands.Ask ask = CompanionPickUpCommands.ask(text, companionName());
+        Minecraft minecraft = Minecraft.getInstance();
+        if (ask == null || minecraft.level == null || minecraft.player == null) return false;
+        CompanionEntity speaker = companion(minecraft);
+        var center = speaker == null ? minecraft.player.position() : speaker.position();
+        var drops = CompanionPickUp.drops(minecraft.level, center, speaker == null ? 16.0D : speaker.pickUpRadius());
+        if (drops.isEmpty()) {
+            CompanionDiagnostics.event(trace, "message_route", "route", "local_pickup_empty", "noun", ask.noun());
+            runLocalActions(List.of(new PlannedAction("pick_up", 0, ask.count(), CompanionPickUp.ANY_ITEM)), trace);
+            return true;
+        }
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_pickup_meaning", "noun", ask.noun(), "drops", drops);
+        announceThinking(OpenRouterClient.isBusy());
+        long generation = CompanionActionExecutor.currentPlanGeneration();
+        OpenRouterClient.ask("Ты выбираешь, что подобрать с земли. Ответь только одним id предмета из списка, без пояснений.",
+                CompanionPickUpCommands.prompt(ask, drops), 60, trace).whenComplete((answer, error) -> Minecraft.getInstance().execute(() -> {
+            CompanionThinking.answered();
+            dropThinkingLine();
+            if (generation != CompanionActionExecutor.currentPlanGeneration()) return;
+            PlannedAction action = error == null ? CompanionPickUpCommands.chosen(ask, drops, answer) : null;
+            if (action == null) {
+                String line = "Не понял, что подобрать: «" + ask.noun() + "». Лежит рядом: " + lying(drops) + ".";
+                OpenRouterClient.recordLocalExchange(text, line);
+                addVoiceReply(line, trace, "local_pickup_meaning");
+                return;
+            }
+            CompanionPickUpCommands.remember(action);
+            runLocalActions(List.of(action), trace);
+        }));
+        return true;
+    }
+
+    /** The companion of this player near them, or null when he is elsewhere: the ground around him is what is picked up. */
+    private static CompanionEntity companion(Minecraft minecraft) {
+        if (minecraft.level == null || minecraft.player == null) return null;
+        var found = minecraft.level.getEntitiesOfClass(CompanionEntity.class, minecraft.player.getBoundingBox().inflate(128.0D),
+                entity -> minecraft.player.getUUID().equals(entity.getOwnerId()));
+        return found.isEmpty() ? null : found.getFirst();
+    }
+
+    /** «Курица (2), Гнилая плоть (1)»: what lies here, in the names the game shows the player. */
+    private static String lying(List<CompanionPickUp.Drop> drops) {
+        StringBuilder line = new StringBuilder();
+        for (CompanionPickUp.Drop drop : drops) {
+            if (line.length() > 0) line.append(", ");
+            line.append(drop.name()).append(" (").append(drop.count()).append(')');
+        }
+        return line.toString();
     }
 
     /** The model's plan for a «подбери» phrase was rejected: the pickup is taken locally, with its own honest answer. */
@@ -193,6 +257,8 @@ public final class CompanionChatScreen extends Screen {
             runLocalCommand(action, trace);
             return;
         }
+        // A «подбери» word the registry cannot answer: the model picks from the drops lying here, not a whole plan.
+        if (pickupByMeaning(text, trace)) return;
         if (hushInFight(text, trace)) return;
 
         long planGeneration = CompanionActionExecutor.currentPlanGeneration();

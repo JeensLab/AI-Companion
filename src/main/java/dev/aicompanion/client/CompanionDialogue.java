@@ -16,7 +16,7 @@ public final class CompanionDialogue {
                 .replaceAll("\\{[^{}]*\"(?:action|steps)\"[^{}]*}", "")).replaceAll("[ \\t]+", " ").trim();
     }
 
-    private static final Pattern ID = Pattern.compile("\\b(?:minecraft|aicompanion):([a-z0-9_/.]+)");
+    private static final Pattern ID = Pattern.compile("\\b([a-z0-9_.-]+):([a-z0-9/._-]+)");
     /** «добыл 2 коровы», «Добыл 1 свинью из 3», «3 животных»: the hunt's own count, not the blocks of stone or ore in the same report. */
     private static final Pattern HUNTED = Pattern.compile("(?iu)добыл (\\d+ (?:" + java.util.Arrays.stream(dev.aicompanion.entity.CompanionGame.Kind.values())
             .flatMap(kind -> java.util.stream.Stream.of(kind.one, kind.few, kind.many)).collect(java.util.stream.Collectors.joining("|")) + "|животное|животных))(?![а-яё])");
@@ -26,8 +26,13 @@ public final class CompanionDialogue {
         var matcher = ID.matcher(text);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
-            String name = itemName(matcher.group());
-            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(name.equals(matcher.group()) ? matcher.group(1).replace('_', ' ') : name));
+            String id = matcher.group(), namespace = matcher.group(1);
+            var location = net.minecraft.resources.ResourceLocation.tryParse(id);
+            // Another namespace is left alone unless it really is an item: a URL or a dimension id is no thing of ours.
+            if (!"minecraft".equals(namespace) && !"aicompanion".equals(namespace)
+                    && (location == null || !net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(location))) continue;
+            String name = itemName(id);
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(name.equals(id) ? matcher.group(2).replace('_', ' ') : name));
         }
         return matcher.appendTail(result).toString();
     }
@@ -204,6 +209,8 @@ public final class CompanionDialogue {
     }
 
     public static String itemName(String id) {
+        // «Всё, что лежит» has no item of its own in the registry: its name is the word, not the raw id.
+        if (dev.aicompanion.entity.CompanionPickUp.ANY_ITEM.equals(id)) return "вещи";
         var key = net.minecraft.resources.ResourceLocation.tryParse(id);
         if (key == null) return id;
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key)
@@ -273,6 +280,12 @@ public final class CompanionDialogue {
         return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
+    /** The lines a pickup step wrote: what was taken, or what really lies around instead (its honest answer). */
+    private static boolean isPickUpLine(String line) {
+        return line.startsWith("Подобрал ") || line.startsWith("Не достал ") || line.startsWith("Не смог подобрать ")
+                || line.startsWith("Не успел подобрать ") || line.startsWith("Рядом нет ") || line.contains("Лежит рядом:");
+    }
+
     /** How the refusals of the sorting itself begin (CompanionSorting); any other stop of a plan with sorting in it goes the usual way. */
     private static final List<String> SORT_OWN = List.of("Рядом с тобой сундуков", "Не смог дойти до", "Не получилось разложить", "Сумка забита, сначала", "Пропустил",
             "Не успел закончить работу");
@@ -285,10 +298,20 @@ public final class CompanionDialogue {
     private static String summarizeSteps(List<PlannedAction> actions, String report) {
         if (report.isBlank()) return "";
         if (actions.stream().anyMatch(CompanionDialogue::isGoalAction)) return report.replace("План остановлен: ", "");
-        // «Подбери» says its own facts: what was taken, or what really lies around instead (the honest answer).
-        if (!actions.isEmpty() && actions.stream().allMatch(action -> "pick_up".equals(action.type()))) {
-            int stoppedAt = report.lastIndexOf("План остановлен:");
-            return speakable(stoppedAt >= 0 ? report.substring(stoppedAt + "План остановлен:".length()) : report);
+        // «Подбери» says its own facts: what was taken, or what really lies around instead (the honest answer). A plan
+        // that goes on after the pickup keeps them, said before the rest: the player hears both, not the last step alone.
+        if (actions.stream().anyMatch(action -> "pick_up".equals(action.type()))) {
+            List<String> picked = new java.util.ArrayList<>(), rest = new java.util.ArrayList<>();
+            for (String line : report.split("\n")) {
+                if (line.startsWith("План остановлен: ")) line = line.substring("План остановлен: ".length());
+                (isPickUpLine(line) ? picked : rest).add(line);
+            }
+            String said = speakable(String.join("\n", picked));
+            List<PlannedAction> later = actions.stream().filter(action -> !"pick_up".equals(action.type())).toList();
+            String tail = later.isEmpty() ? "" : summarizeSteps(later, String.join("\n", rest));
+            // A step that says nothing by itself («подождать») still has its own line in the report: it is said.
+            if (tail.isBlank() && !later.isEmpty()) tail = speakable(String.join("\n", rest));
+            return (said + " " + tail).strip();
         }
         String lower = report.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains("такое поручение уже выполняется")) return "Я уже занимаюсь этим поручением.";

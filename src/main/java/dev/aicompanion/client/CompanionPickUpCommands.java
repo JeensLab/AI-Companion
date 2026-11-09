@@ -1,14 +1,22 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionItemLookup;
 import dev.aicompanion.entity.CompanionPickUp;
+
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
  * «Подбери <X>»: take what of X already lies on the ground here — «подбери вон ту курицу плавающую» is that chicken
  * on the water, not a hunt. «Принеси» is another order: there the thing may be far away and is got and handed over.
- * Only the things the companion knows by meaning become a local command; anything else is left to the model.
+ *
+ * The word is resolved against the game's own registry ({@link CompanionItemLookup}), never against a list here: any
+ * item of any mod answers to the name its lang file gives it in the player's language. A word the registry cannot
+ * answer — «кура», «тухлое мясо» — is left to the model, which picks among the drops actually lying here: one small
+ * request, only in that case ({@link #ask}, {@link #prompt}, {@link #chosen}).
  */
 public final class CompanionPickUpCommands {
     private CompanionPickUpCommands() { }
@@ -25,8 +33,73 @@ public final class CompanionPickUpCommands {
     /** Words that name everything lying around rather than one thing: «подбери всё», «подбери предметы». */
     private static final Set<String> ALL_WORDS = Set.of("все", "весь", "вся", "вещи", "вещь", "всякое", "предмет", "предметы", "предмета", "предметов");
 
-    /** The pick-up order for the phrase, or null for the model. */
+    /** Words a «ещё» may carry around it: «ещё, пожалуйста», «ещё чуть-чуть», «ещё подбери всё». */
+    private static final Pattern MORE_FILLER = Pattern.compile("(?U)\\b(пожалуйста|чуть-чуть|чуть|немного|давай|ну|раз|подбери|подберите|"
+            + "все|весь|вся|всё|вещи|вещь|предмет|предметы|предмета|предметов)\\b");
+
+    /** The pickup order for the phrase, or null when the registry cannot tell what it names. */
     public static PlannedAction parse(String text, String name) {
+        return parse(text, name, CompanionItemLookup.GAME_NAMES);
+    }
+
+    /** The same, by the names the game shows (or a stand-in for the language in a test). */
+    public static PlannedAction parse(String text, String name, Function<net.minecraft.world.item.Item, String> names) {
+        Said said = said(text, name);
+        if (said == null) return null;
+        if (said.noun().isEmpty()) return all(said.count());
+        String id = CompanionItemLookup.itemFor(said.noun(), names);
+        // «Подбери все вещи в воде»: the all-word still names the whole ground when the rest names nothing.
+        if (id == null) return said.all() ? all(said.count()) : null;
+        return new PlannedAction("pick_up", 0, count(said.count()), id);
+    }
+
+    /** What a «подбери» phrase names and how much, or null for a phrase that is no pickup at all. */
+    public record Ask(String noun, int count) { }
+
+    /**
+     * The pickup phrase whose word the registry cannot name, or null when the phrase is no pickup or its word is
+     * already resolved: then the model is asked which of the drops lying here the player meant.
+     */
+    public static Ask ask(String text, String name) {
+        return ask(text, name, CompanionItemLookup.GAME_NAMES);
+    }
+
+    public static Ask ask(String text, String name, Function<net.minecraft.world.item.Item, String> names) {
+        Said said = said(text, name);
+        if (said == null || said.noun().isEmpty() || said.all()) return null;
+        return CompanionItemLookup.itemFor(said.noun(), names) == null ? new Ask(said.noun(), count(said.count())) : null;
+    }
+
+    /** The one question put to the model: only the drops lying here, and nothing invented outside them. */
+    public static String prompt(Ask ask, List<CompanionPickUp.Drop> drops) {
+        StringBuilder list = new StringBuilder();
+        for (CompanionPickUp.Drop drop : drops) {
+            if (list.length() > 0) list.append("; ");
+            list.append(drop.id()).append(" — ").append(drop.name()).append(" (").append(drop.count()).append(')');
+        }
+        return "Игрок сказал: «подбери " + ask.noun() + "». Рядом лежат: " + list + ". "
+                + "Что из этого он имел в виду? Ответь только одним id из списка, без пояснений и без другого текста.";
+    }
+
+    /** The action for the model's answer: only a drop of the list, or null when it named none of them. */
+    public static PlannedAction chosen(Ask ask, List<CompanionPickUp.Drop> drops, String answer) {
+        if (answer == null || answer.isBlank()) return null;
+        String said = answer.toLowerCase(Locale.ROOT);
+        for (CompanionPickUp.Drop drop : drops) {
+            if (said.contains(drop.id().toLowerCase(Locale.ROOT))) return new PlannedAction("pick_up", 0, ask.count(), drop.id());
+        }
+        // A reply that names the thing instead of its id is still the thing lying on the ground.
+        for (CompanionPickUp.Drop drop : drops) {
+            if (!drop.name().isBlank() && said.contains(drop.name().toLowerCase(Locale.ROOT)))
+                return new PlannedAction("pick_up", 0, ask.count(), drop.id());
+        }
+        return null;
+    }
+
+    /** The noun and the number of a pickup phrase, before the registry is asked what the noun is. */
+    private record Said(String noun, int count, boolean all) { }
+
+    private static Said said(String text, String name) {
         String value = plain(text, name);
         // Several things in one breath («подбери курицу и брёвна») are a plan, and plans are the model's.
         if (value.contains(" и ") || value.contains("потом") || value.contains("затем")) return null;
@@ -43,24 +116,26 @@ public final class CompanionPickUpCommands {
             rest = tail.group(1).trim();
         }
         // A bare «подбери» takes whatever lies around; «подбери из сундука камень» is a take order, not this one.
-        if (rest.isEmpty()) return all(said.count());
+        if (rest.isEmpty()) return new Said("", said.count(), true);
         if (CONTAINER.matcher(rest).matches()) return null;
         String noun = FILLER.matcher(rest).replaceAll(" ").replaceAll("\\s+", " ").trim();
-        if (noun.isEmpty()) return all(said.count());
-        // The thing may come after a word about it («жареная свининка», «гнилая плоть», «в воде кусок»): the first word
-        // that names something counts, and an adjective («жареную», «алмазную») only when no noun does. «Всё» names the
-        // whole ground, so a noun after it («все алмазы») still wins.
-        String item = null;
+        // «Всё» names the whole ground; a noun after it («все алмазы») still names one thing.
+        return new Said(withoutAllWords(noun), said.count(), hasAllWord(noun));
+    }
+
+    private static boolean hasAllWord(String noun) {
+        for (String word : noun.split(" ")) if (isAll(word)) return true;
+        return false;
+    }
+
+    private static String withoutAllWords(String noun) {
+        StringBuilder named = new StringBuilder();
         for (String word : noun.split(" ")) {
-            String found = itemFor(word);
-            if (found == null) continue;
-            if (isAll(word)) { if (item == null) item = found; continue; }
-            if (adjective(word)) { if (item == null) item = found; continue; }
-            item = found;
-            break;
+            if (word.isBlank() || isAll(word)) continue;
+            if (named.length() > 0) named.append(' ');
+            named.append(word);
         }
-        if (item == null) return null;
-        return new PlannedAction("pick_up", 0, count(said.count()), item);
+        return named.toString();
     }
 
     private static PlannedAction all(int count) {
@@ -80,12 +155,12 @@ public final class CompanionPickUpCommands {
     /** The pickup the player last had done: «ещё» right after it takes the rest of the same thing. */
     private static volatile String lastPickUp;
 
-    /** «Ещё», «ещё подбери», «давай ещё»: the last pickup again, taking the rest. Null when there was no pickup before. */
+    /** «Ещё», «ещё, пожалуйста», «ещё чуть-чуть», «ещё подбери всё»: the last pickup again, taking the rest. */
     public static PlannedAction more(String text, String name) {
         String item = lastPickUp;
         if (item == null) return null;
-        String value = plain(text, name);
-        if (!value.matches("^(?:ну\\s+)?(?:еще|ещё)(?:\\s+(?:подбери|давай|немного|чуть|раз|еще|ещё))*$")) return null;
+        String value = MORE_FILLER.matcher(plain(text, name)).replaceAll(" ").replaceAll("\\s+", " ").trim();
+        if (!value.matches("^(?:еще|ещё)$")) return null;
         return new PlannedAction("pick_up", 0, 64, item);
     }
 
@@ -110,54 +185,6 @@ public final class CompanionPickUpCommands {
         if (!VERB.matcher(value).matches() && !VERB_TAIL.matcher(value).matches()) return null;
         if (CONTAINER.matcher(value).matches()) return null;
         return all(64);
-    }
-
-    /** A word that describes the thing rather than naming it: «жареную», «гнилую», «алмазную», «вон ту». */
-    private static boolean adjective(String word) {
-        for (String ending : new String[]{"ая", "яя", "ое", "ее", "ый", "ий", "ой", "ую", "юю", "ые", "ие", "ых", "их", "ого", "его", "ому", "ему", "ым", "им"})
-            if (word.endsWith(ending)) return true;
-        return false;
-    }
-
-    /** The item a Russian word of the ground names, by its stem; null for a thing this order does not know. */
-    private static String itemFor(String word) {
-        String w = word.toLowerCase(Locale.ROOT);
-        if (isAll(w)) return CompanionPickUp.ANY_ITEM;
-        if (w.startsWith("куриц") || w.startsWith("кур")) return "minecraft:chicken";
-        if (w.startsWith("говяд")) return "minecraft:beef";
-        if (w.startsWith("свинин")) return "minecraft:porkchop";
-        if (w.startsWith("гнил") || w.startsWith("плот")) return "minecraft:rotten_flesh";
-        if (w.startsWith("ведр")) return "minecraft:bucket";
-        if (w.startsWith("чернил")) return "minecraft:ink_sac";
-        if (w.startsWith("баранин")) return "minecraft:mutton";
-        if (w.startsWith("крол")) return "minecraft:rabbit";
-        if (w.startsWith("мяс")) return "minecraft:meat";
-        if (w.startsWith("алмаз")) return "minecraft:diamond";
-        if (w.startsWith("изумруд")) return "minecraft:emerald";
-        if (w.startsWith("угл")) return "minecraft:coal";
-        if (w.startsWith("желез")) return "minecraft:iron_ingot";
-        if (w.startsWith("мед")) return "minecraft:copper_ingot";
-        if (w.startsWith("золот")) return "minecraft:gold_ingot";
-        if (w.startsWith("лазурит")) return "minecraft:lapis_lazuli";
-        if (w.startsWith("редстоун")) return "minecraft:redstone";
-        if (w.startsWith("бревн") || w.startsWith("бревен") || w.startsWith("брус") || w.startsWith("дерев")) return "minecraft:oak_log";
-        if (w.startsWith("доск") || w.startsWith("дощ")) return "minecraft:oak_planks";
-        if (w.startsWith("камен") || w.startsWith("камн") || w.startsWith("булыж")) return "minecraft:cobblestone";
-        if (w.startsWith("песк")) return "minecraft:sand";
-        if (w.startsWith("грави")) return "minecraft:gravel";
-        if (w.startsWith("крем")) return "minecraft:flint";
-        if (w.startsWith("земл")) return "minecraft:dirt";
-        if (w.startsWith("яйц")) return "minecraft:egg";
-        if (w.startsWith("пер")) return "minecraft:feather";
-        if (w.startsWith("кож")) return "minecraft:leather";
-        if (w.startsWith("шерст")) return "minecraft:white_wool";
-        if (w.startsWith("палк") || w.startsWith("палок")) return "minecraft:stick";
-        if (w.startsWith("семен") || w.startsWith("семеч")) return "minecraft:wheat_seeds";
-        if (w.startsWith("пшен")) return "minecraft:wheat";
-        if (w.startsWith("морков")) return "minecraft:carrot";
-        if (w.startsWith("картош") || w.startsWith("картофел")) return "minecraft:potato";
-        if (w.startsWith("свекл")) return "minecraft:beetroot";
-        return null;
     }
 
     /** Lower case, ё as е, without his name in front, the commas out and the full stop or «!» at the end. */

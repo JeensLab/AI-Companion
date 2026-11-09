@@ -1,6 +1,7 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionDialogue;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionPickUpCommands;
 import dev.aicompanion.client.CompanionPlanCodec;
@@ -11,6 +12,7 @@ import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionGame;
+import dev.aicompanion.entity.CompanionItemLookup;
 import dev.aicompanion.entity.CompanionPickUp;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -27,6 +29,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * The owner's request: «подбери вон ту курицу плавающую» takes that chicken lying on the ground, in water and at any
@@ -77,8 +80,8 @@ public final class CompanionPickUpTests {
                 "A pickup whose fallback started is not accepted: " + result.status() + " " + result.message());
         h.assertTrue(result.evidence() != null && result.evidence().workId() > 0,
                 "The fallback work is not tracked by its workId: " + result.evidence());
-        h.assertTrue(result.message().contains("нет курицы"), "No honest answer: " + result.message());
-        h.assertTrue(result.message().contains("камень"), "What lies around is not named: " + result.message());
+        h.assertTrue(result.message().contains("нет предмета «minecraft:chicken»"), "No honest answer: " + result.message());
+        h.assertTrue(result.message().contains("minecraft:cobblestone (3)"), "What lies around is not named: " + result.message());
         // The honest answer is not the whole answer: the usual work for a chicken starts right after it.
         h.assertTrue(companion.workPhase().startsWith("GAME"), "The fallback did not start: " + companion.workPhase());
         h.assertTrue(result.message().contains("Иду охотиться"), "The fallback is not named: " + result.message());
@@ -107,7 +110,7 @@ public final class CompanionPickUpTests {
             var outcome = plan.join();
             h.assertTrue(outcome.recoveries() == 0 && !outcome.report().contains("Повтор шага"),
                     "The honest answer was repeated: " + outcome.report());
-            h.assertTrue(outcome.report().contains("нет курицы") && outcome.report().contains("камень"),
+            h.assertTrue(outcome.report().contains("нет предмета «minecraft:chicken»") && outcome.report().contains("minecraft:cobblestone (3)"),
                     "No honest answer in the plan: " + outcome.report());
             h.assertTrue(outcome.report().contains("Иду охотиться") && hunted[0],
                     "The fallback did not start: " + outcome.report() + ", phase " + companion.workPhase());
@@ -142,11 +145,11 @@ public final class CompanionPickUpTests {
         companion.setPickUpNearby(true, 4);
         var outOfReach = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:stick", 1);
         h.assertTrue(!outOfReach.success(), "A drop beyond the radius was taken: " + outOfReach.message());
-        h.assertTrue(outOfReach.message().contains("нет палки"), "No honest answer: " + outOfReach.message());
-        h.assertTrue(outOfReach.message().contains("камень (3)"), "What lies inside the radius is not named: " + outOfReach.message());
+        h.assertTrue(outOfReach.message().contains("нет предмета «minecraft:stick»"), "No honest answer: " + outOfReach.message());
+        h.assertTrue(outOfReach.message().contains("minecraft:cobblestone (3)"), "What lies inside the radius is not named: " + outOfReach.message());
         // The answer must not call the stick beyond the radius «рядом» while saying there is no stick: the same radius for both.
         int listed = outOfReach.message().indexOf("Лежит рядом:");
-        h.assertTrue(listed >= 0 && !outOfReach.message().substring(listed).contains("палка"),
+        h.assertTrue(listed >= 0 && !outOfReach.message().substring(listed).contains("minecraft:stick"),
                 "The stick beyond the radius is listed as lying near: " + outOfReach.message());
         h.startSequence().thenIdle(20).thenExecute(() -> {
             h.assertTrue(!stick.isRemoved(), "The stick beyond the radius was taken");
@@ -167,7 +170,7 @@ public final class CompanionPickUpTests {
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:oak_log", 8);
         h.assertTrue(result.success() && result.status() == CompanionActionResult.Status.ACCEPTED,
                 "A pickup whose fallback started is not accepted: " + result.status() + " " + result.message());
-        h.assertTrue(result.message().contains("нет бревна"), "No honest answer: " + result.message());
+        h.assertTrue(result.message().contains("нет брёвен"), "No honest answer: " + result.message());
         h.assertTrue(companion.workPhase().startsWith("WOOD"), "The fallback did not start: " + companion.workPhase());
         h.assertTrue(companion.watchDetail().contains("count=8"), "The fallback does not gather the named count: " + companion.watchDetail());
         h.succeed();
@@ -184,8 +187,8 @@ public final class CompanionPickUpTests {
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:chicken", 1);
         h.assertTrue(!result.success(), "A pickup with a full bag reported success");
         h.assertTrue(result.message().contains("сумка полна"), "The full bag is not said: " + result.message());
-        h.assertTrue(result.message().contains("Лежит рядом: курица (1)"), "The chicken lying there is not named: " + result.message());
-        h.assertTrue(!result.message().contains("нет курицы"), "A full bag was answered as «nothing lies there»: " + result.message());
+        h.assertTrue(result.message().contains("Лежит рядом: «minecraft:chicken» (1)"), "The chicken lying there is not named: " + result.message());
+        h.assertTrue(!result.message().contains("нет предмета «minecraft:chicken»"), "A full bag was answered as «nothing lies there»: " + result.message());
         // Nothing to gather into: the answer is said at once and no fallback work starts.
         h.assertTrue(companion.workPhase().isEmpty(), "A fallback started for a full bag: " + companion.workPhase());
         h.assertTrue(!chicken.isRemoved(), "The chicken was taken into a full bag");
@@ -209,18 +212,22 @@ public final class CompanionPickUpTests {
     /** «Подбери вон ту курицу плавающую» is the pickup order; «принеси» and two things at once stay the model's. */
     @GameTest(template = "large_search")
     public static void thePhraseRoutesToThePickup(GameTestHelper h) {
-        h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("Олег, подбери вон ту курицу плавающую", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("Олег, подбери вон ту курицу плавающую", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери алмазы", "Олег")),
-                "Gems: " + CompanionLocalCommands.route("подбери алмазы", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:oak_log".equals(CompanionLocalCommands.route("подбери брёвна", "Олег")),
-                "Logs: " + CompanionLocalCommands.route("подбери брёвна", "Олег"));
-        h.assertTrue("companion work pick_up 3 minecraft:cobblestone".equals(CompanionLocalCommands.route("подбери 3 камня", "Олег")),
-                "Stone with a number: " + CompanionLocalCommands.route("подбери 3 камня", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:rotten_flesh".equals(CompanionLocalCommands.route("подбери гниль в воде", "Олег")),
-                "Rotten flesh: " + CompanionLocalCommands.route("подбери гниль в воде", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:rotten_flesh".equals(CompanionLocalCommands.route("подбери гнилую плоть", "Олег")),
-                "Rotten flesh: " + CompanionLocalCommands.route("подбери гнилую плоть", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("Олег, подбери вон ту курицу плавающую", "Олег", RU)),
+                "Phrase: " + CompanionLocalCommands.route("Олег, подбери вон ту курицу плавающую", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери алмазы", "Олег", RU)),
+                "Gems: " + CompanionLocalCommands.route("подбери алмазы", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:oak_log".equals(CompanionLocalCommands.route("подбери брёвна", "Олег", RU)),
+                "Logs: " + CompanionLocalCommands.route("подбери брёвна", "Олег", RU));
+        // «Камень» is the stone block itself and the blocks a stone tool is made of: one group, taken as one.
+        h.assertTrue("companion work pick_up 3 minecraft:stone".equals(CompanionLocalCommands.route("подбери 3 камня", "Олег", RU)),
+                "Stone with a number: " + CompanionLocalCommands.route("подбери 3 камня", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:rotten_flesh".equals(CompanionLocalCommands.route("подбери гниль в воде", "Олег", RU)),
+                "Rotten flesh: " + CompanionLocalCommands.route("подбери гниль в воде", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:rotten_flesh".equals(CompanionLocalCommands.route("подбери гнилую плоть", "Олег", RU)),
+                "Rotten flesh: " + CompanionLocalCommands.route("подбери гнилую плоть", "Олег", RU));
+        // The word is the game's own name in the language it runs in; a test server runs en_us, and so does this route.
+        h.assertTrue("companion work pick_up 64 minecraft:spyglass".equals(CompanionLocalCommands.route("подбери Spyglass", "Олег")),
+                "The game's own name: " + CompanionLocalCommands.route("подбери Spyglass", "Олег"));
         h.assertTrue(CompanionLocalCommands.route("принеси мне курицу", "Олег") == null, "«Принеси» is not the pickup");
         h.assertTrue(CompanionLocalCommands.route("подбери курицу и брёвна", "Олег") == null, "Two things at once are a plan");
         PlannedAction step = CompanionLocalCommands.action("companion work pick_up 64 minecraft:chicken");
@@ -286,7 +293,7 @@ public final class CompanionPickUpTests {
                     "Not all three pieces were taken: bag " + stored(companion, Items.ROTTEN_FLESH) + ", drops left "
                             + (!first.isRemoved() || !second.isRemoved() || !third.isRemoved()) + ", phase " + companion.workPhase()
                             + ", " + companion.getLastTaskResult());
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал гнилую плоть (3 шт.)"),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:rotten_flesh» (3 шт.)"),
                     "The report is wrong: " + companion.getLastTaskResult());
         });
     }
@@ -306,7 +313,7 @@ public final class CompanionPickUpTests {
         h.startSequence().thenWaitUntil(() -> {
             h.assertTrue(stored(companion, Items.ROTTEN_FLESH) == 1 && companion.workPhase().isEmpty(),
                     "The one piece was not taken: bag " + stored(companion, Items.ROTTEN_FLESH) + ", phase " + companion.workPhase());
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал гнилую плоть (1 шт.), осталось 2 шт."),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:rotten_flesh» (1 шт.), осталось 2 шт."),
                     "The pieces left are not counted: " + companion.getLastTaskResult());
             h.assertTrue(!companion.getLastTaskResult().contains("Не смог подобрать"),
                     "A partial pickup was reported as a failure: " + companion.getLastTaskResult());
@@ -340,7 +347,7 @@ public final class CompanionPickUpTests {
         h.startSequence().thenWaitUntil(() -> {
             h.assertTrue(stored(companion, Items.ROTTEN_FLESH) == 64 && companion.workPhase().isEmpty(),
                     "The piece that fits was not taken: bag " + stored(companion, Items.ROTTEN_FLESH) + ", phase " + companion.workPhase());
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал гнилую плоть (1 шт.), осталось 1 шт."),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:rotten_flesh» (1 шт.), осталось 1 шт."),
                     "The piece left is not counted: " + companion.getLastTaskResult() + "; drops " + first.isRemoved() + "/" + second.isRemoved()
                             + " " + first.getItem() + " " + second.getItem() + "; " + companion.watchDetail());
             h.assertTrue(!companion.getLastTaskResult().contains("Не смог подобрать"),
@@ -350,7 +357,7 @@ public final class CompanionPickUpTests {
             companion.setFollowing(false);
             var again = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:rotten_flesh", 64);
             h.assertTrue(!again.success(), "A pickup into a full bag reported success");
-            h.assertTrue(again.message().contains("гнилая плоть (1)") && again.message().contains("сумка полна"),
+            h.assertTrue(again.message().contains("«minecraft:rotten_flesh» (1)") && again.message().contains("сумка полна"),
                     "The piece left is not named with its count: " + again.message());
             h.assertTrue(!again.message().contains("Не смог подобрать"),
                     "The repeat claimed failure while the piece lies there: " + again.message());
@@ -363,8 +370,8 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:bucket".equals(CompanionLocalCommands.route("подбери ведро", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери ведро", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:bucket".equals(CompanionLocalCommands.route("подбери ведро", "Олег", RU)),
+                "Phrase: " + CompanionLocalCommands.route("подбери ведро", "Олег", RU));
         ItemEntity bucket = item(h, 12, 1, 8, Items.WATER_BUCKET, 1);
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:bucket", 64);
         h.assertTrue(result.success(), "The order was refused: " + result.message());
@@ -382,10 +389,10 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернила", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери чернила", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернильный мешок", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери чернильный мешок", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернила", "Олег", RU)),
+                "Phrase: " + CompanionLocalCommands.route("подбери чернила", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернильный мешок", "Олег", RU)),
+                "Phrase: " + CompanionLocalCommands.route("подбери чернильный мешок", "Олег", RU));
         pool(h, 12, 6, 5, 2);
         ItemEntity sac = floating(h, 13, 2, 8, Items.INK_SAC, 1);
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:ink_sac", 64);
@@ -393,7 +400,7 @@ public final class CompanionPickUpTests {
         h.succeedWhen(() -> {
             h.assertTrue(sac.isRemoved() && stored(companion, Items.INK_SAC) == 1 && companion.workPhase().isEmpty(),
                     "The ink sac in the water was not taken: phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал чернильный мешок (1 шт.)"),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:ink_sac» (1 шт.)"),
                     "The report does not call it an ink sac: " + companion.getLastTaskResult());
         });
     }
@@ -404,10 +411,10 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("подбери свинину жареную", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери свинину жареную", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег")),
-                "Trailing verb: " + CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("подбери свинину жареную", "Олег", RU)),
+                "Phrase: " + CompanionLocalCommands.route("подбери свинину жареную", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег", RU)),
+                "Trailing verb: " + CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег", RU));
         boolean[] hunted = {false};
         h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
         pool(h, 12, 6, 5, 2);
@@ -419,7 +426,7 @@ public final class CompanionPickUpTests {
             h.assertTrue(pork.isRemoved() && stored(companion, Items.COOKED_PORKCHOP) == 1,
                     "The cooked pork in the water was not taken: phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
             h.assertTrue(!hunted[0], "A hunt started over the cooked pork lying there");
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал свинину (1 шт.)"),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:porkchop» (1 шт.)"),
                     "The report does not name the pork in the right case: " + companion.getLastTaskResult());
         });
     }
@@ -441,12 +448,12 @@ public final class CompanionPickUpTests {
                             && stored(companion, Items.CHICKEN) == 4,
                     "Not all four pieces were taken: bag " + stored(companion, Items.CHICKEN) + ", phase " + companion.workPhase()
                             + ", " + companion.getLastTaskResult());
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал курицу (4 шт.)"),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:chicken» (4 шт.)"),
                     "The report uses the wrong case: " + companion.getLastTaskResult());
         });
     }
 
-    /** The honest list of what lies around is in Russian, not the server's English item names. */
+    /** The honest list names what lies around by the game's ids: the client says their names in the player's language. */
     @GameTest(template = "large_search", timeoutTicks = 300)
     public static void theHonestListNamesThingsInRussian(GameTestHelper h) {
         arena(h);
@@ -458,13 +465,13 @@ public final class CompanionPickUpTests {
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:chicken", 64);
         h.assertTrue(result.success() && result.status() == CompanionActionResult.Status.ACCEPTED,
                 "A pickup whose fallback started is not accepted: " + result.status() + " " + result.message());
-        h.assertTrue(result.message().contains("Рядом нет курицы"), "No honest answer: " + result.message());
-        h.assertTrue(result.message().contains("ведро"), "The bucket is not named in Russian: " + result.message());
-        h.assertTrue(result.message().contains("алмазная кирка"), "The pickaxe is not named in Russian: " + result.message());
-        h.assertTrue(result.message().contains("гнилая плоть (2)"), "The rotten flesh is not named in Russian: " + result.message());
+        h.assertTrue(result.message().contains("нет предмета «minecraft:chicken»"), "No honest answer: " + result.message());
+        h.assertTrue(result.message().contains("minecraft:water_bucket (1)"), "The bucket is not named: " + result.message());
+        h.assertTrue(result.message().contains("minecraft:diamond_pickaxe (1)"), "The pickaxe is not named: " + result.message());
+        h.assertTrue(result.message().contains("minecraft:rotten_flesh (2)"), "The rotten flesh is not named: " + result.message());
         h.assertTrue(!result.message().contains("Water Bucket") && !result.message().contains("Diamond Pickaxe")
                         && !result.message().contains("Rotten Flesh"),
-                "The list names English item names: " + result.message());
+                "The list names the server's English names: " + result.message());
         h.succeed();
     }
 
@@ -521,7 +528,7 @@ public final class CompanionPickUpTests {
             // The order's own result, not the last status: the chase's «Подбираю добытые вещи.» overwrites the status
             // after the order ends, and the pork may be taken by the loose pickup just after it (judge, round 2).
             var recorded = companion.workResult(work);
-            h.assertTrue(recorded != null && recorded.success() && recorded.message().contains("Подобрал свинину (1 шт.)"),
+            h.assertTrue(recorded != null && recorded.success() && recorded.message().contains("Подобрал предмет «minecraft:porkchop» (1 шт.)"),
                     "The order's own result is wrong: " + recorded + "; last status " + companion.getLastTaskResult());
         });
     }
@@ -551,7 +558,7 @@ public final class CompanionPickUpTests {
             h.assertTrue(stored(companion, Items.COOKED_PORKCHOP) == 0,
                     "The pork was taken through the stone: bag " + stored(companion, Items.COOKED_PORKCHOP));
             h.assertTrue(!pork.isRemoved(), "The drop disappeared");
-            h.assertTrue(companion.getLastTaskResult().contains("Не достал свинину, осталось 1 шт."),
+            h.assertTrue(companion.getLastTaskResult().contains("Не достал предмет «minecraft:porkchop», осталось 1 шт."),
                     "The leftover is not counted: " + companion.getLastTaskResult());
             h.assertTrue(!companion.getLastTaskResult().contains("Не смог подобрать"),
                     "A drop still lying was reported as «не смог подобрать»: " + companion.getLastTaskResult());
@@ -587,7 +594,7 @@ public final class CompanionPickUpTests {
                         + ", " + companion.workResult(work[0]) + "; " + companion.watchDetail()))
           .thenExecute(() -> {
               var recorded = companion.workResult(work[0]);
-              h.assertTrue(recorded != null && recorded.message().contains("Не достал свинину, осталось 1 шт."),
+              h.assertTrue(recorded != null && recorded.message().contains("Не достал предмет «minecraft:porkchop», осталось 1 шт."),
                       "The drop was not reported as left: " + recorded + "; last status " + companion.getLastTaskResult());
               h.assertTrue(!recorded.message().contains("Не успел подобрать"), "The order swam the whole minute: " + recorded);
               h.assertTrue(!pork.isRemoved() && stored(companion, Items.COOKED_PORKCHOP) == 0,
@@ -628,7 +635,7 @@ public final class CompanionPickUpTests {
                       "The two in the water were not taken: bag " + stored(companion, Items.COOKED_PORKCHOP) + ", drops "
                               + first.isRemoved() + "/" + second.isRemoved() + ", " + recorded);
               h.assertTrue(!sealed.isRemoved(), "The sealed pork was taken through the stone");
-              h.assertTrue(recorded != null && recorded.message().contains("Подобрал свинину (2 шт.), осталось 1 шт."),
+              h.assertTrue(recorded != null && recorded.message().contains("Подобрал предмет «minecraft:porkchop» (2 шт.), осталось 1 шт."),
                       "The leftover is not counted: " + recorded + "; last status " + companion.getLastTaskResult());
           }).thenSucceed();
     }
@@ -704,7 +711,7 @@ public final class CompanionPickUpTests {
                     "Not all three stacks were taken: bag " + stored(companion, Items.ROTTEN_FLESH) + ", drops left "
                             + (!first.isRemoved() || !second.isRemoved() || !third.isRemoved()) + ", phase "
                             + companion.workPhase() + ", " + companion.getLastTaskResult());
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал гнилую плоть (6 шт.)"),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:rotten_flesh» (6 шт.)"),
                     "The total is not reported: " + companion.getLastTaskResult());
         });
     }
@@ -718,7 +725,7 @@ public final class CompanionPickUpTests {
         companion.setPickUpNearby(true, 4);
         var missed = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:stick", 1);
         h.assertTrue(!missed.success(), "A drop beyond the 4-block radius was taken: " + missed.message());
-        h.assertTrue(missed.message().contains("нет палки"), "No honest answer: " + missed.message());
+        h.assertTrue(missed.message().contains("нет предмета «minecraft:stick»"), "No honest answer: " + missed.message());
         h.assertTrue(!stick.isRemoved(), "The stick beyond the radius was taken");
         companion.setPickUpNearby(true, 32);
         var found = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:stick", 1);
@@ -739,22 +746,25 @@ public final class CompanionPickUpTests {
         h.assertTrue("companion work pick_up 64 minecraft:any".equals(CompanionLocalCommands.route("Олег, подбери", "Олег")),
                 "Bare «подбери»: " + CompanionLocalCommands.route("Олег, подбери", "Олег"));
         // A noun after «все» still names one thing: «все алмазы» is the diamonds, not everything.
-        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери все алмазы", "Олег")),
-                "«Подбери все алмазы»: " + CompanionLocalCommands.route("подбери все алмазы", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери все алмазы", "Олег", RU)),
+                "«Подбери все алмазы»: " + CompanionLocalCommands.route("подбери все алмазы", "Олег", RU));
         ItemEntity chicken = item(h, 11, 1, 8, Items.CHICKEN, 1);
         ItemEntity diamond = item(h, 12, 1, 9, Items.DIAMOND, 2);
         ItemEntity stick = item(h, 13, 1, 8, Items.STICK, 1);
+        // A spyglass is in no list of ours: «всё» takes it as any other drop.
+        ItemEntity spyglass = item(h, 11, 1, 9, Items.SPYGLASS, 1);
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:any", 64);
         h.assertTrue(result.success(), "The order was refused: " + result.message());
         h.assertTrue(companion.workPhase().startsWith("PICK_UP"), "Not the pickup: " + companion.workPhase());
         h.succeedWhen(() -> {
-            h.assertTrue(chicken.isRemoved() && diamond.isRemoved() && stick.isRemoved()
+            h.assertTrue(chicken.isRemoved() && diamond.isRemoved() && stick.isRemoved() && spyglass.isRemoved()
                             && stored(companion, Items.CHICKEN) == 1 && stored(companion, Items.DIAMOND) == 2
-                            && stored(companion, Items.STICK) == 1,
+                            && stored(companion, Items.STICK) == 1 && stored(companion, Items.SPYGLASS) == 1,
                     "Not everything lying around was taken: chicken " + stored(companion, Items.CHICKEN)
                             + ", diamonds " + stored(companion, Items.DIAMOND) + ", sticks " + stored(companion, Items.STICK)
+                            + ", spyglass " + stored(companion, Items.SPYGLASS)
                             + ", phase " + companion.workPhase() + ", " + companion.getLastTaskResult());
-            h.assertTrue(companion.getLastTaskResult().contains("Подобрал вещи (4 шт.)"),
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал вещи (5 шт.)"),
                     "The total is not reported: " + companion.getLastTaskResult());
         });
     }
@@ -770,8 +780,8 @@ public final class CompanionPickUpTests {
             h.assertTrue("companion work pick_up 64 minecraft:any".equals(routed), "Phrase: «" + phrase + "» → " + routed);
         }
         // A noun after «все» still names one thing.
-        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери все алмазы", "Олег")),
-                "«Подбери все алмазы»: " + CompanionLocalCommands.route("подбери все алмазы", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери все алмазы", "Олег", RU)),
+                "«Подбери все алмазы»: " + CompanionLocalCommands.route("подбери все алмазы", "Олег", RU));
         h.succeed();
     }
 
@@ -779,14 +789,14 @@ public final class CompanionPickUpTests {
     @GameTest(template = "large_search")
     public static void moreRepeatsTheLastPickup(GameTestHelper h) {
         CompanionPickUpCommands.forget();
-        h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("Олег, подбери всю плавающую курицу", "Олег")),
-                "The first pickup: " + CompanionLocalCommands.route("Олег, подбери всю плавающую курицу", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("Олег, подбери всю плавающую курицу", "Олег", RU)),
+                "The first pickup: " + CompanionLocalCommands.route("Олег, подбери всю плавающую курицу", "Олег", RU));
         h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("ещё", "Олег")),
                 "«Ещё» after chicken: " + CompanionLocalCommands.route("ещё", "Олег"));
         h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("ещё подбери", "Олег")),
                 "«Ещё подбери»: " + CompanionLocalCommands.route("ещё подбери", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери алмаз", "Олег")),
-                "The diamond pickup: " + CompanionLocalCommands.route("подбери алмаз", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("подбери алмаз", "Олег", RU)),
+                "The diamond pickup: " + CompanionLocalCommands.route("подбери алмаз", "Олег", RU));
         h.assertTrue("companion work pick_up 64 minecraft:diamond".equals(CompanionLocalCommands.route("ещё", "Олег")),
                 "«Ещё» after the diamond: " + CompanionLocalCommands.route("ещё", "Олег"));
         h.assertTrue(CompanionLocalCommands.route("стой", "Олег") != null, "«Стой» is not a local order");
@@ -808,8 +818,8 @@ public final class CompanionPickUpTests {
         h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
         CompanionPickUpCommands.forget();
         h.startSequence().thenExecute(() -> {
-            h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("Олег, подбери курицу", "Олег")),
-                    "The first pickup: " + CompanionLocalCommands.route("Олег, подбери курицу", "Олег"));
+            h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("Олег, подбери курицу", "Олег", RU)),
+                    "The first pickup: " + CompanionLocalCommands.route("Олег, подбери курицу", "Олег", RU));
             // «Ещё» is routed in the same breath as the order it repeats: another GameTest shares this static memory.
             more[0] = CompanionLocalCommands.route("ещё", "Олег");
             h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(more[0]),
@@ -841,11 +851,11 @@ public final class CompanionPickUpTests {
         floating(h, 14, 2, 8, Items.DIAMOND, 1);
         floating(h, 13, 2, 9, Items.WATER_BUCKET, 1);
         String list = CompanionPickUp.nearby(h.getLevel(), companion.position(), 16);
-        h.assertTrue(list.contains("курица (2)"), "The chicken is not listed: " + list);
-        h.assertTrue(list.contains("алмаз (1)"), "The diamond is not listed: " + list);
-        h.assertTrue(list.contains("ведро воды (1)"), "The bucket is not listed: " + list);
-        h.assertTrue(!list.contains("Diamond") && !list.contains("Chicken") && !list.contains("Water Bucket"),
-                "The list names English item names: " + list);
+        h.assertTrue(list.contains(new ItemStack(Items.CHICKEN).getHoverName().getString() + " (2)"), "The chicken is not listed: " + list);
+        h.assertTrue(list.contains(new ItemStack(Items.DIAMOND).getHoverName().getString() + " (1)"), "The diamond is not listed: " + list);
+        h.assertTrue(list.contains(new ItemStack(Items.WATER_BUCKET).getHoverName().getString() + " (1)"), "The bucket is not listed: " + list);
+        // The names are the game's own in the caller's language: a Russian client reads «Курица», the test server «Raw Chicken».
+        h.assertTrue(!list.contains("minecraft:"), "The list leaks raw ids instead of the game's names: " + list);
         h.assertTrue("ничего не лежит".equals(CompanionPickUp.nearby(h.getLevel(), new net.minecraft.world.phys.Vec3(0, 100, 0), 4)),
                 "An empty spot is not said as empty");
         h.succeed();
@@ -932,11 +942,20 @@ public final class CompanionPickUpTests {
             h.assertTrue(outcome.skipped().isEmpty(), "The following step was skipped: " + outcome.skipped() + "; " + outcome.report());
             h.assertTrue(outcome.recoveries() == 0 && !outcome.report().contains("Повтор шага"),
                     "The fallback step was repeated: " + outcome.report());
-            h.assertTrue(outcome.report().contains("нет курицы") && outcome.report().contains("камень"),
+            h.assertTrue(outcome.report().contains("нет предмета «minecraft:chicken»") && outcome.report().contains("minecraft:cobblestone (3)"),
                     "The honest answer is not in the report: " + outcome.report());
             h.assertTrue(outcome.report().contains("Иду охотиться") && outcome.report().contains("Никого не добыл"),
                     "The fallback work is not reported: " + outcome.report());
             h.assertTrue(outcome.report().contains("Остановился и жду."), "The second step did not run: " + outcome.report());
+            // What the player hears: the pickup's own facts and the hunt's outcome first, then the rest of the plan.
+            String spoken = CompanionDialogue.summarize(List.of(
+                    new PlannedAction("pick_up", 0, 1, "minecraft:chicken"),
+                    new PlannedAction("wait", 1, 1)), outcome.report());
+            h.assertTrue(spoken.toLowerCase(java.util.Locale.ROOT).contains("нет предмета"),
+                    "The honest answer is not heard: " + spoken);
+            h.assertTrue(spoken.contains("Иду охотиться"), "The fallback is not heard: " + spoken);
+            h.assertTrue(spoken.contains("Никого не добыл"), "The hunt's outcome is not heard: " + spoken);
+            h.assertTrue(spoken.contains("Остановился и жду."), "The rest of the plan is not heard: " + spoken);
         });
     }
 
@@ -1005,9 +1024,9 @@ public final class CompanionPickUpTests {
                           + ", " + companion.getLastTaskResult())).thenSucceed();
     }
 
-    /** Every meat Kind answers with words; a meat the table does not know falls back to the animal's forms, not an NPE. */
+    /** Every meat Kind is one meaning, raw and cooked, named by the game's own id — no table of ours in the way. */
     @GameTest(template = "large_search")
-    public static void everyMeatKindHasWordsAndAnUnknownOneFallsBack(GameTestHelper h) {
+    public static void everyMeatKindIsItsRawAndCookedDrop(GameTestHelper h) {
         for (CompanionGame.Kind kind : CompanionGame.Kind.values()) {
             String id = BuiltInRegistries.ITEM.getKey(kind.meat).toString();
             var meaning = CompanionPickUp.of(id);
@@ -1022,17 +1041,145 @@ public final class CompanionPickUpTests {
             if (cooked.isPresent()) h.assertTrue(meaning.is(new ItemStack(cooked.get())),
                     "The cooked meat of " + kind + " is not its meaning");
         }
-        // The table's words win when it knows the meat; an unknown meat uses the animal's own forms instead of throwing.
-        String[] known = CompanionPickUp.meatWords(Items.BEEF, "корова", "корову", "коровы");
-        h.assertTrue("говядина".equals(known[0]) && "говядину".equals(known[1]) && "говядины".equals(known[2]),
-                "The table's words are not used: " + String.join("/", known));
-        String[] unknown = CompanionPickUp.meatWords(Items.NETHERITE_INGOT, "корова", "корову", "коровы");
-        h.assertTrue("корова".equals(unknown[0]) && "корову".equals(unknown[1]) && "коровы".equals(unknown[2]),
-                "The fallback is not the animal's own forms: " + String.join("/", unknown));
+        // The name is the game's id, which the client says in the player's language; a thing with no meat pair is itself.
+        h.assertTrue("«minecraft:beef»".equals(CompanionPickUp.of("minecraft:beef").name()),
+                "The beef is not named by its id: " + CompanionPickUp.of("minecraft:beef").name());
+        var plain = CompanionPickUp.of("minecraft:netherite_ingot");
+        h.assertTrue(plain != null && plain.is(new ItemStack(Items.NETHERITE_INGOT)) && plain.fallbackAction() == null,
+                "A plain item is not itself: " + plain);
         h.succeed();
     }
 
-    /** The honest list names a bucket of water by what it is: «ведро воды», not just «ведро». */
+    /** Judge finding 1: the tasks window and «Не выполнено» say «вещи», not the raw «minecraft:any». */
+    @GameTest(template = "large_search")
+    public static void thePickUpAllStepNamesTheGroundInWords(GameTestHelper h) {
+        PlannedAction all = new PlannedAction("pick_up", 0, 64, CompanionPickUp.ANY_ITEM);
+        String step = CompanionDialogue.describe(all);
+        h.assertTrue(step.contains("вещи") && !step.contains("minecraft:any"), "The tasks window shows the raw id: " + step);
+        String skipped = CompanionDialogue.describeAll(List.of(all, new PlannedAction("wait", 1, 1)));
+        h.assertTrue(skipped.contains("вещи") && !skipped.contains("minecraft:any"), "«Не выполнено» shows the raw id: " + skipped);
+        h.succeed();
+    }
+
+    /** Judge finding 3: «ещё» with filler words around it still repeats the last pickup. */
+    @GameTest(template = "large_search")
+    public static void moreTakesTheRestAfterFillerWords(GameTestHelper h) {
+        CompanionPickUpCommands.forget();
+        h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(CompanionLocalCommands.route("подбери курицу", "Олег", RU)),
+                "The first pickup: " + CompanionLocalCommands.route("подбери курицу", "Олег", RU));
+        for (String phrase : List.of("ещё, пожалуйста", "ещё чуть-чуть", "ещё подбери всё", "давай ещё", "ну ещё подбери", "ещё немного")) {
+            String routed = CompanionLocalCommands.route(phrase, "Олег");
+            h.assertTrue("companion work pick_up 64 minecraft:chicken".equals(routed), "Phrase: «" + phrase + "» → " + routed);
+        }
+        h.succeed();
+    }
+
+    /** Judge finding 4: the snapshot scans the radius from the settings, and says nothing at all with the setting off. */
+    @GameTest(template = "large_search", timeoutTicks = 300)
+    public static void theSnapshotUsesTheCompanionsOwnRadiusAndSwitch(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        // The stick lies about 5.7 blocks away: beyond a 4-block scan, inside a 16-block one.
+        item(h, 12, 1, 12, Items.STICK, 1);
+        companion.setPickUpNearby(true, 4);
+        String narrow = CompanionPickUp.snapshotLine(h.getLevel(), companion.position(), companion);
+        h.assertTrue(narrow.contains("на полу рядом=") && !narrow.contains(new ItemStack(Items.STICK).getHoverName().getString()),
+                "The line ignores the 4-block radius: " + narrow);
+        companion.setPickUpNearby(true, 16);
+        String wide = CompanionPickUp.snapshotLine(h.getLevel(), companion.position(), companion);
+        h.assertTrue(wide.contains(new ItemStack(Items.STICK).getHoverName().getString() + " (1)"),
+                "The wider radius is not used: " + wide);
+        companion.setPickUpNearby(false, 16);
+        h.assertTrue(CompanionPickUp.snapshotLine(h.getLevel(), companion.position(), companion).isEmpty(),
+                "The line is said with the ground pickup switched off");
+        h.succeed();
+    }
+
+    /**
+     * The registry is the list: an amethyst shard and a spyglass are in no hand-written table, yet «осколок» and
+     * «подзорная труба» find them by the names a Russian client shows, and the order takes them off the ground.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theGamesOwnRegistryNamesItemsNoListKnows(GameTestHelper h) {
+        h.assertTrue("minecraft:amethyst_shard".equals(CompanionItemLookup.itemFor("осколок аметиста", RU)),
+                "The shard is not resolved by its name: " + CompanionItemLookup.itemFor("осколок аметиста", RU));
+        h.assertTrue("minecraft:spyglass".equals(CompanionItemLookup.itemFor("подзорную трубу", RU)),
+                "The spyglass is not resolved by its name: " + CompanionItemLookup.itemFor("подзорную трубу", RU));
+        h.assertTrue("minecraft:amethyst_shard".equals(CompanionItemLookup.itemFor("Amethyst Shard", CompanionItemLookup.GAME_NAMES)),
+                "The shard is not resolved by the game's own name");
+        h.assertTrue("minecraft:spyglass".equals(CompanionItemLookup.itemFor("Spyglass", CompanionItemLookup.GAME_NAMES)),
+                "The spyglass is not resolved by the game's own name");
+        var shard = CompanionPickUp.of("minecraft:amethyst_shard");
+        h.assertTrue(shard != null && shard.is(new ItemStack(Items.AMETHYST_SHARD)) && shard.fallbackAction() == null,
+                "The shard has no meaning of its own: " + shard);
+        var spyglass = CompanionPickUp.of("minecraft:spyglass");
+        h.assertTrue(spyglass != null && spyglass.is(new ItemStack(Items.SPYGLASS)), "The spyglass has no meaning of its own: " + spyglass);
+
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        ItemEntity shardDrop = item(h, 12, 1, 8, Items.AMETHYST_SHARD, 2);
+        h.assertTrue("companion work pick_up 64 minecraft:amethyst_shard".equals(CompanionLocalCommands.route("подбери осколки", "Олег", RU)),
+                "«Осколки»: " + CompanionLocalCommands.route("подбери осколки", "Олег", RU));
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:amethyst_shard", 64);
+        h.assertTrue(result.success(), "The shard order was refused: " + result.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(shardDrop.isRemoved() && stored(companion, Items.AMETHYST_SHARD) == 2,
+                    "The shard was not taken: bag " + stored(companion, Items.AMETHYST_SHARD) + ", phase " + companion.workPhase()
+                            + ", " + companion.getLastTaskResult());
+            h.assertTrue(companion.getLastTaskResult().contains("Подобрал предмет «minecraft:amethyst_shard» (2 шт.)"),
+                    "The report does not name the shard: " + companion.getLastTaskResult());
+        });
+    }
+
+    /**
+     * «Кура» is no name of the registry («курица» is), so the model is asked which of the drops lying here the player
+     * meant: it may pick only one of them, and the order takes exactly that. «Тухлое мясо» is the rotten flesh lying
+     * there; a pick outside the list and free text are no pick at all.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theModelPicksWhichDropThePlayerMeant(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        item(h, 12, 1, 8, Items.CHICKEN, 2);
+        item(h, 11, 1, 9, Items.ROTTEN_FLESH, 1);
+        var drops = CompanionPickUp.drops(h.getLevel(), companion.position(), 16);
+        h.assertTrue(drops.size() == 2, "The drops are not listed: " + drops);
+        // The registry does not answer «кура»: a four-letter word needs its whole stem, and «кур» is not «куриц».
+        h.assertTrue(CompanionItemLookup.itemFor("кура", RU) == null, "«Кура» was resolved by the registry after all");
+        h.assertTrue("minecraft:chicken".equals(CompanionItemLookup.itemFor("курицу", RU)), "«Курицу» is not the registry's chicken");
+        var ask = CompanionPickUpCommands.ask("подбери куру", "Олег", RU);
+        h.assertTrue(ask != null && "куру".equals(ask.noun()), "«Куру» did not become a question: " + ask);
+        String prompt = CompanionPickUpCommands.prompt(ask, drops);
+        h.assertTrue(prompt.contains("minecraft:chicken") && prompt.contains("minecraft:rotten_flesh"),
+                "The question does not list the drops lying here: " + prompt);
+        h.assertTrue(prompt.contains(new ItemStack(Items.CHICKEN).getHoverName().getString()),
+                "The question does not name the drops as the game does: " + prompt);
+        var chicken = CompanionPickUpCommands.chosen(ask, drops, "minecraft:chicken");
+        h.assertTrue(chicken != null && "minecraft:chicken".equals(chicken.item()) && chicken.count() == 64,
+                "The model's pick is lost: " + chicken);
+        var fleshAsk = CompanionPickUpCommands.ask("подбери тухлое мясо", "Олег", RU);
+        h.assertTrue(fleshAsk != null && "тухлое мясо".equals(fleshAsk.noun()), "«Тухлое мясо» did not become a question: " + fleshAsk);
+        var flesh = CompanionPickUpCommands.chosen(fleshAsk, drops, "minecraft:rotten_flesh");
+        h.assertTrue(flesh != null && "minecraft:rotten_flesh".equals(flesh.item()), "The model's pick is lost: " + flesh);
+        // Nothing outside the list and no free text: a pick of something not lying here is no pick.
+        h.assertTrue(CompanionPickUpCommands.chosen(fleshAsk, drops, "minecraft:diamond") == null,
+                "An item that does not lie here was picked");
+        h.assertTrue(CompanionPickUpCommands.chosen(fleshAsk, drops, "наверное, что-то мясное") == null,
+                "Free text was taken for a pick");
+        // The chosen drop is taken, and no hunt starts over it.
+        boolean[] hunted = {false};
+        h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", chicken.item(), chicken.count());
+        h.assertTrue(result.success(), "The picked drop was refused: " + result.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(stored(companion, Items.CHICKEN) == 2, "The chicken was not taken: " + companion.getLastTaskResult());
+            h.assertTrue(!hunted[0], "A hunt started over the chicken lying there");
+        });
+    }
+
+    /** The honest list names a bucket of water by its own id: «ведро воды», not the bare bucket. */
     @GameTest(template = "large_search", timeoutTicks = 300)
     public static void theHonestListNamesABucketOfWaterInFull(GameTestHelper h) {
         arena(h);
@@ -1042,7 +1189,7 @@ public final class CompanionPickUpTests {
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:chicken", 64);
         h.assertTrue(result.success() && result.status() == CompanionActionResult.Status.ACCEPTED,
                 "A pickup whose fallback started is not accepted: " + result.status() + " " + result.message());
-        h.assertTrue(result.message().contains("Лежит рядом: ведро воды (1)"),
+        h.assertTrue(result.message().contains("Лежит рядом: minecraft:water_bucket (1)"),
                 "The bucket of water is named short: " + result.message());
         h.succeed();
     }
@@ -1166,6 +1313,37 @@ public final class CompanionPickUpTests {
             boolean rim = dx < 0 || dx >= size || dz < 0 || dz >= size;
             if (rim) h.setBlock(new BlockPos(x + dx, 1, z + dz), Blocks.STONE);
         }
+    }
+
+    /**
+     * The names a Russian client shows. The GameTest server runs en_us, so these stand in for the player's language:
+     * the resolver is the same one the client runs, only the names come from this stand-in instead of the client's lang.
+     */
+    private static final Function<Item, String> RU = CompanionPickUpTests::russianName;
+
+    private static String russianName(Item item) {
+        return switch (BuiltInRegistries.ITEM.getKey(item).getPath()) {
+            case "chicken" -> "Курица";
+            case "cooked_chicken" -> "Жареная курица";
+            case "porkchop" -> "Свинина";
+            case "cooked_porkchop" -> "Жареная свинина";
+            case "rotten_flesh" -> "Гнилая плоть";
+            case "diamond" -> "Алмаз";
+            case "amethyst_shard" -> "Осколок аметиста";
+            case "spyglass" -> "Подзорная труба";
+            case "bucket" -> "Ведро";
+            case "water_bucket" -> "Ведро воды";
+            case "ink_sac" -> "Чернильный мешок";
+            case "glow_ink_sac" -> "Светящийся чернильный мешок";
+            case "oak_log" -> "Дубовое бревно";
+            case "birch_log" -> "Берёзовое бревно";
+            case "stone" -> "Камень";
+            case "cobblestone" -> "Булыжник";
+            case "stick" -> "Палка";
+            case "oak_planks" -> "Дубовая доска";
+            case "white_wool" -> "Белая шерсть";
+            default -> new ItemStack(item).getHoverName().getString();
+        };
     }
 
     private static ItemEntity item(GameTestHelper h, int x, int y, int z, Item item, int count) {
