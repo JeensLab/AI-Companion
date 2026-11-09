@@ -19,5 +19,5 @@
   "config.aicompanion.guard_nearest_to_player": "Guard: monster nearest to the player",
   "config.aicompanion.other_containers": "Containers other than chests",
   "config.aicompanion.boat_clutch": "Catch a fall in a boat",
-  "config.aicompanion.replant_saplings": "Saplings on the stumps"
+  "config.aicompanion.replant_saplings": "Saplings where trees were felled"
 }

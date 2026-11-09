@@ -62,8 +62,8 @@ public final class CompanionReplantTests {
         h.succeedWhen(() -> {
             done(h, c);
             h.assertTrue(count(c, Items.DARK_OAK_LOG) == 8 && c.didLastTaskSucceed(), c.getLastTaskResult());
-            h.assertTrue(saplings(h, Blocks.DARK_OAK_SAPLING) == 0 && count(c, Items.DARK_OAK_SAPLING) == 3,
-                    "A dark oak planted short of four: " + saplings(h, Blocks.DARK_OAK_SAPLING) + " planted, bag " + c.getStoredItemsSummary());
+            h.assertTrue(blocks(h, Blocks.DARK_OAK_SAPLING) == 0 && count(c, Items.DARK_OAK_SAPLING) == 3,
+                    "A dark oak planted short of four: " + blocks(h, Blocks.DARK_OAK_SAPLING) + " planted, bag " + c.getStoredItemsSummary());
         });
     }
 
@@ -81,6 +81,53 @@ public final class CompanionReplantTests {
             for (int x = 18; x <= 19; x++) for (int z = 16; z <= 17; z++)
                 h.assertTrue(h.getBlockState(new BlockPos(x, 1, z)).is(Blocks.DARK_OAK_SAPLING), "No sapling at " + x + "," + z + ": bag " + c.getStoredItemsSummary());
             h.assertTrue(count(c, Items.DARK_OAK_SAPLING) == 0, "Saplings left over: " + c.getStoredItemsSummary());
+        });
+    }
+
+    /** Review 09.11: with no axe he sets his own bench by the trunk to make one; his bench is not the player's building, the square goes down. */
+    @GameTest(template = "empty", timeoutTicks = 1600)
+    public static void hisOwnBenchByTheTreeDoesNotStopTheSquare(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        tree(h, Blocks.DARK_OAK_LOG, 18, 16, 2, 3);
+        c.setItem(0, new ItemStack(Items.DARK_OAK_SAPLING, 4));
+        c.startGatheringLogs(6);
+        h.succeedWhen(() -> {
+            done(h, c);
+            h.assertTrue(c.didLastTaskSucceed(), c.getLastTaskResult());
+            h.assertTrue(blocks(h, Blocks.CRAFTING_TABLE) == 1, "He made no bench of his own: " + c.getStoredItemsSummary());
+            h.assertTrue(blocks(h, Blocks.DARK_OAK_SAPLING) == 4 && count(c, Items.DARK_OAK_SAPLING) == 0,
+                    "His own bench kept the square bare: " + blocks(h, Blocks.DARK_OAK_SAPLING) + " planted, bag " + c.getStoredItemsSummary());
+        });
+    }
+
+    /** Only the felled tree's own wood: an oak with nothing but birch saplings in the bag stays bare, the birch ones are kept. */
+    @GameTest(template = "empty", timeoutTicks = 700)
+    public static void aSaplingOfAnotherWoodIsNotUsed(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        tree(h, Blocks.OAK_LOG, 18, 16, 1, 3);
+        c.setItem(0, new ItemStack(Items.BIRCH_SAPLING, 2));
+        c.startGatheringLogs(3);
+        h.succeedWhen(() -> {
+            done(h, c);
+            h.assertTrue(count(c, Items.OAK_LOG) == 3 && c.didLastTaskSucceed(), c.getLastTaskResult());
+            h.assertTrue(h.getBlockState(new BlockPos(18, 1, 16)).isAir() && count(c, Items.BIRCH_SAPLING) == 2,
+                    "Another wood planted: " + h.getBlockState(new BlockPos(18, 1, 16)) + ", bag " + c.getStoredItemsSummary());
+        });
+    }
+
+    /** A giant spruce and two saplings: short of its square it gets one sapling, which grows an ordinary spruce. */
+    @GameTest(template = "empty", timeoutTicks = 1200)
+    public static void aGiantSpruceShortOfFourGetsOne(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        tree(h, Blocks.SPRUCE_LOG, 18, 16, 2, 2);
+        c.setItem(0, new ItemStack(Items.SPRUCE_SAPLING, 2));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
+        c.startGatheringLogs(8);
+        h.succeedWhen(() -> {
+            done(h, c);
+            h.assertTrue(count(c, Items.SPRUCE_LOG) == 8 && c.didLastTaskSucceed(), c.getLastTaskResult());
+            h.assertTrue(blocks(h, Blocks.SPRUCE_SAPLING) == 1 && count(c, Items.SPRUCE_SAPLING) == 1,
+                    "Not exactly one sapling for the spruce: " + blocks(h, Blocks.SPRUCE_SAPLING) + " planted, bag " + c.getStoredItemsSummary());
         });
     }
 
@@ -140,9 +187,9 @@ public final class CompanionReplantTests {
         h.assertTrue(!companion.isGatheringTask() && !companion.isWorking() && !companion.isRecoveringSupports(), "Work still active: " + companion.getLastTaskResult());
     }
 
-    private static int saplings(GameTestHelper h, Block sapling) {
+    private static int blocks(GameTestHelper h, Block block) {
         int result = 0;
-        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 3, 31))) if (h.getBlockState(pos).is(sapling)) result++;
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 3, 31))) if (h.getBlockState(pos).is(block)) result++;
         return result;
     }
 
