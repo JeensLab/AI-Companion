@@ -79,6 +79,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Портал пешком: за игроком (Незер, Край) и по поручению `enter_portal` | `entity/CompanionPortals.java`; тесты `gametest/CompanionPortalTests.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
 | Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java`; без ключа Inworld — голос Windows: `SpeechEngine.java`, `WindowsVoice.java` (SAPI через JNA), `WindowsVoiceChoice.java`, `WindowsVoiceHint.java`; macOS — `MacOsVoice.java` (`say` → временный WAV), `MacOsVoiceHint.java`, переключатель `macosVoice`; тесты `gametest/CompanionWindowsVoiceTests.java`, `CompanionMacOsVoiceTests.java` |
+| Анекдоты (JGGKS, #105) | `CompanionJokes.java` — локальный набор, интервал и часовая история; `client/CompanionAmbientClient.tellJoke` — свободное окно разговора, без работы, боя и воспроизведения речи. Настройки — `OpenRouterConfig`, «Поведение». Проверки: `CompanionJokeTests`, `CompanionMurmurTests`, `CompanionSpeechTests`, `CompanionSoulTests`. |
 | Разговор по своей инициативе, память и характер | `CompanionConversation.java` (сцены и темп), `CompanionTopics.java` (банк тем), `CompanionPersonality.java`, `client/CompanionAmbientClient.java`; память в мире и её сжатие вместе с чертами и своими темами — `client/CompanionMemoryFlow.java`, `CompanionMemoryCodec.java`, `entity/CompanionMemory.java`, `CompanionSoul.java`, `CompanionBonds.java`; тесты `gametest/CompanionSoulTests.java`, `CompanionMemoryTests.java` |
 | Локальные настройки и диагностика | `OpenRouterConfig.java`, `CompanionDiagnostics.java`, [SECURITY.md](../SECURITY.md) |
 | Регрессии и структуры | `gametest/`, `entity/CompanionStairApproachTests.java`, `src/main/resources/data/aicompanion/structure/` |
@@ -257,3 +258,13 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 В PR сообщайте проблему и результат для игрока, затем доказательства проверки
 и оставшиеся ограничения. Другой помощник полезен для отдельного review:
 проверить выполнение условий, отмену, сохранение и побочные эффекты по diff.
+
+Клиентские проверки анекдотов: `bash scripts/verify-jokes-client.sh` (JDK 21,
+графическая среда и заранее загруженные зависимости Gradle). Скрипт запускает
+отдельный клиент в `build/jokes-client` с новым плоским миром и пустыми ключами.
+Непустой ключ или адрес модели приводит к отказу до изменения настроек.
+Проверяются настоящий клиентский обработчик, кнопки «Поведения», общий интервал
+реплик и блокировка анекдота при локальном WAV-воспроизведении. Бой и работа
+задаются через синхронизируемые флаги тестового Олега: это проверка клиентского
+допуска, а не физического поведения мобов. Голос провайдеров и микрофон не используются.
+Успех требует маркера `JOKE_CLIENT_PROBE_PASSED`, одного кода Gradle 0 недостаточно.
