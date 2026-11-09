@@ -58,6 +58,9 @@ final class CompanionReplant {
 
     boolean pending() { return !plots.isEmpty(); }
 
+    /** A stump cell waiting for its sapling: nothing of his goes there in the meantime. */
+    boolean awaits(BlockPos pos) { return plots.stream().anyMatch(plot -> plot.cells().contains(pos)); }
+
     /** A tree about to be felled: its stumps, the logs standing on dirt or grass, are kept for a sapling once it is down. */
     void felling(Collection<BlockPos> logs) {
         if (!c.replantSaplings()) return;

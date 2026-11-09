@@ -60,12 +60,9 @@ final class CompanionGatherGoals {
         private BlockPos searchOrigin;
         /** The trees round the player were looked at too (once per request). */
         private boolean searchedByPlayer;
-        /** Saplings for the stumps of the trees of this request (RYVTB). */
-        private final CompanionReplant replant;
 
         GatherLogsGoal(CompanionEntity c) {
             this.c = c;
-            replant = new CompanionReplant(c);
             axeSense = new CompanionToolSense(c, "axe", ItemTags.AXES, Blocks.OAK_LOG.defaultBlockState());
             setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP));
         }
@@ -104,7 +101,7 @@ final class CompanionGatherGoals {
             pathFailTicks = 0;
             unreachableLogs.clear(); builtLogs.clear(); walkTried.clear();
             currentTreeLogs.clear();
-            replant.reset();
+            c.replant.reset();
             searchOrigin = c.blockPosition();
             searchCandidates = null; searchedByPlayer = false;
         }
@@ -154,7 +151,7 @@ final class CompanionGatherGoals {
                 if (c.temporaryPillar.isRecovering()) return;
                 if (c.loot.hasPending()) return;
                 // The tree is down and its drops are in the bag: its stumps get their saplings before the next tree or the report.
-                if (replant.tick()) return;
+                if (c.replant.tick()) return;
                 if (c.logsRemaining == 0 && currentTreeLogs.isEmpty()) {
                     String accessNote = unreachableLogs.isEmpty() ? "Текущее дерево закончил." : "До части брёвен не удалось добраться, поэтому оставил их.";
                     finish("Закончил сбор: срубил " + gathered + " брёвен (цель была " + c.requestedLogs + "). "
@@ -366,7 +363,7 @@ final class CompanionGatherGoals {
                     || !c.level().getBlockState(pos).is(BlockTags.LOGS));
             if (currentTreeLogs.isEmpty()) {
                 if (c.temporaryPillar.hasSupports()) { c.temporaryPillar.requestCleanup(); return null; }
-                if (replant.pending()) return null;
+                if (c.replant.pending()) return null;
                 // Do not start another tree and its climbing prerequisites while the last
                 // already harvested log is still waiting for its ground pickup delay.
                 if (c.logsRemaining > 0 && c.loot.incomingLogs() >= c.logsRemaining) return null;
@@ -382,7 +379,7 @@ final class CompanionGatherGoals {
                     builtLogs.addAll(currentTreeLogs); currentTreeLogs.clear();
                 }
                 if (currentTreeLogs.isEmpty()) return null;
-                replant.felling(currentTreeLogs);
+                c.replant.felling(currentTreeLogs);
             }
             BlockPos best = null;
             double bestScore = Double.MAX_VALUE;
@@ -432,7 +429,9 @@ final class CompanionGatherGoals {
         private void finish(String message) {
             c.woodBreaking.reset();
             if (!accessIssue.isBlank()) message += " " + accessIssue + ".";
-            message += replant.report();
+            message += c.replant.report();
+            // The request is over, whatever ended it: no stump of it waits any more.
+            c.replant.reset();
             c.lastTaskSucceeded = CompanionTools.count(c, ItemTags.LOGS) >= inventoryTarget;
             c.gatheringLogs = false;
             c.logsRemaining = 0;

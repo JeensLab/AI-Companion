@@ -152,6 +152,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
+    /** Saplings for the stumps of the trees he fells (RYVTB). */
+    final CompanionReplant replant = new CompanionReplant(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
