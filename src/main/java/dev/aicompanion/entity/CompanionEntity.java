@@ -1051,6 +1051,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
      * Falling fast, his client draws him where the server has him, not eased in over three ticks: three ticks behind he was blocks
      * over the boat or water he had already landed in (08.11). Walking is eased as before.
      */
+    /** Not back into a vehicle right after getting out, as a player; switched on, into a boat only with the player (CompanionBoatRide). */
+    @Override protected boolean canRide(Entity vehicle) { return super.canRide(vehicle) && boatRide.mayRide(vehicle); }
+    boolean justGotOut() { return boardingCooldown > 0; }
+
     @Override public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
         super.lerpTo(x, y, z, yRot, xRot, getY() - y > .8 ? 1 : steps);
     }

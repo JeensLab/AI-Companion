@@ -73,7 +73,8 @@ final class CompanionBoatClutch {
         put(level, slot, landing, loss);
     }
 
-    private boolean ours(Boat seat) {
+    /** A boat he put down for a fall: his to sit in alone (CompanionBoatRide). */
+    boolean ours(Boat seat) {
         var data = seat.getPersistentData();
         return data.hasUUID(MARK) && data.getUUID(MARK).equals(c.getUUID());
     }
@@ -100,9 +101,9 @@ final class CompanionBoatClutch {
                 || !level.getEntities(made, box, other -> other != c && made.canCollideWith(other)).isEmpty()
                 || !level.getWorldBorder().isWithinBounds(box) || level.containsAnyLiquid(box)) return;
         if (!level.addFreshEntity(made)) return;
+        made.getPersistentData().putUUID(MARK, c.getUUID());
         if (!c.startRiding(made)) { made.discard(); return; }
         if (boat != null || drop != null) leave("again");
-        made.getPersistentData().putUUID(MARK, c.getUUID());
         level.gameEvent(c, GameEvent.ENTITY_PLACE, spot);
         c.animateAction(1, landing.on(), stack);
         c.removeItem(slot, 1);
