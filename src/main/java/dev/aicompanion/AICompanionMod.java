@@ -28,7 +28,11 @@ public final class AICompanionMod {
             "companion_inventory", () -> IMenuTypeExtension.create(CompanionMenu::fromNetwork));
     public static final DeferredHolder<EntityType<?>, EntityType<CompanionEntity>> COMPANION = ENTITY_TYPES.register(
             "companion", () -> EntityType.Builder.of(CompanionEntity::new, MobCategory.CREATURE)
-                    .sized(0.6F, 1.8F).clientTrackingRange(10).build("aicompanion:companion"));
+                    .sized(0.6F, 1.8F).clientTrackingRange(10)
+                    // Sits down into a boat or minecart as a player does, his legs inside (not perched on top of it).
+                    .vehicleAttachment(net.minecraft.world.entity.player.Player.DEFAULT_VEHICLE_ATTACHMENT)
+                    // His place goes to the client every tick, not every third: a fast fall is drawn where it is (CompanionEntity.lerpTo).
+                    .updateInterval(1).build("aicompanion:companion"));
 
     public AICompanionMod(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT, OpenRouterConfig.SPEC);

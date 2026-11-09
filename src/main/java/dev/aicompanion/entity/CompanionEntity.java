@@ -146,6 +146,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
+    final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -343,6 +344,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
+        this.goalSelector.addGoal(1, new CompanionBoatClutch.BreakGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
@@ -865,6 +867,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             stopRiding();
         }
         waterBucket.tick();
+        boatClutch.tick();
         waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
@@ -992,6 +995,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     @Override public void handleEntityEvent(byte id) {
         super.handleEntityEvent(id);
         if (id == net.minecraft.world.entity.EntityEvent.ATTACK_BLOCKED) damageNumbers.blocked(tickCount);
+    }
+
+    /**
+     * Falling fast, his client draws him where the server has him, not eased in over three ticks: three ticks behind he was blocks
+     * over the boat or water he had already landed in (08.11). Walking is eased as before.
+     */
+    @Override public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
+        super.lerpTo(x, y, z, yRot, xRot, getY() - y > .8 ? 1 : steps);
     }
 
     @Override public boolean doHurtTarget(Entity target) {
