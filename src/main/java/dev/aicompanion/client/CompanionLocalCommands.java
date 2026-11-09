@@ -15,6 +15,13 @@ public final class CompanionLocalCommands {
 
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
     public static String route(String text, String companionName) {
+        String command = routeInner(text, companionName);
+        // «Ещё» repeats only the pickup that was the last order; any other phrase ends that window.
+        if (command == null || !command.startsWith("companion work pick_up ")) CompanionPickUpCommands.forget();
+        return command;
+    }
+
+    private static String routeInner(String text, String companionName) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
@@ -60,8 +67,17 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
         // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
+        // «Ещё» right after a pickup takes the rest of that same thing, not whatever the model guesses.
+        PlannedAction more = CompanionPickUpCommands.more(text, companionName);
+        if (more != null) {
+            CompanionPickUpCommands.remember(more);
+            return "companion work " + more.type() + " " + more.count() + " " + more.item();
+        }
         PlannedAction picked = CompanionPickUpCommands.parse(text, companionName);
-        if (picked != null) return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
+        if (picked != null) {
+            CompanionPickUpCommands.remember(picked);
+            return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
+        }
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
         if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " "
                 + (workAction.item().isEmpty() ? "resources" : workAction.item())

@@ -131,6 +131,13 @@ final class CompanionItemWords {
         put(Items.SUGAR, "сахар", "сахар", "сахара");
         put(Items.COAL, "уголь", "уголь", "угля");
         put(Items.CHARCOAL, "древесный уголь", "древесный уголь", "древесного угля");
+        put(Items.DIAMOND, "алмаз", "алмаз", "алмаза");
+        put(Items.EMERALD, "изумруд", "изумруд", "изумруда");
+        put(Items.LAPIS_LAZULI, "лазурит", "лазурит", "лазурита");
+        put(Items.REDSTONE, "редстоун", "редстоун", "редстоуна");
+        put(Items.RAW_IRON, "сырое железо", "сырое железо", "сырого железа");
+        put(Items.RAW_GOLD, "сырое золото", "сырое золото", "сырого золота");
+        put(Items.RAW_COPPER, "сырая медь", "сырую медь", "сырой меди");
         // Blocks the ground is made of and the loose things a player drops.
         put(Items.TORCH, "факел", "факел", "факела");
         put(Items.CRAFTING_TABLE, "верстак", "верстак", "верстака");

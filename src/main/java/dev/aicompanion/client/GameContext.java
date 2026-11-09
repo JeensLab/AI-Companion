@@ -53,6 +53,10 @@ public final class GameContext {
                 .toList();
         List<CompanionEntity> companions = minecraft.level.getEntitiesOfClass(CompanionEntity.class,
                 player.getBoundingBox().inflate(128.0D), entity -> player.getUUID().equals(entity.getOwnerId()));
+        // «Какие предметы лежат на полу?» is answered from this, not from «списка дропа перед глазами нет»: the model gets
+        // the real drops around him (or around the player when he is away), by their Russian names and counts.
+        String drops = dev.aicompanion.entity.CompanionPickUp.nearby(minecraft.level,
+                companions.isEmpty() ? player.position() : companions.getFirst().position(), 16.0D);
 
         String remembered = PromptMemory.section(CompanionMemoryView.current(), message);
         return "Игровая обстановка (снимок на момент сообщения): измерение=" + minecraft.level.dimension().location()
@@ -66,6 +70,7 @@ public final class GameContext {
                 + ", время суток=" + (minecraft.level.dimensionType().hasSkyLight() ? timeOfDay(minecraft.level.getDayTime()) : "обычного цикла дня и ночи нет")
                 + ", дождь=" + minecraft.level.isRaining()
                 + ", ближайшие монстры=" + (threats.isEmpty() ? "не замечены" : String.join(", ", threats))
+                + ", на полу рядом=" + drops
                 + ", состояние компаньона=" + (companions.isEmpty() ? (remoteWorld == minecraft.level && System.nanoTime() - remoteAt < 10_000_000_000L ? remoteState : "не найден рядом") : companions.getFirst().getActivityForAi())
                 + (companions.isEmpty() ? "" : ", его сумка=" + companions.getFirst().getStoredItemsForAi()
                         + ", его имя=" + companions.getFirst().getName().getString()

@@ -120,6 +120,9 @@ public final class CompanionPlanCodec {
                 if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
+                // «Подбери всё» may come with no item or with a word for the whole ground: the codec's own meaning for any drop.
+                if ("pick_up".equals(type) && (item.isEmpty() || "any".equals(item) || "all".equals(item) || "minecraft:all".equals(item)))
+                    item = dev.aicompanion.entity.CompanionPickUp.ANY_ITEM;
                 if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
                 // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
                 if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item) && !"here".equals(item)) throw invalid();
@@ -201,5 +204,20 @@ public final class CompanionPlanCodec {
 
     private static IllegalStateException invalid() {
         return new IllegalStateException("Модель передала некорректный план. Никакие его шаги не запущены; повтори просьбу.");
+    }
+
+    /** True when the answer was rejected as a plan (not a transport or provider failure): the local route may answer instead. */
+    public static boolean rejected(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (cause instanceof IllegalStateException && message != null
+                    && (message.startsWith("Модель передала некорректный план")
+                        || message.startsWith("Модель вернула пустой ответ")
+                        || message.startsWith("Модель ответила текстом")
+                        || message.startsWith("Ответ модели оборвался")
+                        || message.startsWith("Просьба содержит слишком много шагов"))) return true;
+            if (cause.getCause() == cause) break;
+        }
+        return false;
     }
 }

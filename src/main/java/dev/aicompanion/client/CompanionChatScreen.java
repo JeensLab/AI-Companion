@@ -102,6 +102,11 @@ public final class CompanionChatScreen extends Screen {
             } else {
                 CompanionDiagnostics.failure(trace, "chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
+                // A plan the codec rejected must not dead-end for a «подбери» phrase: the ground is taken locally instead.
+                if (CompanionPlanCodec.rejected(error) && pickupFallback(text, trace)) {
+                    dropThinkingLine();
+                    return;
+                }
                 replaceThinkingLine(Component.literal("Не удалось получить ответ: " + cause.getMessage())
                         .withStyle(ChatFormatting.RED));
             }
@@ -118,6 +123,19 @@ public final class CompanionChatScreen extends Screen {
         CompanionActionExecutor.execute(actions, generation, trace).whenComplete((report, error) -> Minecraft.getInstance().execute(() -> {
             if (generation == CompanionActionExecutor.currentPlanGeneration()) finishActions(actions, report, error, true, trace);
         }));
+    }
+
+    /** The model's plan for a «подбери» phrase was rejected: the pickup is taken locally, with its own honest answer. */
+    private static boolean pickupFallback(String text, String trace) {
+        PlannedAction fallback = CompanionPickUpCommands.fallback(text, companionName());
+        if (fallback == null) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_pickup_fallback", "action", fallback);
+        List<PlannedAction> actions = List.of(fallback);
+        long generation = CompanionActionExecutor.currentPlanGeneration();
+        CompanionActionExecutor.execute(actions, generation, trace).whenComplete((report, error) -> Minecraft.getInstance().execute(() -> {
+            if (generation == CompanionActionExecutor.currentPlanGeneration()) finishActions(actions, report, error, true, trace);
+        }));
+        return true;
     }
 
     public static void processVoiceInBackground(java.util.concurrent.CompletableFuture<String> transcript) {
@@ -193,6 +211,8 @@ public final class CompanionChatScreen extends Screen {
             if (error != null) {
                 CompanionDiagnostics.failure(trace, "voice_chat_response", error);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
+                // A rejected plan for a «подбери» phrase is taken from the ground locally, not left as a red error.
+                if (CompanionPlanCodec.rejected(error) && pickupFallback(text, trace)) return;
                 Component message = Component.literal("Не удалось получить ответ: " + cause.getMessage()).withStyle(ChatFormatting.RED);
                 appendHistory(message);
                 minecraft.gui.getChat().addMessage(message);

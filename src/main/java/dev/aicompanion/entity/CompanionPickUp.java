@@ -9,7 +9,9 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -176,6 +178,30 @@ public final class CompanionPickUp {
             if (shown == 3) break;
         }
         return line.append('.').toString();
+    }
+
+    /**
+     * «курица (2), алмаз (1)»: what lies around a point, for the model's game snapshot. Unlike the order's own list this
+     * has no player to judge gifts by, so every living drop counts; the names are Russian, by the same table.
+     */
+    public static String nearby(Level level, Vec3 center, double radius) {
+        List<ItemEntity> drops = new ArrayList<>(level.getEntitiesOfClass(ItemEntity.class,
+                new AABB(center, center).inflate(radius)));
+        drops.sort(Comparator.comparingDouble(drop -> drop.position().distanceToSqr(center)));
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ItemEntity drop : drops) {
+            if (!drop.isAlive() || drop.getItem().isEmpty()) continue;
+            counts.merge(label(drop.getItem()), drop.getItem().getCount(), Integer::sum);
+        }
+        if (counts.isEmpty()) return "ничего не лежит";
+        StringBuilder line = new StringBuilder();
+        int shown = 0;
+        for (var entry : counts.entrySet()) {
+            if (shown++ > 0) line.append(", ");
+            line.append(entry.getKey()).append(" (").append(entry.getValue()).append(')');
+            if (shown == 6) break;
+        }
+        return line.toString();
     }
 
     /** A drop the order may take: alive, not empty, not a gift, not junk he let go and not aimed at somebody else. */

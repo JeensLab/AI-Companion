@@ -19,11 +19,11 @@ public final class CompanionPickUpCommands {
     /** «Подбери из сундука камень» is a take order, not this one. */
     private static final Pattern CONTAINER = Pattern.compile("(?U).*\\b(из|в)\\b\\s+(сундук|бочк|печ|шкаф|воронк|раздатчик|контейнер)\\p{L}*.*");
     /** Words around the thing: «вон ту курицу плавающую», «мне», «рядом», «с земли». */
-    private static final Pattern FILLER = Pattern.compile("(?U)\\b(вон|ту|тот|та|то|эту|этот|эти|лежащ\\p{L}*|плавающ\\p{L}*|мёртв\\p{L}*|дохл\\p{L}*"
-            + "|мне|нам|себе|пожалуйста|с|со|в|на|земли|земле|рядом|поблизости|тут|здесь|и|а)\\b");
+    private static final Pattern FILLER = Pattern.compile("(?U)\\b(вон|ту|тот|та|то|эту|этот|эти|лежащ\\p{L}*|лежат|лежит|лежал|лежали|плавающ\\p{L}*|мёртв\\p{L}*|дохл\\p{L}*"
+            + "|мне|нам|себе|пожалуйста|с|со|в|на|земли|земле|полу|пол|вал\\p{L}*|рядом|поблизости|тут|здесь|котор\\p{L}*|что|и|а)\\b");
 
-    /** Words that name everything lying around rather than one thing: «подбери всё», «подбери вещи». */
-    private static final Set<String> ALL_WORDS = Set.of("все", "весь", "вся", "вещи", "вещь", "всякое");
+    /** Words that name everything lying around rather than one thing: «подбери всё», «подбери предметы». */
+    private static final Set<String> ALL_WORDS = Set.of("все", "весь", "вся", "вещи", "вещь", "всякое", "предмет", "предметы", "предмета", "предметов");
 
     /** The pick-up order for the phrase, or null for the model. */
     public static PlannedAction parse(String text, String name) {
@@ -73,7 +73,43 @@ public final class CompanionPickUpCommands {
     }
 
     private static boolean isAll(String word) {
-        return ALL_WORDS.contains(word.toLowerCase(Locale.ROOT));
+        String w = word.toLowerCase(Locale.ROOT);
+        return ALL_WORDS.contains(w) || w.startsWith("предмет") || w.startsWith("вещ");
+    }
+
+    /** The pickup the player last had done: «ещё» right after it takes the rest of the same thing. */
+    private static volatile String lastPickUp;
+
+    /** «Ещё», «ещё подбери», «давай ещё»: the last pickup again, taking the rest. Null when there was no pickup before. */
+    public static PlannedAction more(String text, String name) {
+        String item = lastPickUp;
+        if (item == null) return null;
+        String value = plain(text, name);
+        if (!value.matches("^(?:ну\\s+)?(?:еще|ещё)(?:\\s+(?:подбери|давай|немного|чуть|раз|еще|ещё))*$")) return null;
+        return new PlannedAction("pick_up", 0, 64, item);
+    }
+
+    /** Keeps the meaning of a pickup just routed, so «ещё» repeats it rather than guessing another thing. */
+    public static void remember(PlannedAction action) {
+        if (action != null && action.item() != null && !action.item().isBlank()) lastPickUp = action.item();
+    }
+
+    /** A routed phrase that is no pickup ends the «ещё» window: the next «ещё» belongs to the model. */
+    public static void forget() {
+        lastPickUp = null;
+    }
+
+    /**
+     * The order to run when the model's plan for a «подбери» phrase was rejected: the pickup the phrase names, or every
+     * drop lying around when it names nothing this order knows. Null for a phrase that is no pickup at all.
+     */
+    public static PlannedAction fallback(String text, String name) {
+        PlannedAction parsed = parse(text, name);
+        if (parsed != null) return parsed;
+        String value = plain(text, name);
+        if (!VERB.matcher(value).matches() && !VERB_TAIL.matcher(value).matches()) return null;
+        if (CONTAINER.matcher(value).matches()) return null;
+        return all(64);
     }
 
     /** A word that describes the thing rather than naming it: «жареную», «гнилую», «алмазную», «вон ту». */
@@ -124,10 +160,10 @@ public final class CompanionPickUpCommands {
         return null;
     }
 
-    /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
+    /** Lower case, ё as е, without his name in front, the commas out and the full stop or «!» at the end. */
     private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
-        return value.replaceAll("[.!]+$", "").trim();
+        return value.replaceAll("[.!]+$", "").replace(',', ' ').replaceAll("\\s+", " ").trim();
     }
 }
