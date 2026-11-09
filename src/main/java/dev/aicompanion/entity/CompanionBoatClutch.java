@@ -204,6 +204,9 @@ final class CompanionBoatClutch {
     /** A live enemy before him: a dead one stays his target till a goal lets it go. */
     private boolean fighting() { return c.getTarget() != null && c.getTarget().isAlive(); }
 
+    /** Whether this is the boat of his fall, which he gets out of and takes back himself (CompanionBoatRide leaves it be). */
+    boolean holds(Boat seat) { return seat == boat; }
+
     /** He leaves the boat where it stands and says so (as the bucket's water, decided 05.11). */
     private void leave(String why) {
         event("boat_clutch_left", "why", why);

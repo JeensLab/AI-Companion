@@ -136,6 +136,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
+    private boolean boatRideOn = true;
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
@@ -149,6 +150,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private final CompanionShieldDefense shieldDefense = new CompanionShieldDefense(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
+    final CompanionBoatRide boatRide = new CompanionBoatRide(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
@@ -630,6 +632,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
     public boolean otherContainers() { return otherContainers; }
     public void setOtherContainers(boolean on) { otherContainers = on; }
+    /** Whether he gets into the player's boat and out of it with the player (the player can turn it off in the settings). */
+    public boolean boatRide() { return boatRideOn; }
+    public void setBoatRide(boolean on) { boatRideOn = on; }
     /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
     public boolean boatClutch() { return boatClutchOn; }
     public void setBoatClutch(boolean on) { boatClutchOn = on; }
@@ -912,6 +917,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         waterBucket.tick();
         boatClutch.tick();
+        boatRide.tick();
         waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();

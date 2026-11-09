@@ -111,6 +111,11 @@ public final class OpenRouterConfig {
             .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
             .translation("config.aicompanion.urgent_order")
             .define("urgentOrder", true);
+    /** Whether he gets into the player's boat with a seat free and out of it with the player. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue BOAT_RIDE = BUILDER
+            .comment("Get into the player's boat or raft when a seat is free, and out of it with the player, onto land beside it; never stay in a boat without the player. Off: he swims after the boat.")
+            .translation("config.aicompanion.boat_ride")
+            .define("boatRide", true);
     /** Whether a hurtful fall the water bucket does not catch is caught in a boat from his bag. On unless the player turns it off. */
     public static final ModConfigSpec.BooleanValue BOAT_CLUTCH = BUILDER
             .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")

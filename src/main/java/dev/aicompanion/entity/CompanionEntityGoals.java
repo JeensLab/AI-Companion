@@ -177,14 +177,16 @@ final class CompanionEntityGoals {
             owner = serverLevel.getServer().getPlayerList().getPlayer(companion.ownerId);
             // Near him again (the following ends at four blocks, or was interrupted before): the next time he is out of reach is a new occasion to say so.
             if (owner != null && owner.level() == companion.level() && companion.distanceToSqr(owner) <= 16) toldAbout = null;
+            // The player in a boat with a seat for him: over to it from any distance, till he is in (CompanionBoatRide).
             return owner != null && owner.level() == companion.level()
-                    && companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64);
+                    && (companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64) || companion.boatRide.boatToJoin(owner) != null);
         }
 
         @Override
         public boolean canContinueToUse() {
             return !companion.autonomy.staysAtWork() && (companion.following || companion.protecting) && companion.inventoryViewers == 0 && owner != null && owner.isAlive()
-                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D) || companion.onClimbable() && !companion.onGround());
+                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D) || companion.onClimbable() && !companion.onGround()
+                    || companion.boatRide.boatToJoin(owner) != null);
         }
 
         @Override

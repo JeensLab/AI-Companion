@@ -76,6 +76,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(urgentLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
+        addRenderableWidget(Button.builder(boatRideLabel(), b -> {
+            OpenRouterConfig.BOAT_RIDE.set(!OpenRouterConfig.BOAT_RIDE.get()); OpenRouterConfig.BOAT_RIDE.save();
+            b.setMessage(boatRideLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Ты сел в лодку или на плот, где есть место, — он подходит и садится вторым; ты вышел — выходит и он, на берег. В лодке без тебя не сидит. Выключено: плывёт следом."))).build());
         addRenderableWidget(Button.builder(boatClutchLabel(), b -> {
             OpenRouterConfig.BOAT_CLUTCH.set(!OpenRouterConfig.BOAT_CLUTCH.get()); OpenRouterConfig.BOAT_CLUTCH.save();
             b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
@@ -120,6 +125,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
     private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
+    private static Component boatRideLabel() { return Component.literal("Лодка с игроком: " + (OpenRouterConfig.BOAT_RIDE.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }
