@@ -96,7 +96,8 @@ public final class CompanionBoatRideTests {
             boolean wall = z == 2 || z == 5;
             h.setBlock(new BlockPos(x, y, z), wall || y <= 2 ? Blocks.STONE : Blocks.AIR);
         }
-        var middle = h.absoluteVec(new Vec3(5.5, 2.52, 4));
+        // Off the middle towards one wall: the floor beyond it is well within a step of the boat.
+        var middle = h.absoluteVec(new Vec3(5.5, 2.52, 3.9));
         lane.boat.setPos(middle.x, middle.y, middle.z);
         lane.player.startRiding(lane.boat);
         lane.oleg.startRiding(lane.boat);

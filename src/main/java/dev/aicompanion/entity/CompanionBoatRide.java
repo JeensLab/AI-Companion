@@ -49,7 +49,8 @@ final class CompanionBoatRide {
         if (!seatFree(theirs)) { noRoom(theirs); return; }
         if (theirs.getBoundingBox().distanceToSqr(c.getEyePosition()) > REACH * REACH) return;
         if (c.startRiding(theirs)) { joined = theirs; event("boat_ride_in", theirs); }
-        // A boat going under, or another mod's with fewer seats: the game does not seat him.
+        // A boat going under, or another mod's with fewer seats: the game does not seat him. ponytail: a boat dipped for a tick
+        // counts too, till someone gets out; if that is seen, count the refusals over a few ticks.
         else if (!c.justGotOut()) noRoom(theirs);
     }
 
