@@ -40,6 +40,10 @@ public final class OpenRouterConfig {
             .comment("Without an Inworld key, speak with a Russian voice installed in Windows (nothing is sent anywhere).")
             .define("windowsVoice", true);
 
+    public static final ModConfigSpec.BooleanValue MACOS_VOICE = BUILDER
+            .comment("Without an Inworld key, speak using an installed Russian macOS voice. No network or voice downloads.")
+            .define("macosVoice", true);
+
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
             .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
             .translation("config.aicompanion.api_key")
@@ -56,7 +60,7 @@ public final class OpenRouterConfig {
             .define("apiUrl", "");
 
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
-            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to speak with the Windows voice (windowsVoice) or not at all.")
+            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to use an installed local Russian voice on Windows (windowsVoice) or macOS (macosVoice).")
             .translation("config.aicompanion.inworld_api_key")
             .define("inworldApiKey", "");
 
