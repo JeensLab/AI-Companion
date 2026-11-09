@@ -150,11 +150,11 @@ public final class CompanionLootFallTests {
     private static void left(GameTestHelper h, CompanionEntity c) {
         h.onEachTick(() -> h.assertTrue(c.getY() > h.absolutePos(new BlockPos(0, 12, 0)).getY() && c.getHealth() >= c.getMaxHealth(),
                 "He went down the pit: y " + c.getY() + ", health " + c.getHealth() + " at " + h.relativePos(c.blockPosition()).toShortString()));
-        h.runAtTickTime(900, () -> {
+        // A stroll of four blocks earns the drop another look, a few ticks long (CompanionLoot.giveUpFromHere): only going for it on and on is wrong.
+        h.runAtTickTime(900, () -> h.succeedWhen(() -> {
             try { h.assertTrue(!chasing(c), "Still going for the drop at " + h.relativePos(c.blockPosition()).toShortString()); }
             catch (Exception e) { throw new IllegalStateException(e); }
-            h.succeed();
-        });
+        }));
     }
 
     /** He is never hurt on the way and the drop is in his bag at the end. */
