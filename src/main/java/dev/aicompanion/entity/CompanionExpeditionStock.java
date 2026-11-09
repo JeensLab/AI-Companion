@@ -64,14 +64,15 @@ final class CompanionExpeditionStock {
             if (dig.reach(stand)) return true;
             return dig.walkStuck() ? spend(stand) : true;
         }
-        switch (dig.dig(level, cell)) {
+        CompanionExpeditionDig.Status digging = dig.dig(level, cell);
+        switch (digging) {
             case WORKING -> { }
             case DONE -> {
                 dig.flush();
                 dug.add(cell.immutable());
                 pickupUntil = level.getGameTime() + PICKUP_WAIT;
             }
-            default -> { dig.forget(); return spend(stand); }
+            case NO_TOOL, NO_HAND, FULL, STUCK -> { dig.forget(); return spend(stand); }
         }
         return true;
     }

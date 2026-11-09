@@ -110,13 +110,13 @@ final class CompanionExpeditionStep {
 
     /** Null once the floor holds and the walk may go on; a hazard-like failure ends the advance, a missing block is only reported. */
     private Result layFloor(ServerLevel level) {
-        switch (laying.lay(w.owner, level)) {
-            case PLACED -> { w.mine.sealed(laying.cell); return Result.WORKING; }
-            case LAID -> { laying = null; return null; }
-            case NO_BLOCK -> { return fail("пол под новой ступенью надо уложить, а блоков для этого в сумке нет"); }
-            case FAILED -> { return refuse("не смог уложить пол под новой ступенью: не дотянулся или клетка занята"); }
-            default -> { return Result.WORKING; }
-        }
+        return switch (laying.lay(w.owner, level)) {
+            case PLACED -> { w.mine.sealed(laying.cell); yield Result.WORKING; }
+            case LAID -> { laying = null; yield null; }
+            case NO_BLOCK -> fail("пол под новой ступенью надо уложить, а блоков для этого в сумке нет");
+            case FAILED -> refuse("не смог уложить пол под новой ступенью: не дотянулся или клетка занята");
+            case WORKING -> Result.WORKING;
+        };
     }
 
     private Result open(ServerLevel level, int limit) {

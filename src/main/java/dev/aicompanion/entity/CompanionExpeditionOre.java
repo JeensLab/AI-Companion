@@ -86,14 +86,15 @@ final class CompanionExpeditionOre {
             if (reach < 0) skip();
             if (reach != 1) return Result.WORKING;
         }
-        switch (dig.dig(level, target, true)) {
+        CompanionExpeditionDig.Status dug = dig.dig(level, target, true);
+        switch (dug) {
             case WORKING -> { }
             case DONE -> { dig.flush(); target = null; walking = false; return Result.DONE; }
             case FULL -> {
                 if (level.getBlockState(target).is(BlockTags.DIAMOND_ORES)) return dig.makeRoom(level) ? Result.WORKING : Result.FULL;
                 skip();
             }
-            default -> skip();
+            case NO_TOOL, NO_HAND, STUCK -> skip();
         }
         return Result.WORKING;
     }

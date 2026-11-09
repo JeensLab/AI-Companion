@@ -46,7 +46,8 @@ final class CompanionExpeditionBench {
         int reach = w.items.reachBlock(level, bench, false);
         if (reach < 0) { giveUp(bench, "no way to it"); return false; }
         if (reach == 0) return true;
-        switch (w.handOver.takeUp(level, bench)) {
+        CompanionHandOver.Taking taking = w.handOver.takeUp(level, bench);
+        switch (taking) {
             case WORKING -> { }
             case FULL -> { giveUp(bench, "bag full"); return false; }
             case DONE -> {

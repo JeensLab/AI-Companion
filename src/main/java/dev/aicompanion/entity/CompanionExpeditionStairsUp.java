@@ -74,7 +74,7 @@ final class CompanionExpeditionStairsUp {
                     case LAID -> laying = null;
                     case NO_BLOCK -> { return stop("в пути наверх нет пола, а блоков, чтобы его настелить, нет"); }
                     case FAILED -> { return giveUp(level, "floor"); }
-                    default -> { return Result.WORKING; }
+                    case WORKING, PLACED -> { return Result.WORKING; }
                 }
             }
             if (!dig.reach(to)) return dig.walkStuck() ? giveUp(level, "walk") : Result.WORKING;

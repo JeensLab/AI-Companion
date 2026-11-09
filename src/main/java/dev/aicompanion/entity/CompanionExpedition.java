@@ -505,15 +505,16 @@ final class CompanionExpedition {
                 // The plug is rock like any other: a stone pickaxe made on the spot, else the iron one while it has wear to spare.
                 if (supply.craftStonePickaxe()) return;
                 if (!dig.ironForRock && dig.spareIron()) { dig.ironForRock = true; return; }
-                switch (dig.takeOut(level, plug)) {
+                CompanionExpeditionDig.Status taken = dig.takeOut(level, plug);
+                switch (taken) {
                     case WORKING -> { }
                     case DONE -> { dig.flush(); w.mine.plugged(null); }
-                    default -> end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, hadStone) + " Свою пробку на лестнице убрать нечем.");
+                    case NO_TOOL, NO_HAND, FULL, STUCK -> end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, hadStone) + " Свою пробку на лестнице убрать нечем.");
                 }
             }
-            default -> end(Ending.BLOCKED, "Свою пробку на лестнице убрать не смог (" + switch (status) {
+            case NO_HAND, STUCK -> end(Ending.BLOCKED, "Свою пробку на лестнице убрать не смог (" + switch (status) {
                 case NO_HAND -> "не взял кирку в руку";
-                default -> "не вижу её, не дотягиваюсь или не разбирается";
+                case WORKING, DONE, NO_TOOL, FULL, STUCK -> "не вижу её, не дотягиваюсь или не разбирается";
             } + ").");
         }
     }
@@ -546,7 +547,8 @@ final class CompanionExpedition {
     }
 
     private void backtrack() {
-        switch (backtrack.tick((ServerLevel) owner.level())) {
+        CompanionExpeditionBacktrack.Result ticked = backtrack.tick((ServerLevel) owner.level());
+        switch (ticked) {
             case WORKING -> { }
             case STUCK -> restartHere("Не смог подняться по своей лестнице, чтобы свернуть в сторону.");
             case DONE -> {
@@ -679,7 +681,8 @@ final class CompanionExpedition {
 
     private void digOut() {
         ServerLevel level = (ServerLevel) owner.level();
-        switch (digOut.tick(level)) {
+        CompanionExpeditionDigOut.Result ticked = digOut.tick(level);
+        switch (ticked) {
             case WORKING -> { }
             case STUCK -> { if (!leaveForSurface(level, digOutWhy, false)) end(Ending.BLOCKED, digOutWhy); }
             case DONE -> {

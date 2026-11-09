@@ -80,10 +80,12 @@ final class CompanionExpeditionRetreat {
     }
 
     private void climb() {
-        switch (walk.tick()) {
+        CompanionExpeditionWalk.Result walked = walk.tick();
+        switch (walked) {
             case WORKING -> { }
             case DONE -> phase = plugCell == null ? Phase.UP : Phase.PLUG;
             case STUCK -> { stuck = true; phase = Phase.REST; }
+            case NO_BLOCK -> { }
         }
     }
 
@@ -100,10 +102,12 @@ final class CompanionExpeditionRetreat {
     }
 
     private void up() {
-        switch (walk.tick()) {
+        CompanionExpeditionWalk.Result walked = walk.tick();
+        switch (walked) {
             case WORKING -> { }
             case DONE -> phase = Phase.REST;
             case STUCK -> { stuck = true; phase = Phase.REST; }
+            case NO_BLOCK -> { }
         }
     }
 

@@ -173,7 +173,7 @@ final class CompanionHandOver {
             w.packTarget = null; w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + left + " Он нужен для обратного хода.", w.packResult.status(), w.packResult.evidence())); return;
         }
         switch (takeUp(level, w.packTarget)) {
-            case WORKING -> { }
+            case Taking.WORKING -> { }
             case FULL -> { w.packTarget = null;
                 w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + left + " В сумке нет места.", w.packResult.status(), w.packResult.evidence())); }
             case DONE -> {

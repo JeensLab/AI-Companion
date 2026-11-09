@@ -362,11 +362,12 @@ final class CompanionExpeditionDig {
             owner.getNavigation().stop();
             return true;
         }
-        switch (w.handOver.takeUp(level, shut, "Убираю свой блок с лестницы.")) {
-            case WORKING -> { return true; }
-            case DONE -> { mine.taken(shut); mine.unsealed(shut); return true; }
-            default -> { return false; }
-        }
+        CompanionHandOver.Taking taking = w.handOver.takeUp(level, shut, "Убираю свой блок с лестницы.");
+        return switch (taking) {
+            case WORKING -> true;
+            case DONE -> { mine.taken(shut); mine.unsealed(shut); yield true; }
+            case FULL -> false;
+        };
     }
 
     /**
@@ -394,7 +395,7 @@ final class CompanionExpeditionDig {
         }
         return switch (w.handOver.takeUp(level, pos, "Убираю свой блок с дороги.")) {
             case WORKING -> Status.WORKING;
-            case FULL -> Status.FULL;
+            case CompanionHandOver.Taking.FULL -> Status.FULL;
             case DONE -> done();
         };
     }

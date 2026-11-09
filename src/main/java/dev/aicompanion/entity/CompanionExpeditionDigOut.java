@@ -62,9 +62,9 @@ final class CompanionExpeditionDigOut {
         // Over the middle of the cell, or the floor beside it holds him up when the cell below is open.
         if (!dig.walkTo(here)) return Result.WORKING;
         return switch (dig.dig(level, cell)) {
-            case WORKING -> Result.WORKING;
+            case CompanionExpeditionDig.Status.WORKING -> Result.WORKING;
             case DONE -> { depth++; opened = cell; yield Result.WORKING; }
-            default -> Result.STUCK;
+            case NO_TOOL, NO_HAND, FULL, STUCK -> Result.STUCK;
         };
     }
 

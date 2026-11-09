@@ -154,7 +154,7 @@ final class CompanionExpeditionCave {
             case EXPLORE -> explore(level);
             case BACK -> back();
             case STOCK -> stocking(level);
-            default -> seal(level, planCells);
+            case IDLE, SEAL -> seal(level, planCells);
         };
     }
 
@@ -372,7 +372,7 @@ final class CompanionExpeditionCave {
                     return true;
                 }
                 case OCCUPIED -> occupied |= !owner.getBoundingBox().intersects(new AABB(cell)) && hostileIn(level, cell);
-                default -> { }
+                case OUT_OF_REACH -> { }
             }
         }
         if (occupied) { plugBreach(level, planCells); return true; }

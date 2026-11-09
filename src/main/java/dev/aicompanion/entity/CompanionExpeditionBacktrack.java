@@ -71,10 +71,12 @@ final class CompanionExpeditionBacktrack {
 
     Result tick(ServerLevel level) {
         if (phase == Phase.WALK) {
-            switch (walk.tick()) {
+            CompanionExpeditionWalk.Result walked = walk.tick();
+            switch (walked) {
                 case WORKING -> { return Result.WORKING; }
                 case STUCK -> { return Result.STUCK; }
                 case DONE -> phase = Phase.PLUG;
+                case NO_BLOCK -> { }
             }
         }
         return plug(level);
