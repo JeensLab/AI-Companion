@@ -29,7 +29,7 @@ import java.util.List;
 /**
  * Issue #105, «охраняй меня»: on the guard order Oleg watches fifty blocks around the PLAYER and goes for the monster nearest to
  * the player, not the one nearest to himself. The arena is a long road along x with the player at its middle (x = 0), in chunks
- * that are force-loaded, since the template is only a few blocks wide.
+ * that are force-loaded, since the road is far longer than the template.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)

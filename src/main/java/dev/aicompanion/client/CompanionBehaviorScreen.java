@@ -45,11 +45,12 @@ final class CompanionBehaviorScreen extends Screen {
             });
         }).bounds(left, top + 96, 300, 20).build());
         Button windowsVoice = addRenderableWidget(Button.builder(windowsVoiceLabel(), b -> {
-            OpenRouterConfig.WINDOWS_VOICE.set(!OpenRouterConfig.WINDOWS_VOICE.get()); OpenRouterConfig.WINDOWS_VOICE.save();
+            localVoiceSetting().set(!localVoiceSetting().get()); localVoiceSetting().save();
             b.setMessage(windowsVoiceLabel());
         }).bounds(left, top + 120, 300, 20).build());
         windowsVoice.setTooltip(Tooltip.create(Component.literal(
-                "Без ключа Inworld Олег говорит русским голосом Windows. Нет такого голоса — добавь русский язык с речью в параметрах Windows.")));
+                MacOsVoice.macos() ? "Без ключа Inworld Олег говорит установленным русским голосом macOS. Если голос недоступен, появится подсказка."
+                        : "Без ключа Inworld Олег говорит русским голосом Windows. Нет такого голоса — добавь русский язык с речью в параметрах Windows.")));
         addRenderableWidget(Button.builder(shortLabel(), b -> {
             OpenRouterConfig.SHORT_MURMURS.set(!OpenRouterConfig.SHORT_MURMURS.get()); OpenRouterConfig.SHORT_MURMURS.save();
             b.setMessage(shortLabel());
@@ -75,6 +76,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(urgentLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
+        addRenderableWidget(Button.builder(boatClutchLabel(), b -> {
+            OpenRouterConfig.BOAT_CLUTCH.set(!OpenRouterConfig.BOAT_CLUTCH.get()); OpenRouterConfig.BOAT_CLUTCH.save();
+            b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Падение, которое ведро воды не ловит (Незер, нет ведра): он ставит под себя лодку из сумки, садится, потом ломает её и забирает. Выключено: падает как есть."))).build());
         addRenderableWidget(Button.builder(pickUpLabel(), b -> {
             OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
             b.setMessage(pickUpLabel()); CompanionPreferences.sync();
@@ -91,12 +97,28 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
             b.setMessage(damageNumbersLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(jokesLabel(), b -> {
+            OpenRouterConfig.JOKES.set(!OpenRouterConfig.JOKES.get()); OpenRouterConfig.JOKES.save();
+            b.setMessage(jokesLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Короткие анекдоты без запроса к модели, только в спокойный момент. Один и тот же — не чаще раза в час."))).build());
+        addRenderableWidget(Button.builder(jokeIntervalLabel(), b -> {
+            int next = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get() + 5;
+            OpenRouterConfig.JOKE_INTERVAL_MINUTES.set(next > 60 ? 5 : next); OpenRouterConfig.JOKE_INTERVAL_MINUTES.save();
+            b.setMessage(jokeIntervalLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         fitRows(top);
+    }
+    private Component jokesLabel() { return Component.literal("Анекдоты: " + (OpenRouterConfig.JOKES.get() ? "вкл." : "выкл.")); }
+    private Component jokeIntervalLabel() {
+        int minutes = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get();
+        return Component.literal("Пауза между анекдотами: " + minutes + "–" + (minutes * 2) + " мин.");
     }
     private Component shortLabel() { return Component.literal("Короткие реплики (до 15 слов): " + (OpenRouterConfig.SHORT_MURMURS.get() ? "вкл." : "выкл.")); }
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }
     private Component guardLabel() { return Component.literal("Охрана: цель ближе к игроку: " + (OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get() ? "вкл." : "выкл.")); }
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
+    private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
@@ -107,7 +129,10 @@ final class CompanionBehaviorScreen extends Screen {
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
-    private Component windowsVoiceLabel() { return Component.literal("Голос Windows без ключа Inworld: " + (OpenRouterConfig.WINDOWS_VOICE.get() ? "вкл." : "выкл.")); }
+    private static net.neoforged.neoforge.common.ModConfigSpec.BooleanValue localVoiceSetting() {
+        return MacOsVoice.macos() ? OpenRouterConfig.MACOS_VOICE : OpenRouterConfig.WINDOWS_VOICE;
+    }
+    private Component windowsVoiceLabel() { return Component.literal("Голос " + (MacOsVoice.macos() ? "macOS" : "Windows") + " без ключа Inworld: " + (localVoiceSetting().get() ? "вкл." : "выкл.")); }
     private Component distanceLabel() { return Component.literal("Слышимость голоса: " + OpenRouterConfig.VOICE_DISTANCE.get() + " блоков"); }
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);

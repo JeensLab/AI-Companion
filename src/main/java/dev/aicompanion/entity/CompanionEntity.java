@@ -138,6 +138,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean deathRecovery = true;
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
+    private boolean boatClutchOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -149,6 +150,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
+    final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -225,6 +227,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean placedByMe(BlockPos pos) { return places.placedByCompanion(pos); }
     /** Blocks of this kind he set down himself, as remembered. */
     List<BlockPos> placedByMe(String block) { return places.placed(block); }
+    /** Blocks of this kind he set down or saw, as remembered, in this dimension. */
+    List<BlockPos> knownPlaces(String block) { return places.known(block); }
     /** While a deed of his own runs: only his own chests and furnaces, of the player's only an idle empty furnace. */
     boolean ownPlacesOnly() { return autonomy.running(); }
     /** Autonomous targets stay within the remembered work area. */
@@ -344,6 +348,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverSupportsGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverRouteGoal(this));
         this.goalSelector.addGoal(1, new CompanionWaterBucket.FetchGoal(this));
+        this.goalSelector.addGoal(1, new CompanionBoatClutch.BreakGoal(this));
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
@@ -625,6 +630,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
     public boolean otherContainers() { return otherContainers; }
     public void setOtherContainers(boolean on) { otherContainers = on; }
+    /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
+    public boolean boatClutch() { return boatClutchOn; }
+    public void setBoatClutch(boolean on) { boatClutchOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
@@ -739,7 +747,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setFollowing(false, true);
         loot.resumeCollection();
         CompanionActionResult result = work.start(action, item, count, location);
-        if (result.success()) parked.replacedBy(action); else finishFollowing();
+        // An answer with no work begun («Рядом уже есть портал»): he follows on, and the order put aside stays.
+        if (result.success() && work.isActive()) parked.replacedBy(action); else finishFollowing();
         recordActionResult(result);
         syncWorkState();
         return result;
@@ -902,6 +911,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             stopRiding();
         }
         waterBucket.tick();
+        boatClutch.tick();
         waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
@@ -1029,6 +1039,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     @Override public void handleEntityEvent(byte id) {
         super.handleEntityEvent(id);
         if (id == net.minecraft.world.entity.EntityEvent.ATTACK_BLOCKED) damageNumbers.blocked(tickCount);
+    }
+
+    /**
+     * Falling fast, his client draws him where the server has him, not eased in over three ticks: three ticks behind he was blocks
+     * over the boat or water he had already landed in (08.11). Walking is eased as before.
+     */
+    @Override public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
+        super.lerpTo(x, y, z, yRot, xRot, getY() - y > .8 ? 1 : steps);
     }
 
     @Override public boolean doHurtTarget(Entity target) {

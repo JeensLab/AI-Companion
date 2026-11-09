@@ -44,7 +44,7 @@ import java.util.Set;
  */
 final class CompanionWaterBucket {
     /** The least health a landing must cost him to be worth the bucket, unless it kills him (decided 05.11: two hearts). */
-    private static final int WORTH = 4;
+    static final int WORTH = 4;
     /**
      * How many ticks ahead his landing is looked for: the one he lands in. Water poured a tick earlier showed up while he was still
      * high in the air, as a player's client draws a mob some ticks behind.
@@ -91,7 +91,7 @@ final class CompanionWaterBucket {
     }
 
     /** His landing: his box as he touches down, the fall counted by then, the block he lands on. */
-    private record Landing(AABB box, float fall, BlockPos on) {}
+    record Landing(AABB box, float fall, BlockPos on) {}
 
     /** Every server tick, whatever he does: no order or «стоп» holds a reflex back. */
     void tick() {
@@ -123,7 +123,7 @@ final class CompanionWaterBucket {
      * bush or powder snow after a move that is not the landing (their entityInside comes after the fall is counted). Lava ends no
      * fall (it halves it a tick later): over lava he pours as anywhere.
      */
-    private Landing landing(ServerLevel level) {
+    Landing landing(ServerLevel level) {
         Vec3 motion = c.getDeltaMovement();
         AABB box = c.getBoundingBox();
         float fall = c.fallDistance;
@@ -186,7 +186,7 @@ final class CompanionWaterBucket {
      * (Feather Falling) and his absorption (LivingEntity.getDamageAfterMagicAbsorb and actuallyHurt; NeoForge's version of the first
      * may only run in a hit).
      */
-    private float loss(ServerLevel level, Landing landing) {
+    float loss(ServerLevel level, Landing landing) {
         BlockState on = level.getBlockState(landing.on);
         float fall = landing.fall, times = 1;
         if (on.getBlock() instanceof BedBlock) fall *= .5F;

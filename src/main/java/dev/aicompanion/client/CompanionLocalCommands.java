@@ -68,6 +68,8 @@ public final class CompanionLocalCommands {
                 + (NEAR_PLAYER.equals(workAction.location()) ? "" : " " + workAction.location());
         String water = CompanionWorkCommands.water(text, companionName);
         if (water != null) return water;
+        String obsidian = CompanionWorkCommands.obsidian(text, companionName);
+        if (obsidian != null) return obsidian;
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
@@ -143,7 +145,9 @@ public final class CompanionLocalCommands {
         // The mode of his own deeds is no order to drop the plans the player gave.
         if (command.equals("companion goal status") || command.equals("companion goal cancel") || command.equals("companion goal defer")) return false;
         if (command.startsWith("companion memory ")) return false;
-        return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ");
+        // «Построй новый портал» answers his offer to lead the player to one: it replaces that walk.
+        return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ")
+                || command.equals("companion work build_portal 1 new");
     }
 
     /** The reason {@code cancelPendingPlans} gets for a cancel word: the queue ends its tasks as the player's cancel, so a parked smelt is released. */
@@ -184,7 +188,8 @@ public final class CompanionLocalCommands {
     }
 
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {
-        return !actions.isEmpty() && java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect", "enter_portal")
-                .contains(actions.getFirst().type());
+        return !actions.isEmpty() && (java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect", "enter_portal")
+                .contains(actions.getFirst().type())
+                || "build_portal".equals(actions.getFirst().type()) && "new".equals(actions.getFirst().item()));
     }
 }

@@ -14,6 +14,12 @@ public final class OpenRouterConfig {
             .comment("Maximum independent resource-search and roaming distance, in loaded chunks.")
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
+    public static final ModConfigSpec.BooleanValue JOKES = BUILDER
+            .comment("Occasional short local jokes in quiet moments, without a model request.")
+            .define("jokes", true);
+    public static final ModConfigSpec.IntValue JOKE_INTERVAL_MINUTES = BUILDER
+            .comment("Minimum minutes between jokes; a random delay up to the same duration is added. Each joke repeats no sooner than an hour.")
+            .defineInRange("jokeIntervalMinutes", 5, 1, 60);
     public static final ModConfigSpec.BooleanValue SHORT_MURMURS = BUILDER
             .comment("Keep his own idle remarks short (at most 15 words, no digits) and, when you are out of earshot, show them in chat without voice. Off: long remarks are voiced only within earshot.")
             .translation("config.aicompanion.short_murmurs")
@@ -40,6 +46,10 @@ public final class OpenRouterConfig {
             .comment("Without an Inworld key, speak with a Russian voice installed in Windows (nothing is sent anywhere).")
             .define("windowsVoice", true);
 
+    public static final ModConfigSpec.BooleanValue MACOS_VOICE = BUILDER
+            .comment("Without an Inworld key, speak using an installed Russian macOS voice. No network or voice downloads.")
+            .define("macosVoice", true);
+
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
             .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
             .translation("config.aicompanion.api_key")
@@ -56,7 +66,7 @@ public final class OpenRouterConfig {
             .define("apiUrl", "");
 
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
-            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to speak with the Windows voice (windowsVoice) or not at all.")
+            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to use an installed local Russian voice on Windows (windowsVoice) or macOS (macosVoice).")
             .translation("config.aicompanion.inworld_api_key")
             .define("inworldApiKey", "");
 
@@ -101,6 +111,11 @@ public final class OpenRouterConfig {
             .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
             .translation("config.aicompanion.urgent_order")
             .define("urgentOrder", true);
+    /** Whether a hurtful fall the water bucket does not catch is caught in a boat from his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue BOAT_CLUTCH = BUILDER
+            .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")
+            .translation("config.aicompanion.boat_clutch")
+            .define("boatClutch", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")

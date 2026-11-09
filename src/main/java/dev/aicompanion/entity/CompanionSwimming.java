@@ -51,7 +51,7 @@ final class CompanionSwimming {
     }
 
     /** The float lifts him about a tenth of a block a tick; a little more for the way. */
-    private static final int TICKS_UP_A_BLOCK = 12;
+    static final int TICKS_UP_A_BLOCK = 12;
 
     /** Blocks of water over the eyes, up to the air; NO_WAY_UP under a roof, or deeper than any breath reaches. */
     static int waterOverhead(net.minecraft.world.entity.Entity entity) {

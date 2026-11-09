@@ -65,6 +65,7 @@ public final class CompanionDialogue {
             case "sort_chests" -> "Сейчас разложу по сундукам.";
             case "take_items" -> "Сейчас заберу " + CompanionContainers.from(actions.getFirst().location()) + ".";
             case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
+            case "build_portal" -> "Окей, займусь порталом в Незер.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";
             case "unequip_item" -> "Ага, уберу.";
@@ -141,6 +142,7 @@ public final class CompanionDialogue {
             case "pick_up" -> "подобрать «" + itemName(action.item()) + "» (до " + action.count() + " шт.)";
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
             case "fill_bucket" -> "набрать воды в ведро (" + action.count() + " шт.)";
+            case "mine_obsidian" -> "добыть обсидиан (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";
@@ -149,6 +151,7 @@ public final class CompanionDialogue {
             case "sort_chests" -> "разложить по сундукам";
             case "take_items" -> "забрать вещи " + CompanionContainers.from(action.location());
             case "build_house" -> "построить дом";
+            case "build_portal" -> "построить портал в Незер";
             case "hunt_mobs" -> "разобраться с монстрами";
             case "give_wood" -> "отдать тебе дерево";
             case "give_items" -> "отдать тебе «" + itemName(action.item()) + "»";
@@ -336,6 +339,8 @@ public final class CompanionDialogue {
             if (item.endsWith("_pickaxe")) return "Кирка готова.";
             return "Готово, сделал. Можешь посмотреть в сумке.";
         }
+        // «Портал готов» or «Рядом уже есть портал», as the server says it.
+        if (actions.stream().anyMatch(action -> "build_portal".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "obtain_item".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_animals".equals(action.type()))) {
             var got = HUNTED.matcher(report);

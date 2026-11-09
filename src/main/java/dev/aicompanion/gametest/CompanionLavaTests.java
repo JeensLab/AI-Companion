@@ -137,7 +137,7 @@ public final class CompanionLavaTests {
     private static void walkAcross(GameTestHelper h, boolean alongTheShore) {
         CompanionEntity c = spawn(h, 2, 2, 10);
         ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
-        BlockPos stand = h.absolutePos(new BlockPos(16, 2, 10));
+        BlockPos start = h.absolutePos(new BlockPos(2, 2, 10)), stand = h.absolutePos(new BlockPos(16, 2, 10));
         double[] farthest = {0};
         net.minecraft.world.phys.Vec3 middle = net.minecraft.world.phys.Vec3.atCenterOf(h.absolutePos(new BlockPos(9, 2, 10)));
         boolean[] burnt = {false};
@@ -146,6 +146,11 @@ public final class CompanionLavaTests {
             burnt[0] |= c.isOnFire() || c.isInLava();
         });
         h.runAfterDelay(SETTLE, () -> {
+            // While the lava settles he strolls about, at times to the far corner of the yard or out along the shore: the walk is
+            // judged from the west end of the road, so he is put back there and only the walk counts.
+            c.getNavigation().stop();
+            c.teleportTo(start.getX() + .5, start.getY(), start.getZ() + .5);
+            farthest[0] = 0;
             player.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
             h.assertTrue(c.startWork("come", "", 1).success(), "Come order not accepted");
         });

@@ -31,7 +31,7 @@ public final class CompanionMilestones {
         Item item(Tier tier) { return BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace(tier.prefix + "_" + suffix)); }
     }
 
-    public enum Kind { PIECE, MATERIALS, FOOD, STOCK, SKILL, DRAGON }
+    public enum Kind { PIECE, MATERIALS, FOOD, STOCK, PORTAL, SKILL, DRAGON }
 
     /** One step of a milestone's plan: an allowlisted action as the plan runner takes it. */
     public record Step(String type, String item, int count, String slot) { }
@@ -52,7 +52,7 @@ public final class CompanionMilestones {
             return switch (kind) {
                 case PIECE -> (piece.slot == null ? "" : "надеть ") + "«" + CompanionWork.itemName(piece.item(effective(tier, fallback))) + "»";
                 case MATERIALS -> "материал на снаряжение: «" + CompanionWork.itemName(effective(tier, fallback).material) + "»";
-                case FOOD, STOCK, SKILL, DRAGON -> label;
+                case FOOD, STOCK, PORTAL, SKILL, DRAGON -> label;
             };
         }
 
@@ -62,7 +62,9 @@ public final class CompanionMilestones {
                         : atLeast(piece, effective(tier, fallback)).contains(facts.worn(piece.slot));
                 case MATERIALS -> facts.carried(effective(tier, fallback).material) >= need(facts, fallback, all);
                 case FOOD -> facts.carried(READY_FOOD::contains) >= count;
-                case STOCK -> facts.carried(item) >= count;
+                // The obsidian of a portal that stands near went into it: it is not got again for a second one.
+                case STOCK -> facts.carried(item) >= count || item == Items.OBSIDIAN && facts.portal();
+                case PORTAL -> facts.portal();
                 case SKILL -> false;
                 case DRAGON -> facts.dragonDead();
             };
@@ -91,6 +93,7 @@ public final class CompanionMilestones {
                     signature.add(facts.carried(RAW_MEAT::contains));
                 }
                 case STOCK -> signature.add(facts.carried(item));
+                case PORTAL -> signature.add(facts.carried(Items.OBSIDIAN));
                 case SKILL, DRAGON -> { }
             }
             return signature;
@@ -103,6 +106,7 @@ public final class CompanionMilestones {
                 case MATERIALS -> output == effective(tier, fallback).material;
                 case FOOD -> READY_FOOD.contains(output);
                 case STOCK -> output == item;
+                case PORTAL -> false;
                 case SKILL, DRAGON -> false;
             };
         }
@@ -129,6 +133,8 @@ public final class CompanionMilestones {
                             : List.of(new Step("hunt_animals", "food", Math.min(CompanionWork.MAX_GAME, missing - raw), "auto"), cook);
                 }
                 case STOCK -> supported ? List.of(obtain(item, count)) : List.of();
+                // Short of obsidian or of a flint and steel, the step gets them first (CompanionPlanRunner).
+                case PORTAL -> List.of(new Step("build_portal", "", 1, "auto"));
                 case SKILL, DRAGON -> List.of();
             };
         }
@@ -158,6 +164,11 @@ public final class CompanionMilestones {
 
     static Milestone stock(Item item, int count, String label, boolean supported) {
         return new Milestone("stock:" + BuiltInRegistries.ITEM.getKey(item).getPath(), Kind.STOCK, null, null, item, count, label, supported);
+    }
+
+    /** A lit Nether portal near the player, built by him with what he carries (CompanionPortalBuild) or found standing. */
+    static Milestone portal(String label) {
+        return new Milestone("portal", Kind.PORTAL, null, null, null, 0, label, true);
     }
 
     static Milestone skill(String name, String label) {
