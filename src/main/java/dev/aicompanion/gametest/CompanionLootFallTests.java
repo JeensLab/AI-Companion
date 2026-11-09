@@ -38,11 +38,15 @@ public final class CompanionLootFallTests {
         for (int i = 1; i <= 9; i++) CompanionSingleRouteTests.box(h, 17 + i, 3, 23, 17 + i, 13 - i, 23, Blocks.STONE);
     }
 
-    /** Ledges down the pit's west end, each three blocks lower than the one before and one column wide: every drop is allowed, together they are a fall of ten. */
-    private static void ledges(GameTestHelper h, int lastRow) {
-        CompanionSingleRouteTests.box(h, 18, 3, 20, 18, 10, lastRow, Blocks.STONE);
-        CompanionSingleRouteTests.box(h, 19, 3, 20, 19, 7, lastRow, Blocks.STONE);
-        CompanionSingleRouteTests.box(h, 20, 3, 20, 20, 4, lastRow, Blocks.STONE);
+    /**
+     * Ledges down the pit's west end over rows {@code firstRow..lastRow}, each three blocks lower than the one before and one column wide:
+     * every drop is allowed, together they are a fall of ten. Only ledges one row long are no way down: on longer ones a way lands on a
+     * ledge and walks a column along it before the next drop, which starts a new fall (CompanionMoves.fallsFar) and is allowed.
+     */
+    private static void ledges(GameTestHelper h, int firstRow, int lastRow) {
+        CompanionSingleRouteTests.box(h, 18, 3, firstRow, 18, 10, lastRow, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 19, 3, firstRow, 19, 7, lastRow, Blocks.STONE);
+        CompanionSingleRouteTests.box(h, 20, 3, firstRow, 20, 4, lastRow, Blocks.STONE);
     }
 
     private static CompanionEntity companion(GameTestHelper h, BlockPos bottom) throws Exception {
@@ -71,7 +75,7 @@ public final class CompanionLootFallTests {
     @GameTest(template = "tall_tree", timeoutTicks = 1500)
     public static void dropBelowLedgesOfThreeBlocksIsLeftAndNotFallenFor(GameTestHelper h) throws Exception {
         BlockPos bottom = pit(h);
-        ledges(h, 23);
+        ledges(h, 22, 22);
         left(h, companion(h, bottom));
     }
 
@@ -79,7 +83,7 @@ public final class CompanionLootFallTests {
     @GameTest(template = "tall_tree", timeoutTicks = 1500)
     public static void belongingsBelowLedgesAreLeftAndNotFallenFor(GameTestHelper h) throws Exception {
         BlockPos bottom = pit(h);
-        ledges(h, 23);
+        ledges(h, 22, 22);
         CompanionEntity c = CompanionSingleRouteTests.spawn(h, 8, 14, 21);
         c.setHealth(c.getMaxHealth());
         BlockPos at = h.absolutePos(bottom);
@@ -104,24 +108,31 @@ public final class CompanionLootFallTests {
     @GameTest(template = "tall_tree", timeoutTicks = 1500)
     public static void dropBelowLedgesIsFetchedByTheStepsRoundThem(GameTestHelper h) throws Exception {
         BlockPos bottom = pit(h);
-        ledges(h, 22);
+        ledges(h, 20, 22);
         steps(h);
         fetched(h, companion(h, bottom));
     }
 
-    /** The route search itself: no way down the ledges is found, and the way down by the steps has no run of drops past three blocks. */
+    /** The route search itself: from nowhere on the plateau is a way down the ledges found, and the way down by the steps has no run of drops past three blocks. */
     @GameTest(template = "tall_tree", timeoutTicks = 200)
     public static void routeDownNeverAddsUpDropsPastWhatHeMayFall(GameTestHelper h) {
         BlockPos bottom = pit(h);
-        ledges(h, 23);
+        ledges(h, 22, 22);
         CompanionEntity c = CompanionSingleRouteTests.spawn(h, 8, 14, 21);
         var nav = (CompanionNavigation) c.getNavigation();
         // A search begins once he stands on the ground.
         h.runAfterDelay(5, () -> {
-            var path = nav.searchNow(java.util.Set.of(h.absolutePos(bottom)), 0);
-            h.assertTrue(path == null || !path.canReach(), "A way down the ledges was found: " + path);
+            // Wherever a stroll has taken him on the plateau when he tries the drop again: the answer may not depend on the start.
+            for (int x = 0; x <= 31; x++) for (int z = 0; z <= 31; z++) {
+                if (x >= 18 && x <= 27 && z >= 20 && z <= 23) continue;
+                CompanionEntity from = h.spawn(AICompanionMod.COMPANION.get(), x, 14, z);
+                from.setNoAi(true); from.setOnGround(true);
+                var way = ((CompanionNavigation) from.getNavigation()).searchNow(java.util.Set.of(h.absolutePos(bottom)), 0);
+                from.discard();
+                h.assertTrue(way != null && !way.canReach(), "A way down the ledges was found from " + x + ", 14, " + z + ": " + way);
+            }
             steps(h);
-            path = nav.searchNow(java.util.Set.of(h.absolutePos(bottom)), 1);
+            var path = nav.searchNow(java.util.Set.of(h.absolutePos(bottom)), 1);
             h.assertTrue(path != null && path.canReach(), "No way down by the steps");
             int fall = 0;
             for (int i = 1; i < path.getNodeCount(); i++) {
