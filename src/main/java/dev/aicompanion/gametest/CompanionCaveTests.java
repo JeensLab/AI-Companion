@@ -80,6 +80,30 @@ public final class CompanionCaveTests {
         }));
     }
 
+    /** Coal taken in the cave for torches is not told as diamonds: what he says he took there counts the diamond ore only. */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void coalTakenInTheCaveIsNotToldAsDiamonds(GameTestHelper h) {
+        Set<BlockPos> cave = build(h, false, true, true);
+        CompanionEntity c = rig(h);
+        h.setBlock(CAVE_DIAMOND, Blocks.DEEPSLATE_COAL_ORE);
+        long id = start(h, c, 1);
+        Watch w = new Watch();
+        h.onEachTick(() -> {
+            if (w.settled) return;
+            watch(h, c, w);
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+        });
+        h.runAtTickTime(TIMEOUT - 5, () -> h.fail("Out of time. " + summary(h, c, w, cave) + " | " + report(c)));
+        h.onEachTick(() -> {
+            if (w.settled || c.isGatheringTask() || c.isWorking() || c.workResult(id) == null) return;
+            w.settled = true;
+            String said = String.valueOf(c.workResult(id));
+            h.assertTrue(said.contains("Наткнулся на пещеру") && !h.getBlockState(CAVE_DIAMOND).is(Blocks.DEEPSLATE_COAL_ORE), "SETUP: the cave or its coal was not reached, the test proves nothing: " + said);
+            h.assertTrue(!said.contains("Взял в пещере алмазов"), "The coal was told as diamonds: " + said);
+            h.succeed();
+        });
+    }
+
     /**
      * The bag holds no block to plug with when the tunnel breaks into a dark cave (seed 7741901, lava: the blocks went into the
      * stairs and the plugs above): he cuts stone from the wall beside him with his own pickaxe, closes the breach and digs on to the

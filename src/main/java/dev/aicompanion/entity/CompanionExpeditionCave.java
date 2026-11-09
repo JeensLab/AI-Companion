@@ -246,7 +246,7 @@ final class CompanionExpeditionCave {
         if (ore.busy() || now % LOOK_EVERY == 0) {
             switch (ore.step(level, CompanionExpeditionOre.Mode.SIGHT)) {
                 case WORKING -> { return true; }
-                case DONE -> { taken++; work++; settle = SETTLE; pit = dig.lastBroken; tries = 0; return true; }
+                case DONE -> { if (ore.tookDiamond) taken++; work++; settle = SETTLE; pit = dig.lastBroken; tries = 0; return true; }
                 case FULL -> { return leave("Сумка полна, добытое некуда класть."); }
                 case NONE -> { }
             }

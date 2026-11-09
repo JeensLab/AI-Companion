@@ -41,6 +41,8 @@ final class CompanionExpeditionOre {
     boolean scan;
     /** A diamond with an open face was seen that no pickaxe he has can take. */
     boolean missedDiamond;
+    /** The ore of the last DONE was a diamond, not coal taken for torches. */
+    boolean tookDiamond;
 
     CompanionExpeditionOre(CompanionWork w, CompanionExpeditionDig dig) {
         this.w = w;
@@ -86,10 +88,11 @@ final class CompanionExpeditionOre {
             if (reach < 0) skip();
             if (reach != 1) return Result.WORKING;
         }
+        boolean diamond = level.getBlockState(target).is(BlockTags.DIAMOND_ORES);
         CompanionExpeditionDig.Status dug = dig.dig(level, target, true);
         switch (dug) {
             case WORKING -> { }
-            case DONE -> { dig.flush(); target = null; walking = false; return Result.DONE; }
+            case DONE -> { dig.flush(); target = null; walking = false; tookDiamond = diamond; return Result.DONE; }
             case FULL -> {
                 if (level.getBlockState(target).is(BlockTags.DIAMOND_ORES)) return dig.makeRoom(level) ? Result.WORKING : Result.FULL;
                 skip();
