@@ -237,6 +237,38 @@ public final class CompanionBoatClutchTests {
         });
     }
 
+    /** The player turned the boat off: twelve blocks onto stone with a boat in his bag, he takes the fall and the boat stays there. */
+    @GameTest(template = "empty", timeoutTicks = 300, skyAccess = true)
+    public static void switchedOffHeTakesTheFallAndKeepsTheBoat(GameTestHelper h) {
+        floor(h);
+        CompanionEntity c = spawn(h, 4, 13, 4);
+        c.setBoatClutch(false);
+        c.setItem(0, new ItemStack(Items.OAK_BOAT));
+        boolean[] seated = watchSeat(h, c);
+        h.runAfterDelay(60, () -> {
+            h.assertTrue(!seated[0] && count(c, Items.OAK_BOAT) == 1 && boats(h.getLevel(), h.getBounds()).isEmpty(),
+                    "A boat came out with the switch off: bag " + c.getStoredItemsSummary());
+            h.assertTrue(c.getHealth() < c.getMaxHealth(), "Twelve blocks cost him nothing: health " + c.getHealth());
+            h.succeed();
+        });
+    }
+
+    /** The switch lives in the save with him; an old save has it on. */
+    @GameTest(template = "empty")
+    public static void theBoatSwitchIsSavedAndAnOldSaveHasItOn(GameTestHelper h) {
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 4, 1, 4);
+        h.assertTrue(c.boatClutch(), "The switch is not on by default");
+        c.setBoatClutch(false);
+        CompanionEntity other = h.spawn(AICompanionMod.COMPANION.get(), 8, 1, 8);
+        other.load(c.saveWithoutId(new net.minecraft.nbt.CompoundTag()));
+        h.assertTrue(!other.boatClutch(), "The switch was not saved");
+        CompanionEntity third = h.spawn(AICompanionMod.COMPANION.get(), 12, 1, 12);
+        third.setBoatClutch(false);
+        third.load(new net.minecraft.nbt.CompoundTag());
+        h.assertTrue(third.boatClutch(), "An old save loaded with the switch off");
+        h.succeed();
+    }
+
     /** Down, alive and unhurt, he sat in the boat on the way, it is back in his bag, and no boat or water is left about. */
     private static void unhurtWithTheBoatBack(CompanionEntity c, boolean seated, Level level, AABB area) {
         check(seated, "He never sat in a boat");

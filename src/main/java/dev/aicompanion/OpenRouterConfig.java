@@ -111,6 +111,11 @@ public final class OpenRouterConfig {
             .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
             .translation("config.aicompanion.urgent_order")
             .define("urgentOrder", true);
+    /** Whether a hurtful fall the water bucket does not catch is caught in a boat from his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue BOAT_CLUTCH = BUILDER
+            .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")
+            .translation("config.aicompanion.boat_clutch")
+            .define("boatClutch", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")

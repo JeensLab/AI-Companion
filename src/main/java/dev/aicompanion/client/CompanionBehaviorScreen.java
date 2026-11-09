@@ -76,6 +76,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(urgentLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
+        addRenderableWidget(Button.builder(boatClutchLabel(), b -> {
+            OpenRouterConfig.BOAT_CLUTCH.set(!OpenRouterConfig.BOAT_CLUTCH.get()); OpenRouterConfig.BOAT_CLUTCH.save();
+            b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Падение, которое ведро воды не ловит (Незер, нет ведра): он ставит под себя лодку из сумки, садится, потом ломает её и забирает. Выключено: падает как есть."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -102,6 +107,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }
     private Component guardLabel() { return Component.literal("Охрана: цель ближе к игроку: " + (OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get() ? "вкл." : "выкл.")); }
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
+    private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));

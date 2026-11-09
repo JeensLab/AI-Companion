@@ -138,6 +138,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean deathRecovery = true;
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
+    private boolean boatClutchOn = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -626,6 +627,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
     public boolean otherContainers() { return otherContainers; }
     public void setOtherContainers(boolean on) { otherContainers = on; }
+    /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
+    public boolean boatClutch() { return boatClutchOn; }
+    public void setBoatClutch(boolean on) { boatClutchOn = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }

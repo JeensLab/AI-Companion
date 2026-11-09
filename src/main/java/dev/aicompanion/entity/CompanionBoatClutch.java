@@ -61,6 +61,8 @@ final class CompanionBoatClutch {
         if (boat != null) settle(level);
         else if (drop != null) lying(level);
         if (c.onGround() || c.isInWater() || c.isPassenger() || c.isFallFlying() || c.getDeltaMovement().y >= 0) return;
+        // Switched off, no new boat goes down; one already down is still broken and taken back above.
+        if (!c.boatClutch()) return;
         int slot = boatSlot();
         if (slot < 0) return;
         CompanionWaterBucket.Landing landing = c.waterBucket.landing(level);
