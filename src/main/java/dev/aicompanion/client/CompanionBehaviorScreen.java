@@ -81,6 +81,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Падение, которое ведро воды не ловит (Незер, нет ведра): он ставит под себя лодку из сумки, садится, потом ломает её и забирает. Выключено: падает как есть."))).build());
+        addRenderableWidget(Button.builder(diamondMineLabel(), b -> {
+            OpenRouterConfig.DIAMOND_MINE.set(!OpenRouterConfig.DIAMOND_MINE.get()); OpenRouterConfig.DIAMOND_MINE.save();
+            b.setMessage(diamondMineLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "«Добудь алмазы»: он спускается лестницей в шахту, ищет алмазы в тоннелях и приносит их. Выключено: такую цель он не берёт и говорит, что шахта выключена."))).build());
         addRenderableWidget(Button.builder(pickUpLabel(), b -> {
             OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
             b.setMessage(pickUpLabel()); CompanionPreferences.sync();
@@ -124,6 +129,7 @@ final class CompanionBehaviorScreen extends Screen {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }
     private Component damageNumbersLabel() { return Component.literal("Цифры урона над Олегом: " + (OpenRouterConfig.DAMAGE_NUMBERS.get() ? "вкл." : "выкл.")); }
+    private Component diamondMineLabel() { return Component.literal("Шахта за алмазами: " + (OpenRouterConfig.DIAMOND_MINE.get() ? "вкл." : "выкл.")); }
     private Component pickUpLabel() { return Component.literal("Подбирать лежащее рядом: " + (OpenRouterConfig.PICK_UP_NEARBY.get() ? "вкл." : "выкл.")); }
     private Component pickUpRadiusLabel() { return Component.literal("Радиус подбора: " + OpenRouterConfig.PICK_UP_RADIUS.get() + " блоков"); }
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }

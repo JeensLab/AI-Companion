@@ -143,6 +143,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
+    /** Whether the long goal of a diamond mine may be taken (the player's setting, not saved: it is sent again on joining). */
+    private boolean diamondMine = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -650,6 +652,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
     public void setPickUpNearby(boolean on, int radius) { pickUpNearby = on; pickUpRadius = Math.clamp(radius, CompanionPickUp.MIN_RADIUS, CompanionPickUp.MAX_RADIUS); }
+    public boolean diamondMine() { return diamondMine; }
+    public void setDiamondMine(boolean on) { diamondMine = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }

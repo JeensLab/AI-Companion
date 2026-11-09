@@ -101,6 +101,8 @@ public final class CompanionAgenda {
     public static CompanionActionResult accept(ServerPlayer player, CompanionEntity c, String id, int tier) {
         var book = CompanionPlaybooks.of(id, tier);
         if (book == null) return CompanionActionResult.failed("Такой большой цели я не знаю.");
+        if (book.id().equals("find_diamonds") && !c.diamondMine())
+            return CompanionActionResult.blocked("Шахта за алмазами выключена в настройках поведения — включи её там, и схожу.");
         if (c.goals().outstanding()) {
             // A «стоп» leaves the pickaxe order paused for good: without this hint the player has no way out of the refusal.
             String way = c.goals().state() == CompanionGoals.State.PAUSED_PLAYER ? " Скажи «отмени цель», если кирки больше не нужны." : "";
