@@ -29,7 +29,7 @@ final class CompanionAmbientClient {
         conversation.playerMessage(now(), jitter());
         if (!russianPlayer && dev.aicompanion.CompanionJokeBank.hasRussian(text)) {
             russianPlayer = true;
-            loadJokes();
+            if (!bundledRussian) loadJokes();
         }
     }
     private static boolean wantsRussianJokes() {
@@ -156,7 +156,7 @@ final class CompanionAmbientClient {
         if (client.level != null && bundledRussian != wantsRussianJokes()) loadJokes();
         if (jokeBank != null && jokeBank.isDone()) {
             var loaded = jokeBank.join();
-            jokes.setBank(loaded.lines(), loaded.customFile(), now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
+            jokes.reloadBank(loaded.lines(), loaded.customFile(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
             jokeBank = null;
         }
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;

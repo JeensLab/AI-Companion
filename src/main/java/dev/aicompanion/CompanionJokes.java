@@ -1,6 +1,6 @@
 package dev.aicompanion;
 
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
 /** Local jokes share the conversation's free slots, but have their own slower cadence and hourly deduplication. */
@@ -9,20 +9,27 @@ public final class CompanionJokes {
     public static final List<String> ALL = CompanionJokeBank.defaults();
     private List<String> bank = ALL;
     private boolean customBank = true;
-    private long[] toldAt = new long[bank.size()];
+    private final HashMap<String, Long> toldAt = new HashMap<>();
     private long lastJoke;
-    private int delayJitter, previous = -1;
+    private int delayJitter;
+    private String previous;
 
     public void setBank(List<String> lines, boolean customFile, long now, int jitter) {
         bank = List.copyOf(lines);
         customBank = customFile;
-        toldAt = new long[bank.size()];
         reset(now, jitter);
     }
 
+    /** Keep cooldowns even for lines temporarily hidden by a language change. */
+    public void reloadBank(List<String> lines, boolean customFile, int jitter) {
+        bank = List.copyOf(lines);
+        if (customBank != customFile) delayJitter = customFile ? jitter : 0;
+        customBank = customFile;
+    }
+
     public void reset(long now, int jitter) {
-        Arrays.fill(toldAt, Long.MIN_VALUE);
-        lastJoke = now; delayJitter = customBank ? jitter : 0; previous = -1;
+        toldAt.clear();
+        lastJoke = now; delayJitter = customBank ? jitter : 0; previous = null;
     }
 
     /** Between the configured minimum and twice that time; one sampled delay, not a new lottery every tick. */
@@ -39,11 +46,12 @@ public final class CompanionJokes {
         int start = Math.floorMod(jitter, bank.size());
         for (int offset = 0; offset < bank.size(); offset++) {
             int index = (start + offset) % bank.size();
-            if ((bank.size() > 1 && index == previous) || toldAt[index] != Long.MIN_VALUE && now - toldAt[index] < HOUR) continue;
             String joke = bank.get(index);
+            long last = toldAt.getOrDefault(joke, Long.MIN_VALUE);
+            if ((bank.size() > 1 && joke.equals(previous)) || last != Long.MIN_VALUE && now - last < HOUR) continue;
             // Validate before delivery regardless of the ordinary murmur setting.
             if (!CompanionConversation.fitsMurmur(joke)) continue;
-            toldAt[index] = now; previous = index; lastJoke = now; delayJitter = customBank ? jitter : 0;
+            toldAt.put(joke, now); previous = joke; lastJoke = now; delayJitter = customBank ? jitter : 0;
             return joke;
         }
         return null;

@@ -16,6 +16,24 @@ import java.util.HashSet;
 @PrefixGameTestTemplate(false)
 public final class CompanionJokeTests {
     @GameTest(template = "empty")
+    public static void languageReloadKeepsTheIntervalAndHourlyHistory(GameTestHelper h) {
+        var jokes = new CompanionJokes();
+        var lines = java.util.List.of("Утка открыла магазин.", "Гусь стал дирижёром.");
+        jokes.setBank(lines, true, 0, 0);
+        h.assertTrue(lines.getFirst().equals(jokes.poll(6000, 5, true, 0)), "First joke missing");
+        jokes.reloadBank(lines, true, 6000);
+        h.assertTrue(jokes.poll(11999, 5, true, 0) == null, "Reload shortened the interval");
+        h.assertTrue(lines.getLast().equals(jokes.poll(12000, 5, true, 0)), "Reload restarted timer or forgot previous joke");
+        jokes.reloadBank(java.util.List.of(), true, 0);
+        jokes.reloadBank(lines, true, 0);
+        h.assertTrue(jokes.poll(18000, 5, true, 0) == null, "Reload lost hourly cooldown");
+        jokes.reset(0, 0);
+        jokes.reloadBank(lines, true, 0);
+        h.assertTrue(jokes.poll(6000, 5, true, 0) != null, "World reset retained old history");
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
     public static void missingCustomFileUsesExactlyFortyMinutes(GameTestHelper h) {
         var jokes = new CompanionJokes();
         jokes.setBank(CompanionJokes.ALL, false, 0, Integer.MAX_VALUE);
