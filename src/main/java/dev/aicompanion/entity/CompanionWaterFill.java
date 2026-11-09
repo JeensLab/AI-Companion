@@ -145,7 +145,7 @@ final class CompanionWaterFill {
             sawWater |= !water.body().isEmpty();
             if (water.body().isEmpty()) return false;
             body = water.body();
-            stands = standsFor(level, water.aimed());
+            stands = standsFor(c, level, water.aimed());
         }
         CompanionRoute.Reach reach = stands.isEmpty() ? null : route.cells(stands, 0);
         // No search ran (this tick's share is spent, or he is in a jump): asked again next tick.
@@ -245,13 +245,13 @@ final class CompanionWaterFill {
     }
 
     /** The cells he can stand at with one of these within his reach and sight from anywhere in the cell. */
-    private Set<BlockPos> standsFor(ServerLevel level, List<BlockPos> water) {
+    static Set<BlockPos> standsFor(CompanionEntity c, ServerLevel level, List<BlockPos> water) {
         Set<BlockPos> stands = new HashSet<>();
         java.util.Map<BlockPos, Boolean> standable = new java.util.HashMap<>();
         for (BlockPos cell : water) for (int dy = -1; dy <= 2; dy++) for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
             BlockPos stand = cell.offset(dx, dy, dz);
             if (stands.contains(stand) || !standable.computeIfAbsent(stand, at -> CompanionMiningNavigation.standable(c, at))) continue;
-            if (seen(level, Vec3.atBottomCenterOf(stand).add(0, c.getEyeHeight(), 0), cell, STAND_REACH)) stands.add(stand.immutable());
+            if (seen(c, level, Vec3.atBottomCenterOf(stand).add(0, c.getEyeHeight(), 0), cell, STAND_REACH)) stands.add(stand.immutable());
         }
         return stands;
     }
@@ -263,7 +263,7 @@ final class CompanionWaterFill {
         double bestDistance = REACH * REACH;
         for (BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(eyes).offset(-5, -5, -5), BlockPos.containing(eyes).offset(5, 5, 5))) {
             double distance = eyes.distanceToSqr(Vec3.atCenterOf(pos));
-            if (distance <= bestDistance && level.getBlockState(pos).is(Blocks.WATER) && open(level, pos) && seen(level, eyes, pos, REACH)) {
+            if (distance <= bestDistance && level.getBlockState(pos).is(Blocks.WATER) && open(level, pos) && seen(c, level, eyes, pos, REACH)) {
                 best = pos.immutable(); bestDistance = distance;
             }
         }
@@ -271,7 +271,7 @@ final class CompanionWaterFill {
     }
 
     /** Within this reach from these eyes and in their sight: not through a wall. */
-    private boolean seen(ServerLevel level, Vec3 eyes, BlockPos cell, double reach) {
+    static boolean seen(CompanionEntity c, ServerLevel level, Vec3 eyes, BlockPos cell, double reach) {
         Vec3 water = Vec3.atCenterOf(cell);
         if (eyes.distanceToSqr(water) > reach * reach) return false;
         HitResult hit = level.clip(new ClipContext(eyes, water, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c));
@@ -311,7 +311,7 @@ final class CompanionWaterFill {
             Water water = living(level, c.blockPosition(), ASIDE, DEPTH_ASIDE, fill.passed);
             if (water.body().isEmpty()) return false;
             fill.body = water.body();
-            fill.stands = fill.standsFor(level, water.aimed());
+            fill.stands = standsFor(c, level, water.aimed());
             return true;
         }
         @Override public boolean canContinueToUse() {
