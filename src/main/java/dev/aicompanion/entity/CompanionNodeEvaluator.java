@@ -45,6 +45,20 @@ final class CompanionNodeEvaluator extends WalkNodeEvaluator {
         return state.is(net.minecraft.tags.BlockTags.CLIMBABLE) && !state.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING);
     }
     boolean collides(net.minecraft.world.phys.AABB box) { return !currentContext.level().noCollision(mob, box); }
+    /**
+     * The water straight up from (x, y, z) ends in air within {@code blocks}, and none of it is a bubble column that drags down (over
+     * magma): a way up to breathe at its top, not a pocket of water under rock (review 08.11) nor deeper than his breath.
+     */
+    boolean airUp(int x, int y, int z, int blocks) {
+        var pos = new net.minecraft.core.BlockPos.MutableBlockPos(x, y, z);
+        for (int i = 0; i <= blocks; i++, pos.move(0, 1, 0)) {
+            var state = currentContext.level().getBlockState(pos);
+            if (!state.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) return state.isAir();
+            if (state.hasProperty(net.minecraft.world.level.block.BubbleColumnBlock.DRAG_DOWN)
+                    && state.getValue(net.minecraft.world.level.block.BubbleColumnBlock.DRAG_DOWN)) return false;
+        }
+        return false;
+    }
     Node mark(int x, int y, int z, net.minecraft.world.level.pathfinder.PathType type, float malus) {
         Node node = getNode(x, y, z);
         node.type = type;
