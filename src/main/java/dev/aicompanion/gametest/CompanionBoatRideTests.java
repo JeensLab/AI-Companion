@@ -85,6 +85,34 @@ public final class CompanionBoatRideTests {
         });
     }
 
+    /**
+     * A canal two blocks wide, as narrow as a boat goes, between walls two high, dry floor beyond them a step off the boat: the player
+     * leaves along the water, and he steps out into the canal, not over a wall he could not climb (review 09.11).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void inACanalHeStepsOutIntoTheWaterNotThroughTheWall(GameTestHelper h) {
+        Lane lane = new Lane(h, 2, 5.5);
+        for (int x = 0; x < 12; x++) for (int y = 1; y <= 4; y++) for (int z : new int[] {1, 2, 5, 6}) {
+            boolean wall = z == 2 || z == 5;
+            h.setBlock(new BlockPos(x, y, z), wall || y <= 2 ? Blocks.STONE : Blocks.AIR);
+        }
+        var middle = h.absoluteVec(new Vec3(5.5, 2.52, 4));
+        lane.boat.setPos(middle.x, middle.y, middle.z);
+        lane.player.startRiding(lane.boat);
+        lane.oleg.startRiding(lane.boat);
+        Vec3[] out = {null};
+        h.onEachTick(() -> { if (out[0] == null && h.getTick() > 5 && !lane.oleg.isPassenger()) out[0] = lane.oleg.position().subtract(h.absoluteVec(Vec3.ZERO)); });
+        h.runAtTickTime(5, () -> {
+            lane.player.stopRiding();
+            var along = h.absoluteVec(new Vec3(10.5, 2, 4.5));
+            lane.player.teleportTo(along.x, along.y, along.z);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(out[0] != null, "He stayed in the boat");
+            h.assertTrue(out[0].z > 3 && out[0].z < 5 && Math.abs(out[0].y - 2) < .01, "He stepped out over the wall or onto the boat: at " + out[0]);
+        });
+    }
+
     /** The player in a chest boat, its one seat theirs: he does not get in, and says so once, not over and over. */
     @GameTest(template = "tall_tree", timeoutTicks = 200)
     public static void inAChestBoatThereIsNoSeatForHimAndHeSaysSoOnce(GameTestHelper h) {

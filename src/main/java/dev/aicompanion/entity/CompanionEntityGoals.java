@@ -219,8 +219,7 @@ final class CompanionEntityGoals {
             BlockPos meet = companion.dragonBreath.meetingPoint(owner, true);
             if (meet == null) { companion.getNavigation().stop(); return; }
             boolean edge = !meet.equals(owner.blockPosition());
-            // To the player's boat: on till he is in it (CompanionBoatRide gets him in within a click's reach on the way).
-            var step = companion.work.route.follow(meet, companion.boatRide.boatToJoin(owner) != null ? 1 : FOLLOW_NEAR, owner.isSprinting());
+            var step = companion.work.route.follow(meet, FOLLOW_NEAR, owner.isSprinting());
             if (step == CompanionTravel.Step.WALKING) {
                 travelling = true;
                 // A whole route to him exists again: the next time there is none is a new occasion to say so.

@@ -6,6 +6,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.entity.vehicle.ChestBoat;
 import net.minecraft.world.entity.vehicle.DismountHelper;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -28,15 +30,16 @@ final class CompanionBoatRide {
      * ponytail: not kept over a reload; switched off, reloaded and then left by the player, he stays in it till an order.
      */
     private Boat joined;
-    /** The player's boat with no seat for him, while the player sits in it: said once a ride, and not gone to. */
+    /** The player's boat with no seat for him, while the player sits in it and no one gets out: said once a ride, and not gone to. */
     private Boat noSeat;
+    private int noSeatRiders;
 
     CompanionBoatRide(CompanionEntity c) { this.c = c; }
 
     void tick() {
         ServerPlayer owner = c.getOwnerPlayer();
         Boat theirs = owner != null && owner.getVehicle() instanceof Boat boat ? boat : null;
-        if (noSeat != theirs) noSeat = null;
+        if (noSeat != theirs || noSeat != null && noSeat.getPassengers().size() < noSeatRiders) noSeat = null;
         if (c.getVehicle() instanceof Boat seat) {
             if (seat != theirs && !c.boatClutch.holds(seat) && (c.boatRide() || seat == joined)) stepOut(seat, owner);
             return;
@@ -77,6 +80,7 @@ final class CompanionBoatRide {
 
     private void noRoom(Boat boat) {
         noSeat = boat;
+        noSeatRiders = boat.getPassengers().size();
         c.autonomySay(NO_SEAT, false);
         event("boat_ride_no_seat", boat);
     }
@@ -91,23 +95,30 @@ final class CompanionBoatRide {
         Vec3 aim = owner != null ? owner.position() : boat.position();
         Vec3 land = null, water = null;
         BlockPos at = boat.blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(at.offset(-2, 0, -2), at.offset(2, 2, 2))) {
+        for (BlockPos pos : BlockPos.betweenClosed(at.offset(-2, -1, -2), at.offset(2, 2, 2))) {
             double dx = pos.getX() + .5 - boat.getX(), dz = pos.getZ() + .5 - boat.getZ();
-            if (dx * dx + dz * dz > STEP * STEP) continue;
-            if (c.level().getFluidState(pos).isEmpty()) {
-                Vec3 spot = DismountHelper.findSafeDismountLocation(c.getType(), c.level(), pos, true);
-                if (spot != null && (land == null || spot.distanceToSqr(aim) < land.distanceToSqr(aim))) land = spot;
-            } else if (pos.getY() == at.getY()) {
-                Vec3 spot = Vec3.atBottomCenterOf(pos);
-                var box = c.getType().getDimensions().makeBoundingBox(spot);
-                if (DismountHelper.canDismountTo(c.level(), c, box) && !box.intersects(boat.getBoundingBox())
-                        && (water == null || spot.distanceToSqr(aim) < water.distanceToSqr(aim))) water = spot;
-            }
+            boolean dry = c.level().getFluidState(pos).isEmpty();
+            if (dx * dx + dz * dz > STEP * STEP || !dry && pos.getY() != at.getY()) continue;
+            Vec3 spot = dry ? DismountHelper.findSafeDismountLocation(c.getType(), c.level(), pos, true) : Vec3.atBottomCenterOf(pos);
+            if (spot == null || !stepTo(boat, spot)) continue;
+            if (dry && (land == null || spot.distanceToSqr(aim) < land.distanceToSqr(aim))) land = spot;
+            if (!dry && (water == null || spot.distanceToSqr(aim) < water.distanceToSqr(aim))) water = spot;
         }
         Vec3 out = land != null ? land : water;
         c.stopRiding();
         if (out != null) c.dismountTo(out.x, out.y, out.z);
         event("boat_ride_out", boat, "land", land != null, "player", owner == null ? "" : owner.blockPosition().toShortString());
+    }
+
+    /**
+     * A place he steps to from the seat as a player can: clear of the boat, no higher than a jump from its top (a bank a block over
+     * the water, a ledge a block over ice), and over its side, not through a wall or a fence (review 09.11: a canal between walls).
+     */
+    private boolean stepTo(Boat boat, Vec3 spot) {
+        var box = c.getType().getDimensions().makeBoundingBox(spot);
+        if (spot.y > boat.getBoundingBox().minY + 1.8 || box.intersects(boat.getBoundingBox()) || !DismountHelper.canDismountTo(c.level(), c, box)) return false;
+        var sight = new ClipContext(c.getEyePosition(), spot.add(0, c.getBbHeight() / 2, 0), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c);
+        return c.level().clip(sight).getType() == HitResult.Type.MISS;
     }
 
     private void event(String name, Boat boat, Object... more) {
