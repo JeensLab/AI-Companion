@@ -20,6 +20,7 @@ public final class CompanionMineWorldClimbTests {
     private static final class Track {
         final List<Integer> depths = new ArrayList<>(List.of(0));
         final List<Integer> deaths = new ArrayList<>();
+        int excusedFrom = Integer.MAX_VALUE, excusedTo = Integer.MAX_VALUE;
 
         Track to(int depth, int tick) {
             int start = depths.size() - 1, from = depths.get(start);
@@ -30,13 +31,16 @@ public final class CompanionMineWorldClimbTests {
         /** The body dies where it stands; a new one is at the entrance on the next tick. */
         Track death() { deaths.add(depths.size()); depths.add(0); return this; }
 
+        /** From the next tick on (to {@code until}, exclusive) the way up is the player's errand. */
+        Track excused(int until) { excusedFrom = depths.size(); excusedTo = until; return this; }
+
         /** The ticks on which the counter went up. */
         List<Integer> climbs() {
             List<Integer> ticks = new ArrayList<>();
             var state = CompanionMineWorldClimbs.State.START;
             for (int tick = 0; tick < depths.size(); tick++) {
                 if (deaths.contains(tick)) state = state.afterDeath();
-                var next = CompanionMineWorldClimbs.next(state, depths.get(tick), true);
+                var next = CompanionMineWorldClimbs.next(state, depths.get(tick), true, tick >= excusedFrom && tick < excusedTo);
                 if (next.count() > state.count()) ticks.add(tick);
                 state = next;
             }
@@ -81,6 +85,26 @@ public final class CompanionMineWorldClimbTests {
         h.assertTrue(died.isEmpty(), "A climb of the dead body is counted: " + died);
         List<Integer> twice = new Track().to(hover, 400).to(0, 800).to(hover, 1_200).to(0, 1_600).climbs();
         h.assertTrue(twice.size() == 2, "Two descents to the hover depth are not two climbs: " + twice);
+        h.succeed();
+    }
+    /**
+     * Seed 20261031, descent: two climbs out of the depth, then the diamond found at -17 and carried up to the player waiting at the
+     * entrance (milestone handover:diamond). The probe counted the walk with the diamond as a third climb and failed the run.
+     */
+    @GameTest(template = "empty")
+    public static void carryingTheDiamondsUpIsNoClimb(GameTestHelper h) {
+        List<Integer> climbs = new Track().to(85, 16000).to(0, 17303).to(25, 25000).to(0, 27639).to(86, 32039).excused(Integer.MAX_VALUE).to(0, 33185).climbs();
+        h.assertTrue(climbs.size() == 2 && climbs.get(1) <= 27639, "The way up with the diamonds is counted: " + climbs);
+        h.succeed();
+    }
+
+    /** Seed 7, come: the probe's own «ко мне» from depth brings him up; once the goal is resumed, a way up counts again. */
+    @GameTest(template = "empty")
+    public static void comingUpForThePlayersCallIsNoClimb(GameTestHelper h) {
+        Track track = new Track().to(30, 4000);
+        track.excused(5746).to(0, 5746);
+        List<Integer> climbs = track.to(40, 9000).to(0, 12000).climbs();
+        h.assertTrue(climbs.size() == 1 && climbs.getFirst() > 9000, "The way up for «ко мне» is counted, or the later one is not: " + climbs);
         h.succeed();
     }
 }

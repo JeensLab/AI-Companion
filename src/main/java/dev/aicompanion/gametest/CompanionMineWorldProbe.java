@@ -276,7 +276,8 @@ public final class CompanionMineWorldProbe {
     /** The tester's part: every stop of the goal is recorded, and answered with «продолжай» a bounded number of times. */
     private static void observe(MinecraftServer server, CompanionAgendaData.Goal goal, int depth) {
         var state = goal.state();
-        climbState = CompanionMineWorldClimbs.next(climbState, depth, lastState != null && lastState.suppressesDeeds() && state.suppressesDeeds());
+        climbState = CompanionMineWorldClimbs.next(climbState, depth, lastState != null && lastState.suppressesDeeds() && state.suppressesDeeds(),
+                count(Items.DIAMOND) >= REQUESTED_DIAMONDS || comeIssued && !resumedAfterCome);
         if (climbState.count() > journal.climbs) {
             journal.climbs = climbState.count();
             System.out.println("MINE_WORLD_CLIMB scenario=" + SCENARIO + " n=" + journal.climbs + " tick=" + ticks);
