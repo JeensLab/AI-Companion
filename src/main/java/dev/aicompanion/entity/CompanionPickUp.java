@@ -126,13 +126,20 @@ public final class CompanionPickUp {
         return null;
     }
 
-    /** A thing that is only itself; a shovel's loose drop still names the work that gets it when none lies near. */
+    /**
+     * A thing that is only itself; a shovel's loose drop still names the work that gets it when none lies near. A word
+     * that names the plainest form of a thing names every form of it («железо» is the ore, the raw drop, the ingot and
+     * the block); a word that names one form is that form alone («угольный блок» is no loose coal, «светящийся
+     * чернильный мешок» no plain ink sac).
+     */
     private static Meaning single(Item item) {
-        List<Item> family = family(item);
         if (item == Items.GRAVEL) return new Meaning(name(item), accusative(item), genitive(item),
                 stack -> stack.is(Items.GRAVEL), "gather_loose", "minecraft:gravel", GATHER_COUNT, "Возьму лопату.");
         if (item == Items.FLINT) return new Meaning(name(item), accusative(item), genitive(item),
                 stack -> stack.is(Items.FLINT), "gather_loose", "minecraft:flint", FLINT_COUNT, "Возьму лопату.");
+        List<Item> family = family(item);
+        if (item != plainest(family)) return new Meaning(name(item), accusative(item), genitive(item),
+                stack -> stack.is(item), null, null, 0, "");
         return new Meaning(name(item), accusative(item), genitive(item), stack -> {
             for (Item member : family) if (stack.is(member)) return true;
             return false;
@@ -142,6 +149,28 @@ public final class CompanionPickUp {
     /** The affixes the game builds another form of the same thing with: «глубинносланцевая руда», «сырое железо», «слиток». */
     private static final List<String> FORM_PREFIXES = List.of("deepslate_", "nether_", "raw_", "glow_");
     private static final List<String> FORM_SUFFIXES = List.of("_ore", "_ingot", "_block", "_lazuli");
+    /**
+     * The materials the game builds a nether or a glowing form of: «незерское золото» is gold and «светящийся чернильный
+     * мешок» is ink. «Незерский кирпич» is no brick and «светящаяся рамка» no frame, so those prefixes are stripped only
+     * here.
+     */
+    private static final List<String> NETHER_GLOW_MATERIALS = List.of("iron", "gold", "copper", "quartz", "ink_sac");
+
+    /**
+     * The plainest form of the thing: the shortest id of its family that is not itself built from a form suffix — the raw
+     * drop «рудное железо» is the word «железо», while the ore is «железная руда». Only a word that names this form names
+     * the whole family; a word naming «угольный блок» or «глубинносланцевая руда» is that one thing.
+     */
+    private static Item plainest(List<Item> family) {
+        Item plainest = null;
+        for (Item member : family) {
+            if (hasFormSuffix(key(member))) continue;
+            if (plainest == null || key(member).length() < key(plainest).length()) plainest = member;
+        }
+        if (plainest != null) return plainest;
+        for (Item member : family) if (plainest == null || key(member).length() < key(plainest).length()) plainest = member;
+        return plainest;
+    }
 
     /**
      * Every form of the thing the game holds: «железо» is the ore, the raw drop, the ingot and the block, «чернила» both
@@ -164,7 +193,8 @@ public final class CompanionPickUp {
         while (changed) {
             changed = false;
             for (String prefix : FORM_PREFIXES) {
-                if (base.startsWith(prefix) && base.length() > prefix.length()) {
+                if (base.startsWith(prefix) && base.length() > prefix.length()
+                        && anotherForm(prefix, base.substring(prefix.length()))) {
                     base = base.substring(prefix.length());
                     changed = true;
                 }
@@ -177,6 +207,28 @@ public final class CompanionPickUp {
             }
         }
         return base;
+    }
+
+    /**
+     * Whether a prefix really builds another form of the same thing: «nether_gold_ore» is gold and «glow_ink_sac» is ink,
+     * while «nether_brick» is no brick and «glow_item_frame» no frame; deepslate is another stone of an ore, not of
+     * «brick_slab».
+     */
+    private static boolean anotherForm(String prefix, String rest) {
+        if ("deepslate_".equals(prefix)) return hasFormSuffix(rest);
+        if ("nether_".equals(prefix) || "glow_".equals(prefix)) {
+            for (String material : NETHER_GLOW_MATERIALS) {
+                if (rest.equals(material) || rest.startsWith(material + "_")) return true;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /** Whether the id is built from a form suffix: «iron_ore» and «coal_block» are, «brick» and «raw_iron» are not. */
+    private static boolean hasFormSuffix(String path) {
+        for (String suffix : FORM_SUFFIXES) if (path.endsWith(suffix) && path.length() > suffix.length()) return true;
+        return false;
     }
 
     /**

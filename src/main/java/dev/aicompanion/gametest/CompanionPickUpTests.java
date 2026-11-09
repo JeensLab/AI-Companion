@@ -1103,6 +1103,84 @@ public final class CompanionPickUpTests {
                         + stored(companion, Items.IRON_BLOCK) + ", phase " + companion.workPhase() + ", " + companion.getLastTaskResult()));
     }
 
+    /**
+     * Judge follow-up: a word that names one form is that form alone. «Угольный блок» is the block and no loose coal,
+     * «светящийся чернильный мешок» the glow one and no plain ink sac, «железная руда» the ore and no ingot — while the
+     * plainest form of the thing still names the whole family.
+     */
+    @GameTest(template = "large_search")
+    public static void aWordNamingOneFormIsOnlyThatForm(GameTestHelper h) {
+        String block = CompanionItemLookup.itemFor("угольный блок", RU);
+        h.assertTrue("minecraft:coal_block".equals(block), "«Угольный блок» is not the block: " + block);
+        var coalBlock = CompanionPickUp.of(block);
+        h.assertTrue(coalBlock != null && coalBlock.is(new ItemStack(Items.COAL_BLOCK)), "The coal block is not itself: " + coalBlock);
+        h.assertTrue(!coalBlock.is(new ItemStack(Items.COAL)), "The coal block took the loose coal: " + coalBlock);
+        String glow = CompanionItemLookup.itemFor("светящийся чернильный мешок", RU);
+        h.assertTrue("minecraft:glow_ink_sac".equals(glow), "«Светящийся чернильный мешок» is not the glow sac: " + glow);
+        var glowSac = CompanionPickUp.of(glow);
+        h.assertTrue(glowSac != null && glowSac.is(new ItemStack(Items.GLOW_INK_SAC)), "The glow ink sac is not itself: " + glowSac);
+        h.assertTrue(!glowSac.is(new ItemStack(Items.INK_SAC)), "The glow ink sac took the plain ink sac: " + glowSac);
+        String ore = CompanionItemLookup.itemFor("железную руду", RU);
+        h.assertTrue("minecraft:iron_ore".equals(ore), "«Железную руду» is not the ore: " + ore);
+        var ironOre = CompanionPickUp.of(ore);
+        h.assertTrue(ironOre != null && ironOre.is(new ItemStack(Items.IRON_ORE)), "The iron ore is not itself: " + ironOre);
+        h.assertTrue(!ironOre.is(new ItemStack(Items.IRON_INGOT)) && !ironOre.is(new ItemStack(Items.IRON_BLOCK)),
+                "The iron ore took the ingot or the block: " + ironOre);
+        // The plainest form is still the whole family: «уголь» takes the block, «железо» the ore and the ingot.
+        var coal = CompanionPickUp.of(CompanionItemLookup.itemFor("уголь", RU));
+        h.assertTrue(coal != null && coal.is(new ItemStack(Items.COAL)) && coal.is(new ItemStack(Items.COAL_BLOCK)),
+                "«Уголь» stopped taking the block: " + coal);
+        var iron = CompanionPickUp.of(CompanionItemLookup.itemFor("железо", RU));
+        h.assertTrue(iron != null && iron.is(new ItemStack(Items.IRON_ORE)) && iron.is(new ItemStack(Items.IRON_INGOT)),
+                "«Железо» stopped taking the ore and the ingot: " + iron);
+        h.succeed();
+    }
+
+    /** «Подбери угольный блок» takes the block lying there and leaves the loose coal four blocks on. */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theCoalBlockOrderLeavesTheLooseCoal(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        h.assertTrue("companion work pick_up 64 minecraft:coal_block".equals(CompanionLocalCommands.route("подбери угольный блок", "Олег", RU)),
+                "Phrase: " + CompanionLocalCommands.route("подбери угольный блок", "Олег", RU));
+        ItemEntity block = item(h, 11, 1, 8, Items.COAL_BLOCK, 1);
+        // Four blocks from the block: out of the two-block loose pickup, so only the order could take it.
+        ItemEntity coal = item(h, 15, 1, 8, Items.COAL, 3);
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:coal_block", 64);
+        h.assertTrue(result.success(), "The order was refused: " + result.message());
+        h.assertTrue(companion.workPhase().startsWith("PICK_UP"), "Not the pickup: " + companion.workPhase());
+        h.succeedWhen(() -> {
+            h.assertTrue(block.isRemoved() && stored(companion, Items.COAL_BLOCK) == 1 && companion.workPhase().isEmpty(),
+                    "The coal block was not taken: bag " + stored(companion, Items.COAL_BLOCK) + ", phase " + companion.workPhase()
+                            + ", " + companion.getLastTaskResult());
+            h.assertTrue(!coal.isRemoved() && stored(companion, Items.COAL) == 0,
+                    "The loose coal was taken for the coal block: coal " + stored(companion, Items.COAL) + ", drop removed "
+                            + coal.isRemoved() + ", " + companion.getLastTaskResult());
+        });
+    }
+
+    /**
+     * Judge follow-up: the affixes that build another form of a material merge no unrelated things. «Кирпич» is no
+     * nether brick and «рамка» no glowing frame, while «чернила» is still both ink sacs.
+     */
+    @GameTest(template = "large_search")
+    public static void anAffixIsNoOtherThing(GameTestHelper h) {
+        var brick = CompanionPickUp.of(CompanionItemLookup.itemFor("кирпич", RU));
+        h.assertTrue(brick != null && brick.is(new ItemStack(Items.BRICK)), "«Кирпич» is not the brick: " + brick);
+        h.assertTrue(!brick.is(new ItemStack(Items.NETHER_BRICK)), "«Кирпич» took a nether brick: " + brick);
+        var frame = CompanionPickUp.of(CompanionItemLookup.itemFor("рамка", RU));
+        h.assertTrue(frame != null && frame.is(new ItemStack(Items.ITEM_FRAME)), "«Рамка» is not the frame: " + frame);
+        h.assertTrue(!frame.is(new ItemStack(Items.GLOW_ITEM_FRAME)), "«Рамка» took a glowing frame: " + frame);
+        var slab = CompanionPickUp.of(CompanionItemLookup.itemFor("кирпичная плита", RU));
+        h.assertTrue(slab != null && slab.is(new ItemStack(Items.BRICK_SLAB)), "«Кирпичная плита» is not the brick slab: " + slab);
+        h.assertTrue(!slab.is(new ItemStack(Items.DEEPSLATE_BRICK_SLAB)), "«Кирпичная плита» took the deepslate brick slab: " + slab);
+        var ink = CompanionPickUp.of(CompanionItemLookup.itemFor("чернила", RU));
+        h.assertTrue(ink != null && ink.is(new ItemStack(Items.INK_SAC)) && ink.is(new ItemStack(Items.GLOW_INK_SAC)),
+                "«Чернила» stopped taking both ink sacs: " + ink);
+        h.succeed();
+    }
+
     /** Judge finding 2: a mod's fried meat is its own raw meat, not the game's item of the same path. */
     @GameTest(template = "large_search")
     public static void aModsCookedMeatKeepsItsNamespace(GameTestHelper h) {
@@ -1480,7 +1558,15 @@ public final class CompanionPickUpTests {
             java.util.Map.entry("copper_ore", "Медная руда"),
             java.util.Map.entry("raw_copper", "Рудная медь"),
             java.util.Map.entry("copper_ingot", "Медный слиток"),
-            java.util.Map.entry("copper_block", "Медный блок"));
+            java.util.Map.entry("copper_block", "Медный блок"),
+            // The things whose id carries an affix that is no form of them: «кирпич» is no nether brick, «рамка» no
+            // glowing frame.
+            java.util.Map.entry("brick", "Кирпич"),
+            java.util.Map.entry("nether_brick", "Незерский кирпич"),
+            java.util.Map.entry("item_frame", "Рамка"),
+            java.util.Map.entry("glow_item_frame", "Светящаяся рамка"),
+            java.util.Map.entry("brick_slab", "Кирпичная плита"),
+            java.util.Map.entry("deepslate_brick_slab", "Плита из глубинносланцевого кирпича"));
 
     private static final Function<Item, String> RU = CompanionPickUpTests::russianName;
 
