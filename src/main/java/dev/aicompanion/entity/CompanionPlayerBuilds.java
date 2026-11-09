@@ -152,6 +152,13 @@ public final class CompanionPlayerBuilds extends SavedData {
         return here(player, level).stream().flatMap(site -> Stream.concat(site.chests.stream(), site.stashes.stream())).toList();
     }
 
+    /** His buildings in this dimension (sites that reach a home), as a test of a cell: what lies there is his (CompanionObsidian leaves it). Taken once for many cells. */
+    java.util.function.Predicate<BlockPos> sites(UUID player, ServerLevel level) {
+        // A few cobblestones set by a lava flow are no building: they hid the lava from him (second review 08.11).
+        List<Site> here = here(player, level).stream().filter(site -> site.score() >= HOME_SCORE).toList();
+        return pos -> here.stream().anyMatch(site -> site.takesIn(pos));
+    }
+
     private List<Site> here(UUID player, ServerLevel level) {
         List<Site> sites = owners.get(player);
         if (sites == null) return List.of();

@@ -1,5 +1,7 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionContainers;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -28,7 +30,7 @@ public final class CompanionPlanRequirements {
         String location = inside ? "inside_house" : "near_player";
         List<PlannedAction> result = new ArrayList<>();
         for (PlannedAction step : decoded.actions()) {
-            if (inside && List.of("place_block", "store_items", "take_items").contains(step.type()))
+            if (inside && List.of("place_block", "store_items", "take_items").contains(step.type()) && !CompanionContainers.NAMEABLE.contains(step.location()))
                 step = new PlannedAction(step.type(), step.seconds(), step.count(), step.item(), step.slot(), location);
             result.add(step);
         }
@@ -42,8 +44,9 @@ public final class CompanionPlanRequirements {
         }
         if (text.matches("(?sU).*\\b(сложи|сложить|убери|убрать)\\b.*(вещ|предмет|ресурс).*")) {
             String filter = text.matches("(?sU).*\\b(все|свои)\\b.*") ? "all" : "resources";
-            result.removeIf(step -> step.type().equals("store_items"));
-            result.add(new PlannedAction("store_items", 0, 1, filter, "auto", location));
+            result.removeIf(step -> step.type().equals("store_items") && !CompanionContainers.NAMEABLE.contains(step.location()));
+            if (result.stream().noneMatch(step -> step.type().equals("store_items")))
+                result.add(new PlannedAction("store_items", 0, 1, filter, "auto", location));
         }
         if (result.size() > CompanionPlanCodec.MAX_STEPS) throw new IllegalStateException("Просьба содержит слишком много шагов. Раздели ее на части.");
         return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result), List.copyOf(result));
@@ -120,7 +123,12 @@ public final class CompanionPlanRequirements {
         for (int i = 0; i < decoded.actions().size(); i++) if (decoded.actions().get(i).type().equals("mine_ore")) last = i;
         if (last < 0) return decoded;
         var kind = dev.aicompanion.entity.CompanionOre.Kind.of(decoded.actions().get(last).item());
-        String raw = kind == null ? null : switch (kind) { case IRON -> "minecraft:raw_iron"; case GOLD -> "minecraft:raw_gold"; case COPPER -> "minecraft:raw_copper"; default -> null; };
+        String raw = kind == null ? null : switch (kind) {
+            case IRON -> "minecraft:raw_iron";
+            case GOLD -> "minecraft:raw_gold";
+            case COPPER -> "minecraft:raw_copper";
+            case COAL, LAPIS, REDSTONE, DIAMOND, EMERALD -> null;
+        };
         if (raw == null || decoded.actions().size() >= CompanionPlanCodec.MAX_STEPS) return decoded;
         List<PlannedAction> result = new ArrayList<>(decoded.actions());
         result.add(last + 1, new PlannedAction("smelt_items", 0, PlannedAction.ALL_CARRIED, raw));

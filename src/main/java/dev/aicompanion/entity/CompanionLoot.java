@@ -121,7 +121,10 @@ final class CompanionLoot {
             if (!(level.getEntity(id) instanceof ItemEntity item) || item.hasPickUpDelay()) continue;
             if (!touches(owner.position(), item)) continue;
             ItemStack offered = item.getItem().copy();
-            int before = offered.getCount(); owner.storeLoot(offered);
+            int before = offered.getCount();
+            // What fell out of the dead player is kept apart for him, as the loose pickup does.
+            if (item.getPersistentData().getBoolean(CompanionPlayersThings.MARK)) owner.playersThings.keep(offered);
+            else owner.storeLoot(offered);
             int moved = before - offered.getCount();
             if (moved == 0) continue;
             if (item.getItem().is(ItemTags.LOGS)) collectedLogs += moved;
@@ -202,9 +205,10 @@ final class CompanionLoot {
         // held the store order ninety seconds). Wait for what is chased now or still settling: falling, pickup delay, a retry.
         // chaseable also invalidates an old rejection after moving four blocks. Do not filter it out before that check:
         // the last rejected drop otherwise prevents its own reconsideration forever once the rest have been collected.
+        // Nor is a drop let lie (shun): it is waited for neither chased nor settling (obsidian under his water, 08.11).
         return pending.stream().anyMatch(id -> !(level.getEntity(id) instanceof ItemEntity item)
                 || owner.canStoreDrops(List.of(item.getItem().copyWithCount(1)))
-                && (chaseable(level, id) || !unreachable.contains(id) && settling(level, id, item)));
+                && (chaseable(level, id) || !unreachable.contains(id) && shunned.getOrDefault(id, 0L) <= level.getGameTime() && settling(level, id, item)));
     }
     private boolean settling(ServerLevel level, UUID id, ItemEntity item) {
         long age = level.getGameTime() - born.getOrDefault(id, 0L);
@@ -302,7 +306,7 @@ final class CompanionLoot {
                 BlockPos spot = center.offset(ox, dy, oz);
                 // The drop pushed out of a landed block lies clear, while the cell it came from still has the rest of the
                 // column in the air over it: no stand there.
-                if (!CompanionMiningNavigation.standable(owner, spot) || fallingInto(level, new AABB(spot), spot)) continue;
+                if (!CompanionMiningNavigation.pickupStand(owner, spot) || fallingInto(level, new AABB(spot), spot)) continue;
                 var standing = Vec3.atBottomCenterOf(spot);
                 var toward = target.position().subtract(standing).multiply(1, 0, 1).normalize().scale(.3);
                 // A reachable adjacent cell can still be outside pickup range. Route to a point

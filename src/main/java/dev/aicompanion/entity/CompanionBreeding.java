@@ -330,7 +330,7 @@ final class CompanionBreeding {
             case SHEEP -> new String[]{"ягнёнок", "ягнёнка", "ягнят"};
             case PIG -> new String[]{"поросёнок", "поросёнка", "поросят"};
             case CHICKEN -> new String[]{"цыплёнок", "цыплёнка", "цыплят"};
-            default -> new String[]{"крольчонок", "крольчонка", "крольчат"};
+            case RABBIT -> new String[]{"крольчонок", "крольчонка", "крольчат"};
         };
         int last = count % 10, tens = count % 100;
         return count + " " + (last == 1 && tens != 11 ? forms[0] : last >= 2 && last <= 4 && (tens < 12 || tens > 14) ? forms[1] : forms[2]);

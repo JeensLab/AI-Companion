@@ -29,9 +29,11 @@ public final class CompanionPreferences {
         String name = CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get());
         int radius = OpenRouterConfig.SEARCH_RADIUS.get();
         boolean chunks = OpenRouterConfig.CHUNK_LOADING.get(), speech = OpenRouterConfig.AUTONOMOUS_SPEECH.get();
+        int murmurInterval = OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get();
         boolean conversationAvailable = CompanionAmbientClient.availableForObservation();
         boolean longTerm = OpenRouterConfig.LONG_TERM_MEMORY.get();
         CompanionMemoryFlow.bind(server, playerId, longTerm);
+        CompanionMemoryFlow.shortMurmurs(OpenRouterConfig.SHORT_MURMURS.get());
         long session = OpenRouterClient.generation();
         long forgetEpoch = CompanionMemoryView.forgetEpoch();
         server.execute(() -> {
@@ -44,8 +46,14 @@ public final class CompanionPreferences {
             player.getPersistentData().putBoolean("aicompanion:chunk_loading_enabled", chunks);
             if (companion != null) {
                 companion.setCompanionName(name); companion.setSearchRadius(radius); companion.setLifestyle(chunks, speech);
+                companion.setMurmurIntervalPercent(murmurInterval);
                 companion.setConversationAvailable(conversationAvailable);
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());
+                companion.setGuardByPlayer(OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get());
+                companion.setOtherContainers(OpenRouterConfig.OTHER_CONTAINERS.get());
+                companion.setPickUpNearby(OpenRouterConfig.PICK_UP_NEARBY.get(), OpenRouterConfig.PICK_UP_RADIUS.get());
+                companion.setUrgentOrder(OpenRouterConfig.URGENT_ORDER.get());
+                companion.setBoatClutch(OpenRouterConfig.BOAT_CLUTCH.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());
                 String remote = companion.getName().getString() + " находится на " + companion.blockPosition().toShortString()
                         + ", измерение=" + companion.level().dimension().location() + ", занят=" + companion.isGatheringTask()

@@ -23,7 +23,7 @@ final class CompanionSocial {
     private final CompanionUrgent urgent = new CompanionUrgent();
     private String urgentKey = "";
     CompanionSocial(CompanionEntity owner) { this.owner = owner; }
-    private long next(long now) { return now + CompanionConversation.gap(owner.getRandom().nextInt(CompanionConversation.MAX_GAP - CompanionConversation.MIN_GAP + 1)); }
+    private long next(long now) { return now + CompanionConversation.gap(owner.getRandom().nextInt(CompanionConversation.MAX_GAP - CompanionConversation.MIN_GAP + 1), owner.murmurIntervalPercent()); }
     void observe(String key, String fact) {
         offer(key, fact, 20 * 60 * 20);
     }

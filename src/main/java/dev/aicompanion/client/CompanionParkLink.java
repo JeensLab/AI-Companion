@@ -71,6 +71,8 @@ public final class CompanionParkLink implements CompanionTaskQueue.BatchOwner {
     public void cancelAll(boolean clearHistory) { queue.cancelAll(clearHistory, false); }
     /** {@code byPlayer}: the player's cancel, which releases the smelts the tasks held; otherwise they are orphaned. */
     public void cancelAll(boolean clearHistory, boolean byPlayer) { queue.cancelAll(clearHistory, byPlayer); }
+    /** {@code urgent}: the order that follows cannot wait, so the dig that is running is put aside for later, not ended. */
+    public void cancelAll(boolean clearHistory, boolean byPlayer, boolean urgent) { queue.cancelAll(clearHistory, byPlayer, urgent); }
 
     /** Takes the plan into the queue; the future completes with the report. {@code stale} says the plan was invalidated from outside. */
     public CompletableFuture<String> submit(List<PlannedAction> actions, String trace, BooleanSupplier stale) {

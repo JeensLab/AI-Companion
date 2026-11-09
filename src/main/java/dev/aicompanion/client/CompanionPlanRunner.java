@@ -32,10 +32,15 @@ public final class CompanionPlanRunner {
     public static final String NO_TREE = "Не нашёл доступного дерева";
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "fill_bucket");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "fill_bucket", "mine_obsidian", "build_portal", "pick_up");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
+    /**
+     * Steps whose refusal is the whole answer even though their own work started: «подбери» says what lies around and then
+     * takes up the fallback, so a repeat on «companion busy» would only delay the honest answer and show «Повтор шага».
+     */
+    private static final Set<String> NO_BUSY_RETRY = Set.of("pick_up");
 
     public interface Port {
         String trace();
@@ -89,7 +94,7 @@ public final class CompanionPlanRunner {
             return new Verdict(Decision.CONTINUE, null, "target_collected_before_timeout");
         if (retried) return stop("step_already_repeated");
         if (recoveries >= MAX_RECOVERIES) return stop("plan_recovery_budget_spent");
-        if (!attempt.started() && after.busy() && WORK.contains(action.type())) return new Verdict(Decision.RETRY, action, "companion_busy");
+        if (!attempt.started() && after.busy() && WORK.contains(action.type()) && !NO_BUSY_RETRY.contains(action.type())) return new Verdict(Decision.RETRY, action, "companion_busy");
         if (result.status() == Status.TIMEOUT && GATHER.contains(action.type())) {
             if (gained <= 0) return stop("timeout_without_progress");
             return new Verdict(Decision.RETRY, new PlannedAction(action.type(), action.seconds(), action.count() - gained,
@@ -218,6 +223,22 @@ public final class CompanionPlanRunner {
                     run.plan.set(index, obtain);
                     return step(run, index, obtain, false);
                 });
+            }
+            // A portal short of obsidian or of a flint and steel gets it first and is built after. The step names what it was short of,
+            // so an obtain_item given up drops it too; each thing is got once for each count: the same shortage again stops the plan,
+            // a larger one (another frame, the player walked off meanwhile) is got once more.
+            var short_ = result.evidence();
+            if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "build_portal".equals(action.type()) && short_ != null
+                    && run.gotForPortal.add(short_.item() + " " + short_.count())) {
+                PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
+                CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
+                // «Новый» or «здесь» said stays; else the step names what it lacked, so an obtain_item given up drops it.
+                String kept = "new".equals(action.item()) || "here".equals(action.item()) ? action.item() : short_.item();
+                PlannedAction built = new PlannedAction(action.type(), 0, action.count(), kept);
+                run.plan.set(index, built);
+                run.builtAfter = built; run.builtFor = short_.item();
+                run.plan.add(index, obtain);
+                return step(run, index, obtain, false);
             }
             // A blocked step of an obtain chain gives up only this part; the rest of the plan goes on.
             if (inObtain && "blocked".equals(verdict.reason())) return giveUpObtain(run, index, result.message());
@@ -373,6 +394,12 @@ public final class CompanionPlanRunner {
         for (int i = run.plan.size() - 1; i >= from; i--)
             // A mine step after a part of the kit that could not be got is not begun: the goal decides with the bag as it is.
             if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item()) || "dig_for_diamonds".equals(run.plan.get(i).type())) same.addFirst(run.plan.remove(i));
+        // The portal waiting for what this obtain was to get goes too, whatever its own item says (CompanionPortalBuild).
+        if (run.builtAfter != null && !run.builtAfter.item().equals(run.builtFor) && obtain.item() != null && obtain.item().equals(run.builtFor)) {
+            int at = run.plan.subList(from, run.plan.size()).indexOf(run.builtAfter);
+            if (at >= 0) same.add(run.plan.remove(from + at));
+            run.builtAfter = null;
+        }
         boolean earlier = !run.dropped.isEmpty();
         run.dropped.add(obtain);
         run.dropped.addAll(same);
@@ -422,6 +449,11 @@ public final class CompanionPlanRunner {
         boolean replan;
         /** The parked batch that is still cooking while the next independent steps run. */
         Pending pending;
+        /** What a build_portal step was short of and is got for it: once each. */
+        final java.util.Set<String> gotForPortal = new java.util.HashSet<>();
+        /** The build_portal step put back after the obtain_item inserted for it, and the item it lacked. */
+        PlannedAction builtAfter;
+        String builtFor;
         Run(List<PlannedAction> plan, Port port) { this.plan = new ArrayList<>(plan); this.port = port; }
 
         Outcome outcome(int stoppedAt) {

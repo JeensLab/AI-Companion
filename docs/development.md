@@ -63,7 +63,9 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |
 | Компоненты после разделения больших классов | `entity/CompanionGathering.java`, `CompanionGatherGoals.java`, `CompanionStoneMining.java`, `CompanionOreMining.java`, `CompanionWorkCrafting.java`, `CompanionHunting.java` |
 | Песок, красный песок, гравий и кремень (`gather_loose`; стекло и огниво выходят из них через `obtain_item`) | `entity/CompanionGround.java` (каталог сыпучих блоков и их правила), `CompanionDigGoal.java` (копание лопатой), `CompanionFlint.java` (кремень: поставить гравий из сумки и выкопать), `CompanionObtain.java`; тесты `gametest/CompanionLooseTests.java`, `CompanionFlintProtocolTests.java`, `CompanionObtainTests.java` |
-| Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionFurnaces.java`, `CompanionHandOver.java` |
+| Подбор лежащих рядом вещей («подбери курицу»: взять то, что уже лежит, в том числе в воде и на другой высоте; ничего подходящего — честный ответ о том, что лежит вокруг, и только потом охота или добыча) | `entity/CompanionPickUp.java` (значения и осмотр земли), `CompanionEntity.pickUpNearby()`, работа `pick_up_nearby` — `entity/CompanionWork.java`, `entity/CompanionEvents.java`; фраза — `client/CompanionPickUpCommands.java`, `client/CompanionLocalCommands.java`, действие `pick_up` — `client/CompanionPlanCodec.java`; выключатель «Подбирать лежащее рядом» и радиус — `OpenRouterConfig.PICK_UP_NEARBY`, `PICK_UP_RADIUS`, `client/CompanionBehaviorScreen.java`, `client/CompanionPreferences.java`; тесты `gametest/CompanionPickUpTests.java` |
+| Срочный приказ («иди сюда», «стой», «защищай») посреди добычи: остаток откладывается и докапывается, когда он свободен | `entity/CompanionParkedOrder.java` (остаток, сохранение, возобновление; вход — `CompanionEntity.parkWork()` из `CompanionEvents.java`), флаг срочной отмены — `client/CompanionLocalCommands.java`, `CompanionActionExecutor.java`, `CompanionParkLink.java`, `CompanionTaskQueue.java`, `CompanionServerPlanPort.java`; выключатель «Срочный приказ откладывает работу» — `OpenRouterConfig.URGENT_ORDER`, `client/CompanionBehaviorScreen.java`, `client/CompanionPreferences.java`; тесты `gametest/CompanionUrgentOrderTests.java` |
+| Предметы, экипировка, сундуки и печи | `entity/CompanionBag.java`, `CompanionEquipment.java`, `CompanionChests.java`, `CompanionContainers.java` (какие блоки служат хранилищем и что названный контейнер принимает и отдаёт), `CompanionFurnaces.java`, `CompanionHandOver.java` |
 | Дом и память о сундуках и печах: что считается домом (`set_home`, постройки игрока, готовый дом Олега), походы к запомненному и новый блок дома | `entity/CompanionPlaces.java` (дом, запомненные места), `CompanionPlayerBuilds.java` (постройки игрока в сохранении `aicompanion_player_builds`), `CompanionHomeTrip.java` (поход и установка дома); тесты `gametest/CompanionHomeTests.java` |
 | Раскладка по сундукам (`sort_chests`) | `entity/CompanionSorting.java` (набор, ходки, несомое для игрока), `CompanionSortGroups.java` (группы и «куда что»); тесты `gametest/CompanionSorting*Tests.java`, `CompanionStoreGroupsTests.java` |
 | Загон и разведение животных | `entity/CompanionPen.java` (забор с калиткой вокруг животных), `CompanionBreeding.java` (кормление пар); тесты `gametest/CompanionPenTests.java` |
@@ -78,7 +80,8 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Навигация и выход из сложного рельефа | `entity/CompanionTravel.java`, `CompanionMiningNavigation.java`, `CompanionRecovery.java`, `CompanionPillar.java` |
 | Портал пешком: за игроком (Незер, Край) и по поручению `enter_portal` | `entity/CompanionPortals.java`; тесты `gametest/CompanionPortalTests.java` |
 | Окна, клавиши, внешний вид | `client/AICompanionClient.java`, `*Screen.java`, `CompanionRenderer.java`, ресурсы `src/main/resources/assets/aicompanion/` |
-| Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java` |
+| Голос | `client/MicrophoneRecorder.java`, `InworldSttClient.java`, `InworldTtsClient.java`, `CompanionVoiceAudio.java`; без ключа Inworld — голос Windows: `SpeechEngine.java`, `WindowsVoice.java` (SAPI через JNA), `WindowsVoiceChoice.java`, `WindowsVoiceHint.java`; macOS — `MacOsVoice.java` (`say` → временный WAV), `MacOsVoiceHint.java`, переключатель `macosVoice`; тесты `gametest/CompanionWindowsVoiceTests.java`, `CompanionMacOsVoiceTests.java` |
+| Анекдоты (JGGKS, #105) | `CompanionJokes.java` — локальный набор, интервал и часовая история; `client/CompanionAmbientClient.tellJoke` — свободное окно разговора, без работы, боя и воспроизведения речи. Настройки — `OpenRouterConfig`, «Поведение». Проверки: `CompanionJokeTests`, `CompanionMurmurTests`, `CompanionSpeechTests`, `CompanionSoulTests`. |
 | Разговор по своей инициативе, память и характер | `CompanionConversation.java` (сцены и темп), `CompanionTopics.java` (банк тем), `CompanionPersonality.java`, `client/CompanionAmbientClient.java`; память в мире и её сжатие вместе с чертами и своими темами — `client/CompanionMemoryFlow.java`, `CompanionMemoryCodec.java`, `entity/CompanionMemory.java`, `CompanionSoul.java`, `CompanionBonds.java`; тесты `gametest/CompanionSoulTests.java`, `CompanionMemoryTests.java` |
 | Локальные настройки и диагностика | `OpenRouterConfig.java`, `CompanionDiagnostics.java`, [SECURITY.md](../SECURITY.md) |
 | Регрессии и структуры | `gametest/`, `entity/CompanionStairApproachTests.java`, `src/main/resources/data/aicompanion/structure/` |
@@ -108,8 +111,9 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Изменение | Проверка |
 | --- | --- |
 | Документация и инструкции | Проверить пути, команды и `git diff --check`; игровой запуск не требуется |
-| Java, ресурсы или сборка | `.\gradlew.bat build` плюс подходящая проверка поведения |
-| Игровая механика, планы, навигация | Повседневно `.\scripts\verify-fast.ps1` на Windows или `./scripts/verify-fast.sh` на Linux/macOS: все тесты без трёх длинных сценариев `endurance` в нескольких процессах, итог в `build/diagnostics/fast-summary.json`. Число процессов считается по ядрам и свободной памяти (на Linux до 6: 6 шардов дали ~130 с против ~6 минут одним процессом, 8 уже флакуют; на Windows скрипт ограничен 4), `-Shards <1-8>` (Windows) или `--shards <1-8>` (Linux/macOS) задаёт его явно. Миры `run/shard-N/world` удаляются перед каждым прогоном. Перед PR один раз полный `.\gradlew.bat runGameTestServer` |
+| Java, ресурсы или сборка | `.\gradlew.bat build` плюс подходящая проверка поведения. Компилятор падает на `unchecked`, `rawtypes` и категории javac по умолчанию (`-Werror` в `build.gradle`); необязательные `deprecation`/`removal` не включены |
+| `switch` по enum проекта, новая константа enum | `java scripts/SwitchCheck.java` (`.\scripts\switch-check.ps1` или `./scripts/switch-check.sh`): без `default`, все константы перечислены; нужен только JDK; `switch` по вызову метода или `var` без `case` с константами не виден |
+| Игровая механика, планы, навигация | Повседневно `.\scripts\verify-fast.ps1` на Windows или `./scripts/verify-fast.sh` на Linux/macOS: все тесты без трёх длинных сценариев `endurance` в нескольких процессах, итог в `build/diagnostics/fast-summary.json`. Число процессов считается по ядрам и свободной памяти, по умолчанию не больше 4 на обеих ОС; `-Shards <1-4>` (Windows) или `--shards <1-4>` (Linux/macOS) задаёт его явно, 5–8 — только с `-Force` / `--force` и без гарантии стабильности (6 не всегда быстрее, 8 флакуют); `-DryRun` / `--dry-run` только печатает выбранное число. Миры `run/shard-N/world` удаляются перед каждым прогоном. Перед PR один раз полный `.\gradlew.bat runGameTestServer` |
 | Очередь и отмена задач | `.\scripts\verify-tasks.ps1 -Repetitions 1` |
 | Сохраняемая цель | `.\scripts\verify-goals.ps1 -Repetitions 1` |
 | Цель при настоящем перезапуске сервера | `.\scripts\verify-goal-restart.ps1` после создания `build/diagnostics/` |
@@ -262,3 +266,13 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 В PR сообщайте проблему и результат для игрока, затем доказательства проверки
 и оставшиеся ограничения. Другой помощник полезен для отдельного review:
 проверить выполнение условий, отмену, сохранение и побочные эффекты по diff.
+
+Клиентские проверки анекдотов: `bash scripts/verify-jokes-client.sh` (JDK 21,
+графическая среда и заранее загруженные зависимости Gradle). Скрипт запускает
+отдельный клиент в `build/jokes-client` с новым плоским миром и пустыми ключами.
+Непустой ключ или адрес модели приводит к отказу до изменения настроек.
+Проверяются настоящий клиентский обработчик, кнопки «Поведения», общий интервал
+реплик и блокировка анекдота при локальном WAV-воспроизведении. Бой и работа
+задаются через синхронизируемые флаги тестового Олега: это проверка клиентского
+допуска, а не физического поведения мобов. Голос провайдеров и микрофон не используются.
+Успех требует маркера `JOKE_CLIENT_PROBE_PASSED`, одного кода Gradle 0 недостаточно.

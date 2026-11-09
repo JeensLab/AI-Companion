@@ -121,10 +121,16 @@
   Не помещайте их в исходники, журналы, документы, архивы, чат и отчёты проверки.
 - Не публикуйте ключи, локальные настройки, аудио, миры и полные журналы.
   Диагностика может содержать диалог, координаты и инвентарь; см. `SECURITY.md`.
+- `switch` по enum проекта — без `default`, все константы перечислены; новая константа обязана
+  ломать сборку или `scripts/switch-check`, а не молча попадать в `default`. Проверка —
+  `./scripts/switch-check.sh` или `.\scripts\switch-check.ps1`. Для enum Minecraft/NeoForge
+  и для `String` правило не действует; `switch` по вызову метода или `var` без `case` с константами не виден проверке.
 
 ## Проверка и передача результата
 
 - Сборка: Windows `.\gradlew.bat build`; Linux/macOS `./gradlew build`.
+- Предупреждения javac `unchecked` и `rawtypes` — ошибки компиляции (`-Werror` в `build.gradle`);
+  вместе с категориями javac по умолчанию; необязательные (`deprecation`, `removal`) не включены и видны только строкой `Note:`.
 - Игровые тесты: повседневно `.\scripts\verify-fast.ps1` на Windows и `./scripts/verify-fast.sh` на
   Linux/macOS (все тесты без трёх длинных
   сценариев `endurance`, в нескольких процессах); перед PR один раз полный `.\gradlew.bat runGameTestServer`

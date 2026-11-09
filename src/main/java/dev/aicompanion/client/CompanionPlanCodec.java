@@ -15,7 +15,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -75,6 +75,22 @@ public final class CompanionPlanCodec {
         return new CompanionReply(reply, List.copyOf(actions));
     }
 
+    /** The `location` values the model is offered: the two places and every container a store or take order may name. */
+    public static final List<String> LOCATIONS = locations();
+
+    private static List<String> locations() {
+        List<String> names = new ArrayList<>(List.of("near_player", "inside_house"));
+        names.addAll(dev.aicompanion.entity.CompanionContainers.NAMEABLE.stream().sorted().toList());
+        return List.copyOf(names);
+    }
+
+    /** near_player for any step; inside_house for placing and storing; a container block id for store_items and take_items only. */
+    private static boolean validLocation(String location, String type) {
+        boolean storage = Set.of("store_items", "take_items").contains(type);
+        if (dev.aicompanion.entity.CompanionContainers.KINDS.contains(location)) return storage;
+        return location.equals("near_player") || location.equals("inside_house") && (storage || type.equals("place_block"));
+    }
+
     public static List<PlannedAction> parsePlan(JsonElement input) {
         try {
             JsonArray steps = input.isJsonArray() ? input.getAsJsonArray() : input.getAsJsonObject().getAsJsonArray("steps");
@@ -94,16 +110,20 @@ public final class CompanionPlanCodec {
                         : "farm_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES
                         : "harvest_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.MAX_HARVEST
                         : "build_pen".equals(type) ? 4
+                        // «Подбери» without a number takes everything of that kind lying around.
+                        : "pick_up".equals(type) ? 64
                         // A heading with no distance is walked until «стоп».
                         : "walk_heading".equals(type) ? 0 : 1;
                 int seconds = step.has("seconds") ? step.get("seconds").getAsBigDecimal().intValueExact() : 5;
                 if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
-                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type)) && count != 1) throw invalid();
+                if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
                 if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
+                // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
+                if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item) && !"here".equals(item)) throw invalid();
                 // A long goal is a catalog id with a level of 1 or 2 (iron, diamond), for find_diamonds a count; the model cannot make one up.
                 if ("pursue_goal".equals(type) && (!dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item)
                         || count > ("find_diamonds".equals(item) ? dev.aicompanion.entity.CompanionPlaybooks.DIAMONDS_MAX : 2))) throw invalid();
@@ -113,13 +133,12 @@ public final class CompanionPlanCodec {
                 if (("store_items".equals(type) || "take_items".equals(type)) && !item.isEmpty() && !Set.of("resources", "all", "logs", "stone").contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if ("give_items".equals(type) && !"logs".equals(item) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
-                if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type))
-                        && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
+                        || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";
-                if (!Set.of("near_player", "inside_house").contains(location)) throw invalid();
-                if (!location.equals("near_player") && !Set.of("place_block", "store_items", "take_items").contains(type)) throw invalid();
+                if (!validLocation(location, type)) throw invalid();
                 if ("mine_ore".equals(type)) {
                     var kind = dev.aicompanion.entity.CompanionOre.Kind.of(item);
                     if (kind == null) throw invalid();
