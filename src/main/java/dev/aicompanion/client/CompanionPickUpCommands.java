@@ -85,15 +85,25 @@ public final class CompanionPickUpCommands {
     public static PlannedAction chosen(Ask ask, List<CompanionPickUp.Drop> drops, String answer) {
         if (answer == null || answer.isBlank()) return null;
         String said = answer.toLowerCase(Locale.ROOT);
+        // The answer is the id itself: an exact one wins, so «minecraft:coal_block» is not the coal it begins with.
         for (CompanionPickUp.Drop drop : drops) {
-            if (said.contains(drop.id().toLowerCase(Locale.ROOT))) return new PlannedAction("pick_up", 0, ask.count(), drop.id());
+            if (said.trim().equals(drop.id().toLowerCase(Locale.ROOT))) return new PlannedAction("pick_up", 0, ask.count(), drop.id());
         }
-        // A reply that names the thing instead of its id is still the thing lying on the ground.
+        // A sentence around the id: the longest id named wins, so «coal_block» beats the «coal» inside it.
+        CompanionPickUp.Drop longest = null;
         for (CompanionPickUp.Drop drop : drops) {
-            if (!drop.name().isBlank() && said.contains(drop.name().toLowerCase(Locale.ROOT)))
-                return new PlannedAction("pick_up", 0, ask.count(), drop.id());
+            String id = drop.id().toLowerCase(Locale.ROOT);
+            if (said.contains(id) && (longest == null || id.length() > longest.id().length())) longest = drop;
         }
-        return null;
+        if (longest != null) return new PlannedAction("pick_up", 0, ask.count(), longest.id());
+        // A reply that names the thing instead of its id is still the thing lying on the ground: the longest name wins
+        // for the same reason, «угольный блок» over «уголь».
+        CompanionPickUp.Drop named = null;
+        for (CompanionPickUp.Drop drop : drops) {
+            String name = drop.name().toLowerCase(Locale.ROOT);
+            if (!name.isBlank() && said.contains(name) && (named == null || name.length() > named.name().length())) named = drop;
+        }
+        return named == null ? null : new PlannedAction("pick_up", 0, ask.count(), named.id());
     }
 
     /** The noun and the number of a pickup phrase, before the registry is asked what the noun is. */

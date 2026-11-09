@@ -956,6 +956,13 @@ public final class CompanionPickUpTests {
             h.assertTrue(spoken.contains("Иду охотиться"), "The fallback is not heard: " + spoken);
             h.assertTrue(spoken.contains("Никого не добыл"), "The hunt's outcome is not heard: " + spoken);
             h.assertTrue(spoken.contains("Остановился и жду."), "The rest of the plan is not heard: " + spoken);
+            // The pickup's own facts come first, the rest of the plan after them: not only present, but in that order.
+            int honest = spoken.toLowerCase(java.util.Locale.ROOT).indexOf("нет предмета");
+            int fallback = spoken.indexOf("Иду охотиться");
+            int hunt = spoken.indexOf("Никого не добыл");
+            int rest = spoken.indexOf("Остановился и жду.");
+            h.assertTrue(honest >= 0 && fallback >= 0 && hunt >= 0 && rest >= 0 && honest < fallback && fallback < hunt && hunt < rest,
+                    "The pickup's facts are not before the rest of the plan: " + spoken);
         });
     }
 
@@ -1047,6 +1054,100 @@ public final class CompanionPickUpTests {
         var plain = CompanionPickUp.of("minecraft:netherite_ingot");
         h.assertTrue(plain != null && plain.is(new ItemStack(Items.NETHERITE_INGOT)) && plain.fallbackAction() == null,
                 "A plain item is not itself: " + plain);
+        h.succeed();
+    }
+
+    /**
+     * Judge finding 1: a word names every form of the thing, not the single tie the resolver put first. «Железо» is
+     * the ore, the raw drop, the ingot and the block; «уголь», «золото» and «медь» take their own forms, and
+     * «чернила» both ink sacs.
+     */
+    @GameTest(template = "large_search")
+    public static void aWordTakesEveryFormOfTheThing(GameTestHelper h) {
+        var iron = CompanionPickUp.of(CompanionItemLookup.itemFor("железо", RU));
+        h.assertTrue(iron != null, "«Железо» has no meaning at all");
+        for (Item form : List.of(Items.IRON_ORE, Items.RAW_IRON, Items.IRON_INGOT, Items.IRON_BLOCK))
+            h.assertTrue(iron.is(new ItemStack(form)), "«Железо» does not take " + BuiltInRegistries.ITEM.getKey(form) + ": " + iron);
+        var coal = CompanionPickUp.of(CompanionItemLookup.itemFor("уголь", RU));
+        h.assertTrue(coal != null && coal.is(new ItemStack(Items.COAL)) && coal.is(new ItemStack(Items.COAL_BLOCK)),
+                "«Уголь» does not take the coal block: " + coal);
+        var gold = CompanionPickUp.of(CompanionItemLookup.itemFor("золото", RU));
+        h.assertTrue(gold != null && gold.is(new ItemStack(Items.GOLD_ORE)) && gold.is(new ItemStack(Items.GOLD_INGOT))
+                        && gold.is(new ItemStack(Items.GOLD_BLOCK)),
+                "«Золото» does not take the ore, the ingot and the block: " + gold);
+        var copper = CompanionPickUp.of(CompanionItemLookup.itemFor("медь", RU));
+        h.assertTrue(copper != null && copper.is(new ItemStack(Items.COPPER_ORE)) && copper.is(new ItemStack(Items.COPPER_INGOT))
+                        && copper.is(new ItemStack(Items.COPPER_BLOCK)),
+                "«Медь» does not take the ore, the ingot and the block: " + copper);
+        var ink = CompanionPickUp.of(CompanionItemLookup.itemFor("чернила", RU));
+        h.assertTrue(ink != null && ink.is(new ItemStack(Items.INK_SAC)) && ink.is(new ItemStack(Items.GLOW_INK_SAC)),
+                "«Чернила» does not take the glow ink sac: " + ink);
+        h.succeed();
+    }
+
+    /** Judge finding 1: an iron ore and an iron block lying near are both taken by the one order «подбери железо» names. */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void everyFormOfIronLyingNearIsTaken(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        companion.setPickUpNearby(true, 16);
+        ItemEntity ore = item(h, 11, 1, 8, Items.IRON_ORE, 2);
+        ItemEntity block = item(h, 12, 1, 9, Items.IRON_BLOCK, 1);
+        String iron = CompanionItemLookup.itemFor("железо", RU);
+        h.assertTrue(iron != null, "«Железо» was not resolved by the registry");
+        var result = CompanionEvents.executeAction(player(h, companion), "pick_up", iron, 64);
+        h.assertTrue(result.success(), "The iron order was refused: " + result.message());
+        h.succeedWhen(() -> h.assertTrue(ore.isRemoved() && block.isRemoved() && stored(companion, Items.IRON_ORE) == 2
+                        && stored(companion, Items.IRON_BLOCK) == 1,
+                "The iron forms were not all taken: ore " + stored(companion, Items.IRON_ORE) + ", block "
+                        + stored(companion, Items.IRON_BLOCK) + ", phase " + companion.workPhase() + ", " + companion.getLastTaskResult()));
+    }
+
+    /** Judge finding 2: a mod's fried meat is its own raw meat, not the game's item of the same path. */
+    @GameTest(template = "large_search")
+    public static void aModsCookedMeatKeepsItsNamespace(GameTestHelper h) {
+        var modded = ResourceLocation.fromNamespaceAndPath("mymod", "cooked_beef");
+        h.assertTrue(ResourceLocation.fromNamespaceAndPath("mymod", "beef").equals(CompanionItemLookup.uncooked(modded)),
+                "A mod's cooked beef was renamed into another namespace: " + CompanionItemLookup.uncooked(modded));
+        h.assertTrue(ResourceLocation.withDefaultNamespace("beef").equals(
+                        CompanionItemLookup.uncooked(ResourceLocation.withDefaultNamespace("cooked_beef"))),
+                "The game's cooked beef is not its raw one");
+        h.succeed();
+    }
+
+    /** Judge finding 3: the model's answer takes the exact id it named, not the shorter id inside it. */
+    @GameTest(template = "large_search")
+    public static void theModelsAnswerTakesTheExactDrop(GameTestHelper h) {
+        var ask = new CompanionPickUpCommands.Ask("уголь", 64);
+        var drops = List.of(new CompanionPickUp.Drop("minecraft:coal", "Уголь", 1),
+                new CompanionPickUp.Drop("minecraft:coal_block", "Угольный блок", 1));
+        var exact = CompanionPickUpCommands.chosen(ask, drops, "minecraft:coal_block");
+        h.assertTrue(exact != null && "minecraft:coal_block".equals(exact.item()), "«coal_block» was read as coal: " + exact);
+        var coal = CompanionPickUpCommands.chosen(ask, drops, "minecraft:coal");
+        h.assertTrue(coal != null && "minecraft:coal".equals(coal.item()), "«coal» was not taken: " + coal);
+        var sentence = CompanionPickUpCommands.chosen(ask, drops, "Думаю, это minecraft:coal_block.");
+        h.assertTrue(sentence != null && "minecraft:coal_block".equals(sentence.item()), "The longer id in a sentence lost to coal: " + sentence);
+        var byName = CompanionPickUpCommands.chosen(ask, drops, "Угольный блок");
+        h.assertTrue(byName != null && "minecraft:coal_block".equals(byName.item()), "The longer name lost to coal: " + byName);
+        h.succeed();
+    }
+
+    /** Judge finding 4: a gift, junk he let go and another player's drop are not in the model's list. */
+    @GameTest(template = "large_search")
+    public static void theModelsListLeavesOutWhatTheOrderWouldRefuse(GameTestHelper h) {
+        arena(h);
+        CompanionEntity companion = spawn(h);
+        ServerPlayer owner = player(h, companion);
+        item(h, 11, 1, 8, Items.CHICKEN, 1);
+        ItemEntity gift = item(h, 12, 1, 8, Items.DIAMOND, 1);
+        gift.getPersistentData().putBoolean("aicompanion:gift", true);
+        ItemEntity junk = item(h, 12, 1, 9, Items.STICK, 1);
+        junk.getPersistentData().putBoolean("aicompanion:junk", true);
+        ItemEntity aimed = item(h, 11, 1, 9, Items.COBBLESTONE, 1);
+        aimed.setTarget(java.util.UUID.randomUUID());
+        var drops = CompanionPickUp.drops(h.getLevel(), companion.position(), 16, owner.getUUID());
+        h.assertTrue(drops.size() == 1 && "minecraft:chicken".equals(drops.getFirst().id()),
+                "The list is not just the chicken: " + drops);
         h.succeed();
     }
 
@@ -1144,7 +1245,7 @@ public final class CompanionPickUpTests {
         companion.setPickUpNearby(true, 16);
         item(h, 12, 1, 8, Items.CHICKEN, 2);
         item(h, 11, 1, 9, Items.ROTTEN_FLESH, 1);
-        var drops = CompanionPickUp.drops(h.getLevel(), companion.position(), 16);
+        var drops = CompanionPickUp.drops(h.getLevel(), companion.position(), 16, companion.getOwnerId());
         h.assertTrue(drops.size() == 2, "The drops are not listed: " + drops);
         // The registry does not answer «кура»: a four-letter word needs its whole stem, and «кур» is not «куриц».
         h.assertTrue(CompanionItemLookup.itemFor("кура", RU) == null, "«Кура» was resolved by the registry after all");
@@ -1316,34 +1417,89 @@ public final class CompanionPickUpTests {
     }
 
     /**
-     * The names a Russian client shows. The GameTest server runs en_us, so these stand in for the player's language:
-     * the resolver is the same one the client runs, only the names come from this stand-in instead of the client's lang.
+     * Judge finding 6: the Russian stand-in is not a table of ours that drifts from the real translation — every name
+     * it gives is read from the shipped ru_ru lang file the client reads, and checked against it here.
      */
+    @GameTest(template = "large_search")
+    public static void theRussianNamesAreTheShippedOnes(GameTestHelper h) {
+        java.util.Map<String, String> lang = shippedRussianLang();
+        int checked = 0;
+        for (var entry : RU_NAMES.entrySet()) {
+            var id = ResourceLocation.withDefaultNamespace(entry.getKey());
+            Item item = BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+            h.assertTrue(item != null, "No item «" + id + "» for the stand-in name «" + entry.getValue() + "»");
+            String shipped = lang.get("item.minecraft." + entry.getKey());
+            if (shipped == null) shipped = lang.get("block.minecraft." + entry.getKey());
+            h.assertTrue(shipped != null, "The shipped ru_ru has no name for «" + id + "»");
+            h.assertTrue(entry.getValue().equals(shipped),
+                    "The stand-in drifted from ru_ru for «" + id + "»: «" + entry.getValue() + "» is «" + shipped + "»");
+            h.assertTrue(entry.getValue().equals(russianName(item)), "The resolver does not read the stand-in for «" + id + "»");
+            checked++;
+        }
+        h.assertTrue(checked >= 2, "Too few names checked against the shipped lang: " + checked);
+        h.succeed();
+    }
+
+    /**
+     * The names a Russian client shows, as the game's own ru_ru lang file gives them. The GameTest server runs en_us,
+     * so these stand in for the player's language: the resolver is the same one the client runs, only the names come
+     * from here instead of the client's lang. Every one of them is checked against the shipped ru_ru file
+     * ({@link #theRussianNamesAreTheShippedOnes}), so a drift from the real translation fails a test.
+     */
+    private static final java.util.Map<String, String> RU_NAMES = java.util.Map.ofEntries(
+            java.util.Map.entry("chicken", "Сырая курица"),
+            java.util.Map.entry("cooked_chicken", "Жареная курица"),
+            java.util.Map.entry("porkchop", "Сырая свинина"),
+            java.util.Map.entry("cooked_porkchop", "Жареная свинина"),
+            java.util.Map.entry("rotten_flesh", "Гнилая плоть"),
+            java.util.Map.entry("diamond", "Алмаз"),
+            java.util.Map.entry("amethyst_shard", "Осколок аметиста"),
+            java.util.Map.entry("spyglass", "Подзорная труба"),
+            java.util.Map.entry("bucket", "Ведро"),
+            java.util.Map.entry("water_bucket", "Ведро воды"),
+            java.util.Map.entry("ink_sac", "Чернильный мешок"),
+            java.util.Map.entry("glow_ink_sac", "Светящийся чернильный мешок"),
+            java.util.Map.entry("oak_log", "Дубовое бревно"),
+            java.util.Map.entry("birch_log", "Берёзовое бревно"),
+            java.util.Map.entry("stone", "Камень"),
+            java.util.Map.entry("cobblestone", "Булыжник"),
+            java.util.Map.entry("stick", "Палка"),
+            java.util.Map.entry("oak_planks", "Дубовые доски"),
+            java.util.Map.entry("white_wool", "Белая шерсть"),
+            // The forms of the ores and metals the word names as one thing.
+            java.util.Map.entry("iron_ore", "Железная руда"),
+            java.util.Map.entry("raw_iron", "Рудное железо"),
+            java.util.Map.entry("iron_ingot", "Железный слиток"),
+            java.util.Map.entry("iron_block", "Железный блок"),
+            java.util.Map.entry("coal", "Уголь"),
+            java.util.Map.entry("coal_block", "Угольный блок"),
+            java.util.Map.entry("gold_ore", "Золотая руда"),
+            java.util.Map.entry("raw_gold", "Рудное золото"),
+            java.util.Map.entry("gold_ingot", "Золотой слиток"),
+            java.util.Map.entry("gold_block", "Золотой блок"),
+            java.util.Map.entry("copper_ore", "Медная руда"),
+            java.util.Map.entry("raw_copper", "Рудная медь"),
+            java.util.Map.entry("copper_ingot", "Медный слиток"),
+            java.util.Map.entry("copper_block", "Медный блок"));
+
     private static final Function<Item, String> RU = CompanionPickUpTests::russianName;
 
     private static String russianName(Item item) {
-        return switch (BuiltInRegistries.ITEM.getKey(item).getPath()) {
-            case "chicken" -> "Курица";
-            case "cooked_chicken" -> "Жареная курица";
-            case "porkchop" -> "Свинина";
-            case "cooked_porkchop" -> "Жареная свинина";
-            case "rotten_flesh" -> "Гнилая плоть";
-            case "diamond" -> "Алмаз";
-            case "amethyst_shard" -> "Осколок аметиста";
-            case "spyglass" -> "Подзорная труба";
-            case "bucket" -> "Ведро";
-            case "water_bucket" -> "Ведро воды";
-            case "ink_sac" -> "Чернильный мешок";
-            case "glow_ink_sac" -> "Светящийся чернильный мешок";
-            case "oak_log" -> "Дубовое бревно";
-            case "birch_log" -> "Берёзовое бревно";
-            case "stone" -> "Камень";
-            case "cobblestone" -> "Булыжник";
-            case "stick" -> "Палка";
-            case "oak_planks" -> "Дубовая доска";
-            case "white_wool" -> "Белая шерсть";
-            default -> new ItemStack(item).getHoverName().getString();
-        };
+        String name = RU_NAMES.get(BuiltInRegistries.ITEM.getKey(item).getPath());
+        return name != null ? name : new ItemStack(item).getHoverName().getString();
+    }
+
+    /** The shipped Russian lang file the client reads, as a map of keys to the player's words. */
+    private static java.util.Map<String, String> shippedRussianLang() {
+        try (var stream = CompanionPickUpTests.class.getResourceAsStream("/assets/minecraft/lang/ru_ru.json")) {
+            if (stream == null) throw new IllegalStateException("The shipped ru_ru.json is not on the classpath");
+            var json = com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(stream, java.nio.charset.StandardCharsets.UTF_8));
+            java.util.Map<String, String> lang = new java.util.HashMap<>();
+            for (var entry : json.getAsJsonObject().entrySet()) lang.put(entry.getKey(), entry.getValue().getAsString());
+            return lang;
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     private static ItemEntity item(GameTestHelper h, int x, int y, int z, Item item, int count) {

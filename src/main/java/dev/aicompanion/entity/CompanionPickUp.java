@@ -128,11 +128,55 @@ public final class CompanionPickUp {
 
     /** A thing that is only itself; a shovel's loose drop still names the work that gets it when none lies near. */
     private static Meaning single(Item item) {
-        if (item == Items.GRAVEL) return new Meaning(name(item), accusative(item), genitive(item), stack -> stack.is(item),
-                "gather_loose", "minecraft:gravel", GATHER_COUNT, "Возьму лопату.");
-        if (item == Items.FLINT) return new Meaning(name(item), accusative(item), genitive(item), stack -> stack.is(item),
-                "gather_loose", "minecraft:flint", FLINT_COUNT, "Возьму лопату.");
-        return new Meaning(name(item), accusative(item), genitive(item), stack -> stack.is(item), null, null, 0, "");
+        List<Item> family = family(item);
+        if (item == Items.GRAVEL) return new Meaning(name(item), accusative(item), genitive(item),
+                stack -> stack.is(Items.GRAVEL), "gather_loose", "minecraft:gravel", GATHER_COUNT, "Возьму лопату.");
+        if (item == Items.FLINT) return new Meaning(name(item), accusative(item), genitive(item),
+                stack -> stack.is(Items.FLINT), "gather_loose", "minecraft:flint", FLINT_COUNT, "Возьму лопату.");
+        return new Meaning(name(item), accusative(item), genitive(item), stack -> {
+            for (Item member : family) if (stack.is(member)) return true;
+            return false;
+        }, null, null, 0, "");
+    }
+
+    /** The affixes the game builds another form of the same thing with: «глубинносланцевая руда», «сырое железо», «слиток». */
+    private static final List<String> FORM_PREFIXES = List.of("deepslate_", "nether_", "raw_", "glow_");
+    private static final List<String> FORM_SUFFIXES = List.of("_ore", "_ingot", "_block", "_lazuli");
+
+    /**
+     * Every form of the thing the game holds: «железо» is the ore, the raw drop, the ingot and the block, «чернила» both
+     * ink sacs. A form is built from the same base id by the game's own affixes, so the family is every item with that
+     * base — a mod's own ore, raw drop, ingot and block count the same way.
+     */
+    private static List<Item> family(Item item) {
+        String base = base(key(item));
+        List<Item> family = new ArrayList<>();
+        for (Item other : BuiltInRegistries.ITEM) {
+            if (other != Items.AIR && base.equals(base(key(other)))) family.add(other);
+        }
+        return family;
+    }
+
+    /** The id without the affixes of a form: «raw_iron_block» and «iron_ore» are both «iron». */
+    private static String base(String path) {
+        String base = path;
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (String prefix : FORM_PREFIXES) {
+                if (base.startsWith(prefix) && base.length() > prefix.length()) {
+                    base = base.substring(prefix.length());
+                    changed = true;
+                }
+            }
+            for (String suffix : FORM_SUFFIXES) {
+                if (base.endsWith(suffix) && base.length() > suffix.length()) {
+                    base = base.substring(0, base.length() - suffix.length());
+                    changed = true;
+                }
+            }
+        }
+        return base;
     }
 
     /**
@@ -217,13 +261,15 @@ public final class CompanionPickUp {
     }
 
     /**
-     * The drops lying around, each with its id and the name the game shows for it: the exact list the model picks from
-     * when the player's word is not one the registry answers.
+     * The drops lying around that the order may take, each with its id and the name the game shows for it: the exact
+     * list the model picks from when the player's word is not one the registry answers. A gift, junk he let go and a
+     * stack aimed at somebody else are left out, so the model cannot pick what the order would refuse.
      */
-    public static List<Drop> drops(Level level, Vec3 center, double radius) {
+    public static List<Drop> drops(Level level, Vec3 center, double radius, java.util.UUID playerId) {
         Map<String, Drop> byId = new LinkedHashMap<>();
         for (ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(center, center).inflate(radius))) {
             if (!drop.isAlive() || drop.getItem().isEmpty() || drop.position().distanceToSqr(center) > radius * radius) continue;
+            if (!pickable(drop, playerId)) continue;
             String id = id(drop.getItem());
             Drop seen = byId.get(id);
             byId.put(id, new Drop(id, label(drop.getItem()), (seen == null ? 0 : seen.count()) + drop.getItem().getCount()));

@@ -41,12 +41,20 @@ public final class CompanionItemLookup {
         List<Item> found = resolve(phrase, names);
         if (found.isEmpty()) return null;
         Item picked = found.getFirst();
-        String path = BuiltInRegistries.ITEM.getKey(picked).getPath();
-        if (path.startsWith("cooked_")) {
-            var raw = BuiltInRegistries.ITEM.getOptional(ResourceLocation.withDefaultNamespace(path.substring("cooked_".length())));
+        var key = BuiltInRegistries.ITEM.getKey(picked);
+        if (key.getPath().startsWith("cooked_")) {
+            var raw = BuiltInRegistries.ITEM.getOptional(uncooked(key));
             if (raw.isPresent()) picked = raw.get();
         }
         return BuiltInRegistries.ITEM.getKey(picked).toString();
+    }
+
+    /**
+     * The raw form of a fried thing, in its own namespace: a mod's «cooked_beef» is «beef» of that mod, not the game's
+     * beef. Only for an id whose path starts with «cooked_».
+     */
+    public static ResourceLocation uncooked(ResourceLocation key) {
+        return ResourceLocation.fromNamespaceAndPath(key.getNamespace(), key.getPath().substring("cooked_".length()));
     }
 
     /**

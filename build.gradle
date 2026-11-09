@@ -249,6 +249,8 @@ tasks.named('jar', Jar).configure {
     exclude 'data/aicompanion/structure/tall_tree.nbt'
     exclude 'data/aicompanion/structure/b65_hillside.nbt'
     exclude 'data/aicompanion/structure/marathon_*.nbt'
+    // The Russian lang of the game itself, only for the tests to read: the client already has its own copy.
+    exclude 'assets/minecraft/lang/ru_ru.json'
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

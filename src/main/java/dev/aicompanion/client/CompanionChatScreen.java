@@ -144,7 +144,7 @@ public final class CompanionChatScreen extends Screen {
         if (ask == null || minecraft.level == null || minecraft.player == null) return false;
         CompanionEntity speaker = companion(minecraft);
         var center = speaker == null ? minecraft.player.position() : speaker.position();
-        var drops = CompanionPickUp.drops(minecraft.level, center, speaker == null ? 16.0D : speaker.pickUpRadius());
+        var drops = CompanionPickUp.drops(minecraft.level, center, speaker == null ? 16.0D : speaker.pickUpRadius(), minecraft.player.getUUID());
         if (drops.isEmpty()) {
             CompanionDiagnostics.event(trace, "message_route", "route", "local_pickup_empty", "noun", ask.noun());
             runLocalActions(List.of(new PlannedAction("pick_up", 0, ask.count(), CompanionPickUp.ANY_ITEM)), trace);
