@@ -116,6 +116,11 @@ public final class OpenRouterConfig {
             .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")
             .translation("config.aicompanion.boat_clutch")
             .define("boatClutch", true);
+    /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue REPLANT_SAPLINGS = BUILDER
+            .comment("Put a sapling of the same wood from his bag on the stump of a tree he felled (a dark oak only from four). Off: the stumps stay bare.")
+            .translation("config.aicompanion.replant_saplings")
+            .define("replantSaplings", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
