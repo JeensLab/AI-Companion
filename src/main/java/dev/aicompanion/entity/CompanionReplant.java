@@ -39,7 +39,7 @@ final class CompanionReplant {
     /** How long the walk to one plot may take before its stumps are left bare; a fight or an open bag in between does not count. */
     private static final int PATIENCE = 20 * 15;
     /** The ground under the stump is worked from a cell beside it, not from the stump cell itself; a square from nearer, to reach all four. */
-    private static final CompanionRoute.Need GROUND = new CompanionRoute.Need(3.5, false, true, false), SQUARE = new CompanionRoute.Need(2.5, false, true, false);
+    private static final CompanionRoute.Need GROUND = new CompanionRoute.Need(3.5, false, true, false), SQUARE = new CompanionRoute.Need(2.2, false, true, false);
 
     /** The stumps of one tree planted together: one, or the four of a square trunk. */
     private record Plot(List<BlockPos> cells, Item sapling) { }
@@ -163,9 +163,13 @@ final class CompanionReplant {
     private boolean fits(ServerLevel level, BlockPos cell, Item sapling) {
         if (!level.getBlockState(cell).isAir() || !level.getBlockState(cell.above()).isAir()
                 || !Block.byItem(sapling).defaultBlockState().canSurvive(level, cell)) return false;
-        // A tree by the player's blocks would grow into his building. His own bench, set by the trunk for an axe, is not one (review 09.11).
-        for (BlockPos near : BlockPos.betweenClosed(cell.offset(-2, -1, -2), cell.offset(2, 2, 2)))
-            if (level.hasChunkAt(near) && CompanionBuildings.crafted(level.getBlockState(near)) && !c.placedByMe(near)) return false;
+        // A tree by a building would grow into it, a house he built himself included. Only his own bench, set by the trunk for an
+        // axe, is let be (review 09.11).
+        for (BlockPos near : BlockPos.betweenClosed(cell.offset(-2, -1, -2), cell.offset(2, 2, 2))) {
+            if (!level.hasChunkAt(near)) continue;
+            BlockState state = level.getBlockState(near);
+            if (CompanionBuildings.crafted(state) && !(state.is(Blocks.CRAFTING_TABLE) && c.placedByMe(near))) return false;
+        }
         return true;
     }
 

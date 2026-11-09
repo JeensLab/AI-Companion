@@ -147,6 +147,22 @@ public final class CompanionReplantTests {
         });
     }
 
+    /** Review 09.11, round 2: a house he built himself is a building too; only his own bench by the tree is let be. */
+    @GameTest(template = "empty", timeoutTicks = 700)
+    public static void byAHouseHeBuiltTheStumpStaysBare(GameTestHelper h) {
+        CompanionEntity c = setup(h);
+        tree(h, Blocks.OAK_LOG, 18, 16, 1, 3);
+        for (int y = 1; y <= 2; y++) { h.setBlock(new BlockPos(18, y, 18), Blocks.OAK_PLANKS); c.rememberPlaced(h.absolutePos(new BlockPos(18, y, 18))); }
+        c.setItem(0, new ItemStack(Items.OAK_SAPLING, 2));
+        c.startGatheringLogs(3);
+        h.succeedWhen(() -> {
+            done(h, c);
+            h.assertTrue(count(c, Items.OAK_LOG) == 3 && c.didLastTaskSucceed(), c.getLastTaskResult());
+            h.assertTrue(h.getBlockState(new BlockPos(18, 1, 16)).isAir() && count(c, Items.OAK_SAPLING) == 2,
+                    "Planted by his own house: " + h.getBlockState(new BlockPos(18, 1, 16)) + ", bag " + c.getStoredItemsSummary());
+        });
+    }
+
     /** The switch lives in the save with him; an old save has it on. */
     @GameTest(template = "empty")
     public static void theSaplingSwitchIsSavedAndAnOldSaveHasItOn(GameTestHelper h) {
