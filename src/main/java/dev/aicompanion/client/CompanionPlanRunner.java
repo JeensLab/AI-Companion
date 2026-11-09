@@ -30,10 +30,15 @@ public final class CompanionPlanRunner {
     public static final int MAX_OBTAIN_STEPS = 32;
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "fill_bucket", "mine_obsidian", "build_portal");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "fill_bucket", "mine_obsidian", "build_portal", "pick_up");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
+    /**
+     * Steps whose refusal is the whole answer even though their own work started: «подбери» says what lies around and then
+     * takes up the fallback, so a repeat on «companion busy» would only delay the honest answer and show «Повтор шага».
+     */
+    private static final Set<String> NO_BUSY_RETRY = Set.of("pick_up");
 
     public interface Port {
         String trace();
@@ -87,7 +92,7 @@ public final class CompanionPlanRunner {
             return new Verdict(Decision.CONTINUE, null, "target_collected_before_timeout");
         if (retried) return stop("step_already_repeated");
         if (recoveries >= MAX_RECOVERIES) return stop("plan_recovery_budget_spent");
-        if (!attempt.started() && after.busy() && WORK.contains(action.type())) return new Verdict(Decision.RETRY, action, "companion_busy");
+        if (!attempt.started() && after.busy() && WORK.contains(action.type()) && !NO_BUSY_RETRY.contains(action.type())) return new Verdict(Decision.RETRY, action, "companion_busy");
         if (result.status() == Status.TIMEOUT && GATHER.contains(action.type())) {
             if (gained <= 0) return stop("timeout_without_progress");
             return new Verdict(Decision.RETRY, new PlannedAction(action.type(), action.seconds(), action.count() - gained,

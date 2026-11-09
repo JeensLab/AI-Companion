@@ -382,6 +382,8 @@ public final class CompanionEvents {
             case "collect_smelt" -> companion.startWork("collect_smelt", item, 1);
             case "mine_ore" -> companion.startWork("mine_ore", item, count);
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
+            // «Подбери»: what lies on the ground, taken by walking to it; nothing near falls back to the usual work.
+            case "pick_up" -> companion.pickUpNearby(item, count);
             case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.

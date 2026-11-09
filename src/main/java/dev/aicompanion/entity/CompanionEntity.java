@@ -139,6 +139,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
+    /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
+    private boolean pickUpNearby = true;
+    private int pickUpRadius = 16;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -630,6 +633,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
     public boolean boatClutch() { return boatClutchOn; }
     public void setBoatClutch(boolean on) { boatClutchOn = on; }
+    /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
+    public boolean pickUpNearby() { return pickUpNearby; }
+    public int pickUpRadius() { return pickUpRadius; }
+    public void setPickUpNearby(boolean on, int radius) { pickUpNearby = on; pickUpRadius = Math.clamp(radius, CompanionPickUp.MIN_RADIUS, CompanionPickUp.MAX_RADIUS); }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
@@ -697,6 +704,39 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void storageStatus(String location) { entityData.set(DATA_STORAGE_CHEST, location); }
     public CompanionActionResult startWork(String action, String item, int count) {
         return startWork(action, item, count, "near_player");
+    }
+
+    /**
+     * «Подбери <X>»: what of that meaning lies on the ground around him is walked to and taken by the game's own pickup,
+     * in water and at another height too. Nothing of it near: the honest answer names what does lie around, and only
+     * then does he take up the usual work (a hunt for meat, a dig for stone and the like). With the setting off he
+     * skips the ground and goes straight to that work.
+     */
+    CompanionActionResult pickUpNearby(String item, int count) {
+        CompanionPickUp.Meaning meaning = CompanionPickUp.of(item);
+        if (meaning == null) return CompanionActionResult.failed("Не понял, что подобрать: «" + item + "».");
+        if (count < 1 || count > 64) return CompanionActionResult.failed("За раз подбираю от 1 до 64 предметов.");
+        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для подбора нужен загруженный мир.");
+        boolean fallback = meaning.fallbackAction() != null;
+        // The order says how much: «подбери 8 брёвен» falls back on 8, the route's 64 («no number») keeps the meaning's own amount.
+        int wanted = count < CompanionPickUp.ALL_AT_ONCE ? count : meaning.fallbackCount();
+        if (!pickUpNearby && fallback) return startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
+        var found = CompanionPickUp.find(level, blockPosition(), pickUpRadius, meaning, count, getOwnerId());
+        var room = new java.util.ArrayList<ItemEntity>();
+        for (ItemEntity drop : found) if (canStoreDrops(java.util.List.of(drop.getItem().copyWithCount(1)))) room.add(drop);
+        if (!room.isEmpty()) {
+            CompanionActionResult started = startWork("pick_up_nearby", item, count);
+            if (started.success()) loot.claim(room);
+            return started;
+        }
+        if (!found.isEmpty()) {
+            // Matching drops lie there, but none of them fits: the bag is full, not the ground empty.
+            return CompanionActionResult.failed("Лежит рядом: " + meaning.name() + " (" + CompanionPickUp.total(found) + "), но сумка полна.");
+        }
+        String honest = "Рядом нет " + meaning.genitive() + ". " + CompanionPickUp.lying(level, blockPosition(), pickUpRadius, getOwnerId());
+        if (!fallback) return CompanionActionResult.failed(honest);
+        CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
+        return CompanionActionResult.failed(honest + (taken.success() ? " " + meaning.fallbackNote() : ""));
     }
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {

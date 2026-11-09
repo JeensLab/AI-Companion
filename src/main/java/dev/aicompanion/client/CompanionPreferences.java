@@ -51,6 +51,7 @@ public final class CompanionPreferences {
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());
                 companion.setGuardByPlayer(OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get());
                 companion.setOtherContainers(OpenRouterConfig.OTHER_CONTAINERS.get());
+                companion.setPickUpNearby(OpenRouterConfig.PICK_UP_NEARBY.get(), OpenRouterConfig.PICK_UP_RADIUS.get());
                 companion.setUrgentOrder(OpenRouterConfig.URGENT_ORDER.get());
                 companion.setBoatClutch(OpenRouterConfig.BOAT_CLUTCH.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());

@@ -213,6 +213,25 @@ final class CompanionMiningNavigation {
         return level.noCollision(owner, new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8));
     }
 
+    /**
+     * A cell the pickup can take a drop from: standing on the floor, or swimming. A drop floating on a pool deeper than one
+     * block has no dry floor under any cell near it — every cell of the pool has water under it — so a stand on the floor
+     * alone gave the drop up as out of reach at once, and the pork the player saw in the pond stayed lying (game 08.11:
+     * «подбери свинину жареную» — «Рядом ничего не лежит», though it lay five blocks away in the water). A player swims to
+     * such a drop and takes it; so does he: feet in water, the head out of it or under it, no lava, and the body fits.
+     */
+    static boolean pickupStand(CompanionEntity owner, BlockPos pos) {
+        if (standable(owner, pos)) return true;
+        var level = owner.level();
+        if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.above()) || !level.getWorldBorder().isWithinBounds(pos)
+                || CompanionLava.at(level, pos) || CompanionLava.at(level, pos.above())) return false;
+        // Feet in water and nothing solid in the way of the body: a swimmer's cell, as the search's water nodes.
+        if (level.getFluidState(pos).isEmpty() || !level.getFluidState(pos).is(net.minecraft.tags.FluidTags.WATER)) return false;
+        if (!level.getBlockState(pos).getCollisionShape(level, pos).isEmpty()) return false;
+        if (!level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()) return false;
+        return level.noCollision(owner, new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8));
+    }
+
     static void walk(CompanionEntity owner, Path path) { walk(owner, path, 1D); }
 
     static void walk(CompanionEntity owner, Path path, double speed) {
