@@ -222,6 +222,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     boolean placedByMe(BlockPos pos) { return places.placedByCompanion(pos); }
     /** Blocks of this kind he set down himself, as remembered. */
     List<BlockPos> placedByMe(String block) { return places.placed(block); }
+    /** Blocks of this kind he set down or saw, as remembered, in this dimension. */
+    List<BlockPos> knownPlaces(String block) { return places.known(block); }
     /** While a deed of his own runs: only his own chests and furnaces, of the player's only an idle empty furnace. */
     boolean ownPlacesOnly() { return autonomy.running(); }
     /** Autonomous targets stay within the remembered work area. */
@@ -699,7 +701,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setFollowing(false, true);
         loot.resumeCollection();
         CompanionActionResult result = work.start(action, item, count, location);
-        if (result.success()) parked.replacedBy(action); else finishFollowing();
+        // An answer with no work begun («Рядом уже есть портал»): he follows on, and the order put aside stays.
+        if (result.success() && work.isActive()) parked.replacedBy(action); else finishFollowing();
         recordActionResult(result);
         syncWorkState();
         return result;

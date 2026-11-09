@@ -63,6 +63,13 @@ public final class CompanionWorkCommands {
         if (value.matches("^(?:разложи|отсортируй|рассортируй)(?: мне| нам)?(?: (?:все )?(?:вещи|предметы))?(?: (?:по|в) сундук(?:ам|ах)| сундуки)$|^наведи порядок в сундук(?:ах|е)$"))
             return new PlannedAction("sort_chests", 0, 1);
         if (value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$")) return new PlannedAction("build_house", 0, 1);
+        // «Построй портал (в Незер)» (decided 08.11): the frame without its corners near the player, lit; more said is the model's.
+        // «Новый», «не хочу идти» (decided 09.11): built though a portal stands near; «здесь», «возле меня»: built here, not led to one.
+        if (value.matches("^(?:(?:не хочу (?:идти|туда)|не пойду|не надо)[, ]+)?(?:построй|сделай|поставь)(?: мне| нам| себе)?(?: (?:новый|другой|еще один))? портал"
+                + "(?: в (?:незер|ад|нижний мир))?(?: из обсидиана)?(?: (?:рядом|здесь|тут|возле меня|рядом со мной))?$"))
+            return new PlannedAction("build_portal", 0, 1,
+                    value.matches(".*(?:новый|другой|еще один|не хочу|не пойду|не надо).*") ? "new"
+                            : value.matches(".*(?:здесь|тут|возле меня|рядом со мной).*") ? "here" : "");
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;

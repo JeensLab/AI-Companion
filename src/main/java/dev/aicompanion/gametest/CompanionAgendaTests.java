@@ -298,7 +298,9 @@ public final class CompanionAgendaTests {
     public static void blockedGoalStaysCancellableAndYieldsToPickaxes(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
-        f.c.setItem(5, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(6, new ItemStack(Items.WATER_BUCKET)); f.c.setItem(7, new ItemStack(Items.OBSIDIAN, 10));
+        f.c.setItem(5, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(6, new ItemStack(Items.WATER_BUCKET));
+        // A lit portal near the player meets the portal stage, and the ten obsidian that went into it.
+        CompanionPortalBuildTests.litPortal(h, 2, 1, 2);
         f.start("defeat_ender_dragon", 0);
         String cannot = f.goal().book().milestones().stream().filter(milestone -> !milestone.supported()).findFirst().orElseThrow().label(false);
         boolean[] done = {false};
@@ -316,6 +318,7 @@ public final class CompanionAgendaTests {
             h.assertTrue(!f.c.goals().outstanding(), "The second cancel did not end the pickaxe order");
             var none = CompanionEvents.executeAction(f.p, "goal_cancel", "", 1);
             h.assertTrue(!none.success() && none.message().contains("Нет цели"), "A third cancel found a goal: " + none.message());
+            CompanionPortalBuildTests.putOut(h);
             h.succeed();
         });
     }
@@ -658,7 +661,8 @@ public final class CompanionAgendaTests {
     public static void blockedGoalDoesNotFreezeDeeds(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
-        f.c.setItem(7, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(8, new ItemStack(Items.WATER_BUCKET)); f.c.setItem(9, new ItemStack(Items.OBSIDIAN, 10));
+        f.c.setItem(7, new ItemStack(Items.FLINT_AND_STEEL)); f.c.setItem(8, new ItemStack(Items.WATER_BUCKET));
+        CompanionPortalBuildTests.litPortal(h, 2, 1, 2);
         f.start("defeat_ender_dragon", 0);
         boolean[] seen = {false, false};
         h.onEachTick(() -> {
@@ -672,6 +676,7 @@ public final class CompanionAgendaTests {
             h.assertTrue(seen[1], "The batch was not collected by a deed of his own");
             h.assertTrue(count(f.c, Items.IRON_INGOT) == 4 && f.c.batches().summaries().isEmpty(), "The blocked goal froze his deeds: " + f.c.getStoredItemsSummary() + " " + f.goal().state());
             h.assertTrue(f.goal().state() == CompanionAgenda.State.BLOCKED, "The goal is not blocked any more: " + f.goal().state() + " " + f.goal().reason());
+            CompanionPortalBuildTests.putOut(h);
         });
     }
 

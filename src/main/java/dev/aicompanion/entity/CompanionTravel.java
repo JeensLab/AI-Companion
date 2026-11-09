@@ -36,6 +36,8 @@ final class CompanionTravel {
     /** Nothing yet to walk: a search is under way (nextLeg's answer). */
     private static final Path WAIT = CompanionNavigation.BUSY;
     private double best;
+    /** How near the goal the caller wants him: the search is not made coarser than that (nextLeg). */
+    private double near = 2;
     private long lastProgress;
     // Walking counts as progress for three times the time the straight way takes (a way round is longer, not endless).
     private long walkUntil;
@@ -113,6 +115,7 @@ final class CompanionTravel {
     }
 
     private Step step(BlockPos target, double near) {
+        this.near = near;
         if (!(owner.level() instanceof ServerLevel level)) return Step.FAILED;
         long now = level.getGameTime();
         if (!target.equals(goal)) { reset(); goal = target.immutable(); best = distance(); lastProgress = now; walkUntil = now + (long)(3 * distance() / .19) + 200; from = owner.blockPosition(); began = now; meter = CompanionNavigation.meterOf(owner); }
@@ -170,7 +173,9 @@ final class CompanionTravel {
         if (!sideStep) {
             Set<BlockPos> cells = nav().cellsOf(goal);
             boolean wideGoing = nav().running(Set.of(goal), 2, nav().followRange(3));
-            CompanionSearch main = cells == null || wideGoing ? null : nav().advance(cells, 2, nav().followRange(1));
+            // Not coarser than the caller's «near»: two blocks along the axes counted him there already, a route of one cell was no leg,
+            // and a walk asked to come within 1.5 (into a portal level with the floor) stopped two short for good (GameTest 09.11).
+            CompanionSearch main = cells == null || wideGoing ? null : nav().advance(cells, near < 2 ? 1 : 2, nav().followRange(1));
             if (main != null && main.state() == CompanionSearch.State.RUNNING) { waiting = main; return WAIT; }
             Path route = main == null ? null : main.from(owner.position());
             if (route != null && route.getNodeCount() > 1 && route.canReach()) return route;
