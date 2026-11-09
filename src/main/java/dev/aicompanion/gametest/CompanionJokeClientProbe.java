@@ -56,6 +56,7 @@ public final class CompanionJokeClientProbe {
             }
             OpenRouterConfig.LONG_TERM_MEMORY.set(false);
             OpenRouterConfig.WINDOWS_VOICE.set(false);
+            OpenRouterConfig.MACOS_VOICE.set(false);
             mc.createWorldOpenFlows().createFreshLevel("JokesQA-" + System.currentTimeMillis(),
                     new LevelSettings("Offline jokes QA", GameType.CREATIVE, false, Difficulty.PEACEFUL, true,
                             new GameRules(), WorldDataConfiguration.DEFAULT), new WorldOptions(0L, false, false),
