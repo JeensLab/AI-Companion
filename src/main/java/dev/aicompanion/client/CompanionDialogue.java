@@ -71,6 +71,12 @@ public final class CompanionDialogue {
             case "unequip_item" -> "Ага, уберу.";
             case "place_block" -> "Поставлю вот тут.";
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
+            case "campfire_song" -> switch (actions.getFirst().item()) {
+                case "calm" -> "Сыграю что-нибудь спокойное.";
+                case "cheerful" -> "Сыграю повеселее.";
+                case "next" -> "Давай другую.";
+                default -> "Сейчас сыграю.";
+            };
             case "set_home" -> "Запомнил, наш дом здесь.";
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
@@ -166,6 +172,7 @@ public final class CompanionDialogue {
             case "protect" -> "прикрывать тебя";
             case "stop_protect" -> "закончить охрану";
             case "wander" -> "осмотреться";
+            case "campfire_song" -> "сыграть на гитаре";
             case "pursue_goal" -> {
                 var book = dev.aicompanion.entity.CompanionPlaybooks.of(action.item(), action.count());
                 yield "взяться за долгую цель" + (book == null ? "" : ": " + book.title());
@@ -383,7 +390,7 @@ public final class CompanionDialogue {
         }
         if (actions.stream().anyMatch(action -> "come".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_mobs".equals(action.type()))) return speakable(last);
-        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander").contains(action.type()))) return "";
+        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander", "campfire_song").contains(action.type()))) return "";
         return speakable(last);
     }
 

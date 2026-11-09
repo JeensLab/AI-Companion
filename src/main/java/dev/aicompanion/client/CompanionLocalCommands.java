@@ -51,7 +51,9 @@ public final class CompanionLocalCommands {
                 || normalized.contains("перестань добывать") || normalized.contains("хватит копать") || normalized.contains("прекрати копать")
                 || normalized.contains("перестань строить") || normalized.contains("хватит строить") || normalized.contains("прекрати строить")
                 || normalized.contains("останови стройку") || normalized.contains("останови строительство")
-                || normalized.contains("останови задачу")) {
+                || normalized.contains("останови задачу")
+                // The music by the fire (CompanionCampfire): «хватит играть» puts the guitar away like any stop.
+                || normalized.matches("(?sU).*\\b(хватит|перестань|прекрати|кончай|заканчивай)\\s+(играть|бренчать|музыку)\\b.*") || normalized.contains("убери гитару")) {
             return "companion stop";
         }
         if (normalized.matches("(?sU).*\\b(продолжай|продолжи|возобнови)\\s+(работу|заказ|цель|дело)\\b.*")) return "companion goal resume";
@@ -59,6 +61,8 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU)\\s*(?:" + java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е')) + "[\\s,!]+)?(?:давай\\s+|ну\\s+)?(?:продолжай|продолжи|продолжаем)[\\s.!]*")) return "companion goal resume";
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
+        // Before the work phrases: «поставь костёр и сыграй» is the evening by the fire, not a block to place.
+        if (campfireSong(normalized, companionName)) return "companion campfire" + tuneMood(normalized);
         // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
         PlannedAction picked = CompanionPickUpCommands.parse(text, companionName);
         if (picked != null) return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
@@ -111,6 +115,7 @@ public final class CompanionLocalCommands {
             case "unguard" -> new PlannedAction("stop_protect", 0, 1);
             case "summon" -> new PlannedAction("come", 0, 1);
             case "roam" -> new PlannedAction("wander", 0, 1);
+            case "campfire" -> new PlannedAction("campfire_song", 0, 1, parts.length > 2 ? parts[2] : "");
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
             case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), parts[WORK_ITEM], "auto",
                     parts.length > WORK_LOCATION ? parts[WORK_LOCATION] : NEAR_PLAYER);
@@ -124,6 +129,30 @@ public final class CompanionLocalCommands {
         boolean give = command.endsWith(" give");
         PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
         return give ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
+    }
+
+    /**
+     * «Сыграй на гитаре», «сыграй что-нибудь», «поставь костёр и сыграй», «посидим у костра», or a bare «сыграй» (after his name too):
+     * the evening by the fire. «Не играй» and «сыграем в прятки» are not it.
+     */
+    static boolean campfireSong(String normalized, String companionName) {
+        if (normalized.matches("(?sU).*\\bне\\s+(играй|сыграй|поиграй|надо|нужно)\\b.*")) return false;
+        String name = java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е'));
+        boolean play = normalized.matches("(?sU).*\\b(сыграй|поиграй|сыграешь|поиграешь|сыграть|поиграть|сбацай|забацай|слабай)\\b.*");
+        boolean music = normalized.matches("(?sU).*(гитар|песн|песен|мелоди|музык|кост[её]?р|что[- ]?(нибудь|то)).*");
+        boolean bare = normalized.matches("(?sU)\\s*(?:" + name + "[\\s,!]+)?(?:давай\\s+|ну\\s+|а\\s+)?(?:сыграй|поиграй)(?:\\s+(?:нам|мне|пожалуйста))*[\\s.!]*");
+        boolean evening = normalized.matches("(?sU).*\\b(посидим|посиди|сядь|садись|присядь|присядем)\\b.{0,20}\\bу\\s+костр.*");
+        // «Давай другую мелодию», «следующую песню»: another tune, the verb left out.
+        boolean another = normalized.matches("(?sU).*\\b(другую|следующую|еще\\s+одну|смени)\\b.{0,12}(мелоди|песн|музык).*");
+        return play && (music || !tuneMood(normalized).isEmpty()) || bare || evening || another;
+    }
+
+    /** The kind of tune asked for, as the step's item after a space: calm (sad too), cheerful, another, or nothing named. */
+    static String tuneMood(String normalized) {
+        if (normalized.matches("(?sU).*(грустн|печальн|спокойн|тих|медленн|лиричн|нежн|задумчив).*")) return " calm";
+        if (normalized.matches("(?sU).*(весел|бодр|задорн|быстр|танцевальн|зажигательн|радостн).*")) return " cheerful";
+        if (normalized.matches("(?sU).*\\b(другую|следующую|еще\\s+одну|смени)\\b.*")) return " next";
+        return "";
     }
 
     /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */

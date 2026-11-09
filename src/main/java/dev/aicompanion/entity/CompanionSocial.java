@@ -136,6 +136,8 @@ final class CompanionSocial {
         boolean combat = owner.getTarget() != null && owner.getTarget().isAlive();
         var expression = owner.expressions.update(owner.level().getGameTime(), danger, combat,
                 owner.hasActiveWorkOrder() || owner.isMiningAnimation() || owner.actionAnimation() != 0);
+        // Playing by the fire the tune sets the face; a danger or a fight ends the music first (CompanionCampfire).
+        if (owner.campfirePose() == CompanionCampfire.PLAYING) expression = owner.campfire.mood();
         owner.getEntityData().set(CompanionEntity.DATA_EXPRESSION, expression.ordinal());
         // A hunt for meat is no fight; a monster he fights or one near him after either of them is.
         owner.getEntityData().set(CompanionEntity.DATA_FIGHTING, combat && CompanionCombat.hostile(owner.getTarget()) || attacked);

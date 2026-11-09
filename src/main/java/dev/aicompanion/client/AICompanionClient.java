@@ -97,6 +97,7 @@ public final class AICompanionClient {
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(dev.aicompanion.AICompanionMod.COMPANION.get(), CompanionRenderer::new);
+        event.registerEntityRenderer(dev.aicompanion.AICompanionMod.SEAT.get(), net.minecraft.client.renderer.entity.NoopRenderer::new);
     }
 
     private void registerMenuScreens(RegisterMenuScreensEvent event) {
