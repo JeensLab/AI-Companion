@@ -117,7 +117,10 @@ public final class CompanionJokeClientProbe {
         long now = mc.level.getGameTime();
         conversation().reset(now - 100_000, 0); conversation().trackObservation(speaker.socialSequence());
         field(ambient(), "world").set(null, mc.level); field(ambient(), "companion").set(null, speaker.getUUID());
-        ((CompanionJokes) field(ambient(), "jokes").get(null)).reset(now - 100_000, 0);
+        ((CompanionJokes) field(ambient(), "jokes").get(null)).setBank(CompanionJokes.ALL, true, now - 100_000, 0);
+        field(ambient(), "bundledRussian").setBoolean(null, dev.aicompanion.CompanionJokeBank.allowBundled(
+                mc.getLanguageManager().getSelected(), java.util.Locale.getDefault().getLanguage(),
+                field(ambient(), "russianPlayer").getBoolean(null)));
     }
     private interface Change { void run() throws Exception; }
     private static void blocked(Minecraft mc, CompanionEntity speaker, String label, Change change) throws Exception {
@@ -132,7 +135,7 @@ public final class CompanionJokeClientProbe {
                 .map(Button.class::cast).findFirst().orElseThrow();
         toggle.onPress(); check(!OpenRouterConfig.JOKES.get(), "UI did not disable jokes");
         toggle.onPress(); check(OpenRouterConfig.JOKES.get(), "UI did not enable jokes");
-        Button interval = screen.children().stream().filter(c -> c instanceof Button b && b.getMessage().getString().startsWith("Пауза между анекдотами:"))
+        Button interval = screen.children().stream().filter(c -> c instanceof Button b && b.getMessage().getString().startsWith("Пауза:"))
                 .map(Button.class::cast).findFirst().orElseThrow();
         interval.onPress(); check(OpenRouterConfig.JOKE_INTERVAL_MINUTES.get() == 10, "UI did not change interval");
         OpenRouterConfig.JOKE_INTERVAL_MINUTES.set(60); interval.onPress();

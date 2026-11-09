@@ -12,7 +12,8 @@ final class CompanionAmbientClient {
     private static UUID companion;
     private static final CompanionConversation conversation = new CompanionConversation();
     private static final dev.aicompanion.CompanionJokes jokes = new dev.aicompanion.CompanionJokes();
-    private static java.util.concurrent.CompletableFuture<java.util.List<String>> jokeBank;
+    private static java.util.concurrent.CompletableFuture<dev.aicompanion.CompanionJokeBank.Bank> jokeBank;
+    private static boolean russianPlayer, bundledRussian;
     private static boolean pending;
     private static int transcriptions;
     private static String urgentText = "";
@@ -24,7 +25,25 @@ final class CompanionAmbientClient {
     static void transcriptionFinished() { transcriptions = Math.max(0, transcriptions - 1); conversationActivity(); }
     static boolean transcribing() { return transcriptions > 0; }
     private static boolean busy() { return pending || transcriptions > 0 || AICompanionClient.recordingSpeech() || OpenRouterClient.isBusy(); }
-    static void playerMessage() { conversation.playerMessage(now(), jitter()); }
+    static void playerMessage(String text) {
+        conversation.playerMessage(now(), jitter());
+        if (!russianPlayer && dev.aicompanion.CompanionJokeBank.hasRussian(text)) {
+            russianPlayer = true;
+            loadJokes();
+        }
+    }
+    private static boolean wantsRussianJokes() {
+        return dev.aicompanion.CompanionJokeBank.allowBundled(
+                Minecraft.getInstance().getLanguageManager().getSelected(),
+                java.util.Locale.getDefault().getLanguage(), russianPlayer);
+    }
+    private static void loadJokes() {
+        boolean russian = wantsRussianJokes();
+        bundledRussian = russian;
+        jokeBank = java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                dev.aicompanion.CompanionJokeBank.load(
+                        net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("aicompanion-jokes.txt"), russian));
+    }
     static void replyDelivered(String text) {
         conversation.delivered(text, now(), jitter()); CompanionPreferences.speechExpression(text);
     }
@@ -115,7 +134,7 @@ final class CompanionAmbientClient {
     /** A joke uses a free initiative slot; no model request and no scan while its slower timer is waiting. */
     private static boolean tellJoke(dev.aicompanion.entity.CompanionEntity speaker, boolean shortMurmurs) {
         int minutes = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get();
-        if (now() % 20 != 0 || !OpenRouterConfig.JOKES.get() || !jokes.due(now(), minutes)) return false;
+        if (jokeBank != null || now() % 20 != 0 || !OpenRouterConfig.JOKES.get() || !jokes.due(now(), minutes)) return false;
         if (!conversation.ready(now()) || busy() || InworldTtsClient.isSpeaking() || !safe(speaker)
                 || speaker.isGatheringTask() || speaker.isVisiblyBusy() || speaker.fighting()) return false;
         String joke = jokes.poll(now(), minutes, true, java.util.concurrent.ThreadLocalRandom.current().nextInt());
@@ -130,11 +149,14 @@ final class CompanionAmbientClient {
             world = client.level; companion = null; pending = false; lastSpot = null; travelUntil = 0; idleSince = now();
             conversation.reset(now(), jitter());
             jokes.reset(now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
-            jokeBank = client.level == null ? null : java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    dev.aicompanion.CompanionJokeBank.load(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("aicompanion-jokes.txt")));
+            russianPlayer = false;
+            if (client.level != null) loadJokes();
+            else jokeBank = null;
         }
+        if (client.level != null && bundledRussian != wantsRussianJokes()) loadJokes();
         if (jokeBank != null && jokeBank.isDone()) {
-            jokes.setBank(jokeBank.join(), now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
+            var loaded = jokeBank.join();
+            jokes.setBank(loaded.lines(), loaded.customFile(), now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
             jokeBank = null;
         }
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;

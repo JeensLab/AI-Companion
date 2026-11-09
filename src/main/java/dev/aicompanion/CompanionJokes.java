@@ -8,19 +8,21 @@ public final class CompanionJokes {
     public static final long HOUR = 20L * 60 * 60;
     public static final List<String> ALL = CompanionJokeBank.defaults();
     private List<String> bank = ALL;
+    private boolean customBank = true;
     private long[] toldAt = new long[bank.size()];
     private long lastJoke;
     private int delayJitter, previous = -1;
 
-    public void setBank(List<String> lines, long now, int jitter) {
+    public void setBank(List<String> lines, boolean customFile, long now, int jitter) {
         bank = List.copyOf(lines);
+        customBank = customFile;
         toldAt = new long[bank.size()];
         reset(now, jitter);
     }
 
     public void reset(long now, int jitter) {
         Arrays.fill(toldAt, Long.MIN_VALUE);
-        lastJoke = now; delayJitter = jitter; previous = -1;
+        lastJoke = now; delayJitter = customBank ? jitter : 0; previous = -1;
     }
 
     /** Between the configured minimum and twice that time; one sampled delay, not a new lottery every tick. */
@@ -29,7 +31,7 @@ public final class CompanionJokes {
         return minimum + Math.floorMod((long) jitter, minimum + 1);
     }
 
-    public boolean due(long now, int minutes) { return now >= lastJoke + gap(minutes, delayJitter); }
+    public boolean due(long now, int minutes) { return now >= lastJoke + gap(customBank ? minutes : 40, delayJitter); }
 
     /** Refused opportunities consume neither the interval nor a joke, so a quiet moment can use them later. */
     public String poll(long now, int minutes, boolean allowed, int jitter) {
@@ -41,7 +43,7 @@ public final class CompanionJokes {
             String joke = bank.get(index);
             // Validate before delivery regardless of the ordinary murmur setting.
             if (!CompanionConversation.fitsMurmur(joke)) continue;
-            toldAt[index] = now; previous = index; lastJoke = now; delayJitter = jitter;
+            toldAt[index] = now; previous = index; lastJoke = now; delayJitter = customBank ? jitter : 0;
             return joke;
         }
         return null;

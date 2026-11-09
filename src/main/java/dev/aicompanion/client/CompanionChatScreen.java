@@ -50,7 +50,7 @@ public final class CompanionChatScreen extends Screen {
         if (text.isEmpty()) return;
         String trace = CompanionDiagnostics.newTrace();
         CompanionDiagnostics.event(trace, "player_message", "source", "text", "text", text);
-        CompanionAmbientClient.playerMessage();
+        CompanionAmbientClient.playerMessage(text);
         // A message typed while the last answer is still coming used to vanish silently (review 22.10, М8). It is queued,
         // and «ещё отвечает на прошлую просьбу… сделает следом» says so, as for voice.
         input.setValue("");
@@ -164,7 +164,7 @@ public final class CompanionChatScreen extends Screen {
 
     private static void sendVoiceMessage(String text, String trace) {
         Minecraft minecraft = Minecraft.getInstance();
-        CompanionAmbientClient.playerMessage();
+        CompanionAmbientClient.playerMessage(text);
         String action = companionAction(text);
         CompanionMemoryFlow.playerSaid(text, action);
         if (clarifyResources(text, trace)) return;

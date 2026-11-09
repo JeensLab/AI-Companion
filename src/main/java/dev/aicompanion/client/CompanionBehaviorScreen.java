@@ -112,7 +112,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component jokesLabel() { return Component.literal("Анекдоты: " + (OpenRouterConfig.JOKES.get() ? "вкл." : "выкл.")); }
     private Component jokeIntervalLabel() {
         int minutes = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get();
-        return Component.literal("Пауза между анекдотами: " + minutes + "–" + (minutes * 2) + " мин.");
+        return Component.literal("Пауза: " + minutes + "–" + (minutes * 2) + " мин. с файлом; 40 мин. без");
     }
     private Component shortLabel() { return Component.literal("Короткие реплики (до 15 слов): " + (OpenRouterConfig.SHORT_MURMURS.get() ? "вкл." : "выкл.")); }
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }

@@ -24,23 +24,40 @@ public final class CompanionJokeBank {
         }
     }
 
-    public static List<String> load(Path file) {
+    public record Bank(List<String> lines, boolean customFile) { }
+
+    public static Bank load(Path file, boolean russian) {
+        var base = russian ? CompanionJokes.ALL : List.<String>of();
         try {
             byte[] bytes;
             try (var input = Files.newInputStream(file)) { bytes = input.readNBytes(MAX_BYTES + 1); }
             if (bytes.length > MAX_BYTES) throw new IOException("Joke bank exceeds two MiB");
             String text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
-            var combined = new LinkedHashSet<>(CompanionJokes.ALL);
+            var combined = new LinkedHashSet<>(base);
             combined.addAll(parse(text));
             var bank = List.copyOf(combined);
             AICompanionMod.LOGGER.info("Loaded {} local jokes", bank.size());
-            return bank;
+            return new Bank(bank, true);
         } catch (NoSuchFileException missing) {
-            return CompanionJokes.ALL;
+            return new Bank(base, false);
         } catch (IOException | SecurityException error) {
-            AICompanionMod.LOGGER.warn("Cannot read custom joke bank; using bundled jokes", error);
-            return CompanionJokes.ALL;
+            AICompanionMod.LOGGER.warn("Cannot read custom joke bank; keeping language-eligible bundled jokes", error);
+            return new Bank(base, true);
         }
+    }
+
+    public static boolean hasRussian(String text) {
+        // A local script hint, not a language-model request; shared Cyrillic words can be ambiguous.
+        return text != null && text.codePoints().anyMatch(c -> c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я' || c == 'ё' || c == 'Ё');
+    }
+
+    public static boolean allowBundled(String gameLanguage, String systemLanguage, boolean russianPlayer) {
+        return russianPlayer || russianLocale(gameLanguage) || russianLocale(systemLanguage);
+    }
+
+    private static boolean russianLocale(String language) {
+        String code = language.toLowerCase(java.util.Locale.ROOT);
+        return code.equals("ru") || code.startsWith("ru_") || code.startsWith("ru-");
     }
 
     public static List<String> parse(String text) {
