@@ -117,6 +117,8 @@ public final class CompanionPlanCodec {
                 if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
+                // «Закинь саженцы в компостер» names no number: all of them, not one (as the smelting above).
+                if ("compost_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
@@ -135,7 +137,7 @@ public final class CompanionPlanCodec {
                 if (("repair_item".equals(type) || "disenchant_item".equals(type)) && !dev.aicompanion.entity.CompanionGrinding.KINDS.contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 // «Сделай костную муку в компостере»: plant scrap or one of its parts, or an item the player named.
-                if ("compost_items".equals(type) && !dev.aicompanion.entity.CompanionComposting.GROUPS.contains(item)
+                if ("compost_items".equals(type) && !item.isEmpty() && !dev.aicompanion.entity.CompanionComposting.GROUPS.contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
                         || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();

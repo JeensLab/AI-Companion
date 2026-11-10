@@ -50,10 +50,10 @@ public final class CompanionCompostingTests {
         BlockPos composter = new BlockPos(18, 1, 16);
         h.setBlock(composter, Blocks.COMPOSTER);
         companion.setItem(0, new ItemStack(Items.OAK_SAPLING, 4)); companion.setItem(1, new ItemStack(Items.WHEAT_SEEDS, 16));
-        CompanionActionResult scrap = CompanionEvents.executeAction(owner(h, companion), "compost_items", "scrap", 64);
+        CompanionActionResult scrap = CompanionEvents.executeAction(owner(h, companion), "compost_items", "scrap", 0);
         h.assertTrue(!scrap.success() && scrap.message().contains("берегу"), "The reserve was offered: " + scrap.message());
         h.assertTrue(!CompanionEvents.executeAction(owner(h, companion), "compost_items", "minecraft:cobblestone", 64).success(), "Stone went into a composter");
-        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "compost_items", "saplings", 64).success(), "Named saplings refused");
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "compost_items", "saplings", 0).success(), "Named saplings refused");
         h.succeedWhen(() -> {
             done(h, companion);
             h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.OAK_SAPLING) == 0 && count(companion, Items.WHEAT_SEEDS) == 16,
@@ -96,19 +96,38 @@ public final class CompanionCompostingTests {
         });
     }
 
+    /**
+     * A hopper under the composter takes the bone meal before he can: it still counts toward the one asked for, so he stops
+     * there instead of burning all his scrap, and says where it went.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void boneMealTakenByAHopperStillCounts(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        h.setBlock(new BlockPos(18, 1, 16), Blocks.HOPPER);
+        h.setBlock(new BlockPos(18, 2, 16), Blocks.COMPOSTER);
+        companion.setItem(0, new ItemStack(Items.OAK_LEAVES, 64)); companion.setItem(1, new ItemStack(Items.OAK_LEAVES, 64)); companion.setItem(2, new ItemStack(Items.OAK_LEAVES, 64));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "compost_items", "scrap", 1).success(), "Order refused");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("воронка"), companion.getLastTaskResult());
+            h.assertTrue(count(companion, Items.OAK_LEAVES) >= 64 && count(companion, Items.BONE_MEAL) == 0, "All the scrap was burnt: " + companion.getStoredItemsSummary());
+        });
+    }
+
     /** The plain phrases are read without the model; «сделай костную муку» alone stays the craft from bones; the plan takes the action. */
     @GameTest(template = "tall_tree", timeoutTicks = 100)
     public static void thePhrasesAndThePlanAreRead(GameTestHelper h) {
-        h.assertTrue("companion work compost_items 64 scrap".equals(CompanionLocalCommands.route("Олег, сделай костную муку в компостере", "Олег")), "No number");
+        h.assertTrue("companion work compost_items 0 scrap".equals(CompanionLocalCommands.route("Олег, сделай костную муку в компостере", "Олег")), "No number");
         h.assertTrue("companion work compost_items 3 scrap".equals(CompanionLocalCommands.route("сделай 3 костной муки в компостере", "Олег")), "A number");
-        h.assertTrue("companion work compost_items 64 saplings".equals(CompanionLocalCommands.route("закинь саженцы в компостер", "Олег")), "Saplings");
+        h.assertTrue("companion work compost_items 0 saplings".equals(CompanionLocalCommands.route("закинь саженцы в компостер", "Олег")), "Saplings");
+        h.assertTrue(CompanionLocalCommands.route("положи 0 семян в компостер", "Олег") == null || !CompanionLocalCommands.route("положи 0 семян в компостер", "Олег").contains("compost_items"), "A zero became an order");
         h.assertTrue("companion work compost_items 10 seeds".equals(CompanionLocalCommands.route("положи 10 семян в компостер", "Олег")), "Ten seeds");
         String bones = CompanionLocalCommands.route("сделай костную муку", "Олег");
         h.assertTrue(bones == null || !bones.contains("compost_items"), "Bones became compost: " + bones);
         String bread = CompanionLocalCommands.route("закинь хлеб в компостер", "Олег");
         h.assertTrue(bread == null || !bread.contains("compost_items"), "A thing by its name is for the model: " + bread);
-        var steps = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"compost_items\",\"item\":\"scrap\",\"count\":2},{\"action\":\"compost_items\",\"item\":\"minecraft:bread\",\"count\":5}]"));
-        h.assertTrue(steps.size() == 2 && "compost_items".equals(steps.getFirst().type()) && steps.getFirst().count() == 2, "Decoded: " + steps);
+        var steps = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"compost_items\",\"item\":\"scrap\",\"count\":2},{\"action\":\"compost_items\",\"item\":\"saplings\"}]"));
+        h.assertTrue(steps.size() == 2 && "compost_items".equals(steps.getFirst().type()) && steps.getFirst().count() == 2 && steps.getLast().count() == 0, "Decoded: " + steps);
         boolean refused;
         try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"compost_items\",\"item\":\"everything\"}]")); refused = false; } catch (IllegalStateException invalid) { refused = true; }
         h.assertTrue(refused, "A made-up group passed the codec");

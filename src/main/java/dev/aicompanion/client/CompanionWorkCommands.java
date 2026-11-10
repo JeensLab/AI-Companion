@@ -92,12 +92,19 @@ public final class CompanionWorkCommands {
     public static String compost(String text, String name) {
         String value = plain(text, name).replaceAll("\\s+", " ");
         var meal = COMPOST_MEAL.matcher(value);
-        if (meal.matches()) return "companion work compost_items " + (meal.group(1) == null ? 64 : Math.clamp(Integer.parseInt(meal.group(1)), 1, 63)) + " scrap";
-        if (COMPOST_SCRAP.matcher(value).matches()) return "companion work compost_items 64 scrap";
+        if (meal.matches()) return number(meal.group(1)) < 0 ? null : "companion work compost_items " + number(meal.group(1)) + " scrap";
+        if (COMPOST_SCRAP.matcher(value).matches()) return "companion work compost_items " + PlannedAction.ALL_CARRIED + " scrap";
         var put = COMPOST_PUT.matcher(value);
         String group = put.matches() ? word(COMPOST_GROUPS, put.group(2)) : null;
-        if (group == null) return null;
-        return "companion work compost_items " + (put.group(1) == null ? 64 : Math.clamp(Integer.parseInt(put.group(1)), 1, 63)) + " " + group;
+        if (group == null || number(put.group(1)) < 0) return null;
+        return "companion work compost_items " + number(put.group(1)) + " " + group;
+    }
+
+    /** The number said, «all» when none; -1 for one the order cannot carry (a «0» is no order of one, over a stack goes to the model). */
+    private static int number(String said) {
+        if (said == null) return PlannedAction.ALL_CARRIED;
+        int count = Integer.parseInt(said);
+        return count < 1 || count > 64 ? -1 : count;
     }
 
     /** The id of the word's stem in the table, or null. */
