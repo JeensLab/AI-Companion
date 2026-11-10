@@ -133,7 +133,8 @@ final class CompanionExpeditionFight {
     boolean isFoe(LivingEntity entity) {
         if (!(entity instanceof Monster monster) || !monster.isAlive() || monster.isNoAi() || letGo(monster) || owner.combat.leavesAlone(monster)) return false;
         if (!owner.combat.fairTarget(monster, owner.combat.provokes(monster))) return false;
-        if (monster instanceof Creeper && !owner.creeperGuard.fights()) return false;
+        // As anywhere: a creeper only when he fights it and it goes for him or the player; a blow wakes one that does not to a blast beside him.
+        if (monster instanceof Creeper && (!owner.creeperGuard.fights() || !owner.combat.provokes(monster))) return false;
         if (w.expedition.shuns(monster) || below(monster)) return false;
         double distance = owner.distanceTo(monster);
         return owner.hasLineOfSight(monster) && (monster.getTarget() == owner && distance <= AWARE || distance <= ENGAGE);

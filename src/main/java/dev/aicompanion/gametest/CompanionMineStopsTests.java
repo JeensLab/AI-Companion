@@ -50,6 +50,8 @@ public final class CompanionMineStopsTests {
     /** Corner of the arena: about thirty blocks from the entrance at its centre, twice the search range. */
     private static final int FAR_TREE_AT = 3;
     private static final int GOAL_TIMEOUT = 24000, DROP_AT = 8, DROP_Y = 5, STARTED_BY = 1200, CAGE_AT = 8, CAGE_PAD = 7, CAGE_NEAR = 5, SURFACE_MARGIN = 2, CREEPER_AT = 8;
+    /** Below the health at which he fights a creeper (CompanionCreeperGuard.FIGHT_HEALTH). */
+    private static final float TOO_HURT_TO_FIGHT = 10;
     private static final int TUNNEL_START = 2, BESIDE_AT = 18, OVERHEAD_AT = 14, SPARE_PICKAXES = 6, DIAGONAL_AT = 6, CEILING_AT = 9;
     /** Wear left of the iron pickaxe (the reserve kept for ore is just above it), the stands the record still knows, the stand he is in, and the one his plug closes. */
     private static final int IRON_LEFT = 60, KNOWN_STANDS = 3, GAP_AT = 12, PLUG_AT = 8, FAR_PLUG_AT = 4, WALL_AT = 5, DIAMOND_AT = 2;
@@ -327,6 +329,9 @@ public final class CompanionMineStopsTests {
                 new ItemStack(Items.STICK, 8), new ItemStack(Items.CRAFTING_TABLE), new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STONE_PICKAXE)};
         CompanionDiamondGoalTests.Rig r = CompanionDiamondGoalTests.rig(h, false, bag);
         r.c().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        // Fit, he would fight the creeper even with his fists; the drop is let lie only by one who may not. The bread he eats on the way
+        // does not mend him past that while the creeper stands.
+        r.c().setHealth(TOO_HURT_TO_FIGHT);
         BlockPos dropAt = h.absolutePos(new BlockPos(CENTER - CREEPER_AT - 2, GROUND + 1, CENTER));
         Creeper creeper = h.spawn(EntityType.CREEPER, new BlockPos(CENTER - CREEPER_AT, GROUND + 1, CENTER));
         creeper.setPersistenceRequired();
@@ -341,6 +346,7 @@ public final class CompanionMineStopsTests {
         h.onEachTick(() -> {
             h.assertTrue(r.c().isAlive(), "Died | " + CompanionDiamondGoalTests.report(h, r));
             h.assertTrue(creeper.isAlive() && drop.isAlive(), "SETUP: the creeper or the drop is gone | " + CompanionDiamondGoalTests.report(h, r));
+            if (r.c().getHealth() > TOO_HURT_TO_FIGHT) r.c().setHealth(TOO_HURT_TO_FIGHT);
         });
         h.succeedWhen(() -> h.assertTrue(!r.c().expeditionStage().isEmpty() || r.c().mineSite().exists(),
                 "The goal still waits for the drop beside the creeper | " + CompanionDiamondGoalTests.report(h, r)));
