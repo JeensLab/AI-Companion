@@ -252,7 +252,7 @@ final class CompanionFurnaces {
         for (ItemStack stack : w.items.carriedItems()) if (!stack.isEmpty() && !stack.is(w.smelt.input()) && CompanionSmelting.fuelRank(stack) >= 0) have += (long) stack.getCount() * CompanionSmelting.burnTicks(stack);
         for (ItemStack stack : w.items.carriedItems()) {
             if (have >= needTicks) return;
-            if (stack.isEmpty() || !stack.is(ItemTags.LOGS) || stack.is(w.smelt.input())) continue;
+            if (stack.isEmpty() || !stack.is(ItemTags.LOGS_THAT_BURN) || stack.is(w.smelt.input())) continue;
             String type = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().replaceFirst("^stripped_", "").replaceFirst("_(log|wood|stem|hyphae)$", "");
             int burn = CompanionSmelting.burnTicks(stack);
             int logs = (int) Math.min(stack.getCount(), (needTicks - have + 4L * 300 - 1) / (4L * 300));
