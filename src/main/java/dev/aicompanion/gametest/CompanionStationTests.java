@@ -164,6 +164,26 @@ public final class CompanionStationTests {
         });
     }
 
+    /** Ordered while he swims in a pool (game 10.11, at the shore): he goes on to the stonecutter, no stand-still until the stall check. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void fromTheWaterHeGoesOnToTheStonecutter(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(12, 1, 12), new BlockPos(18, 2, 20))) h.setBlock(pos, Blocks.STONE);
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(13, 1, 13), new BlockPos(17, 2, 19))) h.setBlock(pos, Blocks.WATER);
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(19, 1, 12), new BlockPos(27, 2, 20))) h.setBlock(pos, pos.getY() == 1 ? Blocks.STONE : Blocks.AIR);
+        h.setBlock(new BlockPos(24, 2, 16), Blocks.STONECUTTER);
+        CompanionEntity companion = setup(h, new BlockPos(15, 2, 16));
+        companion.setItem(0, new ItemStack(Items.STONE, 4));
+        h.runAfterDelay(10, () -> {
+            h.assertTrue(companion.isInWater() && !companion.onGround(), "Not swimming at the order");
+            h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:stone_stairs", 4).success(), "Craft order refused");
+            h.succeedWhen(() -> {
+                done(h, companion);
+                h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.STONE_STAIRS) == 4, companion.getLastTaskResult());
+            });
+        });
+    }
+
     /** A stonecutter walled in (game 10.11, in a hillside): no way to it, and he says so, not «not enough materials». */
     @GameTest(template = "tall_tree", timeoutTicks = 600)
     public static void walledInStonecutterIsNamedAsTheReason(GameTestHelper h) {
@@ -192,7 +212,10 @@ public final class CompanionStationTests {
 
     private static CompanionEntity setup(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
-        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
+        return setup(h, new BlockPos(16, 1, 16));
+    }
+    private static CompanionEntity setup(GameTestHelper h, BlockPos at) {
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), at.getX(), at.getY(), at.getZ());
         var player = h.makeMockServerPlayerInLevel();
         player.teleportTo(companion.getX() - 3, companion.getY(), companion.getZ() - 3);
         companion.setOwnerId(player.getUUID());
