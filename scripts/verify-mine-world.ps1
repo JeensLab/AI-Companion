@@ -1,7 +1,8 @@
 param(
     [string]$RunName=('mine-world-'+(Get-Date -Format 'yyyyMMdd-HHmmss')),
     [string]$Seed='20261031',
-    [string[]]$Scenarios=@('descent','void','void-2','void-3','void-4','void-5','lava','mobs','water','retreat','come','restart','deepdark')
+    [string[]]$Scenarios=@('descent','void','void-2','void-3','void-4','void-5','lava','mobs','water','retreat','come','restart','deepdark'),
+    [switch]$Night
 )
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
@@ -59,7 +60,8 @@ function Invoke-Stage([string]$name,[string]$dir,[string]$stage,[string]$scenari
     $json=Join-Path $taskRun "$dir/mine-world-$stage.json"
     $gradle=Join-Path $taskRoot 'gradlew.bat'
     $began=Get-Date
-    $proc=Start-Process -FilePath $env:ComSpec -WorkingDirectory $taskRoot -NoNewWindow -PassThru -ArgumentList "/s /d /c `"`"$gradle`" --offline `"-PmineWorldDirectory=run/$RunName/$dir`" `"-PmineWorldStage=$stage`" `"-PmineWorldScenario=$scenario`" runMineWorldServer > `"$log`" 2>&1`""
+    $nightArg=if($Night){" `"-PmineWorldNight=true`""}else{''}
+    $proc=Start-Process -FilePath $env:ComSpec -WorkingDirectory $taskRoot -NoNewWindow -PassThru -ArgumentList "/s /d /c `"`"$gradle`" --offline `"-PmineWorldDirectory=run/$RunName/$dir`" `"-PmineWorldStage=$stage`" `"-PmineWorldScenario=$scenario`"$nightArg runMineWorldServer > `"$log`" 2>&1`""
     $null=$proc.Handle
     $limit=if($stage -eq 'scan'){$taskScanLimitSeconds}else{$taskStageLimitSeconds}
     $doneAt=$null
@@ -80,7 +82,7 @@ function Invoke-Stage([string]$name,[string]$dir,[string]$stage,[string]$scenari
     if($hung -and $stage -eq 'prepare' -and $verdict -eq 'PREPARED'){$verdict='ERROR'}
     $line=if($marks.Count -gt 0){$marks[$marks.Count-1].Value -replace '^MINE_WORLD_[A-Z_]+',"MINE_WORLD_$verdict"}else{"no verdict line, gradle exit $exit, see $log"}
     $detail=if(Test-Path -LiteralPath $json){ConvertFrom-Json ([IO.File]::ReadAllText($json))}else{$null}
-    if($detail){$hazard=if($null -eq $detail.hazardMet){'n/a'}else{"$($detail.hazardMet)".ToLower()}; $line="MINE_WORLD_$verdict scenario=$scenario stage=$stage hazardMet=$hazard climbs=$($detail.climbs) goalBlocked=$($detail.goalBlocked) floorRefusals=$($detail.floorRefusals) stairStops=$($detail.stairStops) deaths=$($detail.deaths) ticks=$($detail.gameTicks) wall=$($detail.wallSeconds)s reason=`"$($detail.reason)`""}
+    if($detail){$hazard=if($null -eq $detail.hazardMet){'n/a'}else{"$($detail.hazardMet)".ToLower()}; $line="MINE_WORLD_$verdict scenario=$scenario stage=$stage hazardMet=$hazard climbs=$($detail.climbs) goalBlocked=$($detail.goalBlocked) floorRefusals=$($detail.floorRefusals) stairStops=$($detail.stairStops) day=$($detail.day) newStairs=$($detail.newStairs) deaths=$($detail.deaths) ticks=$($detail.gameTicks) wall=$($detail.wallSeconds)s reason=`"$($detail.reason)`""}
     $line+=$hung
     if($verdict -ne 'SKIPPED' -and -not $saved -and $verdict -ne 'SETUP_FAILED'){$line+=' [world was not saved cleanly]'}
     return [ordered]@{scenario=$scenario;stage=$stage;verdict=$verdict;line=$line;exitCode=$exit;saved=$saved;killed=$hung.Trim();log=$log;detail=$detail}

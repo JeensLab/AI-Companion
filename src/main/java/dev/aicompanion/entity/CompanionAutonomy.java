@@ -166,6 +166,7 @@ public final class CompanionAutonomy {
         idleTicks = 0;
         if ("verify_item".equals(action) || "autonomy".equals(action)) return;
         owner.portals.stop();
+        owner.endCrystals.playerOrder(action);
         if (deed != null) drop("player_order:" + action);
         boolean wasHeld = held;
         held = switch (action) {
@@ -379,7 +380,7 @@ public final class CompanionAutonomy {
             case SMELT_IRON -> "minecraft:raw_iron";
             case HUNT -> "food";
             case COOK -> CompanionGame.ANY_MEAT;
-            default -> "";
+            case WOOD, STONE, COLLECT -> "";
         };
         starting = true;
         CompanionActionResult result;

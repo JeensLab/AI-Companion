@@ -154,7 +154,7 @@ final class CompanionExpeditionCave {
             case EXPLORE -> explore(level);
             case BACK -> back();
             case STOCK -> stocking(level);
-            default -> seal(level, planCells);
+            case IDLE, SEAL -> seal(level, planCells);
         };
     }
 
@@ -246,7 +246,7 @@ final class CompanionExpeditionCave {
         if (ore.busy() || now % LOOK_EVERY == 0) {
             switch (ore.step(level, CompanionExpeditionOre.Mode.SIGHT)) {
                 case WORKING -> { return true; }
-                case DONE -> { taken++; work++; settle = SETTLE; pit = dig.lastBroken; tries = 0; return true; }
+                case DONE -> { if (ore.tookDiamond) taken++; work++; settle = SETTLE; pit = dig.lastBroken; tries = 0; return true; }
                 case FULL -> { return leave("Сумка полна, добытое некуда класть."); }
                 case NONE -> { }
             }
@@ -372,7 +372,7 @@ final class CompanionExpeditionCave {
                     return true;
                 }
                 case OCCUPIED -> occupied |= !owner.getBoundingBox().intersects(new AABB(cell)) && hostileIn(level, cell);
-                default -> { }
+                case OUT_OF_REACH -> { }
             }
         }
         if (occupied) { plugBreach(level, planCells); return true; }

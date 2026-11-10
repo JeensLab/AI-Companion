@@ -46,7 +46,7 @@ final class CompanionPlaces {
             places.remove(oldest);
         }
     }
-    private static boolean workplace(String id) { return id.equals("minecraft:crafting_table") || id.equals("minecraft:chest") || id.equals("minecraft:furnace"); }
+    private static boolean workplace(String id) { return id.equals("minecraft:crafting_table") || id.equals("minecraft:chest") || id.equals("minecraft:furnace") || id.equals(CompanionPortalBuild.PORTAL); }
     private void validateLoaded() {
         places.values().removeIf(place -> place.dimension.equals(dimension()) && owner.level().hasChunkAt(place.pos)
                 && !BuiltInRegistries.BLOCK.getKey(owner.level().getBlockState(place.pos).getBlock()).toString().equals(place.block));
@@ -110,6 +110,11 @@ final class CompanionPlaces {
     List<BlockPos> placed(String block) {
         validateLoaded();
         return places.values().stream().filter(place -> place.placed && place.dimension.equals(dimension()) && place.block.equals(block)).map(Place::pos).toList();
+    }
+    /** Where blocks of this kind are, set down by him or seen, in this dimension. */
+    List<BlockPos> known(String block) {
+        validateLoaded();
+        return places.values().stream().filter(place -> place.dimension.equals(dimension()) && place.block.equals(block)).map(Place::pos).toList();
     }
     String summary() {
         validateLoaded();

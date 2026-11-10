@@ -4,7 +4,7 @@
   "key.aicompanion.open_chat": "Open companion chat and history (C)",
   "key.aicompanion.open_interface": "Open companion interface and tasks",
   "key.aicompanion.push_to_talk": "Talk without opening chat (V)",
-  "key.aicompanion.toggle_marker": "Companion outline through walls on/off (G)",
+  "key.aicompanion.toggle_marker": "Companion outline and far marker on/off (G)",
   "key.aicompanion.toggle_mood": "Companion mood panel on/off (N)",
   "key.categories.aicompanion": "AI Companion",
   "config.aicompanion.api_key": "API key",
@@ -13,5 +13,11 @@
   "config.aicompanion.personality": "Companion personality",
   "config.aicompanion.inworld_api_key": "Inworld Basic credential",
   "config.aicompanion.inworld_voice_id": "Inworld voice ID",
-  "config.aicompanion.long_term_memory": "Long-term memory"
+  "config.aicompanion.long_term_memory": "Long-term memory",
+  "config.aicompanion.short_murmurs": "Short idle remarks",
+  "config.aicompanion.murmur_interval_percent": "Pause between remarks, %",
+  "config.aicompanion.guard_nearest_to_player": "Guard: monster nearest to the player",
+  "config.aicompanion.other_containers": "Containers other than chests",
+  "config.aicompanion.boat_clutch": "Catch a fall in a boat",
+  "config.aicompanion.diamond_mine": "Diamond mine"
 }

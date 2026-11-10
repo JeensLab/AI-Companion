@@ -29,15 +29,14 @@ final class CompanionCombat {
     static final class PlayerPaceAttackGoal extends MeleeAttackGoal {
         final CompanionEntity c;
         PlayerPaceAttackGoal(CompanionEntity c) { super(c, 1.15D, true); this.c = c; }
-        private int nextSwing;
         /** A foe already in reach is met this tick, not at vanilla's next once-a-second check: every tick of delay is a blow taken. At range the bow has him, when he has one (CompanionArchery). */
         @Override public boolean canUse() {
             LivingEntity target = c.getTarget();
-            if (c.archery.wants(target) || target == null || !target.isAlive() || c.work.expedition.shuns(target) || c.combat.unarmedOnTask()) return false;
+            if (c.archery.wants(target) || target == null || !target.isAlive() || c.work.expedition.shuns(target) || c.combat.leavesAlone(target)) return false;
             return c.isWithinMeleeAttackRange(target) || c.work.expedition.engages(target) || super.canUse();
         }
         @Override public boolean canContinueToUse() {
-            return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget()) && !c.combat.unarmedOnTask();
+            return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget()) && !c.combat.leavesAlone(c.getTarget());
         }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
         @Override public void start() { c.work.expedition.fightBegan(); c.combat.footwork.begin(); super.start(); c.selectWeaponForCombat(); }
@@ -47,7 +46,7 @@ final class CompanionCombat {
                 LivingEntity nearer = c.combat.footwork.nearer(level, c.getTarget());
                 if (nearer != null) c.setTarget(nearer);
                 LivingEntity target = c.getTarget();
-                if (target != null && c.combat.footwork.keepOut(level, c.tickCount >= nextSwing)) {
+                if (target != null && c.combat.footwork.keepOut(level, c.combat.swingReady())) {
                     c.getLookControl().setLookAt(target);
                     c.work.expedition.fightGoing();
                     return;
@@ -57,10 +56,10 @@ final class CompanionCombat {
             c.work.expedition.fightGoing();
         }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
-            if (c.tickCount < nextSwing || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
-            nextSwing = c.tickCount + c.combat.weaponCooldownTicks();
+            if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
+            c.combat.swung();
             c.swing(InteractionHand.MAIN_HAND);
-            c.doHurtTarget(target);
+            if (c.doHurtTarget(target) && target instanceof net.minecraft.world.entity.monster.Creeper) c.creeperGuard.landed();
         }
     }
 
@@ -73,6 +72,9 @@ final class CompanionCombat {
         if (c.work.isHunting() || !(c.work.expedition.active() || c.level() instanceof ServerLevel level && CompanionAgenda.goal(level.getServer(), c.ownerId) != null)) return false;
         return !c.equipment.hasMeleeWeapon();
     }
+
+    /** Unarmed on a task he leaves a monster alone, save a creeper: that one is fought with the fists as anywhere, a blow and a run (CompanionCreeperGuard). */
+    boolean leavesAlone(LivingEntity foe) { return !(foe instanceof net.minecraft.world.entity.monster.Creeper) && unarmedOnTask(); }
 
     /** Unarmed on a task, with a monster on him: he walks away from it, the faster of the two, until it is left behind, and the work goes on from there. */
     static final class StepOffGoal extends Goal {
@@ -98,6 +100,12 @@ final class CompanionCombat {
         }
     }
 
+    /** One pace for every blow he deals, the melee goal's and the creeper guard's: no second blow a tick after the first. */
+    private int nextSwing;
+    boolean swingReady() { return ticksToSwing() == 0; }
+    int ticksToSwing() { return Math.max(0, nextSwing - c.tickCount); }
+    void swung() { nextSwing = c.tickCount + weaponCooldownTicks(); }
+
     int weaponCooldownTicks() { return Math.max(6, Math.min(40, (int) Math.ceil(20 / Math.max(.5, attackSpeed(c.getMainHandItem()))))); }
 
     static double attackSpeed(net.minecraft.world.item.ItemStack stack) {
@@ -120,7 +128,7 @@ final class CompanionCombat {
             if (player == null || c.inventoryViewers != 0) return false;
             timestamp = player.getLastHurtByMobTimestamp();
             attacker = player.getLastHurtByMob();
-            return timestamp != handledTimestamp && player.tickCount - timestamp < 100 && !c.combat.unarmedOnTask()
+            return timestamp != handledTimestamp && player.tickCount - timestamp < 100 && !c.combat.leavesAlone(attacker)
                     && hostile(attacker) && c.combat.fairTarget(attacker, true) && c.distanceToSqr(attacker) <= 18 * 18 && c.hasLineOfSight(attacker);
         }
         @Override public void start() {
@@ -148,6 +156,8 @@ final class CompanionCombat {
         if (entity == null || !entity.isAlive() || entity == c || entity instanceof Player || entity instanceof CompanionEntity) return false;
         if (c.ownerId != null && entity instanceof net.minecraft.world.entity.OwnableEntity pet && c.ownerId.equals(pet.getOwnerUUID())) return false;
         if (entity instanceof net.minecraft.world.entity.monster.warden.Warden) return false;
+        // Nobody but a player hurts the dragon (EnderDragon.hurt): a blade or an arrow of his is spent for nothing; its crystals are his part.
+        if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon) return false;
         boolean neutral = entity instanceof net.minecraft.world.entity.NeutralMob || entity instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin
                 || entity instanceof net.minecraft.world.entity.monster.Spider;
         return !neutral || provoked;
@@ -162,12 +172,13 @@ final class CompanionCombat {
     /**
      * Without a guard order, like a friend (the player 22.10: «когда рядом со мной монстр, он его не бьёт, только если он уже на меня
      * напал»): a monster at the player's side, or one going for the player or for Oleg, is met first. Only while Oleg is near the
-     * player; never his own hunt, and never a creeper unless he is on an expedition and fights it with the sword (a hit beside the player
-     * may end in its blast — wolves leave them alone too). In an expedition any hostile mob near him is met.
+     * player; never his own hunt. A creeper only when he fights it, striking and running from its fuse
+     * (CompanionCreeperGuard), and only one going for the player or for him: one that just stands by the player is left alone, as
+     * a hit wakes it to a blast beside him — wolves leave them alone too. In an expedition any hostile mob near him is met.
      */
     boolean comesForOwner(net.minecraft.world.entity.LivingEntity target) {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
-                || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights() || unarmedOnTask()) return false;
+                || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights() || leavesAlone(monster)) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
         if (c.work.expedition.engages(monster)) return true;
         // Deep in his own mine, the player far above: a monster that has chosen him is met before its first blow, not after it;
@@ -175,8 +186,10 @@ final class CompanionCombat {
         if (monster.getTarget() == c && c.work.expedition.underground() && monster.distanceToSqr(c) <= MINE_RANGE * MINE_RANGE) return true;
         ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(c.ownerId);
         if (owner == null || owner.level() != c.level() || owner.isSpectator() || c.distanceToSqr(owner) > GUARD_RANGE * GUARD_RANGE) return false;
+        boolean hunts = monster.getTarget() == owner || monster.getTarget() == c;
+        if (monster instanceof net.minecraft.world.entity.monster.Creeper) return hunts && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
         return monster.distanceToSqr(owner) <= 6 * 6 || monster.distanceToSqr(c) <= 4 * 4
-                || (monster.getTarget() == owner || monster.getTarget() == c) && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
+                || hunts && monster.distanceToSqr(owner) <= GUARD_RANGE * GUARD_RANGE;
     }
     /** A flier near the player, while Oleg is near him too: no Monster, so comesForOwner does not see it. */
     boolean fliesAtOwner(net.minecraft.world.entity.LivingEntity target) {

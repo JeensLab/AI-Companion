@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayDeque;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The block of his own that shuts his way up: a walk over the cells he can stand in, taking his plugs (blocks he laid to close a cave) as
+ * The block of his own that shuts his way up: a walk over the cells he can stand in, taking his plugs (blocks he laid to close a cave, a bench) as
  * open, to a cell of the way up; the first plug on that walk is the one to take out, and the cells up to it are the way to it.
  */
 final class CompanionExpeditionPlugs {
@@ -61,13 +62,23 @@ final class CompanionExpeditionPlugs {
             BlockPos head = i == 0 ? null : headroom(walk.get(i - 1), at);
             // The upper plug is the one in sight on a step down: it hides the lower one from where he stands, and is taken out first.
             for (BlockPos cell : new BlockPos[]{head, at.above(), at}) {
-                if (cell != null && mine.seals().contains(cell) && !CompanionShaftPlan.open(level, cell)) {
+                if (cell != null && plugged(level, mine, cell)) {
                     List<BlockPos> toStand = List.copyOf(walk.subList(0, Math.max(1, i)));
                     return new Way(toStand, cell);
                 }
             }
         }
+        // The search ends beside the goal, so the goal's own cells are not on the walk: a block of his in the cell he steps into, or over it, is the plug he stands before.
+        for (BlockPos cell : new BlockPos[]{headroom(walk.get(walk.size() - 1), goal), goal.above(), goal}) {
+            if (cell != null && plugged(level, mine, cell)) return new Way(List.copyOf(walk), cell);
+        }
         return new Way(List.copyOf(walk), null);
+    }
+
+    /** A cell of the way that a block of his own (a seal, a temporary block) or a fall of gravel or sand shuts. */
+    private static boolean plugged(ServerLevel level, CompanionMineSite mine, BlockPos cell) {
+        if (CompanionShaftPlan.open(level, cell)) return false;
+        return mine.seals().contains(cell) || mine.temporary().contains(cell) || level.getBlockState(cell).getBlock() instanceof FallingBlock;
     }
 
     /** The cell a step between two levels takes beyond the body in either of them: over his head as he steps up, over the lower cell's body as he steps down; null on the level. */
@@ -90,6 +101,6 @@ final class CompanionExpeditionPlugs {
     }
 
     private static boolean roomIn(ServerLevel level, CompanionMineSite mine, BlockPos cell) {
-        return CompanionShaftPlan.open(level, cell) || mine.seals().contains(cell);
+        return CompanionShaftPlan.open(level, cell) || mine.seals().contains(cell) || mine.temporary().contains(cell);
     }
 }

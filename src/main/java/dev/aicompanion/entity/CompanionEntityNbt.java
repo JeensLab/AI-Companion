@@ -36,10 +36,17 @@ final class CompanionEntityNbt {
         c.temporaryPillar.save(tag);
         c.work.save(tag);
         c.work.mine.save(tag);
+        c.parked.save(tag);
         c.batches().save(tag);
         c.places.save(tag);
         c.deeds.save(tag);
         c.autonomy.save(tag);
+        tag.putBoolean("DeathRecovery", c.deathRecovery());
+        tag.putBoolean("GuardByPlayer", c.guardByPlayer());
+        tag.putBoolean("OtherContainers", c.otherContainers());
+        tag.putBoolean("BoatClutch", c.boatClutch());
+        tag.putInt("DeathRecoveryAttempts", c.deathRecoveryAttempts());
+        tag.putInt("DeathRecoveryDeaths", c.deathRecoveryDeaths());
         c.goals.save(tag);
         c.social.save(tag);
     }
@@ -75,7 +82,12 @@ final class CompanionEntityNbt {
         c.satiety = Math.max(0, Math.min(40, tag.getInt("Satiety"))); // absent in older saves: 0
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.load(tag);
-        c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.refreshPlaces();
+        c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.setDeathRecovery(!tag.contains("DeathRecovery") || tag.getBoolean("DeathRecovery"));
+        c.setGuardByPlayer(!tag.contains("GuardByPlayer") || tag.getBoolean("GuardByPlayer"));
+        c.setOtherContainers(!tag.contains("OtherContainers") || tag.getBoolean("OtherContainers"));
+        c.setBoatClutch(!tag.contains("BoatClutch") || tag.getBoolean("BoatClutch"));
+        c.setDeathRecoveryLimits(tag.contains("DeathRecoveryAttempts") ? tag.getInt("DeathRecoveryAttempts") : 5,
+                tag.contains("DeathRecoveryDeaths") ? tag.getInt("DeathRecoveryDeaths") : 10); c.refreshPlaces();
         c.social.load(tag);
         c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, tag.getString("LastTaskResult"));
         c.refreshInventorySummary();
@@ -89,6 +101,7 @@ final class CompanionEntityNbt {
         c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, c.gatheringLogs || c.gatheringDirt);
         c.temporaryPillar.load(tag);
         c.work.load(tag);
+        c.parked.load(tag);
         c.batches().load(tag);
         c.setCanPickUpLoot(false);
         if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {

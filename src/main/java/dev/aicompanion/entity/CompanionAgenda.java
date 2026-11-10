@@ -101,6 +101,8 @@ public final class CompanionAgenda {
     public static CompanionActionResult accept(ServerPlayer player, CompanionEntity c, String id, int tier) {
         var book = CompanionPlaybooks.of(id, tier);
         if (book == null) return CompanionActionResult.failed("Такой большой цели я не знаю.");
+        if (book.id().equals("find_diamonds") && !c.diamondMine())
+            return CompanionActionResult.blocked("Шахта за алмазами выключена в настройках поведения — включи её там, и схожу.");
         if (c.goals().outstanding()) {
             // A «стоп» leaves the pickaxe order paused for good: without this hint the player has no way out of the refusal.
             String way = c.goals().state() == CompanionGoals.State.PAUSED_PLAYER ? " Скажи «отмени цель», если кирки больше не нужны." : "";
@@ -189,6 +191,9 @@ public final class CompanionAgenda {
         Integer until = LEASES.get(owner);
         return until != null && server.getTickCount() < until;
     }
+
+    /** A request of the player is under way (its plan leases him): between its steps he takes nothing up by himself. */
+    static boolean requestRunning(CompanionEntity c) { return c.getServer() != null && c.getOwnerId() != null && leased(c.getServer(), c.getOwnerId()); }
 
     /** «Продолжай»: the held, interrupted or blocked goal goes on, or the deferred one comes back. Null: no long goal, or the pickaxe order resumes first. */
     public static CompanionActionResult resume(ServerPlayer player, CompanionEntity c) { return resume(player, c, true); }
@@ -430,7 +435,7 @@ public final class CompanionAgenda {
         if (!goal.handedOver() && goal.playbook().equals("find_diamonds") && goal.counter(HAND_OVER)[0] > 0 && facts.carried(Items.DIAMOND) == 0
                 && thrown(c.completedWorkResult(), owner)) goal.record(HAND_OVER, c.completedWorkResult().evidence().workId(), c.level().getGameTime(), c.getUUID());
         if (goal.handedOver()) { data.setDirty(); complete(data, owner, goal, c); return; }
-        if ((next == null || mined) && goal.playbook().equals("find_diamonds") && facts.carried(Items.DIAMOND) > 0) { handOver(server, data, owner, goal, c, facts.carried(Items.DIAMOND)); return; }
+        if ((next == null || mined || goal.handOverShort) && goal.playbook().equals("find_diamonds") && facts.carried(Items.DIAMOND) > 0) { handOver(server, data, owner, goal, c, facts.carried(Items.DIAMOND)); return; }
         if (next == null || last.kind() == Kind.DRAGON && last.satisfied(facts, goal.fallback, all)) { complete(data, owner, goal, c); return; }
         if (!next.supported()) {
             List<String> cannot = all.subList(all.indexOf(next), all.size()).stream()
@@ -452,6 +457,15 @@ public final class CompanionAgenda {
         int[] counter = goal.counter(pick.key());
         if (counter[0] >= MAX_ATTEMPTS) { block(data, owner, goal, c, pick.label(goal.fallback) + " — попытки исчерпаны. " + goal.reason); return; }
         if (goal.workTicks >= STALL_TICKS) { block(data, owner, goal, c, "давно нет продвижения: " + pick.label(goal.fallback) + "."); return; }
+        // Dusk on the surface with the least the mine needs: the rest of the top-up waits for the day, and the night is spent below, as a miner
+        // does, not hunting or felling on the surface among the monsters (runs of 07.11: deaths on the top-up at night, void and water).
+        // The coal in the bag becomes torches first: that takes seconds and needs nothing from outside.
+        List<Step> night = null;
+        if (pick.kind() == Kind.EXPEDITION && !goal.mineAsIs && !facts.belowMine() && c.level().isNight() && pick.nightKit(facts)) {
+            goal.mineAsIs = true;
+            night = pick.nightSteps(facts);
+            c.autonomySay("Темнеет — спускаюсь, факелов хватит на начало.");
+        }
         List<Step> shield = pick.kind() == Kind.EXPEDITION && !goal.mineAsIs ? Milestone.shieldTrekSteps(facts) : List.of();
         if (!shield.isEmpty()) {
             goal.shieldTrek = true;
@@ -462,7 +476,9 @@ public final class CompanionAgenda {
         }
         List<PlannedAction> plan = pick.method(facts, goal.fallback, all).stream()
                 .map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList();
-        if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) plan = List.of(plan.getLast());
+        if (pick.kind() == Kind.EXPEDITION && goal.mineAsIs) {
+            plan = night != null ? night.stream().map(step -> new PlannedAction(step.type(), 0, step.count(), step.item(), step.slot())).toList() : List.of(plan.getLast());
+        }
         goal.mineAsIs = false;
         if (!pick.key().equals(goal.announced)) {
             if (!goal.announced.isEmpty()) c.autonomySay("Дальше: " + pick.label(goal.fallback) + ".");
@@ -658,6 +674,8 @@ public final class CompanionAgenda {
                 || outcome.skipped().stream().noneMatch(step -> "dig_for_diamonds".equals(step.type())) || !milestone.foodShort(CompanionFacts.of(c))) return false;
         boolean hurt = c.getHealth() < c.getMaxHealth();
         if (outcome.report().contains(NO_GAME) && !hurt) {
+            // Diamonds already in the bag (a death on the way up took the bread) are not held back behind the food: they go to the player, and the goal ends with them.
+            if (CompanionFacts.of(c).carried(Items.DIAMOND) > 0) { goal.handOverShort = true; data.setDirty(); return true; }
             block(data, owner, goal, c, "нет еды, а животных поблизости нет. Принеси еды, и я пойду вниз.");
             return true;
         }

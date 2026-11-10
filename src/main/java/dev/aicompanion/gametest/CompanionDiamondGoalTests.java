@@ -54,6 +54,7 @@ public final class CompanionDiamondGoalTests {
     @AfterBatch(batch = "diamond_goal_top_up") public static void afterTopUp(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_progress") public static void afterProgress(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_save") public static void afterSave(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "diamond_goal_switch") public static void afterSwitch(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_fight") public static void afterFight(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_sword") public static void afterSword(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
@@ -187,6 +188,19 @@ public final class CompanionDiamondGoalTests {
             if (result != null && !result.message().contains(RETREATED)) h.fail("The cut step did not end as a retreat: " + result.message() + " | " + report(h, r));
             if (result != null && hurt[0]) { retreats[0]++; hurt[0] = false; step[0] = -1; }
         });
+    }
+
+    /** The diamond mine switched off in the behaviour settings: the goal is not taken and he says why; switched on, it is. */
+    @GameTest(template = "tall_tree", batch = "diamond_goal_switch", timeoutTicks = SAVE_TIMEOUT)
+    public static void theDiamondGoalDoesNotStartWhileTheMineIsOff(GameTestHelper h) {
+        Rig r = bare(h);
+        r.c().setDiamondMine(false);
+        var refused = CompanionEvents.executeAction(r.p(), "pursue_goal", GOAL, 3);
+        h.assertTrue(refused.status() != CompanionActionResult.Status.ACCEPTED && refused.message().contains("выключена"), "The goal was taken with the mine off: " + refused.status() + " " + refused.message());
+        h.assertTrue(goal(h, r) == null, "A goal was recorded with the mine off");
+        r.c().setDiamondMine(true);
+        start(h, r, 3);
+        h.succeed();
     }
 
     /** A save and a load keep the diamond count; an old record of another playbook loads as before and a count out of range does not. */
@@ -412,7 +426,17 @@ public final class CompanionDiamondGoalTests {
         var goal = goal(h, r);
         CompanionEntity c = r.c();
         return "goal " + (goal == null ? "none" : goal.state() + " '" + goal.reason() + "' results " + goal.resultCount()) + ", at " + rel(h, c.blockPosition()).toShortString() + ", hp " + c.getHealth()
-                + ", mine " + (c.mineSite().exists() ? c.mineSite().opened() + " cells" : "none") + " | " + c.getDeedsForAi() + " | " + c.getLastTaskResult() + " | bag: " + c.getStoredItemsSummary();
+                + ", mine " + (c.mineSite().exists() ? c.mineSite().opened() + " cells" : "none") + " | " + c.getDeedsForAi() + " | " + c.getLastTaskResult() + " | bag: " + c.getStoredItemsSummary()
+                + " | " + clock(h, goal);
+    }
+
+    /** The night rule sends him down with what he has (mineAsIs): a test that expects the full kit reads red for the clock it started at, not for the code. */
+    private static String clock(GameTestHelper h, CompanionAgendaData.Goal goal) {
+        String asIs = "none";
+        if (goal != null) {
+            try { asIs = String.valueOf(CompanionSingleRouteTests.field(goal, "mineAsIs")); } catch (Exception error) { asIs = error.toString(); }
+        }
+        return "day=" + h.getLevel().getDayTime() % 24000 + " night=" + h.getLevel().isNight() + " mineAsIs=" + asIs;
     }
 
     /** Diamonds that reached the player: in his inventory or lying at his feet as Oleg's gift drop (a diamond dropped by the ore does not count). */

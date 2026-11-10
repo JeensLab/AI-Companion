@@ -41,11 +41,16 @@ public final class CompanionShaftPlan {
         public static Hazard floor(BlockPos cell) { return new Hazard(Kind.FLOOR, cell); }
     }
 
-    /** Cells the mine must not open again and moves (a stand and a direction) that already failed; consulted only by the overloads that take it. */
-    public record Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused, Predicate<BlockPos> shunned) {
+    /**
+     * Cells the mine must not open again, moves (a stand and a direction) that already failed, and water cells he wades in (his own stand,
+     * which no block can seal while he is in it); consulted only by the overloads that take it.
+     */
+    public record Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused, Predicate<BlockPos> shunned, Set<BlockPos> waded) {
         public static final Avoid NONE = new Avoid(Set.of(), (stand, d) -> false);
 
         public Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused) { this(forbidden, refused, cell -> false); }
+
+        public Avoid(Set<BlockPos> forbidden, BiPredicate<BlockPos, Direction> refused, Predicate<BlockPos> shunned) { this(forbidden, refused, shunned, Set.of()); }
     }
 
     /** Cost added to a turn whose first step along is blocked: the landing is reachable, but it only moves the dead end aside. */
@@ -153,9 +158,24 @@ public final class CompanionShaftPlan {
     }
 
     private static Entrance entranceAt(ServerLevel level, BlockPos feet) {
-        if (!groundSolid(level, feet) || !columnOpen(level, feet) || nearBuilding(level, feet) || waterNear(level, feet)) return null;
+        if (!groundSolid(level, feet) || !columnOpen(level, feet) || !stepOut(level, feet) || nearBuilding(level, feet) || waterNear(level, feet)) return null;
         for (Direction d : Direction.Plane.HORIZONTAL) if (directionFree(level, feet, d)) return new Entrance(feet, d);
         return null;
+    }
+
+    /**
+     * A cell he walks or steps out of: a neighbour at his height, one up or one down with a floor and room to stand. The floor of a pit (the
+     * shaft he cut down to coal before the mine, run void-5 of seed 7) is under the sky too, and a mine begun there ends with the diamonds in
+     * it: the way back to the player has no first step.
+     */
+    private static boolean stepOut(ServerLevel level, BlockPos feet) {
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos side = feet.relative(d);
+            for (BlockPos cell : List.of(side, side.above(), side.below())) {
+                if (level.hasChunkAt(cell) && open(level, cell) && open(level, cell.above()) && !open(level, cell.below())) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean groundSolid(ServerLevel level, BlockPos feet) {
@@ -217,7 +237,7 @@ public final class CompanionShaftPlan {
         BlockPos liquid = null;
         for (BlockPos pos : around(cell)) {
             if (!level.hasChunkAt(pos)) return Hazard.BLOCKED;
-            if (level.getFluidState(pos).isEmpty()) continue;
+            if (level.getFluidState(pos).isEmpty() || avoid.waded().contains(pos)) continue;
             if (!sealable(level, stand, pos)) {
                 if (pos.equals(laid)) continue;
                 return Hazard.BLOCKED;

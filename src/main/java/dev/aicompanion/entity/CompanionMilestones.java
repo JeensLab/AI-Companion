@@ -33,7 +33,7 @@ public final class CompanionMilestones {
         Item item(Tier tier) { return BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace(tier.prefix + "_" + suffix)); }
     }
 
-    public enum Kind { PIECE, MATERIALS, FOOD, STOCK, SKILL, DRAGON, EXPEDITION }
+    public enum Kind { PIECE, MATERIALS, FOOD, STOCK, PORTAL, SKILL, DRAGON, EXPEDITION }
 
     /** One step of a milestone's plan: an allowlisted action as the plan runner takes it. */
     public record Step(String type, String item, int count, String slot) { }
@@ -46,12 +46,12 @@ public final class CompanionMilestones {
      * they are used up below). Blocks to plug caves with, a bench and sticks for a pickaxe made on the spot belong to the kit.
      */
     static final int TORCHES_STOCK = 64;
-    private static final int TORCHES_MIN = 32, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 6, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
+    private static final int TORCHES_MIN = 32, TORCHES_NIGHT = 8, STONE_PICKAXES_MIN = 2, STONE_PICKAXES_STOCK = 6, FOOD_MIN = 4, IRON_SWORD_INGOTS = 2;
     private static final int SEALS_MIN = 16, SEALS_STOCK = 32, STICKS_MIN = 8, STICKS_STOCK = 32, STICKS_PER_PICKAXE = 2;
     /** Ingots beyond the sword's that buy a second iron pickaxe, so that a broken first one does not send him to smelt iron. */
     private static final int SPARE_PICKAXE_INGOTS = 3;
     /** A shield is made of what the bag holds already: six boards and an ingot, with the boards a missing bench and sticks would take kept apart. */
-    private static final int SHIELD_PLANKS = 6, BENCH_PLANKS = 4, STICK_PLANKS = 4, PLANKS_PER_LOG = 4;
+    private static final int SHIELD_PLANKS = 6, BENCH_PLANKS = 4, STICK_PLANKS = 4, PLANKS_PER_LOG = 4, PICKAXE_STONE = 3;
     /** Swords he goes down with; without one he fights the tunnel's monsters with his pickaxes (a wooden or golden one is no better). */
     private static final Set<Item> MINE_SWORDS = Set.of(Items.STONE_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD, Items.NETHERITE_SWORD);
 
@@ -67,7 +67,7 @@ public final class CompanionMilestones {
             return switch (kind) {
                 case PIECE -> (piece.slot == null ? "" : "надеть ") + "«" + CompanionWork.itemName(piece.item(effective(tier, fallback))) + "»";
                 case MATERIALS -> "материал на снаряжение: «" + CompanionWork.itemName(effective(tier, fallback).material) + "»";
-                default -> label;
+                case FOOD, STOCK, PORTAL, SKILL, DRAGON, EXPEDITION -> label;
             };
         }
 
@@ -77,7 +77,10 @@ public final class CompanionMilestones {
                         : atLeast(piece, effective(tier, fallback)).contains(facts.worn(piece.slot));
                 case MATERIALS -> facts.carried(effective(tier, fallback).material) >= need(facts, fallback, all);
                 case FOOD -> facts.carried(READY_FOOD::contains) >= count;
-                case STOCK, EXPEDITION -> facts.carried(item) >= count;
+                case EXPEDITION -> facts.carried(item) >= count;
+                // The obsidian of a portal that stands near went into it: it is not got again for a second one.
+                case STOCK -> facts.carried(item) >= count || item == Items.OBSIDIAN && facts.portal();
+                case PORTAL -> facts.portal();
                 case SKILL -> false;
                 case DRAGON -> facts.dragonDead();
             };
@@ -107,6 +110,7 @@ public final class CompanionMilestones {
                 }
                 case STOCK -> signature.add(facts.carried(item));
                 case EXPEDITION -> { signature.add(facts.carried(item)); signature.add(facts.mineOpened()); }
+                case PORTAL -> signature.add(facts.carried(Items.OBSIDIAN));
                 case SKILL, DRAGON -> { }
             }
             return signature;
@@ -120,6 +124,7 @@ public final class CompanionMilestones {
                 case FOOD -> READY_FOOD.contains(output);
                 case STOCK -> output == item;
                 case EXPEDITION -> READY_FOOD.contains(output) && facts.carried(READY_FOOD::contains) < FOOD_MIN;
+                case PORTAL -> false;
                 case SKILL, DRAGON -> false;
             };
         }
@@ -145,17 +150,28 @@ public final class CompanionMilestones {
                     // go on bare-handed); the rest of the kit waits, the way up is for a retreat or a pickaxe he cannot make there.
                     List<Step> steps = facts.inMine() ? swordSteps(facts) : supplySteps(facts);
                     if (facts.inMine()) steps.addAll(shieldSteps(facts, false));
-                    steps.add(new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto"));
+                    steps.add(digStep(facts));
                     yield steps;
                 }
                 case STOCK -> supported ? List.of(obtain(item, count)) : List.of();
+                // Short of obsidian or of a flint and steel, the step gets them first (CompanionPlanRunner).
+                case PORTAL -> List.of(new Step("build_portal", "", 1, "auto"));
                 case SKILL, DRAGON -> List.of();
             };
         }
 
-        /** Food and the sticks of a pickaxe or two are what he cannot do without below (the stock of {@link #STICKS_MIN} is only a top-up target): a top-up that stopped short of them does not let the descent start. */
+        /**
+         * Food always, and below the least is two stone pickaxes' worth, carried or makeable: a bench (or its wood), two sticks and three stone each (the stock of {@link #STICKS_MIN} is only a top-up target).
+         * What is already made needs neither sticks nor a bench: a bag of made pickaxes was held back for sticks (runs of 07.11); a pickaxe is made below only with them (seed 7, retreat and void-5).
+         */
         public boolean kitMinimum(CompanionFacts facts) {
-            return facts.inMine() || facts.carried(READY_FOOD::contains) >= FOOD_MIN && facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * STONE_PICKAXES_MIN;
+            if (facts.inMine()) return true;
+            int need = Math.max(0, STONE_PICKAXES_MIN - facts.carried(Items.STONE_PICKAXE));
+            boolean bench = facts.carried(Items.CRAFTING_TABLE) > 0 || facts.carried(held -> new ItemStack(held).is(ItemTags.PLANKS)) >= BENCH_PLANKS
+                    || facts.carried(held -> new ItemStack(held).is(ItemTags.LOGS)) >= 1;
+            boolean makeable = bench && facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * need
+                    && facts.carried(held -> new ItemStack(held).is(ItemTags.STONE_TOOL_MATERIALS)) >= PICKAXE_STONE;
+            return facts.carried(READY_FOOD::contains) >= FOOD_MIN && (need == 0 || makeable);
         }
 
         /** Food is what the kit lacks above the ground: a top-up that found no game waits and tries again, like a hurt goal that cannot eat. */
@@ -163,11 +179,37 @@ public final class CompanionMilestones {
             return !facts.inMine() && facts.carried(READY_FOOD::contains) < FOOD_MIN;
         }
 
+        /**
+         * The least he goes down with at dusk: the minimum of the kit and torches for the first steps; the rest of the top-up waits for the day, and the night is spent below.
+         * The sticks are those of the pickaxes still missing up to one more than the minimum's: the tunnels below stop at the last pickaxe, and that one is for the way up.
+         */
+        public boolean nightKit(CompanionFacts facts) {
+            return kitMinimum(facts) && facts.carried(Items.TORCH) >= TORCHES_NIGHT
+                    && (facts.inMine() || facts.carried(Items.STICK) >= STICKS_PER_PICKAXE * Math.max(0, STONE_PICKAXES_MIN + 1 - facts.carried(Items.STONE_PICKAXE)));
+        }
+
+        private Step digStep(CompanionFacts facts) {
+            return new Step("dig_for_diamonds", "", Math.max(1, count - facts.carried(item)), "auto");
+        }
+
+        /**
+         * The night's short plan: only what the bag makes in seconds (torches from its coal, within the sticks of the pickaxes kept apart), then the mine;
+         * nothing that leaves the surface at night.
+         */
+        public List<Step> nightSteps(CompanionFacts facts) {
+            int torches = facts.carried(Items.TORCH);
+            int spareSticks = facts.carried(Items.STICK) - STICKS_PER_PICKAXE * (STONE_PICKAXES_MIN + 1);
+            int target = (int) Math.min(TORCHES_MIN, torches + Math.min(4L * facts.carried(Items.COAL), 4L * Math.max(0, spareSticks)));
+            if (torches >= TORCHES_MIN || target <= torches) return List.of(digStep(facts));
+            return List.of(obtain(Items.TORCH, target), digStep(facts));
+        }
+
         private static List<Step> supplySteps(CompanionFacts facts) {
             List<Step> steps = new ArrayList<>();
             // The coal he carries is made into torches first: a trip for ore to reach the full stock may find none, and then the bag's coal must still be enough.
             int sticksLeft = facts.carried(Items.STICK);
             boolean stockShort = false;
+            int stockSticks = 0;
             if (facts.carried(Items.TORCH) < TORCHES_STOCK) {
                 int torches = (int) Math.clamp(facts.carried(Items.TORCH) + 4L * facts.carried(Items.COAL), TORCHES_MIN, TORCHES_STOCK);
                 stockShort = torches < TORCHES_STOCK;
@@ -175,6 +217,7 @@ public final class CompanionMilestones {
                 // Only the coal in the bag turns into torches here: a torch the plan cannot make takes no stick.
                 int made = (int) Math.min(torches - facts.carried(Items.TORCH), 4L * facts.carried(Items.COAL));
                 sticksLeft -= (made + 3) / 4;
+                stockSticks = (TORCHES_STOCK - torches + 3) / 4;
             }
             if (facts.carried(Items.STONE_PICKAXE) < STONE_PICKAXES_MIN) {
                 steps.add(obtain(Items.STONE_PICKAXE, STONE_PICKAXES_STOCK));
@@ -183,12 +226,15 @@ public final class CompanionMilestones {
             steps.addAll(swordSteps(facts));
             if (sparePickaxe(facts)) steps.add(obtain(Items.IRON_PICKAXE, 2));
             if (facts.carried(Items.CRAFTING_TABLE) == 0) steps.add(obtain(Items.CRAFTING_TABLE, 1));
-            // The torches and the pickaxes made above take their sticks first: what is left must still be enough for a pickaxe made below.
+            // The torches and the pickaxes made above take their sticks first, the full stock of torches too (seed 314159: it took the last eight, and the
+            // pickaxes ran out at the diamonds' depth): what is left must still be enough for a pickaxe made below.
+            boolean stockTorches = stockShort && facts.coalInSight();
+            if (stockTorches) sticksLeft -= stockSticks;
             if (sticksLeft < STICKS_MIN) steps.add(obtain(Items.STICK, STICKS_STOCK));
             if (facts.carried(held -> CompanionSeal.seals(new ItemStack(held))) < SEALS_MIN) steps.add(obtain(Items.COBBLESTONE, SEALS_STOCK));
             if (facts.carried(READY_FOOD::contains) < FOOD_MIN) steps.addAll(foodSteps(facts, FOOD_MIN));
             // The full stock last, and only for coal in sight: coal fetched from afar may not be found, and a failed step must not take the rest of the kit with it.
-            if (stockShort && facts.coalInSight()) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
+            if (stockTorches) steps.add(obtain(Items.TORCH, TORCHES_STOCK));
             steps.addAll(shieldSteps(facts, true));
             return steps;
         }
@@ -286,6 +332,11 @@ public final class CompanionMilestones {
     /** The mine: done when the bag holds {@code count} diamonds; each step of it is bounded, the goal repeats the step. */
     static Milestone expedition(int count) {
         return new Milestone("expedition:diamond", Kind.EXPEDITION, null, null, Items.DIAMOND, count, "добыть алмазы: " + count, true);
+    }
+
+    /** A lit Nether portal near the player, built by him with what he carries (CompanionPortalBuild) or found standing. */
+    static Milestone portal(String label) {
+        return new Milestone("portal", Kind.PORTAL, null, null, null, 0, label, true);
     }
 
     static Milestone skill(String name, String label) {

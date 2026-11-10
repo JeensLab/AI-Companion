@@ -49,11 +49,16 @@ final class CompanionExpeditionSupply {
     void forgiveFailedCrafts() { failedPickaxes = 0; }
 
     /** Stone, wood for the sticks and a bench (carried, or made of the wood) are in the bag: a stone pickaxe can be made on the spot. */
-    boolean canMakePickaxe() {
-        int planks = CompanionTools.count(owner, ItemTags.PLANKS), logs = CompanionTools.count(owner, ItemTags.LOGS);
-        boolean wood = w.items.countCarried(Items.STICK) >= PICKAXE_STICKS || planks >= PICKAXE_STICKS || logs > 0;
+    boolean canMakePickaxe() { return craftable(w) > 0; }
+
+    /** How many stone pickaxes the bag's stone, sticks (or wood for them) and bench can still make; wood alone counts as one. */
+    static int craftable(CompanionWork w) {
+        CompanionEntity owner = w.owner;
+        int planks = CompanionTools.count(owner, ItemTags.PLANKS), logs = CompanionTools.count(owner, ItemTags.LOGS), sticks = w.items.countCarried(Items.STICK);
         boolean bench = w.items.countCarried(Items.CRAFTING_TABLE) > 0 || planks >= BENCH_PLANKS || logs > 0;
-        return wood && bench && CompanionTools.count(owner, ItemTags.STONE_TOOL_MATERIALS) >= PICKAXE_STONE;
+        if (!bench) return 0;
+        int woodSets = Math.max(sticks / PICKAXE_STICKS, planks >= PICKAXE_STICKS || logs > 0 ? 1 : 0);
+        return Math.min(woodSets, CompanionTools.count(owner, ItemTags.STONE_TOOL_MATERIALS) / PICKAXE_STONE);
     }
 
     /** The stone pickaxe in hand, and the stone and sticks of a sword and a pickaxe to spare: the sword must never eat what the pickaxe is to be made of. */

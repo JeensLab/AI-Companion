@@ -81,8 +81,11 @@ public final class CompanionPlaybooks {
 
     private static List<Milestone> dragon() {
         List<Milestone> list = nether();
-        list.add(CompanionMilestones.skill("obsidian", "10 обсидиана"));
-        list.add(CompanionMilestones.skill("portal", "портал в Незер"));
+        // Against the fall when the dragon's ram flings him (CompanionWaterBucket); not for the Nether, where water boils away.
+        list.add(CompanionMilestones.stock(Items.WATER_BUCKET, 1, "ведро воды", true));
+        // A portal's frame without its corners; set lava, mined with the diamond pickaxe (CompanionObsidian).
+        list.add(CompanionMilestones.stock(Items.OBSIDIAN, 10, "10 обсидиана", true));
+        list.add(CompanionMilestones.portal("портал в Незер"));
         list.add(CompanionMilestones.skill("nether", "поход в Незер"));
         list.add(CompanionMilestones.skill("fortress", "найти крепость Незера"));
         list.add(CompanionMilestones.skill("blaze_rods", "7 огненных стержней"));

@@ -16,20 +16,27 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The watch against a creeper that sees him: a goal of its own at the top priority, so that nothing (an order, a pickup, a fight)
  * keeps him from it, in any stage of the mine and with no order at all.
  * <p>
- * On an expedition, armed and with health to spare, he fights a creeper with the sword like any other mob (the melee goal), and this goal
- * takes him the moment its fuse is lit, not a blow later: his pace round corners is far below a straight run's, and the fuse is 30 ticks. He
- * steps back, fast and away from it, until the fuse is out ({@link Creeper#getSwellDir}), and the melee goal brings him back to finish it.
- * Vanilla's fuse goes out beyond 7 blocks or without a line of sight, and a blast reaches 6 blocks.
+ * With health to spare and a way out of the blast from where he stands, he fights a creeper as a wary player does: the moment its
+ * fuse is lit he strikes it first, while the fuse is young and the creeper within a lunge, and then runs, fast and away from it, until the
+ * fuse is out ({@link Creeper#getSwellDir}); the melee goal, or the creeper itself, brings them together for the next blow. His reach is a
+ * player's three blocks and the fuse lights at three, so the blow needs no step in most times. A sword or an axe is taken out for it when he
+ * has one; with none he fights with his fists, and the fight only takes more of these rounds. Vanilla's fuse goes out beyond 7 blocks or
+ * without a line of sight, and a blast reaches 6 blocks.
  * <p>
- * The rest is the fallback, for when he cannot fight it (no sword, low health, no way back, too many retreats from it): on his own stairs or
- * tunnel he shuts the way between them with a block from the bag, a few stands off, and waits behind it; anywhere else he walks away, towards
- * his own passage if it is farther from the creeper than he is. The block is one of the mine's temporary blocks: it is taken up again when
- * the walk reaches it ({@link CompanionExpeditionDig}) and the creeper is gone.
+ * By the house a blast takes the walls with it: an unlit creeper there is first walked away from it, and a lit one there is run from with no
+ * blow; one that would not be walked off is fought where it is for a while.
+ * <p>
+ * The rest is the fallback, for when he cannot fight it (low health, too many retreats with no blow landed, nowhere to run): on his own
+ * stairs or tunnel he shuts the way between them with a block from the bag, a few stands off, and waits behind it; anywhere else he walks
+ * away from a creeper whose fuse is not lit (along his own passage when he is on it, or towards it if it is farther from the creeper than he
+ * is), and dashes from one whose fuse is. The block is one of the mine's temporary blocks: it is taken up again when the walk reaches it
+ * ({@link CompanionExpeditionDig}) and the creeper is gone.
  */
 final class CompanionCreeperGuard {
     /** How near a creeper in sight is a reason to act: its fuse starts at three blocks and a blast kills from full health inside about 2.5. */
@@ -37,13 +44,28 @@ final class CompanionCreeperGuard {
     private static final double ON_HIM = 3;
     private static final int LOOK_EVERY = 5, FIGHT_LOOK_EVERY = 2, PLAN_EVERY = 10, EPISODE_TICKS = 20 * 12, CALM_TICKS = 20, PLACE_TRIES = 20;
     private static final int FLEE_CELLS = 6, SHUT_STANDS = 3, ON_ROUTE_SQR = 2, ROUTE_CREEPER_SQR = 4, PASSAGE_RANGE = 24, FLEE_RANGE = 12, FLEE_HEIGHT = 6;
+    /** A step away from an unlit creeper keeps this near the player, when he is within the second range (else he is off on his own work). */
+    private static final double LEASH = 12, LEASH_FROM = 32;
     private static final double FLEE_SPEED = 1.3;
     /**
-     * The fight. Health above which a creeper is met with the sword; the retreats from creepers he bears before he gives up the fight, and
-     * how long they are remembered.
+     * The fight. Health above which a creeper is fought; the retreats with no blow landed he bears before he gives up the fight,
+     * and how long they are remembered.
      */
     static final float FIGHT_HEALTH = 12;
     private static final int GIVE_UP = 6, FORGET_TICKS = 20 * 60;
+    /**
+     * The blow before the run: only while the fuse has burned less than this share (the run out of a blast takes some ten of its 30 ticks),
+     * and with the creeper no farther than this.
+     */
+    private static final float STRIKE_BEFORE = .3F;
+    private static final double LUNGE = 4;
+    /** {@link Creeper#getSwelling} counts the fuse over this many ticks. */
+    private static final int SWELL_TICKS = 28;
+    /**
+     * The house: a creeper this near its middle is walked away before the fight, until it is this far from it; he waits for it when it falls
+     * this far behind, so that it keeps after him.
+     */
+    private static final double HOUSE_NEAR = 10, HOUSE_CLEAR = 16, LEAD_WAIT = 6, LEAD_REACHED = 1.5;
     /** Steps away from a creeper that has not left the things he went for, before he lets them lie, and for how long. */
     private static final int FLEES_FOR_LOOT = 4, LEAVE_LOOT_TICKS = 20 * 300;
     /** The way out of a lit fuse: the fuse goes out only beyond 7 blocks (a little more for a margin); the speed of that dash. */
@@ -55,6 +77,8 @@ final class CompanionCreeperGuard {
      */
     private static final int STALE_FUSE_TICKS = 60, FUSE_LOOK_GAP = 30;
     private static final float BURNING = .35F;
+    /** A fuse seen lit below this share is a new one: the one before went all the way out, as between the blows of a fight. */
+    private static final float FRESH = .1F;
     /** A run along a heading (see {@link #runTo}) takes a rise or a drop of one block as a step. */
     private static final double TURN_AT = 30;
     private static final double[] RISES = {0, 1, -1};
@@ -67,26 +91,34 @@ final class CompanionCreeperGuard {
     private static final double THREAT_RANGE = 16, GAP_SLACK = .25;
     private static final int RING_HEADINGS = 8, AWAY_TRIES = 4, PATH_TESTS = 6;
     private static final int[] RING_RADII = {5, 9};
+    /** How far the search for a way to a spot may go. */
+    private static final float REACH_RANGE = 24;
 
     private final CompanionEntity owner;
-    private boolean active, finished, noBlock, fighting, shielded, dashing;
-    private long begun, lastSeen, nextLook, nextPlan, lastRetreat, nextSwing, lastFlee, fuseSince, fuseLook;
-    private int tries, retreats, flees;
+    private boolean active, finished, noBlock, fighting, shielded, dashing, leading, mayStrike, room = true;
+    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt;
+    private int tries, retreats, flees, leadTried;
     private List<BlockPos> cells = List.of();
-    private Vec3 flee;
+    private Vec3 flee, house;
     private Creeper watched, fuseOf;
     private String shown = "";
     private final CompanionShieldGuard shield;
-    private final CompanionFuseEscape escape;
+    /** The way out while he runs, and a second one only to judge, before the fuse is lit, whether he would have one. */
+    private final CompanionFuseEscape escape, probe;
 
-    CompanionCreeperGuard(CompanionEntity owner) { this.owner = owner; shield = new CompanionShieldGuard(owner); escape = new CompanionFuseEscape(owner); }
+    CompanionCreeperGuard(CompanionEntity owner) {
+        this.owner = owner;
+        shield = new CompanionShieldGuard(owner);
+        escape = new CompanionFuseEscape(owner);
+        probe = new CompanionFuseEscape(owner);
+    }
 
-    /** The shield is up against a lit fuse: the idle lowering of it (CompanionEntity) waits. */
+    /** The shield is up against a lit fuse: the lowering of it with no other danger near ({@link CompanionShieldDefense}) waits. */
     boolean shielding() { return shield.holding(); }
 
-    /** True when a creeper is met with the sword: on an expedition or a long goal, armed, healthy, and not after a run of retreats from it. */
+    /** True when a creeper is fought: healthy, with a way out of its blast, and not after a run of retreats with no blow landed. */
     boolean fights() {
-        if (!(owner.work.expedition.active() || CompanionAgenda.suppressesDeeds(owner)) || owner.getHealth() <= FIGHT_HEALTH || !owner.equipment.hasMeleeWeapon()) return false;
+        if (owner.getHealth() <= FIGHT_HEALTH || !room) return false;
         if (retreats > 0 && owner.level().getGameTime() - lastRetreat > FORGET_TICKS) retreats = 0;
         return retreats < GIVE_UP;
     }
@@ -100,6 +132,11 @@ final class CompanionCreeperGuard {
         watched = creeper;
         noBlock = false;
         lookAtFuse(creeper, now);
+        if (creeper != null && now >= nextProbe && owner.getHealth() > FIGHT_HEALTH) {
+            nextProbe = now + PLAN_EVERY;
+            probe.plan(level, threats(level));
+            room = probe.clears();
+        }
         shielded = creeper != null && burns(creeper) && shield.covers(level, creeper);
         return creeper != null && (shielded || !(!lit(creeper) && engaged()) && plan(level, creeper));
     }
@@ -126,7 +163,7 @@ final class CompanionCreeperGuard {
     /** The creeper whose fuse he has seen lit, and since when it has kept lighting. */
     private void lookAtFuse(Creeper creeper, long now) {
         if (creeper == null || !lit(creeper)) return;
-        if (creeper != fuseOf || now - fuseLook > FUSE_LOOK_GAP) { fuseOf = creeper; fuseSince = now; }
+        if (creeper != fuseOf || now - fuseLook > FUSE_LOOK_GAP || creeper.getSwelling(0) < FRESH) { fuseOf = creeper; fuseSince = now; }
         fuseLook = now;
     }
 
@@ -148,19 +185,25 @@ final class CompanionCreeperGuard {
         escape.reset();
         shown = "";
         int path = -1;
-        // The work does not tick while the guard holds the turn, so the fight's hold cannot bring the sword out for it.
+        // Neither the melee goal nor the work (with the fight's hold) runs while the guard holds the turn, so they cannot bring a weapon out for it.
         if (fighting || dashing) {
             owner.work.expedition.fightBegan();
             owner.selectWeaponForCombat();
             path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()));
         }
+        // The blow first only with a way out of the blast after it, and not by the house unless walking it off has failed: the melee goal
+        // fights it there then too.
+        mayStrike = fighting && escape.clears() && (houseNear(watched) == null || now < leadAgainAt);
+        if (fighting && !escape.clears()) room = false;
         if (fighting) {
             retreats++;
             lastRetreat = now;
         }
-        owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, " + (cells.isEmpty() ? "ухожу от него." : "закрываю проход блоком."));
-        event(shielded ? "shield" : fighting ? "retreat" : dashing ? "dash" : cells.isEmpty() ? "flee" : "block", watched, path, "cells", cells);
-        if (!shielded && !fighting && cells.isEmpty()) leaveLootAfterFlees(now);
+        owner.workStatus(shielded ? "Крипер поджёг фитиль, прикрываюсь щитом." : leading ? "Увожу крипера от дома." : mayStrike ? "Бью крипера и отскакиваю от взрыва."
+                : fighting ? "Крипер поджёг фитиль, отхожу, потом добью." : "Рядом крипер, " + (cells.isEmpty() ? "ухожу от него." : "закрываю проход блоком."));
+        event(shielded ? "shield" : leading ? "lead" : mayStrike ? "strike_first" : fighting ? "retreat" : dashing ? "dash" : cells.isEmpty() ? "flee" : "block",
+                watched, path, "cells", cells);
+        if (!shielded && !fighting && !leading && cells.isEmpty()) leaveLootAfterFlees(now);
     }
 
     /** A creeper that stays by the things he goes for, with nothing to meet it, would have him step away and come back for ever: the things are let lie. */
@@ -192,7 +235,11 @@ final class CompanionCreeperGuard {
         owner.getLookControl().setLookAt(creeper, 30, 30);
         if (lit(creeper) && !burns(creeper) && (fighting || dashing)) event("stale_fuse", creeper, -1);
         if ((fighting || engaged()) && !burns(creeper)) { finished = true; return; }
-        if (fighting) { retreat(level, creeper); return; }
+        if (fighting) {
+            if (!mayStrike || !strikeFirst(level, creeper)) retreat(level, creeper);
+            return;
+        }
+        if (leading) { lead(level, creeper, now); return; }
         if (dashing && burns(creeper)) { retreat(level, creeper); return; }
         if (now >= nextPlan || cells.isEmpty() && flee == null || cells.isEmpty() && dashing != burns(creeper)) {
             nextPlan = now + PLAN_EVERY;
@@ -204,7 +251,9 @@ final class CompanionCreeperGuard {
 
     void stop() {
         if (!active) return;
-        active = fighting = shielded = dashing = false;
+        // A creeper that would not be walked off in a whole episode is fought where it is for a while.
+        if (leading && owner.level().getGameTime() - begun >= EPISODE_TICKS) leadAgainAt = owner.level().getGameTime() + FORGET_TICKS;
+        active = fighting = shielded = dashing = leading = mayStrike = false;
         shield.release();
         escape.reset();
         flee = null;
@@ -244,34 +293,67 @@ final class CompanionCreeperGuard {
     }
 
     /**
-     * What to do about this creeper. Fighting it: whether to step back now ({@link #retreat}). Otherwise: blocks to set on his route
-     * underground; with its fuse lit and no blocks to set, the same way out as in the fight (the navigation has a start to wait for and may
-     * lead past the creeper or nowhere, and the fuse is 30 ticks); else a place to walk to. False when there is nothing to do.
+     * What to do about this creeper. Fighting it: the blow and the run once its fuse is lit ({@link #strikeFirst}, {@link #retreat}), and
+     * before that nothing, save walking it off the house. Otherwise: blocks to set on his route underground; with its fuse lit and no blocks
+     * to set, the same way out as in the fight (the navigation has a start to wait for and may lead past the creeper or nowhere, and the fuse
+     * is 30 ticks); else a place to walk to: along his route underground, by the player when he is near, else away. False when there is
+     * nothing to do.
      */
     private boolean plan(ServerLevel level, Creeper creeper) {
         cells = List.of();
         flee = null;
-        dashing = false;
+        dashing = leading = false;
         if (lit(creeper) && !burns(creeper)) return false;
         CompanionMineSite mine = owner.work.mine;
         List<BlockPos> way = mine.exists() && level.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionExpeditionClimb.wayUp(mine) : List.of();
         int at = indexOf(way, owner.blockPosition(), ON_ROUTE_SQR);
         boolean underground = at >= 0 && !level.canSeeSky(owner.blockPosition());
-        List<Creeper> threats = threats(level);
         if (fights()) {
-            if (!lit(creeper)) return false;
-            fighting = true;
-            return true;
+            if (lit(creeper)) { fighting = true; return true; }
+            house = level.getGameTime() < leadAgainAt ? null : houseNear(creeper);
+            leading = house != null;
+            return leading;
         }
         if (underground && !noBlock && CompanionSeal.available(owner) > 0) {
             cells = shutCells(mine, way, at, creeper);
             if (!cells.isEmpty()) return true;
         }
         if (lit(creeper)) { dashing = true; return true; }
-        Vec3 target = underground ? alongRoute(way, at, creeper, FLEE_CELLS) : awayFrom(way, creeper);
+        List<Creeper> threats = threats(level);
+        if (underground) {
+            Vec3 target = alongRoute(way, at, creeper, FLEE_CELLS), clear = retreatSpot(way, threats, target);
+            flee = clear != null ? clear : target;
+            return flee != null;
+        }
+        // By the player a step away stays by him: a creeper that hunts him would else lead him off a step at a time (review of PR #95).
+        var player = owner.getOwnerPlayer();
+        if (player != null && player.level() == level && owner.distanceTo(player) <= LEASH_FROM) {
+            flee = byThePlayer(threats, creeper, player.position());
+            return true;
+        }
+        Vec3 target = awayFrom(way, creeper);
         Vec3 clear = retreatSpot(way, threats, target);
         flee = clear != null ? clear : target;
         return flee != null;
+    }
+
+    /**
+     * A step away from the creeper no farther than {@link #LEASH} from the player: the spot that keeps clear of every creeper and gains on
+     * this one most, the nearer to the player the better. With none, to the player himself: he is the one who can deal with it.
+     */
+    private Vec3 byThePlayer(List<Creeper> threats, Creeper creeper, Vec3 player) {
+        double now = owner.distanceTo(creeper);
+        List<Vec3> spots = ring();
+        for (int i = 0; i < AWAY_TRIES; i++) {
+            Vec3 spot = LandRandomPos.getPosAway(owner, FLEE_RANGE, FLEE_HEIGHT, creeper.position());
+            if (spot != null) spots.add(spot);
+        }
+        List<Vec3> ranked = spots.stream().filter(spot -> spot.distanceTo(player) <= LEASH && spot.distanceTo(creeper.position()) > now
+                        && clear(spot, threats, GAP_SLACK))
+                .sorted(Comparator.comparingDouble((Vec3 spot) -> -gap(spot, threats)).thenComparingDouble(spot -> spot.distanceTo(player)))
+                .limit(PATH_TESTS).toList();
+        for (Vec3 spot : ranked) if (reachable(spot)) return spot;
+        return player;
     }
 
     /**
@@ -291,6 +373,90 @@ final class CompanionCreeperGuard {
         if (escape.shut(level, creeper)) { mention("wall", creeper, null); return; }
         mention("strike", creeper, null);
         strike(creeper);
+    }
+
+    /**
+     * The blow before the run: while the fuse is young and the creeper within a lunge he stands in reach (stepping in when it is not) until
+     * his swing is ready, strikes, and runs that very tick. True while the blow is still to come; once it is struck or its time is gone, the
+     * run ({@link #retreat}) is all there is.
+     */
+    private boolean strikeFirst(ServerLevel level, Creeper creeper) {
+        // A blow just dealt by the melee goal leaves no swing ready in time: that blow was the first one, and now he runs.
+        float left = STRIKE_BEFORE - creeper.getSwelling(0);
+        if (left <= 0 || owner.distanceTo(creeper) > LUNGE || owner.combat.ticksToSwing() > left * SWELL_TICKS) {
+            mayStrike = false;
+            event("strike_late", creeper, -1);
+            return false;
+        }
+        if (!owner.isWithinMeleeAttackRange(creeper)) {
+            owner.getNavigation().moveTo(creeper, FIGHT_FLEE_SPEED);
+            return true;
+        }
+        owner.getNavigation().stop();
+        if (!owner.combat.swingReady()) return true;
+        mayStrike = false;
+        // The way out was judged where the fuse was seen; the step in may have left it behind.
+        if (escape.plan(level, threats(level)) < 0 || !escape.clears()) { event("strike_cornered", creeper, -1); return false; }
+        boolean landed = strike(creeper);
+        if (landed) landed();
+        event("struck", creeper, -1, "landed", landed);
+        return false;
+    }
+
+    /**
+     * By the house: he walks the creeper off it, to a spot farther from the house than he is, and waits for it when it falls behind, until
+     * it stands {@link #HOUSE_CLEAR} from the house; then the fight. A lit fuse on the way, or nowhere to walk, ends the walk.
+     */
+    private void lead(ServerLevel level, Creeper creeper, long now) {
+        if (lit(creeper)) { finished = true; return; }
+        if (creeper.position().distanceTo(house) >= HOUSE_CLEAR) { event("led_away", creeper, -1); finished = true; return; }
+        if (owner.distanceTo(creeper) > LEAD_WAIT) { owner.getNavigation().stop(); return; }
+        // Off the ground (a jump, a step down, a teleport) no way is searched at all: that is no proof there is nowhere to go.
+        if (!owner.onGround() && flee == null) return;
+        if (owner.onGround() && (flee == null || now >= nextPlan || owner.position().distanceTo(flee) < LEAD_REACHED)) {
+            nextPlan = now + PLAN_EVERY;
+            flee = leadSpot(threats(level));
+            if (flee == null) {
+                leadAgainAt = now + FORGET_TICKS;
+                event("lead_nowhere", creeper, -1, "candidates", leadTried);
+                finished = true;
+                return;
+            }
+        }
+        owner.getNavigation().moveTo(flee.x, flee.y, flee.z, FLEE_SPEED);
+    }
+
+    /** The middle of his home when this creeper stands near enough to it for a blast to take its walls; else null. */
+    private Vec3 houseNear(Creeper creeper) {
+        CompanionPlaces.Home home = owner.places.home();
+        if (home == null) return null;
+        Vec3 middle = Vec3.atBottomCenterOf(home.pos());
+        return creeper.position().distanceTo(middle) < HOUSE_NEAR ? middle : null;
+    }
+
+    /** Where to walk the creeper: a spot farther from the house than he stands, whose walk keeps clear of every creeper, the farthest first. */
+    private Vec3 leadSpot(List<Creeper> threats) {
+        double from = owner.position().distanceTo(house);
+        List<Vec3> spots = ring();
+        for (int i = 0; i < AWAY_TRIES; i++) {
+            Vec3 spot = LandRandomPos.getPosAway(owner, FLEE_RANGE, FLEE_HEIGHT, house);
+            if (spot != null) spots.add(spot);
+        }
+        List<Vec3> ranked = spots.stream().filter(spot -> spot.distanceTo(house) > from && clear(spot, threats, GAP_SLACK))
+                .sorted(Comparator.comparingDouble((Vec3 spot) -> -spot.distanceTo(house))).limit(PATH_TESTS).toList();
+        leadTried = ranked.size();
+        for (Vec3 spot : ranked) if (reachable(spot)) return spot;
+        return null;
+    }
+
+    /** Spots round him on the level he stands at, in every heading and at each ring radius. */
+    private List<Vec3> ring() {
+        List<Vec3> spots = new ArrayList<>();
+        for (int heading = 0; heading < RING_HEADINGS; heading++) for (int radius : RING_RADII) {
+            double angle = heading * 2 * Math.PI / RING_HEADINGS;
+            spots.add(owner.position().add(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        return spots;
     }
 
     /** A retreat event when the way or the mode changes, not every tick. */
@@ -329,12 +495,16 @@ final class CompanionCreeperGuard {
         return at;
     }
 
-    private void strike(Creeper creeper) {
-        if (owner.tickCount < nextSwing || !owner.isWithinMeleeAttackRange(creeper)) return;
-        nextSwing = owner.tickCount + owner.combat.weaponCooldownTicks();
+    /** A blow of his landed on a creeper, the melee goal's or his own: the retreats behind it were a fight, not a flight. */
+    void landed() { retreats = 0; }
+
+    /** A blow at the player's pace, shared with the melee goal; true when it hurt the creeper. */
+    private boolean strike(Creeper creeper) {
+        if (!owner.combat.swingReady() || !owner.isWithinMeleeAttackRange(creeper)) return false;
         owner.selectWeaponForCombat();
+        owner.combat.swung();
         owner.swing(InteractionHand.MAIN_HAND);
-        owner.doHurtTarget(creeper);
+        return owner.doHurtTarget(creeper);
     }
 
     /** Every creeper about that could hurt him, in sight or not: the way out of one must not lead to another. */
@@ -349,14 +519,10 @@ final class CompanionCreeperGuard {
     private Vec3 retreatSpot(List<BlockPos> way, List<Creeper> threats, Vec3 preferred) {
         if (preferred != null && clear(preferred, threats, GAP_SLACK)) return preferred;
         if (threats.isEmpty()) return null;
-        List<Vec3> spots = new ArrayList<>();
+        List<Vec3> spots = ring();
         for (BlockPos cell : way) {
             Vec3 spot = Vec3.atBottomCenterOf(cell);
             if (owner.distanceToSqr(spot) <= PASSAGE_RANGE * PASSAGE_RANGE) spots.add(spot);
-        }
-        for (int heading = 0; heading < RING_HEADINGS; heading++) for (int radius : RING_RADII) {
-            double angle = heading * 2 * Math.PI / RING_HEADINGS;
-            spots.add(owner.position().add(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
         }
         Vec3 centre = Vec3.ZERO;
         for (Creeper creeper : threats) centre = centre.add(creeper.position());
@@ -395,8 +561,9 @@ final class CompanionCreeperGuard {
         return from.add(line.scale(along)).distanceTo(point);
     }
 
+    /** Searched to its end now: the navigation's createPath answers null while a search outlasts this tick's share, as for most spots tried at once. */
     private boolean reachable(Vec3 spot) {
-        Path path = owner.getNavigation().createPath(BlockPos.containing(spot), 0);
+        Path path = ((CompanionNavigation) owner.getNavigation()).search(Set.of(BlockPos.containing(spot)), 0, REACH_RANGE, true);
         return path != null && path.canReach();
     }
 

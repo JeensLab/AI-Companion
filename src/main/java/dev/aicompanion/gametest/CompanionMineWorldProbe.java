@@ -43,6 +43,8 @@ import java.util.UUID;
 public final class CompanionMineWorldProbe {
     private static final String STAGE = System.getProperty("aicompanion.mineWorldStage", "disabled");
     private static final String SCENARIO = System.getProperty("aicompanion.mineWorldScenario", "descent");
+    /** The goal starts at a fixed time of day (morning, or dusk with -Night), or runs of one seed mix day and night: the night rule changes what the mine takes along. */
+    private static final long START_DAY_TIME = Boolean.getBoolean("aicompanion.mineWorldNight") ? 13_000L : 1_000L;
     private static final UUID PLAYER = UUID.fromString("5a1e7c40-91d3-4b6e-8f27-c0d4a3b96e18");
     private static final Path SITES = Path.of("sites.properties"), MANIFEST = Path.of("mine-world-probe.properties");
     private static final int SCAN_CHUNK_RADIUS = 12, SCAN_SPAN = 160, SCAN_WALL_SECONDS = 900;
@@ -74,6 +76,8 @@ public final class CompanionMineWorldProbe {
     private static CompanionAgenda.State lastState;
     private static CompanionMineWorldClimbs.State climbState = CompanionMineWorldClimbs.State.START;
     private static String signature = "";
+    /** Where he was when the signature last changed: afloat he bobs a block up and down, which is no progress (run descent of seed 7 stood 9000 ticks unseen). */
+    private static net.minecraft.world.phys.Vec3 stallAnchor;
     private static long entityTickStart;
 
     @SubscribeEvent public static void started(ServerStartedEvent event) {
@@ -181,6 +185,8 @@ public final class CompanionMineWorldProbe {
         if (ticks < settleUntil) return;
         companion.teleportTo(entrance.getX() + 0.5, entrance.getY(), entrance.getZ() + 0.5);
         companion.setOwnerId(PLAYER); companion.setSearchRadius(16); companion.setLifestyle(false, false);
+        server.overworld().setDayTime(START_DAY_TIME);
+        journal.startDayTime = START_DAY_TIME;
         ItemStack[] bag = {new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.STONE_PICKAXE, 4), new ItemStack(Items.STONE_SWORD), new ItemStack(Items.TORCH, 32),
                 new ItemStack(Items.BREAD, 16), new ItemStack(Items.COBBLESTONE, 32)};
         for (int slot = 0; slot < bag.length; slot++) companion.setItem(slot, bag[slot]);
@@ -202,6 +208,7 @@ public final class CompanionMineWorldProbe {
         check(site.exists() && Long.toString(site.entrance().asLong()).equals(props.getProperty("entrance")), "The mine entrance changed or was lost: " + site.entrance());
         check(standsText().equals(props.getProperty("stands")), "The recorded stairs changed over the restart");
         journal.facts.put("restoredStands", site.stands().size());
+        journal.startDayTime = server.overworld().getDayTime() % 24_000L;
         restartMet = true;
     }
 
@@ -269,7 +276,8 @@ public final class CompanionMineWorldProbe {
     /** The tester's part: every stop of the goal is recorded, and answered with «продолжай» a bounded number of times. */
     private static void observe(MinecraftServer server, CompanionAgendaData.Goal goal, int depth) {
         var state = goal.state();
-        climbState = CompanionMineWorldClimbs.next(climbState, depth, lastState != null && lastState.suppressesDeeds() && state.suppressesDeeds());
+        climbState = CompanionMineWorldClimbs.next(climbState, depth, lastState != null && lastState.suppressesDeeds() && state.suppressesDeeds(),
+                count(Items.DIAMOND) >= REQUESTED_DIAMONDS || comeIssued && !resumedAfterCome);
         if (climbState.count() > journal.climbs) {
             journal.climbs = climbState.count();
             System.out.println("MINE_WORLD_CLIMB scenario=" + SCENARIO + " n=" + journal.climbs + " tick=" + ticks);
@@ -284,10 +292,11 @@ public final class CompanionMineWorldProbe {
         }
         lastState = state;
         if (journal.climbs > MAX_CLIMBS) { fail(server, "left the mine for the surface " + journal.climbs + " times (limit " + MAX_CLIMBS + ")"); return; }
-        String now = companion.blockPosition().toShortString() + "|" + companion.mineSite().opened() + "|" + count(Items.DIAMOND) + "|" + state;
-        stallFor = now.equals(signature) ? stallFor + 1 : 0;
+        String now = companion.mineSite().opened() + "|" + count(Items.DIAMOND) + "|" + state;
+        if (!now.equals(signature) || stallAnchor == null || companion.position().distanceToSqr(stallAnchor) > 1) { stallAnchor = companion.position(); stallFor = 0; }
+        else stallFor++;
         signature = now;
-        if (stallFor >= STALL_TICKS) fail(server, "stalled for " + STALL_TICKS + " ticks at " + now + " | " + report(goal));
+        if (stallFor >= STALL_TICKS) fail(server, "stalled for " + STALL_TICKS + " ticks at " + companion.blockPosition().toShortString() + "|" + now + " | " + report(goal));
     }
 
     private static void scenarioHooks(MinecraftServer server, CompanionAgendaData.Goal goal, int depth) {
@@ -418,7 +427,8 @@ public final class CompanionMineWorldProbe {
             System.out.println("MINE_WORLD_JOURNAL_ERROR " + error);
         }
         System.out.println("MINE_WORLD_" + verdict + " scenario=" + SCENARIO + " stage=" + STAGE + " hazardMet=" + (journal == null || journal.hazardMet == null ? "n/a" : journal.hazardMet) + " climbs=" + (journal == null ? 0 : journal.climbs) + " blocked=" + (journal == null ? 0 : journal.blocked.size())
-                + " floorRefusals=" + (journal == null ? 0 : journal.floorRefusals) + " reason=\"" + reason + "\"");
+                + " floorRefusals=" + (journal == null ? 0 : journal.floorRefusals)
+                + " day=" + (journal == null ? -1 : journal.startDayTime) + " newStairs=" + (journal == null ? 0 : journal.newStairs) + " reason=\"" + reason + "\"");
         server.halt(false);
     }
 

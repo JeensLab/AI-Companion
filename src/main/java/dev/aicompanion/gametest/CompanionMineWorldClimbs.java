@@ -21,10 +21,13 @@ final class CompanionMineWorldClimbs {
 
     private CompanionMineWorldClimbs() { }
 
-    /** The state after one tick at {@code depth} below the entrance; {@code counted}: the goal is in a state where a climb is held against it. */
-    static State next(State state, int depth, boolean counted) {
+    /**
+     * The state after one tick at {@code depth} below the entrance; {@code counted}: the goal is in a state where a climb is held against it;
+     * {@code excused}: the way up is the player's errand, not a retreat from the mine (the diamonds asked for carried to him, his «ко мне»).
+     */
+    static State next(State state, int depth, boolean counted, boolean excused) {
         boolean back = depth <= ENTRANCE_SLACK;
-        boolean climbed = state.deep() && back && counted;
+        boolean climbed = state.deep() && back && counted && !excused;
         return new State(state.count() + (climbed ? 1 : 0), back ? false : state.deep() || depth >= HOVER_DEPTH);
     }
 }

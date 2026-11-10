@@ -16,14 +16,14 @@ import java.util.List;
 final class CompanionExpeditionClimb {
     enum Result { WORKING, DONE }
 
-    private enum Phase { WALK, TRAVEL, UNPLUG, CUT_OUT }
+    private enum Phase { WALK, TRAVEL, UNPLUG, CUT_OUT, STAIRS_UP }
 
     /** Two cells of the way further apart than this (squared) are not neighbours: the record has a gap between them. */
     private static final double GAP = 9;
     private static final int OWN_STEPS = 4, MAX_PLUGS = 8, IRON_FOR_PLUGS = 8;
     private static final double TRAVEL_NEAR = 1.0;
-    /** Rescues to try for one climb, and the ticks given to one to start: it waits a standstill of three seconds and an answer of the route search. */
-    private static final int MAX_CUTS = 3, CUT_PATIENCE = 200;
+    /** Rescues to try for one climb, and the ticks given to all of them to start: the rescue waits a standstill of three seconds and an answer of the route search. */
+    private static final int MAX_CUTS = 3, CUT_PATIENCE = 600;
     static final String CLOSED = " Подняться не вышло: путь наверх закрыт, остался где стою.";
 
     private final CompanionWork w;
@@ -33,6 +33,10 @@ final class CompanionExpeditionClimb {
     private final CompanionExpeditionWalk toPlug;
     /** Stone from the walls where he stands, for the floor of the way up when the bag has none. */
     private final CompanionExpeditionStock stone;
+    private final CompanionExpeditionSupply supply;
+    /** The staircase cut up to the surface once the rescues are spent: the way up whatever it takes. */
+    private final CompanionExpeditionStairsUp stairs;
+    private int stairSteps;
     private String why = "", outcome = "";
     private List<BlockPos> cells = List.of();
     /** The end (exclusive) of the stretch being walked: the cell there, if any, lies across a gap. */
@@ -41,15 +45,22 @@ final class CompanionExpeditionClimb {
     private CompanionExpeditionPlugs.Way plug;
     private int plugs;
     private int cuts, cutWait, rescuesBefore;
+    /** No cell of his own to start from: the whole way to the entrance is a gap, so the staircase cut up to the surface is all there is. */
+    private boolean lost;
+    /** What the staircase cut up to the surface was cut for, said as it is. */
+    private String newStairsWhy = "";
 
-    CompanionExpeditionClimb(CompanionWork w, CompanionExpeditionDig dig) {
+    CompanionExpeditionClimb(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionSupply supply) {
         this.w = w;
         this.dig = dig;
+        this.supply = supply;
+        this.stairs = new CompanionExpeditionStairsUp(w, dig);
         this.walk = new CompanionExpeditionWalk(dig);
         this.toPlug = new CompanionExpeditionWalk(dig);
         this.stone = new CompanionExpeditionStock(w, dig);
     }
 
+    static final String LAST_PICKAXE = "Кирки на исходе: поднимаюсь, пока есть чем.";
     static final String NO_TORCHES = "Факелы кончились, а сделать их не из чего: копать в темноте не буду.";
 
     /** What ran out, for the report. */
@@ -85,6 +96,7 @@ final class CompanionExpeditionClimb {
         BlockPos origin = w.mine.origin();
         if (walking() || origin == null) return;
         outcome = "";
+        lost = true;
         cells = List.of(origin);
         stretchEnd = 0;
         phase = Phase.TRAVEL;
@@ -126,23 +138,25 @@ final class CompanionExpeditionClimb {
             case TRAVEL -> travel();
             case UNPLUG -> unplug();
             case CUT_OUT -> cutting();
+            case STAIRS_UP -> climbingStairs();
         };
     }
 
     private Result walked() {
-        switch (walk.tick()) {
-            case WORKING -> { return Result.WORKING; }
+        CompanionExpeditionWalk.Result ticked = walk.tick();
+        return switch (ticked) {
+            case WORKING -> Result.WORKING;
             case DONE -> {
-                if (stretchEnd >= cells.size()) return finish(" Копать нечем, поднялся за припасами.");
+                if (stretchEnd >= cells.size()) yield finish(" Копать нечем, поднялся за припасами.");
                 phase = Phase.TRAVEL;
-                return Result.WORKING;
+                yield Result.WORKING;
             }
-            default -> {
+            case STUCK, NO_BLOCK -> {
                 // The cell he cannot enter is a gap of its own: a plug over his head or across the step comes out, and rock is cut.
                 stretchEnd = walk.index();
-                return openWay(cells.get(stretchEnd));
+                yield openWay(cells.get(stretchEnd));
             }
-        }
+        };
     }
 
     /** Across a gap of the record: his own steps once near the cell beyond it, a route search until then, and a plug of his that shuts it, near or far, out of the way. */
@@ -154,14 +168,15 @@ final class CompanionExpeditionClimb {
             if (dig.reach(beyond)) return crossed();
             return dig.walkStuck() ? openWay(beyond) : Result.WORKING;
         }
-        switch (w.route.legs(beyond, TRAVEL_NEAR)) {
-            case NEAR -> { return crossed(); }
+        CompanionTravel.Step leg = w.route.legs(beyond, TRAVEL_NEAR);
+        return switch (leg) {
+            case NEAR -> crossed();
             case FAILED -> {
                 w.route.legsEnd(false);
-                return openWay(beyond);
+                yield openWay(beyond);
             }
-            default -> { return Result.WORKING; }
-        }
+            case WALKING -> Result.WORKING;
+        };
     }
 
     /** Out under the open sky at the height of the entrance on the surface: the climb has done its work, whatever cell of the record lies beyond the gap. */
@@ -195,11 +210,10 @@ final class CompanionExpeditionClimb {
         return Result.WORKING;
     }
 
-    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore): without one the rock stays, and so does he. */
+    /** No walk and no block of his own joins the two ends. Any pickaxe he has cuts the way up, the wear kept for ore too (out is worth more than ore); the rescues spent, a staircase of his own to the surface where the record has none. */
     private Result cutOut() {
-        if (cuts >= MAX_CUTS || w.items.countCarried(Items.STONE_PICKAXE) == 0 && !dig.ironLeft(0) && dig.hardPickaxe() == null) return finish(CLOSED);
+        if (cuts >= MAX_CUTS || !rockTool()) return noWay();
         cuts++;
-        cutWait = 0;
         rescuesBefore = w.owner.recovery.begun();
         w.owner.getNavigation().stop();
         w.expedition.climbTime();
@@ -213,9 +227,63 @@ final class CompanionExpeditionClimb {
             phase = Phase.TRAVEL;
             return Result.WORKING;
         }
-        if (++cutWait > CUT_PATIENCE) return finish(CLOSED);
+        if (++cutWait > CUT_PATIENCE) return noWay();
         w.owner.movementIntent(cells.get(stretchEnd));
         return Result.WORKING;
+    }
+
+    /**
+     * The record's way up is shut where he stands and no rescue opens it. A staircase of his own is the way up whatever it takes where the record has a gap
+     * beyond the blocked cell (or none at all), and where the blocked cell itself lies across a gap from the cell before it: his stairs then do not lead up
+     * from here, whole or not. Only where his stairs run on whole to the surface and are merely shut at that cell are they known; a new staircase cut from
+     * the middle of the mine would wear the pickaxes out, so the climb ends said as it is.
+     */
+    private Result noWay() {
+        BlockPos beyond = cells.get(stretchEnd);
+        boolean acrossGap = stretchEnd == 0 || cells.get(stretchEnd - 1).distSqr(beyond) > GAP;
+        if (lost || acrossGap || gapAfter(cells, stretchEnd) < cells.size()) {
+            newStairsWhy = lost ? "Своей лестницы наверх нет" : acrossGap ? "До своей лестницы не добраться" : "Своя лестница перекрыта на высоте " + beyond.getY();
+            return stairsUp();
+        }
+        return finish(" Своя лестница перекрыта на высоте " + beyond.getY() + "." + CLOSED);
+    }
+
+    private boolean rockTool() { return w.items.countCarried(Items.STONE_PICKAXE) > 0 || dig.ironLeft(0) || dig.hardPickaxe() != null; }
+
+    /** A stone pickaxe made on the spot, else the iron one down to its last wear: out is worth more than ore. */
+    private boolean makeTool() {
+        if (supply.craftStonePickaxe()) return true;
+        if (!dig.ironLeft(0) && dig.hardPickaxe() == null) return false;
+        dig.ironForRock(0);
+        return true;
+    }
+
+    /** The record's way up is cut and no rescue opens it: a staircase of his own up to the entrance on the surface, as a player digs out of a lost mine. */
+    private Result stairsUp() {
+        if (!rockTool() && !makeTool()) return finish(CLOSED);
+        BlockPos top = w.mine.origin() != null ? w.mine.origin() : w.mine.entrance();
+        stairs.begin(top);
+        stairSteps = 0;
+        w.owner.getNavigation().stop();
+        w.expedition.climbTime();
+        phase = Phase.STAIRS_UP;
+        w.owner.workStatus(newStairsWhy + ", прокапываю новую к поверхности.");
+        return Result.WORKING;
+    }
+
+    private Result climbingStairs() {
+        ServerLevel level = (ServerLevel) w.owner.level();
+        return switch (stairs.tick(level)) {
+            case WORKING -> {
+                if (stairs.steps() == stairSteps) yield Result.WORKING;
+                stairSteps = stairs.steps();
+                w.expedition.climbTime();
+                yield onSurface() ? finish(" " + newStairsWhy + ", прокопал новую к поверхности.") : Result.WORKING;
+            }
+            case ARRIVED -> finish(" " + newStairsWhy + ", прокопал новую к поверхности.");
+            case NO_TOOL -> makeTool() ? Result.WORKING : finish(" " + shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + CLOSED);
+            case STUCK -> finish(stairs.why().equals("путь наверх закрыт") ? CLOSED : " Подняться не вышло: " + stairs.why() + ", остался где стою.");
+        };
     }
 
     /** The one time the expedition lets the self-rescue work: its walls are the plan at any other. */
@@ -230,7 +298,7 @@ final class CompanionExpeditionClimb {
                 if (stone.tickAround(level, w.owner.blockPosition()) || CompanionSeal.available(w.owner) > 0) return Result.WORKING;
                 return finish(" Подняться не вышло: в пути наверх нет пола, а блоков, чтобы его настелить, нет, остался где стою.");
             }
-            default -> { }
+            case DONE -> { }
         }
         if (plug.cell() == null) {
             plugs++;
@@ -239,22 +307,23 @@ final class CompanionExpeditionClimb {
         }
         // No pickaxe that may be spent on rock is no reason to leave a plug of his own where it is: it comes out by hand.
         CompanionExpeditionDig.Status taken = dig.hasTool(level.getBlockState(plug.cell())) ? dig.dig(level, plug.cell()) : dig.takeOut(level, plug.cell());
-        switch (taken) {
-            case WORKING -> { return Result.WORKING; }
+        return switch (taken) {
+            case WORKING -> Result.WORKING;
             case DONE -> {
                 dig.flush();
                 w.mine.unsealed(plug.cell());
+                w.mine.taken(plug.cell());
                 plugs++;
                 phase = Phase.TRAVEL;
-                return Result.WORKING;
+                yield Result.WORKING;
             }
-            case FULL -> { return finish(" Подняться не вышло: свою пробку на пути наверх убрать некуда, сумка полна, остался где стою."); }
-            default -> {
+            case FULL -> finish(" Подняться не вышло: свою пробку на пути наверх убрать некуда, сумка полна, остался где стою.");
+            case NO_TOOL, NO_HAND, STUCK -> {
                 dig.diagnoseDig(plug.cell());
                 dig.forget();
-                return cutOut();
+                yield cutOut();
             }
-        }
+        };
     }
 
     private Result finish(String text) {
@@ -269,9 +338,13 @@ final class CompanionExpeditionClimb {
         walk.clear();
         toPlug.clear();
         stone.reset();
+        stairs.reset();
+        stairSteps = 0;
         why = outcome = "";
         cells = List.of();
         stretchEnd = plugs = cuts = cutWait = rescuesBefore = 0;
+        lost = false;
+        newStairsWhy = "";
         phase = Phase.WALK;
         plug = null;
     }

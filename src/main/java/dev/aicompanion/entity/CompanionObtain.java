@@ -43,6 +43,7 @@ public final class CompanionObtain {
     private static final String LOGS = "#logs", PLANKS = "#planks", STONE = "#stone";
 
     private final ServerLevel level;
+    private final List<ItemStack> carried;
     /** A bench stands within his reach: a 3x3 recipe needs no log for a new one. */
     private boolean bench;
     private final Map<String, Integer> bag = new HashMap<>();
@@ -51,7 +52,7 @@ public final class CompanionObtain {
     private String why;
 
     private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench) {
-        this.level = level; this.bench = bench;
+        this.level = level; this.carried = carried; this.bench = bench;
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
 
@@ -91,6 +92,19 @@ public final class CompanionObtain {
             case "minecraft:dirt" -> { return add("gather_dirt", "", count); }
             case "minecraft:sand", "minecraft:red_sand", "minecraft:gravel" -> { return addSplit("gather_loose", key, count, 64); }
             case FLINT -> { return addSplit("gather_loose", key, count, FLINT_STEP); }   // gravel dug (and re-placed) until this much flint drops
+            // An empty bucket of his (or one made now) filled from living water (CompanionWaterFill); none to be had in the Nether or the
+            // End, or with the game's rule that refills water off: then no bucket is made for it either.
+            case "minecraft:water_bucket" -> {
+                String refusal = CompanionWaterFill.refusal(level);
+                if (refusal != null) return refuse(refusal);
+                return need("minecraft:bucket", count, depth + 1) && add("fill_bucket", key, count);
+            }
+            // Lava he walks to, set by his bucket of water and mined (CompanionObsidian); with a pickaxe that takes it only, he does not go for diamonds.
+            case "minecraft:obsidian" -> {
+                String refusal = CompanionObsidian.refusal(level, carried);
+                if (refusal != null) return refuse(refusal);
+                return need("minecraft:water_bucket", 1, depth + 1) && add("mine_obsidian", key, count);
+            }
             default -> { }
         }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
@@ -182,7 +196,11 @@ public final class CompanionObtain {
         return item == Items.BEEF || item == Items.PORKCHOP ? ceil(count, 2) : count;
     }
     private static int perOre(CompanionOre.Kind ore) {
-        return switch (ore) { case COPPER -> 2; case LAPIS, REDSTONE -> 4; default -> 1; };
+        return switch (ore) {
+            case COPPER -> 2;
+            case LAPIS, REDSTONE -> 4; // raw drops one block gives without Fortune
+            case COAL, IRON, GOLD, DIAMOND, EMERALD -> 1;
+        };
     }
 
     private boolean add(String type, String item, int count) { steps.add(new Step(type, item, count)); return true; }

@@ -26,6 +26,11 @@ final class CompanionMoodPanel {
     private static CompanionEntity companion;
     private static long sampledAt = Long.MIN_VALUE;
 
+    static void forgetWorld() {
+        companion = null;
+        sampledAt = Long.MIN_VALUE;
+    }
+
     static void toggle() {
         boolean on = !OpenRouterConfig.MOOD_PANEL.get();
         OpenRouterConfig.MOOD_PANEL.set(on); OpenRouterConfig.MOOD_PANEL.save();

@@ -32,7 +32,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private static final int DIG_RETREAT_SECONDS = 360;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "walk_heading");
+            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "walk_heading", "fill_bucket", "mine_obsidian", "build_portal", "pick_up");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
@@ -92,10 +92,16 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     /** Ordered on the same server executor as dispatch, restricted to this request's own work ID. */
     public void cancelWork() {
         if (!server.isRunning()) return;
+        boolean urgent = task != null && task.urgent();
+        boolean byPlayer = task != null && task.byPlayer();
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             var companion = player == null ? null : CompanionEvents.getOwnedCompanion(player);
-            if (companion != null && ownedWorkId > 0 && companion.activeWorkId() == ownedWorkId) companion.stopGathering();
+            if (companion != null && ownedWorkId > 0 && companion.activeWorkId() == ownedWorkId && !(urgent && companion.parkWork())) {
+                // Only the player's own cancel ends the dig that was put aside; another order on the way («иди за мной») leaves it for later.
+                if (byPlayer && !urgent) companion.stopGatheringForPlayer();
+                else companion.stopGathering();
+            }
         });
     }
 

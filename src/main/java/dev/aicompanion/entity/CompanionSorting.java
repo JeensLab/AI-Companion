@@ -3,8 +3,6 @@ package dev.aicompanion.entity;
 import dev.aicompanion.entity.CompanionSortGroups.Group;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
@@ -53,6 +51,8 @@ final class CompanionSorting {
     private final List<ItemStack> carried = new ArrayList<>();
     private final Set<BlockPos> opened = new HashSet<>();
     private boolean closing, started, tidyOnly, reordered, left;
+    /** A barrel is in the set: the report then says «хранилище», not «сундук». */
+    private boolean barrels;
     private int idle, trips, tripLimit;
     private long leftAt;
     private ItemStack shown = ItemStack.EMPTY;
@@ -63,7 +63,10 @@ final class CompanionSorting {
 
     CompanionSorting(CompanionWork w) { this.w = w; }
 
-    /** The set is fixed at the request: ordinary chests (not trapped, not barrels, not under a block) within six blocks of the player, nearest first, a double one once. */
+    /**
+     * The set is fixed at the request: ordinary chests, and barrels while the setting allows other containers (not trapped, not under a block),
+     * within six blocks of the player, nearest first, a double one once.
+     */
     void begin(ServerLevel level) {
         // What a stopped sorting left in his bag is still the player's: this one puts it away too, as much of it as the bag still holds (review round 4, finding 3).
         for (ItemStack carry : carried) carry.setCount(Math.min(carry.getCount(), count(w.owner, carry)));
@@ -75,12 +78,13 @@ final class CompanionSorting {
         List<BlockPos> found = new ArrayList<>();
         for (BlockPos pos : w.chests.blockEntitiesNear(level, BlockPos.containing(from), (int) RADIUS + 1)) {
             BlockState state = level.getBlockState(pos);
-            if (state.getBlock() != Blocks.CHEST || state.getValue(ChestBlock.TYPE) == ChestType.RIGHT || pos.getCenter().distanceToSqr(from) > RADIUS * RADIUS
-                    || w.chests.chestAt(level, pos) == null) continue;
+            if (!CompanionContainers.sortable(state, w.owner.otherContainers()) || state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) == ChestType.RIGHT
+                    || pos.getCenter().distanceToSqr(from) > RADIUS * RADIUS || CompanionContainers.storageAt(level, pos) == null) continue;
             found.add(pos.immutable());
         }
         found.sort(Comparator.comparingDouble(pos -> pos.getCenter().distanceToSqr(from)));
         chests.addAll(found.subList(0, Math.min(MAX_CHESTS, found.size())));
+        barrels = chests.stream().anyMatch(pos -> level.getBlockState(pos).is(Blocks.BARREL));
     }
 
     void step(ServerLevel level) {
@@ -97,7 +101,7 @@ final class CompanionSorting {
             if (next == null) return;
             w.target = next; w.resetApproach();
         }
-        Container chest = w.chests.chestAt(level, w.target);
+        Container chest = CompanionContainers.storageAt(level, w.target);
         // A broken chest stays in the set (its place keeps the numbers of the report) and is skipped: the plan is made from the live ones.
         if (chest == null) { w.resetTarget(); return; }
         if (w.owner.distanceToSqr(w.target.getCenter()) > 3.2D * 3.2D || !w.items.visibleFrom(level, w.owner.getEyePosition(), w.target)) {
@@ -108,7 +112,7 @@ final class CompanionSorting {
         w.owner.getLookControl().setLookAt(w.target.getX() + 0.5, w.target.getY() + 0.5, w.target.getZ() + 0.5);
         w.openedChest = w.target.immutable(); opened.add(w.openedChest);
         w.animateChest(level, w.openedChest, 1);
-        level.playSound(null, w.openedChest, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
+        CompanionContainers.playOpen(level, w.openedChest);
         layout(live(level));
         // Unfinished stacks merged first: their cells are the room a new kind of the chest's group needs (review round 4, finding 2).
         reordered |= tidy(chest);
@@ -259,13 +263,13 @@ final class CompanionSorting {
             }
             if (any) used++;
         }
-        if (where.isEmpty()) return "В сундуках пусто, раскладывать нечего." + goneNote(live);
+        if (where.isEmpty()) return (barrels ? "В хранилищах пусто" : "В сундуках пусто") + ", раскладывать нечего." + goneNote(live);
         // The groups of one chest together: «руда и металлы, еда — в ближнем», not the same chest named for each.
         Map<String, List<String>> byChest = new LinkedHashMap<>();
         where.forEach((group, at) -> byChest.computeIfAbsent(String.join(" и ", at.stream().map(i -> NEAR[i]).toList()), chest -> new ArrayList<>()).add(group.label));
         List<String> parts = new ArrayList<>();
         byChest.forEach((chest, groups) -> parts.add(String.join(", ", groups) + " — " + chest));
-        return (w.transferred == 0 && !reordered ? "Всё уже лежит по группам: " : "Разложил по " + used + (used == 1 ? " сундуку: " : " сундукам: ")) + String.join("; ", parts) + "." + goneNote(live);
+        return (w.transferred == 0 && !reordered ? "Всё уже лежит по группам: " : "Разложил по " + used + (barrels ? used == 1 ? " хранилищу: " : " хранилищам: " : used == 1 ? " сундуку: " : " сундукам: ")) + String.join("; ", parts) + "." + goneNote(live);
     }
 
     /** For the answer to the player: the chests of the set that were broken or built over meanwhile. */
@@ -301,7 +305,7 @@ final class CompanionSorting {
         Vec3 eye = w.owner.getEyePosition();
         w.closeChest();
         for (BlockPos pos : chests.stream().sorted(Comparator.comparingDouble((BlockPos at) -> at.getCenter().distanceToSqr(eye))).toList()) {
-            Container chest = w.chests.chestAt(level, pos);
+            Container chest = CompanionContainers.storageAt(level, pos);
             if (carried.isEmpty() || chest == null || pos.getCenter().distanceToSqr(eye) > REACH * REACH || !w.items.visibleFrom(level, eye, pos)) continue;
             boolean put = false;
             for (ItemStack carry : carried) {
@@ -314,7 +318,7 @@ final class CompanionSorting {
             w.owner.getLookControl().setLookAt(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
             w.owner.animateAction(3, pos, ItemStack.EMPTY);
             w.animateChest(level, pos, 1);
-            level.playSound(null, pos, SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 0.5F, 1.0F);
+            CompanionContainers.playOpen(level, pos);
             w.openedChest = pos.immutable();
             // Only the last chest is left to cancel's closeChest.
             if (!carried.isEmpty()) w.closeChest();
@@ -331,7 +335,7 @@ final class CompanionSorting {
     /** The chests of the set as they are now, by their place in the set; null for one that is gone. */
     private List<Container> live(ServerLevel level) {
         List<Container> live = new ArrayList<>();
-        for (BlockPos pos : chests) live.add(w.chests.chestAt(level, pos));
+        for (BlockPos pos : chests) live.add(CompanionContainers.storageAt(level, pos));
         return live;
     }
 

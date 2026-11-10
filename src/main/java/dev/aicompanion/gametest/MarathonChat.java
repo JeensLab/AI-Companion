@@ -43,7 +43,7 @@ final class MarathonChat {
         String command = CompanionLocalCommands.route(text, "Олег");
         h.assertTrue(command != null, "«" + text + "» is no local command; give the model's plan");
         if (CompanionLocalCommands.cancelsPlans(command)) generation.incrementAndGet();
-        return run(text, List.of(CompanionLocalCommands.action(command)));
+        return run(text, CompanionLocalCommands.actions(command));
     }
 
     /** A request for the model, with the steps it would send in queue_companion_plan. */

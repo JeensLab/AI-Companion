@@ -58,6 +58,8 @@ final class CompanionExpeditionDig {
     boolean lackedOre;
     /** Stranded under the ground with no stone pickaxe: the rock is dug with the iron one while it has wear to spare. */
     boolean ironForRock;
+    /** The last NO_TOOL was the stone pickaxe kept for the way up (see {@link #pickaxesLeft}), not a missing tool. */
+    boolean reserved;
     private int ironReserve = SPARE_DURABILITY;
 
     CompanionExpeditionDig(CompanionWork w) {
@@ -76,7 +78,14 @@ final class CompanionExpeditionDig {
     }
 
     /** One tick of breaking the cell. DONE once it is open (broken now or before). */
-    Status dig(ServerLevel level, BlockPos pos) {
+    Status dig(ServerLevel level, BlockPos pos) { return dig(level, pos, false); }
+
+    /**
+     * As above; {@code sparing}: for a tunnel or ore, which the way up does not need, the last pickaxe is not worn by it, nor the materials of the last one.
+     * The cell is left shut and {@link #reserved} says why.
+     */
+    Status dig(ServerLevel level, BlockPos pos, boolean sparing) {
+        reserved = false;
         if (CompanionShaftPlan.open(level, pos)) return done();
         if (!pos.equals(cell)) { cell = pos.immutable(); cellTicks = unseen = 0; }
         if (++cellTicks > CELL_PATIENCE) return stuck("patience");
@@ -85,6 +94,10 @@ final class CompanionExpeditionDig {
         Item tool = toolFor(state);
         lackedOre = tool == null && state.is(Tags.Blocks.ORES);
         if (tool == null) return Status.NO_TOOL;
+        if (sparing && tool == Items.STONE_PICKAXE && pickaxesLeft() <= 1) {
+            reserved = true;
+            return Status.NO_TOOL;
+        }
         if (!holdTool(tool)) return Status.NO_HAND;
         Vec3 eye = owner.getEyePosition();
         owner.getLookControl().setLookAt(pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5);
@@ -233,6 +246,14 @@ final class CompanionExpeditionDig {
 
     boolean spareIron() { return ironLeft(ironReserve); }
 
+    /** Pickaxes he can still dig with: those in the bag (stone, iron with any wear, diamond, netherite) and the stone ones the bag's materials make. */
+    int pickaxesLeft() {
+        int left = w.items.countCarried(Items.STONE_PICKAXE) + CompanionExpeditionSupply.craftable(w);
+        if (ironLeft(0)) left++;
+        if (hardPickaxe() != null) left++;
+        return left;
+    }
+
     /** Rock can be dug without a stone pickaxe: a diamond or netherite one, or an iron one with wear to spare. */
     boolean hasRockTool() { return hardPickaxe() != null || spareIron(); }
 
@@ -341,11 +362,12 @@ final class CompanionExpeditionDig {
             owner.getNavigation().stop();
             return true;
         }
-        switch (w.handOver.takeUp(level, shut, "Убираю свой блок с лестницы.")) {
-            case WORKING -> { return true; }
-            case DONE -> { mine.taken(shut); mine.unsealed(shut); return true; }
-            default -> { return false; }
-        }
+        CompanionHandOver.Taking taking = w.handOver.takeUp(level, shut, "Убираю свой блок с лестницы.");
+        return switch (taking) {
+            case WORKING -> true;
+            case DONE -> { mine.taken(shut); mine.unsealed(shut); yield true; }
+            case FULL -> false;
+        };
     }
 
     /**
@@ -373,7 +395,7 @@ final class CompanionExpeditionDig {
         }
         return switch (w.handOver.takeUp(level, pos, "Убираю свой блок с дороги.")) {
             case WORKING -> Status.WORKING;
-            case FULL -> Status.FULL;
+            case CompanionHandOver.Taking.FULL -> Status.FULL;
             case DONE -> done();
         };
     }

@@ -7,10 +7,54 @@ import java.util.regex.Pattern;
 public final class CompanionWorkCommands {
     private CompanionWorkCommands() { }
 
-    public static PlannedAction parse(String text, String name) {
+    /** Buckets of water fetched at most without the model: a stack of empty buckets. */
+    private static final int MAX_WATER = 16;
+    private static final Pattern WATER = Pattern.compile("^(?:(принеси|дай|набери)( мне)?(?: (?:ведро|ведра|ведер))? воды(?: в (?:ведро|ведра))?( и (?:принеси|дай|отдай)(?: мне)?)?"
+            + "|(сходи) за водой|наполни (?:ведро|ведра)(?: водой)?)$");
+
+    /**
+     * «Принеси воды», «набери мне ведро воды», «набери воды» (FWR29, decided 07.11): "companion work obtain_item N minecraft:water_bucket",
+     * with " give" when the water is for the player («принеси», «дай», «сходи за водой», «мне», «…и отдай»). Null for anything else,
+     * which is the model's: «во все вёдра» (only the server knows his buckets), «сколько сможешь», more than {@link #MAX_WATER}.
+     */
+    public static String water(String text, String name) {
+        var said = CompanionNumbers.parse(plain(text, name));
+        String rest = said.rest().replaceAll("\\s+", " ").trim();
+        // «Наполни вёдра» with no number (ё is е here) means all his buckets, as «во все вёдра»; «0 вёдер» is no order of one.
+        if (said.count() == 0 && rest.matches("(?U).*\\b(?:ведра|ведер)\\b.*")) return null;
+        int count = said.count() == 0 ? 1 : said.count();
+        var water = WATER.matcher(rest);
+        if (!water.matches() || count < 1 || count > MAX_WATER) return null;
+        boolean give = "принеси".equals(water.group(1)) || "дай".equals(water.group(1)) || water.group(2) != null || water.group(3) != null || water.group(4) != null;
+        return "companion work obtain_item " + count + " minecraft:water_bucket" + (give ? " give" : "");
+    }
+
+    /** Obsidian got without the model at most (a stack) and when no number is said (a portal's frame without its corners). */
+    private static final int MAX_OBSIDIAN = 64, OBSIDIAN = 10;
+    private static final Pattern OBSIDIAN_ORDER = Pattern.compile("^(?:добудь|накопай|выкопай|сделай|набери)(?: (?:блоков|блока|блок|штук|штуки))? обсидиана?$");
+
+    /**
+     * «Добудь обсидиан», «накопай 5 обсидиана» (decided 08.11): "companion work obtain_item N minecraft:obsidian", ten when no number is
+     * said. Null for anything else, which is the model's: «принеси», «и …», «0», more than {@link #MAX_OBSIDIAN}.
+     */
+    public static String obsidian(String text, String name) {
+        String value = plain(text, name).replaceAll("\s+", " ");
+        var said = CompanionNumbers.parse(value);
+        // Nothing taken out of what was said: no number at all, so ten («блок» alone is one); a «0» taken out is no order of one.
+        int count = said.rest().equals(value) ? ((" " + value + " ").contains(" блок ") ? 1 : OBSIDIAN) : said.count();
+        if (!OBSIDIAN_ORDER.matcher(said.rest()).matches() || count < 1 || count > MAX_OBSIDIAN) return null;
+        return "companion work obtain_item " + count + " minecraft:obsidian";
+    }
+
+    /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
+    private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
-        value = value.replaceAll("[.!]+$", "").trim();
+        return value.replaceAll("[.!]+$", "").trim();
+    }
+
+    public static PlannedAction parse(String text, String name) {
+        String value = plain(text, name);
         if (value.matches("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1);
         // Said of the place the player stands on. A question («это наш дом?») keeps its mark and stays talk for the model.
         if (value.matches("^(?:(?:это|вот|здесь|тут)(?: и есть| теперь| будет)? (?:наш|мой) дом|наш дом (?:здесь|тут)|(?:здесь|тут) (?:будет|теперь)(?: наш)? дом|запомни(?:,)? (?:где наш дом|(?:здесь|тут) наш дом|(?:это|этот дом|это место) как (?:наш )?дом))$"))
@@ -19,6 +63,13 @@ public final class CompanionWorkCommands {
         if (value.matches("^(?:разложи|отсортируй|рассортируй)(?: мне| нам)?(?: (?:все )?(?:вещи|предметы))?(?: (?:по|в) сундук(?:ам|ах)| сундуки)$|^наведи порядок в сундук(?:ах|е)$"))
             return new PlannedAction("sort_chests", 0, 1);
         if (value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$")) return new PlannedAction("build_house", 0, 1);
+        // «Построй портал (в Незер)» (decided 08.11): the frame without its corners near the player, lit; more said is the model's.
+        // «Новый», «не хочу идти» (decided 09.11): built though a portal stands near; «здесь», «возле меня»: built here, not led to one.
+        if (value.matches("^(?:(?:не хочу (?:идти|туда)|не пойду|не надо)[, ]+)?(?:построй|сделай|поставь)(?: мне| нам| себе)?(?: (?:новый|другой|еще один))? портал"
+                + "(?: в (?:незер|ад|нижний мир))?(?: из обсидиана)?(?: (?:рядом|здесь|тут|возле меня|рядом со мной))?$"))
+            return new PlannedAction("build_portal", 0, 1,
+                    value.matches(".*(?:новый|другой|еще один|не хочу|не пойду|не надо).*") ? "new"
+                            : value.matches(".*(?:здесь|тут|возле меня|рядом со мной).*") ? "here" : "");
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;
@@ -100,29 +151,9 @@ public final class CompanionWorkCommands {
                 return count >= 1 && count <= 64 ? new PlannedAction("place_block", 0, count, "minecraft:chest") : null;
             } catch (NumberFormatException ignored) { return null; }
         }
-        var take = Pattern.compile("^(?:забери|возьми|достань)(?:\\s+(\\d+))?\\s+(все|все вещи|вещи|ресурсы|дерево|бревна|бревен|камень|камня|булыжник|булыжника|землю|земли)\\s+из сундука$").matcher(value);
-        if (take.matches()) {
-            String filter = switch (take.group(2)) {
-                case "все", "все вещи", "вещи" -> "all";
-                case "дерево", "бревна", "бревен" -> "logs";
-                case "камень", "камня", "булыжник", "булыжника" -> "stone";
-                case "землю", "земли" -> "minecraft:dirt";
-                default -> "resources";
-            };
-            try { int count = take.group(1) == null ? 64 : Integer.parseInt(take.group(1));
-                return count > 0 && count <= 64 ? new PlannedAction("take_items", 0, count, filter) : null;
-            } catch (NumberFormatException ignored) { return null; }
-        }
-        var store = Pattern.compile("^(?:сложи|положи|выгрузи|убери) (ресурсы|вещи|все вещи|все|дерево|бревна|камень|булыжник) в сундук$").matcher(value);
-        if (store.matches()) {
-            String filter = switch (store.group(1)) {
-                case "все", "все вещи" -> "all";
-                case "дерево", "бревна" -> "logs";
-                case "камень", "булыжник" -> "stone";
-                default -> "resources";
-            };
-            return new PlannedAction("store_items", 0, 1, filter);
-        }
+        // Store and take orders, with the container they name («в бочку», «из печи»; «в сундук» as it always was).
+        PlannedAction container = CompanionContainerCommands.parse(value);
+        if (container != null) return container;
         // The field and the harvest need no model either: «собери урожай», «сделай огород», «посади морковь».
         if (bare.matches("^(?:собери|сними|убери)(?: мне| нам)?(?: весь| созревший)? урожай(?: рядом| вокруг| с огорода| с грядок| с фермы)?$"))
             return new PlannedAction("harvest_crops", 0, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, "any");

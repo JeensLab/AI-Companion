@@ -14,17 +14,41 @@ public final class OpenRouterConfig {
             .comment("Maximum independent resource-search and roaming distance, in loaded chunks.")
             .defineInRange("searchRadius", 64, 16, 128);
     public static final ModConfigSpec.BooleanValue AUTONOMOUS_SPEECH = BUILDER.define("autonomousSpeech", true);
+    public static final ModConfigSpec.BooleanValue JOKES = BUILDER
+            .comment("Occasional short local jokes in quiet moments, without a model request.")
+            .define("jokes", true);
+    public static final ModConfigSpec.IntValue JOKE_INTERVAL_MINUTES = BUILDER
+            .comment("Minimum minutes between jokes; a random delay up to the same duration is added. Each joke repeats no sooner than an hour.")
+            .defineInRange("jokeIntervalMinutes", 5, 1, 60);
+    public static final ModConfigSpec.BooleanValue SHORT_MURMURS = BUILDER
+            .comment("Keep his own idle remarks short (at most 15 words, no digits) and, when you are out of earshot, show them in chat without voice. Off: long remarks are voiced only within earshot.")
+            .translation("config.aicompanion.short_murmurs")
+            .define("shortMurmurs", true);
+    public static final ModConfigSpec.IntValue MURMUR_INTERVAL_PERCENT = BUILDER
+            .comment("How long he waits between remarks of his own, in percent of the usual pause (100 = as designed, 200 = twice as rare).")
+            .translation("config.aicompanion.murmur_interval_percent")
+            .defineInRange("murmurIntervalPercent", 100, 25, 400);
     public static final ModConfigSpec.BooleanValue COMPANION_MARKER = BUILDER
-            .comment("Outline the companion through walls when he is out of sight (toggled with the key G).")
+            .comment("Outline the companion through walls when he is out of sight, and mark him on the screen when he is too far to be seen (toggled with the key G).")
             .define("companionMarker", true);
     public static final ModConfigSpec.BooleanValue MOOD_PANEL = BUILDER
             .comment("Show the companion's mood, bond and character as a thin panel on the right of the screen (toggled with the key N).")
             .define("moodPanel", true);
+    public static final ModConfigSpec.BooleanValue DAMAGE_NUMBERS = BUILDER
+            .comment("Show above the companion, to his owner, the health he lost or regained and «блок» when his shield stopped a hit.")
+            .define("damageNumbers", true);
     public static final ModConfigSpec.BooleanValue CHUNK_LOADING = BUILDER.define("companionChunkLoading", true);
     public static final ModConfigSpec.BooleanValue DIAGNOSTICS = BUILDER
             .comment("Write local diagnostic events, dialogue and game state to logs/aicompanion. May include private conversations and coordinates.")
             .define("diagnosticLogging", true);
     public static final ModConfigSpec.IntValue VOICE_DISTANCE = BUILDER.defineInRange("voiceDistance", 32, 8, 64);
+    public static final ModConfigSpec.BooleanValue WINDOWS_VOICE = BUILDER
+            .comment("Without an Inworld key, speak with a Russian voice installed in Windows (nothing is sent anywhere).")
+            .define("windowsVoice", true);
+
+    public static final ModConfigSpec.BooleanValue MACOS_VOICE = BUILDER
+            .comment("Without an Inworld key, speak using an installed Russian macOS voice. No network or voice downloads.")
+            .define("macosVoice", true);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
             .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
@@ -42,7 +66,7 @@ public final class OpenRouterConfig {
             .define("apiUrl", "");
 
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
-            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to disable voice output.")
+            .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to use an installed local Russian voice on Windows (windowsVoice) or macOS (macosVoice).")
             .translation("config.aicompanion.inworld_api_key")
             .define("inworldApiKey", "");
 
@@ -56,10 +80,63 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.personality")
             .define("personality", "Ты мой товарищ по выживанию в Minecraft: язвительный, разговорчивый и надёжный. Помни наш разговор, интересуйся происходящим, шути и матерись естественно, без постоянных комплиментов.");
 
+    /** How many times he arrives at one place before letting it lie, and how many deaths going for it are too many. */
+    public static final ModConfigSpec.IntValue DEATH_RECOVERY_ATTEMPTS = BUILDER
+            .comment("Tries at one death place before he lets it lie (1-20).")
+            .translation("config.aicompanion.death_recovery_attempts")
+            .defineInRange("deathRecoveryAttempts", 5, 1, 20);
+    public static final ModConfigSpec.IntValue DEATH_RECOVERY_DEATHS = BUILDER
+            .comment("Deaths going for one death place, on the way or at it, after which he lets it lie (1-50).")
+            .translation("config.aicompanion.death_recovery_deaths")
+            .defineInRange("deathRecoveryDeaths", 10, 1, 50);
+
+    /** Whether he goes back for his own things after a death. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue DEATH_RECOVERY = BUILDER
+            .comment("Go back for his own belongings after a death: the dearest place first, junk left alone.")
+            .translation("config.aicompanion.death_recovery")
+            .define("deathRecovery", true);
+
+    /** Whether the guard order goes for the monster nearest to the player. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue GUARD_NEAREST_TO_PLAYER = BUILDER
+            .comment("On the guard order, go for the monster nearest to the player within fifty blocks of him. Off: only the monsters near the player or near the companion, the nearest to the companion first.")
+            .translation("config.aicompanion.guard_nearest_to_player")
+            .define("guardNearestToPlayer", true);
+    /** Whether he also stores into and takes from barrels, shulker boxes, furnaces, hoppers and dispensers. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue OTHER_CONTAINERS = BUILDER
+            .comment("Store into and take from barrels, shulker boxes, furnaces, hoppers and dispensers when asked by name, and sort barrels with the chests. Off: chests only.")
+            .translation("config.aicompanion.other_containers")
+            .define("otherContainers", true);
+    /** Whether an urgent order («иди ко мне», «стой», «защищай») puts a dig aside for later instead of ending it. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue URGENT_ORDER = BUILDER
+            .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
+            .translation("config.aicompanion.urgent_order")
+            .define("urgentOrder", true);
+    /** Whether a hurtful fall the water bucket does not catch is caught in a boat from his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue BOAT_CLUTCH = BUILDER
+            .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")
+            .translation("config.aicompanion.boat_clutch")
+            .define("boatClutch", true);
+
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
             .translation("config.aicompanion.long_term_memory")
             .define("longTermMemory", true);
+
+    /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue PICK_UP_NEARBY = BUILDER
+            .comment("«Подбери <X>» takes what of it lies on the ground around the companion instead of starting a hunt or a dig. Off: the usual hunt or dig starts at once.")
+            .translation("config.aicompanion.pick_up_nearby")
+            .define("pickUpNearby", true);
+    public static final ModConfigSpec.IntValue PICK_UP_RADIUS = BUILDER
+            .comment("How far around the companion the ground is scanned for «подбери», in blocks.")
+            .translation("config.aicompanion.pick_up_radius")
+            .defineInRange("pickUpRadius", 16, 4, 32);
+
+    /** Whether he takes the long goal of a diamond mine («добудь алмазы»). On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue DIAMOND_MINE = BUILDER
+            .comment("Take the long goal of a diamond mine: dig down, search the tunnels and bring the diamonds back. Off: he says the mine is switched off.")
+            .translation("config.aicompanion.diamond_mine")
+            .define("diamondMine", true);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 

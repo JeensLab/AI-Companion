@@ -29,7 +29,7 @@ import static dev.aicompanion.gametest.CompanionDiamondGoalTests.*;
 @PrefixGameTestTemplate(false)
 public final class CompanionGoalResumeAndPitTests {
     private static final String GOAL = "find_diamonds";
-    private static final int SPENT = 12, HUNT_TICKS = 1200, PIT_TIMEOUT = 2400, SURFACE = 7, FOOD_MIN = 4, STICKS_MIN = 4;
+    private static final int SPENT = 12, HUNT_TICKS = 1200, PIT_TIMEOUT = 2400, SURFACE = 7, FOOD_MIN = 4, STICKS_MIN = 4, STONE_PICKAXE_STONE = 3;
 
     @AfterBatch(batch = "resume_fresh") public static void afterFresh(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "resume_repeat") public static void afterRepeat(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -84,6 +84,8 @@ public final class CompanionGoalResumeAndPitTests {
         c.setItem(1, new ItemStack(Items.STICK, STICKS_MIN)); c.setItem(0, new ItemStack(Items.BREAD, FOOD_MIN - 1));
         h.assertTrue(!mine.kitMinimum(CompanionFacts.of(c)), "Sticks without enough food meet the kit minimum");
         c.setItem(0, new ItemStack(Items.BREAD, FOOD_MIN));
+        h.assertTrue(!mine.kitMinimum(CompanionFacts.of(c)), "Food and sticks without a bench and stone meet the kit minimum");
+        c.setItem(2, new ItemStack(Items.CRAFTING_TABLE)); c.setItem(3, new ItemStack(Items.COBBLESTONE, STONE_PICKAXE_STONE));
         h.assertTrue(mine.kitMinimum(CompanionFacts.of(c)), "A full minimum is refused");
         h.succeed();
     }
@@ -97,6 +99,20 @@ public final class CompanionGoalResumeAndPitTests {
         start(h, r, 1);
         h.runAtTickTime(HUNT_TICKS, h::succeed);
         h.onEachTick(() -> h.assertTrue(r.c().mineSite().opened() == 0, "Went down without food | " + report(h, r)));
+    }
+
+    /** No bench, no stone pickaxe and no tree in reach: the top-up gives the wood part up, and the dig step after it is not begun; the goal stops for the missing wood. */
+    @GameTest(template = "marathon_cave", batch = "kit_gate", timeoutTicks = 2400)
+    public static void aTopUpWithoutATreeDoesNotStartTheDescent(GameTestHelper h) {
+        ItemStack[] bag = supplies(32, 0);
+        bag[6] = ItemStack.EMPTY;
+        Rig r = rig(h, false, bag);
+        start(h, r, 1);
+        h.onEachTick(() -> h.assertTrue(r.c().mineSite().opened() == 0, "Went down without a bench and no tree in reach | " + report(h, r)));
+        h.succeedWhen(() -> {
+            h.assertTrue(state(h, r) == CompanionAgenda.State.BLOCKED, "The goal did not stop: " + state(h, r) + " | " + report(h, r));
+            h.assertTrue(goal(h, r).reason().contains("дерев"), "Stopped for another reason: " + goal(h, r).reason());
+        });
     }
 
     /** A hunt that found no game at all changes nothing by waiting: with full health the goal stops at once and asks for food. */

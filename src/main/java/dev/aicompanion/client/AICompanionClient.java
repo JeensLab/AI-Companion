@@ -16,6 +16,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.client.settings.KeyConflictContext;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
@@ -75,6 +76,9 @@ public final class AICompanionClient {
     private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         OpenRouterClient.resetSession();
         CompanionMemoryFlow.unbind();
+        CompanionAmbientClient.forgetWorld();
+        GameContext.forgetWorld();
+        CompanionMoodPanel.forgetWorld();
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -88,6 +92,7 @@ public final class AICompanionClient {
     private void registerGuiLayers(RegisterGuiLayersEvent event) {
         event.registerAboveAll(CompanionMoodPanel.ID, CompanionMoodPanel::render);
         event.registerAboveAll(CompanionThinking.ID, CompanionThinking::render);
+        event.registerBelow(VanillaGuiLayers.CHAT, CompanionMarker.ID, CompanionMarker::render);
     }
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {

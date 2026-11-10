@@ -124,12 +124,12 @@ final class CompanionExpeditionWalk {
     private Result lay(BlockPos cell) {
         if (dig.floored(cell)) { laying = null; return null; }
         if (laying == null) laying = new CompanionExpeditionFloor(cell.below());
-        switch (dig.lay(laying)) {
-            case LAID -> { laying = null; return null; }
-            case NO_BLOCK -> { return Result.NO_BLOCK; }
-            case FAILED -> { return Result.STUCK; }
-            default -> { return Result.WORKING; }
-        }
+        return switch (dig.lay(laying)) {
+            case LAID -> { laying = null; yield null; }
+            case NO_BLOCK -> Result.NO_BLOCK;
+            case FAILED -> Result.STUCK;
+            case WORKING, PLACED -> Result.WORKING;
+        };
     }
 
     void clear() {

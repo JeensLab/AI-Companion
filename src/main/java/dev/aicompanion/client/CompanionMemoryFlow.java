@@ -46,8 +46,12 @@ public final class CompanionMemoryFlow {
     // The world of this session even while memory is off: «Забудь всё» must still erase what earlier sessions left in it.
     private static volatile Target world;
     private static volatile Completer completer = OpenRouterClient::complete;
+    // Pushed from the client settings by CompanionPreferences: the server side must not read the client config itself.
+    private static volatile boolean shortMurmurs = true;
 
     private CompanionMemoryFlow() { }
+
+    public static void shortMurmurs(boolean on) { shortMurmurs = on; }
 
     public static void useCompleter(Completer replacement) { completer = replacement == null ? OpenRouterClient::complete : replacement; }
 
@@ -183,7 +187,7 @@ public final class CompanionMemoryFlow {
         if (!parsed.callMe().isEmpty()) bonds.setCallMe(t.owner(), parsed.callMe());
         parsed.likes().forEach(like -> bonds.addLike(t.owner(), like));
         parsed.dislikes().forEach(dislike -> bonds.addDislike(t.owner(), dislike));
-        bonds.adapt(t.owner(), parsed.character(), parsed.topics());
+        bonds.adapt(t.owner(), parsed.character(), parsed.topics(), shortMurmurs);
         CompanionDiagnostics.event(trace, "memory_compression_stored", "accepted", accepted,
                 "rejectedByCodec", parsed.rejected(), "rejectedByServer", parsed.memories().size() - accepted,
                 "topics", parsed.topics().size(), "character", parsed.character());

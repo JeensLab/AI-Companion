@@ -12,6 +12,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -122,6 +123,98 @@ public final class CompanionWorkflowTests {
         stablePitExit(helper, companion);
     }
 
+    /** Recon 04.11 (E1): a pocket of netherrack was «Не могу к тебе пройти» — he digs out of it by hand, as out of soil. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesNetherrackPit(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.NETHERRACK, 4);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        stablePitExit(helper, companion);
+    }
+
+    /** Netherrack goes in 2 s by hand: the logs in the bag are not spent on a pickaxe and a bench for it (review 05.11). */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesNetherrackPitByHandWithoutCraftingAPickaxe(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.NETHERRACK, 4); companion.setItem(0, new ItemStack(Items.OAK_LOG, 4));
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        helper.onEachTick(() -> helper.assertTrue(count(companion, Items.WOODEN_PICKAXE) == 0, "Crafted a pickaxe for netherrack"));
+        stablePitExit(helper, companion);
+    }
+
+    /** Recon 04.11 (E1) as it was met: «иди ко мне» from a pocket in end stone ends beside the player, not in «Не могу к тебе пройти». */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void calledOutOfAnEndStonePitHeCutsHisWayUp(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.END_STONE, 4); companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        helper.runAfterDelay(20, () -> helper.assertTrue(CompanionEvents.executeAction(player, "come", "", 1).success(), "Not accepted"));
+        helper.succeedWhen(() -> helper.assertTrue(helper.getTick() > 20 && companion.didLastTaskSucceed()
+                && companion.getY() >= helper.absolutePos(new BlockPos(16, 5, 16)).getY(), diagnostic(companion)));
+    }
+
+    /**
+     * Review 05.11: a fire on the netherrack beside the cell his last step toward the player comes out at (19, 5, 16): the step
+     * overshoots to x 19.7 and touches it. He steps up another way.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void hisStepsOutOfNetherrackGoRoundAFire(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.NETHERRACK, 4); helper.setBlock(new BlockPos(20, 5, 16), Blocks.FIRE);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        helper.onEachTick(() -> helper.assertFalse(companion.isOnFire(), "Stepped into the fire at " + companion.blockPosition().subtract(helper.absolutePos(BlockPos.ZERO)).toShortString()));
+        stablePitExit(helper, companion);
+    }
+
+    /** End stone takes 15 s a block by hand: the pickaxe in the bag goes into the hand, as for stone. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1300)
+    public static void escapesEndStonePitWithThePickaxeFromTheBag(GameTestHelper helper) {
+        CompanionEntity companion = pit(helper, Blocks.END_STONE, 4); companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        stablePitExit(helper, companion);
+    }
+
+    /**
+     * Recon 04.11 (A3): digging steps up out of his tunnel he opened the floor of a pond, its water ran down the steps, and from the
+     * bottom «иди ко мне» was «Не могу к тебе пройти»: a route went only across the water at his level. He swims up the fall into
+     * the pond and out to the player, and does not cut steps instead.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1000)
+    public static void calledFromStepsAPondRanDownHeSwimsUpToThePlayer(GameTestHelper helper) {
+        CompanionEntity companion = floodedSteps(helper, false);
+        var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        helper.onEachTick(() -> helper.assertFalse(companion.isSelfRescuing(), "Cut steps instead of swimming up"));
+        helper.succeedWhen(() -> helper.assertTrue(helper.getTick() > 200 && companion.didLastTaskSucceed() && companion.distanceTo(player) <= 4, diagnostic(companion)));
+    }
+
+    /** Review 08.11: the same water under a lid of stone is a pocket with no air at its top: nearer the player, but no way to him. He stays where he breathes. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void calledFromStepsUnderAPocketOfWaterHeDoesNotSwimUpIntoIt(GameTestHelper helper) {
+        CompanionEntity companion = floodedSteps(helper, true);
+        double pocket = helper.absolutePos(new BlockPos(16, 8, 15)).getY();
+        helper.onEachTick(() -> helper.assertTrue(companion.getY() < pocket && companion.getAirSupply() > 0, "Swam up into the pocket: " + diagnostic(companion)));
+        helper.runAtTickTime(800, helper::succeed);
+    }
+
+    /**
+     * Stone to y 10 and a pond in it 3 deep (under a lid of stone at y 11 if asked), and the recon's steps under it, 328 56 175 to
+     * 328 58 171 there: the last one is under the pond. He is held at their bottom while the water runs down, as his self-rescue held
+     * him then, and called to the player on the stone east of the pond at tick 200.
+     */
+    private static CompanionEntity floodedSteps(GameTestHelper helper, boolean lid) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 10; y++) helper.setBlock(new BlockPos(x, y, z), y > 0 ? Blocks.STONE : Blocks.BEDROCK);
+        for (int x = 11; x <= 19; x++) for (int z = 9; z <= 15; z++) {
+            for (int y = 8; y <= 10; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.WATER);
+            if (lid) helper.setBlock(new BlockPos(x, 11, z), Blocks.STONE);
+        }
+        for (int[] c : new int[][]{{16, 4, 18}, {16, 3, 17}, {16, 4, 17}, {16, 5, 17}, {16, 4, 16}, {16, 5, 16}, {16, 6, 16}, {16, 5, 15}, {16, 6, 15}, {16, 7, 15}, {16, 6, 14}})
+            helper.setBlock(new BlockPos(c[0], c[1], c[2]), Blocks.AIR);
+        CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, 4, 16);
+        companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
+        var player = helper.makeMockServerPlayerInLevel(); BlockPos at = helper.absolutePos(new BlockPos(26, 11, 13)); player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        companion.setOwnerId(player.getUUID()); player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID()); CompanionEvents.getOwnedCompanion(player);
+        helper.runAfterDelay(1, () -> CompanionEvents.executeAction(player, "wait", "", 1));
+        helper.runAfterDelay(200, () -> helper.assertTrue(CompanionEvents.executeAction(player, "come", "", 1).success(), "Not accepted"));
+        return companion;
+    }
+
     private static void stablePitExit(GameTestHelper helper, CompanionEntity companion) {
         double top = helper.absolutePos(new BlockPos(16, 5, 16)).getY();
         int[] stable = {0};
@@ -211,7 +304,10 @@ public final class CompanionWorkflowTests {
         return pit(helper, soil, 4);
     }
     private static CompanionEntity pit(GameTestHelper helper, boolean soil, int depth) {
-        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= depth; y++) helper.setBlock(new BlockPos(x, y, z), soil && y > 0 ? Blocks.DIRT : Blocks.BEDROCK);
+        return pit(helper, soil ? Blocks.DIRT : Blocks.BEDROCK, depth);
+    }
+    private static CompanionEntity pit(GameTestHelper helper, Block walls, int depth) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= depth; y++) helper.setBlock(new BlockPos(x, y, z), y > 0 ? walls : Blocks.BEDROCK);
         for (int y = 1; y <= depth; y++) helper.setBlock(new BlockPos(16, y, 16), Blocks.AIR);
         CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
         var player = helper.makeMockServerPlayerInLevel(); BlockPos at = helper.absolutePos(new BlockPos(21, depth + 1, 16)); player.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);

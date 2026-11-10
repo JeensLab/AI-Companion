@@ -2,6 +2,7 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -9,11 +10,13 @@ import java.util.List;
 
 /**
  * The bench he set down on a step of his stairs to make a pickaxe is taken up by hand again before he goes on: in a passage one cell
- * wide it would shut the way. The cells are the mine's temporary blocks, which are saved, so a taking cut short by a quit goes on
- * after the load. The effort is bounded per step; a bench left standing stays in the record and the next step tries again.
+ * wide it would shut the way. On the surface, the bench of the kit he set down himself goes back into the bag before the way down, from as
+ * far as the kit was made (void of seed 7: forty-eight blocks from the entrance). The cells are the mine's temporary blocks, which are saved,
+ * so a taking cut short by a quit goes on after the load. The effort is bounded per step; a bench left standing stays in the record and the
+ * next step tries again.
  */
 final class CompanionExpeditionBench {
-    private static final int PATIENCE = 20 * 15, PICKUP_WAIT = 20 * 3, NEAR = 24;
+    private static final int PATIENCE = 20 * 30, PICKUP_WAIT = 20 * 3, NEAR = 24, KIT_NEAR = 64;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -43,7 +46,8 @@ final class CompanionExpeditionBench {
         int reach = w.items.reachBlock(level, bench, false);
         if (reach < 0) { giveUp(bench, "no way to it"); return false; }
         if (reach == 0) return true;
-        switch (w.handOver.takeUp(level, bench)) {
+        CompanionHandOver.Taking taking = w.handOver.takeUp(level, bench);
+        switch (taking) {
             case WORKING -> { }
             case FULL -> { giveUp(bench, "bag full"); return false; }
             case DONE -> {
@@ -60,7 +64,12 @@ final class CompanionExpeditionBench {
         dev.aicompanion.CompanionDiagnostics.event(owner.diagnostics.trace(), "temporary_left", "entity", owner.getUUID(), "position", bench, "why", why);
     }
 
-    /** The nearest bench of the mine's temporary blocks within reach of a walk; a cell with nothing in it any more is forgotten. */
+    /**
+     * The nearest bench of the mine's temporary blocks within reach of a walk; a cell with nothing in it any more is forgotten.
+     * On the surface with no bench in the bag, a bench he set down himself near by counts too: the kit goes down with him (void-2 of seed 7:
+     * the bench of the kit stayed by the entrance after a craft, and no pickaxe could be made below). The kit's bench counts from a pit the mine
+     * begins in too, not only under the sky (retreat of seed 7: the mine was started again in a roofed pit, and the descent went on without the bench).
+     */
     private BlockPos nearest(ServerLevel level) {
         BlockPos best = null;
         double bestDistance = NEAR * NEAR;
@@ -71,6 +80,19 @@ final class CompanionExpeditionBench {
             double distance = owner.distanceToSqr(cell.getCenter());
             if (state.is(Blocks.CRAFTING_TABLE) && distance <= bestDistance) { best = cell; bestDistance = distance; }
         }
+        if (best != null || w.items.countCarried(Items.CRAFTING_TABLE) > 0 || !atTopOfTheMine(level)) return best;
+        bestDistance = (double) KIT_NEAR * KIT_NEAR;
+        for (BlockPos cell : owner.places.placed("minecraft:crafting_table")) {
+            if (!level.hasChunkAt(cell) || !level.getBlockState(cell).is(Blocks.CRAFTING_TABLE)) continue;
+            double distance = owner.distanceToSqr(cell.getCenter());
+            if (distance <= bestDistance) { best = cell; bestDistance = distance; }
+        }
         return best;
+    }
+
+    /** Still at the top of the mine, where the way down has not begun: the cells of its first steps, or the open sky while there is no mine. */
+    private boolean atTopOfTheMine(ServerLevel level) {
+        if (!w.mine.exists()) return CompanionExpeditionRecord.underSky(level, owner.blockPosition().above());
+        return owner.getY() >= w.mine.entrance().getY() - CompanionExpedition.UNDERGROUND_DEPTH;
     }
 }

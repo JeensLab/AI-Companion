@@ -1,5 +1,6 @@
 package dev.aicompanion.entity;
 
+import dev.aicompanion.CompanionConversation;
 import dev.aicompanion.CompanionPersonality.Trait;
 import dev.aicompanion.CompanionTopics;
 import dev.aicompanion.CompanionTopics.Topic;
@@ -81,17 +82,25 @@ public final class CompanionSoul {
      * What a condensed talk says: the level of a trait that suits the player and topics for the next talks. One talk cannot turn
      * him into someone else: a step at a time, but what may hurt or annoy the player is toned down at once (Trait.dropsAtOnce).
      */
-    public void adapt(Map<Trait, Integer> wanted, List<String> topics) {
+    public void adapt(Map<Trait, Integer> wanted, List<String> topics) { adapt(wanted, topics, true); }
+
+    /** With short murmurs off a topic need not fit the murmur limit to enter the bank. */
+    public void adapt(Map<Trait, Integer> wanted, List<String> topics, boolean shortMurmurs) {
         wanted.forEach((trait, target) -> {
             int level = level(trait), goal = Math.max(-2, Math.min(2, target));
             int next = goal < level && trait.dropsAtOnce() ? goal : level + Integer.signum(goal - level);
             if (next == 0) character.remove(trait); else character.put(trait, next);
         });
-        for (String text : topics) if (speakable(text) && !known(text)) own.add(text);
+        for (String text : topics) if (speakable(text, shortMurmurs) && !known(text)) own.add(text);
         while (own.size() > OWN_TOPICS) own.removeFirst();
     }
 
-    private static boolean speakable(String text) { return CompanionTopics.speakable(text) && !CompanionMemory.isSensitive(text); }
+    // A topic he cannot say as a murmur must not enter the bank: it would be marked raised and lost.
+    private static boolean speakable(String text) { return speakable(text, true); }
+
+    private static boolean speakable(String text, boolean shortMurmurs) {
+        return CompanionTopics.speakable(text) && (!shortMurmurs || CompanionConversation.fitsMurmur(text)) && !CompanionMemory.isSensitive(text);
+    }
 
     /** He has this topic, has raised it or has it in the bank, perhaps in other words. */
     private boolean known(String text) {

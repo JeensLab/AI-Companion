@@ -32,11 +32,14 @@ public final class CompanionFacts {
     private final boolean onOwnWay;
     private final BooleanSupplier ironInSight, coalInSight;
     private final boolean shieldTrekSpent;
+    /** Looked up when asked (a goal with a portal stage), not every second for any goal. */
+    private final CompanionEntity c;
+    private Boolean portal;
 
     private CompanionFacts(Map<Item, Integer> carried, Map<EquipmentSlot, Item> worn, boolean dragonDead, int mineOpened, boolean belowMine,
-                           boolean onOwnWay, BooleanSupplier ironInSight, BooleanSupplier coalInSight, boolean shieldTrekSpent) {
+                           boolean onOwnWay, BooleanSupplier ironInSight, BooleanSupplier coalInSight, boolean shieldTrekSpent, CompanionEntity c) {
         this.carried = Map.copyOf(carried); this.worn = Map.copyOf(worn); this.dragonDead = dragonDead; this.mineOpened = mineOpened; this.belowMine = belowMine; this.onOwnWay = onOwnWay;
-        this.ironInSight = ironInSight; this.coalInSight = coalInSight; this.shieldTrekSpent = shieldTrekSpent;
+        this.ironInSight = ironInSight; this.coalInSight = coalInSight; this.shieldTrekSpent = shieldTrekSpent; this.c = c;
     }
 
     public static CompanionFacts of(CompanionEntity c) {
@@ -56,7 +59,7 @@ public final class CompanionFacts {
         var site = c.mineSite();
         boolean onOwnWay = belowMine && (site.buried() || site.stands().isEmpty() || site.stands().stream().anyMatch(stand -> stand.distSqr(here) <= OWN_WAY_SQR)
                 || site.above().stream().anyMatch(cell -> cell.distSqr(here) <= OWN_WAY_SQR) || site.inTunnel(here));
-        return new CompanionFacts(carried, worn, dragonDead, site.openedTotal(), belowMine, onOwnWay, inSight(c, CompanionOre.Kind.IRON), coalSearch(c), false);
+        return new CompanionFacts(carried, worn, dragonDead, site.openedTotal(), belowMine, onOwnWay, inSight(c, CompanionOre.Kind.IRON), coalSearch(c), false, c);
     }
 
     /** Looked up once, and only if a plan asks: the world is scanned around where he stands now. */
@@ -85,7 +88,7 @@ public final class CompanionFacts {
 
     /** The same facts, told whether the goal has already gone out for the iron of a shield (it goes once). */
     public CompanionFacts withShieldTrekSpent(boolean spent) {
-        return new CompanionFacts(carried, worn, dragonDead, mineOpened, belowMine, onOwnWay, ironInSight, coalInSight, spent);
+        return new CompanionFacts(carried, worn, dragonDead, mineOpened, belowMine, onOwnWay, ironInSight, coalInSight, spent, c);
     }
 
     /** How many of the item he carries in the bag and in his hands; armour he wears is not counted here. */
@@ -117,6 +120,13 @@ public final class CompanionFacts {
 
     /** Cells his diamond mine has opened since it began (stairs and tunnels, none counted twice for a cut-back): what a step of the expedition leaves behind even without a diamond. */
     public int mineOpened() { return mineOpened; }
+
+    /** A lit Nether portal he knows in this world, wherever the player is: one he built or saw, its block still a portal (decided 09.11). */
+    public boolean portal() {
+        if (portal == null) portal = c.level() instanceof net.minecraft.server.level.ServerLevel level
+                && CompanionPortalBuild.known(c, level, CompanionPortalBuild.center(c), Integer.MAX_VALUE) != null;
+        return portal;
+    }
 
     private static void add(Map<Item, Integer> carried, ItemStack stack) {
         if (usable(stack)) carried.merge(stack.getItem(), stack.getCount(), Integer::sum);

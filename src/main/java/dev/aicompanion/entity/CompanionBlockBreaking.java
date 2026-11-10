@@ -9,6 +9,10 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /** A continuous survival-mode swing. Moving away, changing tools/blocks or cancelling resets cracks. */
 final class CompanionBlockBreaking {
+    // He looks at what he breaks, as a player does: the head is on the block from the first swing and stays on it. A mob's
+    // head turns 10° a tick and its pitch is set back to level every tick, then raised at most 40°: late on a new block and
+    // too flat for a log above him or a crop at his feet (#105, «взгляд при копании»). Here it turns in one tick.
+    private static final float TURN = 180F, PITCH = 90F;
     private final CompanionEntity owner;
     private BlockPos target;
     private BlockState state;
@@ -30,6 +34,9 @@ final class CompanionBlockBreaking {
         }
         float hardness = current.getDestroySpeed(level, pos);
         if (hardness < 0 || current.isAir()) { reset(); return false; }
+        // Straight above or below him the heading is a few centimetres' noise: he only tilts the head, never spins it.
+        double dx = pos.getX() + .5 - owner.getX(), dz = pos.getZ() + .5 - owner.getZ();
+        owner.getLookControl().setLookAt(pos.getX() + .5, pos.getY() + .5, pos.getZ() + .5, dx * dx + dz * dz < .25 ? 0 : TURN, PITCH);
         if (lastTick == level.getGameTime()) return false;
         lastTick = level.getGameTime();
         float speed = Math.max(1, hand.getDestroySpeed(current));

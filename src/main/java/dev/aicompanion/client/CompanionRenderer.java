@@ -102,6 +102,7 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
             com.mojang.blaze3d.vertex.PoseStack pose, net.minecraft.client.renderer.MultiBufferSource buffers, int light) {
         super.render(entity, yaw, partialTick, pose, buffers, light);
         if (net.minecraft.client.Minecraft.getInstance().screen instanceof CompanionInventoryScreen) return;
+        renderDamageNumbers(entity, partialTick, pose, buffers);
         if (!aimedAt(entity)) return;
         var anchor = entity.getAttachments().get(net.minecraft.world.entity.EntityAttachment.NAME_TAG, 0, entity.getViewYRot(partialTick));
         pose.pushPose();
@@ -109,8 +110,7 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
         pose.mulPose(this.entityRenderDispatcher.cameraOrientation());
         // World geometry shrinks with distance like the model does; compensate so the block keeps a readable size
         // up close and stays visible far away.
-        var camera = net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
-        float distanceFactor = (float) Math.min(Math.max(Math.sqrt(camera.distanceToSqr(entity.getX(), entity.getY(), entity.getZ())) / 6.0D, 0.55D), 3.0D);
+        float distanceFactor = distanceFactor(entity);
         pose.scale(0.025F * distanceFactor, -0.025F * distanceFactor, 0.025F * distanceFactor);
         var matrix = pose.last().pose();
         var consumer = buffers.getBuffer(BAR);
@@ -135,6 +135,42 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
         font.drawInBatch(numbers, -font.width(numbers) / 2.0F, (barHeight - 8.0F * textScale) / 2.0F / textScale, 0xFFFFFFFF, false,
                 pose.last().pose(), buffers, net.minecraft.client.gui.Font.DisplayMode.SEE_THROUGH, 0, light);
         pose.popPose();
+        pose.popPose();
+    }
+
+    private static float distanceFactor(CompanionEntity entity) {
+        var camera = net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+        return (float) Math.min(Math.max(Math.sqrt(camera.distanceToSqr(entity.getX(), entity.getY(), entity.getZ())) / 6.0D, 0.55D), 3.0D);
+    }
+
+    /**
+     * Idea 7ES2V: each change of his health rises from just above the health block's place and fades out within a second,
+     * whether or not he is aimed at. For his owner only; blocks in front hide it like anything else in the world.
+     */
+    private void renderDamageNumbers(CompanionEntity entity, float partialTick,
+            com.mojang.blaze3d.vertex.PoseStack pose, net.minecraft.client.renderer.MultiBufferSource buffers) {
+        var client = net.minecraft.client.Minecraft.getInstance();
+        if (!dev.aicompanion.OpenRouterConfig.DAMAGE_NUMBERS.get() || client.player == null || !client.player.getUUID().equals(entity.getOwnerId())) return;
+        var pops = entity.damageNumbers.live(entity.tickCount);
+        if (pops.isEmpty()) return;
+        var anchor = entity.getAttachments().get(net.minecraft.world.entity.EntityAttachment.NAME_TAG, 0, entity.getViewYRot(partialTick));
+        pose.pushPose();
+        pose.translate(anchor.x, anchor.y + 0.85D, anchor.z);
+        pose.mulPose(this.entityRenderDispatcher.cameraOrientation());
+        float scale = 0.025F * distanceFactor(entity);
+        pose.scale(scale, -scale, scale);
+        var font = client.font;
+        for (var pop : pops) {
+            float age = Math.min(1.0F, (entity.tickCount - pop.born() + partialTick) / dev.aicompanion.CompanionDamageNumbers.LIFE_TICKS);
+            int alpha = (int) (255 * Math.min(1.0F, 2.0F - 2.0F * age)); // whole for the first half, then fading
+            if (alpha < 5) continue; // the font draws an alpha under 4 as opaque
+            float rise = 16.0F * (1.0F - (1.0F - age) * (1.0F - age));
+            // «-12,5» is 26 wide and «блок» 24: numbers up together stand a little further apart than that.
+            float x = (pop.slot() == 1 ? -28.0F : pop.slot() == 2 ? 28.0F : 0.0F) - font.width(pop.text()) / 2.0F;
+            // Above the health bar, which spans 0..8 here (up is negative).
+            font.drawInBatch(pop.text(), x, -12.0F - rise, alpha << 24 | pop.kind().color, true, pose.last().pose(), buffers,
+                    net.minecraft.client.gui.Font.DisplayMode.NORMAL, 0, net.minecraft.client.renderer.LightTexture.FULL_BRIGHT);
+        }
         pose.popPose();
     }
 

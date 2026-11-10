@@ -11,7 +11,7 @@ import net.minecraft.world.phys.AABB;
 /**
  * The moves of the companion's own search and what each costs in ticks: a step to the four sides, a diagonal when both cells
  * beside it can be walked, a climb of one block (two out of the water onto a bank), a drop of as far as he may fall (any
- * depth into water; onto a ladder or vine too: he takes hold), swimming, a jump over a pit of one or two blocks, a climb up and down a ladder or vine. What a cell is (walkable, a door, a fence, danger, water) is the game's own judgement of it,
+ * depth into water; onto a ladder or vine too: he takes hold), swimming, a jump over a pit of one or two blocks, a climb up and down a ladder or vine, a swim straight up through water to air. What a cell is (walkable, a door, a fence, danger, water) is the game's own judgement of it,
  * the evaluator's; which neighbour a step may come to follows the game's walking search, so the same routes are found.
  * A new move (dig, place) is one more method called from {@link #expand} that offers its cells with their cost.
  */
@@ -38,6 +38,8 @@ final class CompanionMoves {
     private static final float JUMP = 8;
     /** Ticks a block of ladder takes: up by the game's climb, 0.2 a tick; down at the 0.15 a tick a climber's fall is held to. */
     private static final float LADDER_UP = 5, LADDER_DOWN = 7;
+    /** Blocks of water up to the air that he swims up: as far up as CompanionBreath looks for air (his breath lasts some 16 at the float's pace). */
+    private static final int AIR_WITHIN = 10;
 
     private final CompanionNodeEvaluator eval;
     private final Mob mob;
@@ -70,6 +72,13 @@ final class CompanionMoves {
         if (ladder) {
             ladder(from, y + 1, LADDER_UP, sink);
             ladder(from, y - 1, LADDER_DOWN, sink);
+        }
+        // Up through the water over him, as a player swims up (recon 04.11, A3: a pond had run down the steps he dug, and the only way
+        // on was up its fall into the pond; across the water at his level there was none, «Не могу к тебе пройти»). Only to air he
+        // reaches while his breath lasts.
+        if (here == PathType.WATER && eval.typeAt(x, y + 1, z) == PathType.WATER && eval.airUp(x, y + 1, z, AIR_WITHIN)) {
+            float malus = eval.malusAt(PathType.WATER, x, y + 1, z);
+            if (malus >= 0) sink.offer(eval.mark(x, y + 1, z, PathType.WATER, malus), CompanionSwimming.TICKS_UP_A_BLOCK);
         }
         if (here == PathType.WALKABLE && from.costMalus >= 0) for (Direction d : Direction.Plane.HORIZONTAL) jump(from, d, floor, sink);
     }

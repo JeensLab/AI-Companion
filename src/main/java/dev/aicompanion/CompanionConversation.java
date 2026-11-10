@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Local admission/deduplication policy, shared by the client and deterministic tests. No model call to decide to talk. */
 public final class CompanionConversation {
@@ -12,7 +13,14 @@ public final class CompanionConversation {
     public static final int ANSWER_WAIT = 20 * 90;
     /** What is going on sets how soon he opens a topic of his own: never in a fight, soon on the road or in a mine. */
     public enum Scene { FIGHT, TRAVEL, MINE, IDLE, WORK }
+    /** What becomes of an idle murmur: nothing, a line in chat only, or a line in chat and in his voice. */
+    public enum Delivery { DROP, CHAT, VOICE }
+    /** An idle murmur is a short remark, not a speech. */
+    public static final int MURMUR_WORDS = 15;
+    private static final Pattern DIGIT = Pattern.compile("\\p{N}");
+    private static final Pattern SENTENCE = Pattern.compile("[^.!?…]+[.!?…]*");
     private long nextOpportunity;
+    private int intervalPercent = 100;
     private long quietUntil;
     private boolean awaitingAnswer;
     private long answerUntil;
@@ -34,7 +42,41 @@ public final class CompanionConversation {
 
     public static boolean isUrgent(String text) { return text != null && text.startsWith(URGENT_MARK); }
     public static String stripUrgent(String text) { return isUrgent(text) ? text.substring(URGENT_MARK.length()).stripLeading() : text; }
+    /** A murmur out of earshot is not lost, only unvoiced; the player can still read it. */
+    public static Delivery decide(boolean safe, boolean audible, boolean screenOpen, boolean paused) {
+        return decide(safe, audible, screenOpen, paused, true);
+    }
+    /** With short murmurs off the line is voiced within earshot and lost out of it, as before the murmur limit. */
+    public static Delivery decide(boolean safe, boolean audible, boolean screenOpen, boolean paused, boolean shortMurmurs) {
+        if (!safe || screenOpen || paused) return Delivery.DROP;
+        return audible ? Delivery.VOICE : shortMurmurs ? Delivery.CHAT : Delivery.DROP;
+    }
+    /** At most {@link #MURMUR_WORDS} words and no digit anywhere, which also rules out coordinates. */
+    public static boolean fitsMurmur(String text) {
+        if (text == null || text.isBlank() || DIGIT.matcher(text).find()) return false;
+        return text.strip().split("\\s+").length <= MURMUR_WORDS;
+    }
+    /** The murmur as it is, or its longest opening of whole sentences that fits; null when not even the first sentence does. */
+    public static String fitMurmur(String text, boolean shortMurmurs) {
+        if (shortMurmurs) return fitMurmur(text);
+        return text == null || text.isBlank() ? null : text.strip();
+    }
+    public static String fitMurmur(String text) {
+        if (fitsMurmur(text)) return text.strip();
+        if (text == null) return null;
+        StringBuilder kept = new StringBuilder();
+        var sentences = SENTENCE.matcher(text);
+        while (sentences.find()) {
+            String candidate = kept + sentences.group();
+            if (!fitsMurmur(candidate)) break;
+            kept.setLength(0); kept.append(candidate);
+        }
+        return kept.isEmpty() ? null : kept.toString().strip();
+    }
     public static int gap(int jitter) { return MIN_GAP + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1); }
+    /** The pause between his own remarks scaled by the player's setting; 100 percent is the pause as designed. */
+    public static int gap(int jitter, int percent) { return scaled(gap(jitter), percent); }
+    private static int scaled(int ticks, int percent) { return (int) Math.min(Integer.MAX_VALUE, (long) ticks * percent / 100); }
     public static Scene scene(boolean fighting, boolean underground, boolean travelling, boolean working, long idleTicks) {
         if (fighting) return Scene.FIGHT;
         if (underground) return Scene.MINE;
@@ -43,6 +85,7 @@ public final class CompanionConversation {
         return working || idleTicks < 20 * 60 ? Scene.WORK : Scene.IDLE;
     }
     /** The pause before a topic of his own: the scene's minimum and up to a minute more. */
+    public static int topicGap(Scene scene, int jitter, int percent) { return scaled(topicGap(scene, jitter), percent); }
     public static int topicGap(Scene scene, int jitter) {
         int minimum = switch (scene) {
             case FIGHT -> Integer.MAX_VALUE;
@@ -54,9 +97,10 @@ public final class CompanionConversation {
         };
         return scene == Scene.FIGHT ? minimum : minimum + Math.floorMod(jitter, MAX_GAP - MIN_GAP + 1);
     }
+    public void setIntervalPercent(int percent) { intervalPercent = percent; }
     public void reset(long now, int jitter) {
         recent.clear(); awaitingAnswer = false; unansweredQuestion = false; answerUntil = 0; observation = 0;
-        urgentSerial = 0; takenSerial = 0; retriedSerial = 0; nextOpportunity = now + gap(jitter); talked(now, jitter); activity(now, jitter);
+        urgentSerial = 0; takenSerial = 0; retriedSerial = 0; nextOpportunity = now + gap(jitter, intervalPercent); talked(now, jitter); activity(now, jitter);
     }
     // Normal conversation needs a short pause, not another full initiative interval after every answer.
     public void activity(long now, int jitter) { revision++; quietUntil = now + MIN_PAUSE + Math.floorMod(jitter, MAX_PAUSE - MIN_PAUSE + 1); }
@@ -76,7 +120,7 @@ public final class CompanionConversation {
      * the topic is then one without a question (review of PR #28: one question in a remark on chests silenced his topics for good).
      */
     public boolean topicReady(long now, Scene scene) {
-        return scene != Scene.FIGHT && ready(now) && now >= lastTalk + topicGap(scene, talkJitter);
+        return scene != Scene.FIGHT && ready(now) && now >= lastTalk + topicGap(scene, talkJitter, intervalPercent);
     }
     public long nextOpportunity() { return nextOpportunity; }
     public long revision() { return revision; }
@@ -88,7 +132,7 @@ public final class CompanionConversation {
         observation = serial;
         // Entity metadata can arrive a few client ticks ahead of the next world-time update.
         if (age < -20 || age > 400 || !safe || busy || !ready(now)) return false;
-        nextOpportunity = now + gap(jitter); activity(now, jitter); return true;
+        nextOpportunity = now + gap(jitter, intervalPercent); activity(now, jitter); return true;
     }
     /** An urgent remark ignores the quiet window and an open question, and stays pending until it can be spoken or expires. */
     public boolean takeObservation(int serial, long age, long now, boolean safe, boolean busy, int jitter, boolean urgent) {
@@ -100,13 +144,18 @@ public final class CompanionConversation {
         return takePendingUrgent(now, safe, busy, jitter);
     }
     public int urgentPending() { return urgentSerial; }
+    /** The pending urgent remark, forgotten once it is older than {@link #URGENT_TTL}; takePendingUrgent is not reached while nobody can hear it. */
+    public int urgentPending(long now) {
+        if (urgentSerial != 0 && now - urgentSince > URGENT_TTL) urgentSerial = 0;
+        return urgentSerial;
+    }
     /** Never touches awaitingAnswer: an open question stays open while the urgent line is spoken. */
     public boolean takePendingUrgent(long now, boolean safe, boolean busy, int jitter) {
         if (urgentSerial == 0) return false;
         if (now - urgentSince > URGENT_TTL) { urgentSerial = 0; return false; }
         if (!safe || busy) return false;
         takenSerial = urgentSerial; takenSince = urgentSince;
-        urgentSerial = 0; nextOpportunity = now + gap(jitter); activity(now, jitter); return true;
+        urgentSerial = 0; nextOpportunity = now + gap(jitter, intervalPercent); activity(now, jitter); return true;
     }
     /** A lost urgent reply (failed request, empty answer, nobody to hear it) gets one more try per remark while the remark is fresh; a newer pending remark wins. */
     public boolean retryUrgent(long now) {
@@ -163,7 +212,7 @@ public final class CompanionConversation {
         activity(now, jitter);
     }
     public void initiativeDelivered(String text, long now, int jitter) {
-        delivered(text, now, jitter); nextOpportunity = now + gap(jitter);
+        delivered(text, now, jitter); nextOpportunity = now + gap(jitter, intervalPercent);
     }
     static String normalize(String text) {
         return text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').replaceAll("[^\\p{L}\\p{N}]+", " ").strip();

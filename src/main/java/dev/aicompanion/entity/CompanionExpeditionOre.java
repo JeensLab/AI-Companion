@@ -13,7 +13,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 /**
- * The ore of the mine expedition: finds diamond (and coal while torches run low) with an open face, walks to it when the mode
+ * The ore of the mine expedition: finds diamond (and coal while the torch stock is short) with an open face, walks to it when the mode
  * asks for that, and mines it with the best pickaxe he has. Ore that cannot be taken in time is skipped, not retried.
  */
 final class CompanionExpeditionOre {
@@ -26,7 +26,7 @@ final class CompanionExpeditionOre {
     /** NONE: no ore to take; WORKING: busy with one; DONE: one taken this tick; FULL: a diamond, and the bag has no room for it. */
     enum Result { NONE, WORKING, DONE, FULL }
 
-    private static final int SCAN_RADIUS = 4, TUNNEL_BESIDE = 2, WALK_RADIUS = 12, SIGHT_RADIUS = 16, ORE_PATIENCE = 600, TORCHES_ENOUGH = 16;
+    private static final int SCAN_RADIUS = 4, TUNNEL_BESIDE = 2, WALK_RADIUS = 12, SIGHT_RADIUS = 16, ORE_PATIENCE = 600;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -41,6 +41,8 @@ final class CompanionExpeditionOre {
     boolean scan;
     /** A diamond with an open face was seen that no pickaxe he has can take. */
     boolean missedDiamond;
+    /** The ore of the last DONE was a diamond, not coal taken for torches. */
+    boolean tookDiamond;
 
     CompanionExpeditionOre(CompanionWork w, CompanionExpeditionDig dig) {
         this.w = w;
@@ -86,14 +88,16 @@ final class CompanionExpeditionOre {
             if (reach < 0) skip();
             if (reach != 1) return Result.WORKING;
         }
-        switch (dig.dig(level, target)) {
+        boolean diamond = level.getBlockState(target).is(BlockTags.DIAMOND_ORES);
+        CompanionExpeditionDig.Status dug = dig.dig(level, target, true);
+        switch (dug) {
             case WORKING -> { }
-            case DONE -> { dig.flush(); target = null; walking = false; return Result.DONE; }
+            case DONE -> { dig.flush(); target = null; walking = false; tookDiamond = diamond; return Result.DONE; }
             case FULL -> {
                 if (level.getBlockState(target).is(BlockTags.DIAMOND_ORES)) return dig.makeRoom(level) ? Result.WORKING : Result.FULL;
                 skip();
             }
-            default -> skip();
+            case NO_TOOL, NO_HAND, STUCK -> skip();
         }
         return Result.WORKING;
     }
@@ -142,7 +146,8 @@ final class CompanionExpeditionOre {
     private BlockPos find(ServerLevel level, Mode mode) {
         BlockPos feet = owner.blockPosition();
         int radius = mode == Mode.NEAR ? SCAN_RADIUS : mode == Mode.WALK ? WALK_RADIUS : SIGHT_RADIUS;
-        boolean coal = mode == Mode.NEAR && w.items.countCarried(net.minecraft.world.item.Items.TORCH) < TORCHES_ENOUGH;
+        // Coal in the walls of the way down keeps the torch stock up without a climb: taken whenever the stock is short, in any mode (descent of seed 20261031: down with thirty-two torches, up for light at y -30, the coal on the way passed by).
+        boolean coal = w.items.countCarried(net.minecraft.world.item.Items.TORCH) < CompanionMilestones.TORCHES_STOCK;
         Vec3 eye = owner.getEyePosition();
         BlockPos best = null;
         double bestDistance = Double.MAX_VALUE;

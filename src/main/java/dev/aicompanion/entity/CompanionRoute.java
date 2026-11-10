@@ -255,6 +255,8 @@ public final class CompanionRoute {
             w.path = reach.path();
             if (reach.kind() == Kind.FAR) setFar(w.path);
             // A failed search was told by nearest() already.
+            // Nothing was searched (the body is not on the ground yet): no verdict, ask again next tick; the patience above bounds it.
+            if (!reach.found() && NOT_SEARCHED.equals(reach.reason())) return 0;
             if (!reach.found()) { meter = null; return -1; }
         }
         if (w.path == null || !w.path.canReach()) { told("FAILED", "no route"); return -1; }

@@ -26,7 +26,7 @@ public final class CompanionGaze {
         return switch (CompanionBond.Tier.of(bondScore)) {
             case OFFENDED -> Eyes.DOWN;
             case WARY -> Eyes.PAST_PLAYER;
-            default -> Eyes.AT_PLAYER;
+            case ACQUAINTANCE, PAL, BUDDY, BEST_FRIEND -> Eyes.AT_PLAYER;
         };
     }
 

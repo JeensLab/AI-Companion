@@ -5,6 +5,12 @@ package dev.aicompanion.client;
  * No client classes, so the chat screen and the GameTests route a phrase the same way.
  */
 public final class CompanionLocalCommands {
+    private static final String NEAR_PLAYER = "near_player";
+    /** Token positions of "companion work <type> <count> <item> [location]"; the location is optional. */
+    private static final int WORK_COUNT = 3;
+    private static final int WORK_ITEM = 4;
+    private static final int WORK_LOCATION = 5;
+
     private CompanionLocalCommands() { }
 
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
@@ -53,8 +59,17 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU)\\s*(?:" + java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е')) + "[\\s,!]+)?(?:давай\\s+|ну\\s+)?(?:продолжай|продолжи|продолжаем)[\\s.!]*")) return "companion goal resume";
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
+        // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
+        PlannedAction picked = CompanionPickUpCommands.parse(text, companionName);
+        if (picked != null) return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
-        if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " " + (workAction.item().isEmpty() ? "resources" : workAction.item());
+        if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " "
+                + (workAction.item().isEmpty() ? "resources" : workAction.item())
+                + (NEAR_PLAYER.equals(workAction.location()) ? "" : " " + workAction.location());
+        String water = CompanionWorkCommands.water(text, companionName);
+        if (water != null) return water;
+        String obsidian = CompanionWorkCommands.obsidian(text, companionName);
+        if (obsidian != null) return obsidian;
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
@@ -97,9 +112,18 @@ public final class CompanionLocalCommands {
             case "summon" -> new PlannedAction("come", 0, 1);
             case "roam" -> new PlannedAction("wander", 0, 1);
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
-            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[3]), parts[4]);
+            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), parts[WORK_ITEM], "auto",
+                    parts.length > WORK_LOCATION ? parts[WORK_LOCATION] : NEAR_PLAYER);
             default -> new PlannedAction(parts[1], 0, 1);
         };
+    }
+
+    /** The plan a local command runs: its step, and for «принеси воды» the hand-over of what it got after it. */
+    public static java.util.List<PlannedAction> actions(String command) {
+        // " give" is not a container: the step is parsed without it, or it would be read as the place to store into.
+        boolean give = command.endsWith(" give");
+        PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
+        return give ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
     }
 
     /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
@@ -121,16 +145,31 @@ public final class CompanionLocalCommands {
         // The mode of his own deeds is no order to drop the plans the player gave.
         if (command.equals("companion goal status") || command.equals("companion goal cancel") || command.equals("companion goal defer")) return false;
         if (command.startsWith("companion memory ")) return false;
-        return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ");
+        // «Построй новый портал» answers his offer to lead the player to one: it replaces that walk.
+        return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ")
+                || command.equals("companion work build_portal 1 new");
     }
 
     /** The reason {@code cancelPendingPlans} gets for a cancel word: the queue ends its tasks as the player's cancel, so a parked smelt is released. */
     public static final String PLAYER_CANCEL = "player_cancel";
 
-    /** «Отмена» and «отмени…» cancel for good; «стоп» and the other stop words only stop, and a smelt parked meanwhile is orphaned for him to collect. */
+    /**
+     * «Отмена» and «отмени…» cancel for good; «стоп» and the other stop words only stop, and a smelt parked meanwhile is orphaned for him to collect.
+     * «Иди сюда», «стой» and «защищай» give URGENT_ORDER: the dig that is running is put aside for later instead.
+     */
     public static String cancelReason(String text, String action) {
         boolean cancel = "companion stop".equals(action) && text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').matches("(?sU).*\\b(отмена|отмени)\\b.*");
-        return cancel ? PLAYER_CANCEL : "local_command";
+        return cancel ? PLAYER_CANCEL : URGENT_COMMANDS.contains(action) ? URGENT_ORDER : "local_command";
+    }
+
+    /** The reason for an order that cannot wait for the dig to end («иди сюда», «стой», «защищай»): the dig is put aside for later, not stopped. */
+    public static final String URGENT_ORDER = "urgent_order";
+    private static final java.util.Set<String> URGENT_COMMANDS = java.util.Set.of("companion summon", "companion stay", "companion guard");
+    private static final java.util.Set<String> URGENT_ACTIONS = java.util.Set.of("come", "wait", "protect");
+
+    /** The reason a model's plan that starts with a priority order cancels the queue for. */
+    public static String priorityReason(java.util.List<PlannedAction> actions) {
+        return URGENT_ACTIONS.contains(actions.getFirst().type()) ? URGENT_ORDER : "priority_player_order";
     }
 
     public static final String FIGHT_HUSH = "Помолчи, я тут занят мобом.";
@@ -149,7 +188,8 @@ public final class CompanionLocalCommands {
     }
 
     public static boolean priorityOrder(java.util.List<PlannedAction> actions) {
-        return !actions.isEmpty() && java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect", "enter_portal")
-                .contains(actions.getFirst().type());
+        return !actions.isEmpty() && (java.util.List.of("stop", "come", "equip_item", "unequip_item", "hunt_mobs", "follow", "wait", "protect", "stop_protect", "enter_portal")
+                .contains(actions.getFirst().type())
+                || "build_portal".equals(actions.getFirst().type()) && "new".equals(actions.getFirst().item()));
     }
 }
