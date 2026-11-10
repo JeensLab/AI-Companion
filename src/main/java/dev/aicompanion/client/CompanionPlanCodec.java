@@ -15,7 +15,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up", "remember_place", "go_to_place");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -137,6 +137,9 @@ public final class CompanionPlanCodec {
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";
                 if (!validLocation(location, type)) throw invalid();
+                // A marker is named by the player's own word: 1..24 characters, never a coordinate triple.
+                if (("remember_place".equals(type) || "go_to_place".equals(type))
+                        && (!dev.aicompanion.entity.CompanionMarkerNames.valid(item) || count != 1 || !"near_player".equals(location))) throw invalid();
                 if ("mine_ore".equals(type)) {
                     var kind = dev.aicompanion.entity.CompanionOre.Kind.of(item);
                     if (kind == null) throw invalid();

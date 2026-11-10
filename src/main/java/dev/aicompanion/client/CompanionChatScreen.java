@@ -60,6 +60,7 @@ public final class CompanionChatScreen extends Screen {
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
+        if (clarifyPlace(text, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
             runLocalCommand(action, trace);
@@ -170,6 +171,7 @@ public final class CompanionChatScreen extends Screen {
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
+        if (clarifyPlace(text, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
             runLocalCommand(action, trace);
@@ -231,6 +233,16 @@ public final class CompanionChatScreen extends Screen {
             return CompanionActionExecutor.currentPlanGeneration();
         }
         return captured;
+    }
+
+    /** «Иди к озеру» with no such marker, or a name two markers fit: one honest question, no model request and no walk. */
+    private static boolean clarifyPlace(String text, String trace) {
+        var place = CompanionPlaceSpeech.parse(text, companionName(), CompanionMarkerView.names(), CompanionMarkerView.enabled());
+        if (place.question() == null) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_clarification", "reason", "place_" + place.kind().name().toLowerCase(java.util.Locale.ROOT));
+        OpenRouterClient.recordLocalExchange(text, place.question());
+        addVoiceReply(place.question(), trace, "clarification");
+        return true;
     }
 
     private static boolean clarifyResources(String text, String trace) {

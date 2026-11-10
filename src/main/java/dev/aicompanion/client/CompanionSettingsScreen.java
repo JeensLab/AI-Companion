@@ -51,6 +51,10 @@ public final class CompanionSettingsScreen extends Screen {
             saveAndClose(); minecraft.setScreen(new CompanionDeathRecoveryScreen(this));
         }).bounds(100, 8, 150, 20).tooltip(Tooltip.create(Component.literal(
                 "Возвращаться за своими вещами после смерти: выключатель и сколько попыток он делает."))).build());
+        addRenderableWidget(Button.builder(Component.literal("Метки"), b -> {
+            saveAndClose(); minecraft.setScreen(new CompanionMarkersScreen(this));
+        }).bounds(254, 8, 70, 20).tooltip(Tooltip.create(Component.literal(
+                "Запомненные места с названиями: переименовать, удалить, изменить координаты, добавить текущее место и выключатель."))).build());
         addRenderableWidget(Button.builder(memoryLabel(), b -> {
             OpenRouterConfig.LONG_TERM_MEMORY.set(!OpenRouterConfig.LONG_TERM_MEMORY.get()); OpenRouterConfig.LONG_TERM_MEMORY.save();
             b.setMessage(memoryLabel()); CompanionPreferences.sync();

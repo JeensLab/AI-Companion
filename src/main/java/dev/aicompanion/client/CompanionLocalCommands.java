@@ -15,6 +15,11 @@ public final class CompanionLocalCommands {
 
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
     public static String route(String text, String companionName) {
+        return route(text, companionName, CompanionMarkerView.names(), CompanionMarkerView.enabled());
+    }
+
+    /** The same routing with the marker names the caller knows: the chat screen uses the client's copy, tests pass their own. */
+    public static String route(String text, String companionName, java.util.List<String> markers, boolean markersEnabled) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
@@ -70,6 +75,10 @@ public final class CompanionLocalCommands {
         if (water != null) return water;
         String obsidian = CompanionWorkCommands.obsidian(text, companionName);
         if (obsidian != null) return obsidian;
+        // «Запомни это место, это дом» names a marker: after the work grammar, so «запомни это место как дом» stays the
+        // home it always was, and before the number guard, so a name with digits («дом2») keeps them.
+        CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);
+        if (remembered.kind() == CompanionPlaceSpeech.Kind.REMEMBER) return "companion place remember " + remembered.name();
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
@@ -78,7 +87,7 @@ public final class CompanionLocalCommands {
                 || normalized.contains("стой здесь") || normalized.contains("жди тут")) {
             return "companion stay";
         }
-        if (normalized.contains("защищай меня") || normalized.contains("защити меня")
+        if (normalized.contains("защищай меня") || normalized.contains("защити меня") || normalized.contains("охраняй меня") || normalized.contains("охраняй нас")
                 || normalized.contains("прикрывай меня") || normalized.contains("помогай в бою")) {
             return "companion guard";
         }
@@ -96,11 +105,18 @@ public final class CompanionLocalCommands {
             return "companion summon";
         }
         if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
+        // A named place he remembers: «иди к колодцу», «проведи меня до железного рудника», «отведи меня к даче»,
+        // «охраняй дачу», «отнеси ресы в дом». An unknown or ambiguous name is a question, asked by the chat screen.
+        CompanionPlaceSpeech.Result place = CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled);
+        if (place.kind() == CompanionPlaceSpeech.Kind.GO) return "companion place go " + place.name();
+        if (place.kind() == CompanionPlaceSpeech.Kind.GUARD) return "companion place guard " + place.name();
+        if (place.kind() == CompanionPlaceSpeech.Kind.CARRY) return "companion place carry " + place.name();
         return CompanionEquipmentCommands.parse(normalized);
     }
 
     /** The plan step a local command runs. */
     public static PlannedAction action(String command) {
+        if (command.startsWith("companion place ")) return placeAction(command);
         String[] parts = command.split(" ");
         return switch (parts[1]) {
             case "goal" -> new PlannedAction("goal_" + parts[2], 0, 1);
@@ -120,10 +136,24 @@ public final class CompanionLocalCommands {
 
     /** The plan a local command runs: its step, and for «принеси воды» the hand-over of what it got after it. */
     public static java.util.List<PlannedAction> actions(String command) {
+        if (command.startsWith("companion place guard "))
+            return java.util.List.of(action(command), new PlannedAction("protect", 0, 1));
+        if (command.startsWith("companion place carry "))
+            return java.util.List.of(action(command), new PlannedAction("store_items", 0, 1, "resources"));
         // " give" is not a container: the step is parsed without it, or it would be read as the place to store into.
         boolean give = command.endsWith(" give");
         PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
         return give ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
+    }
+
+    /** «companion place remember|go|guard|carry <name>»: the name is the rest of the command and may hold spaces. */
+    private static PlannedAction placeAction(String command) {
+        String rest = command.substring("companion place ".length());
+        int cut = rest.indexOf(' ');
+        String kind = cut < 0 ? rest : rest.substring(0, cut);
+        String name = cut < 0 ? "" : rest.substring(cut + 1);
+        return "remember".equals(kind) ? new PlannedAction("remember_place", 0, 1, name)
+                : new PlannedAction("go_to_place", 0, 1, name);
     }
 
     /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
@@ -145,6 +175,8 @@ public final class CompanionLocalCommands {
         // The mode of his own deeds is no order to drop the plans the player gave.
         if (command.equals("companion goal status") || command.equals("companion goal cancel") || command.equals("companion goal defer")) return false;
         if (command.startsWith("companion memory ")) return false;
+        // Naming a place is a word, not an order: whatever he is busy with goes on, as with the home.
+        if (command.startsWith("companion place remember ")) return false;
         // «Построй новый портал» answers his offer to lead the player to one: it replaces that walk.
         return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ")
                 || command.equals("companion work build_portal 1 new");

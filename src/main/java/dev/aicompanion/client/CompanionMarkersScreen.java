@@ -1,0 +1,235 @@
+package dev.aicompanion.client;
+
+import dev.aicompanion.OpenRouterConfig;
+import dev.aicompanion.entity.CompanionMarkerBoard;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+/** The named places the player asked the companion to remember: the switch, the list, renaming, deleting and coordinates. */
+public final class CompanionMarkersScreen extends Screen {
+    private static final int ROW = 20;
+    private final Screen parent;
+    private EditBox name, x, y, z;
+    private final List<Button> rowButtons = new ArrayList<>();
+    private List<CompanionMarkerBoard.Place> places = List.of();
+    private UUID selected;
+    private String notice = "";
+    private int offset, listTop, listBottom, ticks;
+    private boolean reading;
+    /** A refresh asked for while a read was in flight: it runs once that read is done, never lost. */
+    private boolean refreshQueued;
+
+    public CompanionMarkersScreen(Screen parent) {
+        super(Component.literal("Метки на карте"));
+        this.parent = parent;
+    }
+
+    private static Component onOff() {
+        return Component.literal("Метки на карте: " + (OpenRouterConfig.MARKERS.get() ? "вкл." : "выкл."));
+    }
+
+    @Override protected void init() {
+        int left = this.width / 2 - 160, top = 44;
+        rowButtons.clear();
+        addRenderableWidget(Button.builder(onOff(), b -> {
+            OpenRouterConfig.MARKERS.set(!OpenRouterConfig.MARKERS.get());
+            OpenRouterConfig.MARKERS.save();
+            b.setMessage(onOff());
+            CompanionPreferences.sync();
+        }).bounds(left, top, 320, 20).tooltip(Tooltip.create(Component.literal(
+                "Выключено: Олег не узнаёт названия меток и не ходит к ним; список здесь остаётся и включается обратно."))).build());
+        name = new EditBox(this.font, left, top + 28, 200, 20, Component.literal("Название"));
+        name.setHint(Component.literal("Название метки, до 24 символов").withStyle(net.minecraft.ChatFormatting.GRAY));
+        name.setMaxLength(24);
+        addRenderableWidget(name);
+        addRenderableWidget(Button.builder(Component.literal("Добавить здесь"), b -> addHere())
+                .bounds(left + 210, top + 28, 110, 20).tooltip(Tooltip.create(Component.literal(
+                        "Запомнить место, где стоит игрок, под названием из поля слева."))).build());
+        x = coordinate(left, top + 54, "X");
+        y = coordinate(left + 92, top + 54, "Y");
+        z = coordinate(left + 184, top + 54, "Z");
+        addRenderableWidget(Button.builder(Component.literal("Сохранить"), b -> saveSelected())
+                .bounds(left, top + 80, 150, 20).tooltip(Tooltip.create(Component.literal(
+                        "Применить новое название и координаты к выбранной метке. Координаты ограничены границей мира и высотой постройки."))).build());
+        addRenderableWidget(Button.builder(Component.literal("Удалить выбранную"), b -> deleteSelected())
+                .bounds(left + 170, top + 80, 150, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose())
+                .bounds(left, top + 104, 150, 20).build());
+        listTop = top + 132;
+        listBottom = Math.max(listTop + ROW, this.height - 24);
+        refresh();
+    }
+
+    private EditBox coordinate(int x, int y, String hint) {
+        EditBox field = new EditBox(this.font, x, y, 80, 20, Component.literal(hint));
+        field.setFilter(value -> value.matches("-?\\d{0,9}"));
+        addRenderableWidget(field);
+        return field;
+    }
+
+    @Override public void tick() {
+        if (++ticks % 10 == 0) refresh();
+    }
+
+    /** The list comes from the server, which keeps the markers; the screen only draws it and sends the changes. */
+    private void refresh() {
+        var server = minecraft.getSingleplayerServer();
+        if (server == null || minecraft.player == null) {
+            notice = "Список меток доступен в одиночном мире.";
+            setPlaces(List.of());
+            return;
+        }
+        if (reading) { refreshQueued = true; return; }
+        reading = true;
+        var playerId = minecraft.player.getUUID();
+        var world = minecraft.level;
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            var value = player == null ? List.<CompanionMarkerBoard.Place>of() : CompanionMarkerBoard.places(player);
+            minecraft.execute(() -> {
+                reading = false;
+                if (minecraft.screen != this || minecraft.level != world) { refreshQueued = false; return; }
+                if (refreshQueued) { refreshQueued = false; refresh(); return; }
+                setPlaces(value);
+            });
+        });
+    }
+
+    private void setPlaces(List<CompanionMarkerBoard.Place> now) {
+        if (now.equals(places)) return;
+        places = now;
+        if (selected != null && places.stream().noneMatch(place -> place.id().equals(selected))) selected = null;
+        offset = Math.clamp(offset, 0, Math.max(0, places.size() - capacity()));
+        rebuildRows();
+    }
+
+    private void rebuildRows() {
+        for (Button button : rowButtons) removeWidget(button);
+        rowButtons.clear();
+        int left = this.width / 2 - 160;
+        for (int index = offset; index < Math.min(places.size(), offset + capacity()); index++) {
+            CompanionMarkerBoard.Place place = places.get(index);
+            int row = listTop + (index - offset) * ROW;
+            Button edit = addRenderableWidget(Button.builder(Component.literal("Изменить"), b -> select(place))
+                    .bounds(left + 180, row + 2, 70, 16).build());
+            edit.setTooltip(Tooltip.create(Component.literal("Взять название и координаты этой метки в поля выше.")));
+            Button forget = addRenderableWidget(Button.builder(Component.literal("Удалить"), b -> forget(place.id()))
+                    .bounds(left + 254, row + 2, 60, 16).build());
+            forget.setTooltip(Tooltip.create(Component.literal("Забыть эту метку; соседние остаются.")));
+            rowButtons.add(edit);
+            rowButtons.add(forget);
+        }
+    }
+
+    private void select(CompanionMarkerBoard.Place place) {
+        selected = place.id();
+        name.setValue(place.name());
+        x.setValue(Integer.toString(place.x()));
+        y.setValue(Integer.toString(place.y()));
+        z.setValue(Integer.toString(place.z()));
+        notice = "Выбрана метка «" + place.name() + "».";
+    }
+
+    private void addHere() {
+        var server = minecraft.getSingleplayerServer();
+        if (server == null || minecraft.player == null) return;
+        var playerId = minecraft.player.getUUID();
+        String wanted = name.getValue().trim();
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            CompanionMarkerBoard.AddResult added = player == null ? null : CompanionMarkerBoard.addHere(player, wanted);
+            minecraft.execute(() -> {
+                notice = added != null ? added.message() : "Название метки — от 1 до 24 символов, без координат.";
+                refresh();
+            });
+        });
+    }
+
+    private void saveSelected() {
+        if (selected == null) { notice = "Сначала выбери метку кнопкой «Изменить»."; return; }
+        var server = minecraft.getSingleplayerServer();
+        if (server == null || minecraft.player == null) return;
+        var playerId = minecraft.player.getUUID();
+        UUID id = selected;
+        String wanted = name.getValue().trim();
+        int px = number(x.getValue()), py = number(y.getValue()), pz = number(z.getValue());
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            boolean renamed = player != null && CompanionMarkerBoard.rename(player, id, wanted);
+            boolean moved = player != null && CompanionMarkerBoard.move(player, id, px, py, pz);
+            minecraft.execute(() -> {
+                if (!renamed) notice = "Название пустое, длиннее 24 символов или уже занято другой меткой.";
+                else if (!moved) notice = "Координаты сохранить не удалось.";
+                else notice = "Метка сохранена.";
+                refresh();
+            });
+        });
+    }
+
+    private void deleteSelected() {
+        if (selected == null) { notice = "Сначала выбери метку кнопкой «Изменить»."; return; }
+        forget(selected);
+    }
+
+    /** Deleting one marker on the server: the list he reads comes back without it. */
+    private void forget(UUID markerId) {
+        var server = minecraft.getSingleplayerServer();
+        if (server == null || minecraft.player == null) return;
+        var playerId = minecraft.player.getUUID();
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(playerId);
+            boolean forgotten = player != null && CompanionMarkerBoard.forget(player, markerId);
+            minecraft.execute(() -> {
+                notice = forgotten ? "Метка забыта." : "Такой метки уже нет.";
+                if (selected != null && selected.equals(markerId)) selected = null;
+                refresh();
+            });
+        });
+    }
+
+    private static int number(String text) {
+        try { return Integer.parseInt(text.trim()); } catch (NumberFormatException ignored) { return 0; }
+    }
+
+    private int capacity() { return Math.max(1, (listBottom - listTop) / ROW); }
+
+    @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.render(graphics, mouseX, mouseY, partialTick);
+        graphics.drawCenteredString(this.font, this.title, this.width / 2, 16, 0xFFFFFF);
+        int left = this.width / 2 - 160;
+        graphics.drawString(this.font, "Название", left, 44 + 28 - 10, 0xA0A0A0);
+        graphics.drawString(this.font, "X", left, 44 + 54 - 10, 0xA0A0A0);
+        graphics.drawString(this.font, "Y", left + 92, 44 + 54 - 10, 0xA0A0A0);
+        graphics.drawString(this.font, "Z", left + 184, 44 + 54 - 10, 0xA0A0A0);
+        graphics.drawString(this.font, "Места, которые он помнит", left, listTop - 12, 0xC6CFDC);
+        if (places.size() > capacity()) graphics.drawString(this.font, "↕ колёсико", left + 250, listTop - 12, 0x8595AC);
+        graphics.enableScissor(left, listTop, left + 320, listBottom);
+        if (!notice.isEmpty()) graphics.drawString(this.font, this.font.plainSubstrByWidth(notice, 316), left + 4, listTop + 5, 0xA6B4C6);
+        else if (places.isEmpty()) graphics.drawString(this.font, "Пока меток нет: скажи «запомни это место, дача» или добавь здесь.", left + 4, listTop + 5, 0xA6B4C6);
+        for (int index = offset; index < Math.min(places.size(), offset + capacity()); index++) {
+            CompanionMarkerBoard.Place place = places.get(index);
+            String label = (place.id().equals(selected) ? "▶ " : "") + place.name() + " — " + place.world() + " " + place.x() + ", " + place.y() + ", " + place.z();
+            graphics.drawString(this.font, this.font.plainSubstrByWidth(label, 172), left + 4, listTop + (index - offset) * ROW + 6, 0xF1F5FA);
+        }
+        graphics.disableScissor();
+    }
+
+    @Override public boolean mouseScrolled(double x, double y, double dx, double dy) {
+        if (y >= listTop && y <= listBottom && places.size() > capacity()) {
+            offset = Math.clamp(offset + (dy > 0 ? -1 : 1), 0, Math.max(0, places.size() - capacity()));
+            rebuildRows();
+            return true;
+        }
+        return super.mouseScrolled(x, y, dx, dy);
+    }
+
+    @Override public void onClose() { this.minecraft.setScreen(parent); }
+}

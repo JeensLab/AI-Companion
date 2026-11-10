@@ -132,6 +132,13 @@ final class CompanionPlaces {
             entries.add(place.block + " на " + place.pos.toShortString() + " в " + place.dimension + " (поставил)"
                     + (place.dimension.equals(dimension()) && owner.level().hasChunkAt(place.pos) ? " (проверено)" : " (сейчас не проверено)"));
         }
+        // The player's own named markers: the names the model may say and walk to (CompanionMarkers). Read on the server
+        // thread only, like the home: an entity is also read while its chunk loads.
+        if (owner.markersEnabled() && owner.getOwnerId() != null && owner.level() instanceof ServerLevel level && level.getServer().isSameThread()) {
+            var marks = CompanionMarkers.get(level.getServer()).all(owner.getOwnerId());
+            if (!marks.isEmpty()) entries.add("метки: " + String.join("; ", marks.stream()
+                    .map(mark -> "«" + mark.name() + "» на " + mark.pos().toShortString() + " в " + CompanionMarkers.worldName(mark.dimension())).toList()));
+        }
         return entries.isEmpty() ? "известных рабочих мест нет" : "Известные места: " + String.join("; ", entries);
     }
     void save(CompoundTag tag) {

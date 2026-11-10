@@ -92,6 +92,11 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.PICK_UP_RADIUS.save(); b.setMessage(pickUpRadiusLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Насколько далеко он осматривает землю вокруг себя, блоков."))).build());
+        addRenderableWidget(Button.builder(markersLabel(), b -> {
+            OpenRouterConfig.MARKERS.set(!OpenRouterConfig.MARKERS.get()); OpenRouterConfig.MARKERS.save();
+            b.setMessage(markersLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "«Запомни это место, дача» — метка с названием; «иди к даче», «охраняй дачу» ведут к ней. Выключено: названия не распознаются и походов нет, список меток в настройках остаётся."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -126,6 +131,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component damageNumbersLabel() { return Component.literal("Цифры урона над Олегом: " + (OpenRouterConfig.DAMAGE_NUMBERS.get() ? "вкл." : "выкл.")); }
     private Component pickUpLabel() { return Component.literal("Подбирать лежащее рядом: " + (OpenRouterConfig.PICK_UP_NEARBY.get() ? "вкл." : "выкл.")); }
     private Component pickUpRadiusLabel() { return Component.literal("Радиус подбора: " + OpenRouterConfig.PICK_UP_RADIUS.get() + " блоков"); }
+    private Component markersLabel() { return Component.literal("Метки на карте: " + (OpenRouterConfig.MARKERS.get() ? "вкл." : "выкл.")); }
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
