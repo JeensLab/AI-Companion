@@ -208,7 +208,7 @@ public final class CompanionContainerTests {
         });
     }
 
-    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_setting_save")
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void theSettingIsSavedAndAnOldSaveWithoutItLoadsOn(GameTestHelper helper) {
         CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 2, 1, 2);
         helper.assertTrue(companion.otherContainers(), "Not on by default");
@@ -248,7 +248,7 @@ public final class CompanionContainerTests {
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 100, batch = "containers_commands")
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
     public static void containerNamesAreUnderstoodInCommandsAndPlans(GameTestHelper helper) {
         PlannedAction store = CompanionWorkCommands.parse("Олег, сложи 10 камня в бочку", "Олег");
         helper.assertTrue(store != null && "store_items".equals(store.type()) && store.count() == 10 && "stone".equals(store.item())
@@ -275,7 +275,7 @@ public final class CompanionContainerTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_chat_path")
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void theChatPathKeepsTheContainerKind(GameTestHelper helper) {
         Object[][] orders = {
                 {"положи вещи в бочку", "store_items", PlannedAction.ALL_CARRIED, "minecraft:barrel"},
@@ -331,7 +331,7 @@ public final class CompanionContainerTests {
         });
     }
 
-    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_model_path")
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void theModelCanNameAContainer(GameTestHelper helper) {
         String offered = locationEnum(OpenRouterClient.planTool()).toString();
         for (String kind : new String[] {"minecraft:barrel", "minecraft:furnace", "minecraft:hopper", "minecraft:shulker_box", "near_player", "inside_house"})
@@ -347,7 +347,7 @@ public final class CompanionContainerTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 100, batch = "containers_requirements")
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void aPlacementRequestKeepsTheNamedContainerStep(GameTestHelper helper) {
         PlannedAction named = new PlannedAction("store_items", 0, 1, "all", "auto", "minecraft:barrel");
         CompanionReply reply = CompanionPlanRequirements.apply("поставь верстак и сложи вещи в бочку", new CompanionReply("", List.of(named)));

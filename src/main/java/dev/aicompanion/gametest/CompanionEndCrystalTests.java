@@ -341,7 +341,7 @@ public final class CompanionEndCrystalTests {
      * Higher than any arrow climbs (some 66 blocks straight up): no flight, so he would not waste one; 40 up is within reach. Flown in
      * the open air over the arena: the game shuts every test structure in under a ceiling of barriers, which no flight would pass.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 100, batch = "crystal_flight")
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
     public static void aCrystalOutOfAnyArrowsReachHasNoFlight(GameTestHelper h) {
         Vec3 from = h.absoluteVec(new Vec3(16.5, 30.5, 16.5));
         var reached = net.minecraft.world.phys.AABB.ofSize(from.add(8, 40, 0), 2, 2, 2);
