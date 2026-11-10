@@ -47,6 +47,37 @@ public final class CompanionWorkCommands {
     }
 
     /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
+    private static final Pattern REPAIR = Pattern.compile("^(?:почини|почини-ка|подлатай)(?: мне| свою| свои| твою| твои)? (.+)$");
+    private static final Pattern DISENCHANT = Pattern.compile("^(?:сними|снимай|убери|счисти)(?: все)? чары (?:с|со) (всех )?(.+)$");
+    private static final String[][] KINDS = {{"кирк", "pickaxe"}, {"топор", "axe"}, {"меч", "sword"}, {"лопат", "shovel"}, {"мотыг", "hoe"},
+            {"шлем", "helmet"}, {"нагрудник", "chestplate"}, {"понож", "leggings"}, {"ботин", "boots"}};
+    private static final String[][] THINGS = {{"лук", "minecraft:bow"}, {"арбалет", "minecraft:crossbow"}, {"удочк", "minecraft:fishing_rod"},
+            {"ножниц", "minecraft:shears"}, {"огнив", "minecraft:flint_and_steel"}, {"трезуб", "minecraft:trident"}, {"щит", "minecraft:shield"},
+            {"элитр", "minecraft:elytra"}, {"книг", "minecraft:enchanted_book"}};
+    private static final String[][] MATERIALS = {{"деревян", "wooden"}, {"камен", "stone"}, {"желез", "iron"}, {"золот", "golden"},
+            {"алмаз", "diamond"}, {"незерит", "netherite"}, {"кожан", "leather"}, {"кольчуж", "chainmail"}};
+
+    /**
+     * «Почини кирку» folds two alike, «сними чары с меча» takes it to a grindstone, «со всех луков» every one (CompanionGrinding).
+     * A word with no material is any of the kind; an unknown thing or a list is left to the model.
+     */
+    public static String grind(String text, String name) {
+        String value = plain(text, name).replaceAll("\\s+", " ");
+        var repair = REPAIR.matcher(value);
+        var disenchant = DISENCHANT.matcher(value);
+        boolean fold = repair.matches();
+        if (!fold && !disenchant.matches()) return null;
+        String words = fold ? repair.group(1) : disenchant.group(2), item = null;
+        if (words.matches("(?U).*\\b(?:и|или)\\b.*")) return null;
+        for (String[] kind : KINDS) if (item == null && words.matches("(?U)(?:.*\\s)?" + kind[0] + ".*")) {
+            item = kind[1];
+            for (String[] material : MATERIALS) if (words.matches("(?U)(?:.*\\s)?" + material[0] + ".*")) item = "minecraft:" + material[1] + "_" + kind[1];
+        }
+        for (String[] thing : THINGS) if (item == null && words.matches("(?U)(?:.*\\s)?" + thing[0] + ".*")) item = thing[1];
+        if (item == null) return null;
+        return fold ? "companion work repair_item 1 " + item : "companion work disenchant_item " + (disenchant.group(1) != null ? 64 : 1) + " " + item;
+    }
+
     private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");

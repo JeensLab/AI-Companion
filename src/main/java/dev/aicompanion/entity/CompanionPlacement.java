@@ -130,16 +130,21 @@ final class CompanionPlacement {
      */
     BlockPos cutterWalk(String requestedItemId, int requestedCount) {
         if (!(c.level() instanceof ServerLevel level) || inReach(Blocks.STONECUTTER) != null) return null;
-        BlockPos origin = c.blockPosition(), cutter = null;
-        int far = CompanionToolSense.BENCH_WALK;
-        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-far, -4, -far), origin.offset(far, 4, far)))
-            if (level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.STONECUTTER) && (cutter == null || pos.distSqr(origin) < cutter.distSqr(origin))) cutter = pos.immutable();
+        BlockPos cutter = nearest(Blocks.STONECUTTER, CompanionToolSense.BENCH_WALK);
         if (cutter == null) return null;
         boolean bench = hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK);
         var cut = CompanionCrafting.plan(level, c.companionInventory, requestedItemId, requestedCount, bench, true);
         if (!cut.success() || !cut.cutter()) return null;
         var plain = CompanionCrafting.plan(level, c.companionInventory, requestedItemId, requestedCount, bench, false);
         return !plain.success() || left(cut.inventory()) > left(plain.inventory()) ? cutter : null;
+    }
+
+    /** The nearest block of this kind within so many blocks across and four up or down, as a stonecutter or a grindstone is looked for. */
+    BlockPos nearest(Block block, int far) {
+        BlockPos origin = c.blockPosition(), found = null;
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-far, -4, -far), origin.offset(far, 4, far)))
+            if (c.level().hasChunkAt(pos) && c.level().getBlockState(pos).is(block) && (found == null || pos.distSqr(origin) < found.distSqr(origin))) found = pos.immutable();
+        return found;
     }
 
     private static int left(java.util.List<ItemStack> bag) { return bag.stream().mapToInt(ItemStack::getCount).sum(); }
