@@ -44,7 +44,8 @@ public final class CompanionComposting {
     private String what = "scrap";
     private int count;
     private BlockPos composter;
-    private boolean ownTried;
+    /** His own was tried (made or not); and set down, so a broken one is gone, not «nothing to make it of». */
+    private boolean ownTried, ownPlaced;
     private int put, made;
     /** Bone meal he made and a hopper under the composter took before he could: counted toward the order, said in the report. */
     private int taken;
@@ -81,7 +82,7 @@ public final class CompanionComposting {
     CompanionActionResult begin(String item, int count) {
         CompanionEntity c = w.owner;
         what = item == null || item.isBlank() ? "scrap" : item;
-        this.count = Math.max(ALL, count); composter = null; ownTried = false; put = 0; made = 0; taken = 0; ripening = false; nextAt = 0;
+        this.count = Math.max(ALL, count); composter = null; ownTried = false; ownPlaced = false; put = 0; made = 0; taken = 0; ripening = false; nextAt = 0;
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
         if (!GROUPS.contains(what)) {
             ResourceLocation id = ResourceLocation.tryParse(what);
@@ -103,11 +104,11 @@ public final class CompanionComposting {
 
     void tick(ServerLevel level) {
         CompanionEntity c = w.owner;
-        BlockPos here = c.placement.inReach(Blocks.COMPOSTER);
-        if (here != null) { work(level, here); return; }
+        // At the one he chose (a full one, say), not at whichever of a row the look meets first (review 10.11).
+        if (composter != null && c.placement.reaches(composter, Blocks.COMPOSTER)) { work(level, composter); return; }
         if (composter != null && !level.getBlockState(composter).is(Blocks.COMPOSTER)) composter = c.placement.nearest(Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK);
         if (composter == null) {
-            if (ownTried) w.finish(false, NO_COMPOSTER + done()); else own(level);
+            if (ownTried) w.finish(false, (ownPlaced ? "Мой компостер пропал, а второго у меня нет." : NO_COMPOSTER) + done()); else own(level);
             return;
         }
         // In the air no way is searched (as to a bench); in water he goes on (as to the stonecutter).
@@ -136,7 +137,7 @@ public final class CompanionComposting {
         c.refreshInventorySummary();
         level.playSound(null, at, Blocks.COMPOSTER.defaultBlockState().getSoundType().getPlaceSound(), SoundSource.BLOCKS, .7F, 1F);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed", "entity", c.getUUID(), "block", "minecraft:composter", "position", at, "reason", "compost");
-        composter = at;
+        composter = at; ownPlaced = true;
         c.workStatus("Поставил свой компостер.");
     }
 

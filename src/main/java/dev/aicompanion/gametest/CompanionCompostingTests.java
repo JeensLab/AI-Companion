@@ -78,6 +78,26 @@ public final class CompanionCompostingTests {
         });
     }
 
+    /**
+     * Two composters by him: the nearest is full, the other empty and the first his look meets. He takes the bone meal of the
+     * full one, the one he chose, and puts nothing into the other (review 10.11).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void theChosenComposterIsWorkedNotTheFirstSeen(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        BlockPos full = new BlockPos(17, 1, 16), empty = new BlockPos(14, 1, 16);
+        h.setBlock(full, Blocks.COMPOSTER.defaultBlockState().setValue(ComposterBlock.LEVEL, ComposterBlock.READY));
+        h.setBlock(empty, Blocks.COMPOSTER);
+        companion.setItem(0, new ItemStack(Items.OAK_SAPLING, 64));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "compost_items", "scrap", 1).success(), "Order refused");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.BONE_MEAL) == 1 && count(companion, Items.OAK_SAPLING) == 64,
+                    companion.getLastTaskResult() + " | " + companion.getStoredItemsSummary());
+            h.assertTrue(h.getBlockState(empty).getValue(ComposterBlock.LEVEL) == 0, "The other composter was filled");
+        });
+    }
+
     /** No composter near: his own is made from the slabs in his bag at the bench, set down and left; with no slabs he says so. */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void hisOwnComposterIsMadeFromTheBag(GameTestHelper h) {
