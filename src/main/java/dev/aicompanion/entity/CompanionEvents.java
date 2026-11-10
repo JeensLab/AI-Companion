@@ -300,8 +300,8 @@ public final class CompanionEvents {
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
-                // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order.
-                if (!action.equals("pursue_goal")) companion.goals().playerOrder(action);
+                // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order. Nor does switching autonomy on: «будь самостоятельным» is a switch, not an order.
+                if (!action.equals("pursue_goal") && !(action.equals("autonomy") && "on".equals(item))) companion.goals().playerOrder(action);
                 // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
