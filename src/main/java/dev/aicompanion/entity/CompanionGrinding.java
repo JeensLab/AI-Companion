@@ -106,7 +106,7 @@ public final class CompanionGrinding {
     }
 
     /** «кирка», «железный меч»: the order's thing in the task list (a kind like "pickaxe" is no word for the player). */
-    public static String label(String kind) { return words(kind).name(); }
+    public static String label(String kind) { return words(kind).name().replaceAll("^«|»$", ""); }
 
     private static String capital(String text) { return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1); }
 
@@ -120,8 +120,9 @@ public final class CompanionGrinding {
      * enchantments are. Such a thing is not folded in his hands; only wear and the work cost are no loss.
      */
     private static boolean plain(ItemStack stack) {
+        // Curses the grid keeps (RepairItemRecipe takes the higher level), so a cursed one is folded too.
         return stack.getComponentsPatch().entrySet().stream().map(java.util.Map.Entry::getKey)
-                .allMatch(type -> type == DataComponents.DAMAGE || type == DataComponents.REPAIR_COST);
+                .allMatch(type -> type == DataComponents.DAMAGE || type == DataComponents.REPAIR_COST || type == DataComponents.ENCHANTMENTS && !enchanted(stack));
     }
 
     /** Where a folded thing stays: the main hand first, then what he wears or holds, then the bag. */
@@ -149,7 +150,7 @@ public final class CompanionGrinding {
             List<Held> alike = plain.values().stream().filter(group -> group.size() >= 2).findFirst().orElse(null);
             return c.recordActionResult(CompanionActionResult.failed(pair && enchanted(special.stack)
                     ? capital(words(special.stack.getItem()).name()) + " с чарами — при починке чары пропадут. Если не жалко, скажи «сними чары»."
-                    : pair ? capital(words(special.stack.getItem()).name()) + " с именем, отделкой или краской — при починке в руках это пропадёт."
+                    : pair ? capital(words(special.stack.getItem()).name()) + " — особенная: при починке в руках пропадёт то, что на ней сверх износа (имя, отделка, краска, заряд или метка)."
                     : alike != null && alike.stream().noneMatch(held -> held.stack.isDamaged()) ? "Чинить нечего: " + words(alike.getFirst().stack.getItem()).name() + " без износа."
                     : alike != null ? "Чинить нечего: изношенная вещь одна, а сложить её с целой — значит выбросить целую."
                     : "Сложить не с чем: нужна пара одинаковых, а " + words(all.getFirst().stack.getItem()).name() + " у меня без пары."));

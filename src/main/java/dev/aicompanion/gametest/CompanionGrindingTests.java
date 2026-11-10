@@ -56,7 +56,18 @@ public final class CompanionGrindingTests {
         named.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("Любимая"));
         companion.setItem(1, named);
         CompanionActionResult name = CompanionEvents.executeAction(owner(h, companion), "repair_item", "pickaxe", 1);
-        h.assertTrue(!name.success() && name.message().contains("с именем") && count(companion, Items.IRON_PICKAXE) == 2, "A named one was folded: " + name.message());
+        h.assertTrue(!name.success() && name.message().contains("особенная") && count(companion, Items.IRON_PICKAXE) == 2, "A named one was folded: " + name.message());
+        h.succeed();
+    }
+
+    /** A curse is kept by the grid's repair, so two cursed worn pickaxes are folded, the curse still on. */
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void aCursedPairIsFolded(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, enchanted(h, worn(Items.STONE_PICKAXE, 10), Enchantments.VANISHING_CURSE, 1));
+        companion.setItem(1, enchanted(h, worn(Items.STONE_PICKAXE, 20), Enchantments.VANISHING_CURSE, 1));
+        CompanionActionResult result = CompanionEvents.executeAction(owner(h, companion), "repair_item", "pickaxe", 1);
+        h.assertTrue(result.success() && count(companion, Items.STONE_PICKAXE) == 1 && all(companion, Items.STONE_PICKAXE).getFirst().isEnchanted(), "Repair: " + result.message());
         h.succeed();
     }
 
@@ -177,6 +188,9 @@ public final class CompanionGrindingTests {
         h.assertTrue("companion work repair_item 1 pickaxe".equals(CompanionLocalCommands.route("почини кирку", "Олег")), CompanionLocalCommands.route("почини кирку", "Олег"));
         h.assertTrue("companion work repair_item 1 minecraft:iron_pickaxe".equals(CompanionLocalCommands.route("Почини железные кирки", "Олег")), CompanionLocalCommands.route("Почини железные кирки", "Олег"));
         h.assertTrue("companion unequip mainhand".equals(CompanionLocalCommands.route("сними меч", "Олег")), "«сними меч» is still the hand");
+        // Review 10.11, round 2: «чар» in his name or in «зачарованный» is no grindstone.
+        h.assertTrue("companion unequip head".equals(CompanionLocalCommands.route("Ричард, сними шлем", "Ричард")), CompanionLocalCommands.route("Ричард, сними шлем", "Ричард"));
+        h.assertTrue(String.valueOf(CompanionLocalCommands.route("возьми зачарованный меч", "Олег")).startsWith("companion equip"), CompanionLocalCommands.route("возьми зачарованный меч", "Олег"));
         // Review 10.11: anything past a thing's name is the model's to read, a wrong local guess grinds off what was to be kept.
         for (String said : new String[]{"почини кирку, потом наруби дров", "сними чары с меча, а кирку не трогай", "почини железную кирку, а не алмазную",
                 "сними чары с моего меча", "почини мне кирку", "сними чары с двух мечей", "сними, пожалуйста, чары с меча", "почини деревянный шлем"}) {
