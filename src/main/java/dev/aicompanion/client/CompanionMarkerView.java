@@ -28,16 +28,34 @@ public final class CompanionMarkerView {
 
     static void clear() { names = List.of(); enabled = true; }
 
-    /** Runs on the client thread: the names and the switch of this sync. */
+    /** Sets the copy; both fields are volatile, so the server thread may deliver after a settings change too. */
     static void deliver(List<String> known, boolean on) { names = List.copyOf(known); enabled = on; }
 
-    /** Runs on the server thread: reads the names from the world, with the switch the companion was given. */
-    public static void pull(ServerPlayer player, boolean on, BiConsumer<List<String>, Boolean> to) {
-        CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+    /**
+     * Runs on the server thread after the settings screen changed the list: the chat must recognise the new names at
+     * once, not at the next slow sync.
+     */
+    public static void refresh(ServerPlayer player) {
+        var server = player.level().getServer();
+        if (server == null) return;
         List<String> known = new ArrayList<>();
-        if (companion != null && companion.getOwnerId() != null && player.level().getServer() != null)
-            for (CompanionMarkers.Marker marker : CompanionMarkers.get(player.level().getServer()).all(companion.getOwnerId()))
-                known.add(marker.name());
-        to.accept(List.copyOf(known), on);
+        for (CompanionMarkers.Marker marker : CompanionMarkers.get(server).all(player.getUUID())) known.add(marker.name());
+        CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+        deliver(List.copyOf(known), companion == null ? enabled : companion.markersEnabled());
+    }
+
+    /** Reads the names from the world on the server thread, with the switch the companion was given. */
+    public static void pull(ServerPlayer player, boolean on, BiConsumer<List<String>, Boolean> to) {
+        var server = player.level().getServer();
+        if (server == null) { to.accept(List.of(), on); return; }
+        // The store is the server's: its list is copied there, never on the client thread that reads the copy.
+        server.execute(() -> {
+            CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            List<String> known = new ArrayList<>();
+            if (companion != null && companion.getOwnerId() != null)
+                for (CompanionMarkers.Marker marker : CompanionMarkers.get(server).all(companion.getOwnerId()))
+                    known.add(marker.name());
+            to.accept(List.copyOf(known), on);
+        });
     }
 }

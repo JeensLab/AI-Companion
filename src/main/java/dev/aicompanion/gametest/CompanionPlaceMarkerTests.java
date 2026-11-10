@@ -2,6 +2,8 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.client.CompanionLocalCommands;
+import dev.aicompanion.client.CompanionMarkerView;
+import dev.aicompanion.client.CompanionParkHold;
 import dev.aicompanion.client.CompanionPlaceSpeech;
 import dev.aicompanion.client.CompanionPlanCodec;
 import dev.aicompanion.client.CompanionPlanRunner;
@@ -17,6 +19,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -24,6 +27,7 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * «Запомни это место, дача» (3GFBJ): named markers of the player — saving by phrase, recognition in free speech by
@@ -68,19 +72,48 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
-    /** A marker is saved where the companion stands, with its dimension and creation time. */
+    /** A marker is saved where the player stands, and his absence is said honestly instead of pretending it is his point. */
     @GameTest(template = "empty")
-    public static void theMarkerIsSavedAtTheCompanionsPoint(GameTestHelper h) {
+    public static void theMarkerIsSavedAtTheOwnersPoint(GameTestHelper h) {
         CompanionEntity c = spawn(h);
-        var result = CompanionEvents.executeAction(player(h, c), "remember_place", "колодец", 1);
+        ServerPlayer owner = player(h, c);
+        var result = CompanionEvents.executeAction(owner, "remember_place", "колодец", 1);
         h.assertTrue(result.success(), "The marker was refused: " + result.message());
         h.assertTrue(result.message().contains("Запомнил место «колодец»"), "No honest answer: " + result.message());
+        h.assertTrue(!result.message().contains("стою я"), "An online owner's point was called the companion's: " + result.message());
         var markers = CompanionMarkers.get(h.getLevel().getServer()).all(c.getOwnerId());
         h.assertTrue(markers.size() == 1, "Not saved: " + markers);
         var marker = markers.getFirst();
-        h.assertTrue(marker.pos().equals(c.blockPosition()), "Saved elsewhere: " + marker.pos() + " he at " + c.blockPosition());
-        h.assertTrue(marker.dimension().equals(h.getLevel().dimension()), "Another dimension: " + marker.dimension());
+        h.assertTrue(marker.pos().equals(owner.blockPosition()), "Saved elsewhere: " + marker.pos() + " owner at " + owner.blockPosition());
+        h.assertTrue(marker.dimension().equals(owner.level().dimension()), "Another dimension: " + marker.dimension());
         h.assertTrue(marker.created() > 0, "No creation time: " + marker.created());
+        // With no owner online there is no player's point: his own feet are saved, and the answer says so.
+        UUID away = UUID.randomUUID();
+        c.setOwnerId(away);
+        var offline = c.rememberPlace("дом");
+        h.assertTrue(offline.success() && offline.message().contains("стою я"), "The absent owner was not said: " + offline.message());
+        var own = CompanionMarkers.get(h.getLevel().getServer()).all(away);
+        h.assertTrue(own.size() == 1 && own.getFirst().pos().equals(c.blockPosition()),
+                "The companion's own point was not saved: " + own + " he at " + c.blockPosition());
+        CompanionMarkers.get(h.getLevel().getServer()).remove(away, own.getFirst().id());
+        h.succeed();
+    }
+
+    /** The same name again moves that one marker: its id and creation time stay, no second marker is made. */
+    @GameTest(template = "empty")
+    public static void theSameNameMovesTheMarkerInsteadOfAddingASecond(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        BlockPos first = c.blockPosition().offset(2, 0, 0);
+        var saved = store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), first, 100).marker();
+        BlockPos second = c.blockPosition().offset(5, 0, 0);
+        var again = store.add(c.getOwnerId(), "ДАЧА", h.getLevel().dimension(), second, 200);
+        h.assertTrue(again.moved(), "The same name made a second marker: " + again);
+        h.assertTrue(again.evicted() == null, "A move evicted a marker: " + again.evicted());
+        h.assertTrue(again.marker().id().equals(saved.id()), "The move changed the id: " + again.marker());
+        h.assertTrue(again.marker().pos().equals(second), "The marker did not move: " + again.marker());
+        h.assertTrue(again.marker().created() == 100, "The move changed the creation time: " + again.marker());
+        h.assertTrue(store.all(c.getOwnerId()).size() == 1, "Two markers carry one name: " + store.all(c.getOwnerId()));
         h.succeed();
     }
 
@@ -120,6 +153,48 @@ public final class CompanionPlaceMarkerTests {
         var home = CompanionPlaceSpeech.parse("проведи меня до дома", "Олег", List.of("дача"), true);
         h.assertTrue(home.kind() == CompanionPlaceSpeech.Kind.NONE && home.question() == null,
                 "«до дома» became a question: " + home.kind() + " " + home.question());
+        h.succeed();
+    }
+
+    /** Names with digits and spaces are ordinary names: «дом2», «шахта 3», «железный рудник» resolve like any word. */
+    @GameTest(template = "empty")
+    public static void namesWithDigitsAndSpacesResolve(GameTestHelper h) {
+        List<String> none = List.of();
+        h.assertTrue("companion place remember дом2".equals(CompanionLocalCommands.route("запомни это дом2", "Олег", none, true)),
+                "«запомни это дом2»: " + CompanionLocalCommands.route("запомни это дом2", "Олег", none, true));
+        h.assertTrue("companion place go дом2".equals(CompanionLocalCommands.route("иди к дому2", "Олег", List.of("дом2"), true)),
+                "«иди к дому2»: " + CompanionLocalCommands.route("иди к дому2", "Олег", List.of("дом2"), true));
+        h.assertTrue("companion place go шахта 3".equals(CompanionLocalCommands.route("иди к шахте 3", "Олег", List.of("шахта 3"), true)),
+                "«иди к шахте 3»: " + CompanionLocalCommands.route("иди к шахте 3", "Олег", List.of("шахта 3"), true));
+        h.assertTrue("companion place go железный рудник".equals(CompanionLocalCommands.route("иди к железному руднику", "Олег", List.of("железный рудник"), true)),
+                "«иди к железному руднику»: " + CompanionLocalCommands.route("иди к железному руднику", "Олег", List.of("железный рудник"), true));
+        // At run time: remembering the name and walking to it.
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var remembered = CompanionEvents.executeAction(owner, "remember_place", "дом2", 1);
+        h.assertTrue(remembered.success(), "«дом2» was refused: " + remembered.message());
+        var markers = CompanionMarkers.get(h.getLevel().getServer()).all(c.getOwnerId());
+        h.assertTrue(markers.size() == 1 && markers.getFirst().name().equals("дом2"), "The name lost its digit: " + markers);
+        var walked = CompanionEvents.executeAction(owner, "go_to_place", "дому2", 1);
+        h.assertTrue(walked.success(), "«иди к дому2» was refused: " + walked.message());
+        h.assertTrue(c.workPhase().startsWith("PLACE"), "Not the place walk: " + c.workPhase());
+        h.succeed();
+    }
+
+    /** A coordinate triple is not a name: one question, and no marker is made. */
+    @GameTest(template = "empty")
+    public static void aCoordinateTripleAsksOneQuestionInsteadOfBecomingAMarker(GameTestHelper h) {
+        var speech = CompanionPlaceSpeech.remember("запомни это место, 100, 64, 200", "Олег", true);
+        h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.COORDINATES, "A coordinate triple was taken: " + speech.kind());
+        h.assertTrue(speech.question() != null && speech.question().contains("координаты"), "No honest question: " + speech.question());
+        h.assertTrue(speech.question().chars().filter(ch -> ch == '?').count() == 1, "Not one question: " + speech.question());
+        h.assertTrue(CompanionLocalCommands.route("запомни это место, 100, 64, 200", "Олег", List.of(), true) == null,
+                "The coordinate triple became a command");
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var result = CompanionEvents.executeAction(owner, "remember_place", "100, 64, 200", 1);
+        h.assertTrue(!result.success() && result.message().contains("координаты"), "The server took the coordinates: " + result.message());
+        h.assertTrue(CompanionMarkers.get(h.getLevel().getServer()).all(c.getOwnerId()).isEmpty(), "A coordinate marker was saved");
         h.succeed();
     }
 
@@ -175,6 +250,43 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
+    /** Matching is per owner: each player's names resolve only in his own list. */
+    @GameTest(template = "empty")
+    public static void matchingIsPerOwner(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer ownerB = h.makeMockServerPlayerInLevel();
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+        store.add(ownerB.getUUID(), "колодец", h.getLevel().dimension(), c.blockPosition().offset(2, 0, 0), 2);
+        h.assertTrue(store.matching(c.getOwnerId(), "даче").size() == 1, "The owner lost his own name: " + store.matching(c.getOwnerId(), "даче"));
+        h.assertTrue(store.matching(c.getOwnerId(), "колодцу").isEmpty(), "The owner saw another list: " + store.matching(c.getOwnerId(), "колодцу"));
+        h.assertTrue(store.matching(ownerB.getUUID(), "колодцу").size() == 1, "The other owner lost his name: " + store.matching(ownerB.getUUID(), "колодцу"));
+        h.assertTrue(store.matching(ownerB.getUUID(), "даче").isEmpty(), "The other owner saw the first list: " + store.matching(ownerB.getUUID(), "даче"));
+        // The same name in both lists is two independent markers.
+        store.add(ownerB.getUUID(), "дача", h.getLevel().dimension(), c.blockPosition().offset(4, 0, 0), 3);
+        h.assertTrue(store.matching(c.getOwnerId(), "даче").size() == 1 && store.matching(ownerB.getUUID(), "даче").size() == 1,
+                "One name in two lists: " + store.matching(c.getOwnerId(), "даче") + " / " + store.matching(ownerB.getUUID(), "даче"));
+        h.succeed();
+    }
+
+    /** Another player cannot see or change a marker that is not his. */
+    @GameTest(template = "empty")
+    public static void anotherOwnerCannotSeeOrChangeTheMarker(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer ownerB = h.makeMockServerPlayerInLevel();
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        var marker = store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition().offset(3, 0, 0), 1).marker();
+        h.assertTrue(CompanionMarkerBoard.places(ownerB).isEmpty(), "The screen shows another owner's marker: " + CompanionMarkerBoard.places(ownerB));
+        h.assertTrue(store.byId(ownerB.getUUID(), marker.id()) == null, "Another owner found the marker by id");
+        h.assertTrue(!CompanionMarkerBoard.rename(ownerB, marker.id(), "чужая"), "Another owner renamed the marker");
+        h.assertTrue(!CompanionMarkerBoard.move(ownerB, marker.id(), 1, 2, 3), "Another owner moved the marker");
+        h.assertTrue(!CompanionMarkerBoard.forget(ownerB, marker.id()), "Another owner deleted the marker");
+        var left = store.all(c.getOwnerId());
+        h.assertTrue(left.size() == 1 && left.getFirst().name().equals("дача") && left.getFirst().pos().equals(marker.pos()),
+                "The marker changed under another owner: " + left);
+        h.succeed();
+    }
+
     // ---- the walk ----
 
     /** A marker ten blocks away: he walks there by the normal path and says where he arrived. */
@@ -211,6 +323,28 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
+    /** A marker moved three blocks above him: an honest «нет пути», and the plan ends instead of walking forever. */
+    @GameTest(template = "empty", timeoutTicks = 300)
+    public static void aMarkerAboveHisHeadEndsWithAnHonestNoPath(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        var marker = store.add(c.getOwnerId(), "высоко", h.getLevel().dimension(), c.blockPosition(), 1).marker();
+        BlockPos above = c.blockPosition().offset(2, 3, 0);
+        h.assertTrue(CompanionMarkerBoard.move(owner, marker.id(), above.getX(), above.getY(), above.getZ()), "The move was refused");
+        var plan = CompanionPlanRunner.run(List.of(new PlannedAction("go_to_place", 0, 1, "высоко")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-above", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The walk to the marker above never ended: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.report().contains("нет пути") && outcome.report().contains("«высоко»"),
+                    "No honest no-path answer: " + outcome.report());
+            h.assertTrue(outcome.recoveries() == 0 && !outcome.report().contains("Повтор шага"),
+                    "The no-path walk was retried: " + outcome.report());
+        });
+    }
+
     // ---- the settings list ----
 
     /** Renaming keeps the point and the id; a name another marker has is refused. */
@@ -227,6 +361,46 @@ public final class CompanionPlaceMarkerTests {
         h.assertTrue(!CompanionMarkerBoard.rename(owner, second.id(), "дачный участок"), "A duplicate name was taken");
         h.assertTrue(!CompanionMarkerBoard.rename(owner, second.id(), "а".repeat(CompanionMarkerNames.MAX + 1)), "A 25-character name was taken");
         h.assertTrue(!CompanionMarkerBoard.rename(owner, second.id(), "   "), "An empty name was taken");
+        h.succeed();
+    }
+
+    /** The screen's save: a refused rename leaves the coordinates as they were; an accepted one moves the marker. */
+    @GameTest(template = "empty")
+    public static void aRefusedRenameDoesNotMoveTheMarker(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+        var second = store.add(c.getOwnerId(), "колодец", h.getLevel().dimension(), c.blockPosition().offset(2, 0, 0), 2).marker();
+        BlockPos wanted = c.blockPosition().offset(6, 0, 3);
+        var refused = CompanionMarkerBoard.save(owner, second.id(), "дача", wanted.getX(), wanted.getY(), wanted.getZ());
+        h.assertTrue(!refused.renamed() && !refused.moved(), "A duplicate rename reported a save: " + refused);
+        var unchanged = store.byId(c.getOwnerId(), second.id());
+        h.assertTrue(unchanged.name().equals("колодец") && unchanged.pos().equals(second.pos()),
+                "A refused rename still moved the marker: " + unchanged);
+        var accepted = CompanionMarkerBoard.save(owner, second.id(), "колодец2", wanted.getX(), wanted.getY(), wanted.getZ());
+        h.assertTrue(accepted.renamed() && accepted.moved(), "An accepted save was refused: " + accepted);
+        var saved = store.byId(c.getOwnerId(), second.id());
+        h.assertTrue(saved.name().equals("колодец2") && saved.pos().equals(wanted), "The accepted save did not land: " + saved);
+        h.succeed();
+    }
+
+    /** At the cap, renaming an existing marker changes it in place: nothing is evicted. */
+    @GameTest(template = "empty")
+    public static void renamingAtTheCapDoesNotEvict(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        for (int index = 1; index <= CompanionMarkers.MOST; index++)
+            store.add(c.getOwnerId(), "метка" + index, h.getLevel().dimension(), c.blockPosition().offset(index, 0, 0), index);
+        var oldest = store.all(c.getOwnerId()).getFirst();
+        h.assertTrue(CompanionMarkerBoard.rename(owner, oldest.id(), "первая"), "The rename at the cap was refused");
+        var after = store.all(c.getOwnerId());
+        h.assertTrue(after.size() == CompanionMarkers.MOST, "The rename changed the count: " + after.size());
+        h.assertTrue(after.stream().anyMatch(marker -> marker.id().equals(oldest.id()) && marker.name().equals("первая")),
+                "The renamed marker is missing: " + after);
+        h.assertTrue(after.stream().noneMatch(marker -> marker.name().equals("метка1")), "The old name stayed: " + after);
+        h.assertTrue(after.stream().anyMatch(marker -> marker.name().equals("метка20")), "The newest marker was evicted: " + after);
         h.succeed();
     }
 
@@ -281,6 +455,27 @@ public final class CompanionPlaceMarkerTests {
         h.assertTrue(added.message().contains("Запомнил место «лагерь»"), "No honest line: " + added.message());
         h.assertTrue(CompanionMarkerBoard.addHere(owner, "") == null, "An empty name was added");
         h.succeed();
+    }
+
+    /** The chat's recognition copy follows every settings change at once, and pull reads the list on the server thread. */
+    @GameTest(template = "empty")
+    public static void theRecognitionCopyFollowsTheServerList(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        var added = CompanionMarkerBoard.addHere(owner, "дача");
+        h.assertTrue(added != null, "The marker was refused");
+        h.assertTrue(CompanionMarkerView.names().contains("дача"), "The new name did not reach recognition: " + CompanionMarkerView.names());
+        var marker = store.all(c.getOwnerId()).getFirst();
+        h.assertTrue(CompanionMarkerBoard.rename(owner, marker.id(), "дача2"), "The rename was refused");
+        h.assertTrue(CompanionMarkerView.names().contains("дача2") && !CompanionMarkerView.names().contains("дача"),
+                "The rename did not reach recognition: " + CompanionMarkerView.names());
+        h.assertTrue(CompanionMarkerBoard.forget(owner, marker.id()), "The delete was refused");
+        h.assertTrue(!CompanionMarkerView.names().contains("дача2"), "The delete did not reach recognition: " + CompanionMarkerView.names());
+        h.assertTrue(CompanionMarkerBoard.addHere(owner, "колодец") != null, "The second marker was refused");
+        boolean[] pulled = {false};
+        CompanionMarkerView.pull(owner, true, (names, on) -> pulled[0] = names.contains("колодец") && on);
+        h.succeedWhen(() -> h.assertTrue(pulled[0], "pull did not deliver the names on the server thread: " + CompanionMarkerView.names()));
     }
 
     /** Twenty markers are the limit: the twenty-first evicts the oldest and the answer names it. */
@@ -339,6 +534,50 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
+    /** Corrupt entries in a saved list are skipped: the good marker survives and nothing throws. */
+    @GameTest(template = "empty")
+    public static void loadSkipsCorruptMarkersWithoutThrowing(GameTestHelper h) {
+        var server = h.getLevel().getServer();
+        UUID owner = UUID.randomUUID();
+        ListTag list = new ListTag();
+        list.add(markerTag(UUID.randomUUID(), "дача", "minecraft:overworld", 1, 64, 2, 5));
+        list.add(markerTag(UUID.randomUUID(), "", "minecraft:overworld", 0, 0, 0, 6));
+        list.add(markerTag(UUID.randomUUID(), "а".repeat(CompanionMarkerNames.MAX + 1), "minecraft:overworld", 0, 0, 0, 7));
+        CompoundTag noDimension = new CompoundTag();
+        noDimension.putUUID("id", UUID.randomUUID());
+        noDimension.putString("name", "шахта");
+        noDimension.putLong("created", 8);
+        list.add(noDimension);
+        CompoundTag owners = new CompoundTag();
+        owners.put(owner.toString(), list);
+        CompoundTag tag = new CompoundTag();
+        tag.put("owners", owners);
+        var loaded = CompanionMarkers.load(tag, server.registryAccess());
+        var markers = loaded.all(owner);
+        h.assertTrue(markers.size() == 1, "The corrupt entries were not skipped: " + markers);
+        h.assertTrue(markers.getFirst().name().equals("дача") && markers.getFirst().pos().equals(new BlockPos(1, 64, 2)),
+                "The good marker came back changed: " + markers.getFirst());
+        h.succeed();
+    }
+
+    /** A bad owner key, a bad dimension and a 25-character name are skipped without throwing. */
+    @GameTest(template = "empty")
+    public static void loadSkipsBadOwnerKeysDimensionsAndLongNames(GameTestHelper h) {
+        var server = h.getLevel().getServer();
+        UUID owner = UUID.randomUUID();
+        ListTag badEntries = new ListTag();
+        badEntries.add(markerTag(UUID.randomUUID(), "колодец", "not a location", 2, 64, 3, 9));
+        badEntries.add(markerTag(UUID.randomUUID(), "а".repeat(CompanionMarkerNames.MAX + 1), "minecraft:overworld", 2, 64, 3, 10));
+        CompoundTag owners = new CompoundTag();
+        owners.put("not-a-uuid", badEntries);
+        owners.put(owner.toString(), badEntries);
+        CompoundTag tag = new CompoundTag();
+        tag.put("owners", owners);
+        var loaded = CompanionMarkers.load(tag, server.registryAccess());
+        h.assertTrue(loaded.all(owner).isEmpty(), "A bad entry survived: " + loaded.all(owner));
+        h.succeed();
+    }
+
     // ---- the switch ----
 
     /** Switched off: no recognition, no remembering, no walks; the settings list is still readable. */
@@ -358,6 +597,23 @@ public final class CompanionPlaceMarkerTests {
         var remembered = CompanionEvents.executeAction(owner, "remember_place", "колодец", 1);
         h.assertTrue(!remembered.success() && remembered.message().contains("выключены"), "A marker was saved with the switch off: " + remembered.message());
         h.assertTrue(CompanionMarkerBoard.places(owner).size() == 1, "The list is not readable with the switch off");
+        h.succeed();
+    }
+
+    /** Switched back on, the same names are recognised and walked to again. */
+    @GameTest(template = "empty")
+    public static void switchingBackOnRestoresWalking(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        CompanionMarkers.get(h.getLevel().getServer()).add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition().offset(6, 0, 0), 1);
+        c.setMarkersEnabled(false);
+        h.assertTrue(!CompanionEvents.executeAction(owner, "go_to_place", "даче", 1).success(), "The walk ran with the switch off");
+        c.setMarkersEnabled(true);
+        h.assertTrue("companion place go дача".equals(CompanionLocalCommands.route("иди к даче", "Олег", List.of("дача"), true)),
+                "The phrase is not recognised after switching on");
+        var walked = CompanionEvents.executeAction(owner, "go_to_place", "даче", 1);
+        h.assertTrue(walked.success(), "The walk was refused after switching on: " + walked.message());
+        h.assertTrue(c.workPhase().startsWith("PLACE"), "Not the place walk: " + c.workPhase());
         h.succeed();
     }
 
@@ -392,6 +648,34 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
+    /** The local command becomes the plan step: remembering keeps the name, going keeps the name as it was said. */
+    @GameTest(template = "empty")
+    public static void placeActionParsesRememberAndGo(GameTestHelper h) {
+        var remember = CompanionLocalCommands.action("companion place remember железный рудник");
+        h.assertTrue("remember_place".equals(remember.type()) && "железный рудник".equals(remember.item()) && remember.count() == 1,
+                "remember_place step: " + remember);
+        var go = CompanionLocalCommands.action("companion place go дом2");
+        h.assertTrue("go_to_place".equals(go.type()) && "дом2".equals(go.item()) && go.count() == 1, "go_to_place step: " + go);
+        var rememberPlan = CompanionLocalCommands.actions("companion place remember дача");
+        h.assertTrue(rememberPlan.size() == 1 && "remember_place".equals(rememberPlan.getFirst().type()),
+                "The remember plan is not one step: " + rememberPlan);
+        h.succeed();
+    }
+
+    /** A named place neither gives nor takes an item: a parked smelt does not hold it back. */
+    @GameTest(template = "empty")
+    public static void aNamedPlaceDoesNotWaitForAParkedSmelt(GameTestHelper h) {
+        var parked = List.of(new CompanionParkHold.Parked("minecraft:raw_iron", "minecraft:iron_ingot"));
+        h.assertTrue(!CompanionParkHold.held(List.of(new PlannedAction("go_to_place", 0, 1, "дача")), parked),
+                "The walk waited for the parked smelt");
+        h.assertTrue(!CompanionParkHold.held(List.of(new PlannedAction("remember_place", 0, 1, "дача")), parked),
+                "Remembering waited for the parked smelt");
+        // Control: a hand-over of the parked product still waits.
+        h.assertTrue(CompanionParkHold.held(List.of(new PlannedAction("give_items", 0, 1, "minecraft:iron_ingot")), parked),
+                "A product hand-over stopped waiting");
+        h.succeed();
+    }
+
     /** remember_place then go_to_place in one plan: both run in order, and the walk is waited for by its work id. */
     @GameTest(template = "large_search", timeoutTicks = 600)
     public static void thePlanRunsRememberThenGoInOrder(GameTestHelper h) {
@@ -413,14 +697,30 @@ public final class CompanionPlaceMarkerTests {
         });
     }
 
-    /** The runner's busy retry applies to the walk like any other work order; remembering is instantaneous. */
-    @GameTest(template = "empty")
-    public static void theRunnerTreatsTheWalkAsWork(GameTestHelper h) {
-        h.assertTrue(CompanionPlanRunner.WORK.contains("go_to_place"), "go_to_place is not an order");
-        h.assertTrue(!CompanionPlanRunner.WORK.contains("remember_place"), "remember_place is not instantaneous");
-        h.assertTrue(CompanionServerPlanPort.tracksWork("go_to_place"), "The port does not track the walk");
-        h.assertTrue(!CompanionServerPlanPort.tracksWork("remember_place"), "The port tracks an instantaneous step");
-        h.succeed();
+    /**
+     * The runner waits for the walk itself: the plan stays running while he is still on his way and reports the arrival
+     * only after it, rather than treating the walk as done when it is dispatched.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theRunnerWaitsForTheWalkBeforeReportingIt(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        BlockPos marker = h.absolutePos(new BlockPos(22, 1, 20));
+        CompanionMarkers.get(h.getLevel().getServer()).add(c.getOwnerId(), "дача", h.getLevel().dimension(), marker, 1);
+        var plan = CompanionPlanRunner.run(List.of(new PlannedAction("go_to_place", 0, 1, "дача")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-waits", () -> false));
+        // Five ticks in, the walk is still going: a plan that does not wait would already have reported it done.
+        h.runAfterDelay(5, () -> {
+            h.assertTrue(!plan.isDone(), "The plan reported the walk done while he was still walking: " + c.getLastTaskResult());
+            h.assertTrue(c.workPhase().startsWith("PLACE"), "The walk is not the running work: " + c.workPhase());
+            h.assertTrue(c.blockPosition().distSqr(marker) > 4 * 4, "He arrived before the plan was checked: " + c.blockPosition());
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.report().contains("Пришёл к метке «дача»"), "No arrival in the plan: " + outcome.report());
+            h.assertTrue(c.blockPosition().distSqr(marker) <= 4 * 4, "He did not arrive: " + c.blockPosition() + " marker " + marker);
+        });
     }
 
     /** A plan whose walk names no known marker: the honest answer is the plan's answer, and no trip starts. */
@@ -441,10 +741,41 @@ public final class CompanionPlaceMarkerTests {
         });
     }
 
+    /** A plan step whose marker is in another dimension: said honestly, and not retried. */
+    @GameTest(template = "empty")
+    public static void aCrossDimensionPlanStepIsNotRetried(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        CompanionMarkers.get(h.getLevel().getServer()).add(c.getOwnerId(), "портал", Level.NETHER, h.absolutePos(new BlockPos(40, 64, 40)), 1);
+        var plan = CompanionPlanRunner.run(List.of(new PlannedAction("go_to_place", 0, 1, "порталу")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-nether-plan", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.report().contains("в другом измерении") && outcome.report().contains("nether"),
+                    "The other dimension is not said: " + outcome.report());
+            h.assertTrue(outcome.recoveries() == 0 && !outcome.report().contains("Повтор шага"),
+                    "The cross-dimension step was retried: " + outcome.report());
+            h.assertTrue(c.workPhase().isEmpty(), "He walked off into another dimension: " + c.workPhase());
+        });
+    }
+
     // ---- fixtures ----
 
     private static void arena(GameTestHelper h) {
         for (int x = 0; x < 24; x++) for (int z = 0; z < 24; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+    }
+
+    /** One saved marker as the store writes it, for the load tests. */
+    private static CompoundTag markerTag(UUID id, String name, String dimension, int x, int y, int z, long created) {
+        CompoundTag tag = new CompoundTag();
+        tag.putUUID("id", id);
+        tag.putString("name", name);
+        tag.putString("dimension", dimension);
+        tag.putInt("x", x);
+        tag.putInt("y", y);
+        tag.putInt("z", z);
+        tag.putLong("created", created);
+        return tag;
     }
 
     private static CompanionEntity spawn(GameTestHelper h) {

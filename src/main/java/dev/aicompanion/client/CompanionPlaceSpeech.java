@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
  * comparison is generic (stems and Russian case forms), never a list of known place words.
  */
 public final class CompanionPlaceSpeech {
-    public enum Kind { NONE, REMEMBER, GO, GUARD, CARRY, UNKNOWN, AMBIGUOUS, EMPTY_NAME, TOO_LONG }
+    public enum Kind { NONE, REMEMBER, GO, GUARD, CARRY, UNKNOWN, AMBIGUOUS, EMPTY_NAME, TOO_LONG, COORDINATES }
 
     /** kind: what the phrase means; name: the marker it names; question: the one honest question, or null. */
     public record Result(Kind kind, String name, String question) {
@@ -71,8 +71,12 @@ public final class CompanionPlaceSpeech {
     private static Result remember(String tail) {
         String name = CompanionMarkerNames.clean(tail);
         if (name.isEmpty()) return new Result(Kind.EMPTY_NAME, "", "Как назвать это место? Скажи «запомни это место, " + "название».");
-        if (name.length() > CompanionMarkerNames.MAX)
-            return new Result(Kind.TOO_LONG, name, "Название метки — до " + CompanionMarkerNames.MAX + " символов. Как назвать это место покороче?");
+        // One validator for speech, the plan codec and the screen: a name they refuse is not a marker here either.
+        if (!CompanionMarkerNames.valid(name)) {
+            if (name.length() > CompanionMarkerNames.MAX)
+                return new Result(Kind.TOO_LONG, name, "Название метки — до " + CompanionMarkerNames.MAX + " символов. Как назвать это место покороче?");
+            return new Result(Kind.COORDINATES, name, "«" + name + "» — это координаты, а не название. Как назвать это место?");
+        }
         return new Result(Kind.REMEMBER, name, null);
     }
 

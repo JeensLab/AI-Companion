@@ -163,11 +163,11 @@ public final class CompanionMarkersScreen extends Screen {
         int px = number(x.getValue()), py = number(y.getValue()), pz = number(z.getValue());
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
-            boolean renamed = player != null && CompanionMarkerBoard.rename(player, id, wanted);
-            boolean moved = player != null && CompanionMarkerBoard.move(player, id, px, py, pz);
+            CompanionMarkerBoard.Saved saved = player == null ? new CompanionMarkerBoard.Saved(false, false)
+                    : CompanionMarkerBoard.save(player, id, wanted, px, py, pz);
             minecraft.execute(() -> {
-                if (!renamed) notice = "Название пустое, длиннее 24 символов или уже занято другой меткой.";
-                else if (!moved) notice = "Координаты сохранить не удалось.";
+                if (!saved.renamed()) notice = "Название пустое, длиннее 24 символов, координаты или уже занято другой меткой.";
+                else if (!saved.moved()) notice = "Координаты сохранить не удалось.";
                 else notice = "Метка сохранена.";
                 refresh();
             });

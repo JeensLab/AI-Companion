@@ -6,6 +6,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.border.WorldBorder;
 
+import dev.aicompanion.client.CompanionMarkerView;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -25,6 +27,9 @@ public final class CompanionMarkerBoard {
 
     /** A marker added where the player stands, and the honest line about it (including the oldest one it evicted). */
     public record AddResult(Place place, String message) { }
+
+    /** The outcome of the screen's save: the rename first, and the move only when the rename was accepted. */
+    public record Saved(boolean renamed, boolean moved) { }
 
     /** Every marker of this player, oldest first. */
     public static List<Place> places(ServerPlayer player) {
@@ -70,6 +75,14 @@ public final class CompanionMarkerBoard {
         return moved;
     }
 
+    /** Saves a rename and a move together, as the settings screen does: a refused name leaves the point untouched. */
+    public static Saved save(ServerPlayer player, UUID markerId, String name, int x, int y, int z) {
+        if (player == null) return new Saved(false, false);
+        boolean renamed = rename(player, markerId, name);
+        boolean moved = renamed && move(player, markerId, x, y, z);
+        return new Saved(renamed, moved);
+    }
+
     /** Saves a marker where the player stands now; null when the name is refused. */
     public static AddResult addHere(ServerPlayer player, String name) {
         var server = player.level().getServer();
@@ -92,10 +105,12 @@ public final class CompanionMarkerBoard {
         return new AddResult(place, message);
     }
 
-    /** The model's own line of known places must hear of the change at once, not at the next slow refresh. */
+    /** The model's own line of known places must hear of the change at once, and so must the chat's recognition copy. */
     private static void refresh(ServerPlayer player) {
         CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
         if (companion != null) companion.refreshPlaces();
+        // The names the client recognises without a model request follow the change now, not at the next slow sync.
+        CompanionMarkerView.refresh(player);
     }
 
     /** The point a marker may have: inside the world border and the build height of its dimension. */

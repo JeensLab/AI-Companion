@@ -76,11 +76,11 @@ public final class CompanionLocalCommands {
         String obsidian = CompanionWorkCommands.obsidian(text, companionName);
         if (obsidian != null) return obsidian;
         // «Запомни это место, это дом» names a marker: after the work grammar, so «запомни это место как дом» stays the
-        // home it always was, and before the number guard, so a name with digits («дом2») keeps them.
+        // home it always was.
         CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);
         if (remembered.kind() == CompanionPlaceSpeech.Kind.REMEMBER) return "companion place remember " + remembered.name();
-        if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
-                || normalized.matches("(?s).*\\d.*")) return null;
+        // A request with steps («иди к даче, потом домой») stays the model's; a digit is no reason to leave the places.
+        if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
         if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(зайди|заходи|войди|входи|шагни|прыгни|пройди|проходи|иди)\\s+(в|через)\\s+(\\p{L}+\\s+)?(портал|незер)\\b.*")) return "companion enter_portal";
         if (normalized.matches("(?sU).*\\b(стой|останься|жди)\\b.*")
@@ -106,11 +106,13 @@ public final class CompanionLocalCommands {
         }
         if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
         // A named place he remembers: «иди к колодцу», «проведи меня до железного рудника», «отведи меня к даче»,
-        // «охраняй дачу», «отнеси ресы в дом». An unknown or ambiguous name is a question, asked by the chat screen.
+        // «охраняй дачу», «отнеси ресы в дом». Before the number guard, so a name with digits and spaces («дом2»,
+        // «шахта 3») resolves exactly like a plain word; an unknown or ambiguous name is a question, asked by the chat screen.
         CompanionPlaceSpeech.Result place = CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled);
         if (place.kind() == CompanionPlaceSpeech.Kind.GO) return "companion place go " + place.name();
         if (place.kind() == CompanionPlaceSpeech.Kind.GUARD) return "companion place guard " + place.name();
         if (place.kind() == CompanionPlaceSpeech.Kind.CARRY) return "companion place carry " + place.name();
+        if (normalized.matches("(?s).*\\d.*")) return null;
         return CompanionEquipmentCommands.parse(normalized);
     }
 

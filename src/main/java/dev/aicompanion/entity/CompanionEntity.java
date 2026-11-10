@@ -754,14 +754,21 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, метку запоминать не для кого.");
         String clean = CompanionMarkerNames.clean(name);
         if (clean.isEmpty()) return CompanionActionResult.failed("Как назвать это место? Скажи «запомни это место, название».");
-        if (clean.length() > CompanionMarkerNames.MAX)
-            return CompanionActionResult.failed("Название метки — до " + CompanionMarkerNames.MAX + " символов.");
+        if (!CompanionMarkerNames.valid(clean)) {
+            if (clean.length() > CompanionMarkerNames.MAX)
+                return CompanionActionResult.failed("Название метки — до " + CompanionMarkerNames.MAX + " символов.");
+            return CompanionActionResult.failed("«" + clean + "» — это координаты, а не название. Скажи «запомни это место, название».");
+        }
+        // The phrase promises the place the player stands on: his feet while he is here, mine only when he is away.
+        ServerPlayer owner = getOwnerPlayer();
+        BlockPos at = owner != null ? owner.blockPosition() : blockPosition();
         CompanionMarkers.Added added = CompanionMarkers.get(level.getServer())
-                .add(getOwnerId(), clean, level.dimension(), blockPosition(), level.getGameTime());
+                .add(getOwnerId(), clean, level.dimension(), at, level.getGameTime());
         refreshPlaces();
         String where = added.marker().pos().toShortString() + " в " + CompanionMarkers.worldName(added.marker().dimension());
         String line = added.moved() ? "Метка «" + added.marker().name() + "» теперь здесь: " + where + "."
                 : "Запомнил место «" + added.marker().name() + "»: " + where + ".";
+        if (owner == null) line += " Тебя нет рядом, поэтому это место, где стою я.";
         if (added.evicted() != null)
             line += " Меток было " + CompanionMarkers.MOST + ", самую старую «" + added.evicted().name() + "» забыл.";
         return CompanionActionResult.ok(line);
