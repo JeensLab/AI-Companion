@@ -78,6 +78,8 @@ public final class CompanionGrindingTests {
         h.setBlock(new BlockPos(18, 1, 16), Blocks.GRINDSTONE);
         companion.setItem(0, enchanted(h, new ItemStack(Items.ELYTRA), Enchantments.UNBREAKING, 1));
         companion.setItem(1, enchanted(h, new ItemStack(Items.IRON_CHESTPLATE), Enchantments.PROTECTION, 4));
+        // The model sees which of his things are enchanted: it is what «сними чары» is about.
+        h.assertTrue(companion.getStoredItemsForAi().contains("minecraft:iron_chestplate (с чарами)"), "For the model: " + companion.getStoredItemsForAi());
         h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "disenchant_item", "chestplate", 1).success(), "Order refused");
         h.succeedWhen(() -> {
             done(h, companion);

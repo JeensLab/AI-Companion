@@ -119,7 +119,9 @@ final class CompanionBag {
         c.getEntityData().set(CompanionEntity.DATA_INVENTORY_SUMMARY, buildInventorySummary());
         java.util.Map<String, Integer> items = new java.util.LinkedHashMap<>();
         for (ItemStack stack : c.companionInventory) {
-            if (!stack.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
+            // Enchantments and wear are named for the model: «почини» and «сними чары» (CompanionGrinding) are about them.
+            if (!stack.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()) + (net.minecraft.world.item.enchantment.EnchantmentHelper.hasAnyEnchantments(stack) ? " (с чарами)" : "")
+                    + (stack.isDamaged() ? " (с износом)" : ""), stack.getCount(), Integer::sum);
         }
         c.getEntityData().set(CompanionEntity.DATA_INVENTORY_AI, items.isEmpty() ? "пусто" : items.entrySet().stream()
                 .map(entry -> entry.getValue() + "x " + entry.getKey()).collect(java.util.stream.Collectors.joining(", ")));
