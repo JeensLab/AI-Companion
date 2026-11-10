@@ -13,6 +13,7 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.inventory.AnvilMenu;
+import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -36,7 +37,7 @@ import java.util.Set;
 /**
  * Two alike folded into one and enchantments ground off, as a player does it, and only on an order (decided 10.11). «Почини кирку»:
  * the two most worn plain ones of his are folded where he stands by the game's own repair recipe of the crafting grid, which gives
- * what a grindstone gives with no enchantments to pay back; one with enchantments is left, they would be lost. «Сними чары»: the
+ * what a grindstone gives for a plain thing; one with enchantments, a name, a trim or a dye is left, the grid would drop them. «Сними чары»: the
  * thing is taken to a grindstone a few steps away, or to his own made from his bag, and the experience falls out there.
  */
 public final class CompanionGrinding {
@@ -81,10 +82,11 @@ public final class CompanionGrinding {
             case "sword" -> stack.is(ItemTags.SWORDS);
             case "shovel" -> stack.is(ItemTags.SHOVELS);
             case "hoe" -> stack.is(ItemTags.HOES);
-            case "helmet" -> c.getEquipmentSlotForItem(stack) == EquipmentSlot.HEAD;
-            case "chestplate" -> c.getEquipmentSlotForItem(stack) == EquipmentSlot.CHEST;
-            case "leggings" -> c.getEquipmentSlotForItem(stack) == EquipmentSlot.LEGS;
-            case "boots" -> c.getEquipmentSlotForItem(stack) == EquipmentSlot.FEET;
+            // By the armor's own type: elytra sit in the chest slot too, and are no chestplate (review 10.11).
+            case "helmet" -> stack.getItem() instanceof ArmorItem armor && armor.getType() == ArmorItem.Type.HELMET;
+            case "chestplate" -> stack.getItem() instanceof ArmorItem armor && armor.getType() == ArmorItem.Type.CHESTPLATE;
+            case "leggings" -> stack.getItem() instanceof ArmorItem armor && armor.getType() == ArmorItem.Type.LEGGINGS;
+            case "boots" -> stack.getItem() instanceof ArmorItem armor && armor.getType() == ArmorItem.Type.BOOTS;
             default -> kind.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
         };
     }
@@ -103,12 +105,27 @@ public final class CompanionGrinding {
         return forms != null ? forms : new CompanionItemWords.Forms(name, name, name);
     }
 
+    /** «кирка», «железный меч»: the order's thing in the task list (a kind like "pickaxe" is no word for the player). */
+    public static String label(String kind) { return words(kind).name(); }
+
     private static String capital(String text) { return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1); }
 
     /** Enchantments a grindstone takes off: all but curses, which the game keeps on a folded or ground thing. */
     private static boolean enchanted(ItemStack stack) {
         return EnchantmentHelper.getEnchantmentsForCrafting(stack).keySet().stream().anyMatch(enchantment -> !enchantment.is(EnchantmentTags.CURSE));
     }
+
+    /**
+     * The crafting grid's repair makes a new thing of the item (RepairItemRecipe): a name, a trim, a dye or a pattern is lost, as
+     * enchantments are. Such a thing is not folded in his hands; only wear and the work cost are no loss.
+     */
+    private static boolean plain(ItemStack stack) {
+        return stack.getComponentsPatch().entrySet().stream().map(java.util.Map.Entry::getKey)
+                .allMatch(type -> type == DataComponents.DAMAGE || type == DataComponents.REPAIR_COST);
+    }
+
+    /** Where a folded thing stays: the main hand first, then what he wears or holds, then the bag. */
+    private static int rank(Held held) { return held.worn == EquipmentSlot.MAINHAND ? 0 : held.worn != null ? 1 : 2; }
 
     private static int remaining(ItemStack stack) { return stack.getMaxDamage() - stack.getDamageValue(); }
 
@@ -120,42 +137,45 @@ public final class CompanionGrinding {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу чинить без загруженного мира.");
         CompanionItemWords.Forms asked = words(kind);
         List<Held> all = things(c, kind).stream().filter(held -> held.stack.isDamageableItem() && held.stack.getCount() == 1).toList();
-        if (all.isEmpty()) return c.recordActionResult(CompanionActionResult.failed("У меня нет " + asked.genitive() + " — чинить нечего."));
+        if (all.isEmpty()) return c.recordActionResult(CompanionActionResult.failed("У меня нет " + asked.genitive() + " — чинить нечего. Положи мне в сумку две одинаковые — сложу."));
         Map<Item, List<Held>> plain = new LinkedHashMap<>();
-        for (Held held : all) if (!enchanted(held.stack)) plain.computeIfAbsent(held.stack.getItem(), item -> new ArrayList<>()).add(held);
-        plain.values().removeIf(group -> group.size() < 2);
-        if (plain.isEmpty()) {
-            Held magic = all.stream().filter(held -> enchanted(held.stack)).findFirst().orElse(null);
-            boolean pair = magic != null && all.stream().filter(held -> held.stack.is(magic.stack.getItem())).count() >= 2;
-            return c.recordActionResult(CompanionActionResult.failed(pair
-                    ? capital(words(magic.stack.getItem()).name()) + " с чарами — при починке чары пропадут. Если не жалко, скажи «сними чары»."
+        for (Held held : all) if (plain(held.stack)) plain.computeIfAbsent(held.stack.getItem(), item -> new ArrayList<>()).add(held);
+        // Two worn ones at least: a whole one folded with another is the whole one again, the other only thrown away (review 10.11).
+        Map<Item, List<Held>> pairs = new LinkedHashMap<>(plain);
+        pairs.values().removeIf(group -> group.stream().filter(held -> held.stack.isDamaged()).count() < 2);
+        if (pairs.isEmpty()) {
+            Held special = all.stream().filter(held -> !plain(held.stack)).findFirst().orElse(null);
+            boolean pair = special != null && all.stream().filter(held -> held.stack.is(special.stack.getItem())).count() >= 2;
+            List<Held> alike = plain.values().stream().filter(group -> group.size() >= 2).findFirst().orElse(null);
+            return c.recordActionResult(CompanionActionResult.failed(pair && enchanted(special.stack)
+                    ? capital(words(special.stack.getItem()).name()) + " с чарами — при починке чары пропадут. Если не жалко, скажи «сними чары»."
+                    : pair ? capital(words(special.stack.getItem()).name()) + " с именем, отделкой или краской — при починке в руках это пропадёт."
+                    : alike != null && alike.stream().noneMatch(held -> held.stack.isDamaged()) ? "Чинить нечего: " + words(alike.getFirst().stack.getItem()).name() + " без износа."
+                    : alike != null ? "Чинить нечего: изношенная вещь одна, а сложить её с целой — значит выбросить целую."
                     : "Сложить не с чем: нужна пара одинаковых, а " + words(all.getFirst().stack.getItem()).name() + " у меня без пары."));
         }
         // The kind the player means: the one with the most worn thing.
-        Item first = plain.entrySet().stream().min(Comparator.comparingDouble(entry -> entry.getValue().stream()
+        Item first = pairs.entrySet().stream().min(Comparator.comparingDouble(entry -> entry.getValue().stream()
                 .mapToDouble(held -> remaining(held.stack) / (double) held.stack.getMaxDamage()).min().orElse(1))).orElseThrow().getKey();
-        List<Held> mostWorn = plain.get(first);
-        if (mostWorn.stream().noneMatch(held -> held.stack.isDamaged()))
-            return c.recordActionResult(CompanionActionResult.failed("Чинить нечего: " + words(first).name() + " без износа."));
         StringBuilder report = new StringBuilder();
         ItemStack shown = ItemStack.EMPTY;
-        List<Item> order = new ArrayList<>(plain.keySet());
+        List<Item> order = new ArrayList<>(pairs.keySet());
         order.remove(first); order.addFirst(first);
         for (Item item : order) {
-            List<Held> group = new ArrayList<>(plain.get(item));
+            List<Held> group = new ArrayList<>(pairs.get(item));
             boolean firstPair = item == first, groupStart = true;
             while (group.size() >= 2) {
                 group.sort(Comparator.comparingInt(held -> remaining(held.stack)));
                 Held a = group.get(0), b = group.get(1);
                 int max = Math.max(a.stack.getMaxDamage(), b.stack.getMaxDamage());
                 int loss = remaining(a.stack) + remaining(b.stack) + max * 5 / 100 - max;
-                if (loss > 0 && !firstPair) break;
+                if (loss > 0 && !firstPair || !b.stack.isDamaged()) break;
                 CraftingInput input = CraftingInput.of(2, 1, List.of(a.stack, b.stack));
                 ItemStack folded = level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, input, level)
                         .map(recipe -> recipe.value().assemble(input, level.registryAccess())).orElse(ItemStack.EMPTY);
                 if (folded.isEmpty() || !folded.is(a.stack.getItem())) break;
                 // Where one of the two is worn or held, the folded one goes there; the other place is emptied.
-                Held keep = a.worn == null && b.worn != null ? b : a, gone = keep == a ? b : a;
+                Held keep = rank(b) < rank(a) ? b : a, gone = keep == a ? b : a;
                 gone.put(c, ItemStack.EMPTY); keep.put(c, folded);
                 group.remove(gone); group.set(group.indexOf(keep), new Held(keep.slot, keep.worn, folded));
                 report.append(report.isEmpty() ? "Починил " + words(item).accusative() + ": сложил две в одну"
@@ -180,7 +200,7 @@ public final class CompanionGrinding {
         if (things.stream().noneMatch(held -> enchanted(held.stack))) {
             boolean cursed = things.stream().anyMatch(held -> !EnchantmentHelper.getEnchantmentsForCrafting(held.stack).isEmpty());
             return CompanionActionResult.failed(cursed ? "У " + words(kind).genitive() + " только проклятие — точилом его не снять."
-                    : "У меня нет " + words(kind).genitive() + " с чарами.");
+                    : "У меня нет " + words(kind).genitive() + " с чарами. Положи мне в сумку — сниму.");
         }
         grindstone = c.placement.nearest(Blocks.GRINDSTONE, CompanionToolSense.BENCH_WALK);
         if (grindstone == null && !carries(Items.GRINDSTONE)
@@ -256,7 +276,10 @@ public final class CompanionGrinding {
         }
         c.animateAction(1, at, shown);
         c.refreshInventorySummary();
-        String message = "Снял чары на точиле с " + String.join(", ", names) + "." + (experience ? " Опыт лежит у точила." : "")
+        Map<String, Integer> counted = new LinkedHashMap<>();
+        for (String one : names) counted.merge(one, 1, Integer::sum);
+        List<String> said = counted.entrySet().stream().map(entry -> entry.getKey() + (entry.getValue() > 1 ? " (" + entry.getValue() + " шт.)" : "")).toList();
+        String message = "Снял чары на точиле с " + String.join(", ", said) + "." + (experience ? " Опыт лежит у точила." : "")
                 + (cursed ? " Проклятие точилом не снять — осталось." : "");
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "items_disenchanted", "entity", c.getUUID(), "kind", kind, "count", names.size(), "grindstone", at);
         w.finish(CompanionActionResult.ok(message)

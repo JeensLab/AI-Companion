@@ -30,15 +30,49 @@ import java.util.List;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionGrindingTests {
-    /** Two worn iron pickaxes become one: 50 + 100 left and the game's 5% of 250 on top, the second slot empty. */
+    /**
+     * Two worn iron pickaxes become one: 50 + 100 left and the game's 5% of 250 on top. The more worn one was in the second hand:
+     * the folded one stays in the main hand, the second hand is emptied.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 100)
     public static void twoWornPickaxesAreFoldedIntoOne(GameTestHelper h) {
         CompanionEntity companion = setup(h);
-        companion.setItem(0, worn(Items.IRON_PICKAXE, 50)); companion.setItem(3, worn(Items.IRON_PICKAXE, 100));
+        companion.setItemSlot(EquipmentSlot.MAINHAND, worn(Items.IRON_PICKAXE, 100)); companion.setItemSlot(EquipmentSlot.OFFHAND, worn(Items.IRON_PICKAXE, 50));
         CompanionActionResult result = CompanionEvents.executeAction(owner(h, companion), "repair_item", "pickaxe", 1);
         h.assertTrue(result.success() && result.message().contains("162 из 250"), "Repair: " + result.message());
         h.assertTrue(count(companion, Items.IRON_PICKAXE) == 1 && left(companion, Items.IRON_PICKAXE) == 162, "Pickaxes after: " + companion.getStoredItemsSummary());
+        h.assertTrue(companion.getMainHandItem().is(Items.IRON_PICKAXE) && companion.getOffhandItem().isEmpty(), "Hands: " + companion.getMainHandItem() + ", " + companion.getOffhandItem());
         h.succeed();
+    }
+
+    /** A whole one folded with a worn one is only the whole one again, and a named one would lose its name: neither is folded. */
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void aWholeOrANamedOneIsNotFolded(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, worn(Items.IRON_PICKAXE, 249)); companion.setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        CompanionActionResult whole = CompanionEvents.executeAction(owner(h, companion), "repair_item", "pickaxe", 1);
+        h.assertTrue(!whole.success() && count(companion, Items.IRON_PICKAXE) == 2, "A whole one was folded: " + whole.message());
+        ItemStack named = worn(Items.IRON_PICKAXE, 50);
+        named.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("Любимая"));
+        companion.setItem(1, named);
+        CompanionActionResult name = CompanionEvents.executeAction(owner(h, companion), "repair_item", "pickaxe", 1);
+        h.assertTrue(!name.success() && name.message().contains("с именем") && count(companion, Items.IRON_PICKAXE) == 2, "A named one was folded: " + name.message());
+        h.succeed();
+    }
+
+    /** Elytra sit in the chest slot too: «сними чары с нагрудника» grinds the chestplate, though the elytra's enchantments are cheaper. */
+    @GameTest(template = "tall_tree", timeoutTicks = 200)
+    public static void elytraAreNoChestplate(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        h.setBlock(new BlockPos(18, 1, 16), Blocks.GRINDSTONE);
+        companion.setItem(0, enchanted(h, new ItemStack(Items.ELYTRA), Enchantments.UNBREAKING, 1));
+        companion.setItem(1, enchanted(h, new ItemStack(Items.IRON_CHESTPLATE), Enchantments.PROTECTION, 4));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "disenchant_item", "chestplate", 1).success(), "Order refused");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && companion.getItem(0).isEnchanted() && !companion.getItem(1).isEnchanted(),
+                    companion.getLastTaskResult() + " | " + companion.getItem(0) + ", " + companion.getItem(1));
+        });
     }
 
     /** Four worn stone pickaxes: the two most worn are folded; the next pair would lose durability, so it is left. */
@@ -143,6 +177,12 @@ public final class CompanionGrindingTests {
         h.assertTrue("companion work repair_item 1 pickaxe".equals(CompanionLocalCommands.route("почини кирку", "Олег")), CompanionLocalCommands.route("почини кирку", "Олег"));
         h.assertTrue("companion work repair_item 1 minecraft:iron_pickaxe".equals(CompanionLocalCommands.route("Почини железные кирки", "Олег")), CompanionLocalCommands.route("Почини железные кирки", "Олег"));
         h.assertTrue("companion unequip mainhand".equals(CompanionLocalCommands.route("сними меч", "Олег")), "«сними меч» is still the hand");
+        // Review 10.11: anything past a thing's name is the model's to read, a wrong local guess grinds off what was to be kept.
+        for (String said : new String[]{"почини кирку, потом наруби дров", "сними чары с меча, а кирку не трогай", "почини железную кирку, а не алмазную",
+                "сними чары с моего меча", "почини мне кирку", "сними чары с двух мечей", "сними, пожалуйста, чары с меча", "почини деревянный шлем"}) {
+            String routed = CompanionLocalCommands.route(said, "Олег");
+            h.assertTrue(routed == null || !routed.contains("repair_item") && !routed.contains("disenchant_item") && !routed.contains("unequip"), "«" + said + "» → " + routed);
+        }
         var steps = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"repair_item\",\"item\":\"pickaxe\"},{\"action\":\"disenchant_item\",\"item\":\"minecraft:bow\"}]"));
         h.assertTrue(steps.equals(List.of(new PlannedAction("repair_item", 0, 1, "pickaxe", "auto", "near_player"), new PlannedAction("disenchant_item", 0, 1, "minecraft:bow", "auto", "near_player"))), "Decoded: " + steps);
         for (String json : new String[]{"[{\"action\":\"repair_item\",\"item\":\"кирка\"}]", "[{\"action\":\"disenchant_item\"}]"}) {

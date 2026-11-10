@@ -7,6 +7,8 @@ public final class CompanionEquipmentCommands {
     public static String parse(String text) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         if (normalized.contains(" и ")) return null;
+        // «Сними, пожалуйста, чары с меча» is the grindstone (the model reads that order), not the sword out of his hand.
+        if (normalized.contains("чар")) return null;
         if (normalized.matches("(?sU).*\\bне\\s+(используй|возьми|экипируй|надень|одень|достань).*")) return null;
         boolean remove = normalized.matches("(?s).*(убери|сними|спрячь).*");
         boolean equip = normalized.matches("(?s).*(возьми|достань|экипируй|надень|одень|используй).*");
