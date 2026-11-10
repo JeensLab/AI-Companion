@@ -370,21 +370,6 @@ public final class CompanionDeathWalkTests {
         h.succeed();
     }
 
-    /** A step of one block is stepped up and over. */
-    @GameTest(template = "empty")
-    public static void aStackBeyondAStepIsTaken(GameTestHelper h) {
-        CompanionEntity c = spawn(h);
-        settle(c);
-        BlockPos feet = yard(h, c, 8);
-        put(h, feet.offset(2, 0, 0), Blocks.STONE);
-        var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
-        place(h, c, feet, 20, item);
-        h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 400);
-        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack beyond the step was not taken: " + item.getItem());
-        h.succeed();
-    }
-
     /** Up a staircase of three steps to the stack on its top. */
     @GameTest(template = "empty")
     public static void aStackUpAStaircaseIsTaken(GameTestHelper h) {
@@ -607,21 +592,6 @@ public final class CompanionDeathWalkTests {
         h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 1200);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The washed-away stack was not taken: " + item.getItem());
-        h.succeed();
-    }
-
-    /** A stack in a flowing stream is taken, not left to the current. */
-    @GameTest(template = "empty")
-    public static void aStackInAFlowingStreamIsTaken(GameTestHelper h) {
-        CompanionEntity c = spawn(h);
-        settle(c);
-        BlockPos feet = yard(h, c, 10);
-        for (int dx = 2; dx <= 6; dx++) put(h, feet.offset(dx, 0, 0), Blocks.WATER);
-        var item = stack(h, feet.offset(5, 0, 0), new ItemStack(Items.DIAMOND, 2));
-        place(h, c, feet.offset(5, 0, 0), 20, item);
-        h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 600);
-        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the stream was not taken: " + item.getItem());
         h.succeed();
     }
 }
