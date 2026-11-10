@@ -74,6 +74,8 @@ public final class CompanionLocalCommands {
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
         if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(зайди|заходи|войди|входи|шагни|прыгни|пройди|проходи|иди)\\s+(в|через)\\s+(\\p{L}+\\s+)?(портал|незер)\\b.*")) return "companion enter_portal";
+        // «Не стой столбом» is no order; in «стой, не иди туда» only the negated verb is cut out, the rest is read below.
+        normalized = normalized.replaceAll("(?U)\\bне\\s+(стой|останься|жди|защищай|защити|прикрывай|помогай|(?:пре)?следуй(?:те)?|иди|пойдем|пошли|приди|подойди|вернись|появись|телепортируйся)\\b", " ");
         if (normalized.matches("(?sU).*\\b(стой|останься|жди)\\b.*")
                 || normalized.contains("стой здесь") || normalized.contains("жди тут")) {
             return "companion stay";
