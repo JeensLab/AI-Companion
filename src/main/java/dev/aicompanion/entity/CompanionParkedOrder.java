@@ -56,7 +56,7 @@ final class CompanionParkedOrder {
             case WOOD -> rest("gather_wood", "", digging ? owner.logsRemaining : 0, location);
             case DIRT -> rest(work.ground.isLoose() ? "gather_loose" : "gather_dirt", work.ground.id(),
                     digging ? owner.logsRemaining : work.phase == CompanionWork.Phase.SHOVEL ? work.requestedCount : 0, location);
-            case CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, COME, HUNT, GIVE, SMELT, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP -> null;
+            case CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, COME, HUNT, GIVE, SMELT, GAME, SORT, PEN, BREED, FARM, EXPEDITION, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP -> null;
         };
     }
 

@@ -54,6 +54,7 @@ public final class CompanionPreferences {
                 companion.setPickUpNearby(OpenRouterConfig.PICK_UP_NEARBY.get(), OpenRouterConfig.PICK_UP_RADIUS.get());
                 companion.setUrgentOrder(OpenRouterConfig.URGENT_ORDER.get());
                 companion.setBoatClutch(OpenRouterConfig.BOAT_CLUTCH.get());
+                companion.setDiamondMine(OpenRouterConfig.DIAMOND_MINE.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());
                 String remote = companion.getName().getString() + " находится на " + companion.blockPosition().toShortString()
                         + ", измерение=" + companion.level().dimension().location() + ", занят=" + companion.isGatheringTask()

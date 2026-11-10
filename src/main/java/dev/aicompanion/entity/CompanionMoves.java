@@ -27,6 +27,10 @@ final class CompanionMoves {
     private static final int WATER_DROP = 20;
     /** The deepest drop onto land, chasing or not (the game's own allows a mob with a target up to 12 on Normal, 16 on Hard). */
     private static final int LAND_DROP = 3;
+    /** How many drops in a row are added up (a chain longer than that is far over what he may fall anyway). */
+    private static final int CHAIN_LINKS = 8;
+    /** A block in a cell no higher than this (a bottom slab, a carpet, a few layers of snow) is stepped onto; a higher one fills the cell. */
+    private static final double STEPPED_OVER = .5;
 
     /** The widest pit he jumps (a player's sprinting jump clears far more; two blocks leave room for a miss of a few tenths). */
     private static final int JUMP_WIDTH = 2;
@@ -55,6 +59,7 @@ final class CompanionMoves {
             Node to = accept(x + d.getStepX(), y, z + d.getStepZ(), up, floor, d, here, floats);
             // Not off a ladder into a fall: his feet are anywhere in its cell, so the drop is more than the node's, and damage.
             if (ladder && to != null && to.y < y) to = null;
+            if (to != null && fallsFar(from, to)) to = null;
             sides[d.get2DDataValue()] = to;
             if (to != null && (to.costMalus >= 0 || from.costMalus < 0)) sink.offer(to, cost(from, to));
         }
@@ -62,7 +67,7 @@ final class CompanionMoves {
             Direction e = d.getClockWise();
             if (!diagonalSides(from, sides[d.get2DDataValue()], sides[e.get2DDataValue()])) continue;
             Node to = accept(x + d.getStepX() + e.getStepX(), y, z + d.getStepZ() + e.getStepZ(), up, floor, d, here, floats);
-            if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0 && (to.y <= y || roomOverDiagonal(from, d, e, to))) sink.offer(to, cost(from, to));
+            if (to != null && to.type != PathType.WALKABLE_DOOR && to.costMalus >= 0 && (to.y <= y || roomOverDiagonal(from, d, e, to)) && !fallsFar(from, to)) sink.offer(to, cost(from, to));
         }
         if (ladder) {
             ladder(from, y + 1, LADDER_UP, sink);
@@ -149,14 +154,29 @@ final class CompanionMoves {
         if (eval.floorAt(x, y, z) - floor > Math.max(1.125, mob.maxUpStep())) return null;
         PathType type = eval.typeAt(x, y, z);
         float malus = eval.malusAt(type, x, y, z);
-        Node node = malus >= 0 ? eval.mark(x, y, z, type, malus) : null;
-        if (type == PathType.WALKABLE) return node;
+        // The game calls a cell with a block of partial shape open (an azalea's leaves are a plate over a stem); a cell his body does not fit in is a wall.
+        boolean filled = type == PathType.WALKABLE && filled(x, y, z);
+        Node node = malus >= 0 && !filled ? eval.mark(x, y, z, type, malus) : null;
+        if (type == PathType.WALKABLE && !filled) return node;
         if (node == null) {
             boolean wall = type != PathType.FENCE && type != PathType.UNPASSABLE_RAIL && type != PathType.TRAPDOOR && type != PathType.POWDER_SNOW;
             return up > 0 && wall ? climb(x, y, z, up, floor, d) : null;
         }
         // The companion floats: water is swum in at the level it is met; air is fallen through.
         return type == PathType.OPEN ? drop(x, y, z) : node;
+    }
+
+    /**
+     * Whether a block in the cell stops his body standing on its floor: something in the cell or the one over it that reaches above a
+     * step and is neither stairs nor a ladder, which he walks up. The way on is then over it (a step up), if it is no higher than that.
+     */
+    private boolean filled(int x, int y, int z) {
+        var level = mob.level();
+        BlockPos pos = new BlockPos(x, y, z);
+        if (level.getBlockState(pos).getCollisionShape(level, pos).isEmpty() && level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()) return false;
+        if (eval.climbableAt(x, y, z) || level.getBlockState(pos).is(net.minecraft.tags.BlockTags.STAIRS)) return false;
+        double half = mob.getBbWidth() / 2, floor = eval.floorAt(x, y, z);
+        return eval.collides(new AABB(x + .5 - half, floor + STEPPED_OVER, z + .5 - half, x + .5 + half, floor + mob.getBbHeight() - .002, z + .5 + half));
     }
 
     /** Onto the cell above a wall; the cell he jumps from needs head room for it. */
@@ -185,6 +205,27 @@ final class CompanionMoves {
         return true;
     }
 
+    /**
+     * A drop straight after a drop is no new fall: he is still in the air over the first landing when he turns to the second (a drop of
+     * three takes nine ticks, the next column four and a half), so the falls add up (marathon m15: down a slope of ledges three blocks
+     * each, 6 and 26 blocks in one fall). The chain may not come to more than he may fall. A drop of one block lands within the time he
+     * takes for a column (4 ticks in the air against 4.6), so a stair is walked step by step and breaks the chain, before and after it.
+     * Into water and onto a ladder or vine nothing is added.
+     */
+    private static boolean fallsFar(Node from, Node to) {
+        int fall = from.y - to.y;
+        if (fall <= 1 || to.type == PathType.WATER || to.type == PathType.OPEN) return false;
+        Node at = from;
+        for (int link = 0; link < CHAIN_LINKS && at.cameFrom != null && at.type != PathType.WATER; link++) {
+            Node before = at.cameFrom;
+            int drop = before.y - at.y;
+            if (drop <= 1 || before.x == at.x && before.z == at.z) break;
+            fall += drop;
+            at = before;
+        }
+        return fall > LAND_DROP;
+    }
+
     /** Down through air to the first cell with a floor: no deeper than he may fall, unless it is water. */
     private Node drop(int x, int y, int z) {
         if (eval.climbableAt(x, y, z)) return eval.mark(x, y, z, PathType.OPEN, 0);
@@ -194,7 +235,7 @@ final class CompanionMoves {
             if (type == PathType.OPEN && eval.climbableAt(x, i, z) && y - i <= LAND_DROP) return eval.mark(x, i, z, PathType.OPEN, 0);
             if (type == PathType.OPEN) continue;
             float malus = eval.malusAt(type, x, i, z);
-            return malus < 0 || (y - i > LAND_DROP && type != PathType.WATER) ? null : eval.mark(x, i, z, type, malus);
+            return malus < 0 || (y - i > LAND_DROP && type != PathType.WATER) || type == PathType.WALKABLE && filled(x, i, z) ? null : eval.mark(x, i, z, type, malus);
         }
         return null;
     }

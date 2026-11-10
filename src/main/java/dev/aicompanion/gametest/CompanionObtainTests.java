@@ -261,6 +261,20 @@ public final class CompanionObtainTests {
         });
     }
 
+    /** A bench in plain sight but beyond arm's reach, never stood next to: the plan walks to it (found once, in a fight's wake it was «no bench» and the tree hunt began). */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void aBenchInSightBeyondReachIsNotAReasonToGatherWood(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(20, GROUND + 1, 16), Blocks.CRAFTING_TABLE);
+        CompanionEntity companion = spawn(h);
+        companion.setItem(0, new ItemStack(Items.IRON_INGOT, 3)); companion.setItem(1, new ItemStack(Items.STICK, 2));
+        h.runAfterDelay(5, () -> {
+            var plan = companion.obtainPlan("minecraft:iron_pickaxe", 1);
+            h.assertTrue(!plan.refused() && types(plan).equals(List.of("craft_item")), "A bench six blocks off, in sight, yet: " + plan);
+            h.succeed();
+        });
+    }
+
     private static int indexOf(CompanionObtain.Plan plan, String type, String item) {
         for (int i = 0; i < plan.steps().size(); i++) if (plan.steps().get(i).type().equals(type) && plan.steps().get(i).item().equals(item)) return i;
         return -1;
