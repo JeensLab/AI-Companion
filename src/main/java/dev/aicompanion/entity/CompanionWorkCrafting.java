@@ -126,7 +126,15 @@ final class CompanionWorkCrafting {
             w.owner.movementIntent(w.cutter);
             if (w.approach(level, w.cutter, 2.8D)) { w.owner.workStatus("Иду к камнерезу на " + w.cutter.toShortString() + "."); return true; }
         }
+        BlockPos missed = w.cutter;
         w.cutter = null; w.heading = null; w.resetApproach();
+        // Without it the item cannot be made at all: say why, not «not enough materials» (game 10.11, a cutter walled in by a hill).
+        if (!CompanionCrafting.plan(level, w.owner.companionInventory, w.requestedItem, w.requestedCount, true).success()) {
+            boolean there = level.getBlockState(missed).is(Blocks.STONECUTTER);
+            w.finish(false, (there ? "Не смог подойти к камнерезу на " + missed.toShortString() : "Камнереза на " + missed.toShortString() + " больше нет")
+                    + ", а без него на " + w.requestedCount + " «" + CompanionWork.itemName(w.requestedItem) + "» материалов не хватает. Материалы у меня.");
+            return true;
+        }
         return false;
     }
 

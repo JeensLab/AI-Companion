@@ -164,6 +164,21 @@ public final class CompanionStationTests {
         });
     }
 
+    /** A stonecutter walled in (game 10.11, in a hillside): no way to it, and he says so, not «not enough materials». */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void walledInStonecutterIsNamedAsTheReason(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(23, 1, 15), new BlockPos(25, 2, 17))) h.setBlock(pos, Blocks.STONE);
+        h.setBlock(new BlockPos(24, 1, 16), Blocks.STONECUTTER);
+        companion.setItem(0, new ItemStack(Items.STONE, 4));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:stone_stairs", 4).success(), "Craft order refused");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().startsWith("Не смог подойти к камнерезу")
+                    && count(companion, Items.STONE) == 4, companion.getLastTaskResult());
+        });
+    }
+
     /** Slabs come out the same at the bench beside him: no walk to the stonecutter for them. */
     @GameTest(template = "tall_tree", timeoutTicks = 200)
     public static void slabsAreNotWorthTheWalkToTheStonecutter(GameTestHelper h) {
