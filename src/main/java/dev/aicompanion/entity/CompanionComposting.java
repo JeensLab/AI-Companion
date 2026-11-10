@@ -1,0 +1,183 @@
+package dev.aicompanion.entity;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ComposterBlock;
+import net.minecraft.world.level.block.state.BlockState;
+
+import java.util.List;
+import java.util.Set;
+
+/**
+ * compost_items, as a player at a composter and only on an order (decided 10.11): plants from his bag go in one by one, each raising
+ * the level by the chance the game gives it, and the bone meal of a full one is taken out, falls and is picked up. With nothing named
+ * it is plant scrap only (saplings, seeds, leaves, grass, flowers), food and harvest are left, and some saplings and seeds are kept
+ * for his own planting; what the player names goes in as said. No composter a few steps away: his own, made from his bag and left standing.
+ */
+public final class CompanionComposting {
+    /** What an order may name besides an item: scrap is the plants nobody eats, the rest are its parts. */
+    public static final Set<String> GROUPS = Set.of("scrap", "saplings", "seeds", "leaves");
+    /** A count of this much is «all there is»: of scrap, bone meal until the scrap ends; of a named thing, every one of it. */
+    public static final int ALL = 64;
+    static final String NO_COMPOSTER = "Рядом нет компостера, а сделать не из чего.";
+    /** Of scrap he keeps this many of each sapling (a 2×2 tree to plant again) and of each seed (a field). */
+    static final int KEEP_SAPLINGS = 4, KEEP_SEEDS = 16;
+    /** Ticks between two things put in, as a player clicks. */
+    private static final int PACE = 6;
+    private static final Set<Item> SEEDS = Set.of(Items.WHEAT_SEEDS, Items.BEETROOT_SEEDS, Items.MELON_SEEDS, Items.PUMPKIN_SEEDS, Items.TORCHFLOWER_SEEDS, Items.PITCHER_POD);
+    private static final Set<Item> GREENS = Set.of(Items.SHORT_GRASS, Items.TALL_GRASS, Items.FERN, Items.LARGE_FERN, Items.KELP, Items.SEAGRASS,
+            Items.VINE, Items.MOSS_CARPET, Items.PINK_PETALS, Items.HANGING_ROOTS, Items.SMALL_DRIPLEAF, Items.BIG_DRIPLEAF, Items.GLOW_LICHEN);
+
+    private final CompanionWork w;
+    /** The order: a group or an item id, and how much (bone meal of scrap, pieces of a named thing). */
+    private String what = "scrap";
+    private int count;
+    private BlockPos composter;
+    private boolean ownTried;
+    private int put, made;
+    private long nextAt;
+
+    /** Made with the work, before its owner is set: the owner is read when used. */
+    CompanionComposting(CompanionWork w) { this.w = w; }
+
+    private static boolean matches(ItemStack stack, String what) {
+        if (stack.isEmpty() || ComposterBlock.getValue(stack) <= 0) return false;
+        return switch (what) {
+            case "scrap" -> stack.is(ItemTags.SAPLINGS) || stack.is(ItemTags.LEAVES) || stack.is(ItemTags.FLOWERS) || SEEDS.contains(stack.getItem()) || GREENS.contains(stack.getItem());
+            case "saplings" -> stack.is(ItemTags.SAPLINGS);
+            case "seeds" -> SEEDS.contains(stack.getItem());
+            case "leaves" -> stack.is(ItemTags.LEAVES);
+            default -> what.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+        };
+    }
+
+    /** The next thing of the bag to put in; of scrap, never the last saplings and seeds of a kind. */
+    private ItemStack next() {
+        CompanionEntity c = w.owner;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            ItemStack stack = c.getItem(slot);
+            if (!matches(stack, what)) continue;
+            int keep = !"scrap".equals(what) ? 0 : stack.is(ItemTags.SAPLINGS) ? KEEP_SAPLINGS : SEEDS.contains(stack.getItem()) ? KEEP_SEEDS : 0;
+            if (keep == 0 || c.companionInventory.stream().filter(other -> other.is(stack.getItem())).mapToInt(ItemStack::getCount).sum() > keep) return stack;
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /** null when the work may start, else why not. */
+    CompanionActionResult begin(String item, int count) {
+        CompanionEntity c = w.owner;
+        what = item == null || item.isBlank() ? "scrap" : item;
+        this.count = Math.max(1, count); composter = null; ownTried = false; put = 0; made = 0; nextAt = 0;
+        if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
+        if (!GROUPS.contains(what)) {
+            ResourceLocation id = ResourceLocation.tryParse(what);
+            if (id == null || !BuiltInRegistries.ITEM.containsKey(id)) return CompanionActionResult.failed("Не понял, что положить в компостер.");
+            if (ComposterBlock.getValue(new ItemStack(BuiltInRegistries.ITEM.get(id))) <= 0)
+                return CompanionActionResult.failed("«" + CompanionWork.itemName(BuiltInRegistries.ITEM.get(id)) + "» в компостер не кладут: он берёт только растения и еду из них.");
+        }
+        composter = c.placement.nearest(Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK);
+        boolean ready = composter != null && level.getBlockState(composter).getValue(ComposterBlock.LEVEL) == ComposterBlock.READY;
+        if (next().isEmpty() && !ready) return CompanionActionResult.failed("scrap".equals(what)
+                ? "Класть в компостер нечего: растительного хлама у меня нет, а последние саженцы и семена я берегу для посадки. Скажи, что именно положить."
+                : "У меня этого нет — в компостер класть нечего.");
+        if (composter == null && !carries(Items.COMPOSTER)
+                && !CompanionCrafting.plan(level, c.companionInventory, "minecraft:composter", 1, true).success()) return CompanionActionResult.failed(NO_COMPOSTER);
+        return null;
+    }
+
+    String jobName() { return "костная мука в компостере"; }
+
+    void tick(ServerLevel level) {
+        CompanionEntity c = w.owner;
+        BlockPos here = c.placement.inReach(Blocks.COMPOSTER);
+        if (here != null) { work(level, here); return; }
+        if (composter != null && !level.getBlockState(composter).is(Blocks.COMPOSTER)) composter = c.placement.nearest(Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK);
+        if (composter == null) {
+            if (ownTried) w.finish(false, NO_COMPOSTER); else own(level);
+            return;
+        }
+        // In the air no way is searched (as to a bench); in water he goes on (as to the stonecutter).
+        if (!c.onGround() && !c.isInWater()) return;
+        if (!composter.equals(w.heading)) { w.heading = composter; w.resetApproach(); }
+        c.movementIntent(composter);
+        if (w.approach(level, composter, 2.8D)) { c.workStatus("Иду к компостеру на " + composter.toShortString() + "."); return; }
+        w.finish(false, "Не смог подойти к компостеру на " + composter.toShortString() + ".");
+    }
+
+    /** His own composter, from the bag only (the order counted on it): made at a bench, set down beside him and left standing. */
+    private void own(ServerLevel level) {
+        CompanionEntity c = w.owner;
+        if (!carries(Items.COMPOSTER)) {
+            if (w.crafting.approachCraftingTable()) return;
+            if (!c.craftFromBag("minecraft:composter", 1).success()) { ownTried = true; w.finish(false, NO_COMPOSTER); return; }
+        }
+        ownTried = true;
+        BlockPos at = c.placement.findPlacementPosition(level, Blocks.COMPOSTER, c.blockPosition(), pos -> true);
+        ItemStack item = c.companionInventory.stream().filter(stack -> stack.is(Items.COMPOSTER)).findFirst().orElse(ItemStack.EMPTY);
+        if (at == null || item.isEmpty()) { w.finish(false, "Компостер у меня есть, а поставить его рядом некуда."); return; }
+        level.setBlock(at, Blocks.COMPOSTER.defaultBlockState(), 3);
+        c.animateAction(1, at, item);
+        c.rememberPlaced(at);
+        item.shrink(1);
+        c.refreshInventorySummary();
+        level.playSound(null, at, Blocks.COMPOSTER.defaultBlockState().getSoundType().getPlaceSound(), SoundSource.BLOCKS, .7F, 1F);
+        dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed", "entity", c.getUUID(), "block", "minecraft:composter", "position", at, "reason", "compost");
+        composter = at;
+        c.workStatus("Поставил свой компостер.");
+    }
+
+    private boolean carries(Item item) { return w.owner.companionInventory.stream().anyMatch(stack -> stack.is(item)); }
+
+    /** At the composter, a step each few ticks: a full one is emptied, a filling one waited for, else the next thing goes in. */
+    private void work(ServerLevel level, BlockPos at) {
+        CompanionEntity c = w.owner;
+        if (level.getGameTime() < nextAt) return;
+        nextAt = level.getGameTime() + PACE;
+        BlockState state = level.getBlockState(at);
+        int filled = state.getValue(ComposterBlock.LEVEL);
+        if (filled == ComposterBlock.READY) {
+            List<ItemStack> meal = List.of(new ItemStack(Items.BONE_MEAL));
+            if (!w.items.canStore(meal)) { w.finish(made > 0, report(filled) + " Костная мука готова в компостере, а сумка полна."); return; }
+            // What ComposterBlock.extractProduce does, the meal dropped as his own so that the pickup is his and waited for.
+            level.setBlock(at, state.setValue(ComposterBlock.LEVEL, 0), 3);
+            level.playSound(null, at, SoundEvents.COMPOSTER_EMPTY, SoundSource.BLOCKS, 1F, 1F);
+            c.animateAction(1, at, meal.getFirst());
+            c.dropHarvest(c.blockPosition(), meal);
+            made++;
+            return;
+        }
+        // The last layer turns into bone meal a second later (the block's own tick).
+        if (filled == ComposterBlock.MAX_LEVEL) return;
+        boolean enough = count < ALL && ("scrap".equals(what) ? made >= count : put >= count);
+        ItemStack next = enough ? ItemStack.EMPTY : next();
+        if (next.isEmpty()) {
+            dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "items_composted", "entity", c.getUUID(), "what", what, "put", put, "made", made, "composter", at);
+            c.refreshInventorySummary();
+            if (put == 0 && made == 0) { w.finish(false, "Класть в компостер больше нечего."); return; }
+            w.finish(CompanionActionResult.ok(report(filled))
+                    .withEvidence(new CompanionActionResult.Evidence(w.taskId, "compost_items", what, made, c.getUUID(), null, null)));
+            return;
+        }
+        ItemStack shown = next.copyWithCount(1);
+        BlockState after = ComposterBlock.insertItem(c, state, level, next, at);
+        level.levelEvent(1500, at, after != state ? 1 : 0);
+        c.animateAction(1, at, shown);
+        put++;
+        c.workStatus("Закладываю в компостер: " + put + " шт.");
+    }
+
+    private String report(int filled) {
+        String rest = filled > 0 && filled < ComposterBlock.READY ? " В компостере осталось на " + filled + " из 7." : "";
+        if (made > 0) return "Сделал в компостере костную муку: " + made + " шт." + (put > 0 ? " Ушло " + put + " шт. растительного." : "") + rest;
+        return "Заложил в компостер " + put + " шт. — на костную муку пока не хватило." + rest;
+    }
+}

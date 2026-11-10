@@ -73,6 +73,8 @@ public final class CompanionLocalCommands {
         // Before the equipment: «сними чары с меча» is the grindstone, not «сними меч».
         String grind = CompanionWorkCommands.grind(text, companionName);
         if (grind != null) return grind;
+        String compost = CompanionWorkCommands.compost(text, companionName);
+        if (compost != null) return compost;
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
