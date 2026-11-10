@@ -98,6 +98,26 @@ public final class CompanionCompostingTests {
         });
     }
 
+    /**
+     * The composter he left full a moment ago is broken before it ripens; the empty one he goes on to is no sign of a hopper, and
+     * no bone meal is counted that nobody made (review 10.11, round 2).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aBrokenFullComposterIsNoHopper(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        BlockPos full = new BlockPos(17, 1, 16), other = new BlockPos(14, 1, 16);
+        h.setBlock(full, Blocks.COMPOSTER.defaultBlockState().setValue(ComposterBlock.LEVEL, ComposterBlock.MAX_LEVEL));
+        h.setBlock(other, Blocks.COMPOSTER);
+        companion.setItem(0, new ItemStack(Items.OAK_SAPLING, 64)); companion.setItem(1, new ItemStack(Items.OAK_SAPLING, 64));
+        h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "compost_items", "scrap", 1).success(), "Order refused");
+        h.runAfterDelay(8, () -> h.setBlock(full, Blocks.AIR));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && !companion.getLastTaskResult().contains("воронка") && count(companion, Items.BONE_MEAL) == 1,
+                    companion.getLastTaskResult() + " | " + companion.getStoredItemsSummary());
+        });
+    }
+
     /** No composter near: his own is made from the slabs in his bag at the bench, set down and left; with no slabs he says so. */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void hisOwnComposterIsMadeFromTheBag(GameTestHelper h) {

@@ -49,7 +49,8 @@ public final class CompanionComposting {
     private int put, made;
     /** Bone meal he made and a hopper under the composter took before he could: counted toward the order, said in the report. */
     private int taken;
-    private boolean ripening;
+    /** The composter he left full (level 7) a moment ago: only there an empty one later means a hopper took his bone meal. */
+    private BlockPos ripening;
     private long nextAt;
 
     /** Made with the work, before its owner is set: the owner is read when used. */
@@ -82,7 +83,7 @@ public final class CompanionComposting {
     CompanionActionResult begin(String item, int count) {
         CompanionEntity c = w.owner;
         what = item == null || item.isBlank() ? "scrap" : item;
-        this.count = Math.max(ALL, count); composter = null; ownTried = false; ownPlaced = false; put = 0; made = 0; taken = 0; ripening = false; nextAt = 0;
+        this.count = Math.max(ALL, count); composter = null; ownTried = false; ownPlaced = false; put = 0; made = 0; taken = 0; ripening = null; nextAt = 0;
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
         if (!GROUPS.contains(what)) {
             ResourceLocation id = ResourceLocation.tryParse(what);
@@ -91,7 +92,10 @@ public final class CompanionComposting {
                 return CompanionActionResult.failed("«" + CompanionWork.itemName(BuiltInRegistries.ITEM.get(id)) + "» в компостер не кладут: он берёт только растения и еду из них.");
         }
         composter = c.placement.nearest(Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK);
-        boolean ready = composter != null && level.getBlockState(composter).getValue(ComposterBlock.LEVEL) == ComposterBlock.READY;
+        // Full or a moment from full: there is bone meal to take even with nothing to put in.
+        boolean ready = composter != null && level.getBlockState(composter).getValue(ComposterBlock.LEVEL) >= ComposterBlock.MAX_LEVEL;
+        // The bone meal must have a place in the bag before anything goes in, or the scrap is spent for meal left in the composter.
+        if (!w.items.canStore(List.of(new ItemStack(Items.BONE_MEAL)))) return CompanionActionResult.failed("Сумка полна — костную муку забрать будет некуда.");
         if (next().isEmpty() && !ready) return CompanionActionResult.failed("scrap".equals(what)
                 ? "Класть в компостер нечего: растительного хлама у меня нет, а последние саженцы и семена я берегу для посадки. Скажи, что именно положить."
                 : "У меня этого нет — в компостер класть нечего.");
@@ -154,17 +158,20 @@ public final class CompanionComposting {
             List<ItemStack> meal = List.of(new ItemStack(Items.BONE_MEAL));
             if (!w.items.canStore(meal)) { c.refreshInventorySummary(); w.finish(made > 0, "Костная мука готова в компостере, а сумка полна — забрать некуда." + done()); return; }
             // What ComposterBlock.extractProduce does, the meal dropped as his own so that the pickup is his and waited for.
-            level.setBlock(at, state.setValue(ComposterBlock.LEVEL, 0), 3);
+            BlockState emptied = state.setValue(ComposterBlock.LEVEL, 0);
+            level.setBlock(at, emptied, 3);
+            level.gameEvent(net.minecraft.world.level.gameevent.GameEvent.BLOCK_CHANGE, at, net.minecraft.world.level.gameevent.GameEvent.Context.of(c, emptied));
             level.playSound(null, at, SoundEvents.COMPOSTER_EMPTY, SoundSource.BLOCKS, 1F, 1F);
             c.animateAction(1, at, meal.getFirst());
             c.dropHarvest(c.blockPosition(), meal);
-            made++; ripening = false;
+            made++; ripening = null;
             return;
         }
         // The last layer turns into bone meal a second later (the block's own tick).
-        if (filled == ComposterBlock.MAX_LEVEL) { ripening = true; return; }
+        if (filled == ComposterBlock.MAX_LEVEL) { ripening = at.immutable(); return; }
         // Full a moment ago and empty now, not by his hand: a hopper under the composter took the bone meal he made (review 10.11).
-        if (ripening) { ripening = false; if (filled == 0) taken++; }
+        // Another composter (the first broken, say) is no such sign (review 10.11, round 2).
+        if (ripening != null) { if (filled == 0 && ripening.equals(at)) taken++; ripening = null; }
         boolean enough = count != ALL && ("scrap".equals(what) ? made + taken >= count : put >= count);
         ItemStack next = enough ? ItemStack.EMPTY : next();
         if (next.isEmpty()) {
@@ -187,8 +194,10 @@ public final class CompanionComposting {
     private String report(int filled) {
         String rest = filled > 0 && filled < ComposterBlock.READY ? " В компостере осталось на " + filled + " из 7." : "";
         String hopper = taken > 0 ? " Костную муку (" + taken + " шт.) из компостера забрала воронка под ним." : "";
-        if (made > 0) return "Сделал в компостере костную муку: " + made + " шт." + (put > 0 ? " Ушло " + put + " шт. растительного." : "") + hopper + rest;
-        return "Заложил в компостер " + put + " шт." + (taken > 0 ? hopper : " На костную муку пока не хватило.") + rest;
+        if (made > 0) return "Сделал в компостере костную муку: " + made + " шт." + (put > 0 ? " Ушло " + put + " шт. растительного." : "") + hopper + rest
+                + ("scrap".equals(what) && count != ALL && made + taken < count ? " Просил " + count + " — растительного хлама больше нет." : "");
+        String fewer = "scrap".equals(what) && count != ALL && made + taken < count ? " Просил " + count + " — растительного хлама больше нет." : "";
+        return "Заложил в компостер " + put + " шт." + (taken > 0 ? hopper : " На костную муку пока не хватило.") + rest + fewer;
     }
 
     /** What was done before a failure, for its line: bone meal made and things put in are not lost with it. */
