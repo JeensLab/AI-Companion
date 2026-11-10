@@ -34,9 +34,14 @@ final class CompanionLava {
     /** The game's malus of a cell by fire or lava (8) makes a step 5 times as dear; by lava that stands, a step costs 1.5 times. */
     static final float SETTLED_MALUS = 1;
 
-    /** What he plugs lava with, cheapest first. Never sand or gravel (they fall through lava), never tools or valuables. */
-    private static final List<Item> PLUGS = List.of(Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.DIRT, Items.NETHERRACK,
-            Items.STONE, Items.ANDESITE, Items.DIORITE, Items.GRANITE, Items.TUFF);
+    /** What he plugs lava with, cheapest first: the seal rocks, with netherrack after the soil. Never sand or gravel (they fall through lava), never tools or valuables. */
+    private static final List<Item> PLUGS = plugs();
+
+    private static List<Item> plugs() {
+        List<Item> plugs = new ArrayList<>(CompanionSeal.PREFERENCE);
+        plugs.add(plugs.indexOf(Items.DIRT) + 1, Items.NETHERRACK);
+        return List.copyOf(plugs);
+    }
 
     /**
      * Why an ore may not be opened now: its drop would fall into lava, lava would run in and there is nothing to plug it with, a lava fall

@@ -28,9 +28,11 @@ public final class CompanionPlanRunner {
     private static final int NO_GAIN_LIMIT = 2;
     /** Steps run for one obtain_item, replans included: twice the longest chain the planner gives (CompanionObtain.MAX_STEPS). */
     public static final int MAX_OBTAIN_STEPS = 32;
+    /** What a wood search says when it found no log: not a chance to repeat (the search itself ran for minutes), and the same for every part that needs wood. */
+    public static final String NO_TREE = "Не нашёл доступного дерева";
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "fill_bucket", "mine_obsidian", "build_portal", "pick_up");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "fill_bucket", "mine_obsidian", "build_portal", "pick_up");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
@@ -129,6 +131,10 @@ public final class CompanionPlanRunner {
             if (expansion.refusal() != null) {
                 run.obtain = action; run.obtainEnd = index + 1;
                 return giveUpObtain(run, index, expansion.refusal());
+            }
+            if (run.noTree != null && expansion.steps().stream().anyMatch(step -> "gather_wood".equals(step.type()))) {
+                run.obtain = action; run.obtainEnd = index + 1;
+                return giveUpObtain(run, index, run.noTree);
             }
             run.plan.remove(index);
             run.plan.addAll(index, expansion.steps());
@@ -236,6 +242,10 @@ public final class CompanionPlanRunner {
             }
             // A blocked step of an obtain chain gives up only this part; the rest of the plan goes on.
             if (inObtain && "blocked".equals(verdict.reason())) return giveUpObtain(run, index, result.message());
+            if (inObtain && "gather_wood".equals(action.type()) && !result.success() && result.message().contains(NO_TREE)) {
+                run.noTree = result.message();
+                return giveUpObtain(run, index, result.message());
+            }
             // A step of an obtain chain that did not succeed is planned around, even a partial gather the plan would go on after:
             // the stop comes only if the new plan is the same as before the step (nothing was gained).
             if (inObtain && !result.success() && verdict.decision() != Decision.RETRY && !"cancelled".equals(verdict.reason())) {
@@ -372,8 +382,8 @@ public final class CompanionPlanRunner {
     }
 
     /**
-     * The running obtain_item is given up: its unfinished steps and the later steps of the plan that name the same item are dropped
-     * (reported as not done), the rest of the plan goes on. With nothing left to run it is the old whole-plan stop.
+     * The running obtain_item is given up: its unfinished steps, the later steps of the plan that name the same item and the later
+     * dig_for_diamonds steps are dropped (reported as not done), the rest of the plan goes on. With nothing left to run it is the old whole-plan stop.
      */
     private static CompletableFuture<Integer> giveUpObtain(Run run, int index, String reason) {
         PlannedAction obtain = run.obtain;
@@ -382,7 +392,8 @@ public final class CompanionPlanRunner {
         run.plan.subList(from, Math.min(run.obtainEnd, run.plan.size())).clear();
         List<PlannedAction> same = new ArrayList<>();
         for (int i = run.plan.size() - 1; i >= from; i--)
-            if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item())) same.addFirst(run.plan.remove(i));
+            // A mine step after a part of the kit that could not be got is not begun: the goal decides with the bag as it is.
+            if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item()) || "dig_for_diamonds".equals(run.plan.get(i).type())) same.addFirst(run.plan.remove(i));
         // The portal waiting for what this obtain was to get goes too, whatever its own item says (CompanionPortalBuild).
         if (run.builtAfter != null && !run.builtAfter.item().equals(run.builtFor) && obtain.item() != null && obtain.item().equals(run.builtFor)) {
             int at = run.plan.subList(from, run.plan.size()).indexOf(run.builtAfter);
@@ -433,6 +444,8 @@ public final class CompanionPlanRunner {
         int obtainEnd, obtainSteps, noGain;
         /** The last failure message among the no-gain steps in a row, if any of them failed. */
         String noGainFailure;
+        /** The message of a wood search that found no tree: later parts that need wood give up with it at once. */
+        String noTree;
         boolean replan;
         /** The parked batch that is still cooking while the next independent steps run. */
         Pending pending;

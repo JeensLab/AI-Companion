@@ -120,6 +120,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final NonNullList<ItemStack> companionInventory = NonNullList.withSize(27, ItemStack.EMPTY);
     final CompanionPillar temporaryPillar = new CompanionPillar(this);
     final CompanionWork work = new CompanionWork(this);
+    public CompanionMineSite mineSite() { return work.mine; }
     private final CompanionFurnaceBatches batches = new CompanionFurnaceBatches(this);
     final CompanionGathering gathering = new CompanionGathering(this);
     final CompanionEquipment equipment = new CompanionEquipment(this);
@@ -142,6 +143,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
+    /** Whether the long goal of a diamond mine may be taken (the player's setting, not saved: it is sent again on joining). */
+    private boolean diamondMine = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -320,6 +323,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String diagnosticTrace() { return diagnostics.trace(); }
     public void diagnosticSnapshot(String event) { if (dev.aicompanion.CompanionDiagnostics.enabled()) diagnostics.snapshot(event); }
     String diagnosticState() { return diagnostics.diagnosticState(); }
+    /** For the diagnostics of a fight: the goals that hold him this tick and whom he is after. */
+    String runningGoals() { return goalSelector.getAvailableGoals().stream().filter(net.minecraft.world.entity.ai.goal.WrappedGoal::isRunning).map(g -> g.getGoal().getClass().getSimpleName()).collect(java.util.stream.Collectors.joining(",")) + "|" + (getTarget() == null ? "none" : getTarget().getType().getDescriptionId()); }
+    /** For the diagnostics: where the mine expedition is (stage and cave phase), empty outside one. */
+    public String expeditionStage() { return work.expedition.stageName(); }
+    public String expeditionCavePhase() { return work.expedition.cavePhase(); }
+    public long expeditionStepEnd() { return work.expedition.stepEnd(); }
     net.minecraft.world.entity.ai.goal.GoalSelector goalSelector() { return goalSelector; }
 
     /** The game's ground navigation with the companion's own route search (CompanionNavigation). */
@@ -342,6 +351,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // game's price of water, and the part of it that came out led him off into the sea).
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 2.0F);
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
+        // Before the float and the guard (0): a goal of an equal priority does not push a running one out, and the guard may hold the turn in lava.
+        this.goalSelector.addGoal(-1, new CompanionLavaExit(this));
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
@@ -352,6 +363,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionEntityGoals.RecoverBelongingsGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.BreatheGoal(this));
         this.goalSelector.addGoal(0, new CompanionEntityGoals.DragonBreathGoal(this));
+        this.goalSelector.addGoal(1, new CompanionWaterExit(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
@@ -369,8 +381,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             @Override public boolean canContinueToUse() { return gazeLooksAtPlayer() && super.canContinueToUse(); }
         });
         this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.65D) {
-            @Override public boolean canUse() { return following && !protecting && !autonomy.staysAtWork() && inventoryViewers == 0 && super.canUse(); }
-            @Override public boolean canContinueToUse() { return !autonomy.staysAtWork() && super.canContinueToUse(); }
+            @Override public boolean canUse() { return following && !protecting && !autonomy.staysAtWork() && inventoryViewers == 0 && !CompanionAgenda.suppressesDeeds(CompanionEntity.this) && super.canUse(); }
+            @Override public boolean canContinueToUse() { return !autonomy.staysAtWork() && !CompanionAgenda.suppressesDeeds(CompanionEntity.this) && super.canContinueToUse(); }
             @Override protected net.minecraft.world.phys.Vec3 getPosition() {
                 var position = super.getPosition();
                 var owner = getOwnerPlayer();
@@ -571,6 +583,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean isRecoveringSupports() { return temporaryPillar.isRecovering(); }
 
     public boolean isWorking() { return work.isActive(); }
+    public void expireExpeditionStep() { if (level() instanceof ServerLevel s) work.expedition.expireStep(s); }
     /** Read only, for the GameTest observer: a self-rescue running, the work's job/phase, and a visible action in hand. */
     public boolean isSelfRescuing() { return recovery.active(); }
     /** The damage a landing after this fall does him before his protection, by the game's own count (CompanionWaterBucket). */
@@ -590,6 +603,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public CompanionFurnaceBatches.State batchState(long id) { return batches.state(id); }
     public String releaseBatch(long id) { return batches.release(id); }
     public CompanionActionResult workResult(long id) { return work.taskResult(id); }
+    /** The last finished work's result, saved with him: the goal reads from it what was handed over before a reload. */
+    CompanionActionResult completedWorkResult() { return work.completedResult; }
     public boolean hasActiveWorkOrder() {
         return gatheringLogs || gatheringDirt || work.isActive() || temporaryPillar.isActive() || temporaryPillar.isRecovering();
     }
@@ -637,6 +652,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
     public void setPickUpNearby(boolean on, int radius) { pickUpNearby = on; pickUpRadius = Math.clamp(radius, CompanionPickUp.MIN_RADIUS, CompanionPickUp.MAX_RADIUS); }
+    public boolean diamondMine() { return diamondMine; }
+    public void setDiamondMine(boolean on) { diamondMine = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
@@ -921,10 +938,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (level() instanceof ServerLevel serverLevel) playersThings.tick(serverLevel);
         recovery.observe();
         work.watchChase();
+        gathering.watchWork();
         social.updateExpression();
         social.tick();
         lighting.tick();
         if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
+        if (work.mine.loadedHeld()) for (CompanionMineSite.Held drop : work.mine.takeHeld()) dropHarvest(drop.pos(), drop.drops());
         goals.tick();
         parked.tick();
         // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
@@ -981,6 +1000,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (!dead && !isRemoved() && level() instanceof ServerLevel) {
             String where = blockPosition().toShortString();
             String cause = source.getLocalizedDeathMessage(this).getString();
+            diagnostics.died(source);
             work.cancel(); gatheringLogs = gatheringDirt = false; loot.cancel();
             if (deathTrip.active() && getOwnerId() != null)
                 CompanionDeathSpots.get(((ServerLevel) level()).getServer()).deathOnTheWay(getOwnerId(), deathTrip.spotId());
@@ -1006,6 +1026,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         super.die(source);
     }
+    @Override public void onRemovedFromLevel() { if (!level().isClientSide) CompanionChunkTicket.release(this); super.onRemovedFromLevel(); }
 
 
     /** Food in the bag heals, like a player who eats: nothing is conjured, the food is eaten (review 22.10: he never healed). */
@@ -1021,6 +1042,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         boolean hurt = super.hurt(source, amount);
         if (hurt) {
             lastHurtTick = tickCount;
+            if (!level().isClientSide) diagnostics.hurt(source, amount);
             CompanionHappeningEvents.playerHit(this, source);
             // A touch from the player turns his eyes to him (CompanionGaze, owner 29.10).
             if (!level().isClientSide && source.getEntity() instanceof ServerPlayer player && player.getUUID().equals(ownerId)) gazeTalk();
@@ -1051,6 +1073,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     @Override public boolean doHurtTarget(Entity target) {
         boolean hit = super.doHurtTarget(target);
+        if (!level().isClientSide) diagnostics.struck(target, hit);
         // Every hit swings the arm he strikes with, whoever dealt it: the goal starts its own stroke first, and a
         // stroke already running is left alone, so one hit is one packet. Without this a hit dealt outside the goal
         // would land with him standing still.

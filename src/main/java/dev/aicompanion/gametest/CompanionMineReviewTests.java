@@ -1,0 +1,181 @@
+package dev.aicompanion.gametest;
+
+import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionFacts;
+import dev.aicompanion.entity.CompanionShaftPlan;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+import java.util.List;
+import java.util.Map;
+
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.TIMEOUT;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.carveMine;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.ended;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.mountain;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.report;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
+import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
+
+/** Probes for the findings of the review of the mine at ded408e. Arena as in the other mine tests. */
+@GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
+@PrefixGameTestTemplate(false)
+public final class CompanionMineReviewTests {
+    private static final int GAP_AT = 12, WALL_AT = 5, IRON_LEFT = 60;
+    private static final int FIRE_TICKS = 200, FIRE_REACTION = 60, LOW_HEALTH = 6, NETHER_Y = 40, SURFACE_Y = 100;
+
+    /**
+     * The stairs are shut at feet and head by blocks he did not put there, the record knows of none and he has only the worn iron pickaxe.
+     * Whatever he does about it, the blocks stay: a chest, a player's bricks and a plug of cobblestone holding lava back are not his to break.
+     */
+    private static void leavesOthersBlocksOnTheStairs(GameTestHelper h, Block feet, Block head, boolean lavaBeside) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        c.setItem(0, ItemStack.EMPTY);
+        ItemStack iron = new ItemStack(Items.IRON_PICKAXE);
+        iron.setDamageValue(iron.getMaxDamage() - IRON_LEFT);
+        c.setItem(1, iron);
+        c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos here = stairs.get(GAP_AT);
+        for (BlockPos stand : stairs.subList(GAP_AT + 1, stairs.size())) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.STONE.defaultBlockState(), 2 | 16);
+        BlockPos low = stairs.get(WALL_AT);
+        Map<BlockPos, Block> wall = Map.of(low, feet, low.above(), head);
+        wall.forEach((cell, block) -> h.getLevel().setBlock(cell, block.defaultBlockState(), 2 | 16));
+        // The lava sits in a pocket of the rock beside the plug and has no other way out.
+        if (lavaBeside) for (BlockPos cell : wall.keySet()) h.getLevel().setBlock(cell.east(), Blocks.LAVA.defaultBlockState(), 2 | 16);
+        c.teleportTo(here.getX() + .5, here.getY(), here.getZ() + .5);
+        c.mineSite().newStep(h.getLevel().getGameTime());
+        for (int i = 0; i < 3; i++) {
+            c.mineSite().restart(here, Direction.NORTH);
+            c.mineSite().buried(true);
+        }
+        long[] id = {0};
+        h.onEachTick(() -> {
+            if (id[0] == 0) return;
+            wall.forEach((cell, block) -> h.assertTrue(h.getLevel().getBlockState(cell).is(block), "He broke the " + block.getName().getString() + " on the stairs at " + cell + " | " + report(c)));
+        });
+        h.succeedWhen(() -> {
+            if (id[0] == 0) {
+                h.assertTrue(!h.getLevel().canSeeSky(here.above()), "The light on the stairs is not worked out yet");
+                id[0] = start(h, c, 1);
+            }
+            ended(h, c, id[0]);
+        });
+    }
+
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void leavesAChestOnTheStairsWhereItStands(GameTestHelper h) {
+        leavesOthersBlocksOnTheStairs(h, Blocks.CHEST, Blocks.AIR, false);
+    }
+
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void leavesAPlayersBricksOnTheStairsWhereTheyStand(GameTestHelper h) {
+        leavesOthersBlocksOnTheStairs(h, Blocks.STONE_BRICKS, Blocks.STONE_BRICKS, false);
+    }
+
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void leavesAPlugOnTheStairsThatHoldsLavaBack(GameTestHelper h) {
+        leavesOthersBlocksOnTheStairs(h, Blocks.COBBLESTONE, Blocks.COBBLESTONE, true);
+    }
+
+    /**
+     * On fire on the stairs, with no cave anywhere near (the cave sense is the only part that reads a fire): the step turns back at once,
+     * as it did when the goal stopped the step for a fire. The fire is short, so the health never gets low enough to be the reason.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void turnsBackWhenHeBurnsOnTheStairsOutsideACave(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        carveMine(h, c, 0);
+        long id = start(h, c, 1);
+        long[] ignited = {-1};
+        h.onEachTick(() -> {
+            String stage = c.expeditionStage();
+            if (ignited[0] < 0) {
+                if (stage.equals("WALK_DOWN") || stage.equals("DESCEND")) { c.setRemainingFireTicks(FIRE_TICKS); ignited[0] = h.getTick(); }
+                return;
+            }
+            if (stage.equals("RETREAT") || stage.equals("CLIMB") || c.workResult(id) != null) { h.succeed(); return; }
+            h.assertTrue(h.getTick() - ignited[0] < FIRE_REACTION, "He burns and goes on in stage " + stage + ", health " + c.getHealth() + " | " + report(c));
+        });
+    }
+
+    /**
+     * The mark of a mine step that moved the goal is the number of cells the mine opened. A step that cut the record back (a backtrack) or began
+     * it again (a restart) opened nothing, and must not look like one that did: it would give back the steps and the time the goal is allowed.
+     */
+    @GameTest(template = "marathon_cave")
+    public static void aMineThatIsCutBackOrBegunAgainShowsNoProgress(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        int dug = CompanionFacts.of(c).mineOpened();
+        c.mineSite().truncate(3);
+        h.assertTrue(CompanionFacts.of(c).mineOpened() == dug, "A record cut back to three stands shows progress: " + dug + " -> " + CompanionFacts.of(c).mineOpened());
+        c.mineSite().restart(stairs.get(3), Direction.NORTH);
+        h.assertTrue(CompanionFacts.of(c).mineOpened() == dug, "A mine begun again shows progress: " + dug + " -> " + CompanionFacts.of(c).mineOpened());
+        c.mineSite().reached(stairs.get(3).offset(0, -1, -1));
+        h.assertTrue(CompanionFacts.of(c).mineOpened() == dug + 1, "A stand dug after it shows none: " + CompanionFacts.of(c).mineOpened());
+        h.succeed();
+    }
+
+    /**
+     * An old stop of an earlier order is still on the record when this one ends in a retreat to the surface: it is not this order's stop, and
+     * the goal must not take it for a way left to try (it would not count the failure).
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aRetreatLeavesNoStopOfAnEarlierOrderOnTheRecord(GameTestHelper h) {
+        mountain(h, true);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        c.mineSite().stopped(stairs.get(GAP_AT), 1);
+        h.assertTrue(c.mineSite().stopWayLeft(), "The earlier stop is not on the record");
+        long id = start(h, c, 1);
+        boolean[] hurt = {false};
+        h.onEachTick(() -> {
+            String stage = c.expeditionStage();
+            if (!hurt[0] && (stage.equals("WALK_DOWN") || stage.equals("DESCEND"))) { c.setHealth(LOW_HEALTH); hurt[0] = true; }
+            if (c.workResult(id) == null) return;
+            h.assertTrue(hurt[0], "The order ended before he was hurt: " + report(c));
+            h.assertTrue(!c.mineSite().stopWayLeft(), "The stop of an earlier order stands after the retreat: " + report(c));
+            h.succeed();
+        });
+    }
+
+    /**
+     * The record of the mine keeps no dimension, and the mine is only ever dug in the Overworld: in the Nether, with Y far below the entrance,
+     * he is not «below the mine» (that sends a goal up stairs that are not there, and picks the steps for a man underground).
+     */
+    @GameTest(template = "marathon_cave")
+    public static void isNotBelowTheMineInTheNether(GameTestHelper h) {
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No second dimension to test with");
+        BlockPos at = new BlockPos(0, NETHER_Y, 0);
+        nether.getChunk(at);
+        CompanionEntity c = AICompanionMod.COMPANION.get().create(nether);
+        c.moveTo(at.getX() + .5, at.getY(), at.getZ() + .5);
+        nether.addFreshEntity(c);
+        try {
+            c.mineSite().start(new BlockPos(0, SURFACE_Y, 0), Direction.NORTH);
+            h.assertTrue(!CompanionFacts.of(c).belowMine(), "In the Nether at Y " + NETHER_Y + " he is below a mine entered at Y " + SURFACE_Y);
+        } finally {
+            c.discard();
+        }
+        h.succeed();
+    }
+}

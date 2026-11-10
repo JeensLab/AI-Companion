@@ -1,0 +1,150 @@
+package dev.aicompanion.entity;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+
+import java.util.List;
+
+/**
+ * Up his own staircase when it is too dangerous below: back along the last tunnel and the stairs, a plug of real blocks in the
+ * step he has just left so that nothing follows him, then rest at the entrance (he eats, the health comes back) until he is fit
+ * again or the time is up. The next step takes the plug out ({@link CompanionMineSite#plug}).
+ */
+final class CompanionExpeditionRetreat {
+    enum Result { WORKING, DONE }
+
+    private enum Phase { CLIMB, PLUG, UP, REST }
+
+    /** The fit health he rests up to, the longest rest and the ticks a plug may take. */
+    static final float FIT = 18;
+    static final double FLEE_REACH = 24;
+    static final int REST_TICKS = 20 * 240, PLUG_TRIES = 60;
+    /** Why a rest does not heal him, as the report says it: the goal reads it to wait for food rather than count the retreat against its stops. */
+    static final String NO_FOOD = "нет еды, а без сытости рана сама не заживает";
+
+    private final CompanionWork w;
+    private final CompanionEntity owner;
+    private final CompanionExpeditionWalk walk;
+    private Phase phase = Phase.REST;
+    private String reason = "";
+    private BlockPos plugCell;
+    private boolean climbed, plugged, plugFailed, stuck, unmendable;
+    private long restEnd;
+    private int tries;
+
+    CompanionExpeditionRetreat(CompanionWork w, CompanionExpeditionDig dig) {
+        this.w = w;
+        this.owner = w.owner;
+        this.walk = new CompanionExpeditionWalk(dig);
+    }
+
+    /**
+     * Plans the way up from where he stands; with no way (not on his stairs, or already at the entrance) he rests where he is. With a mob on him
+     * ({@code hounded}) a few steps off his stairs is no reason to stay and fight: he walks back to them.
+     */
+    void begin(String why, boolean hounded) {
+        reset();
+        reason = why;
+        owner.getNavigation().stop();
+        CompanionMineSite mine = w.mine;
+        if (!mine.exists()) return;
+        List<BlockPos> way = CompanionExpeditionClimb.wayUp(mine);
+        int at = hounded ? closest(way, owner.blockPosition()) : CompanionExpeditionRecord.nearest(way, owner.blockPosition(), CompanionMineSite.NEAR_STAND);
+        plugCell = mine.stands().size() >= 2 ? mine.stands().get(1) : null;
+        int hold = plugCell == null ? way.size() - 1 : way.size() - 2;
+        if (at < 0 || at > hold) { plugCell = null; return; }
+        climbed = at < way.size() - 1;
+        walk.set(way.subList(0, hold + 1), at);
+        phase = Phase.CLIMB;
+    }
+
+    /** The index of the cell of his way up nearest to {@code here} within {@link #FLEE_REACH} blocks, or -1. */
+    static int closest(List<BlockPos> way, BlockPos here) {
+        int closest = -1;
+        double best = FLEE_REACH * FLEE_REACH;
+        for (int i = 0; i < way.size(); i++) {
+            double distance = way.get(i).distSqr(here);
+            if (distance < best) { closest = i; best = distance; }
+        }
+        return closest;
+    }
+
+    Result tick(ServerLevel level) {
+        switch (phase) {
+            case CLIMB -> climb();
+            case PLUG -> plug(level);
+            case UP -> up();
+            case REST -> { return rest(level); }
+        }
+        return Result.WORKING;
+    }
+
+    private void climb() {
+        CompanionExpeditionWalk.Result walked = walk.tick();
+        switch (walked) {
+            case WORKING -> { }
+            case DONE -> phase = plugCell == null ? Phase.UP : Phase.PLUG;
+            case STUCK -> { stuck = true; phase = Phase.REST; }
+            case NO_BLOCK -> { }
+        }
+    }
+
+    /** The first step up is closed behind him, from the stand above it; nothing is made up, the block is from the bag. */
+    private void plug(ServerLevel level) {
+        // A torch he hung on the stair wall may stand in the cell: it comes out like a plant, as in a cave plug.
+        if (!CompanionSeal.replaceable(level, plugCell) && CompanionShaftPlan.open(level, plugCell)) { level.destroyBlock(plugCell, true, owner); return; }
+        CompanionSeal.Result result = CompanionSeal.place(owner, plugCell);
+        if (result == CompanionSeal.Result.PLACED) { w.mine.plugged(plugCell); plugged = true; }
+        else if (result == CompanionSeal.Result.NO_BLOCK || ++tries > PLUG_TRIES) plugFailed = true;
+        else return;
+        walk.set(List.of(w.mine.entrance()), 0);
+        phase = Phase.UP;
+    }
+
+    private void up() {
+        CompanionExpeditionWalk.Result walked = walk.tick();
+        switch (walked) {
+            case WORKING -> { }
+            case DONE -> phase = Phase.REST;
+            case STUCK -> { stuck = true; phase = Phase.REST; }
+            case NO_BLOCK -> { }
+        }
+    }
+
+    private Result rest(ServerLevel level) {
+        if (restEnd == 0) restEnd = level.getGameTime() + REST_TICKS;
+        boolean fit = owner.getHealth() >= FIT;
+        unmendable = !fit && cannotMend();
+        return fit || level.getGameTime() >= restEnd || unmendable ? Result.DONE : Result.WORKING;
+    }
+
+    /** Nothing left to heal him: no food to eat, and a stomach too empty to heal on its own. */
+    private boolean cannotMend() {
+        return owner.satiety <= 0 && owner.eatTicks <= 0 && !CompanionEating.hasFood(owner);
+    }
+
+    /** Still on the move up (the climb, the plug, the last stretch): a slower foe is left behind. At rest, or stuck, there is nowhere further to go. */
+    boolean leaving() { return phase != Phase.REST; }
+
+    /** What he did and how it ended, for the report. */
+    String text() {
+        StringBuilder text = new StringBuilder("Прервал вылазку и ").append(climbed ? "отступил наверх" : "остановился отдохнуть").append(": ").append(reason).append('.');
+        if (plugged) text.append(" Поставил пробку на лестнице.");
+        if (plugFailed) text.append(" Пробку на лестнице поставить не вышло.");
+        if (stuck) text.append(" Подняться по своей лестнице до конца не вышло, остался где стою.");
+        int health = (int) owner.getHealth();
+        if (owner.getHealth() >= FIT) text.append(" Отдохнул, здоровье ").append(health).append('.');
+        else text.append(" Отдохнуть до ").append((int) FIT).append(unmendable ? " здоровья не вышло: " + NO_FOOD + ", сейчас " : " здоровья не вышло, сейчас ").append(health).append('.');
+        return text.toString();
+    }
+
+    void reset() {
+        walk.clear();
+        phase = Phase.REST;
+        reason = "";
+        plugCell = null;
+        climbed = plugged = plugFailed = stuck = unmendable = false;
+        restEnd = 0;
+        tries = 0;
+    }
+}
