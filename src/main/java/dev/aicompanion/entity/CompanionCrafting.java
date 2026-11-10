@@ -63,7 +63,7 @@ public final class CompanionCrafting {
         if (placeTable && (!planner.ensure(bag, Items.CRAFTING_TABLE, 1) || !take(bag, Items.CRAFTING_TABLE))) {
             return new Plan(false, "Для этого нужен верстак. Не хватает материалов, чтобы сделать и верстак, и запрошенный предмет. Материалы сохранены.", copy(inventory), false, true);
         }
-        String chain = String.join("; ", planner.steps);
+        String chain = String.join("; ", merged(planner.steps));
         return new Plan(true, (planner.usedCutter ? "Нарезал на камнерезе " : "Скрафтил ") + made + " «" + target.getDescription().getString() + "»."
                 + (chain.isEmpty() ? "" : " Цепочка: " + chain + "."), bag, placeTable, false, planner.usedCutter);
     }
@@ -154,6 +154,20 @@ public final class CompanionCrafting {
             if (searches > MAX_SEARCH) break;
         }
         return false;
+    }
+
+    /** «1 X на камнерезе» four times over reads as «4 X на камнерезе»: the same step in a row is said once with the counts added. */
+    private static List<String> merged(List<String> steps) {
+        List<String> result = new ArrayList<>();
+        for (String step : steps) {
+            int last = result.size() - 1, space = step.indexOf(' ');
+            String what = step.substring(space + 1);
+            if (last >= 0 && result.get(last).substring(result.get(last).indexOf(' ') + 1).equals(what) && space > 0) {
+                String previous = result.get(last);
+                result.set(last, (Integer.parseInt(previous.substring(0, previous.indexOf(' '))) + Integer.parseInt(step.substring(0, space))) + " " + what);
+            } else result.add(step);
+        }
+        return result;
     }
 
     /** At the stonecutter: one block in, the recipe's count out. Never costs more than the bench, often less (stairs). */

@@ -159,6 +159,8 @@ public final class CompanionStationTests {
             done(h, companion);
             h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.STONE_STAIRS) == 4 && count(companion, Items.STONE) == 0, companion.getLastTaskResult());
             h.assertTrue(blocks(h, Blocks.CRAFTING_TABLE) == 0, "A bench was set down");
+            // Game 10.11: four cuts of one were read out as «1 …; 1 …; 1 …; 1 …».
+            h.assertTrue(companion.getLastTaskResult().contains("Цепочка: 4 ") && !companion.getLastTaskResult().contains("; 1 "), companion.getLastTaskResult());
         });
     }
 
