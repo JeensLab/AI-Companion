@@ -234,6 +234,43 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
+    /**
+     * «иди к даче, потом домой»: the name resolves, but the words left after it are a second leg, so the model plans
+     * both; a name that holds «и» itself leaves nothing, and a phrase that only softens the order stays one step.
+     */
+    @GameTest(template = "empty")
+    public static void aSecondLegAfterAKnownNameGoesToTheModel(GameTestHelper h) {
+        List<String> markers = List.of("дача");
+        h.assertTrue(CompanionLocalCommands.route("иди к даче, потом домой", "Олег", markers, true) == null,
+                "Two legs became one walk: " + CompanionLocalCommands.route("иди к даче, потом домой", "Олег", markers, true));
+        h.assertTrue(CompanionLocalCommands.route("веди меня к даче, затем домой", "Олег", markers, true) == null,
+                "«затем» lost the second leg: " + CompanionLocalCommands.route("веди меня к даче, затем домой", "Олег", markers, true));
+        // A comma separates a second place just as well: «домой» is no word that softens the order.
+        h.assertTrue(CompanionLocalCommands.route("иди к даче, домой", "Олег", markers, true) == null,
+                "A comma and a second place became one walk: " + CompanionLocalCommands.route("иди к даче, домой", "Олег", markers, true));
+        h.assertTrue(CompanionLocalCommands.route("отнеси ресы в дом, потом домой", "Олег", List.of("дом"), true) == null,
+                "The carry kept only its first leg: " + CompanionLocalCommands.route("отнеси ресы в дом, потом домой", "Олег", List.of("дом"), true));
+        h.assertTrue(CompanionLocalCommands.route("охраняй дачу, потом домой", "Олег", markers, true) == null,
+                "The guard kept only its first leg: " + CompanionLocalCommands.route("охраняй дачу, потом домой", "Олег", markers, true));
+        // The names that hold «и» themselves are one name: nothing is left after them, so they stay local.
+        h.assertTrue("companion place go сад и огород".equals(CompanionLocalCommands.route("иди к саду и огороду", "Олег", List.of("сад и огород"), true)),
+                "«сад и огород»: " + CompanionLocalCommands.route("иди к саду и огороду", "Олег", List.of("сад и огород"), true));
+        h.assertTrue("companion place go дом и баня".equals(CompanionLocalCommands.route("веди меня к дому и бане", "Олег", List.of("сад и огород", "дом и баня"), true)),
+                "«дом и баня»: " + CompanionLocalCommands.route("веди меня к дому и бане", "Олег", List.of("сад и огород", "дом и баня"), true));
+        // One leg stays local, and so does one leg with only the words that soften it.
+        h.assertTrue("companion place go дача".equals(CompanionLocalCommands.route("иди к даче", "Олег", markers, true)),
+                "«иди к даче»: " + CompanionLocalCommands.route("иди к даче", "Олег", markers, true));
+        h.assertTrue("companion place go дача".equals(CompanionLocalCommands.route("иди к даче и всё", "Олег", markers, true)),
+                "«иди к даче и всё»: " + CompanionLocalCommands.route("иди к даче и всё", "Олег", markers, true));
+        h.assertTrue("companion place go дача".equals(CompanionLocalCommands.route("иди к даче, пожалуйста", "Олег", markers, true)),
+                "«иди к даче, пожалуйста»: " + CompanionLocalCommands.route("иди к даче, пожалуйста", "Олег", markers, true));
+        h.assertTrue("companion place guard дача".equals(CompanionLocalCommands.route("охраняй дачу и всё", "Олег", markers, true)),
+                "«охраняй дачу и всё»: " + CompanionLocalCommands.route("охраняй дачу и всё", "Олег", markers, true));
+        h.assertTrue("companion place carry дом".equals(CompanionLocalCommands.route("отнеси ресы в дом и всё", "Олег", List.of("дом"), true)),
+                "«отнеси ресы в дом и всё»: " + CompanionLocalCommands.route("отнеси ресы в дом и всё", "Олег", List.of("дом"), true));
+        h.succeed();
+    }
+
     /** A coordinate triple is not a name: one question, and no marker is made. */
     @GameTest(template = "empty")
     public static void aCoordinateTripleAsksOneQuestionInsteadOfBecomingAMarker(GameTestHelper h) {
@@ -557,11 +594,33 @@ public final class CompanionPlaceMarkerTests {
         BlockPos at = h.absolutePos(new BlockPos(20, 1, 24));
         owner.teleportTo(at.getX() + .5, at.getY(), at.getZ() + .5);
         var added = CompanionMarkerBoard.addHere(owner, "лагерь");
-        h.assertTrue(added != null && added.place().name().equals("лагерь"), "Not added: " + added);
+        h.assertTrue(added.place() != null && added.place().name().equals("лагерь"), "Not added: " + added);
         h.assertTrue(added.place().x() == at.getX() && added.place().y() == at.getY() && added.place().z() == at.getZ(), "Not at the player: " + added);
         h.assertTrue("world".equals(added.place().world()), "Wrong world name: " + added.place().world());
         h.assertTrue(added.message().contains("Запомнил место «лагерь»"), "No honest line: " + added.message());
-        h.assertTrue(CompanionMarkerBoard.addHere(owner, "") == null, "An empty name was added");
+        var empty = CompanionMarkerBoard.addHere(owner, "");
+        h.assertTrue(empty.place() == null && empty.message().contains("пустым"), "An empty name was added: " + empty);
+        h.succeed();
+    }
+
+    /** A name the store refuses in the screen's add is said as that refusal, never as a missing player. */
+    @GameTest(template = "empty")
+    public static void theAddSaysItsOwnRefusalInsteadOfAMissingPlayer(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var coordinates = CompanionMarkerBoard.addHere(owner, "100, 64, 200");
+        h.assertTrue(coordinates.place() == null && coordinates.message().contains("координаты"), "A coordinate name was added: " + coordinates);
+        h.assertTrue(!coordinates.message().contains("нет на сервере"), "The refusal blamed the player: " + coordinates.message());
+        var tooLong = CompanionMarkerBoard.addHere(owner, "а".repeat(CompanionMarkerNames.MAX + 1));
+        h.assertTrue(tooLong.place() == null && tooLong.message().contains("до " + CompanionMarkerNames.MAX + " символов"),
+                "No length line: " + tooLong.message());
+        h.assertTrue(!tooLong.message().contains("нет на сервере"), "The length refusal blamed the player: " + tooLong.message());
+        // A vanished player is still said as the missing player, and nothing else.
+        var absent = CompanionMarkerBoard.addHere(null, "дача");
+        h.assertTrue(absent.place() == null && absent.message().contains("нет на сервере"), "A missing player was not said: " + absent);
+        // And the add that fits still lands where the player stands.
+        var added = CompanionMarkerBoard.addHere(owner, "лагерь");
+        h.assertTrue(added.place() != null && added.message().contains("Запомнил место «лагерь»"), "The add: " + added);
         h.succeed();
     }
 
@@ -572,7 +631,7 @@ public final class CompanionPlaceMarkerTests {
         ServerPlayer owner = player(h, c);
         var store = CompanionMarkers.get(h.getLevel().getServer());
         var added = CompanionMarkerBoard.addHere(owner, "дача");
-        h.assertTrue(added != null, "The marker was refused");
+        h.assertTrue(added.place() != null, "The marker was refused");
         h.assertTrue(CompanionMarkerView.names().contains("дача"), "The new name did not reach recognition: " + CompanionMarkerView.names());
         var marker = store.all(c.getOwnerId()).getFirst();
         h.assertTrue(CompanionMarkerBoard.rename(owner, marker.id(), "дача2"), "The rename was refused");
@@ -580,7 +639,7 @@ public final class CompanionPlaceMarkerTests {
                 "The rename did not reach recognition: " + CompanionMarkerView.names());
         h.assertTrue(CompanionMarkerBoard.forget(owner, marker.id()), "The delete was refused");
         h.assertTrue(!CompanionMarkerView.names().contains("дача2"), "The delete did not reach recognition: " + CompanionMarkerView.names());
-        h.assertTrue(CompanionMarkerBoard.addHere(owner, "колодец") != null, "The second marker was refused");
+        h.assertTrue(CompanionMarkerBoard.addHere(owner, "колодец").place() != null, "The second marker was refused");
         boolean[] pulled = {false};
         CompanionMarkerView.pull(owner, true, (names, on) -> pulled[0] = names.contains("колодец") && on);
         h.succeedWhen(() -> h.assertTrue(pulled[0], "pull did not deliver the names on the server thread: " + CompanionMarkerView.names()));

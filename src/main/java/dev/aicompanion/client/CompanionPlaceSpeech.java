@@ -15,13 +15,17 @@ import java.util.regex.Pattern;
  * marker, or more than one, is answered with one honest question and no walk.
  * <p>
  * No client classes, so the chat screen and the GameTests read the same phrases. Names are the player's own words: the
- * comparison is generic (stems and Russian case forms), never a list of known place words.
+ * comparison is generic (stems and Russian case forms), never a list of known place words. What the phrase still says
+ * after the name («потом домой») is the {@link Result#leftover()}, so the router can leave a two-step request to the
+ * model instead of walking only its first leg.
  */
 public final class CompanionPlaceSpeech {
     public enum Kind { NONE, REMEMBER, GO, GUARD, CARRY, UNKNOWN, AMBIGUOUS, EMPTY_NAME, TOO_LONG, COORDINATES }
 
-    /** kind: what the phrase means; name: the marker it names; question: the one honest question, or null. */
-    public record Result(Kind kind, String name, String question) {
+    /** kind: what the phrase means; name: the marker it names; question: the one honest question, or null;
+     * leftover: what the phrase still says after the name («потом домой» in «иди к даче, потом домой»). */
+    public record Result(Kind kind, String name, String question, String leftover) {
+        public Result(Kind kind, String name, String question) { this(kind, name, question, ""); }
         static Result none() { return new Result(Kind.NONE, "", null); }
     }
 
@@ -86,7 +90,7 @@ public final class CompanionPlaceSpeech {
         if (words.isEmpty() || PEOPLE.contains(words.getFirst())) return Result.none();
         List<String> matches = new ArrayList<>();
         for (String known : knownNames) if (CompanionMarkerNames.matches(known, target)) matches.add(known);
-        if (matches.size() == 1) return new Result(kind, matches.getFirst(), null);
+        if (matches.size() == 1) return new Result(kind, matches.getFirst(), null, CompanionMarkerNames.without(matches.getFirst(), target));
         if (matches.size() > 1) return new Result(Kind.AMBIGUOUS, target, ambiguous(target, matches));
         // No marker: «дом» and «домик» are the home he knows, not an unknown name to ask about.
         if (HOME_WORDS.contains(stemOfFirstHomeWord(words))) return Result.none();

@@ -1,5 +1,7 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionMarkerNames;
+
 /**
  * The player's short orders that never wait for the model («стоп», «иди за мной», «стой», «иди ко мне», simple work requests).
  * No client classes, so the chat screen and the GameTests route a phrase the same way.
@@ -82,13 +84,18 @@ public final class CompanionLocalCommands {
         CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);
         if (remembered.kind() == CompanionPlaceSpeech.Kind.REMEMBER) return "companion place remember " + remembered.name();
         // A named place he remembers: «иди к колодцу», «проведи меня до железного рудника», «отведи меня к даче»,
-        // «охраняй дачу», «отнеси ресы в дом». Before the guard for «и», «потом» and «затем», because a name the screen
-        // and the codec accept may contain them («сад и огород», «дом и баня»): whatever the screen accepts, speech resolves.
+        // «охраняй дачу», «отнеси ресы в дом». What is left after the name decides: a name that itself holds «и»
+        // («сад и огород», «дом и баня») leaves nothing, so it stays one local step; «иди к даче, потом домой» leaves
+        // «потом домой», and the model plans both legs, which one local walk would lose.
         CompanionPlaceSpeech.Result place = CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled);
-        if (place.kind() == CompanionPlaceSpeech.Kind.GO) return "companion place go " + place.name();
-        if (place.kind() == CompanionPlaceSpeech.Kind.GUARD) return "companion place guard " + place.name();
-        if (place.kind() == CompanionPlaceSpeech.Kind.CARRY) return "companion place carry " + place.name();
-        // Only when the place parse had nothing to say: a request with steps («иди к даче, потом домой») stays the model's,
+        if (place.kind() == CompanionPlaceSpeech.Kind.GO || place.kind() == CompanionPlaceSpeech.Kind.GUARD
+                || place.kind() == CompanionPlaceSpeech.Kind.CARRY) {
+            if (!oneStep(place.leftover())) return null;
+            String verb = place.kind() == CompanionPlaceSpeech.Kind.GO ? "go"
+                    : place.kind() == CompanionPlaceSpeech.Kind.GUARD ? "guard" : "carry";
+            return "companion place " + verb + " " + place.name();
+        }
+        // Only when the place parse had nothing to say: a request with steps («иди к озеру, потом домой») stays the model's,
         // an unknown or ambiguous name is the chat screen's question, and a digit is no reason to leave the places.
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
@@ -117,6 +124,19 @@ public final class CompanionLocalCommands {
         if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
         if (normalized.matches("(?s).*\\d.*")) return null;
         return CompanionEquipmentCommands.parse(normalized);
+    }
+
+    /** Words that only soften the order: «и всё», «пожалуйста» after the place ask no second step of him. */
+    private static final java.util.Set<String> SOFTENERS = java.util.Set.of("и", "все", "всё", "пожалуйста", "пожалуста",
+            "пожалуй", "спасибо", "ладно", "хорошо", "ок", "ok", "давай", "ну", "плиз");
+
+    /**
+     * True when the words left after the place name are no second step: nothing, or only the words that soften the
+     * order. Anything else — «потом домой», «и домой», «возьми кирку» — is a plan with steps, and the model makes it.
+     */
+    private static boolean oneStep(String leftover) {
+        for (String word : CompanionMarkerNames.tokens(leftover)) if (!SOFTENERS.contains(word)) return false;
+        return true;
     }
 
     /** The plan step a local command runs. */

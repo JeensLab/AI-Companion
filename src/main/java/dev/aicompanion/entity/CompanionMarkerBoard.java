@@ -25,7 +25,8 @@ public final class CompanionMarkerBoard {
     /** One marker of the list: what it is called, where it is, and the id the buttons name. */
     public record Place(int number, UUID id, String name, String world, int x, int y, int z) { }
 
-    /** A marker added where the player stands, and the honest line about it (including the oldest one it evicted). */
+    /** A marker added where the player stands, and the honest line about it (including the oldest one it evicted);
+     * {@code place} is null when nothing was added, and the line says the cause. */
     public record AddResult(Place place, String message) { }
 
     /** The outcome of the screen's save: the rename first, the move only when the rename was accepted, and the honest
@@ -102,21 +103,22 @@ public final class CompanionMarkerBoard {
         return "Такое название уже есть у другой метки.";
     }
 
-    /** Saves a marker where the player stands now; null when the name is refused. */
+    /** Adds a marker where the player stands; {@code place} is null when nothing was added, and the line says the cause. */
     public static AddResult addHere(ServerPlayer player, String name) {
+        if (player == null) return new AddResult(null, "Тебя нет на сервере — метку добавить не удалось.");
         var server = player.level().getServer();
-        if (server == null) return null;
+        if (server == null) return new AddResult(null, "Мир не загружен — метку добавить не удалось.");
         String clean = CompanionMarkerNames.clean(name);
-        if (!CompanionMarkerNames.valid(clean)) return null;
         CompanionMarkers.Added added = CompanionMarkers.get(server)
                 .add(player.getUUID(), clean, player.level().dimension(), player.blockPosition(), player.level().getGameTime());
-        if (added.refused()) return null;
+        // The store answers the cause itself: an empty, long or coordinate name is said as it refused it.
+        if (added.refused()) return new AddResult(null, added.refusal());
         List<Place> places = places(player);
         Place place = null;
         for (int index = 0; index < places.size(); index++) if (places.get(index).id().equals(added.marker().id()))
             place = new Place(index + 1, added.marker().id(), added.marker().name(), CompanionMarkers.worldName(added.marker().dimension()),
                     added.marker().pos().getX(), added.marker().pos().getY(), added.marker().pos().getZ());
-        if (place == null) return null;
+        if (place == null) return new AddResult(null, "Метка «" + added.marker().name() + "» сохранена, но в списке её нет.");
         String message = added.moved() ? "Метка «" + place.name() + "» теперь здесь: " + place.x() + ", " + place.y() + ", " + place.z() + "."
                 : "Запомнил место «" + place.name() + "» здесь: " + place.x() + ", " + place.y() + ", " + place.z() + ".";
         if (added.evicted() != null)

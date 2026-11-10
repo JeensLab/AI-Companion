@@ -16,6 +16,8 @@ public final class CompanionMarkerNames {
     public static final int MAX = 24;
     private static final Pattern COORDINATES = Pattern.compile("-?\\d+\\s*[,;]\\s*-?\\d+.*");
     private static final Pattern SPLIT = Pattern.compile("[^\\p{L}\\p{N}]+");
+    /** One word of a phrase, with the span it takes there: the same words {@link #SPLIT} cuts. */
+    private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}]+");
     /** Longest first: an ending is taken once, and only while the stem stays at least three letters. */
     private static final String[] ENDINGS = {"ыми", "ими", "ого", "его", "ому", "ему", "ами", "ями", "ах", "ях",
             "ов", "ев", "ей", "ой", "ый", "ий", "ом", "ем", "ою", "ею", "а", "я", "о", "е", "у", "ю", "ы", "и", "ь"};
@@ -51,14 +53,38 @@ public final class CompanionMarkerNames {
 
     /** True when the spoken phrase (a marker name in any case form) means this marker. */
     public static boolean matches(String markerName, String said) {
-        List<String> name = tokens(markerName), words = tokens(said);
-        if (name.isEmpty() || words.isEmpty() || words.size() < name.size()) return false;
+        return window(tokens(markerName), tokens(said)) >= 0;
+    }
+
+    /**
+     * The spoken phrase without the words the name matched: «даче, потом домой» without «дача» is «потом домой»,
+     * and a phrase that is only the name leaves nothing. The words are dropped by their own span, so the punctuation
+     * and the words around them stay as the player said them.
+     */
+    public static String without(String markerName, String said) {
+        if (said == null) return "";
+        List<String> name = tokens(markerName);
+        List<String> words = new ArrayList<>();
+        List<int[]> spans = new ArrayList<>();
+        var word = WORD.matcher(said);
+        while (word.find()) {
+            words.add(word.group().toLowerCase(Locale.ROOT).replace('ё', 'е'));
+            spans.add(new int[]{word.start(), word.end()});
+        }
+        int from = window(name, words);
+        if (from < 0) return said;
+        return (said.substring(0, spans.get(from)[0]) + " " + said.substring(spans.get(from + name.size() - 1)[1])).strip();
+    }
+
+    /** The token index where the name starts in the phrase, or -1: the one comparison {@link #matches} makes. */
+    private static int window(List<String> name, List<String> words) {
+        if (name.isEmpty() || words.isEmpty() || words.size() < name.size()) return -1;
         for (int from = 0; from + name.size() <= words.size(); from++) {
             boolean same = true;
             for (int at = 0; at < name.size(); at++) if (!sameStem(name.get(at), words.get(from + at))) { same = false; break; }
-            if (same) return true;
+            if (same) return from;
         }
-        return false;
+        return -1;
     }
 
     /** The words of a name or a phrase, lower case, ё as е, punctuation dropped. */

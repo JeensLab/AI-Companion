@@ -148,9 +148,10 @@ public final class CompanionMarkersScreen extends Screen {
         var playerId = minecraft.player.getUUID();
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
-            CompanionMarkerBoard.AddResult added = player == null ? null : CompanionMarkerBoard.addHere(player, wanted);
+            // The board answers the cause itself: a name it refused is not «тебя нет на сервере».
+            CompanionMarkerBoard.AddResult added = CompanionMarkerBoard.addHere(player, wanted);
             minecraft.execute(() -> {
-                notice = added != null ? added.message() : "Тебя нет на сервере — метку добавить не удалось.";
+                notice = added.message();
                 refresh();
             });
         });
