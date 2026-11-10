@@ -15,7 +15,9 @@ public final class CompanionLocalCommands {
 
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
     public static String route(String text, String companionName) {
-        return route(text, companionName, CompanionMarkerView.names(), CompanionMarkerView.enabled());
+        // One snapshot of the client's copy: the names and the switch come from the same publication.
+        CompanionMarkerView.Snapshot known = CompanionMarkerView.snapshot();
+        return route(text, companionName, known.names(), known.enabled());
     }
 
     /** The same routing with the marker names the caller knows: the chat screen uses the client's copy, tests pass their own. */
@@ -79,7 +81,15 @@ public final class CompanionLocalCommands {
         // home it always was.
         CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);
         if (remembered.kind() == CompanionPlaceSpeech.Kind.REMEMBER) return "companion place remember " + remembered.name();
-        // A request with steps («иди к даче, потом домой») stays the model's; a digit is no reason to leave the places.
+        // A named place he remembers: «иди к колодцу», «проведи меня до железного рудника», «отведи меня к даче»,
+        // «охраняй дачу», «отнеси ресы в дом». Before the guard for «и», «потом» and «затем», because a name the screen
+        // and the codec accept may contain them («сад и огород», «дом и баня»): whatever the screen accepts, speech resolves.
+        CompanionPlaceSpeech.Result place = CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled);
+        if (place.kind() == CompanionPlaceSpeech.Kind.GO) return "companion place go " + place.name();
+        if (place.kind() == CompanionPlaceSpeech.Kind.GUARD) return "companion place guard " + place.name();
+        if (place.kind() == CompanionPlaceSpeech.Kind.CARRY) return "companion place carry " + place.name();
+        // Only when the place parse had nothing to say: a request with steps («иди к даче, потом домой») stays the model's,
+        // an unknown or ambiguous name is the chat screen's question, and a digit is no reason to leave the places.
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
         if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(зайди|заходи|войди|входи|шагни|прыгни|пройди|проходи|иди)\\s+(в|через)\\s+(\\p{L}+\\s+)?(портал|незер)\\b.*")) return "companion enter_portal";
@@ -105,13 +115,6 @@ public final class CompanionLocalCommands {
             return "companion summon";
         }
         if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
-        // A named place he remembers: «иди к колодцу», «проведи меня до железного рудника», «отведи меня к даче»,
-        // «охраняй дачу», «отнеси ресы в дом». Before the number guard, so a name with digits and spaces («дом2»,
-        // «шахта 3») resolves exactly like a plain word; an unknown or ambiguous name is a question, asked by the chat screen.
-        CompanionPlaceSpeech.Result place = CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled);
-        if (place.kind() == CompanionPlaceSpeech.Kind.GO) return "companion place go " + place.name();
-        if (place.kind() == CompanionPlaceSpeech.Kind.GUARD) return "companion place guard " + place.name();
-        if (place.kind() == CompanionPlaceSpeech.Kind.CARRY) return "companion place carry " + place.name();
         if (normalized.matches("(?s).*\\d.*")) return null;
         return CompanionEquipmentCommands.parse(normalized);
     }

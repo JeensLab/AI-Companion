@@ -237,7 +237,9 @@ public final class CompanionChatScreen extends Screen {
 
     /** «Иди к озеру» with no such marker, or a name two markers fit: one honest question, no model request and no walk. */
     private static boolean clarifyPlace(String text, String trace) {
-        var place = CompanionPlaceSpeech.parse(text, companionName(), CompanionMarkerView.names(), CompanionMarkerView.enabled());
+        // One snapshot: the names and the switch are read together, never a new list with the old switch.
+        var known = CompanionMarkerView.snapshot();
+        var place = CompanionPlaceSpeech.parse(text, companionName(), known.names(), known.enabled());
         if (place.question() == null) return false;
         CompanionDiagnostics.event(trace, "message_route", "route", "local_clarification", "reason", "place_" + place.kind().name().toLowerCase(java.util.Locale.ROOT));
         OpenRouterClient.recordLocalExchange(text, place.question());

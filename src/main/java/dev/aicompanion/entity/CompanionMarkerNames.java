@@ -32,8 +32,21 @@ public final class CompanionMarkerNames {
 
     /** 1..24 characters and not a coordinate triple. */
     public static boolean valid(String name) {
+        return refusal(name).isEmpty();
+    }
+
+    /**
+     * The honest line for a name that is not a marker name, or "" when it is one: empty, longer than {@link #MAX} or a
+     * coordinate triple. One source for speech, the store, the codec and the screen, so a name one of them accepts is a
+     * name all of them accept.
+     */
+    public static String refusal(String name) {
         String clean = clean(name);
-        return !clean.isEmpty() && clean.length() <= MAX && !COORDINATES.matcher(clean).matches();
+        if (clean.isEmpty()) return "Название метки не может быть пустым.";
+        if (clean.length() > MAX)
+            return "Название метки — до " + MAX + " символов: «" + clean + "» длиннее на " + (clean.length() - MAX) + ".";
+        if (COORDINATES.matcher(clean).matches()) return "«" + clean + "» — это координаты, а не название.";
+        return "";
     }
 
     /** True when the spoken phrase (a marker name in any case form) means this marker. */

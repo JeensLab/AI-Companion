@@ -2,6 +2,7 @@ package dev.aicompanion.client;
 
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.entity.CompanionMarkerBoard;
+import dev.aicompanion.entity.CompanionMarkerNames;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -140,14 +141,16 @@ public final class CompanionMarkersScreen extends Screen {
 
     private void addHere() {
         var server = minecraft.getSingleplayerServer();
-        if (server == null || minecraft.player == null) return;
-        var playerId = minecraft.player.getUUID();
+        if (server == null || minecraft.player == null) { notice = "Список меток доступен в одиночном мире."; return; }
         String wanted = name.getValue().trim();
+        String refusal = CompanionMarkerNames.refusal(wanted);
+        if (!refusal.isEmpty()) { notice = refusal; return; }
+        var playerId = minecraft.player.getUUID();
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             CompanionMarkerBoard.AddResult added = player == null ? null : CompanionMarkerBoard.addHere(player, wanted);
             minecraft.execute(() -> {
-                notice = added != null ? added.message() : "Название метки — от 1 до 24 символов, без координат.";
+                notice = added != null ? added.message() : "Тебя нет на сервере — метку добавить не удалось.";
                 refresh();
             });
         });
@@ -156,19 +159,17 @@ public final class CompanionMarkersScreen extends Screen {
     private void saveSelected() {
         if (selected == null) { notice = "Сначала выбери метку кнопкой «Изменить»."; return; }
         var server = minecraft.getSingleplayerServer();
-        if (server == null || minecraft.player == null) return;
+        if (server == null || minecraft.player == null) { notice = "Список меток доступен в одиночном мире."; return; }
         var playerId = minecraft.player.getUUID();
         UUID id = selected;
         String wanted = name.getValue().trim();
         int px = number(x.getValue()), py = number(y.getValue()), pz = number(z.getValue());
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
-            CompanionMarkerBoard.Saved saved = player == null ? new CompanionMarkerBoard.Saved(false, false)
-                    : CompanionMarkerBoard.save(player, id, wanted, px, py, pz);
+            // The board answers with the cause: a vanished marker, a name that did not fit or a point not saved.
+            CompanionMarkerBoard.Saved saved = CompanionMarkerBoard.save(player, id, wanted, px, py, pz);
             minecraft.execute(() -> {
-                if (!saved.renamed()) notice = "Название пустое, длиннее 24 символов, координаты или уже занято другой меткой.";
-                else if (!saved.moved()) notice = "Координаты сохранить не удалось.";
-                else notice = "Метка сохранена.";
+                notice = saved.message();
                 refresh();
             });
         });

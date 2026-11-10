@@ -28,8 +28,9 @@ public final class CompanionMarkerBoard {
     /** A marker added where the player stands, and the honest line about it (including the oldest one it evicted). */
     public record AddResult(Place place, String message) { }
 
-    /** The outcome of the screen's save: the rename first, and the move only when the rename was accepted. */
-    public record Saved(boolean renamed, boolean moved) { }
+    /** The outcome of the screen's save: the rename first, the move only when the rename was accepted, and the honest
+     * line for the cause — a vanished marker and a name that did not fit are said apart, never as one garbled sentence. */
+    public record Saved(boolean renamed, boolean moved, String message) { }
 
     /** Every marker of this player, oldest first. */
     public static List<Place> places(ServerPlayer player) {
@@ -77,10 +78,28 @@ public final class CompanionMarkerBoard {
 
     /** Saves a rename and a move together, as the settings screen does: a refused name leaves the point untouched. */
     public static Saved save(ServerPlayer player, UUID markerId, String name, int x, int y, int z) {
-        if (player == null) return new Saved(false, false);
-        boolean renamed = rename(player, markerId, name);
-        boolean moved = renamed && move(player, markerId, x, y, z);
-        return new Saved(renamed, moved);
+        if (player == null) return new Saved(false, false, "Тебя нет на сервере — метку сохранить не удалось.");
+        var server = player.level().getServer();
+        if (server == null) return new Saved(false, false, "Мир не загружен — метку сохранить не удалось.");
+        CompanionMarkers store = CompanionMarkers.get(server);
+        String clean = CompanionMarkerNames.clean(name);
+        // The store answers the cause itself: a vanished marker, an empty, long or coordinate name, or a taken one.
+        CompanionMarkers.Renamed outcome = store.renameChecked(player.getUUID(), markerId, clean);
+        if (outcome != CompanionMarkers.Renamed.RENAMED) return new Saved(false, false, refusal(outcome, store, player, markerId, clean));
+        boolean moved = move(player, markerId, x, y, z);
+        return new Saved(true, moved, moved ? "Метка сохранена." : "Название сохранено, но координаты сохранить не удалось.");
+    }
+
+    /** The line for a refused save, one cause at a time: «метка не найдена» and «имя не подошло» are never one sentence. */
+    private static String refusal(CompanionMarkers.Renamed outcome, CompanionMarkers store, ServerPlayer player, UUID markerId, String clean) {
+        if (outcome == CompanionMarkers.Renamed.NOT_FOUND) return "Такой метки уже нет: возможно, её удалили.";
+        if (outcome == CompanionMarkers.Renamed.EMPTY_NAME) return "Название метки не может быть пустым.";
+        if (outcome == CompanionMarkers.Renamed.TOO_LONG) return "Название метки — до " + CompanionMarkerNames.MAX + " символов.";
+        if (outcome == CompanionMarkers.Renamed.COORDINATES) return "«" + clean + "» — это координаты, а не название.";
+        for (CompanionMarkers.Marker other : store.all(player.getUUID()))
+            if (!other.id().equals(markerId) && other.name().equalsIgnoreCase(clean))
+                return "Такое название уже есть у метки «" + other.name() + "».";
+        return "Такое название уже есть у другой метки.";
     }
 
     /** Saves a marker where the player stands now; null when the name is refused. */
@@ -91,6 +110,7 @@ public final class CompanionMarkerBoard {
         if (!CompanionMarkerNames.valid(clean)) return null;
         CompanionMarkers.Added added = CompanionMarkers.get(server)
                 .add(player.getUUID(), clean, player.level().dimension(), player.blockPosition(), player.level().getGameTime());
+        if (added.refused()) return null;
         List<Place> places = places(player);
         Place place = null;
         for (int index = 0; index < places.size(); index++) if (places.get(index).id().equals(added.marker().id()))

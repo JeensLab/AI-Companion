@@ -17,19 +17,29 @@ import java.util.function.BiConsumer;
  * a stale name costs a walk, never a wrong marker.
  */
 public final class CompanionMarkerView {
-    private static volatile List<String> names = List.of();
-    private static volatile boolean enabled = true;
+    /**
+     * One read of the copy: the names and the switch as the server published them together. Two separate fields could
+     * pair a new list with the old switch, which would recognise a name of a feature that is off, or miss one that is on.
+     */
+    public record Snapshot(List<String> names, boolean enabled) {
+        public Snapshot { names = List.copyOf(names); }
+    }
+
+    private static volatile Snapshot state = new Snapshot(List.of(), true);
 
     private CompanionMarkerView() { }
 
-    public static List<String> names() { return names; }
+    /** The names and the switch from the same publication: route and clarify a phrase against this pair only. */
+    public static Snapshot snapshot() { return state; }
 
-    public static boolean enabled() { return enabled; }
+    public static List<String> names() { return state.names(); }
 
-    static void clear() { names = List.of(); enabled = true; }
+    public static boolean enabled() { return state.enabled(); }
 
-    /** Sets the copy; both fields are volatile, so the server thread may deliver after a settings change too. */
-    static void deliver(List<String> known, boolean on) { names = List.copyOf(known); enabled = on; }
+    static void clear() { state = new Snapshot(List.of(), true); }
+
+    /** Publishes the copy as one immutable snapshot, so a reader never sees half of a settings change. */
+    public static void deliver(List<String> known, boolean on) { state = new Snapshot(known, on); }
 
     /**
      * Runs on the server thread after the settings screen changed the list: the chat must recognise the new names at
@@ -41,7 +51,7 @@ public final class CompanionMarkerView {
         List<String> known = new ArrayList<>();
         for (CompanionMarkers.Marker marker : CompanionMarkers.get(server).all(player.getUUID())) known.add(marker.name());
         CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
-        deliver(List.copyOf(known), companion == null ? enabled : companion.markersEnabled());
+        deliver(List.copyOf(known), companion == null ? state.enabled() : companion.markersEnabled());
     }
 
     /** Reads the names from the world on the server thread, with the switch the companion was given. */

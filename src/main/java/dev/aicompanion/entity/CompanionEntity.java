@@ -764,6 +764,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         BlockPos at = owner != null ? owner.blockPosition() : blockPosition();
         CompanionMarkers.Added added = CompanionMarkers.get(level.getServer())
                 .add(getOwnerId(), clean, level.dimension(), at, level.getGameTime());
+        if (added.refused()) return CompanionActionResult.failed(added.refusal());
         refreshPlaces();
         String where = added.marker().pos().toShortString() + " в " + CompanionMarkers.worldName(added.marker().dimension());
         String line = added.moved() ? "Метка «" + added.marker().name() + "» теперь здесь: " + where + "."

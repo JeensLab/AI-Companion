@@ -35,7 +35,14 @@ public final class CompanionMarkers extends SavedData {
     public record Marker(UUID id, String name, ResourceKey<Level> dimension, BlockPos pos, long created) { }
 
     /** A marker saved now; {@code evicted} is the oldest one that made room for it, if the list was full. */
-    public record Added(Marker marker, Marker evicted, boolean moved) { }
+    public record Added(Marker marker, Marker evicted, boolean moved, String refusal) {
+        static Added refused(String line) { return new Added(null, null, false, line); }
+        /** True when the name was not a marker name: nothing was stored, and {@link #refusal()} is the honest line. */
+        public boolean refused() { return marker == null; }
+    }
+
+    /** Why a rename was refused, or that it was accepted: the screen says which cause, not one line for all of them. */
+    public enum Renamed { RENAMED, NOT_FOUND, EMPTY_NAME, TOO_LONG, COORDINATES, TAKEN }
 
     private final Map<UUID, List<Marker>> markers = new HashMap<>();
 
@@ -53,10 +60,13 @@ public final class CompanionMarkers extends SavedData {
 
     /**
      * Saves a marker at the companion's point. The same name again moves that marker instead of making a second one, so
-     * one name never means two places. A full list loses its oldest marker.
+     * one name never means two places. A full list loses its oldest marker. A name the rename and the load refuse is not
+     * stored here either: otherwise it would be saved and silently dropped on the next load.
      */
     public Added add(UUID owner, String name, ResourceKey<Level> dimension, BlockPos pos, long tick) {
         String clean = CompanionMarkerNames.clean(name);
+        String refusal = CompanionMarkerNames.refusal(clean);
+        if (!refusal.isEmpty()) return Added.refused(refusal);
         List<Marker> list = markers.computeIfAbsent(owner, key -> new ArrayList<>());
         for (int at = 0; at < list.size(); at++) {
             Marker marker = list.get(at);
@@ -64,7 +74,7 @@ public final class CompanionMarkers extends SavedData {
             Marker moved = new Marker(marker.id(), clean, dimension, pos.immutable(), marker.created());
             list.set(at, moved);
             setDirty();
-            return new Added(moved, null, true);
+            return new Added(moved, null, true, "");
         }
         Marker marker = new Marker(UUID.randomUUID(), clean, dimension, pos.immutable(), tick);
         Marker evicted = null;
@@ -74,7 +84,7 @@ public final class CompanionMarkers extends SavedData {
         }
         list.add(marker);
         setDirty();
-        return new Added(marker, evicted, false);
+        return new Added(marker, evicted, false, "");
     }
 
     /** Every marker of the owner, oldest first. */
@@ -99,16 +109,22 @@ public final class CompanionMarkers extends SavedData {
 
     /** Renames a marker; a name another marker already has is refused, so one name never means two places. */
     public boolean rename(UUID owner, UUID markerId, String name) {
+        return renameChecked(owner, markerId, name) == Renamed.RENAMED;
+    }
+
+    /** The rename and the reason it was refused: the marker first, then the name, so each cause has its own answer. */
+    public Renamed renameChecked(UUID owner, UUID markerId, String name) {
         String clean = CompanionMarkerNames.clean(name);
-        if (!CompanionMarkerNames.valid(clean)) return false;
         List<Marker> list = markers.get(owner);
-        if (list == null) return false;
-        Marker marker = byId(owner, markerId);
-        if (marker == null) return false;
-        for (Marker other : list) if (!other.id().equals(markerId) && other.name().equalsIgnoreCase(clean)) return false;
+        Marker marker = markerId == null || list == null ? null : byId(owner, markerId);
+        if (marker == null) return Renamed.NOT_FOUND;
+        if (clean.isEmpty()) return Renamed.EMPTY_NAME;
+        if (clean.length() > CompanionMarkerNames.MAX) return Renamed.TOO_LONG;
+        if (!CompanionMarkerNames.valid(clean)) return Renamed.COORDINATES;
+        for (Marker other : list) if (!other.id().equals(markerId) && other.name().equalsIgnoreCase(clean)) return Renamed.TAKEN;
         list.set(list.indexOf(marker), new Marker(marker.id(), clean, marker.dimension(), marker.pos(), marker.created()));
         setDirty();
-        return true;
+        return Renamed.RENAMED;
     }
 
     /** Moves a marker to another point of its own dimension. */
