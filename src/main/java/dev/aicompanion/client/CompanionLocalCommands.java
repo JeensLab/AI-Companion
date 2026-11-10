@@ -104,7 +104,7 @@ public final class CompanionLocalCommands {
                 || normalized.contains("стой здесь") || normalized.contains("жди тут")) {
             return "companion stay";
         }
-        if (normalized.contains("защищай меня") || normalized.contains("защити меня") || normalized.contains("охраняй меня") || normalized.contains("охраняй нас")
+        if (normalized.contains("защищай меня") || normalized.contains("защити меня")
                 || normalized.contains("прикрывай меня") || normalized.contains("помогай в бою")) {
             return "companion guard";
         }

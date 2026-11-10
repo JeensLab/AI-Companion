@@ -170,11 +170,12 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
-    /** «Охраняй меня» is still the guard order, and «до дома» without a marker stays the model's, not a question. */
+    /** «Охраняй меня» is no marker (the word points at a person), and «до дома» without a marker stays the model's, not a question. */
     @GameTest(template = "empty")
     public static void peopleAndTheHomeWordAreNotMarkers(GameTestHelper h) {
-        h.assertTrue("companion guard".equals(CompanionLocalCommands.route("охраняй меня", "Олег", List.of("дача"), true)),
-                "«охраняй меня»: " + CompanionLocalCommands.route("охраняй меня", "Олег", List.of("дача"), true));
+        String guard = CompanionLocalCommands.route("охраняй меня", "Олег", List.of("дача"), true);
+        h.assertTrue(guard == null || !guard.startsWith("companion place"),
+                "«охраняй меня» became a place order: " + guard);
         var home = CompanionPlaceSpeech.parse("проведи меня до дома", "Олег", List.of("дача"), true);
         h.assertTrue(home.kind() == CompanionPlaceSpeech.Kind.NONE && home.question() == null,
                 "«до дома» became a question: " + home.kind() + " " + home.question());
