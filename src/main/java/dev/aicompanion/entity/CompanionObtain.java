@@ -85,11 +85,11 @@ public final class CompanionObtain {
     /** Gets {@code count} of the key into the bag and takes it straight out again (it is used by the caller). */
     private boolean produce(String key, int count, int depth) {
         switch (key) {
-            case LOGS -> { return add("gather_wood", "", count); }
-            case STONE -> { return add("gather_stone", "", count); }
+            case LOGS -> { return addSplit("gather_wood", "", count, 64); }
+            case STONE -> { return addSplit("gather_stone", "", count, 64); }
             case PLANKS -> { return need(LOGS, ceil(count, 4), depth + 1); }               // the craft that needs them makes them
             case "minecraft:stick" -> { return need(PLANKS, ceil(count, 4) * 2, depth + 1); }
-            case "minecraft:dirt" -> { return add("gather_dirt", "", count); }
+            case "minecraft:dirt" -> { return addSplit("gather_dirt", "", count, 64); }
             case "minecraft:sand", "minecraft:red_sand", "minecraft:gravel" -> { return addSplit("gather_loose", key, count, 64); }
             case FLINT -> { return addSplit("gather_loose", key, count, FLINT_STEP); }   // gravel dug (and re-placed) until this much flint drops
             // An empty bucket of his (or one made now) filled from living water (CompanionWaterFill); none to be had in the Nether or the
