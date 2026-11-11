@@ -129,23 +129,10 @@ public final class CompanionObtainTests {
         });
     }
 
-    /** Iron ingots: the ore mined, the raw iron smelted in the furnace nearby. */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
-    public static void ironIngotsFromOre(GameTestHelper h) {
-        ground(h);
-        h.setBlock(new BlockPos(20, GROUND + 1, 16), Blocks.IRON_ORE); h.setBlock(new BlockPos(20, GROUND + 1, 17), Blocks.IRON_ORE);
-        h.setBlock(new BlockPos(13, GROUND + 1, 19), Blocks.FURNACE);
-        CompanionEntity companion = spawn(h);
-        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
-        companion.setItem(0, new ItemStack(Items.COAL, 2));
-        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:iron_ingot\",\"count\":2}]");
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
-            h.assertTrue(count(companion, Items.IRON_INGOT) >= 2, future.join().report());
-        });
-    }
-
-    /** An ingot leaves the bag after the smelting (a pickaxe upgrade in the game): the missing ore is dug up and smelted too. */
+    /**
+     * Iron ingots: the ore mined, the raw iron smelted in the furnace nearby; an ingot then leaves the bag after the smelting
+     * (a pickaxe upgrade in the game): the missing ore is dug up and smelted too.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 3600)
     public static void ingotsLostOnTheWayAreMinedAgain(GameTestHelper h) {
         ground(h);

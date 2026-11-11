@@ -82,23 +82,6 @@ public final class CompanionCreeperFleeTests {
         });
     }
 
-    /** The fuse lit two and a half blocks off: four blocks off in twenty ticks, and alive when it blows or goes out. */
-    @GameTest(template = "tall_tree", timeoutTicks = 300)
-    public static void aLitFuseGetsHimFourBlocksOffInTwentyTicks(GameTestHelper h) {
-        CompanionEntity c = setup(h);
-        Creeper creeper = creeper(h, new Vec3(19, 1, 16.5));
-        creeper.ignite();
-        long begun = h.getTick();
-        h.onEachTick(() -> {
-            long elapsed = h.getTick() - begun;
-            double gap = c.distanceTo(creeper);
-            String trace = " | tick " + elapsed + ", gap " + String.format("%.1f", gap) + (creeper.isAlive() ? "" : " (gone)") + ", health " + c.getHealth();
-            h.assertTrue(c.isAlive(), "Died" + trace);
-            if (elapsed == RUN_TICKS) h.assertTrue(!creeper.isAlive() || gap >= RUN_GAP, "Less than 4 blocks off in 20 ticks" + trace);
-            if (elapsed >= WATCH_TICKS) h.succeed();
-        });
-    }
-
     /** On a long goal with a sword in hand an unlit creeper is struck, not run from. */
     @GameTest(template = "tall_tree", batch = "creeper_flee_goal", timeoutTicks = 600)
     public static void anArmedGoalWorkerStrikesAnUnlitCreeper(GameTestHelper h) {
@@ -119,19 +102,22 @@ public final class CompanionCreeperFleeTests {
         });
     }
 
-    /** The fuse lit two and a half blocks off, a sword in hand and no order: a blow lands within half a second, and the blast does not reach him. */
+    /**
+     * The fuse lit two and a half blocks off, a sword in hand and no order: a blow lands within half a second, he is four blocks off
+     * in twenty ticks (or the creeper is gone), and the blast does not reach him.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
-    public static void aLitFuseIsStruckBeforeHeRuns(GameTestHelper h) { strikeBeforeTheRun(h, setup(h)); }
+    public static void aLitFuseIsStruckBeforeHeRuns(GameTestHelper h) { strikeBeforeTheRun(h, setup(h), true); }
 
     /** The same with no weapon at all: the blow is a punch. */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
     public static void aLitFuseIsPunchedBeforeHeRunsWithNoWeapon(GameTestHelper h) {
         CompanionEntity c = setup(h);
         c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
-        strikeBeforeTheRun(h, c);
+        strikeBeforeTheRun(h, c, false);
     }
 
-    private static void strikeBeforeTheRun(GameTestHelper h, CompanionEntity c) {
+    private static void strikeBeforeTheRun(GameTestHelper h, CompanionEntity c, boolean gapAtRun) {
         Creeper creeper = creeper(h, new Vec3(19, 1, 16.5));
         creeper.ignite();
         long begun = h.getTick();
@@ -141,6 +127,7 @@ public final class CompanionCreeperFleeTests {
                     + ", health " + c.getHealth();
             h.assertTrue(c.isAlive(), "Died" + trace);
             if (elapsed == BLOW_TICKS) h.assertTrue(creeper.isDeadOrDying() || creeper.getHealth() < creeper.getMaxHealth(), "No blow before the run" + trace);
+            if (gapAtRun && elapsed == RUN_TICKS) h.assertTrue(!creeper.isAlive() || c.distanceTo(creeper) >= RUN_GAP, "Less than 4 blocks off in 20 ticks" + trace);
             if (elapsed >= WATCH_TICKS) {
                 h.assertTrue(c.getHealth() >= c.getMaxHealth(), "The blast reached him" + trace);
                 h.succeed();

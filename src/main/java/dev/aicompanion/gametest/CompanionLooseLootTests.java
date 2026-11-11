@@ -100,47 +100,15 @@ public final class CompanionLooseLootTests {
         player.teleportTo(companion.getX() + 0.5D, companion.getY(), companion.getZ());
         player.hurt(h.getLevel().damageSources().genericKill(), 100.0F);
         companion.setHealth(companion.getMaxHealth() / 3);
-        // The series that hunts the flake reads these lines: the tick the things were taken, and the fate of every drop of the pile.
-        var pile = new net.minecraft.world.phys.Vec3[1];
-        long[] keptAt = {-1};
-        var piled = new java.util.LinkedHashMap<ItemEntity, String>();
-        var trail = new java.util.ArrayList<String>();
-        java.util.function.Supplier<String> around = () -> {
-            var sb = new StringBuilder();
-            for (var e : h.getLevel().getEntities(companion, companion.getBoundingBox().inflate(16.0D), e -> !(e instanceof ItemEntity)))
-                sb.append(' ').append(e.getType().toShortString()).append('@').append(String.format("%.1f", e.position().distanceTo(pile[0] == null ? companion.position() : pile[0])))
-                  .append(e instanceof CompanionEntity other ? "{kept bread " + other.keptForPlayer(Items.BREAD) + ", bag " + stored(other, Items.BREAD) + ", hp " + other.getHealth() + "}"
-                          : e instanceof net.minecraft.world.entity.player.Player p ? "{alive " + p.isAlive() + ", bread " + p.getInventory().countItem(Items.BREAD) + "}" : "");
-            for (var e : h.getLevel().getEntitiesOfClass(ItemEntity.class, companion.getBoundingBox().inflate(16.0D)))
-                sb.append(' ').append(e.getItem().getCount()).append('x').append(e.getItem().getItem()).append('@').append(String.format("%.1f", e.position().distanceTo(pile[0] == null ? companion.position() : pile[0])))
-                  .append(e.getPersistentData().getBoolean("aicompanion:players") ? "[players]" : "").append(e.getTarget() != null ? "[aimed]" : "").append(e.hasPickUpDelay() ? "[delay]" : "");
-            return sb.toString();
-        };
-        h.onEachTick(() -> {
-            for (var entry : piled.entrySet()) {
-                var drop = entry.getKey();
-                String now = drop.isRemoved() ? "removed" : drop.getItem().getCount() + "x" + drop.getItem().getItem() + (drop.hasPickUpDelay() ? "[delay]" : "") + String.format("@%.2f", drop.position().distanceTo(pile[0]));
-                if (now.equals(entry.getValue())) continue;
-                entry.setValue(now);
-                trail.add("t" + h.getTick() + " " + now + " | kept " + companion.keptForPlayer(Items.IRON_INGOT) + "/" + companion.keptForPlayer(Items.BREAD) + "/" + companion.keptForPlayer(Items.IRON_SWORD) + " | bag " + companion.getStoredItemsSummary() + " | oleg " + String.format("%.2f", companion.position().distanceTo(pile[0])) + " | " + around.get());
-            }
-            if (keptAt[0] >= 0 || pile[0] == null || companion.keptForPlayer(Items.IRON_INGOT) != 4 || companion.keptForPlayer(Items.BREAD) != 3 || companion.keptForPlayer(Items.IRON_SWORD) != 1) return;
-            keptAt[0] = h.getTick();
-            AICompanionMod.LOGGER.info("whatFallsOutOfTheDeadPlayerIsKeptForHim: kept for the player at tick {} , {} blocks from the pile, phase {}", keptAt[0], String.format("%.2f", companion.position().distanceTo(pile[0])), companion.workPhase());
-        });
         h.startSequence().thenExecuteAfter(2, () -> {
             var drops = h.getLevel().getEntitiesOfClass(ItemEntity.class, companion.getBoundingBox().inflate(8.0D));
             h.assertTrue(!drops.isEmpty(), "The dead player dropped nothing");
             // The drops scatter over a few blocks; he walks over them, so they are put at his feet, without the toss that rolls them away.
             for (ItemEntity drop : drops) { drop.setPos(companion.getX(), companion.getY() + 0.2D, companion.getZ()); drop.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO); }
-            pile[0] = companion.position();
-            for (ItemEntity drop : drops) piled.put(drop, "");
-            AICompanionMod.LOGGER.info("whatFallsOutOfTheDeadPlayerIsKeptForHim: pile of {} at tick {}:{}", drops.size(), h.getTick(), around.get());
         }).thenWaitUntil(() -> h.assertTrue(companion.keptForPlayer(Items.IRON_INGOT) == 4 && companion.keptForPlayer(Items.BREAD) == 3
                 && companion.keptForPlayer(Items.IRON_SWORD) == 1, "What fell out of the dead player is not kept for him: " + companion.keptForPlayer(Items.IRON_INGOT)
                 + " ingots, " + companion.keptForPlayer(Items.BREAD) + " bread, " + companion.keptForPlayer(Items.IRON_SWORD) + " swords; bag " + companion.getStoredItemsSummary()
-                + "; tick " + h.getTick() + ", " + (pile[0] == null ? "no pile" : String.format("%.2f", companion.position().distanceTo(pile[0])) + " blocks from the pile") + ", phase " + companion.workPhase()
-                + "; player bread " + player.getInventory().countItem(Items.BREAD) + " alive " + player.isAlive() + "; around:" + around.get() + " || trail: " + String.join(" ;; ", trail)))
+                + "; tick " + h.getTick() + ", phase " + companion.workPhase()))
           .thenIdle(200)
           .thenExecute(() -> {
             h.assertTrue(companion.keptForPlayer(Items.BREAD) == 3, "He ate the player's bread");
