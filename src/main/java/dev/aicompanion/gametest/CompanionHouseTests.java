@@ -21,6 +21,8 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -175,7 +177,7 @@ public final class CompanionHouseTests {
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void villageHouseStandsLikeItsTemplateAndSpendsTheBag(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper);
+        CompanionEntity companion = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(companion, bag);
         helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
@@ -189,7 +191,7 @@ public final class CompanionHouseTests {
 
     @GameTest(template = "tall_tree", timeoutTicks = 9000)
     public static void villageHouseResumesAfterStopAndReloadWithoutDuplicates(GameTestHelper helper) {
-        CompanionEntity original = setup(helper);
+        CompanionEntity original = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(original, bag);
         int total = bag.values().stream().mapToInt(Integer::intValue).sum();
@@ -220,7 +222,7 @@ public final class CompanionHouseTests {
 
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void villageHouseWithMissingMaterialsNamesThemAndBuildsNothing(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper);
+        CompanionEntity companion = groundedSetup(helper);
         companion.setItem(0, new ItemStack(Items.COBBLESTONE, 10));
         helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
         helper.succeedWhen(() -> {
@@ -239,7 +241,7 @@ public final class CompanionHouseTests {
     /** A gabled roof is out of reach from the ground: he stands on a dirt column for it, and nothing of it is left afterwards. */
     @GameTest(template = "tall_tree", timeoutTicks = 9000)
     public static void gabledHouseIsBuiltFromScaffoldingThatLeavesNoTrace(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper);
+        CompanionEntity companion = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, GABLED_HOUSE_TEMPLATE);
         fill(companion, bag);
         companion.setItem(companion.getContainerSize() - 1, new ItemStack(Items.DIRT, DIRT));
@@ -259,7 +261,7 @@ public final class CompanionHouseTests {
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void gabledHouseWithoutDirtSaysHowMuchIsNeeded(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper);
+        CompanionEntity companion = groundedSetup(helper);
         fill(companion, placeReference(helper, GABLED_HOUSE_TEMPLATE));
         helper.assertTrue(companion.startWork("build_house", GABLED_HOUSE, 1).success(), "Template house work rejected");
         helper.succeedWhen(() -> {
@@ -272,7 +274,7 @@ public final class CompanionHouseTests {
 
     @GameTest(template = "tall_tree", timeoutTicks = 12000)
     public static void scaffoldingLeftByAnInterruptionIsTakenDownOnResume(GameTestHelper helper) {
-        CompanionEntity original = setup(helper);
+        CompanionEntity original = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, LOG_HOUSE_TEMPLATE);
         fill(original, bag);
         original.setItem(original.getContainerSize() - 1, new ItemStack(Items.DIRT, DIRT));
@@ -314,6 +316,116 @@ public final class CompanionHouseTests {
         });
     }
 
+    /**
+     * The site is overgrown and uneven wherever he looks: a tree every four blocks (with its crown), a block of red sand sticking up
+     * every four, grass and flowers between. The floor is sunk into the ground, so the door stands at the level of the ground.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 9000)
+    public static void villageHouseIsBuiltOnAnOvergrownUnevenSiteWithItsDoorAtGroundLevel(GameTestHelper helper) {
+        CompanionEntity companion = wildSetup(helper);
+        Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
+        fill(companion, bag);
+        helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains(VILLAGE_HOUSE), companion.getLastTaskResult());
+            BlockPos base = templateBase(companion);
+            assertLooksLikeReference(helper, base);
+            var size = helper.getLevel().getServer().getStructureManager().get(VILLAGE_HOUSE_TEMPLATE).orElseThrow().getSize();
+            BlockPos door = null;
+            for (int x = 0; x < size.getX(); x++) for (int y = 0; y < size.getY(); y++) for (int z = 0; z < size.getZ(); z++) {
+                BlockState reference = helper.getBlockState(new BlockPos(1 + x, 1 + y, 1 + z));
+                if (reference.getBlock() instanceof DoorBlock && reference.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER) door = base.offset(x, y, z);
+                // The box above the floor is cleared: what the template leaves as air is air, not a bush or a leaf of the old tree.
+                if (y >= 1 && reference.isAir()) helper.assertTrue(helper.getLevel().getBlockState(base.offset(x, y, z)).isAir(), "Not cleared: " + helper.getLevel().getBlockState(base.offset(x, y, z)) + " at " + helper.relativePos(base.offset(x, y, z)));
+            }
+            helper.assertTrue(door != null, "The reference has no door");
+            helper.assertTrue(helper.relativePos(door).getY() == GROUND + 1, "The door is not at ground level: " + helper.relativePos(door));
+            boolean walksIn = false;
+            for (var side : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                BlockPos outside = door.relative(side);
+                var level = helper.getLevel();
+                walksIn |= level.getBlockState(outside).getCollisionShape(level, outside).isEmpty() && level.getBlockState(outside.above()).getCollisionShape(level, outside.above()).isEmpty()
+                        && level.getBlockState(outside.below()).isFaceSturdy(level, outside.below(), net.minecraft.core.Direction.UP);
+            }
+            helper.assertTrue(walksIn, "No level ground in front of the door: he would have to jump to get in");
+        });
+    }
+
+    /** A chest with things in it is not his to break: he stops, says what is in the way and where, and leaves it as it was. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void aChestInTheWayIsLeftIntactAndNamed(GameTestHelper helper) {
+        CompanionEntity companion = groundedSetup(helper);
+        Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
+        fill(companion, bag);
+        var size = helper.getLevel().getServer().getStructureManager().get(VILLAGE_HOUSE_TEMPLATE).orElseThrow().getSize();
+        BlockPos rel = null;
+        for (int y = 2; y < size.getY() && rel == null; y++) for (int x = 0; x < size.getX() && rel == null; x++) for (int z = 0; z < size.getZ() && rel == null; z++) {
+            BlockState reference = helper.getBlockState(new BlockPos(1 + x, 1 + y, 1 + z));
+            if (!reference.isAir() && !(reference.getBlock() instanceof DoorBlock) && !(reference.getBlock() instanceof BedBlock)) rel = new BlockPos(x, y, z);
+        }
+        BlockPos wall = rel;
+        BlockPos[] placedAt = {null};
+        // The chest is put down after the site was chosen and the floor begun: what he cannot have known when he chose it.
+        helper.onEachTick(() -> {
+            var data = saved(companion).getCompound("TemplateBuild");
+            if (placedAt[0] == null && data.getLongArray("Placed").length > 0) {
+                BlockPos at = BlockPos.of(data.getLong("Base")).offset(wall);
+                helper.getLevel().setBlock(at, Blocks.CHEST.defaultBlockState(), 3);
+                ((Container) helper.getLevel().getBlockEntity(at)).setItem(0, new ItemStack(Items.DIAMOND, 5));
+                placedAt[0] = at;
+            }
+        });
+        helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(placedAt[0] != null, "The chest is not put down yet");
+            done(helper, companion);
+            String said = companion.getLastTaskResult();
+            helper.assertTrue(!companion.didLastTaskSucceed() && said.contains(placedAt[0].toShortString()) && said.contains("Мешает"), said);
+            helper.assertTrue(helper.getLevel().getBlockState(placedAt[0]).is(Blocks.CHEST)
+                    && helper.getLevel().getBlockEntity(placedAt[0]) instanceof Container held && held.getItem(0).is(Items.DIAMOND) && held.getItem(0).getCount() == 5, "The chest or what it held was touched");
+        });
+    }
+
+    /**
+     * What he clears is his: the logs and the sand come to the bag as drops, nothing is left lying and nothing is lost, also when he is
+     * stopped in the middle of it and the world is left and entered again.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 12000)
+    public static void whatIsClearedIsPickedUpAndSurvivesAStopAndReload(GameTestHelper helper) {
+        CompanionEntity original = wildSetup(helper);
+        Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
+        helper.assertTrue(!bag.containsKey(Items.RED_SAND) && !bag.containsKey(Items.OAK_LOG), "The premise: the building takes neither red sand nor logs");
+        fill(original, bag);
+        int logs = countBlocks(helper, Blocks.OAK_LOG), sand = countBlocks(helper, Blocks.RED_SAND);
+        CompanionEntity[] current = {original};
+        long[] stopped = {-1};
+        helper.onEachTick(() -> {
+            if (stopped[0] < 0 && countBlocks(helper, Blocks.OAK_LOG) < logs && saved(current[0]).getCompound("TemplateBuild").contains("Base")) {
+                current[0].stopGathering();
+                stopped[0] = helper.getTick();
+                CompoundTag data = new CompoundTag(); original.saveWithoutId(data); original.discard();
+                helper.runAfterDelay(1, () -> {
+                    CompanionEntity replacement = AICompanionMod.COMPANION.get().create(helper.getLevel());
+                    replacement.load(data); helper.getLevel().addFreshEntity(replacement); current[0] = replacement;
+                });
+            }
+            if (stopped[0] >= 0 && helper.getTick() - stopped[0] == 30) helper.assertTrue(current[0].startWork("build_house", "resume", 1).success(), "Resume rejected");
+        });
+        helper.assertTrue(original.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stopped[0] >= 0 && helper.getTick() - stopped[0] > 40, "Not stopped and resumed yet");
+            done(helper, current[0]);
+            helper.assertTrue(current[0].didLastTaskSucceed(), current[0].getLastTaskResult());
+            int lying = 0;
+            for (ItemEntity item : helper.getLevel().getEntitiesOfClass(ItemEntity.class, helper.getBounds().inflate(4))) if (item.getItem().is(Items.OAK_LOG) || item.getItem().is(Items.RED_SAND)) lying += item.getItem().getCount();
+            helper.assertTrue(lying == 0, lying + " logs or sand are left lying");
+            helper.assertTrue(count(current[0], Items.OAK_LOG) == logs - countBlocks(helper, Blocks.OAK_LOG), "Logs: cleared " + (logs - countBlocks(helper, Blocks.OAK_LOG)) + ", in the bag " + count(current[0], Items.OAK_LOG));
+            helper.assertTrue(count(current[0], Items.RED_SAND) == sand - countBlocks(helper, Blocks.RED_SAND), "Sand: dug " + (sand - countBlocks(helper, Blocks.RED_SAND)) + ", in the bag " + count(current[0], Items.RED_SAND));
+            helper.assertTrue(logs > countBlocks(helper, Blocks.OAK_LOG), "No log was cleared: the premise of the test is gone");
+        });
+    }
+
     @GameTest(template = "empty")
     public static void buildingNamesComeOnlyFromTheCatalogue(GameTestHelper helper) {
         var named = CompanionWorkCommands.parse("построй " + VILLAGE_HOUSE, "Олег");
@@ -329,6 +441,8 @@ public final class CompanionHouseTests {
     /** The vanilla template placed in the arena corner is the reference; returns what the bag needs to build one more like it. */
     private static Map<Item, Integer> placeReference(GameTestHelper helper, ResourceLocation id) {
         var template = helper.getLevel().getServer().getStructureManager().get(id).orElseThrow();
+        // The ground of the arena is not part of the reference: its corner is cleared first.
+        for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(7, 7, 7))) helper.setBlock(rel, Blocks.AIR);
         BlockPos at = helper.absolutePos(new BlockPos(1, 1, 1));
         template.placeInWorld(helper.getLevel(), at, at, new StructurePlaceSettings().setIgnoreEntities(true), RandomSource.create(1), 2);
         Map<Item, Integer> needed = new LinkedHashMap<>();
@@ -366,9 +480,31 @@ public final class CompanionHouseTests {
         helper.assertTrue(checked > 60, "Reference too small to prove anything: " + checked);
     }
 
-    private static CompanionEntity setup(GameTestHelper helper) {
+    /** The floor of a template building is sunk into the ground: the arena has red sand (no house of the catalogue is built of it) over its bedrock, and a shovel in the bag. */
+    private static final int GROUND = 1;
+    private static CompanionEntity groundedSetup(GameTestHelper helper) { return setup(helper, true); }
+    /** {@link #groundedSetup} with trees, bumps of red sand, grass and flowers everywhere (nothing around his start and the player). */
+    private static CompanionEntity wildSetup(GameTestHelper helper) {
+        CompanionEntity companion = groundedSetup(helper);
+        companion.setItem(companion.getContainerSize() - 3, new ItemStack(Items.IRON_AXE));
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) {
+            // Nothing around his start, the player and the reference building (the corner), which is read as it is.
+            if (Math.abs(x - 16) <= 1 && Math.abs(z - 16) <= 1 || Math.abs(x - 11) <= 1 && Math.abs(z - 11) <= 1 || x < 10 && z < 10) continue;
+            if (x % 4 == 2 && z % 4 == 2) {
+                for (int y = GROUND + 1; y <= GROUND + 4; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.OAK_LOG);
+                for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int y = GROUND + 4; y <= GROUND + 5; y++)
+                    if (helper.getBlockState(new BlockPos(x + dx, y, z + dz)).isAir()) helper.setBlock(new BlockPos(x + dx, y, z + dz), Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true));
+            } else if (x % 4 == 0 && z % 4 == 0) helper.setBlock(new BlockPos(x, GROUND + 1, z), Blocks.RED_SAND);
+            else if ((x + z) % 3 == 0) helper.setBlock(new BlockPos(x, GROUND + 1, z), (x + z) % 7 == 0 ? Blocks.DANDELION : Blocks.SHORT_GRASS);
+        }
+        return companion;
+    }
+    private static CompanionEntity setup(GameTestHelper helper) { return setup(helper, false); }
+    private static CompanionEntity setup(GameTestHelper helper, boolean ground) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) helper.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
-        CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
+        if (ground) for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) if (helper.getBlockState(new BlockPos(x, GROUND, z)).isAir()) helper.setBlock(new BlockPos(x, GROUND, z), Blocks.RED_SAND);
+        CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, ground ? GROUND + 1 : 1, 16);
+        if (ground) companion.setItem(companion.getContainerSize() - 2, new ItemStack(Items.IRON_SHOVEL));
         var player = helper.makeMockServerPlayerInLevel(); player.teleportTo(companion.getX() - 5, companion.getY(), companion.getZ() - 5);
         companion.setOwnerId(player.getUUID()); player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
         CompanionEvents.getOwnedCompanion(player); companion.setSearchRadius(16);

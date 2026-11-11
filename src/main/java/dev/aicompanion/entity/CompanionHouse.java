@@ -84,9 +84,12 @@ final class CompanionHouse {
     /** The end of the work (done or failed) waits for the scaffolding to come down: none stands in a building reported done. */
     private Result afterScaffold;
     private record Column(BlockPos ground, int levels, double score) { }
+    /** The site of a template building: its floor is sunk into the ground, what stands on it is cleared (read from the world again after a load). */
+    private final CompanionSiteClearing clearing;
+    private boolean cleared;
 
     CompanionHouse(CompanionEntity owner) { this(owner, false); }
-    CompanionHouse(CompanionEntity owner, boolean template) { this.owner = owner; this.template = template; scaffold = new CompanionScaffold(owner); }
+    CompanionHouse(CompanionEntity owner, boolean template) { this.owner = owner; this.template = template; scaffold = new CompanionScaffold(owner); clearing = new CompanionSiteClearing(owner, this); }
 
     /** A building of the catalogue: the one already under way goes on, any other (or a finished one) starts at a new site. */
     void begin(CompanionVillageBuildings.Building next) {
@@ -115,10 +118,11 @@ final class CompanionHouse {
         path = null;
         cooldown = 0;
         onScaffold = false; scaffold.reset();
+        clearing.reset(); cleared = false;
         // Placed blocks and the blueprint belong to the world, not the active command.
     }
 
-    boolean needsPreparation() { return !prepared && !(template && scaffold.hasBlocks()); }
+    boolean needsPreparation() { return !prepared && !(template && (scaffold.hasBlocks() || !cleared)); }
     /** The climb and the descent need a tick in the air too, between two jumps. */
     boolean scaffolding() { return template && scaffold.busy(); }
     BlockPos interiorAnchor() { return base == null ? null : base.offset(2, 1, 2); }
@@ -155,6 +159,7 @@ final class CompanionHouse {
     private Result loadTemplate(ServerLevel level) {
         if (!template || loaded != null) return null;
         loaded = CompanionTemplates.load(level, building);
+        if (loaded != null) clearing.use(loaded);
         return loaded == null ? Result.failed("Не нашёл в игре шаблон постройки «" + building.name() + "».") : null;
     }
 
@@ -221,6 +226,13 @@ final class CompanionHouse {
             Result checked = checkBlueprint(level);
             if (checked != null) return checked;
             if (placed.cardinality() == steps.size()) return finished();
+            if (template && !cleared) {
+                switch (clearing.tick(level, base, builtCells())) {
+                    case WORKING -> { return Result.working(); }
+                    case BLOCKED -> { return Result.failed(clearing.message()); }
+                    case READY -> cleared = true;
+                }
+            }
             Result materials = prepareMaterials(level);
             if (materials != null) return materials;
             prepared = true;
@@ -241,7 +253,13 @@ final class CompanionHouse {
             candidates.sort(Comparator.comparingDouble(index -> owner.distanceToSqr(steps.get(index).pos.getCenter())));
             for (int index : candidates) {
                 Step step = steps.get(index);
-                if (!free(level, step)) return Result.failed("На месте стройки появился другой блок. Не буду его ломать. Освободи место и попроси достроить дом.");
+                if (!free(level, step)) {
+                    if (!template) return Result.failed("На месте стройки появился другой блок. Не буду его ломать. Освободи место и попроси достроить дом.");
+                    // A cell of a template building may hold what he digs out first: the ground the floor is sunk into, a bush grown since.
+                    String why = obstruction(level, step);
+                    if (why != null) return Result.failed(why);
+                    select(index, level); break;
+                }
                 if (!supported(level, step)) continue;
                 if (canPlaceFromHere(level, step)) { select(index, level); break; }
                 // From the column only what is within reach is placed; the rest waits for the descent.
@@ -260,7 +278,13 @@ final class CompanionHouse {
             if (target < 0) return Result.failed("Не могу подойти к оставшимся блокам дома. Освободи проход и скажи «дострой дом».");
         }
         Step step = steps.get(target);
-        if (!free(level, step)) return Result.failed("Место для следующего блока занято. Сохранил стройку; продолжу, когда освободишь место.");
+        if (!free(level, step)) {
+            if (!template) return Result.failed("Место для следующего блока занято. Сохранил стройку; продолжу, когда освободишь место.");
+            return switch (clearing.clear(level, base, vacant(level, step.pos) ? step.second() : step.pos)) {
+                case BLOCKED -> Result.failed(clearing.message());
+                case WORKING, READY -> Result.working();
+            };
+        }
         owner.getLookControl().setLookAt(step.pos.getX() + .5, step.pos.getY() + .5, step.pos.getZ() + .5);
         double distance = owner.distanceToSqr(step.pos.getCenter());
         if (distance + .05 < bestDistance) { bestDistance = distance; progressTime = level.getGameTime(); }
@@ -523,26 +547,40 @@ final class CompanionHouse {
     private boolean reserved(BlockPos pos) { return pos.getX() >= base.getX() - 1 && pos.getX() <= base.getX() + width() && pos.getZ() >= base.getZ() - 1 && pos.getZ() <= base.getZ() + depth(); }
 
     private BlockPos findSite(ServerLevel level) {
+        if (!template) return searchSite(level, false, pos -> false);
+        // A site that needs no clearing is preferred; failing that, one with only clearable blocks and at most a block of height difference.
+        var players = clearing.playerSites(level);
+        for (boolean digging : new boolean[]{false, true}) {
+            int busy = owner.work.route.busyAnswers();
+            BlockPos found = searchSite(level, digging, players);
+            if (found != null || owner.work.route.busyAnswers() != busy) return found;
+        }
+        return null;
+    }
+    private BlockPos searchSite(ServerLevel level, boolean digging, java.util.function.Predicate<BlockPos> players) {
         BlockPos center = owner.blockPosition();
         for (int radius = 6; radius <= Math.min(24, owner.getSearchRadius()); radius += 2) {
             for (int dx = -radius; dx <= radius; dx += 2) for (int dz = -radius; dz <= radius; dz += 2) {
                 if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
                 for (int dy : new int[]{0, -1, 1, -2, 2, -3}) {
                     BlockPos corner = center.offset(dx - width() / 2, dy, dz - depth() / 2);
-                    if (siteClear(level, corner)) return corner;
+                    if (siteClear(level, corner, digging, players)) return corner;
                 }
             }
         }
         return null;
     }
-    private boolean siteClear(ServerLevel level, BlockPos corner) {
-        for (int x = -1; x <= width(); x++) for (int z = -1; z <= depth(); z++) {
+    private boolean siteClear(ServerLevel level, BlockPos corner, boolean digging, java.util.function.Predicate<BlockPos> players) {
+        if (template) { if (clearing.assess(level, corner, digging, players) < 0) return false; }
+        else for (int x = -1; x <= width(); x++) for (int z = -1; z <= depth(); z++) {
             BlockPos floor = corner.offset(x, -1, z);
             if (!level.hasChunkAt(floor) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP) || !level.getFluidState(floor).isEmpty()) return false;
             for (int y = 0; y < height(); y++) if (!replaceable(level, corner.offset(x, y, z))) return false;
         }
         if (!level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner.offset(-1, 0, -1)), Vec3.atLowerCornerOf(corner.offset(width() + 1, height(), depth() + 1))), entity -> entity.isAlive()).isEmpty()) return false;
-        return owner.work.route.toCells(Set.of(corner.offset(width() / 2, 0, -1), corner.offset(-1, 0, depth() / 2), corner.offset(width(), 0, depth() / 2))) != null;
+        // The floor of a template building is sunk, so the ground to walk on beside it is one block above its corner.
+        int stand = template ? 1 : 0;
+        return owner.work.route.toCells(Set.of(corner.offset(width() / 2, stand, -1), corner.offset(-1, stand, depth() / 2), corner.offset(width(), stand, depth() / 2))) != null;
     }
 
     private Result checkBlueprint(ServerLevel level) {
@@ -552,7 +590,11 @@ final class CompanionHouse {
             if (placed.get(index) && !matches(level, step)) placed.clear(index);
             // A building is judged by its blocks in the world: one that already stands (a saved bit lost) is not placed again.
             if (template && !placed.get(index) && matches(level, step)) placed.set(index);
-            if (!placed.get(index) && !free(level, step)) return Result.failed("На месте дома появились чужие блоки. Не буду их ломать; освободи площадку и попроси достроить дом.");
+            if (!placed.get(index) && !free(level, step)) {
+                if (!template) return Result.failed("На месте дома появились чужие блоки. Не буду их ломать; освободи площадку и попроси достроить дом.");
+                String why = obstruction(level, step);
+                if (why != null) return Result.failed(why);
+            }
         }
         return null;
     }
@@ -566,7 +608,23 @@ final class CompanionHouse {
         return actual.is(step.state.getBlock()) && actual.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER
                 && top.is(step.state.getBlock()) && top.getValue(DoorBlock.HALF) == DoubleBlockHalf.UPPER;
     }
-    private boolean free(ServerLevel level, Step step) { return replaceable(level, step.pos) && (step.second() == null || replaceable(level, step.second())); }
+    private boolean free(ServerLevel level, Step step) { return vacant(level, step.pos) && (step.second() == null || vacant(level, step.second())); }
+    /** A cell for a block of the building: for a template building empty air (what stands there, grass too, is dug out first), for the plank house anything replaceable. */
+    private boolean vacant(ServerLevel level, BlockPos pos) { return replaceable(level, pos) && (!template || level.getBlockState(pos).isAir()); }
+    /** Why a cell of the step cannot be dug out by him; null when each is vacant or his to dig. */
+    private String obstruction(ServerLevel level, Step step) {
+        for (BlockPos cell : step.second() == null ? new BlockPos[]{step.pos} : new BlockPos[]{step.pos, step.second()}) {
+            String why = vacant(level, cell) ? null : clearing.obstruction(level, cell);
+            if (why != null) return why;
+        }
+        return null;
+    }
+    /** What of the building already stands as planned: not to be cleared away with the rest of the box. */
+    private Set<BlockPos> builtCells() {
+        Set<BlockPos> cells = new java.util.HashSet<>();
+        for (int index = 0; index < steps.size(); index++) if (placed.get(index)) { cells.add(steps.get(index).pos); if (steps.get(index).second() != null) cells.add(steps.get(index).second()); }
+        return cells;
+    }
     private boolean replaceable(ServerLevel level, BlockPos pos) {
         return level.hasChunkAt(pos) && level.getWorldBorder().isWithinBounds(pos) && !level.isOutsideBuildHeight(pos)
                 && level.getBlockEntity(pos) == null && level.getFluidState(pos).isEmpty() && level.getBlockState(pos).canBeReplaced();
@@ -584,7 +642,7 @@ final class CompanionHouse {
         if (step.second() != null) box = box.minmax(new AABB(step.second()));
         return level.noCollision(box) && visible(level, owner.getEyePosition(), step.pos);
     }
-    private boolean visible(ServerLevel level, Vec3 eye, BlockPos pos) {
+    boolean visible(ServerLevel level, Vec3 eye, BlockPos pos) {
         // Use visible faces/edges, as a player would. A ray to the cube center alone is
         // hidden by the finished wall beneath a roof tile or by an adjacent half-slab.
         double x = Math.clamp(eye.x, pos.getX() + .01, pos.getX() + .99);
@@ -598,6 +656,9 @@ final class CompanionHouse {
         return false;
     }
     private boolean routeBusy;
+    boolean routeBusy() { return routeBusy; }
+    /** The way to a cell from which the block at {@code pos} is within reach and in sight (for the site clearing); null when there is none. */
+    Path routeToBlock(ServerLevel level, BlockPos pos) { return route(level, new Step(pos, Blocks.AIR.defaultBlockState(), 0)); }
     private Path route(ServerLevel level, Step step) {
         Set<BlockPos> feet = new java.util.HashSet<>();
         for (int y = 0; y <= 1; y++) for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
