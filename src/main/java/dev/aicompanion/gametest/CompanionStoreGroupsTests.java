@@ -2,11 +2,13 @@ package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -92,6 +94,54 @@ public final class CompanionStoreGroupsTests {
         helper.succeedWhen(() -> {
             helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
             helper.assertTrue(count(companion, Items.DIRT) == 8 && count(stone, Items.DIRT) == 5 && count(wood, Items.OAK_LOG) == 4, "Reserve or groups wrong: bag " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** «Поставь сундук и сложи в него вещи»: the chest he set down himself is filled, not the old one 20 blocks away where stone already lies. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void storeFillsTheChestHeJustPlaced(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        BlockPos oldPos = new BlockPos(2, 1, 2);
+        helper.setBlock(oldPos, Blocks.CHEST);
+        Container old = (Container)helper.getBlockEntity(oldPos);
+        old.setItem(0, new ItemStack(Items.COBBLESTONE, 10));
+        companion.setItem(0, new ItemStack(Items.CHEST));
+        companion.setItem(1, new ItemStack(Items.COBBLESTONE, 12));
+        helper.assertTrue(new BlockPos(16, 1, 16).distSqr(oldPos) > 19 * 19, "The old chest has to stand about 20 blocks away");
+        companion.startWork("place_chest", "", 1);
+        boolean[] storeStarted = {false};
+        helper.onEachTick(() -> {
+            if (!storeStarted[0] && !companion.hasActiveWorkOrder()) { storeStarted[0] = true; companion.startWork("store_items", "stone", 1); }
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(storeStarted[0] && !companion.hasActiveWorkOrder(), "Still working: " + companion.getLastTaskResult());
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            BlockPos fresh = null; int chests = 0;
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 4, 31)))
+                if (!pos.equals(oldPos) && helper.getBlockState(pos).is(Blocks.CHEST)) { chests++; fresh = pos.immutable(); }
+            helper.assertTrue(chests == 1 && fresh != null, "Chests beside the old one: " + chests);
+            helper.assertTrue(count((Container)helper.getBlockEntity(fresh), Items.COBBLESTONE) == 12,
+                    "The chest he placed is not filled: " + count((Container)helper.getBlockEntity(fresh), Items.COBBLESTONE));
+            helper.assertTrue(count(old, Items.COBBLESTONE) == 10, "The old chest was filled instead: " + count(old, Items.COBBLESTONE));
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == 0, "Stone stayed in the bag: " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** No chest anywhere around: he crafts one, sets it down and fills that same chest within one step. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void storeFillsTheChestHeCraftedAndPlacedInOneStep(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setItem(0, new ItemStack(Items.OAK_PLANKS, 12));
+        companion.setItem(1, new ItemStack(Items.COBBLESTONE, 12));
+        companion.startWork("store_items", "stone", 1);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.hasActiveWorkOrder() && companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            BlockPos chest = null; int chests = 0;
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 4, 31)))
+                if (helper.getBlockState(pos).is(Blocks.CHEST)) { chests++; chest = pos.immutable(); }
+            helper.assertTrue(chests == 1 && chest != null, "Chests he set down: " + chests);
+            helper.assertTrue(count((Container)helper.getBlockEntity(chest), Items.COBBLESTONE) == 12, "The chest he placed is not filled: " + companion.getLastTaskResult());
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == 0, "Stone stayed in the bag: " + companion.getStoredItemsSummary());
         });
     }
 }

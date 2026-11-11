@@ -79,7 +79,9 @@ final class CompanionChests {
                 CompanionActionResult placed = w.trip.place("minecraft:chest");
                 if (!placed.success()) { w.finish(false, placed.message()); return; }
                 w.newChests++;
-                w.target = findChest(level);
+                // The chest just set down is the one this order fills: searching again could pick another chest.
+                BlockPos setDown = w.owner.lastPlacedPosition();
+                w.target = setDown != null ? setDown : findChest(level);
                 w.resetApproach();
                 if (w.target == null) { w.finish(false, "Сундук поставил, но не могу его открыть. Вещи остались в сумке."); return; }
                 return; // Open on the next work stage, after the placement gesture.
@@ -237,7 +239,7 @@ final class CompanionChests {
 
     private BlockPos findChest(ServerLevel level) {
         LinkedHashMap<BlockPos, Container> usable = usableChests(level);
-        if (w.job == CompanionWork.Job.STORE) return storeTarget(usable);
+        if (w.job == CompanionWork.Job.STORE) return storeTarget(level, usable);
         for (var entry : usable.entrySet())
             if (w.job == CompanionWork.Job.TAKE ? containsRequested(entry.getValue()) : w.job == CompanionWork.Job.PLACE_CHEST || hasCapacity(entry.getValue())) return entry.getKey();
         return null;
@@ -263,8 +265,35 @@ final class CompanionChests {
     /** One point for the whole order, where the work began: the homes must not change as he walks between the chests. */
     private BlockPos storeCenter() { return w.workOrigin != null ? w.workOrigin : w.owner.blockPosition(); }
 
-    /** The chest to go to next: the nearest "own group" chest of anything he carries; with none, the first in the old order. */
-    private BlockPos storeTarget(LinkedHashMap<BlockPos, Container> usable) {
+    /**
+     * The chest he set down himself for this order: «поставь сундук и сложи в него вещи» fills it, not the old chest where the
+     * same things already lie. Null when it is gone, out of the search radius or has no room — then the old order decides.
+     */
+    private BlockPos placedChest(ServerLevel level) {
+        BlockPos pos = w.owner.lastPlacedPosition();
+        if (pos == null) return null;
+        int radius = Math.min(32, w.owner.getSearchRadius());
+        if (pos.distSqr(w.owner.blockPosition()) > radius * radius) return null;
+        if (w.owner.ownPlacesOnly() && (!w.owner.placedByMe(pos) || !w.owner.leashAllows(pos))) return null;
+        Container chest = containerAt(level, pos);
+        if (chest == null) {
+            // What he set down is gone or is no container this order may use: the next order goes the old way.
+            if (level.hasChunkAt(pos) && CompanionContainers.storageAt(level, pos) == null) w.owner.lastPlacedPosition = null;
+            return null;
+        }
+        return takesSomething(chest) ? pos : null;
+    }
+
+    /** Whether a store order would put anything of his bag into this chest now (the reserves counted down). */
+    private boolean takesSomething(Container chest) {
+        for (int slot : movableSlots()) if (hasRoomFor(chest, w.owner.getItem(slot))) return true;
+        return false;
+    }
+
+    /** The chest to go to next: the one he set down last, else the nearest "own group" chest of anything he carries; with none, the first in the old order. */
+    private BlockPos storeTarget(ServerLevel level, LinkedHashMap<BlockPos, Container> usable) {
+        BlockPos placed = placedChest(level);
+        if (placed != null) return placed;
         BlockPos center = storeCenter(), nearest = null, first = null;
         int firstIndex = Integer.MAX_VALUE;
         List<BlockPos> order = new ArrayList<>(usable.keySet());
@@ -334,7 +363,9 @@ final class CompanionChests {
         int moved = 0;
         int[] reserves = reserves(w.requestedItem);
         // A store order takes to this chest only what belongs here: the homes are fixed before anything moves.
-        LinkedHashMap<BlockPos, Container> usable = w.job == CompanionWork.Job.STORE ? usableChests(level) : null;
+        // The chest he set down himself is the one the order named for filling, so it takes everything it can hold.
+        boolean filling = w.job == CompanionWork.Job.STORE && at.equals(placedChest(level));
+        LinkedHashMap<BlockPos, Container> usable = w.job == CompanionWork.Job.STORE && !filling ? usableChests(level) : null;
         Set<Integer> mine = new HashSet<>();
         if (usable != null) for (int slot : movableSlots()) if (at.equals(homeOf(w.owner.getItem(slot), usable, new boolean[1]))) mine.add(slot);
         for (int source = 0; source < w.owner.getContainerSize(); source++) {
