@@ -66,6 +66,11 @@ public final class CompanionPlaceSpeech {
     private static final Set<String> HOME_WORDS = Set.of("дом", "домик");
     /** Words that say the request has more than one leg: «и», «потом», «затем», «обратно», «снова», «ещё раз». */
     private static final Set<String> STEPS = Set.of("и", "потом", "затем", "обратно", "снова", "опять", "еще", "раз");
+    /** Words that still mean the list itself when they follow «забудь всё»: «забудь все метки», «забудь всё точки». */
+    private static final Set<String> LIST_WORDS = Set.of("метки", "метку", "меток", "точки", "точку", "точек",
+            "места", "место", "метками", "точками", "все", "всё");
+    /** Polite or filler words that do not turn «забудь всё» into a compound order. */
+    private static final Set<String> SOFTENERS = Set.of("пожалуйста", "давай", "ну", "и", "всё", "все");
 
     private CompanionPlaceSpeech() { }
 
@@ -116,6 +121,8 @@ public final class CompanionPlaceSpeech {
             // «Забудь всё про молоко», «забудь всё про метку»: «всё» with a preposition after it is a subject he is told
             // about, not the list, so the model answers and no marker goes. The bare «забудь всё» still empties it.
             if (PREPOSITIONS.contains(firstWord(all.group(1)))) return Result.none();
+            // «Забудь всё и добудь дерево» is a compound order: only the whole message counts as «всё».
+            if (!onlyTheList(all.group(1))) return Result.none();
             return new Result(Kind.FORGET_ALL, "", null);
         }
         var named = FORGET_NAMED.matcher(said);
@@ -194,6 +201,14 @@ public final class CompanionPlaceSpeech {
     private static String firstWord(String tail) {
         List<String> words = CompanionMarkerNames.tokens(tail);
         return words.isEmpty() ? "" : words.getFirst();
+    }
+
+    /** True when «забудь всё» is the whole message: nothing after it but words about the list itself. */
+    private static boolean onlyTheList(String tail) {
+        for (String word : CompanionMarkerNames.tokens(tail)) {
+            if (!LIST_WORDS.contains(word) && !SOFTENERS.contains(word)) return false;
+        }
+        return true;
     }
 
     /** A word that points at a person is never a marker name, whatever the list holds. */
