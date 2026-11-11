@@ -25,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
-/** Chat completion client with a constrained tool-calling loop for in-game plans. */
+/** Model client with constrained tool calls for in-game plans. */
 public final class OpenRouterClient {
     private static final String OPENROUTER = "https://openrouter.ai/api/v1";
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
@@ -47,15 +47,22 @@ public final class OpenRouterClient {
             + "minecraft:hopper, minecraft:dispenser, minecraft:dropper, minecraft:shulker_box. Для сундука и без названия контейнера — near_player. ";
     public static synchronized boolean isBusy() { return !pendingRequests.isDone(); }
 
-    /** Chat completions of the configured OpenAI-compatible server (issue #2): OpenRouter when empty, a base address completed as OpenAI clients do. */
+    /** Direct OpenAI uses Responses; OpenRouter and compatible servers keep Chat Completions. */
     public static URI endpoint(String configured) {
         String base = configured == null ? "" : configured.trim();
         while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
         if (base.isEmpty()) base = OPENROUTER;
-        if (!base.endsWith("/chat/completions")) base += "/chat/completions";
         try {
             URI uri = new URI(base);
-            if (("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null) return uri;
+            if (("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null) {
+                if ("api.openai.com".equalsIgnoreCase(uri.getHost())) {
+                    String path = uri.getPath();
+                    if (path.endsWith("/chat/completions")) path = path.substring(0, path.length() - "/chat/completions".length());
+                    if (!path.endsWith("/responses")) path += "/responses";
+                    return new URI(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(), path, uri.getQuery(), uri.getFragment());
+                }
+                return new URI(base.endsWith("/chat/completions") ? base : base + "/chat/completions");
+            }
         } catch (java.net.URISyntaxException ignored) {
             // Reported below in the player's words.
         }
@@ -619,10 +626,12 @@ public final class OpenRouterClient {
     public static final Duration ANSWER_LIMIT = Duration.ofSeconds(90);
 
     private static CompletableFuture<JsonObject> post(URI endpoint, JsonObject body, boolean withTools, String trace) {
+        boolean responses = "api.openai.com".equalsIgnoreCase(endpoint.getHost());
+        JsonObject wireBody = responses ? OpenAiResponses.request(body) : body;
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(60))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
+                .POST(HttpRequest.BodyPublishers.ofString(wireBody.toString()));
         String key = OpenRouterConfig.API_KEY.get().trim();
         if (!key.isEmpty() && sendsKey(endpoint, key)) builder.header("Authorization", "Bearer " + key);
         String withheld = withheldKeyNote(endpoint, key);
@@ -633,7 +642,8 @@ public final class OpenRouterClient {
         return OpenRouterRetry.execute(() -> {
             int attempt = attempts.incrementAndGet();
             long started = System.nanoTime();
-            CompanionDiagnostics.event(trace, "http_attempt", "service", logged, "attempt", attempt, "tools", withTools);
+            CompanionDiagnostics.event(trace, "http_attempt", "service", logged, "attempt", attempt, "tools", withTools,
+                    "protocol", responses ? "responses" : "chat_completions");
             // The request timeout above ends at the response headers; the body could keep the queue waiting for ever.
             return OpenRouterRetry.bounded(HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofString()), ANSWER_LIMIT,
                     "Модель не ответила за " + ANSWER_LIMIT.toSeconds() + " секунд. Попробуй ещё раз или выбери модель побыстрее в настройках.").whenComplete((response, error) -> {
@@ -648,7 +658,7 @@ public final class OpenRouterClient {
                 String error = readError(service, response.body(), response.statusCode());
                 // The server's own words decide, not its name (tools.lan, function-gw…).
                 String lower = error.toLowerCase(java.util.Locale.ROOT).replace(service.toLowerCase(java.util.Locale.ROOT), "");
-                if (withTools && (response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422)
+                if (!responses && withTools && (response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422)
                         && (lower.contains("tool") || lower.contains("parameter") || lower.contains("function"))) {
                     throw new UnsupportedToolsException(error);
                 }
@@ -658,6 +668,7 @@ public final class OpenRouterClient {
                 throw new IllegalStateException(note.isEmpty() ? error : error + " " + note);
             }
             JsonObject parsed = JsonParser.parseString(response.body()).getAsJsonObject();
+            if (responses) return OpenAiResponses.completion(parsed);
             if (!parsed.has("choices") || !parsed.get("choices").isJsonArray() || parsed.getAsJsonArray("choices").isEmpty()) {
                 throw new IllegalStateException(service + " вернул ответ без сообщения модели. " + readError(service, response.body(), response.statusCode()));
             }

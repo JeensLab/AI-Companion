@@ -57,7 +57,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | --- | --- |
 | Регистрация, события, владелец компаньона | `AICompanionMod.java`, `entity/CompanionEvents.java` |
 | Чат и прямые команды | `client/CompanionChatScreen.java`, `CompanionLocalCommands.java`, `CompanionWorkCommands.java`, `CompanionGoalCommands.java` |
-| Запрос модели, промпт, таймауты | `client/OpenRouterClient.java`, `OpenRouterRetry.java`, `GameContext.java` |
+| Запрос модели, промпт, таймауты | `client/OpenRouterClient.java`, `OpenRouterRetry.java`, `GameContext.java`; прямой OpenAI Responses — `client/OpenAiResponses.java`, контракты — `gametest/CompanionResponsesTests.java` |
 | Допустимые действия и параметры | `client/CompanionPlanCodec.java`, `CompanionPlanRequirements.java`, `PlannedAction.java` |
 | Очередь, приоритеты, отмена, восстановление плана | `client/CompanionTaskQueue.java`, `CompanionActionExecutor.java`, `CompanionPlanRunner.java`, `CompanionServerPlanPort.java` |
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |
@@ -130,6 +130,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | Память, отношения и события | `.\scripts\verify-memory.ps1 -Expected <число тестов>`: сначала проверка `entity/*.java` (не больше 800 строк) и `build`, затем фокусный прогон `CompanionMemoryTests`, `CompanionBondTests`, `CompanionHappeningsTests`, `CompanionSoulTests`, ровно столько тестов, сколько в `-Expected`; `-Full <N>` добавляет полный `runGameTestServer` (ровно N, один повтор, если упал только известный нестабильный тест); `-Banter` добавляет `verify-banter-tools.ps1 -Repetitions 3`; `-Tag` (по умолчанию `memory`) задаёт префикс отчётов в `build/diagnostics/` |
 | Прочие экраны, рендер, клавиши | `.\gradlew.bat runClient`, ручная проверка изменённого сценария |
 | Живой диалог, STT/TTS | Ручная проверка с собственными ключами только по отдельному разрешению на платные запросы; локальные GameTest не доказывают работу провайдера |
+| Прямой OpenAI Responses в клиенте | `.\scripts\verify-openai-responses-live.ps1 -AllowPaidRequests`: отдельное окно Minecraft и новый одноразовый мир в `build/responses-client`; по 3 платных запроса к Luna и Terra: диалог, текстовая история, нативный план `come` с завершением очереди и проверкой реального подхода. Ключ читается из локального конфига (`-ConfigPath`), временный конфиг и его резервные копии удаляются после выхода; без флага — `SKIP`, не проверка. Успех — `RESPONSES_CLIENT_PROBE_PASSED: 2 models, 6 requests`. Полные журналы остаются частными. |
 | Живое сжатие памяти через OpenRouter | `.\scripts\verify-memory-live.ps1 -AllowPaidRequests`: платный запрос к OpenRouter; ключ и модель читаются из `-ConfigPath` (по умолчанию `run\config\aicompanion-client.toml`); без флага или без ключа печатает `SKIP` и выходит с кодом 0, это не проверка; успех — `All 3 required tests passed` |
 
 Для проверки перезапуска заранее выполните `New-Item -ItemType Directory -Force build/diagnostics | Out-Null`:
