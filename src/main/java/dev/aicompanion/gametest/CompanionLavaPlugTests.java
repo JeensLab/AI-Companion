@@ -125,6 +125,7 @@ public final class CompanionLavaPlugTests {
             h.assertTrue(h.getTick() > SETTLE && idle(c), "Work still active: " + c.getLastTaskResult());
             h.assertTrue(h.getBlockState(stone).is(Blocks.STONE) && h.getBlockState(lava).is(Blocks.LAVA), "Stone dug or lava plugged");
             h.assertTrue(count(c, Items.DIRT) == 3, "Plugs spent on stone: " + c.getStoredItemsSummary());
+            h.assertTrue(count(c, Items.COBBLESTONE) == 0, "Stone brought from outside the arena: " + c.getStoredItemsSummary() + ", he at " + h.relativePos(c.blockPosition()).toShortString());
             h.assertTrue(c.isAlive() && c.getHealth() >= c.getMaxHealth(), "Hurt: " + c.getHealth());
         });
     }
@@ -253,6 +254,9 @@ public final class CompanionLavaPlugTests {
     private static CompanionEntity wallArena(GameTestHelper h) {
         box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
         box(h, 0, 7, 0, 31, 7, 31, Blocks.BEDROCK);
+        // Walled in: with no stone to take here he would go to the next test's arena for it, and pick up what lies on the way.
+        box(h, 0, 1, 0, 31, 6, 0, Blocks.BEDROCK); box(h, 0, 1, 31, 31, 6, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 0, 6, 31, Blocks.BEDROCK); box(h, 31, 1, 0, 31, 6, 31, Blocks.BEDROCK);
         box(h, 20, 1, 10, 26, 6, 22, Blocks.STONE);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
         ServerPlayer owner = h.makeMockServerPlayerInLevel();

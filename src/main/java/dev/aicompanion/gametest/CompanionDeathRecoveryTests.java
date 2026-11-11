@@ -957,6 +957,7 @@ public final class CompanionDeathRecoveryTests {
         int ticks = walk(h, c, 600);
         h.assertTrue(mine.isRemoved() || mine.getItem().isEmpty(), "His diamond was not fetched");
         h.assertTrue(junk.isAlive() && junk.getItem().getCount() == 64, "He walked to a stranger's junk");
+        junk.discard(); // it lies past this test's own arena, where the companion of the next test can pick it up
         h.assertTrue(ticks < 200, "The walk to one stack took too long: " + ticks);
         h.succeed();
     }
