@@ -10,6 +10,7 @@ import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.CompanionSettingsLayout;
 import dev.aicompanion.client.PlannedAction;
+import dev.aicompanion.entity.CompanionCrafting;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionMarkerBoard;
@@ -22,7 +23,12 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -1234,6 +1240,186 @@ public final class CompanionPlaceMarkerTests {
                     "The cross-dimension step was retried: " + outcome.report());
             h.assertTrue(c.workPhase().isEmpty(), "He walked off into another dimension: " + c.workPhase());
         });
+    }
+
+    // ---- the owner's five-step plan: home, take, mine, set down a chest, put the things into it ----
+
+    /** 27 things that are neither logs, planks nor a chest, so a test's chest has to be made from the wood it gives him. */
+    private static final Item[] FILLER = {Items.DIRT, Items.GRAVEL, Items.SAND, Items.FLINT, Items.ANDESITE, Items.DIORITE,
+            Items.GRANITE, Items.TUFF, Items.CALCITE, Items.DEEPSLATE, Items.IRON_INGOT, Items.GOLD_INGOT, Items.COPPER_INGOT,
+            Items.REDSTONE, Items.LAPIS_LAZULI, Items.COAL, Items.CHARCOAL, Items.TORCH, Items.STICK, Items.STRING,
+            Items.FEATHER, Items.LEATHER, Items.BONE, Items.GUNPOWDER, Items.BRICK, Items.NETHER_BRICK, Items.AMETHYST_SHARD};
+
+    /**
+     * The plan the owner gave: «дом», take the things from the chest there, «шахта», set down a chest, put the things into
+     * it. After the take one cell is left and there is no bench at the mine, so the chest is made there: the bench is made
+     * and set down first, its cell comes free for the planks, and the taken things end up in the new chest.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 1600)
+    public static void theFiveStepPlanPlacesTheChestAndStoresTheTakenThingsWithANearlyFullBag(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        BlockPos homeChest = new BlockPos(4, 1, 6);
+        h.setBlock(homeChest, Blocks.CHEST);
+        ((Container) h.getBlockEntity(homeChest)).setItem(0, new ItemStack(Items.BRICK, 30));
+        ((Container) h.getBlockEntity(homeChest)).setItem(1, new ItemStack(Items.NETHER_BRICK, 30));
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дом", h.getLevel().dimension(), h.absolutePos(homeChest), 1);
+        BlockPos mine = new BlockPos(20, 1, 20);
+        store.add(c.getOwnerId(), "шахта", h.getLevel().dimension(), h.absolutePos(mine), 1);
+        owner.teleportTo(h.absolutePos(mine).getX() + .5, h.absolutePos(mine).getY(), h.absolutePos(mine).getZ() + .5);
+        // 24 things and three logs take 25 cells: two are free, and the take fills both of them — the bag is full.
+        for (int slot = 0; slot < 24; slot++) c.setItem(slot, new ItemStack(FILLER[slot], 2));
+        c.setItem(24, new ItemStack(Items.OAK_LOG, 3));
+        var plan = CompanionPlanRunner.run(List.of(
+                        new PlannedAction("go_to_place", 0, 1, "дом"),
+                        new PlannedAction("take_items", 0, 64, "all"),
+                        new PlannedAction("go_to_place", 0, 1, "шахта"),
+                        new PlannedAction("place_block", 0, 1, "minecraft:chest"),
+                        new PlannedAction("store_items", 0, 1, "resources")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-five-steps", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.skipped().isEmpty() && !outcome.report().contains("Не выполнено"), "A step was skipped: " + outcome.report());
+            h.assertTrue(outcome.report().contains("Поставил minecraft:chest: 1"), "The chest was not placed: " + outcome.report());
+            h.assertTrue(outcome.report().contains("Сложил"), "The things were not put away: " + outcome.report());
+            BlockPos placed = blockNear(h, Blocks.CHEST, h.absolutePos(mine), 5);
+            h.assertTrue(placed != null, "No new chest by the mine: " + outcome.report());
+            var into = (Container) h.getLevel().getBlockEntity(placed);
+            h.assertTrue(countIn(contents(into), Items.BRICK) == 30, "The taken bricks are not in the new chest: " + summary(into));
+            h.assertTrue(countIn(bag(c), Items.BRICK) == 0, "Bricks left in the bag: " + c.getLastTaskResult());
+            h.assertTrue(countIn(bag(c), Items.OAK_LOG) == 0 && countIn(bag(c), Items.CHEST) == 0,
+                    "The chest or the logs are still in the bag: " + c.getLastTaskResult());
+        });
+    }
+
+    /**
+     * A full bag, the wood for a chest, but no cell for the planks and no free hand to hold one stack in: the answer names
+     * what is missing in plain words, the plan says which step failed, lists the rest as not done, and nothing claims the
+     * storing happened.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void aFullBagSaysWhatIsMissingForTheChestAndThePlanSaysWhatFailed(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        for (int slot = 0; slot < 26; slot++) c.setItem(slot, new ItemStack(FILLER[slot], 2));
+        c.setItem(26, new ItemStack(Items.OAK_LOG, 3));
+        // Both hands taken, as at a mine: a pickaxe and torches leave nothing to hold a stack in.
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.TORCH, 8));
+        var plan = CompanionPlanRunner.run(List.of(
+                        new PlannedAction("place_block", 0, 1, "minecraft:chest"),
+                        new PlannedAction("store_items", 0, 1, "resources")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-full-bag", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            String report = outcome.report();
+            h.assertTrue(report.contains("План остановлен: Поставил 0 из 1."), "The failed step is not named: " + report);
+            h.assertTrue(report.contains("нет места") && report.toLowerCase(java.util.Locale.ROOT).contains("planks"),
+                    "What is missing is not named: " + report);
+            h.assertTrue(!report.contains("цепочки крафта"), "The craft chain is named for a chest: " + report);
+            h.assertTrue(outcome.skipped().size() == 1 && "store_items".equals(outcome.skipped().getFirst().type()),
+                    "The rest of the plan is not listed as not done: " + outcome.skipped());
+            h.assertTrue(report.contains("Не выполнено: сложить вещи в сундук"), "The skipped step is not said: " + report);
+            h.assertTrue(!report.contains("Сложил"), "A failed plan claimed the storing: " + report);
+            h.assertTrue(!c.didLastTaskSucceed(), "The failed step claimed success: " + c.getLastTaskResult());
+            h.assertTrue(countIn(bag(c), Items.OAK_LOG) == 3, "The materials were spent: " + c.getLastTaskResult());
+            h.assertTrue(blockNear(h, Blocks.CHEST, c.blockPosition(), 5) == null, "A chest was placed after all: " + c.getLastTaskResult());
+        });
+    }
+
+    /** Two half stacks of planks take two cells: merging them frees one, and the chest is made out of what they hold. */
+    @GameTest(template = "empty")
+    public static void mergingTwoPlanksStacksFreesTheCellTheChestNeeds(GameTestHelper h) {
+        List<ItemStack> bag = fullBag(new ItemStack(Items.OAK_PLANKS, 20), new ItemStack(Items.OAK_PLANKS, 20));
+        h.assertTrue(freeCells(bag) == 0 && planksStacks(bag) == 2, "The bag is not full of two half stacks: " + freeCells(bag));
+        var plan = CompanionCrafting.plan(h.getLevel(), bag, "minecraft:chest", 1, false);
+        h.assertTrue(plan.success(), "The chest was refused: " + plan.message());
+        h.assertTrue(countIn(plan.inventory(), Items.CHEST) == 1, "No chest made: " + plan.message());
+        h.assertTrue(planksStacks(plan.inventory()) == 1, "The two half stacks were not merged: " + plan.message());
+        h.assertTrue(countIn(plan.inventory(), Items.OAK_PLANKS) == 28, "The planks do not add up: " + countIn(plan.inventory(), Items.OAK_PLANKS));
+        h.assertTrue(plan.placeTable(), "The bench he had to make first is not set down: " + plan.message());
+        h.assertTrue(plan.message().contains("Скрафтил 1 «Chest»"), "No plain answer: " + plan.message());
+        h.succeed();
+    }
+
+    /** A chest already in the bag is set down as it is: with every cell taken and no wood, nothing is crafted. */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void aChestInTheBagIsSetDownInsteadOfBeingCrafted(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.CHEST, 1));
+        for (int slot = 1; slot < 27; slot++) c.setItem(slot, new ItemStack(FILLER[slot - 1], 2));
+        h.assertTrue(CompanionEvents.executeAction(player(h, c), "place_block", "minecraft:chest", 1).success(), "Order not accepted");
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isWorking(), "Still working: " + c.getLastTaskResult());
+            h.assertTrue(c.didLastTaskSucceed() && c.getLastTaskResult().contains("Поставил minecraft:chest: 1"), "Not placed: " + c.getLastTaskResult());
+            h.assertTrue(!c.getLastTaskResult().contains("Скрафтил"), "The chest was crafted though he carried one: " + c.getLastTaskResult());
+            h.assertTrue(countIn(bag(c), Items.CHEST) == 0, "The chest is still in the bag: " + c.getLastTaskResult());
+            h.assertTrue(blockNear(h, Blocks.CHEST, c.blockPosition(), 6) != null, "No chest in the world: " + c.getLastTaskResult());
+        });
+    }
+
+    /** A full bag and no wood at all: the answer names the logs, not «цепочку крафта», and it is a shortage. */
+    @GameTest(template = "empty")
+    public static void aChestShortOfWoodNamesTheLogsInsteadOfTheCraftChain(GameTestHelper h) {
+        List<ItemStack> bag = fullBag();
+        h.assertTrue(countIn(bag, Items.OAK_LOG) == 0 && freeCells(bag) == 0, "The bag is not full and woodless");
+        var plan = CompanionCrafting.plan(h.getLevel(), bag, "minecraft:chest", 1, false);
+        h.assertTrue(!plan.success() && plan.shortage(), "The shortage was not a shortage: " + plan.message());
+        h.assertTrue(plan.message().contains("«Chest»") && plan.message().contains("не хватает"), "What is missing is not named: " + plan.message());
+        h.assertTrue(plan.message().toLowerCase(java.util.Locale.ROOT).contains("log"), "The logs are not named: " + plan.message());
+        h.assertTrue(!plan.message().contains("цепочки крафта"), "The craft chain is named: " + plan.message());
+        h.succeed();
+    }
+
+    // ---- fixtures for the bag ----
+
+    /** A bag with every cell taken: the extras first, then filler things that are not wood, planks or a chest. */
+    private static List<ItemStack> fullBag(ItemStack... extras) {
+        List<ItemStack> bag = new java.util.ArrayList<>();
+        for (ItemStack extra : extras) bag.add(extra.copy());
+        for (int at = 0; bag.size() < 27; at++) bag.add(new ItemStack(FILLER[at], 2));
+        return bag;
+    }
+
+    private static List<ItemStack> bag(CompanionEntity c) {
+        List<ItemStack> stacks = new java.util.ArrayList<>();
+        for (int slot = 0; slot < c.getContainerSize(); slot++) stacks.add(c.getItem(slot).copy());
+        return stacks;
+    }
+
+    private static List<ItemStack> contents(Container container) {
+        List<ItemStack> stacks = new java.util.ArrayList<>();
+        for (int slot = 0; slot < container.getContainerSize(); slot++) stacks.add(container.getItem(slot));
+        return stacks;
+    }
+
+    private static String summary(Container container) {
+        return contents(container).stream().filter(stack -> !stack.isEmpty())
+                .map(stack -> stack.getCount() + " " + stack.getHoverName().getString()).toList().toString();
+    }
+
+    private static int countIn(List<ItemStack> stacks, Item item) {
+        return stacks.stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum();
+    }
+
+    private static int freeCells(List<ItemStack> stacks) {
+        return (int) stacks.stream().filter(ItemStack::isEmpty).count();
+    }
+
+    private static long planksStacks(List<ItemStack> stacks) {
+        return stacks.stream().filter(stack -> stack.is(Items.OAK_PLANKS)).count();
+    }
+
+    /** The first block of this kind within a box around an absolute point, or null. */
+    private static BlockPos blockNear(GameTestHelper h, Block block, BlockPos center, int radius) {
+        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -2, -radius), center.offset(radius, 2, radius)))
+            if (h.getLevel().hasChunkAt(pos) && h.getLevel().getBlockState(pos).is(block)) return pos.immutable();
+        return null;
     }
 
     // ---- the settings page at every GUI size the auto scale picks ----

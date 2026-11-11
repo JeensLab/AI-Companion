@@ -583,6 +583,7 @@ public final class CompanionWork {
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;
+        items.putHeldStackBack();
         clearCracks();
         closeChest();
         house.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();

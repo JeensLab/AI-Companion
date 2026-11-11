@@ -98,6 +98,51 @@ final class CompanionWorkItems {
         return true;
     }
 
+    /** The hand a stack is held in while the bag has no cell for a craft; null when nothing is held. */
+    private EquipmentSlot heldHand;
+
+    /**
+     * A full bag leaves no cell for the planks a chest is made of: one stack is taken in a free hand, the way a player holds
+     * something to free a cell. False when there is nothing to take — the craft may still fit into a cell it frees itself.
+     */
+    boolean holdOneStack() {
+        if (heldHand != null) return true;
+        for (int slot = 0; slot < w.owner.getContainerSize(); slot++) if (w.owner.getItem(slot).isEmpty()) return true;
+        for (EquipmentSlot hand : new EquipmentSlot[]{EquipmentSlot.OFFHAND, EquipmentSlot.MAINHAND}) {
+            if (!w.owner.getItemBySlot(hand).isEmpty()) continue;
+            int pick = -1;
+            double worst = Double.MAX_VALUE;
+            for (int slot = 0; slot < w.owner.getContainerSize(); slot++) {
+                ItemStack stack = w.owner.getItem(slot);
+                // What a hand gives back at once (moveHandMaterialsToBag) stays in the bag.
+                if (stack.isEmpty() || stack.is(ItemTags.LOGS) || stack.is(ItemTags.PLANKS)
+                        || stack.is(ItemTags.STONE_TOOL_MATERIALS) || stack.is(Items.STICK)) continue;
+                double worth = CompanionBelongings.worth(stack);
+                if (worth < worst) { worst = worth; pick = slot; }
+            }
+            if (pick < 0) return false;
+            ItemStack held = w.owner.getItem(pick).copy();
+            w.owner.setItem(pick, ItemStack.EMPTY);
+            w.owner.setItemSlot(hand, held);
+            w.owner.setChanged();
+            heldHand = hand;
+            return true;
+        }
+        return false;
+    }
+
+    /** The stack taken in a hand goes back once the made block has left the bag and its cell is free; never dropped. */
+    void putHeldStackBack() {
+        if (heldHand == null) return;
+        ItemStack held = w.owner.getItemBySlot(heldHand);
+        if (held.isEmpty()) { heldHand = null; return; }
+        w.owner.setItemSlot(heldHand, ItemStack.EMPTY);
+        w.owner.storeLoot(held);
+        // No cell for it yet: it stays in the hand and goes back on the next end of the work.
+        if (!held.isEmpty()) w.owner.setItemSlot(heldHand, held);
+        else heldHand = null;
+    }
+
     int takeFromSlot(Container container, int slot, int max) {
         ItemStack stack = container.getItem(slot);
         if (max <= 0 || stack.isEmpty()) return 0;

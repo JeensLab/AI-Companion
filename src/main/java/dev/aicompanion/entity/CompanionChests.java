@@ -67,8 +67,11 @@ final class CompanionChests {
                 if (!hasChestItem()) {
                     if (w.crafting.approachCraftingTable()) return;
                     if (!w.items.moveHandMaterialsToBag()) return;
+                    // A full bag has no cell for the planks the chest is made of: a stack is held in a free hand meanwhile.
+                    w.items.holdOneStack();
                     CompanionActionResult crafted = w.owner.craftFromBag("minecraft:chest", 1);
                     if (!crafted.success()) {
+                        w.items.putHeldStackBack();
                         if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) w.finish(false, crafted.message());
                         else w.crafting.requestWood(CompanionWork.Phase.STORE);
                         return;
@@ -77,7 +80,8 @@ final class CompanionChests {
                 }
                 if (w.trip.toHome() || w.trip.backToRoom("minecraft:chest")) return;
                 CompanionActionResult placed = w.trip.place("minecraft:chest");
-                if (!placed.success()) { w.finish(false, placed.message()); return; }
+                if (!placed.success()) { w.items.putHeldStackBack(); w.finish(false, placed.message()); return; }
+                w.items.putHeldStackBack();
                 w.newChests++;
                 w.target = findChest(level);
                 w.resetApproach();
@@ -117,8 +121,11 @@ final class CompanionChests {
             if (!CompanionCraftCosts.supportsCraft(w.requestedItem, 1)) { w.finish(false, "Нет блока " + w.requestedItem + " в сумке, его подготовку пока не умею."); return; }
             if (w.crafting.needsWorkbench(w.requestedItem) && w.crafting.approachCraftingTable()) return;
             if (!w.items.moveHandMaterialsToBag()) return;
+            // A full bag has no cell for the planks the chest is made of: a stack is held in a free hand meanwhile.
+            w.items.holdOneStack();
             CompanionActionResult crafted = w.owner.craftFromBag(w.requestedItem, 1);
             if (!crafted.success()) {
+                w.items.putHeldStackBack();
                 if (crafted.message().contains("места") || crafted.message().contains("безопасное место"))
                     w.finish(false, "Поставил " + w.newChests + " из " + w.requestedCount + ". " + crafted.message());
                 else if (CompanionCraftCosts.stoneCost(w.requestedItem) > w.items.countStoneMaterials()) {
@@ -151,6 +158,8 @@ final class CompanionChests {
         if (w.insideHouse && !w.house.interiorAvailable((ServerLevel)w.owner.level())) { w.finish(false, "Дом изменился, место внутри больше не подтверждено."); return; }
         CompanionActionResult placed = w.owner.placeBlockNearResult(w.requestedItem, w.placementAnchor, pos -> !w.insideHouse || w.house.inside(pos));
         if (!placed.success()) { w.finish(false, "Поставил " + w.newChests + " из " + w.requestedCount + ". " + placed.message()); return; }
+        // The block has left the bag: the stack held in a hand goes back into the cell it freed.
+        w.items.putHeldStackBack();
         if (w.owner.lastPlacedPosition() != null) w.placedChests.add(w.owner.lastPlacedPosition());
         w.newChests++;
         if (w.newChests >= w.requestedCount) finishPlacedChests();
