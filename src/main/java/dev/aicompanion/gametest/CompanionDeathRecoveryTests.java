@@ -955,9 +955,10 @@ public final class CompanionDeathRecoveryTests {
         place(h, c, place, 20, mine);
         h.assertTrue(setOut(h, c), "He did not set out");
         int ticks = walk(h, c, 600);
-        h.assertTrue(mine.isRemoved() || mine.getItem().isEmpty(), "His diamond was not fetched");
-        h.assertTrue(junk.isAlive() && junk.getItem().getCount() == 64, "He walked to a stranger's junk");
+        boolean junkLeft = junk.isAlive() && junk.getItem().getCount() == 64;
         junk.discard(); // it lies past this test's own arena, where the companion of the next test can pick it up
+        h.assertTrue(mine.isRemoved() || mine.getItem().isEmpty(), "His diamond was not fetched");
+        h.assertTrue(junkLeft, "He walked to a stranger's junk");
         h.assertTrue(ticks < 200, "The walk to one stack took too long: " + ticks);
         h.succeed();
     }
@@ -1454,10 +1455,12 @@ public final class CompanionDeathRecoveryTests {
         put(h, fresh.below(), Blocks.STONE);
         put(h, fresh, Blocks.AIR);
         var item = stack(h, fresh, new ItemStack(Items.DIAMOND, 2));
-        h.assertTrue(h.getLevel().getEntity(item.getUUID()) == item,
+        boolean handedOut = h.getLevel().getEntity(item.getUUID()) == item;
+        boolean scanned = h.getLevel().getEntitiesOfClass(ItemEntity.class, new AABB(fresh).inflate(1)).contains(item);
+        item.discard(); // it lies 64 blocks off, in the arena of another test, where that test's companion can pick it up
+        h.assertTrue(handedOut,
                 "The stack is not in the world the game hands out: it lies in a chunk whose entities nobody has taken yet");
-        h.assertTrue(h.getLevel().getEntitiesOfClass(ItemEntity.class,
-                        new AABB(fresh).inflate(1)).contains(item),
+        h.assertTrue(scanned,
                 "The scan of the world does not see the stack");
         h.succeed();
     }
