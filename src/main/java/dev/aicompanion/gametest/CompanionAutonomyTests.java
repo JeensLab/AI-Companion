@@ -134,7 +134,8 @@ public final class CompanionAutonomyTests {
                     a.expect(!a.oleg.autonomy().enabled(), "The mode is on by default");
                     a.expect(!worked[0], "Worked on his own with the mode off: " + a.oleg.getLastTaskResult());
                     a.expect(logs(a) == logsBefore, "Logs changed: " + logsBefore + " -> " + logs(a));
-                    a.watch.assertWithPlayer(8);
+                    // He only starts after the player past 8 blocks, so at this one tick he may be just beyond them.
+                    a.watch.assertWithPlayer(12);
                 });
         finish(a, "autonomy-off");
     }
