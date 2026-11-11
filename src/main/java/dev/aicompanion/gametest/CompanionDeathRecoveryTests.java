@@ -1073,16 +1073,17 @@ public final class CompanionDeathRecoveryTests {
         CompanionEntity c = spawn(h);
         settle(c);
         yard(h, c, 8);
-        BlockPos place = c.blockPosition();
+        // Six blocks to walk, the monster beside the way: a stack in his own cell is in the bag before a blow could start.
+        BlockPos place = c.blockPosition().offset(6, 0, 0);
         var item = stack(h, place, new ItemStack(Items.DIAMOND, 2));
         var foe = new Zombie(h.getLevel());
-        foe.moveTo(c.getX() + 2.5, c.getY(), c.getZ() + .5);
+        foe.moveTo(c.getX() + 3, c.getY(), c.getZ() + 1.5);
         h.getLevel().addFreshEntity(foe);
         place(h, c, place, 20, item);
         h.assertTrue(setOut(h, c), "He did not set out");
         c.setTarget(foe);
         // The foe is not ticked: its own hits and knockback would only add noise.
-        for (int tick = 0; tick < 60 && c.deathTrip.active(); tick++) {
+        for (int tick = 0; tick < 200 && c.deathTrip.active(); tick++) {
             c.tick();
             h.assertTrue(!c.swinging, "He stopped to swing at the monster");
         }
