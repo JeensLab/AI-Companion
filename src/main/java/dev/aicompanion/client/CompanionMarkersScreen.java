@@ -17,6 +17,12 @@ import java.util.UUID;
 /** The named places the player asked the companion to remember: the switch, the list, renaming, deleting and coordinates. */
 public final class CompanionMarkersScreen extends Screen {
     private static final int ROW = 20;
+    /** The column every widget of this screen shares: the list, the fields and the footer sit inside it. */
+    private static final int PANEL = 320;
+    /** The first control row, under the title. */
+    private static final int TOP = 32;
+    /** The distance between control rows: a field and the gap under it, so nothing of one row reaches the next. */
+    private static final int PITCH = 26;
     private final Screen parent;
     private EditBox name, x, y, z;
     private final List<Button> rowButtons = new ArrayList<>();
@@ -38,40 +44,46 @@ public final class CompanionMarkersScreen extends Screen {
     }
 
     @Override protected void init() {
-        int left = this.width / 2 - 160, top = 44;
+        int left = this.width / 2 - PANEL / 2, top = TOP;
         rowButtons.clear();
         addRenderableWidget(Button.builder(onOff(), b -> {
             OpenRouterConfig.MARKERS.set(!OpenRouterConfig.MARKERS.get());
             OpenRouterConfig.MARKERS.save();
             b.setMessage(onOff());
             CompanionPreferences.sync();
-        }).bounds(left, top, 320, 20).tooltip(Tooltip.create(Component.literal(
+        }).bounds(left, top, PANEL, 20).tooltip(Tooltip.create(Component.literal(
                 "Выключено: Олег не узнаёт названия меток и не ходит к ним; список здесь остаётся и включается обратно."))).build());
-        name = new EditBox(this.font, left, top + 28, 200, 20, Component.literal("Название"));
+        name = new EditBox(this.font, left, top + PITCH, 200, 20, Component.literal("Название"));
         name.setHint(Component.literal("Название метки, до 24 символов").withStyle(net.minecraft.ChatFormatting.GRAY));
         name.setMaxLength(24);
         addRenderableWidget(name);
         addRenderableWidget(Button.builder(Component.literal("Добавить здесь"), b -> addHere())
-                .bounds(left + 210, top + 28, 110, 20).tooltip(Tooltip.create(Component.literal(
+                .bounds(left + 210, top + PITCH, 110, 20).tooltip(Tooltip.create(Component.literal(
                         "Запомнить место, где стоит игрок, под названием из поля слева."))).build());
-        x = coordinate(left, top + 54, "X");
-        y = coordinate(left + 92, top + 54, "Y");
-        z = coordinate(left + 184, top + 54, "Z");
+        x = coordinate(left, top + PITCH * 2, "X", "Координата X метки.");
+        y = coordinate(left + 92, top + PITCH * 2, "Y", "Высота метки.");
+        z = coordinate(left + 184, top + PITCH * 2, "Z", "Координата Z метки.");
         addRenderableWidget(Button.builder(Component.literal("Сохранить"), b -> saveSelected())
-                .bounds(left, top + 80, 150, 20).tooltip(Tooltip.create(Component.literal(
+                .bounds(left, top + PITCH * 3, 150, 20).tooltip(Tooltip.create(Component.literal(
                         "Применить новое название и координаты к выбранной метке. Координаты ограничены границей мира и высотой постройки."))).build());
         addRenderableWidget(Button.builder(Component.literal("Удалить выбранную"), b -> deleteSelected())
-                .bounds(left + 170, top + 80, 150, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose())
-                .bounds(left, top + 104, 150, 20).build());
+                .bounds(left + 170, top + PITCH * 3, 150, 20).build());
+        // The heading, the notice line and the list follow the controls; the list stops above the footer button.
         listTop = top + 132;
-        listBottom = Math.max(listTop + ROW, this.height - 24);
+        listBottom = Math.max(listTop + ROW, this.height - 34);
+        addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose())
+                .bounds(this.width / 2 - 50, this.height - 28, 100, 20).build());
         refresh();
+        // A resize clears every widget and the read may find the same list, so the rows are rebuilt from it here;
+        // otherwise the markers stay without their «Изменить»/«Удалить» buttons.
+        rebuildRows();
     }
 
-    private EditBox coordinate(int x, int y, String hint) {
+    private EditBox coordinate(int x, int y, String hint, String description) {
         EditBox field = new EditBox(this.font, x, y, 80, 20, Component.literal(hint));
+        field.setHint(Component.literal(hint).withStyle(net.minecraft.ChatFormatting.GRAY));
         field.setFilter(value -> value.matches("-?\\d{0,9}"));
+        field.setTooltip(Tooltip.create(Component.literal(description)));
         addRenderableWidget(field);
         return field;
     }
@@ -115,7 +127,9 @@ public final class CompanionMarkersScreen extends Screen {
     private void rebuildRows() {
         for (Button button : rowButtons) removeWidget(button);
         rowButtons.clear();
-        int left = this.width / 2 - 160;
+        // The window may have grown since the last scroll: the offset follows the room the list has now.
+        offset = Math.clamp(offset, 0, Math.max(0, places.size() - capacity()));
+        int left = this.width / 2 - PANEL / 2;
         for (int index = offset; index < Math.min(places.size(), offset + capacity()); index++) {
             CompanionMarkerBoard.Place place = places.get(index);
             int row = listTop + (index - offset) * ROW;
@@ -206,16 +220,15 @@ public final class CompanionMarkersScreen extends Screen {
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(this.font, this.title, this.width / 2, 16, 0xFFFFFF);
-        int left = this.width / 2 - 160;
-        graphics.drawString(this.font, "Название", left, 44 + 28 - 10, 0xA0A0A0);
-        graphics.drawString(this.font, "X", left, 44 + 54 - 10, 0xA0A0A0);
-        graphics.drawString(this.font, "Y", left + 92, 44 + 54 - 10, 0xA0A0A0);
-        graphics.drawString(this.font, "Z", left + 184, 44 + 54 - 10, 0xA0A0A0);
-        graphics.drawString(this.font, "Места, которые он помнит", left, listTop - 12, 0xC6CFDC);
-        if (places.size() > capacity()) graphics.drawString(this.font, "↕ колёсико", left + 250, listTop - 12, 0x8595AC);
-        graphics.enableScissor(left, listTop, left + 320, listBottom);
-        if (!notice.isEmpty()) graphics.drawString(this.font, this.font.plainSubstrByWidth(notice, 316), left + 4, listTop + 5, 0xA6B4C6);
-        else if (places.isEmpty()) graphics.drawString(this.font, "Пока меток нет: скажи «запомни это место, дача» или добавь здесь.", left + 4, listTop + 5, 0xA6B4C6);
+        int left = this.width / 2 - PANEL / 2;
+        graphics.drawString(this.font, "Места, которые он помнит", left, listTop - 26, 0xC6CFDC);
+        if (places.size() > capacity()) graphics.drawString(this.font, "↕ колёсико", left + 250, listTop - 26, 0x8595AC);
+        // The last answer has a line of its own above the list, so it never covers a marker row.
+        if (!notice.isEmpty()) graphics.drawString(this.font, this.font.plainSubstrByWidth(notice, PANEL - 8), left, listTop - 12, 0xA6B4C6);
+        graphics.enableScissor(left, listTop, left + PANEL, listBottom);
+        if (places.isEmpty() && notice.isEmpty()) graphics.drawString(this.font,
+                this.font.plainSubstrByWidth("Пока меток нет: скажи «запомни это место, дача» или добавь здесь.", PANEL - 8),
+                left + 4, listTop + 5, 0xA6B4C6);
         for (int index = offset; index < Math.min(places.size(), offset + capacity()); index++) {
             CompanionMarkerBoard.Place place = places.get(index);
             String label = (place.id().equals(selected) ? "▶ " : "") + place.name() + " — " + place.world() + " " + place.x() + ", " + place.y() + ", " + place.z();
@@ -224,13 +237,19 @@ public final class CompanionMarkersScreen extends Screen {
         graphics.disableScissor();
     }
 
+    /**
+     * The wheel scrolls the list only under the panel and only while a marker is out of sight; everywhere else the
+     * event goes on to the screen below instead of being swallowed.
+     */
     @Override public boolean mouseScrolled(double x, double y, double dx, double dy) {
-        if (y >= listTop && y <= listBottom && places.size() > capacity()) {
-            offset = Math.clamp(offset + (dy > 0 ? -1 : 1), 0, Math.max(0, places.size() - capacity()));
-            rebuildRows();
-            return true;
-        }
-        return super.mouseScrolled(x, y, dx, dy);
+        int left = this.width / 2 - PANEL / 2;
+        int maximum = Math.max(0, places.size() - capacity());
+        if (x < left || x >= left + PANEL || y < listTop || y > listBottom || maximum == 0) return super.mouseScrolled(x, y, dx, dy);
+        int next = Math.clamp(offset + (dy > 0 ? -1 : 1), 0, maximum);
+        if (next == offset) return super.mouseScrolled(x, y, dx, dy);
+        offset = next;
+        rebuildRows();
+        return true;
     }
 
     @Override public void onClose() { this.minecraft.setScreen(parent); }

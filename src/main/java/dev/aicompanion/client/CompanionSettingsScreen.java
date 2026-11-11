@@ -25,6 +25,9 @@ public final class CompanionSettingsScreen extends Screen {
     private EditBox searchRadius;
     private int firstY;
     private int rowGap;
+    /** The span of the top band the centred title may use: right of «Вещи после смерти», left of «Метки». */
+    private int titleFrom;
+    private int titleTo;
     private EditBox model;
     private EditBox apiUrl;
     private EditBox inworldKey;
@@ -44,16 +47,24 @@ public final class CompanionSettingsScreen extends Screen {
     protected void init() {
         fields.clear();
         showOpenRouterKey = showInworldKey = false;
+        // The four entries share the top band with the centred title: the two on the left and the two on the right
+        // are placed from the edges, so a narrow window closes the gap between them instead of pushing a button over
+        // its neighbour or past the right edge.
+        int deathX = 100, deathWidth = 150;
+        int behaviorX = Math.max(6, width - 94);
+        int markersX = Math.max(6, behaviorX - 74);
+        titleFrom = deathX + deathWidth + 1;
+        titleTo = markersX - 1;
         addRenderableWidget(Button.builder(Component.literal("Поведение"), b -> {
             saveAndClose(); minecraft.setScreen(new CompanionBehaviorScreen(this));
-        }).bounds(width - 94, 8, 88, 20).build());
+        }).bounds(behaviorX, 8, 88, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Вещи после смерти"), b -> {
             saveAndClose(); minecraft.setScreen(new CompanionDeathRecoveryScreen(this));
-        }).bounds(100, 8, 150, 20).tooltip(Tooltip.create(Component.literal(
+        }).bounds(deathX, 8, deathWidth, 20).tooltip(Tooltip.create(Component.literal(
                 "Возвращаться за своими вещами после смерти: выключатель и сколько попыток он делает."))).build());
         addRenderableWidget(Button.builder(Component.literal("Метки"), b -> {
             saveAndClose(); minecraft.setScreen(new CompanionMarkersScreen(this));
-        }).bounds(254, 8, 70, 20).tooltip(Tooltip.create(Component.literal(
+        }).bounds(markersX, 8, 70, 20).tooltip(Tooltip.create(Component.literal(
                 "Запомненные места с названиями: переименовать, удалить, изменить координаты, добавить текущее место и выключатель."))).build());
         addRenderableWidget(Button.builder(memoryLabel(), b -> {
             OpenRouterConfig.LONG_TERM_MEMORY.set(!OpenRouterConfig.LONG_TERM_MEMORY.get()); OpenRouterConfig.LONG_TERM_MEMORY.save();
@@ -147,7 +158,12 @@ public final class CompanionSettingsScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        graphics.drawCenteredString(font, title, this.width / 2, 18, 0xFFFFFF);
+        int titleWidth = font.width(title);
+        int titleX = this.width / 2 - titleWidth / 2;
+        // Drawn only where the header leaves it room: a narrow window would otherwise paint it over a button.
+        if (titleX >= titleFrom && titleX + titleWidth <= titleTo) {
+            graphics.drawCenteredString(font, title, this.width / 2, 18, 0xFFFFFF);
+        }
         int fieldWidth = Math.min(380, this.width - 80);
         int left = (this.width - fieldWidth) / 2;
         firstY = 36;
