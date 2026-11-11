@@ -52,6 +52,11 @@ public final class CompanionDialogue {
     }
 
     public static String acknowledge(List<PlannedAction> actions) {
+        return acknowledge(actions, 1);
+    }
+
+    /** A walking route walked several times says so: the player hears the count he asked for before the walk starts. */
+    public static String acknowledge(List<PlannedAction> actions, int repeat) {
         boolean wood = actions.stream().anyMatch(action -> "gather_wood".equals(action.type()));
         boolean crafting = actions.stream().anyMatch(action -> "craft_item".equals(action.type()));
         if (wood && crafting) return "Окей, схожу за деревом и сделаю инструменты.";
@@ -73,7 +78,7 @@ public final class CompanionDialogue {
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
             case "set_home" -> "Запомнил, наш дом здесь.";
             case "remember_place" -> "Запомнил это место как «" + actions.getFirst().item() + "».";
-            case "go_to_place" -> "Ага, иду к метке «" + actions.getFirst().item() + "».";
+            case "go_to_place" -> "Ага, иду к метке «" + actions.getFirst().item() + "»." + routeRepeat(actions, repeat);
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
             case "enter_portal" -> "Попробую зайти в портал.";
@@ -93,6 +98,13 @@ public final class CompanionDialogue {
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
+    }
+
+    /** «Маршрут «дом» → «дача» — 50 раз.»: the route and the count, once, for a walking route walked more than once. */
+    private static String routeRepeat(List<PlannedAction> actions, int repeat) {
+        if (repeat <= 1) return "";
+        String route = actions.stream().map(action -> "«" + action.item() + "»").distinct().collect(java.util.stream.Collectors.joining(" → "));
+        return " Маршрут " + route + " — " + repeat + " раз.";
     }
 
     /** The note of a sorting that an order ended while he carried things (CompanionSorting): said whatever step of the plan it came with. */

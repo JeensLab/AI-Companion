@@ -16,6 +16,8 @@ import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionMarkerBoard;
 import dev.aicompanion.entity.CompanionMarkerNames;
 import dev.aicompanion.entity.CompanionMarkers;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
@@ -1131,6 +1133,66 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
+    /**
+     * «Патрулируй от дома до дачи 100 раз»: the count is a plan-level repeat beside the written steps, and only a walking
+     * route may carry it. The written steps stay capped at 12, so two steps and repeat 50 are one legal plan.
+     */
+    @GameTest(template = "empty")
+    public static void theCodecTakesARepeatOnlyForAWalkingRoute(GameTestHelper h) {
+        String route = "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"}],\"repeat\":50}";
+        var reply = CompanionPlanCodec.decode(toolCall(route));
+        h.assertTrue(reply.actions().size() == 2 && reply.repeat() == 50, "The repeat was lost: " + reply);
+        h.assertTrue(reply.text().contains("50") && reply.text().contains("«дом»") && reply.text().contains("«дача»"),
+                "The player does not hear the count and the route: " + reply.text());
+        // Without the field the plan runs once, as it did before.
+        var once = CompanionPlanCodec.decode(toolCall("{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дача\"}]}"));
+        h.assertTrue(once.repeat() == 1 && once.actions().size() == 1, "A plan without repeat changed: " + once);
+        // repeat 1 beside another action is the same as no repeat at all.
+        var mixed = CompanionPlanCodec.decode(toolCall("{\"steps\":[{\"action\":\"store_items\",\"item\":\"resources\"}],\"repeat\":1}"));
+        h.assertTrue(mixed.repeat() == 1 && "store_items".equals(mixed.actions().getFirst().type()), "repeat 1 refused another action: " + mixed);
+        // Any other action in the plan, a count out of range or a fractional one spoils it whole.
+        String walk = "{\"action\":\"go_to_place\",\"item\":\"дом\"}";
+        for (String bad : List.of(
+                "{\"steps\":[" + walk + ",{\"action\":\"store_items\",\"item\":\"resources\"}],\"repeat\":5}",
+                "{\"steps\":[" + walk + "],\"repeat\":0}",
+                "{\"steps\":[" + walk + "],\"repeat\":101}",
+                "{\"steps\":[" + walk + "],\"repeat\":2.5}")) {
+            boolean refused = false;
+            try { CompanionPlanCodec.decode(toolCall(bad)); } catch (RuntimeException expected) { refused = true; }
+            h.assertTrue(refused, "Accepted: " + bad);
+        }
+        // The 12-step cap is on the written steps, not on the walks the repeat adds; 13 steps with a repeat are refused.
+        StringBuilder many = new StringBuilder("{\"steps\":[");
+        for (int step = 0; step < CompanionPlanCodec.MAX_STEPS + 1; step++) many.append(step == 0 ? "" : ",").append(walk);
+        many.append("],\"repeat\":2}");
+        boolean refused = false;
+        try { CompanionPlanCodec.decode(toolCall(many.toString())); } catch (RuntimeException expected) { refused = true; }
+        h.assertTrue(refused, "13 written steps with a repeat were accepted: " + many);
+        // The fallback text carries the repeat beside the steps just as well.
+        JsonObject fallbackText = new JsonObject();
+        fallbackText.addProperty("content", "<|DSML|invoke name=\"queue_companion_plan\">"
+                + "<|DSML|parameter name=\"steps\" string=\"false\">[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"}]</|DSML|parameter>"
+                + "<|DSML|parameter name=\"repeat\" string=\"false\">5</|DSML|parameter></|DSML|invoke>");
+        var fallback = CompanionPlanCodec.decode(fallbackText);
+        h.assertTrue(fallback.repeat() == 5 && fallback.actions().size() == 2, "The fallback text lost the repeat: " + fallback);
+        h.succeed();
+    }
+
+    /** The queue gets the route as many times as the repeat says, in order: 2 steps × 50 are 100 queued actions. */
+    @GameTest(template = "empty")
+    public static void theRepeatExpandsIntoTheQueuedStepsInOrder(GameTestHelper h) {
+        var written = CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"}],\"repeat\":50}"));
+        var queued = CompanionPlanCodec.repeated(written, 50);
+        h.assertTrue(queued.size() == 100, "The route was not repeated: " + queued.size());
+        h.assertTrue(queued.get(0).item().equals("дом") && queued.get(1).item().equals("дача")
+                && queued.get(2).item().equals("дом") && queued.get(99).item().equals("дача"),
+                "The legs are out of order: " + queued.subList(0, 4) + " … " + queued.getLast());
+        h.assertTrue(queued.stream().allMatch(step -> "go_to_place".equals(step.type())), "A step of another kind was queued");
+        h.assertTrue(CompanionPlanCodec.repeated(written, 1).equals(written), "One repeat changed the plan");
+        h.succeed();
+    }
+
     /** The local command becomes the plan step: remembering keeps the name, going keeps the name as it was said. */
     @GameTest(template = "empty")
     public static void placeActionParsesRememberAndGo(GameTestHelper h) {
@@ -1221,6 +1283,94 @@ public final class CompanionPlaceMarkerTests {
             h.assertTrue(outcome.recoveries() == 0 && !outcome.report().contains("Повтор шага"),
                     "An unknown name was retried: " + outcome.report());
             h.assertTrue(c.workPhase().isEmpty(), "A trip started for an unknown name: " + c.workPhase());
+        });
+    }
+
+    // ---- the patrol: one plan, several walks ----
+
+    /**
+     * «Патрулируй от дома до дачи и обратно 2 раза»: three written legs and repeat 2 become six real walks, and he visits
+     * both markers — home four times, the dacha twice — by the normal path, one leg after the other.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 1600)
+    public static void aPatrolWithRepeatWalksEveryLegItWasGiven(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        BlockPos home = h.absolutePos(new BlockPos(14, 1, 8));
+        BlockPos dacha = h.absolutePos(new BlockPos(20, 1, 6));
+        store.add(c.getOwnerId(), "дом", h.getLevel().dimension(), home, 1);
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), dacha, 2);
+        var written = CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"},{\"action\":\"go_to_place\",\"item\":\"дом\"}],\"repeat\":2}"));
+        h.assertTrue(written.size() == 3, "The codec expanded the written steps: " + written);
+        var queued = CompanionPlanCodec.repeated(written, 2);
+        h.assertTrue(queued.size() == 6, "The patrol was not expanded: " + queued.size());
+        var plan = CompanionPlanRunner.run(queued,
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-patrol", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The patrol is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            String report = outcome.report();
+            h.assertTrue(arrivals(report) == 6, "The six legs were not all walked: " + report);
+            h.assertTrue(arrivals(report, "дом") == 4 && arrivals(report, "дача") == 2, "The route was not the one written: " + report);
+            h.assertTrue(outcome.skipped().isEmpty() && !report.contains("Не выполнено"), "A leg was skipped: " + report);
+            h.assertTrue(report.lastIndexOf("Пришёл к метке «дом»") > report.lastIndexOf("Пришёл к метке «дача»"),
+                    "The patrol did not end at home: " + report);
+        });
+    }
+
+    /** «Стоп» mid-patrol: the leg in hand ends, the rest of the six are not walked, and nothing is listed as not done. */
+    @GameTest(template = "large_search", timeoutTicks = 1600)
+    public static void aStopMidPatrolCancelsTheRest(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дом", h.getLevel().dimension(), h.absolutePos(new BlockPos(14, 1, 8)), 1);
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), h.absolutePos(new BlockPos(20, 1, 6)), 2);
+        var queued = CompanionPlanCodec.repeated(CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"},{\"action\":\"go_to_place\",\"item\":\"дом\"}],\"repeat\":2}")), 2);
+        java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean();
+        int[] legs = {0};
+        boolean[] working = {false};
+        h.onEachTick(() -> {
+            boolean now = c.isWorking() || c.isGatheringTask();
+            if (working[0] && !now) legs[0]++;
+            working[0] = now;
+            if (legs[0] >= 2) stop.set(true);
+        });
+        var plan = CompanionPlanRunner.run(queued,
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-patrol-stop", stop::get));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The patrol is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.cancelled(), "The stop did not cancel the patrol: " + outcome.report());
+            h.assertTrue(outcome.skipped().isEmpty(), "A cancelled patrol listed legs as not done: " + outcome.skipped());
+            h.assertTrue(outcome.report().contains("План остановлен:"), "The stop is not said: " + outcome.report());
+            h.assertTrue(arrivals(outcome.report()) < 6, "The patrol walked on after the stop: " + outcome.report());
+            h.assertTrue(legs[0] >= 2, "The stop came before the patrol walked: " + legs[0]);
+        });
+    }
+
+    /** A patrol whose first leg names no known marker: it fails there, the other five legs are not walked, nothing is retried. */
+    @GameTest(template = "empty", timeoutTicks = 300)
+    public static void anUnknownMarkerOnTheFirstLegEndsThePatrolWithoutRepeating(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        CompanionMarkers.get(h.getLevel().getServer()).add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition().offset(6, 0, 0), 1);
+        var queued = CompanionPlanCodec.repeated(CompanionPlanCodec.parsePlan(JsonParser.parseString(
+                "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"озеро\"},{\"action\":\"go_to_place\",\"item\":\"дача\"}],\"repeat\":2}")), 2);
+        h.assertTrue(queued.size() == 4, "The patrol was not expanded: " + queued.size());
+        var plan = CompanionPlanRunner.run(queued,
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-marker-patrol-unknown", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The patrol is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            String report = outcome.report();
+            h.assertTrue(report.contains("Не знаю метки «озеро»"), "The unknown name is not said: " + report);
+            h.assertTrue(outcome.recoveries() == 0 && !report.contains("Повтор шага"), "The first leg was repeated: " + report);
+            h.assertTrue(outcome.skipped().size() == 3, "The legs after the failed one are not listed: " + outcome.skipped());
+            h.assertTrue(arrivals(report, "дача") == 0, "He walked to the dacha after the first leg failed: " + report);
+            h.assertTrue(c.workPhase().isEmpty(), "A walk started for the unknown name: " + c.workPhase());
         });
     }
 
@@ -1589,6 +1739,30 @@ public final class CompanionPlaceMarkerTests {
     }
 
     // ---- fixtures ----
+
+    /** One tool call of the model's answer, as the provider hands it over: the plan JSON is the arguments string. */
+    private static JsonObject toolCall(String arguments) {
+        JsonObject function = new JsonObject();
+        function.addProperty("name", "queue_companion_plan");
+        function.addProperty("arguments", arguments);
+        JsonObject call = new JsonObject();
+        call.add("function", function);
+        JsonArray calls = new JsonArray();
+        calls.add(call);
+        JsonObject message = new JsonObject();
+        message.addProperty("content", "");
+        message.add("tool_calls", calls);
+        return message;
+    }
+
+    /** The arrivals at one marker, or at any marker, in a plan's report. */
+    private static int arrivals(String report) {
+        return (int) report.lines().filter(line -> line.contains("Пришёл к метке «")).count();
+    }
+
+    private static int arrivals(String report, String name) {
+        return (int) report.lines().filter(line -> line.contains("Пришёл к метке «" + name + "»")).count();
+    }
 
     private static void arena(GameTestHelper h) {
         for (int x = 0; x < 24; x++) for (int z = 0; z < 24; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);

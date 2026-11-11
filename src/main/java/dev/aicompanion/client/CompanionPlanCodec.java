@@ -13,6 +13,8 @@ import java.util.regex.Pattern;
 /** Decodes model output without executing anything. Invalid plans fail as a whole. */
 public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
+    /** How many times one walking route may be walked: the written steps stay capped at {@link #MAX_STEPS}. */
+    public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
             "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up", "remember_place", "go_to_place");
@@ -24,6 +26,8 @@ public final class CompanionPlanCodec {
     private static final Set<String> LOOSE_ITEMS = Set.of("minecraft:sand", "minecraft:red_sand", "minecraft:gravel", FLINT);
     private static final Pattern DSML = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>.*?"
             + "<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>.*?</\\|DSML\\|invoke>");
+    /** The fallback text may carry the repeat beside the steps; it writes one invoke, so its first such parameter is the plan's. */
+    private static final Pattern DSML_REPEAT = Pattern.compile("<\\|DSML\\|parameter\\s+name=\"repeat\"[^>]*>(.*?)</\\|DSML\\|parameter>");
 
     private CompanionPlanCodec() { }
 
@@ -38,19 +42,25 @@ public final class CompanionPlanCodec {
 
     private static CompanionReply decodeMessage(JsonObject message) {
         List<PlannedAction> actions = new ArrayList<>();
+        int repeat = 1;
         if (message.has("tool_calls") && message.get("tool_calls").isJsonArray()) {
             for (JsonElement element : message.getAsJsonArray("tool_calls")) {
                 JsonObject function = element.getAsJsonObject().getAsJsonObject("function");
                 if (!"queue_companion_plan".equals(function.get("name").getAsString())) throw invalid();
                 JsonElement args = function.get("arguments");
-                actions.addAll(parsePlan(args.isJsonPrimitive() ? JsonParser.parseString(args.getAsString()) : args));
+                DecodedPlan plan = parsePlanWithRepeat(args.isJsonPrimitive() ? JsonParser.parseString(args.getAsString()) : args);
+                actions.addAll(plan.actions());
+                repeat = mergedRepeat(repeat, plan.repeat());
             }
         }
         String raw = textContent(message.get("content"));
         var matcher = DSML.matcher(raw);
         List<PlannedAction> embedded = new ArrayList<>();
         while (matcher.find()) embedded.addAll(parsePlan(JsonParser.parseString(matcher.group(1))));
-        if (actions.isEmpty()) actions.addAll(embedded);
+        if (actions.isEmpty()) {
+            actions.addAll(embedded);
+            if (!embedded.isEmpty()) repeat = mergedRepeat(repeat, dsmlRepeat(raw));
+        }
         String reply = raw.replaceAll("(?s)<\\|DSML\\|invoke\\b.*?</\\|DSML\\|invoke>", "")
                 .replaceAll("</?\\|DSML\\|[^>]*>", "").trim().replaceFirst("(?i)^assistant\\s*:\\s*", "").trim();
         String json = raw.trim().replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
@@ -58,21 +68,55 @@ public final class CompanionPlanCodec {
             try {
                 JsonObject envelope = JsonParser.parseString(json).getAsJsonObject();
                 if (envelope.has("steps")) {
-                    actions.addAll(parsePlan(envelope));
+                    DecodedPlan plan = parsePlanWithRepeat(envelope);
+                    actions.addAll(plan.actions());
+                    repeat = mergedRepeat(repeat, plan.repeat());
                     reply = envelope.has("reply") ? textContent(envelope.get("reply")) : "";
                 }
             } catch (RuntimeException exception) { throw invalid(); }
         }
         if (actions.size() > MAX_STEPS) throw invalid();
         requireGoalAlone(actions);
+        requireWalkOnly(actions, repeat);
         reply = CompanionDialogue.cleanReply(reply);
         if (reply.isBlank() || (!actions.isEmpty() && reply.matches("(?s).*(План принят|Понял, выполняю|Результат сообщу после действий).*"))) {
             if (actions.isEmpty()) throw new IllegalStateException("Модель вернула пустой ответ без команд. Попробуй повторить просьбу или выбрать другую модель в настройках.");
-            reply = CompanionDialogue.acknowledge(actions);
+            reply = CompanionDialogue.acknowledge(actions, repeat);
         }
         // A plan is an intention. Completion is spoken only after the server verifies the result.
-        if (!actions.isEmpty()) reply = CompanionDialogue.acknowledge(actions);
-        return new CompanionReply(reply, List.copyOf(actions));
+        if (!actions.isEmpty()) reply = CompanionDialogue.acknowledge(actions, repeat);
+        return new CompanionReply(reply, List.copyOf(actions), repeat);
+    }
+
+    /** A repeat covers the whole answer: two plans of one message may not ask for different counts. */
+    private static int mergedRepeat(int current, int declared) {
+        if (declared == 1) return current;
+        if (current != 1 && current != declared) throw invalid();
+        return declared;
+    }
+
+    /** The repeat the fallback text names beside the steps, or 1 when it names none. */
+    private static int dsmlRepeat(String raw) {
+        var matcher = DSML_REPEAT.matcher(raw);
+        return matcher.find() ? repeatValue(JsonParser.parseString(matcher.group(1).trim())) : 1;
+    }
+
+    /** The repeat the model wrote: a whole number 1..MAX_REPEAT, or the plan is invalid. */
+    private static int repeatOf(JsonObject plan) {
+        return plan.has("repeat") ? repeatValue(plan.get("repeat")) : 1;
+    }
+
+    private static int repeatValue(JsonElement value) {
+        int repeat;
+        try { repeat = value.getAsBigDecimal().intValueExact(); }
+        catch (RuntimeException exception) { throw invalid(); }
+        if (repeat < 1 || repeat > MAX_REPEAT) throw invalid();
+        return repeat;
+    }
+
+    /** A repeat is a route over markers: every written step must be go_to_place, or the whole plan is invalid. */
+    private static void requireWalkOnly(List<PlannedAction> steps, int repeat) {
+        if (repeat > 1 && steps.stream().anyMatch(step -> !"go_to_place".equals(step.type()))) throw invalid();
     }
 
     /** The `location` values the model is offered: the two places and every container a store or take order may name. */
@@ -92,9 +136,15 @@ public final class CompanionPlanCodec {
     }
 
     public static List<PlannedAction> parsePlan(JsonElement input) {
+        return parsePlanWithRepeat(input).actions();
+    }
+
+    /** The written steps and how many times they are walked: only a route of go_to_place steps may carry a repeat. */
+    public static DecodedPlan parsePlanWithRepeat(JsonElement input) {
         try {
             JsonArray steps = input.isJsonArray() ? input.getAsJsonArray() : input.getAsJsonObject().getAsJsonArray("steps");
             if (steps == null || steps.size() > MAX_STEPS) throw invalid();
+            int repeat = input.isJsonArray() ? 1 : repeatOf(input.getAsJsonObject());
             List<PlannedAction> result = new ArrayList<>();
             for (JsonElement element : steps) {
                 JsonObject step = element.getAsJsonObject();
@@ -178,8 +228,20 @@ public final class CompanionPlanCodec {
             }
             requireGoalAlone(result);
             requirePortalLast(result);
-            return List.copyOf(result);
+            requireWalkOnly(result, repeat);
+            return new DecodedPlan(List.copyOf(result), repeat);
         } catch (RuntimeException exception) { throw invalid(); }
+    }
+
+    /** A validated plan: the steps as the model wrote them and the repeat it asked for, 1 when it named none. */
+    public record DecodedPlan(List<PlannedAction> actions, int repeat) { }
+
+    /** The written steps as the queue runs them: {@code repeat} copies in order, or the same list when it is one. */
+    public static List<PlannedAction> repeated(List<PlannedAction> actions, int repeat) {
+        if (repeat <= 1) return actions;
+        List<PlannedAction> result = new ArrayList<>(actions.size() * repeat);
+        for (int copy = 0; copy < repeat; copy++) result.addAll(actions);
+        return List.copyOf(result);
     }
 
     /** A long goal runs on the server by itself: it is the only step of its plan, or the whole plan is invalid. */
