@@ -113,7 +113,10 @@ public final class CompanionDialogue {
 
     public static String describe(PlannedAction action) {
         return switch (action.type()) {
-            case "gather_wood" -> "нарубить брёвна (" + action.count() + " шт.)";
+            case "gather_wood" -> {
+                var wood = dev.aicompanion.entity.CompanionWoodKind.of(action.item());
+                yield "нарубить брёвна " + (wood == null ? "" : wood.genitive() + " ") + "(" + action.count() + " шт.)";
+            }
             case "gather_dirt" -> "накопать землю (" + action.count() + " шт.)";
             case "gather_loose" -> "накопать " + looseWord(action) + " (" + action.count() + " шт.)";
             case "gather_stone" -> "добыть камень (" + action.count() + " шт.)";
