@@ -65,6 +65,24 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.api_url")
             .define("apiUrl", "");
 
+    /** Off by default: on a full prompt the model spent 2263 hidden reasoning tokens and 100 s before the plan. */
+    public static final ModConfigSpec.BooleanValue THINKING = BUILDER
+            .comment("Let the model reason before answering. Off: the same prompt is answered in seconds instead of minutes. On: the server's own default — slower, and sometimes a more careful choice of materials.")
+            .translation("config.aicompanion.model_thinking")
+            .define("thinking", false);
+
+    /** Empty means «не задавать»: the server's own sampling, unchanged. */
+    public static final ModConfigSpec.ConfigValue<String> TEMPERATURE = BUILDER
+            .comment("Sampling temperature 0.0-2.0; empty keeps the model server's own default. Low makes plans repeatable, high makes speech livelier.")
+            .translation("config.aicompanion.temperature")
+            .define("temperature", "");
+
+    /** Empty means «не задавать»: the server's own sampling, unchanged. */
+    public static final ModConfigSpec.ConfigValue<String> TOP_P = BUILDER
+            .comment("Nucleus sampling top_p 0.0-1.0; empty keeps the model server's own default. Low keeps the wording predictable, high lets it wander.")
+            .translation("config.aicompanion.top_p")
+            .define("topP", "");
+
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
             .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to use an installed local Russian voice on Windows (windowsVoice) or macOS (macosVoice).")
             .translation("config.aicompanion.inworld_api_key")

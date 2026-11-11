@@ -145,11 +145,8 @@ public final class OpenRouterClient {
         if (missingKey(endpoint)) {
             return CompletableFuture.failedFuture(new IllegalStateException("Нет ключа OpenRouter"));
         }
-        JsonObject body = new JsonObject();
-        body.addProperty("model", OpenRouterConfig.MODEL.get().trim().isEmpty() ? "openrouter/auto" : OpenRouterConfig.MODEL.get().trim());
-        body.add("messages", messages);
-        body.addProperty("max_tokens", maxTokens);
-        return post(endpoint, body, false, trace).thenApply(OpenRouterClient::completionText);
+        JsonObject body = body(messages, maxTokens);
+        return postAdapted(endpoint, body, false, trace).thenApply(OpenRouterClient::completionText);
     }
 
     /**
@@ -234,11 +231,10 @@ public final class OpenRouterClient {
         messages.add(message("system", personaPrompt() + ambientDirections(urgent, canAskQuestion, OpenRouterConfig.SHORT_MURMURS.get())));
         synchronized (HISTORY) { ambientHistory(HISTORY).forEach(messages::add); }
         messages.add(message("user", "Наблюдение игры (данные): " + observation + "\nОбстановка (данные): " + snapshot));
-        JsonObject body = new JsonObject(); body.addProperty("model", OpenRouterConfig.MODEL.get().isBlank() ? "openrouter/auto" : OpenRouterConfig.MODEL.get());
         // Reasoning tokens count against max_tokens: at 150 a reasoning model ended with finish_reason "length" and no text.
         // The visible length is held by the prompt and acceptReply, not by this limit.
-        body.add("messages", messages); body.addProperty("max_tokens", 600);
-        CompletableFuture<String> next = post(endpoint, body, false, trace).thenApply(response -> {
+        JsonObject body = body(messages, 600);
+        CompletableFuture<String> next = postAdapted(endpoint, body, false, trace).thenApply(response -> {
             JsonObject choice = response.getAsJsonArray("choices").get(0).getAsJsonObject();
             String text = "", silence = "";
             if (requestGeneration != generation()) silence = "session_changed";
@@ -310,13 +306,16 @@ public final class OpenRouterClient {
             trimHistory();
         }
         boolean forcePlan = requiresAction(userText);
-        CompanionDiagnostics.event(trace, "model_protocol", "tools", true, "forcePlan", forcePlan);
-        return request(endpoint, true, forcePlan, trace, userMessage, context).exceptionallyCompose(error -> {
+        // Thinking is off unless the owner turned it on: with it the model spends its whole budget on hidden reasoning.
+        boolean thinking = OpenRouterConfig.THINKING.get();
+        int budget = answerBudget(thinking);
+        CompanionDiagnostics.event(trace, "model_protocol", "tools", true, "forcePlan", forcePlan, "thinking", thinking, "maxTokens", budget);
+        return answer(endpoint, true, forcePlan, !thinking, budget, trace, userMessage, context).exceptionallyCompose(error -> {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             // Unsupported tool parameters get an explicit JSON planning protocol, never plain chat.
             if (cause instanceof UnsupportedToolsException) {
                 CompanionDiagnostics.event(trace, "model_protocol_fallback", "reason", "provider_tools_unsupported", "protocol", "json");
-                return request(endpoint, false, forcePlan, trace, userMessage, context);
+                return answer(endpoint, false, forcePlan, !thinking, budget, trace, userMessage, context);
             }
             return CompletableFuture.failedFuture(cause);
         }).thenApply(response -> {
@@ -573,7 +572,8 @@ public final class OpenRouterClient {
                 + "приказы игрока ты выполняешь при любой ступени. Обиды бери только из причин, названных в снимке; не выдумывай новых и не припоминай обиду без повода.";
     }
 
-    private static CompletableFuture<JsonObject> request(URI endpoint, boolean withTools, boolean forcePlan, String trace, JsonObject current, String context) {
+    private static CompletableFuture<JsonObject> request(URI endpoint, boolean withTools, boolean forcePlan, boolean thinkingField, int maxTokens,
+                                                         String trace, JsonObject current, String context) {
         JsonArray messages;
         synchronized (HISTORY) { messages = withContext(HISTORY, current, context); }
         if (!withTools) {
@@ -581,11 +581,8 @@ public final class OpenRouterClient {
                     + "Для обычного разговора steps пуст. Для явной команды составь план. Схема плана: "
                     + planTool().getAsJsonObject("function").get("parameters")));
         }
-        JsonObject body = new JsonObject();
-        body.addProperty("model", OpenRouterConfig.MODEL.get().trim().isEmpty()
-                ? "openrouter/auto" : OpenRouterConfig.MODEL.get().trim());
-        body.add("messages", messages);
-        body.addProperty("max_tokens", 2048);
+        JsonObject body = requestBody(modelName(), messages, maxTokens, thinkingField,
+                sampling(OpenRouterConfig.TEMPERATURE.get(), 2.0), sampling(OpenRouterConfig.TOP_P.get(), 1.0));
         if (withTools) {
             JsonArray tools = new JsonArray();
             tools.add(planTool());
@@ -601,7 +598,98 @@ public final class OpenRouterClient {
             }
         }
 
-        return post(endpoint, body, withTools, trace);
+        return postAdapted(endpoint, body, withTools, trace);
+    }
+
+    /** One answer of the plan protocol, with the one bigger retry an empty cut-off answer gets. */
+    private static CompletableFuture<JsonObject> answer(URI endpoint, boolean withTools, boolean forcePlan, boolean thinkingField, int maxTokens,
+                                                        String trace, JsonObject current, String context) {
+        return ensureAnswer(request(endpoint, withTools, forcePlan, thinkingField, maxTokens, trace, current, context), maxTokens,
+                bigger -> request(endpoint, withTools, forcePlan, thinkingField, bigger, trace, current, context));
+    }
+
+    /** The configured model, or OpenRouter's own choice when the field is empty. */
+    private static String modelName() {
+        String model = OpenRouterConfig.MODEL.get().trim();
+        return model.isEmpty() ? "openrouter/auto" : model;
+    }
+
+    /** A plain body without tools: a remark or a memory condensation, with the same thinking and sampling rules. */
+    private static JsonObject body(JsonArray messages, int maxTokens) {
+        return requestBody(modelName(), messages, maxTokens, !OpenRouterConfig.THINKING.get(),
+                sampling(OpenRouterConfig.TEMPERATURE.get(), 2.0), sampling(OpenRouterConfig.TOP_P.get(), 1.0));
+    }
+
+    /**
+     * The chat completion body. Thinking is off by default through the server's own template switch: the same prompt was
+     * answered in 4-12 s instead of 180 s, because the model otherwise spends its whole budget on hidden reasoning (2263
+     * tokens on our prompt). Sampling is sent only when the owner set it; an absent field keeps the server's default.
+     * Public so that a GameTest can check the fields without a request.
+     */
+    public static JsonObject requestBody(String model, JsonArray messages, int maxTokens, boolean thinkingField,
+                                         Double temperature, Double topP) {
+        JsonObject body = new JsonObject();
+        body.addProperty("model", model);
+        body.add("messages", messages);
+        body.addProperty("max_tokens", maxTokens);
+        if (thinkingField) {
+            JsonObject kwargs = new JsonObject();
+            kwargs.addProperty("enable_thinking", false);
+            body.add("chat_template_kwargs", kwargs);
+        }
+        if (temperature != null) body.addProperty("temperature", temperature);
+        if (topP != null) body.addProperty("top_p", topP);
+        return body;
+    }
+
+    /** The owner's sampling value, or null when it is «не задавать»: the model server keeps its own default then. */
+    public static Double sampling(String configured, double maximum) {
+        String text = configured == null ? "" : configured.trim().replace(',', '.');
+        if (text.isEmpty()) return null;
+        try {
+            double value = Double.parseDouble(text);
+            return Double.isFinite(value) ? Math.max(0.0, Math.min(maximum, value)) : null;
+        } catch (NumberFormatException notANumber) {
+            return null;
+        }
+    }
+
+    /**
+     * One rule for the plan request: with thinking the model was measured to spend 2263 hidden tokens before a ~110-token
+     * plan, so 4096; without thinking the answer itself is about a hundred tokens, so 1024. Ambient remarks keep their 600.
+     */
+    public static int answerBudget(boolean thinking) { return thinking ? 4096 : 1024; }
+
+    /** The one retry an empty cut-off answer gets: room for the same reasoning and the plan again, up to 8192. */
+    public static int retryBudget(int maxTokens) { return Math.min(2 * maxTokens, 8192); }
+
+    /**
+     * A reply that ended at the token limit with nothing usable in it: the whole budget went into hidden reasoning and the
+     * plan was lost, not merely shortened. Public so that a GameTest can check it on a canned response.
+     */
+    public static boolean truncatedEmpty(JsonObject response) {
+        JsonObject choice = response.getAsJsonArray("choices").get(0).getAsJsonObject();
+        if (!"length".equals(scalar(choice, "finish_reason"))) return false;
+        JsonObject reply = choice.has("message") && choice.get("message").isJsonObject() ? choice.getAsJsonObject("message") : null;
+        if (reply == null) return true;
+        boolean text = reply.has("content") && !reply.get("content").isJsonNull() && !reply.get("content").getAsString().isBlank();
+        boolean calls = reply.has("tool_calls") && reply.get("tool_calls").isJsonArray() && !reply.getAsJsonArray("tool_calls").isEmpty();
+        return !text && !calls;
+    }
+
+    /**
+     * One more try with a bigger budget when the limit cut off an empty answer, then the honest error: never a request
+     * that ends at the limit with nothing in it. Public so that a GameTest can drive it on canned responses.
+     */
+    public static CompletableFuture<JsonObject> ensureAnswer(CompletableFuture<JsonObject> first, int maxTokens,
+                                                             java.util.function.IntFunction<CompletableFuture<JsonObject>> again) {
+        return first.thenCompose(response -> {
+            if (!truncatedEmpty(response)) return CompletableFuture.completedFuture(response);
+            return again.apply(retryBudget(maxTokens)).thenCompose(second -> truncatedEmpty(second)
+                    ? CompletableFuture.failedFuture(new IllegalStateException(
+                            "Ответ модели оборвался на пределе токенов, текста нет. План не запущен; попроси выполнить меньше действий за раз."))
+                    : CompletableFuture.completedFuture(second));
+        });
     }
 
     /** The messages sent: the history as it is, with the world snapshot added to the current player message only. */
@@ -618,9 +706,38 @@ public final class OpenRouterClient {
     /** One attempt may take this long, the whole answer included; then the queue moves on (review 22.10, К3: 64–131 s answers). */
     public static final Duration ANSWER_LIMIT = Duration.ofSeconds(90);
 
+    /**
+     * A body with fields the server may not know. A refusal of the thinking switch is retried once without it, as the
+     * tools fallback already does for servers that cannot take tool parameters; the prompt stays byte-identical.
+     */
+    private static CompletableFuture<JsonObject> postAdapted(URI endpoint, JsonObject body, boolean withTools, String trace) {
+        return post(endpoint, body, withTools, trace).exceptionallyCompose(error -> {
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            if (!(cause instanceof UnsupportedThinkingException)) return CompletableFuture.failedFuture(cause);
+            CompanionDiagnostics.event(trace, "model_protocol_fallback", "reason", "thinking_field_unsupported",
+                    "protocol", withTools ? "tools" : "text");
+            return post(endpoint, withoutThinkingField(body), withTools, trace);
+        });
+    }
+
+    /** The same body without the template switch, for a server that refused it as a field it does not know. */
+    public static JsonObject withoutThinkingField(JsonObject body) {
+        JsonObject plain = body.deepCopy();
+        plain.remove("chat_template_kwargs");
+        return plain;
+    }
+
+    /** Whether a refusal names the field it did not know: llama.cpp says «unknown field», others «extra field» or «additional properties». */
+    public static boolean refusedUnknownField(String lower) {
+        return lower.contains("chat_template") || lower.contains("enable_thinking") || lower.contains("unknown field")
+                || lower.contains("extra field") || lower.contains("unexpected field") || lower.contains("unrecognized field")
+                || lower.contains("additional propert");
+    }
+
     private static CompletableFuture<JsonObject> post(URI endpoint, JsonObject body, boolean withTools, String trace) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint)
-                .timeout(Duration.ofSeconds(60))
+                // The same limit as the whole answer: 60 s ended the attempt before the declared 90 s cap could be reached.
+                .timeout(ANSWER_LIMIT)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
         String key = OpenRouterConfig.API_KEY.get().trim();
@@ -654,6 +771,10 @@ public final class OpenRouterClient {
                 }
                 boolean refused = response.statusCode() == 401 || response.statusCode() == 403;
                 boolean rejected = response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422;
+                // A server that does not know the template switch says «unknown field», «extra field» or «additional properties».
+                if (rejected && body.has("chat_template_kwargs") && refusedUnknownField(lower)) {
+                    throw new UnsupportedThinkingException(error);
+                }
                 String note = refused ? withheld : rejected ? modelNote(endpoint, OpenRouterConfig.MODEL.get()) : "";
                 throw new IllegalStateException(note.isEmpty() ? error : error + " " + note);
             }
@@ -672,6 +793,10 @@ public final class OpenRouterClient {
 
     private static final class UnsupportedToolsException extends IllegalStateException {
         private UnsupportedToolsException(String message) { super(message); }
+    }
+
+    private static final class UnsupportedThinkingException extends IllegalStateException {
+        private UnsupportedThinkingException(String message) { super(message); }
     }
 
     public static JsonObject planTool() {

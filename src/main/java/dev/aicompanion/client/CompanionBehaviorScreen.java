@@ -92,6 +92,21 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.PICK_UP_RADIUS.save(); b.setMessage(pickUpRadiusLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Насколько далеко он осматривает землю вокруг себя, блоков."))).build());
+        addRenderableWidget(Button.builder(thinkingLabel(), b -> {
+            OpenRouterConfig.THINKING.set(!OpenRouterConfig.THINKING.get()); OpenRouterConfig.THINKING.save();
+            b.setMessage(thinkingLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Выключено: модель отвечает сразу — замерено 4–12 с вместо 1,5–3 мин. Включено: модель думает перед ответом, это медленнее, но иногда удачнее выбор материалов."))).build());
+        addRenderableWidget(Button.builder(temperatureLabel(), b -> {
+            OpenRouterConfig.TEMPERATURE.set(nextSampling(OpenRouterConfig.TEMPERATURE.get(), TEMPERATURES));
+            OpenRouterConfig.TEMPERATURE.save(); b.setMessage(temperatureLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Ниже — планы повторяемее и предсказуемее, выше — речь живее и разнообразнее. «Не задавать» — настройка сервера модели."))).build());
+        addRenderableWidget(Button.builder(topPLabel(), b -> {
+            OpenRouterConfig.TOP_P.set(nextSampling(OpenRouterConfig.TOP_P.get(), TOP_P_VALUES));
+            OpenRouterConfig.TOP_P.save(); b.setMessage(topPLabel());
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Отбор слов по накопленной вероятности: ниже — предсказуемее, выше — разнообразнее. «Не задавать» — настройка сервера модели."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -126,6 +141,26 @@ final class CompanionBehaviorScreen extends Screen {
     private Component damageNumbersLabel() { return Component.literal("Цифры урона над Олегом: " + (OpenRouterConfig.DAMAGE_NUMBERS.get() ? "вкл." : "выкл.")); }
     private Component pickUpLabel() { return Component.literal("Подбирать лежащее рядом: " + (OpenRouterConfig.PICK_UP_NEARBY.get() ? "вкл." : "выкл.")); }
     private Component pickUpRadiusLabel() { return Component.literal("Радиус подбора: " + OpenRouterConfig.PICK_UP_RADIUS.get() + " блоков"); }
+    private static Component thinkingLabel() { return Component.literal("Размышление модели: " + (OpenRouterConfig.THINKING.get() ? "вкл." : "выкл.")); }
+    private static Component temperatureLabel() { return Component.literal("Температура: " + samplingLabel(OpenRouterConfig.TEMPERATURE.get())); }
+    private static Component topPLabel() { return Component.literal("top_p: " + samplingLabel(OpenRouterConfig.TOP_P.get())); }
+    private static String samplingLabel(String value) {
+        Double parsed = OpenRouterClient.sampling(value, 2.0);
+        return parsed == null ? "не задавать" : String.format(java.util.Locale.ROOT, "%.1f", parsed);
+    }
+    /** The next value in the list: from «не задавать» through the numbers and back. */
+    static String nextSampling(String current, String[] steps) {
+        Double parsed = OpenRouterClient.sampling(current, 2.0);
+        int at = 0;
+        for (int i = 0; i < steps.length; i++) {
+            Double step = OpenRouterClient.sampling(steps[i], 2.0);
+            if (parsed == null ? step == null : step != null && step.doubleValue() == parsed.doubleValue()) { at = i; break; }
+        }
+        return steps[(at + 1) % steps.length];
+    }
+    /** Sampling choices offered by the button: an empty first entry means «не задавать», the server's own default. */
+    private static final String[] TEMPERATURES = {"", "0.0", "0.2", "0.4", "0.6", "0.8", "1.0", "1.2", "1.4", "1.6", "1.8", "2.0"};
+    private static final String[] TOP_P_VALUES = {"", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"};
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }

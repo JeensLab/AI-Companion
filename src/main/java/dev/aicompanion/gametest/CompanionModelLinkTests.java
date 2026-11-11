@@ -1,7 +1,9 @@
 package dev.aicompanion.gametest;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.client.CompanionReply;
 import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.client.OpenRouterRetry;
@@ -11,11 +13,14 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.io.IOException;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Review 22.10, К3/В10. The game log had single model answers of 64, 69 and 131 seconds despite a «60 s timeout», which only
@@ -145,5 +150,130 @@ public final class CompanionModelLinkTests {
         JsonObject message = new JsonObject();
         message.addProperty("role", role); message.addProperty("content", content);
         return message;
+    }
+
+    /** A canned chat completion: the finish reason, the text (null for none) and whether a tool call came with it. */
+    private static JsonObject response(String finish, String content, boolean toolCall) {
+        JsonObject reply = new JsonObject();
+        reply.addProperty("role", "assistant");
+        if (content == null) reply.add("content", com.google.gson.JsonNull.INSTANCE); else reply.addProperty("content", content);
+        if (toolCall) {
+            JsonArray calls = new JsonArray();
+            calls.add(new JsonObject());
+            reply.add("tool_calls", calls);
+        }
+        JsonObject choice = new JsonObject();
+        choice.addProperty("finish_reason", finish);
+        choice.add("message", reply);
+        JsonArray choices = new JsonArray();
+        choices.add(choice);
+        JsonObject response = new JsonObject();
+        response.add("choices", choices);
+        return response;
+    }
+
+    /**
+     * Measured 11.2026: with thinking on, the 12 258-token prompt spent 2263 hidden tokens and 180 s; the same prompt with
+     * the template switch off answered in 4–12 s. Sampling is absent until the owner sets it, so the server's default stands.
+     */
+    @GameTest(template = "empty")
+    public static void thinkingIsOffByDefaultAndSamplingOnlyWhenSet(GameTestHelper h) {
+        JsonArray messages = new JsonArray();
+        messages.add(message("system", "правила"));
+        JsonObject thinkingOff = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(false), true, null, null);
+        h.assertTrue(thinkingOff.has("chat_template_kwargs")
+                && !thinkingOff.getAsJsonObject("chat_template_kwargs").get("enable_thinking").getAsBoolean(), "Thinking is not switched off by default");
+        h.assertTrue(!thinkingOff.has("temperature") && !thinkingOff.has("top_p"), "Sampling is sent although not set");
+        JsonObject tuned = OpenRouterClient.requestBody("Dingo", messages, 1024, true, 0.7, 0.9);
+        h.assertTrue(tuned.get("temperature").getAsDouble() == 0.7 && tuned.get("top_p").getAsDouble() == 0.9, "A set sampling value was not sent");
+        JsonObject owners = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(true), false, null, null);
+        h.assertTrue(!owners.has("chat_template_kwargs"), "Thinking was forced off although the owner turned it on");
+        // A server that does not know the field: the refusal is recognised and the retry drops only the switch.
+        h.assertTrue(OpenRouterClient.refusedUnknownField("llama.cpp: unknown field chat_template_kwargs")
+                && OpenRouterClient.refusedUnknownField("Unrecognized field \"chat_template_kwargs\"")
+                && !OpenRouterClient.refusedUnknownField("model not found"), "A refusal of the switch is not recognised");
+        JsonObject plain = OpenRouterClient.withoutThinkingField(tuned);
+        h.assertTrue(!plain.has("chat_template_kwargs") && plain.get("temperature").getAsDouble() == 0.7 && tuned.has("chat_template_kwargs"),
+                "The fallback changed more than the switch");
+        h.succeed();
+    }
+
+    /** 2048 was below the measured 2263 reasoning tokens + plan; the budget now fits thinking on, and is small without it. */
+    @GameTest(template = "empty")
+    public static void theBudgetFitsTheReasoningItAsksFor(GameTestHelper h) {
+        h.assertTrue(OpenRouterClient.answerBudget(true) == 4096 && OpenRouterClient.answerBudget(false) == 1024, "The budget does not fit thinking on/off");
+        h.assertTrue(OpenRouterClient.retryBudget(1024) == 2048 && OpenRouterClient.retryBudget(4096) == 8192
+                && OpenRouterClient.retryBudget(8192) == 8192, "The retry budget is wrong");
+        h.succeed();
+    }
+
+    /** The measured failure: finish_reason «length», the whole budget in hidden reasoning, no text, the plan lost silently. */
+    @GameTest(template = "empty")
+    public static void anEmptyCutOffAnswerIsRetriedOnceWithABiggerBudget(GameTestHelper h) {
+        JsonObject cut = response("length", null, false), plan = response("stop", "{\"steps\":[]}", false);
+        List<Integer> budgets = new ArrayList<>();
+        var first = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(cut), 1024, budget -> {
+            budgets.add(budget);
+            return CompletableFuture.completedFuture(plan);
+        });
+        h.assertTrue(plan == first.join() && budgets.equals(List.of(2048)), "The empty cut-off answer was not retried once with a bigger budget");
+        budgets.clear();
+        var twice = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(cut), 1024, budget -> {
+            budgets.add(budget);
+            return CompletableFuture.completedFuture(cut);
+        });
+        boolean honest = false;
+        try { twice.join(); } catch (Exception error) {
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            honest = cause instanceof IllegalStateException && cause.getMessage().contains("оборвался");
+        }
+        h.assertTrue(honest && budgets.equals(List.of(2048)), "A still empty answer did not fail honestly once: " + budgets);
+        List<Integer> untouched = new ArrayList<>();
+        var good = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(plan), 1024, budget -> {
+            untouched.add(budget);
+            return CompletableFuture.completedFuture(cut);
+        });
+        h.assertTrue(good.join() == plan && untouched.isEmpty(), "A good answer was retried");
+        h.assertTrue(OpenRouterClient.truncatedEmpty(cut) && !OpenRouterClient.truncatedEmpty(plan)
+                && !OpenRouterClient.truncatedEmpty(response("length", "короткий текст", false))
+                && !OpenRouterClient.truncatedEmpty(response("length", null, true)), "A usable answer looks empty");
+        h.succeed();
+    }
+
+    /** Measured: three 60 s timeouts with two pauses held the queue 183 s; the attempt limit is the 90 s answer cap. */
+    @GameTest(template = "empty")
+    public static void aTimeoutIsNotRetriedAndTheLimitIsTheAnswerCap(GameTestHelper h) {
+        AtomicInteger attempts = new AtomicInteger();
+        var timedOut = OpenRouterRetry.execute(() -> {
+            attempts.incrementAndGet();
+            return CompletableFuture.<Integer>failedFuture(new HttpTimeoutException("timed out"));
+        }, value -> value, value -> "", delay -> CompletableFuture.completedFuture(null));
+        boolean failed = false;
+        try { timedOut.join(); } catch (Exception error) {
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            failed = cause instanceof HttpTimeoutException;
+        }
+        h.assertTrue(failed && attempts.get() == 1, "A timeout was retried: " + attempts.get());
+        attempts.set(0);
+        var retried = OpenRouterRetry.execute(() -> attempts.incrementAndGet() == 1
+                ? CompletableFuture.<Integer>failedFuture(new IOException("offline")) : CompletableFuture.completedFuture(200),
+                value -> value, value -> "", delay -> CompletableFuture.completedFuture(null));
+        h.assertTrue(retried.join() == 200 && attempts.get() == 2, "A transport failure stopped being retried");
+        h.assertTrue(OpenRouterClient.ANSWER_LIMIT.equals(Duration.ofSeconds(90)), "The attempt limit left the 90 s answer cap");
+        h.succeed();
+    }
+
+    /** The owner sees «не задавать» until he chooses a value; a value outside the API's range is clamped, not sent as is. */
+    @GameTest(template = "empty")
+    public static void theSamplingSettingsKeepTheirDefaultsAndRanges(GameTestHelper h) {
+        h.assertTrue(!OpenRouterConfig.THINKING.getDefault() && OpenRouterConfig.TEMPERATURE.getDefault().isEmpty()
+                && OpenRouterConfig.TOP_P.getDefault().isEmpty(), "A model setting changed its default");
+        h.assertTrue(OpenRouterClient.sampling("", 2.0) == null && OpenRouterClient.sampling(null, 1.0) == null
+                && OpenRouterClient.sampling("не задавать", 2.0) == null && OpenRouterClient.sampling("abc", 2.0) == null,
+                "An unset value became a number");
+        h.assertTrue(OpenRouterClient.sampling("0,7", 2.0) == 0.7 && OpenRouterClient.sampling("3.5", 2.0) == 2.0
+                && OpenRouterClient.sampling("-1", 2.0) == 0.0 && OpenRouterClient.sampling("1.4", 1.0) == 1.0,
+                "Sampling is not parsed or clamped");
+        h.succeed();
     }
 }
