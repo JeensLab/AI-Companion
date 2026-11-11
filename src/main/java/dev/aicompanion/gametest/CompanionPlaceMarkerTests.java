@@ -1292,7 +1292,78 @@ public final class CompanionPlaceMarkerTests {
             h.assertTrue(countIn(bag(c), Items.BRICK) == 0, "Bricks left in the bag: " + c.getLastTaskResult());
             h.assertTrue(countIn(bag(c), Items.OAK_LOG) == 0 && countIn(bag(c), Items.CHEST) == 0,
                     "The chest or the logs are still in the bag: " + c.getLastTaskResult());
+            // A filler stack was held in a hand to free the cell the chest needed: it must be somewhere afterwards, in the
+            // bag or in the chest, and never dropped — a lost stack cannot pass this test.
+            h.assertTrue(countIn(bag(c), Items.DIRT) + countIn(contents(into), Items.DIRT) == 2,
+                    "The stack held in a hand was lost: " + countIn(bag(c), Items.DIRT) + " dirt in the bag, "
+                            + countIn(contents(into), Items.DIRT) + " in the chest: " + outcome.report());
         });
+    }
+
+    /**
+     * Two steps of one order with a full bag: the first stack goes into the free hand, and once the cell it freed is taken
+     * again the next step must take the other free hand instead of claiming the bag has room. Before the fix the second
+     * step returned at once, so nothing was taken and the craft refused for space although the other hand was free.
+     */
+    @GameTest(template = "empty")
+    public static void aFullBagFindsTheOtherFreeHandWhenOneAlreadyHoldsAStack(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        for (int slot = 0; slot < 27; slot++) c.setItem(slot, new ItemStack(FILLER[slot], 2));
+        h.assertTrue(freeCells(bag(c)) == 0, "The bag is not full: " + freeCells(bag(c)));
+        h.assertTrue(c.holdOneStackInHand(), "No stack was taken with both hands free");
+        h.assertTrue(c.heldStackHands().equals(List.of("offhand")), "The stack is not in the free offhand: " + c.heldStackHands());
+        h.assertTrue(freeCells(bag(c)) == 1, "The bag cell was not freed: " + freeCells(bag(c)));
+        // What the craft made takes the freed cell back: the bag is full again and the other hand is still free.
+        c.setItem(0, new ItemStack(Items.CHEST, 1));
+        h.assertTrue(c.holdOneStackInHand(), "The other free hand was not used: " + c.heldStackHands());
+        h.assertTrue(c.heldStackHands().equals(List.of("mainhand", "offhand")), "Only one hand holds a stack: " + c.heldStackHands());
+        h.assertTrue(freeCells(bag(c)) == 1, "The second cell was not freed: " + freeCells(bag(c)));
+        h.succeed();
+    }
+
+    /**
+     * A stack held in a hand is the work's, not equipment: a save and a reload must put it back into the bag, not leave it
+     * in the hand forever (where a later order would strand a second one beside it).
+     */
+    @GameTest(template = "empty")
+    public static void aStackHeldInAHandComesBackAfterAReload(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        for (int slot = 0; slot < 27; slot++) c.setItem(slot, new ItemStack(FILLER[slot], 2));
+        h.assertTrue(c.holdOneStackInHand(), "No stack was taken with both hands free");
+        h.assertTrue(c.getOffhandItem().is(Items.DIRT) && countIn(bag(c), Items.DIRT) == 0,
+                "The stack is not in the free offhand: " + c.getOffhandItem());
+        var saved = new CompoundTag();
+        c.addAdditionalSaveData(saved);
+        var loaded = AICompanionMod.COMPANION.get().create(h.getLevel());
+        loaded.readAdditionalSaveData(saved);
+        h.assertTrue(countIn(bag(loaded), Items.DIRT) == 2, "The held stack did not come back into the bag: " + countIn(bag(loaded), Items.DIRT));
+        h.assertTrue(loaded.getMainHandItem().isEmpty() && loaded.getOffhandItem().isEmpty(),
+                "A stack stayed in a hand after the reload: " + loaded.getMainHandItem() + " " + loaded.getOffhandItem());
+        h.succeed();
+    }
+
+    /**
+     * A torch chain is made of coal and sticks: a full bag must hold some other stack, never the coal. The plan reads the
+     * bag, so a coal taken into a hand is «не хватает «Уголь»» while he holds it — the coal must stay where the plan sees it.
+     */
+    @GameTest(template = "empty")
+    public static void aFullBagKeepsTheCoalOfATorchChainInTheBag(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        // 25 stacks that are none of the torch chain's materials: the torch stack has to be made, so its cell is missing.
+        Item[] plain = {Items.DIRT, Items.GRAVEL, Items.SAND, Items.FLINT, Items.ANDESITE, Items.DIORITE, Items.GRANITE,
+                Items.TUFF, Items.CALCITE, Items.DEEPSLATE, Items.IRON_INGOT, Items.GOLD_INGOT, Items.COPPER_INGOT,
+                Items.REDSTONE, Items.LAPIS_LAZULI, Items.CHARCOAL, Items.STRING, Items.FEATHER, Items.LEATHER, Items.BONE,
+                Items.GUNPOWDER, Items.BRICK, Items.NETHER_BRICK, Items.AMETHYST_SHARD, Items.SLIME_BALL};
+        c.setItem(0, new ItemStack(Items.COAL, 8));
+        c.setItem(1, new ItemStack(Items.STICK, 4));
+        for (int slot = 0; slot < plain.length; slot++) c.setItem(slot + 2, new ItemStack(plain[slot], 2));
+        h.assertTrue(freeCells(bag(c)) == 0 && countIn(bag(c), Items.TORCH) == 0, "The bag is not full and torchless: " + freeCells(bag(c)));
+        var crafted = c.craftHoldingIfTheBagIsFull("minecraft:torch", 1);
+        h.assertTrue(crafted.success(), "The torches were refused although the coal and sticks are carried: " + crafted.message());
+        h.assertTrue(countIn(bag(c), Items.TORCH) == 4, "No torches in the bag: " + crafted.message());
+        h.assertTrue(countIn(bag(c), Items.COAL) == 7, "The coal left the bag for a hand: " + countIn(bag(c), Items.COAL) + " coal, hands " + c.heldStackHands());
+        h.assertTrue(c.getOffhandItem().is(Items.DIRT), "The stack for the hand was not a filler: " + c.getOffhandItem() + " " + c.heldStackHands());
+        h.succeed();
     }
 
     /**

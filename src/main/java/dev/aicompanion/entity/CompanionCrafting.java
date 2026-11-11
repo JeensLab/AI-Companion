@@ -72,7 +72,7 @@ public final class CompanionCrafting {
     }
 
     /** The requested item's own recipes all need the 3×3 grid, so a bench has to be made before its chain, not after it. */
-    private static boolean needsBench(ServerLevel level, Item target) {
+    public static boolean needsBench(ServerLevel level, Item target) {
         boolean any = false;
         for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
             CraftingRecipe recipe = holder.value();
@@ -81,6 +81,28 @@ public final class CompanionCrafting {
             if (recipe.canCraftInDimensions(2, 2)) return false;
         }
         return any;
+    }
+
+    /**
+     * Everything the chain for an item is made of, the item itself too — what a hand must not take out of the bag while
+     * the plan reads the bag (the torch chain's coal, the chest chain's logs and planks). The scan is bounded: a chain
+     * that loops over more than a bagful of kinds has no single stack to spare anyway.
+     */
+    public static Set<Item> chainMaterials(ServerLevel level, Item target) {
+        Set<Item> materials = new HashSet<>();
+        java.util.Deque<Item> queue = new java.util.ArrayDeque<>();
+        materials.add(target); queue.add(target);
+        while (!queue.isEmpty() && materials.size() < 64) {
+            Item item = queue.poll();
+            for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
+                CraftingRecipe recipe = holder.value();
+                if (recipe.getResultItem(level.registryAccess()).getItem() != item) continue;
+                for (Ingredient ingredient : recipe.getIngredients())
+                    for (ItemStack option : ingredient.getItems())
+                        if (materials.add(option.getItem())) queue.add(option.getItem());
+            }
+        }
+        return materials;
     }
 
     /**

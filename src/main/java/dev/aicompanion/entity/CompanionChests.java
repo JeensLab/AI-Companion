@@ -67,11 +67,10 @@ final class CompanionChests {
                 if (!hasChestItem()) {
                     if (w.crafting.approachCraftingTable()) return;
                     if (!w.items.moveHandMaterialsToBag()) return;
-                    // A full bag has no cell for the planks the chest is made of: a stack is held in a free hand meanwhile.
-                    w.items.holdOneStack();
-                    CompanionActionResult crafted = w.owner.craftFromBag("minecraft:chest", 1);
+                    // A full bag has no cell for the planks the chest is made of: the craft itself says so, then a stack
+                    // is held in a free hand (nothing of the chain's own materials) and the craft is tried again.
+                    CompanionActionResult crafted = w.items.craftFromBagMakingRoom("minecraft:chest", 1);
                     if (!crafted.success()) {
-                        w.items.putHeldStackBack();
                         if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) w.finish(false, crafted.message());
                         else w.crafting.requestWood(CompanionWork.Phase.STORE);
                         return;
@@ -121,11 +120,10 @@ final class CompanionChests {
             if (!CompanionCraftCosts.supportsCraft(w.requestedItem, 1)) { w.finish(false, "Нет блока " + w.requestedItem + " в сумке, его подготовку пока не умею."); return; }
             if (w.crafting.needsWorkbench(w.requestedItem) && w.crafting.approachCraftingTable()) return;
             if (!w.items.moveHandMaterialsToBag()) return;
-            // A full bag has no cell for the planks the chest is made of: a stack is held in a free hand meanwhile.
-            w.items.holdOneStack();
-            CompanionActionResult crafted = w.owner.craftFromBag(w.requestedItem, 1);
+            // A full bag has no cell for what the block is made of: the craft itself says so, then a stack is held in a
+            // free hand (nothing of the chain's own materials) and the craft is tried again.
+            CompanionActionResult crafted = w.items.craftFromBagMakingRoom(w.requestedItem, 1);
             if (!crafted.success()) {
-                w.items.putHeldStackBack();
                 if (crafted.message().contains("места") || crafted.message().contains("безопасное место"))
                     w.finish(false, "Поставил " + w.newChests + " из " + w.requestedCount + ". " + crafted.message());
                 else if (CompanionCraftCosts.stoneCost(w.requestedItem) > w.items.countStoneMaterials()) {
