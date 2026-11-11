@@ -1,8 +1,10 @@
 package dev.aicompanion.client;
 
 import dev.aicompanion.OpenRouterConfig;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -11,7 +13,10 @@ final class CompanionBehaviorScreen extends Screen {
     private final Screen parent;
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
-        int left = width / 2 - 150, top = Math.max(30, height / 2 - 90); // six rows end above the note at height - 64, down to a GUI height of 240
+        int left = width / 2 - 150, top = Math.max(64, height / 2 - 90); // the sampling fields hold the first rows, the switches start below them
+        // Sampling is free entry: models differ, so the mod sends the number as typed and lets the server judge its range.
+        addSamplingField(left + 72, 30, 80, OpenRouterConfig.TEMPERATURE);
+        addSamplingField(left + 200, 30, 100, OpenRouterConfig.TOP_P);
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();
@@ -97,16 +102,6 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(thinkingLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Выключено: модель отвечает сразу — замерено 4–12 с вместо 1,5–3 мин. Включено: модель думает перед ответом, это медленнее, но иногда удачнее выбор материалов."))).build());
-        addRenderableWidget(Button.builder(temperatureLabel(), b -> {
-            OpenRouterConfig.TEMPERATURE.set(nextSampling(OpenRouterConfig.TEMPERATURE.get(), TEMPERATURES));
-            OpenRouterConfig.TEMPERATURE.save(); b.setMessage(temperatureLabel());
-        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
-                "Ниже — планы повторяемее и предсказуемее, выше — речь живее и разнообразнее. «Не задавать» — настройка сервера модели."))).build());
-        addRenderableWidget(Button.builder(topPLabel(), b -> {
-            OpenRouterConfig.TOP_P.set(nextSampling(OpenRouterConfig.TOP_P.get(), TOP_P_VALUES));
-            OpenRouterConfig.TOP_P.save(); b.setMessage(topPLabel());
-        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
-                "Отбор слов по накопленной вероятности: ниже — предсказуемее, выше — разнообразнее. «Не задавать» — настройка сервера модели."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -142,25 +137,25 @@ final class CompanionBehaviorScreen extends Screen {
     private Component pickUpLabel() { return Component.literal("Подбирать лежащее рядом: " + (OpenRouterConfig.PICK_UP_NEARBY.get() ? "вкл." : "выкл.")); }
     private Component pickUpRadiusLabel() { return Component.literal("Радиус подбора: " + OpenRouterConfig.PICK_UP_RADIUS.get() + " блоков"); }
     private static Component thinkingLabel() { return Component.literal("Размышление модели: " + (OpenRouterConfig.THINKING.get() ? "вкл." : "выкл.")); }
-    private static Component temperatureLabel() { return Component.literal("Температура: " + samplingLabel(OpenRouterConfig.TEMPERATURE.get())); }
-    private static Component topPLabel() { return Component.literal("top_p: " + samplingLabel(OpenRouterConfig.TOP_P.get())); }
-    private static String samplingLabel(String value) {
-        Double parsed = OpenRouterClient.sampling(value, 2.0);
-        return parsed == null ? "не задавать" : String.format(java.util.Locale.ROOT, "%.1f", parsed);
+    /**
+     * A free-entry sampling field: any number the owner types is sent as is — dot or comma, negative too. The mod sets no
+     * range of its own; a value the server rejects comes back as the server's own error. Empty means «не задавать».
+     */
+    private EditBox addSamplingField(int x, int y, int width, net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<String> setting) {
+        EditBox field = addRenderableWidget(new EditBox(font, x, y, width, 20, Component.literal("")));
+        field.setMaxLength(24);
+        field.setHint(Component.literal("не задавать").withStyle(ChatFormatting.GRAY));
+        field.setValue(setting.get() == null ? "" : setting.get());
+        field.setResponder(text -> {
+            setting.set(text.trim());
+            setting.save();
+            field.setTextColor(OpenRouterClient.samplingHint(text).isEmpty() ? 0xE0E0E0 : 0xFF5555);
+        });
+        field.setTextColor(OpenRouterClient.samplingHint(setting.get()).isEmpty() ? 0xE0E0E0 : 0xFF5555);
+        field.setTooltip(Tooltip.create(Component.literal(
+                "Значение отправляется как есть; допустимый диапазон зависит от вашей модели. Пусто — не задавать, остаётся настройка сервера модели.")));
+        return field;
     }
-    /** The next value in the list: from «не задавать» through the numbers and back. */
-    static String nextSampling(String current, String[] steps) {
-        Double parsed = OpenRouterClient.sampling(current, 2.0);
-        int at = 0;
-        for (int i = 0; i < steps.length; i++) {
-            Double step = OpenRouterClient.sampling(steps[i], 2.0);
-            if (parsed == null ? step == null : step != null && step.doubleValue() == parsed.doubleValue()) { at = i; break; }
-        }
-        return steps[(at + 1) % steps.length];
-    }
-    /** Sampling choices offered by the button: an empty first entry means «не задавать», the server's own default. */
-    private static final String[] TEMPERATURES = {"", "0.0", "0.2", "0.4", "0.6", "0.8", "1.0", "1.2", "1.4", "1.6", "1.8", "2.0"};
-    private static final String[] TOP_P_VALUES = {"", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"};
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
@@ -172,17 +167,29 @@ final class CompanionBehaviorScreen extends Screen {
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 18, 0xFFFFFF);
+        int left = width / 2 - 150;
+        graphics.drawString(font, "Температура", left, 35, 0xFFFFFF);
+        graphics.drawString(font, "top_p", left + 160, 35, 0xFFFFFF);
+        // A typed value that is not a number is not sent; say so visibly, the text itself stays as typed.
+        String hint = OpenRouterClient.samplingHint(OpenRouterConfig.TEMPERATURE.get());
+        if (!hint.isEmpty()) hint = "Температура — " + hint;
+        else {
+            hint = OpenRouterClient.samplingHint(OpenRouterConfig.TOP_P.get());
+            if (!hint.isEmpty()) hint = "top_p — " + hint;
+        }
+        if (!hint.isEmpty()) graphics.drawCenteredString(font, hint, width / 2, 52, 0xFF5555);
         graphics.drawCenteredString(font, "Свои темы и редкие реплики об обстановке идут на сервер модели и в Inworld.", width / 2, height - 64, 0xB8C3D1);
     }
     @Override public void onClose() { minecraft.setScreen(parent); }
 
-    private static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 30, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
+    private static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 64, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
     /** The page of switches shown when they do not all fit above the note. */
     private int page;
     /**
      * The switches, every button as wide as a row, stand one under another in the order they were added: from the
      * usual top and 30 apart while there is room, higher up and closer (down to touching) when they would reach the
-     * note. So a switch added anywhere in init needs no place of its own, and seven rows fit at a GUI height of 240.
+     * note. So a switch added anywhere in init needs no place of its own, and the sampling fields above keep their own
+     * row, leaving about four switch rows at a GUI height of 240.
      * More than fit 24 apart go on pages, turned by a button beside «Назад».
      */
     private void fitRows(int top) {

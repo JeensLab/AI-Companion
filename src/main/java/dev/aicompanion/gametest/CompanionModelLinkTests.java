@@ -2,6 +2,8 @@ package dev.aicompanion.gametest;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.sun.net.httpserver.HttpServer;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.client.CompanionReply;
@@ -14,11 +16,17 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -174,27 +182,38 @@ public final class CompanionModelLinkTests {
 
     /**
      * Measured 11.2026: with thinking on, the 12 258-token prompt spent 2263 hidden tokens and 180 s; the same prompt with
-     * the template switch off answered in 4–12 s. Sampling is absent until the owner sets it, so the server's default stands.
+     * the template switch off answered in 4–12 s. The switch carries the owner's own value, so turning thinking on is not
+     * left to a server whose template default is off. Sampling is absent until the owner sets it, then sent as typed.
      */
     @GameTest(template = "empty")
-    public static void thinkingIsOffByDefaultAndSamplingOnlyWhenSet(GameTestHelper h) {
+    public static void thinkingIsSentAsConfiguredAndSamplingOnlyWhenSet(GameTestHelper h) {
         JsonArray messages = new JsonArray();
         messages.add(message("system", "правила"));
-        JsonObject thinkingOff = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(false), true, null, null);
+        JsonObject thinkingOff = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(false), false, null, null);
         h.assertTrue(thinkingOff.has("chat_template_kwargs")
                 && !thinkingOff.getAsJsonObject("chat_template_kwargs").get("enable_thinking").getAsBoolean(), "Thinking is not switched off by default");
+        JsonObject thinkingOn = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(true), true, null, null);
+        h.assertTrue(thinkingOn.getAsJsonObject("chat_template_kwargs").get("enable_thinking").getAsBoolean(),
+                "Thinking on is not sent: a server whose template default is off would ignore the switch");
         h.assertTrue(!thinkingOff.has("temperature") && !thinkingOff.has("top_p"), "Sampling is sent although not set");
-        JsonObject tuned = OpenRouterClient.requestBody("Dingo", messages, 1024, true, 0.7, 0.9);
-        h.assertTrue(tuned.get("temperature").getAsDouble() == 0.7 && tuned.get("top_p").getAsDouble() == 0.9, "A set sampling value was not sent");
-        JsonObject owners = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(true), false, null, null);
-        h.assertTrue(!owners.has("chat_template_kwargs"), "Thinking was forced off although the owner turned it on");
-        // A server that does not know the field: the refusal is recognised and the retry drops only the switch.
-        h.assertTrue(OpenRouterClient.refusedUnknownField("llama.cpp: unknown field chat_template_kwargs")
-                && OpenRouterClient.refusedUnknownField("Unrecognized field \"chat_template_kwargs\"")
-                && !OpenRouterClient.refusedUnknownField("model not found"), "A refusal of the switch is not recognised");
-        JsonObject plain = OpenRouterClient.withoutThinkingField(tuned);
-        h.assertTrue(!plain.has("chat_template_kwargs") && plain.get("temperature").getAsDouble() == 0.7 && tuned.has("chat_template_kwargs"),
-                "The fallback changed more than the switch");
+        JsonObject tuned = OpenRouterClient.requestBody("Dingo", messages, 1024, false, 0.7, 1.5);
+        h.assertTrue(tuned.get("temperature").getAsDouble() == 0.7 && tuned.get("top_p").getAsDouble() == 1.5,
+                "A set sampling value was not sent as typed");
+        // A refusal of the switch is recognised by name with tools too; a bare phrase is believed only without tools, where a
+        // strict gateway's «unknown field max_tokens» cannot silently turn thinking off and restore 100–180 s answers.
+        h.assertTrue(OpenRouterClient.refusedUnknownField("llama.cpp: unknown field chat_template_kwargs", true)
+                && OpenRouterClient.refusedUnknownField("Unrecognized field \"chat_template_kwargs\"", true)
+                && OpenRouterClient.refusedUnknownField("unknown field", false)
+                && OpenRouterClient.refusedUnknownField("additional properties are not allowed", false)
+                && !OpenRouterClient.refusedUnknownField("unknown field", true)
+                && !OpenRouterClient.refusedUnknownField("extra field max_tokens", true)
+                && !OpenRouterClient.refusedUnknownField("model not found", true)
+                && !OpenRouterClient.refusedUnknownField("model not found", false), "A refusal of the switch is not recognised");
+        // The fallback drops only the switch and raises the budget: without it the server thinks by default.
+        JsonObject plain = OpenRouterClient.fallbackBody(tuned);
+        h.assertTrue(!plain.has("chat_template_kwargs") && plain.get("temperature").getAsDouble() == 0.7
+                && plain.get("max_tokens").getAsInt() == OpenRouterClient.answerBudget(true) && tuned.has("chat_template_kwargs"),
+                "The fallback changed more than the switch and the budget");
         h.succeed();
     }
 
@@ -202,6 +221,8 @@ public final class CompanionModelLinkTests {
     @GameTest(template = "empty")
     public static void theBudgetFitsTheReasoningItAsksFor(GameTestHelper h) {
         h.assertTrue(OpenRouterClient.answerBudget(true) == 4096 && OpenRouterClient.answerBudget(false) == 1024, "The budget does not fit thinking on/off");
+        h.assertTrue(OpenRouterClient.ambientBudget(false) == 600 && OpenRouterClient.ambientBudget(true) == 2048,
+                "The ambient budget does not fit thinking on/off");
         h.assertTrue(OpenRouterClient.retryBudget(1024) == 2048 && OpenRouterClient.retryBudget(4096) == 8192
                 && OpenRouterClient.retryBudget(8192) == 8192, "The retry budget is wrong");
         h.succeed();
@@ -263,17 +284,95 @@ public final class CompanionModelLinkTests {
         h.succeed();
     }
 
-    /** The owner sees «не задавать» until he chooses a value; a value outside the API's range is clamped, not sent as is. */
+    /**
+     * The whole 400-to-fallback chain against a local stub server: the first body carries the template switch and the
+     * thinking-off budget, the server refuses the field by name, and the retry drops only that field, keeps the prompt and
+     * the tools, and raises the budget to fit the thinking the server now does by default.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void theRefusedThinkingSwitchFallsBackToTheThinkingOnBudget(GameTestHelper h) {
+        HttpServer stub;
+        try {
+            stub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        } catch (IOException noPort) {
+            h.fail("No local stub server: " + noPort);
+            return;
+        }
+        List<String> bodies = Collections.synchronizedList(new ArrayList<>());
+        stub.createContext("/v1/chat/completions", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            bodies.add(body);
+            byte[] reply = bodies.size() == 1
+                    ? "{\"error\":{\"message\":\"llama.cpp: unknown field chat_template_kwargs\"}}".getBytes(StandardCharsets.UTF_8)
+                    : "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"steps\\\":[]}\"}}]}"
+                            .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(bodies.size() == 1 ? 400 : 200, reply.length);
+            exchange.getResponseBody().write(reply);
+            exchange.close();
+        });
+        stub.start();
+        try {
+            URI endpoint = URI.create("http://127.0.0.1:" + stub.getAddress().getPort() + "/v1/chat/completions");
+            JsonArray messages = new JsonArray();
+            messages.add(message("user", "построй дом"));
+            JsonObject body = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(false), false, 0.7, 1.5);
+            JsonArray tools = new JsonArray();
+            tools.add(OpenRouterClient.planTool());
+            body.add("tools", tools);
+            body.addProperty("tool_choice", "required");
+            JsonObject answer = OpenRouterClient.postAdapted(endpoint, body, true, "fallback-chain")
+                    .get(15, TimeUnit.SECONDS);
+            h.assertTrue(bodies.size() == 2, "The stub saw " + bodies.size() + " requests, not two");
+            JsonObject first = JsonParser.parseString(bodies.get(0)).getAsJsonObject();
+            JsonObject retry = JsonParser.parseString(bodies.get(1)).getAsJsonObject();
+            h.assertTrue(first.get("max_tokens").getAsInt() == OpenRouterClient.answerBudget(false)
+                    && !first.getAsJsonObject("chat_template_kwargs").get("enable_thinking").getAsBoolean(),
+                    "The first request did not carry the switch and the thinking-off budget");
+            h.assertTrue(!retry.has("chat_template_kwargs"), "The retry kept the refused field");
+            h.assertTrue(retry.get("max_tokens").getAsInt() == OpenRouterClient.answerBudget(true),
+                    "The retry kept a budget too small for the thinking the server now does: " + retry.get("max_tokens"));
+            h.assertTrue(retry.get("messages").equals(first.get("messages")), "The retry changed the prompt");
+            h.assertTrue(retry.get("tools").equals(first.get("tools")), "The retry lost the tools");
+            h.assertTrue(retry.get("temperature").getAsDouble() == 0.7, "The retry lost the owner's sampling");
+            h.assertTrue(answer.has("choices"), "The fallback answer was not the server's completion");
+        } catch (ExecutionException error) {
+            h.fail("The fallback chain failed: " + error.getCause());
+        } catch (TimeoutException slow) {
+            h.fail("The fallback chain did not finish in 15 s");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            h.fail("Interrupted while waiting for the fallback chain");
+        } finally {
+            stub.stop(0);
+        }
+        h.succeed();
+    }
+
+    /**
+     * The owner types the number himself: dot or comma, negative too, and the mod imposes no range — models differ. A
+     * non-number is not sent, stays as typed, and the screen says so. Empty means «не задавать».
+     */
     @GameTest(template = "empty")
-    public static void theSamplingSettingsKeepTheirDefaultsAndRanges(GameTestHelper h) {
+    public static void theSamplingSettingsAreFreeEntryWithoutARangeOfOurs(GameTestHelper h) {
         h.assertTrue(!OpenRouterConfig.THINKING.getDefault() && OpenRouterConfig.TEMPERATURE.getDefault().isEmpty()
                 && OpenRouterConfig.TOP_P.getDefault().isEmpty(), "A model setting changed its default");
-        h.assertTrue(OpenRouterClient.sampling("", 2.0) == null && OpenRouterClient.sampling(null, 1.0) == null
-                && OpenRouterClient.sampling("не задавать", 2.0) == null && OpenRouterClient.sampling("abc", 2.0) == null,
-                "An unset value became a number");
-        h.assertTrue(OpenRouterClient.sampling("0,7", 2.0) == 0.7 && OpenRouterClient.sampling("3.5", 2.0) == 2.0
-                && OpenRouterClient.sampling("-1", 2.0) == 0.0 && OpenRouterClient.sampling("1.4", 1.0) == 1.0,
-                "Sampling is not parsed or clamped");
+        h.assertTrue(OpenRouterClient.sampling("") == null && OpenRouterClient.sampling(null) == null
+                && OpenRouterClient.sampling(" ") == null && OpenRouterClient.sampling("abc") == null,
+                "An unset or non-numeric value became a number");
+        h.assertTrue(OpenRouterClient.sampling("0.7") == 0.7 && OpenRouterClient.sampling("1,2") == 1.2
+                && OpenRouterClient.sampling("1.5") == 1.5 && OpenRouterClient.sampling("-0.5") == -0.5
+                && OpenRouterClient.sampling("3.5") == 3.5, "Sampling is parsed or clamped by the mod");
+        h.assertTrue(OpenRouterClient.samplingHint("").isEmpty() && OpenRouterClient.samplingHint("1,2").isEmpty()
+                && !OpenRouterClient.samplingHint("abc").isEmpty(), "A typed value is not explained");
+        JsonArray messages = new JsonArray();
+        messages.add(message("user", "привет"));
+        JsonObject typed = OpenRouterClient.requestBody("Dingo", messages, 600, false,
+                OpenRouterClient.sampling("-0.5"), OpenRouterClient.sampling("1.5"));
+        h.assertTrue(typed.get("temperature").getAsDouble() == -0.5 && typed.get("top_p").getAsDouble() == 1.5,
+                "A typed sampling value was not sent as typed");
+        JsonObject junk = OpenRouterClient.requestBody("Dingo", messages, 600, false,
+                OpenRouterClient.sampling("abc"), OpenRouterClient.sampling(""));
+        h.assertTrue(!junk.has("temperature") && !junk.has("top_p"), "A junk value reached the request");
         h.succeed();
     }
 }

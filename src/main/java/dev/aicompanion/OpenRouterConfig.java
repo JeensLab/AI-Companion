@@ -71,15 +71,15 @@ public final class OpenRouterConfig {
             .translation("config.aicompanion.model_thinking")
             .define("thinking", false);
 
-    /** Empty means «не задавать»: the server's own sampling, unchanged. */
+    /** Empty means «не задавать»: the server's own sampling, unchanged. The mod imposes no range: models differ. */
     public static final ModConfigSpec.ConfigValue<String> TEMPERATURE = BUILDER
-            .comment("Sampling temperature 0.0-2.0; empty keeps the model server's own default. Low makes plans repeatable, high makes speech livelier.")
+            .comment("Sampling temperature, sent as typed (dot or comma, negative too); the acceptable range depends on your model, and a value it rejects comes back as its own error. Empty keeps the model server's own default.")
             .translation("config.aicompanion.temperature")
             .define("temperature", "");
 
-    /** Empty means «не задавать»: the server's own sampling, unchanged. */
+    /** Empty means «не задавать»: the server's own sampling, unchanged. The mod imposes no range: models differ. */
     public static final ModConfigSpec.ConfigValue<String> TOP_P = BUILDER
-            .comment("Nucleus sampling top_p 0.0-1.0; empty keeps the model server's own default. Low keeps the wording predictable, high lets it wander.")
+            .comment("Nucleus sampling top_p, sent as typed (dot or comma, negative too); the acceptable range depends on your model, and a value it rejects comes back as its own error. Empty keeps the model server's own default.")
             .translation("config.aicompanion.top_p")
             .define("topP", "");
 
