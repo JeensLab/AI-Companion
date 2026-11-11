@@ -63,7 +63,7 @@ public final class CompanionObtain {
         CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)));
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
-        if (species != null) {
+        if (species != null && plainLog(id.getPath())) {
             int have = carried.stream().filter(stack -> stack.is(species.items)).mapToInt(ItemStack::getCount).sum();
             return new Plan(have >= count ? List.of() : List.of(new Step("gather_wood", id.toString(), count - have)), null);
         }
@@ -239,6 +239,9 @@ public final class CompanionObtain {
         }
         return result;
     }
+
+    /** A log as it grows: stripped logs and wood blocks are crafted or made with an axe, chopping does not give them. */
+    private static boolean plainLog(String path) { return !path.startsWith("stripped_") && (path.endsWith("_log") || path.endsWith("_stem")); }
 
     /** Wood and crafting stone are families: any log, any planks, any cobblestone-like block serve the same recipes. */
     private static String key(Item item) {

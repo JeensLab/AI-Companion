@@ -66,14 +66,13 @@ public final class CompanionNamedWoodTests {
     }
 
     @GameTest(template = "empty")
-    public static void speciesSurvivesTheSplitAndOnlyWoodNamesAreValid(GameTestHelper h) {
+    public static void speciesSurvivesTheSplitAndOtherItemsMeanAnyLog(GameTestHelper h) {
         List<PlannedAction> plan = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"gather_wood\",\"item\":\"minecraft:birch_log\",\"count\":20}]"));
         h.assertTrue(plan.size() == 2 && plan.stream().allMatch(step -> step.item().equals("minecraft:birch_log")) && plan.stream().mapToInt(PlannedAction::count).sum() == 20,
                 "Species lost in the split: " + plan);
         for (String bad : List.of("minecraft:stone", "minecraft:bamboo_block", "minecraft:birch_planks", "birch")) {
-            boolean rejected = false;
-            try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"gather_wood\",\"item\":\"" + bad + "\",\"count\":2}]")); } catch (IllegalStateException expected) { rejected = true; }
-            h.assertTrue(rejected, bad + " accepted as a wood species");
+            var any = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"gather_wood\",\"item\":\"" + bad + "\",\"count\":2}]"));
+            h.assertTrue(any.size() == 1 && any.get(0).item().isEmpty(), bad + " kept as a wood species: " + any);
         }
         // Any item of the species tag names it; no item is any log.
         h.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"gather_wood\",\"item\":\"minecraft:stripped_birch_log\",\"count\":2},{\"action\":\"gather_wood\",\"count\":2}]")).size() == 2, "Stripped log or empty item refused");

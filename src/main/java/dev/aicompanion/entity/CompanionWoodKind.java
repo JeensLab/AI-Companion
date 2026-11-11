@@ -39,6 +39,9 @@ public enum CompanionWoodKind {
     /** The refusal when none of the species stands within his search. */
     public String none() { return Character.toUpperCase(genitive.charAt(0)) + genitive.substring(1) + " рядом не нашёл."; }
 
+    /** The refusal when its trees stand near but none could be got to. */
+    public String outOfReach() { return "До брёвен " + genitive + " рядом не смог добраться."; }
+
     /** The species an item id names, or null: empty, not an item, or not wood of a species (bamboo, stone). */
     public static CompanionWoodKind of(String item) {
         var id = item == null || item.isBlank() ? null : ResourceLocation.tryParse(item.trim());

@@ -60,7 +60,7 @@ final class CompanionGatherGoals {
         private BlockPos searchOrigin;
         /** The trees round the player were looked at too (once per request). */
         private boolean searchedByPlayer;
-        /** The species the order named (the work's item), or null: any log. Read at the start, so a reload brings it back with the work. */
+        /** The species the order named (the work's item), or null: any log. Read when the goal starts, so a parked order that goes on keeps it. */
         private CompanionWoodKind kind;
         private net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> logBlocks() { return kind == null ? BlockTags.LOGS : kind.blocks; }
         private int logs() { return CompanionTools.count(c, kind == null ? ItemTags.LOGS : kind.items); }
@@ -158,7 +158,9 @@ final class CompanionGatherGoals {
                     String accessNote = unreachableLogs.isEmpty() ? "Текущее дерево закончил." : "До части брёвен не удалось добраться, поэтому оставил их.";
                     finish("Закончил сбор: срубил " + gathered + " брёвен (цель была " + c.requestedLogs + "). "
                             + accessNote + " У меня в сумке: " + c.getStoredItemsSummary() + ".");
-                } else if (++noLogsTicks >= 100) finish(kind != null ? (gathered == 0 ? kind.none() : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен " + kind.genitive() + ", больше рядом не нашёл. У меня в сумке: " + c.getStoredItemsSummary() + ".")
+                } else if (++noLogsTicks >= 100) finish(kind != null ? (gathered == 0 ? unreachableLogs.isEmpty() ? kind.none() : kind.outOfReach()
+                        : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен " + kind.genitive()
+                        + (unreachableLogs.isEmpty() ? ", больше рядом не нашёл. " : ", до остальных не добрался. ") + "У меня в сумке: " + c.getStoredItemsSummary() + ".")
                         : gathered == 0
                         ? c.autonomy.running() ? "В " + CompanionAutonomy.LEASH + " блоках от рабочего места не нашёл доступных деревьев."
                         : "Сбор завершён: в пределах " + c.searchRadius + " блоков не нашёл доступных деревьев."
