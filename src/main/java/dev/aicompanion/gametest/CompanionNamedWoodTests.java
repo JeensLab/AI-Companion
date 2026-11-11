@@ -53,6 +53,21 @@ public final class CompanionNamedWoodTests {
         });
     }
 
+    /** A birch walled in on every side: it is there, so the ending says he could not get to it, not that there is none. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBirchHeCannotGetToIsNotCalledMissing(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        trunk(h, FAR_BIRCH, Blocks.BIRCH_LOG);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int dy = 0; dy <= 4; dy++)
+            if (dx != 0 || dz != 0 || dy == 4) h.setBlock(FAR_BIRCH.offset(dx, dy, dz), Blocks.BEDROCK);
+        h.assertTrue(order(h, companion, "minecraft:birch_log", 2).success(), "Order not accepted");
+        h.succeedWhen(() -> {
+            idle(h, companion);
+            h.assertTrue(companion.getLastTaskResult().contains("не смог добраться") && !companion.didLastTaskSucceed(), "Ending: " + companion.getLastTaskResult());
+            h.assertTrue(trunkLeft(h, FAR_BIRCH, Blocks.BIRCH_LOG) == 3, "The walled birch was chopped");
+        });
+    }
+
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void noSpeciesTakesTheNearestTree(GameTestHelper h) {
         CompanionEntity companion = setup(h);
