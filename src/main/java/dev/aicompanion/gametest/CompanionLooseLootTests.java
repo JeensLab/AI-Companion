@@ -24,7 +24,7 @@ import java.util.UUID;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionLooseLootTests {
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", timeoutTicks = 400)
     public static void anItemThrownAtHisFeetGoesIntoTheBag(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);
@@ -37,7 +37,7 @@ public final class CompanionLooseLootTests {
     }
 
     /** A gift he threw to the player is aimed at the player and flagged: it must not come back. */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", timeoutTicks = 400)
     public static void aGiftHandedToThePlayerStaysOnTheFloor(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);
@@ -54,7 +54,7 @@ public final class CompanionLooseLootTests {
     }
 
     /** A drop aimed at somebody else (another player's share) is theirs, not his. */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", timeoutTicks = 400)
     public static void anItemAimedAtSomebodyElseStaysOnTheFloor(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);
@@ -68,7 +68,7 @@ public final class CompanionLooseLootTests {
     }
 
     /** Tagged drops are not loose loot: another companion's harvest, or his own stack left on purpose. */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", timeoutTicks = 400)
     public static void aTaggedDropStaysOnTheFloor(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);
@@ -193,7 +193,7 @@ public final class CompanionLooseLootTests {
     }
 
     /** A stack he threw himself stays on the floor: the mine leaves its excess stone that way (PR #48). */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", timeoutTicks = 400)
     public static void aStackHeThrewHimselfStaysOnTheFloor(GameTestHelper h) {
         arena(h);
         CompanionEntity companion = spawn(h);

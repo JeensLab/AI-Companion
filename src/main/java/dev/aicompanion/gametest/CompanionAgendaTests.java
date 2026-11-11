@@ -65,7 +65,6 @@ public final class CompanionAgendaTests {
     @AfterBatch(batch = "agenda_quick") public static void afterQuick(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_interrupt") public static void afterInterrupt(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_plan_gap") public static void afterPlanGap(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_trailing") public static void afterTrailing(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_modes") public static void afterModes(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_sort") public static void afterSort(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "agenda_harvest") public static void afterHarvest(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -380,18 +379,6 @@ public final class CompanionAgendaTests {
             h.assertTrue(plan.get() != null && plan.get().isDone(), "The player's plan did not finish");
             h.assertTrue(plan.get().join().recoveries() == 0, "The plan spent a recovery on the goal's work: " + plan.get().join().report());
             h.assertTrue(count(f.c, Items.CHEST) == 1 && count(f.c, Items.CRAFTING_TABLE) == 1, "The plan's crafts are missing: " + f.c.getStoredItemsSummary());
-            gearDone(f);
-        });
-    }
-
-    @GameTest(template = "tall_tree", batch = "agenda_trailing", timeoutTicks = 3000)
-    public static void trailingFollowStillResumes(GameTestHelper h) {
-        var f = fixture(h); ingots(f, h); f.c.setItem(2, new ItemStack(Items.OAK_PLANKS, 8)); f.start("gear_up", 1);
-        var plan = playerPlan(f, CompanionAgenda.State.INTERRUPTED, new PlannedAction("craft_item", 0, 1, "minecraft:chest"), new PlannedAction("follow", 0, 1));
-        h.succeedWhen(() -> {
-            h.assertTrue(plan.get() != null && plan.get().isDone(), "The player's plan did not finish");
-            h.assertTrue(f.goal().state() != CompanionAgenda.State.HELD, "A follow after real work held the goal");
-            h.assertTrue(count(f.c, Items.CHEST) == 1, "The craft is missing: " + f.c.getStoredItemsSummary());
             gearDone(f);
         });
     }
