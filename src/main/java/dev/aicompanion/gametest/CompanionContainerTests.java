@@ -41,22 +41,6 @@ import java.util.List;
 public final class CompanionContainerTests {
     private static final BlockPos NEAR = new BlockPos(22, 1, 16);
 
-    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_store_barrel")
-    public static void storesTheAskedAmountIntoANamedBarrel(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper);
-        Container barrel = container(helper, NEAR, Blocks.BARREL);
-        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 16));
-        helper.assertTrue(companion.startWork("store_items", "stone", 10, "minecraft:barrel").success(), "The order for the barrel was refused");
-        helper.succeedWhen(() -> {
-            done(helper, companion);
-            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
-            int inBarrel = count(barrel, Items.COBBLESTONE), inBag = count(companion, Items.COBBLESTONE);
-            helper.assertTrue(inBarrel == 10 && inBag == 6, "Wrong split: " + inBarrel + "/" + inBag);
-            AABB around = new AABB(helper.absolutePos(BlockPos.ZERO)).inflate(40);
-            helper.assertTrue(helper.getLevel().getEntitiesOfClass(ItemEntity.class, around).isEmpty(), "Items were dropped");
-        });
-    }
-
     @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "containers_take_barrel")
     public static void takesEverythingFromANamedBarrel(GameTestHelper helper) {
         CompanionEntity companion = setup(helper);
@@ -314,6 +298,8 @@ public final class CompanionContainerTests {
             helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
             helper.assertTrue(count(barrel, Items.COBBLESTONE) == 10 && count(companion, Items.COBBLESTONE) == 6 && chest.isEmpty(),
                     "Wrong split: barrel " + count(barrel, Items.COBBLESTONE) + ", bag " + count(companion, Items.COBBLESTONE));
+            AABB around = new AABB(helper.absolutePos(BlockPos.ZERO)).inflate(40);
+            helper.assertTrue(helper.getLevel().getEntitiesOfClass(ItemEntity.class, around).isEmpty(), "Items were dropped");
         });
     }
 
@@ -341,9 +327,6 @@ public final class CompanionContainerTests {
             String plan = "[{\"action\":\"store_items\",\"item\":\"stone\",\"count\":4,\"location\":\"" + location + "\"}]";
             helper.assertTrue(location.equals(CompanionPlanCodec.parsePlan(JsonParser.parseString(plan)).get(0).location()), "Not accepted: " + location);
         }
-        String barrelPlan = "[{\"action\":\"store_items\",\"item\":\"stone\",\"count\":4,\"location\":\"minecraft:barrel\"}]";
-        PlannedAction parsed = CompanionPlanCodec.parsePlan(JsonParser.parseString(barrelPlan)).get(0);
-        helper.assertTrue("minecraft:barrel".equals(parsed.location()), "The codec dropped the barrel: " + parsed);
         helper.succeed();
     }
 
