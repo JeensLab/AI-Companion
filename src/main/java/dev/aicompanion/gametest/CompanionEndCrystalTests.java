@@ -84,7 +84,11 @@ public final class CompanionEndCrystalTests {
         EnderDragon dragon = dragon(h, GROUND + 8, 12.5);
         CompanionEntity companion = archer(h, 16, 4);
         // Not at his first tick: the game's «hit back» goal takes a blow dealt at tick 0 for no new one (HurtByTargetGoal.timestamp).
-        h.runAtTickTime(5, () -> companion.hurt(h.getLevel().damageSources().mobAttack(dragon), 1F));
+        h.runAtTickTime(5, () -> {
+            companion.hurt(h.getLevel().damageSources().mobAttack(dragon), 1F);
+            // The blow registered (it is forgotten after 100 ticks, so only here), else the checks below hold for nothing.
+            h.assertTrue(companion.getLastHurtByMob() == dragon, "The dragon's blow did not register");
+        });
         h.runAtTickTime(120, () -> h.succeedIf(() -> {
             h.assertTrue(companion.getTarget() != dragon, "The dragon is his target");
             h.assertTrue(count(companion, Items.ARROW) == 16, "Arrows sent at the dragon: " + (16 - count(companion, Items.ARROW)));

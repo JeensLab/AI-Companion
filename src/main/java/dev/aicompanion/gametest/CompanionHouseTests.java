@@ -134,12 +134,8 @@ public final class CompanionHouseTests {
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 600)
-    public static void occupiedGroundIsPreservedAndHouseProtocolIsValidated(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper);
-        // Every possible footprint intersects an existing block.
-        for (int x = 1; x < 32; x += 4) for (int z = 1; z < 32; z += 4) helper.setBlock(new BlockPos(x, 1, z), Blocks.GOLD_BLOCK);
-        companion.setItem(0, new ItemStack(Items.OAK_LOG, 32));
+    @GameTest(template = "empty")
+    public static void theHouseProtocolIsValidated(GameTestHelper helper) {
         helper.assertTrue("build_house".equals(CompanionWorkCommands.parse("Олег, построй нам небольшой деревянный дом", "Олег").type()), "House command not recognized");
         helper.assertTrue("build_house".equals(CompanionWorkCommands.parse("дострой дом", "Олег").type()), "Resume not recognized");
         helper.assertTrue(CompanionWorkCommands.parse("не построй дом", "Олег") == null && CompanionWorkCommands.parse("построй дом и вернись", "Олег") == null, "Partial/negative command accepted");
@@ -147,6 +143,15 @@ public final class CompanionHouseTests {
         boolean rejected = false;
         try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"build_house\",\"count\":2}]")); } catch (IllegalStateException expected) { rejected = true; }
         helper.assertTrue(rejected, "Unsupported multiple houses accepted");
+        helper.succeed();
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void occupiedGroundIsPreserved(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        // Every possible footprint intersects an existing block.
+        for (int x = 1; x < 32; x += 4) for (int z = 1; z < 32; z += 4) helper.setBlock(new BlockPos(x, 1, z), Blocks.GOLD_BLOCK);
+        companion.setItem(0, new ItemStack(Items.OAK_LOG, 32));
         start(helper, companion);
         helper.succeedWhen(() -> {
             done(helper, companion);
