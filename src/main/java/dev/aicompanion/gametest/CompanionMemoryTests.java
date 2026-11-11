@@ -60,7 +60,7 @@ public final class CompanionMemoryTests {
         h.succeed();
     }
 
-    @GameTest(template="empty", batch="memory_session_end")
+    @GameTest(template="empty", batch="memory_session")
     public static void sessionEndRecognizesLateAndRefusedReplies(GameTestHelper h) {
         try {
             long begun = OpenRouterClient.generation();
@@ -163,7 +163,7 @@ public final class CompanionMemoryTests {
         h.succeed();
     }
 
-    @GameTest(template="empty", batch="memory_restore")
+    @GameTest(template="empty", batch="memory_session")
     public static void restoredRepliesHaveNoDuplicates(GameTestHelper h) {
         List<CompanionMemory.Talk> talk = List.of(new CompanionMemory.Talk(true, "Привет, Олег"), new CompanionMemory.Talk(false, "Привет!"),
                 new CompanionMemory.Talk(true, "Пойдём за железом"));
@@ -189,7 +189,7 @@ public final class CompanionMemoryTests {
         }
     }
 
-    @GameTest(template="empty", batch="memory_survive")
+    @GameTest(template="empty", batch="memory_session")
     public static void messageBeforeFirstSyncSurvivesRestore(GameTestHelper h) {
         try {
             OpenRouterClient.resetSession();
@@ -326,18 +326,6 @@ public final class CompanionMemoryTests {
                                                     "A cut-off reply took lines out of the journal: " + asked[0] + " requests, " + bonds.pendingTalk(owner).size() + " lines");
                                             var memory = bonds.memory(owner);
                                             h.assertTrue(memory.entries().isEmpty() && memory.callMe().isEmpty(), "An unfinished reply was stored: " + memory.save());
-
-                                            boolean refused = false;
-                                            try {
-                                                completionText(CUT_OFF);
-                                            } catch (IllegalStateException expected) {
-                                                refused = true;
-                                            }
-                                            h.assertTrue(refused, "A reply cut off by the token limit was taken for an answer");
-                                            String finished = completionText("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"x\"}}]}");
-                                            h.assertTrue("x".equals(finished), "A finished reply lost its text: " + finished);
-                                            String silent = completionText("{\"choices\":[{\"finish_reason\":null,\"message\":{\"content\":null}}]}");
-                                            h.assertTrue(silent.isEmpty(), "A reply without text is not empty: " + silent);
                                             h.succeed();
                                         } finally {
                                             resetFlow();
@@ -362,6 +350,32 @@ public final class CompanionMemoryTests {
             resetFlow();
             throw error;
         }
+    }
+
+    /** The text of a completion: a reply cut off by the token limit is no answer, a finished one keeps its text, a silent one is empty. */
+    @GameTest(template="empty")
+    public static void aReplyCutOffByTheTokenLimitIsNoAnswer(GameTestHelper h) {
+        boolean refused = false;
+        try {
+            completionText(CUT_OFF);
+        } catch (IllegalStateException expected) {
+            refused = true;
+        }
+        h.assertTrue(refused, "A reply cut off by the token limit was taken for an answer");
+        String finished = completionText("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"x\"}}]}");
+        h.assertTrue("x".equals(finished), "A finished reply lost its text: " + finished);
+        String silent = completionText("{\"choices\":[{\"finish_reason\":null,\"message\":{\"content\":null}}]}");
+        h.assertTrue(silent.isEmpty(), "A reply without text is not empty: " + silent);
+        h.succeed();
+    }
+
+    @GameTest(template="empty")
+    public static void theForgetAndShowPhrasesAreRouted(GameTestHelper h) {
+        h.assertTrue("companion memory forget".equals(CompanionLocalCommands.route("Олег, забудь всё", "Олег")), "«забудь всё» not routed");
+        h.assertTrue("companion memory show".equals(CompanionLocalCommands.route("что ты обо мне помнишь", "Олег")), "«что ты обо мне помнишь» not routed");
+        h.assertTrue(CompanionLocalCommands.route("забудь всё и добудь дерево", "Олег") == null, "A compound order was taken for forgetting");
+        h.assertTrue(!CompanionLocalCommands.cancelsPlans("companion memory forget"), "Memory command cancels plans");
+        h.succeed();
     }
 
     @GameTest(template="empty", batch="memory_off", timeoutTicks=200)
@@ -482,11 +496,6 @@ public final class CompanionMemoryTests {
                                     // The acknowledgement of the request begun before forgetting arrives late and must not eat lines numbered after it.
                                     after.ackPending(owner, oldEnd);
                                     h.assertTrue(after.pendingTalk(owner).size() == 12, "A late acknowledgement removed lines said after forgetting: " + after.pendingTalk(owner).size());
-
-                                    h.assertTrue("companion memory forget".equals(CompanionLocalCommands.route("Олег, забудь всё", "Олег")), "«забудь всё» not routed");
-                                    h.assertTrue("companion memory show".equals(CompanionLocalCommands.route("что ты обо мне помнишь", "Олег")), "«что ты обо мне помнишь» not routed");
-                                    h.assertTrue(CompanionLocalCommands.route("забудь всё и добудь дерево", "Олег") == null, "A compound order was taken for forgetting");
-                                    h.assertTrue(!CompanionLocalCommands.cancelsPlans("companion memory forget"), "Memory command cancels plans");
                                     h.succeed();
                                 } finally {
                                     resetFlow();

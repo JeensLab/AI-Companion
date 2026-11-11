@@ -229,7 +229,7 @@ public final class CompanionBanterToolsTests {
         h.succeedWhen(()->{done(h,c);h.assertTrue(c.didLastTaskSucceed()&&count(c,Items.COAL)>0&&used[0],"No shovel in real dirt tunnel: "+c.getLastTaskResult());h.assertTrue(count(c,Items.WOODEN_PICKAXE)==1,"Original pickaxe lost");});
     }
     @GameTest(template="tall_tree",timeoutTicks=4000)
-    public static void autonomousBuriedVeinUsesShovelAndClimbsBackWithoutRepeatedSwings(GameTestHelper h) {
+    public static void autonomousBuriedVeinUsesShovelAndClimbsBack(GameTestHelper h) {
         for(int x=0;x<32;x++)for(int z=0;z<32;z++)for(int y=0;y<6;y++)
             h.setBlock(new BlockPos(x,y,z),y==0?Blocks.BEDROCK:y<4?Blocks.STONE:y==5?Blocks.GRASS_BLOCK:Blocks.DIRT);
         var c=spawn(h,6);bench(h,c,new BlockPos(14,6,16));

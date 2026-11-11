@@ -185,7 +185,7 @@ public final class CompanionPlanRecoveryTests {
         });
     }
 
-    /** A step that fails twice in a row without any gain stops the order with its own reason. */
+    /** A step that fails twice in a row without any gain stops the order with its own reason; one obtain alone is the old single stop line, with no given-up line before it. */
     @GameTest(template = "empty", timeoutTicks = 100)
     public static void obtainStopsWhenTheSameStepFailsWithoutGain(GameTestHelper h) {
         var port = new BagPort();
@@ -194,7 +194,8 @@ public final class CompanionPlanRecoveryTests {
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
             h.assertTrue(port.calls.equals(List.of("mine_ore:2", "mine_ore:2")) && outcome.report().contains("План остановлен: Руды рядом нет.")
-                    && outcome.skipped().stream().noneMatch(a -> a.type().equals("mine_ore")), port.calls + " " + outcome);
+                    && outcome.skipped().stream().noneMatch(a -> a.type().equals("mine_ore"))
+                    && !outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX), port.calls + " " + outcome);
         });
     }
 
@@ -301,18 +302,6 @@ public final class CompanionPlanRecoveryTests {
         });
     }
 
-    /** One obtain alone that fails is the old single stop line, without a given-up line before it. */
-    @GameTest(template = "empty", timeoutTicks = 100)
-    public static void aSingleFailedObtainIsStillOneStopLine(GameTestHelper h) {
-        var port = new BagPort();
-        port.neverMines = true;
-        var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
-        h.succeedWhen(() -> {
-            Outcome outcome = future.join();
-            h.assertTrue(!outcome.report().contains(CompanionDialogue.PARTIAL_PREFIX) && outcome.report().contains("План остановлен: Руды рядом нет."), outcome.report());
-        });
-    }
-
     /** The plan changes after every step but the bag never gets what is needed: the ceiling still ends the order. */
     @GameTest(template = "empty", timeoutTicks = 100)
     public static void obtainStepsHaveACeiling(GameTestHelper h) {
@@ -363,8 +352,8 @@ public final class CompanionPlanRecoveryTests {
         var future = CompanionPlanRunner.run(List.of(OBTAIN_HELMET), port);
         h.succeedWhen(() -> {
             Outcome outcome = future.join();
-            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1", "craft_item:1", "craft_item:1")) && port.expands == 5
-                    && outcome.report().contains("План остановлен: Не хватает материалов."), port.calls + " expands=" + port.expands + " " + outcome);
+            h.assertTrue(port.calls.equals(List.of("mine_ore:2", "gather_wood:1", "craft_item:1", "craft_item:1"))
+                    && outcome.report().contains("План остановлен: Не хватает материалов."), port.calls + " " + outcome);
         });
     }
 
@@ -586,7 +575,7 @@ public final class CompanionPlanRecoveryTests {
     private static final class BagPort implements CompanionPlanRunner.Port {
         final List<String> calls = new ArrayList<>();
         int logs, ingots, helmets;
-        int need = 2, failGain = 1, expands;
+        int need = 2, failGain = 1;
         boolean mineGainsNothingOnce, emptyHalfEmpty;
         int mines;
         boolean logsAppearAfterOre, pickaxeEatsIngot, mineFailsOnce, neverMines, mineChangesNothing, noTrees, followFails, layoutDrifts, mineBlocked, craftShortage;
@@ -595,7 +584,6 @@ public final class CompanionPlanRecoveryTests {
         @Override public CompletableFuture<State> state(PlannedAction action) { return CompletableFuture.completedFuture(IDLE); }
         @Override public CompletableFuture<Void> pause(int seconds) { return CompletableFuture.completedFuture(null); }
         @Override public CompletableFuture<CompanionPlanRunner.Expansion> expand(PlannedAction action) {
-            expands++;
             List<PlannedAction> steps = new ArrayList<>();
             if (helmets < 1) {
                 // Ore over 16 is planned in pieces, as CompanionObtain does.

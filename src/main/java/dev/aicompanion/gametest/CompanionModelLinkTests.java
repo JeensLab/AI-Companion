@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.client.CompanionReply;
+import dev.aicompanion.client.OpenAiResponses;
 import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.client.OpenRouterRetry;
 import dev.aicompanion.client.PlannedAction;
@@ -373,6 +374,40 @@ public final class CompanionModelLinkTests {
         JsonObject junk = OpenRouterClient.requestBody("Dingo", messages, 600, false,
                 OpenRouterClient.sampling("abc"), OpenRouterClient.sampling(""));
         h.assertTrue(!junk.has("temperature") && !junk.has("top_p"), "A junk value reached the request");
+        h.succeed();
+    }
+
+    /**
+     * Direct OpenAI goes through Responses, which has no chat_template_kwargs: the branch's rules must reach that wire
+     * body too. Thinking off is reasoning.effort none, thinking on leaves the provider's own effort rather than one the
+     * mod invents, the budget is the same one, sampling is sent only when the owner set it, and the field never goes to a
+     * model that does not take it. The 400 fallback drops only the reasoning switch.
+     */
+    @GameTest(template = "empty")
+    public static void theResponsesTransportKeepsTheThinkingSamplingAndBudgetRules(GameTestHelper h) {
+        JsonArray messages = new JsonArray();
+        messages.add(message("user", "построй дом"));
+        JsonObject off = OpenRouterClient.requestBody("gpt-6-luna", messages, OpenRouterClient.answerBudget(false), false, null, null);
+        JsonObject sentOff = OpenAiResponses.request(off);
+        h.assertTrue(sentOff.getAsJsonObject("reasoning").get("effort").getAsString().equals("none"),
+                "Thinking off is not sent on Responses");
+        h.assertTrue(!sentOff.has("chat_template_kwargs") && !sentOff.has("messages")
+                && sentOff.get("max_output_tokens").getAsInt() == OpenRouterClient.answerBudget(false),
+                "A chat-only field or another budget reached Responses");
+        JsonObject on = OpenRouterClient.requestBody("gpt-6-luna", messages, OpenRouterClient.answerBudget(true), true, null, null);
+        JsonObject sentOn = OpenAiResponses.request(on);
+        h.assertTrue(!sentOn.has("reasoning") && sentOn.get("max_output_tokens").getAsInt() == OpenRouterClient.answerBudget(true),
+                "Thinking on imposed an effort of ours or kept the thinking-off budget");
+        JsonObject tuned = OpenRouterClient.requestBody("gpt-6.1-terra", messages, 1024, false, 0.7, 1.5);
+        JsonObject sentTuned = OpenAiResponses.request(tuned);
+        h.assertTrue(sentTuned.get("temperature").getAsDouble() == 0.7 && sentTuned.get("top_p").getAsDouble() == 1.5,
+                "The owner's sampling was lost on Responses");
+        h.assertTrue(!OpenAiResponses.request(OpenRouterClient.requestBody("gpt-4o", messages, 600, false, null, null)).has("reasoning"),
+                "A model that does not take effort was sent the field");
+        JsonObject plain = OpenAiResponses.withoutReasoning(sentOff);
+        h.assertTrue(!plain.has("reasoning") && plain.get("input").equals(sentOff.get("input"))
+                && plain.get("max_output_tokens").equals(sentOff.get("max_output_tokens")) && sentOff.has("reasoning"),
+                "The Responses fallback changed more than the reasoning switch");
         h.succeed();
     }
 }

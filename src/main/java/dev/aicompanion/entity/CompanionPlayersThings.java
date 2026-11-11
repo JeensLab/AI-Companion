@@ -64,6 +64,7 @@ public final class CompanionPlayersThings {
             entity.setDeltaMovement(toward.x, .2, toward.z);
             entity.setPickUpDelay(10);
             entity.setTarget(player.getUUID()); // only the player can pick it up
+            entity.getPersistentData().putBoolean("aicompanion:gift", true); // «подбери» never takes it back
             if (level.addFreshEntity(entity)) it.remove();
         }
         c.swing(net.minecraft.world.InteractionHand.MAIN_HAND);

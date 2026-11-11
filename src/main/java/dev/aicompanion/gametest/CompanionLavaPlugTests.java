@@ -31,7 +31,10 @@ public final class CompanionLavaPlugTests {
 
     private CompanionLavaPlugTests() { }
 
-    /** Iron with a lava source right behind it in the wall: mined, a cobblestone stands where the lava was, one cobblestone gone, no lava, no burn. */
+    /**
+     * Iron with a lava source right behind it in the wall: mined, a cobblestone stands where the lava was, one cobblestone gone, no lava, no burn.
+     * The plug stands within a few ticks of the cell being opened: far inside the 10 ticks after which lava of the Nether moves.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
     public static void lavaBesideTheOreIsPluggedAndTheOreMined(GameTestHelper h) {
         CompanionEntity c = wallArena(h);
@@ -45,6 +48,8 @@ public final class CompanionLavaPlugTests {
             h.assertTrue(h.getTick() > SETTLE && idle(c) && c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c));
             h.assertTrue(h.getBlockState(lava).is(Blocks.COBBLESTONE), "No plug where the lava was: " + h.getBlockState(lava));
             h.assertTrue(count(c, Items.COBBLESTONE) == 2, "Plugs left in the bag: " + count(c, Items.COBBLESTONE));
+            h.assertTrue(watch.opened > 0 && watch.plugged > 0, "Ore not opened or lava not plugged: " + report(c));
+            h.assertTrue(watch.plugged - watch.opened < NETHER_LAVA_TICKS / 2, "Plug came " + (watch.plugged - watch.opened) + " ticks after the opening");
             noLava(h, watch, c);
         });
     }
@@ -68,23 +73,6 @@ public final class CompanionLavaPlugTests {
             for (int x = 21; x <= 25; x++) for (int z = 11; z <= 21; z++) if (h.getBlockState(new BlockPos(x, 3, z)).is(Blocks.COBBLESTONE)) plugs++;
             h.assertTrue(plugs >= 1, "No plug in the lake over his tunnel: " + report(c));
             noLava(h, watch, c);
-        });
-    }
-
-    /** The plug stands within a few ticks of the cell being opened: far inside the 10 ticks after which lava of the Nether moves. */
-    @GameTest(template = "tall_tree", timeoutTicks = 900)
-    public static void thePlugLandsBeforeLavaOfTheNetherCouldMove(GameTestHelper h) {
-        CompanionEntity c = wallArena(h);
-        BlockPos ore = new BlockPos(20, 1, 16), lava = new BlockPos(21, 1, 16);
-        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(lava, Blocks.LAVA);
-        h.setBlock(ore.above(), Blocks.AIR); // open above: no stone is dug first, so the cobblestone count is the plugs' alone
-        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
-        Watch watch = watch(h, c, ore, lava);
-        order(h, c);
-        h.succeedWhen(() -> {
-            h.assertTrue(h.getTick() > SETTLE && idle(c) && c.didLastTaskSucceed(), report(c));
-            h.assertTrue(watch.opened > 0 && watch.plugged > 0, "Ore not opened or lava not plugged: " + report(c));
-            h.assertTrue(watch.plugged - watch.opened < NETHER_LAVA_TICKS / 2, "Plug came " + (watch.plugged - watch.opened) + " ticks after the opening");
         });
     }
 

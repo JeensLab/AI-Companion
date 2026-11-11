@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, GRIND, COMPOST }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, GRIND, COMPOST }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -45,6 +45,10 @@ public final class CompanionWork {
     final CompanionHouse house;
     final CompanionObsidian obsidian;
     final CompanionPortalBuild portal;
+    /** disenchant_item: the walk to a grindstone, or his own one, and the grinding. */
+    final CompanionGrinding grinding = new CompanionGrinding(this);
+    /** compost_items: the walk to a composter, or his own one, and the filling. */
+    final CompanionComposting composting = new CompanionComposting(this);
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
     CompanionStoneSearch stoneSearch;
@@ -103,6 +107,8 @@ public final class CompanionWork {
     BlockPos packedBenchFrom;
     BlockPos openedChest;
     BlockPos craftingStation;
+    /** cutter_craft: the stonecutter the order counted on; null when no way leads to it. */
+    BlockPos cutter;
     /** The remembered bench turned out unreachable on foot: this job sets down its own from the bag instead. */
     boolean benchHere;
     static final int NEAR_BENCH = 8;
@@ -231,6 +237,8 @@ public final class CompanionWork {
     final Set<BlockPos> triedFurnaces = new HashSet<>();
     BlockPos heading;
     boolean ownFurnaceFailed;
+    /** A smoker was made or set down for this batch, or could not be: not tried again. */
+    boolean smokerTried;
     /** Tries to get out of a cut below the bench before the order gives up on it. */
     int benchClimbs;
     /** Where the furnace goes when there was no room for it where he stood: the place of the order. */
@@ -317,6 +325,8 @@ public final class CompanionWork {
             case COURSE -> "в пути";
             case WATER -> "за водой";
             case PICKUP -> "подбор";
+            case GRIND -> "у точила";
+            case COMPOST -> "у компостера";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -347,6 +357,8 @@ public final class CompanionWork {
             case OBSIDIAN -> obsidian.jobName();
             case PORTAL -> portal.jobName();
             case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
+            case GRIND -> grinding.jobName();
+            case COMPOST -> composting.jobName();
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -416,7 +428,8 @@ public final class CompanionWork {
                 job = Job.CRAFT; phase = Phase.CRAFT;
             }
             // Any recipe whose bench is a few steps away: walk there and craft once; materials are not gathered.
-            case "bench_craft" -> { job = Job.CRAFT; phase = Phase.CRAFT; }
+            // The same for a stonecutter a few steps away that makes the item from less (CompanionPlacement.cutterWalk).
+            case "bench_craft", "cutter_craft" -> { job = Job.CRAFT; phase = Phase.CRAFT; }
             case "store_items" -> { job = Job.STORE; phase = Phase.STORE; }
             case "take_items" -> { job = Job.TAKE; phase = Phase.STORE; }
             case "sort_chests" -> { job = Job.SORT; phase = Phase.SORT; }
@@ -433,6 +446,8 @@ public final class CompanionWork {
             case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
             case "build_portal" -> { CompanionActionResult answer = portal.begin(item); if (answer != null) return answer; job = Job.PORTAL; phase = Phase.PORTAL; }
+            case "compost_items" -> { CompanionActionResult refusal = composting.begin(item, count); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
+            case "disenchant_item" -> { CompanionActionResult refusal = grinding.begin(item, count); if (refusal != null) return refusal; job = Job.GRIND; phase = Phase.GRIND; }
             case "give_items" -> {
                 if (!"logs".equals(item) && (ResourceLocation.tryParse(item) == null || !BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse(item))))
                     return CompanionActionResult.failed("Не понял, какой предмет отдать.");
@@ -491,7 +506,7 @@ public final class CompanionWork {
             default -> { return CompanionActionResult.failed("Неизвестная работа."); }
         }
         taskId++;
-        craftOnly = "bench_craft".equals(action);
+        craftOnly = "bench_craft".equals(action) || "cutter_craft".equals(action);
         workOrigin = stoneMining.miningOrigin(); returnRouteBlocked = false; nextReturnCheck = returnBlockedSince = 0; returnMisses = 0;
         quarrySupports.clear(); recoveryReplans = 0;
         stepChecked = null;
@@ -517,10 +532,10 @@ public final class CompanionWork {
         // real prerequisite stages. A single three-minute budget used to expire before mining began.
         deadline = level.getGameTime() + 20 * (job == Job.COURSE ? CompanionCourse.LIMIT_SECONDS + 60 : 600);
         rejected.clear(); triedChests.clear(); stoneCandidates = null; stoneLootRetried = false;
-        lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = false; furnacesPlaced = 0; benchClimbs = 0;
+        lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
         resetTarget();
-        craftingStation = null; benchHere = false; owner.allowNewBench(false);
+        craftingStation = null; benchHere = false; owner.allowNewBench(false); cutter = "cutter_craft".equals(action) ? owner.cutterWalk(item, count) : null;
         stallTicks = 0; stallAnchor = owner.position(); stallSignature = progressSignature(); stallSeen.clear();
         dryTicks = dryGathered = dryWalkTicks = 0; dryAnchor = null; dug.clear(); offFoot.clear(); stoneMining.endStoneChoice(); stoneTravel = null; stoneTravels = 0; travelFailed.clear(); owner.travel().reset(); trip.reset();
         oreOffFoot.clear(); oreNoTunnel.clear(); oreBlockedCells.clear(); pickaxeSense.reset(); shovelSense.reset();
@@ -594,6 +609,7 @@ public final class CompanionWork {
                 // A full bag is said as it is, not as «no wood».
                 if (CompanionEntity.FULL_BAG_FOR_LOGS.equals(owner.getLastTaskResult())) { finish(false, CompanionEntity.FULL_BAG_FOR_LOGS); return; }
                 if (job == Job.DIRT) { crafting.startDigging(); return; }
+                if (job == Job.WOOD && CompanionWoodKind.of(requestedItem) != null) { finish(false, owner.getLastTaskResult()); return; }
                 finish(false, "Не нашёл доступного дерева для подготовки. Вещи сохранил." + (job == Job.HOUSE ? " Начатый дом можно достроить позже." : "")); return;
             }
             phase = afterWood; resetTarget();
@@ -628,6 +644,8 @@ public final class CompanionWork {
             case OBSIDIAN -> obsidian.tick(level);
             case PORTAL -> portal.tick(level);
             case PICKUP -> pickUp(level);
+            case GRIND -> grinding.tick(level);
+            case COMPOST -> composting.tick(level);
             case WOOD -> { }
         }
     }

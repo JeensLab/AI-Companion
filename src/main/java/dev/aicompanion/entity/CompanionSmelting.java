@@ -7,8 +7,13 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SingleRecipeInput;
+import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
+import net.minecraft.world.level.block.entity.BlastFurnaceBlockEntity;
+import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
+import net.minecraft.world.level.block.entity.SmokerBlockEntity;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,6 +68,24 @@ final class CompanionSmelting {
                 .filter(recipe -> !recipe.result().isEmpty() && recipe.cookTicks() > 0).orElse(null);
     }
 
+    /** The block cooks this recipe to the same product: a smoker takes only food, a blast furnace only ore and metal. */
+    static boolean cooks(ServerLevel level, AbstractFurnaceBlockEntity oven, Recipe recipe) {
+        if (oven instanceof SmokerBlockEntity) return smokes(level, recipe);
+        if (oven instanceof BlastFurnaceBlockEntity) return gives(level, RecipeType.BLASTING, recipe);
+        return oven instanceof FurnaceBlockEntity;
+    }
+
+    static boolean smokes(ServerLevel level, Recipe recipe) { return gives(level, RecipeType.SMOKING, recipe); }
+
+    private static <T extends AbstractCookingRecipe> boolean gives(ServerLevel level, RecipeType<T> type, Recipe recipe) {
+        return level.getRecipeManager().getRecipeFor(type, new SingleRecipeInput(new ItemStack(recipe.input())), level)
+                .filter(holder -> ItemStack.isSameItemSameComponents(holder.value().getResultItem(level.registryAccess()), recipe.result())).isPresent();
+    }
+
+    /**
+     * Fuel in furnace ticks. A smoker or blast furnace burns it twice as fast and cooks twice as fast, so an item takes the same
+     * fuel in any of them, and the furnace's numbers do for all three.
+     */
     static int burnTicks(ItemStack stack) { return stack.isEmpty() ? 0 : stack.getBurnTime(RecipeType.SMELTING); }
 
     /** What a player would put under the furnace, best first. Tools, benches, chests and saplings are never burnt. */

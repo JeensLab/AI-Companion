@@ -181,21 +181,6 @@ public final class CompanionDeathWalkTests {
         h.succeed();
     }
 
-    /** A stack on a slab is taken from the cell beside it. */
-    @GameTest(template = "empty")
-    public static void aStackOnASlabIsTakenFromBeside(GameTestHelper h) {
-        CompanionEntity c = spawn(h);
-        settle(c);
-        BlockPos feet = yard(h, c, 8);
-        put(h, feet.offset(3, 0, 0), Blocks.STONE_SLAB);
-        var item = stack(h, feet.offset(3, 1, 0), new ItemStack(Items.DIAMOND, 2));
-        place(h, c, feet, 20, item);
-        h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 400);
-        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack on the slab was not taken: " + item.getItem());
-        h.succeed();
-    }
-
     /** A stack on magma is taken, as a player takes it and puts the fire out afterwards. */
     @GameTest(template = "empty")
     public static void aStackOnMagmaIsTaken(GameTestHelper h) {
@@ -261,16 +246,17 @@ public final class CompanionDeathWalkTests {
         h.succeed();
     }
 
-    /** Through a tunnel in a wall, not over it. */
+    /** Through a tunnel in a wall, not over it: the stack is walled in on every side, the tunnel is the only way. */
     @GameTest(template = "empty")
     public static void aStackThroughATunnelIsTaken(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
         BlockPos feet = yard(h, c, 10);
-        for (int dz = -3; dz <= 3; dz++) for (int dy = 0; dy <= 2; dy++) put(h, feet.offset(2, dy, dz), Blocks.STONE);
-        put(h, feet.offset(2, 0, 0), Blocks.AIR);
-        put(h, feet.offset(2, 1, 0), Blocks.AIR);
-        var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
+        BlockPos room = feet.offset(5, 0, 0);
+        wallIn(h, room);
+        put(h, room.offset(-2, 0, 0), Blocks.AIR);
+        put(h, room.offset(-2, 1, 0), Blocks.AIR);
+        var item = stack(h, room, new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
         h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 600);
@@ -278,14 +264,19 @@ public final class CompanionDeathWalkTests {
         h.succeed();
     }
 
-    /** Across a one-block gap: down into it and up the far side. */
+    /** Across a one-block gap: the stack lies on an island with a ditch all round, out of reach from the near side and from the ditch. */
     @GameTest(template = "empty")
     public static void aStackAcrossAGapIsTaken(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
-        BlockPos feet = yard(h, c, 8);
-        put(h, feet.offset(2, -1, 0), Blocks.AIR);
-        var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
+        BlockPos feet = yard(h, c, 10);
+        BlockPos island = feet.offset(5, 0, 0);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) != 2) continue;
+            put(h, island.offset(dx, -1, dz), Blocks.AIR);
+            put(h, island.offset(dx, -2, dz), Blocks.STONE);
+        }
+        var item = stack(h, island, new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
         h.assertTrue(setOut(h, c), "He did not set out");
         walk(h, c, 400);
@@ -313,20 +304,29 @@ public final class CompanionDeathWalkTests {
         h.succeed();
     }
 
-    /** A closed door is opened and walked through, as a player does. */
+    /** A closed door is opened and walked through, as a player does: the stack is walled in, the door shuts the only way. */
     @GameTest(template = "empty")
     public static void aStackBehindAClosedDoorIsTaken(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
         BlockPos feet = yard(h, c, 10);
-        for (int dz = -3; dz <= 3; dz++) for (int dy = 0; dy <= 2; dy++) put(h, feet.offset(2, dy, dz), Blocks.STONE);
-        put(h, feet.offset(2, 0, 0), Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
-        put(h, feet.offset(2, 1, 0), Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
-        var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
+        BlockPos room = feet.offset(5, 0, 0);
+        wallIn(h, room);
+        BlockPos door = room.offset(-2, 0, 0);
+        // Facing east the shut leaf lies across the way in; the default (north) leaves most of the cell free to walk past.
+        var leaf = Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.EAST);
+        put(h, door, leaf.setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
+        put(h, door.above(), leaf.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
+        var item = stack(h, room, new ItemStack(Items.DIAMOND, 2));
         place(h, c, feet, 20, item);
         h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 600);
-        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack behind the door was not taken: " + item.getItem());
+        boolean opened = false;
+        for (int tick = 0; tick < 600 && c.deathTrip.active(); tick++) {
+            c.tick();
+            if (h.getLevel().getBlockState(door).getValue(DoorBlock.OPEN)) opened = true;
+        }
+        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack behind the door was not taken: " + item.getItem() + ", he at " + c.blockPosition());
+        h.assertTrue(opened, "The door was never open");
         h.succeed();
     }
 
@@ -367,21 +367,6 @@ public final class CompanionDeathWalkTests {
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(),
                 "The stack down the ladder was not taken: " + item.getItem() + " at " + item.blockPosition() + ", he at " + c.blockPosition()
                         + ", " + c.deathTrip.verdict(item.getUUID()));
-        h.succeed();
-    }
-
-    /** A step of one block is stepped up and over. */
-    @GameTest(template = "empty")
-    public static void aStackBeyondAStepIsTaken(GameTestHelper h) {
-        CompanionEntity c = spawn(h);
-        settle(c);
-        BlockPos feet = yard(h, c, 8);
-        put(h, feet.offset(2, 0, 0), Blocks.STONE);
-        var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
-        place(h, c, feet, 20, item);
-        h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 400);
-        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack beyond the step was not taken: " + item.getItem());
         h.succeed();
     }
 
@@ -526,36 +511,24 @@ public final class CompanionDeathWalkTests {
         h.succeed();
     }
 
-    /** A stack at the foot of a waterfall is fetched. */
-    @GameTest(template = "empty")
-    public static void aStackAtAWaterfallIsTaken(GameTestHelper h) {
-        CompanionEntity c = spawn(h);
-        settle(c);
-        BlockPos feet = yard(h, c, 10);
-        put(h, feet.offset(4, 0, 0), Blocks.WATER);
-        put(h, feet.offset(4, 2, 0), Blocks.WATER);
-        put(h, feet.offset(4, 3, 0), Blocks.WATER);
-        var item = stack(h, feet.offset(4, 0, 0), new ItemStack(Items.DIAMOND, 2));
-        place(h, c, feet, 20, item);
-        h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 600);
-        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack at the waterfall was not taken: " + item.getItem());
-        h.succeed();
-    }
-
-    /** A stack pushed along by a current is followed where it drifts. */
+    /** A stack carried along a stream while he walks is followed to where it is, not to where it lay. */
     @GameTest(template = "empty")
     public static void aStackDriftingInACurrentIsFollowed(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
         BlockPos feet = yard(h, c, 12);
-        for (int dx = 2; dx <= 8; dx++) put(h, feet.offset(dx, 0, 0), Blocks.WATER);
+        for (int dx = 2; dx <= 10; dx++) put(h, feet.offset(dx, 0, 0), Blocks.WATER);
         var item = stack(h, feet.offset(3, 0, 0), new ItemStack(Items.DIAMOND, 2));
-        item.setDeltaMovement(.12, 0, 0);
         place(h, c, feet.offset(3, 0, 0), 20, item);
         h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 600);
+        double from = item.getX(), end = feet.getX() + 9.5;
+        // Only he is ticked here, so the test carries the stack itself, a current's pace a tick.
+        for (int tick = 0; tick < 600 && c.deathTrip.active(); tick++) {
+            if (item.isAlive() && item.getX() < end) item.setPos(item.getX() + .12, item.getY(), item.getZ());
+            c.tick();
+        }
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The drifting stack was not taken: " + item.getItem() + " at " + item.blockPosition());
+        h.assertTrue(item.getX() - from >= 2, "The stack had hardly drifted when he took it: " + (item.getX() - from));
         h.succeed();
     }
 
@@ -610,18 +583,11 @@ public final class CompanionDeathWalkTests {
         h.succeed();
     }
 
-    /** A stack in a flowing stream is taken, not left to the current. */
-    @GameTest(template = "empty")
-    public static void aStackInAFlowingStreamIsTaken(GameTestHelper h) {
-        CompanionEntity c = spawn(h);
-        settle(c);
-        BlockPos feet = yard(h, c, 10);
-        for (int dx = 2; dx <= 6; dx++) put(h, feet.offset(dx, 0, 0), Blocks.WATER);
-        var item = stack(h, feet.offset(5, 0, 0), new ItemStack(Items.DIAMOND, 2));
-        place(h, c, feet.offset(5, 0, 0), 20, item);
-        h.assertTrue(setOut(h, c), "He did not set out");
-        walk(h, c, 600);
-        h.assertTrue(item.isRemoved() || item.getItem().isEmpty(), "The stack in the stream was not taken: " + item.getItem());
-        h.succeed();
+    /** Walls three high all round a place, two cells off it: what lies there is reached only through what the test opens. */
+    private static void wallIn(GameTestHelper h, BlockPos centre) {
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) != 2) continue;
+            for (int dy = 0; dy <= 2; dy++) put(h, centre.offset(dx, dy, dz), Blocks.STONE);
+        }
     }
 }

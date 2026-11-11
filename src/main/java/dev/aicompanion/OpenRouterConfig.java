@@ -51,17 +51,17 @@ public final class OpenRouterConfig {
             .define("macosVoice", true);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
-            .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
+            .comment("Your provider's API key: OpenRouter or direct OpenAI; usually not needed for a local server. Stored in the local Minecraft config folder.")
             .translation("config.aicompanion.api_key")
             .define("apiKey", "");
 
     public static final ModConfigSpec.ConfigValue<String> MODEL = BUILDER
-            .comment("Model ID. With OpenRouter, openrouter/auto lets OpenRouter choose; with your own server, the name of a model it has loaded.")
+            .comment("Model ID: openrouter/auto for OpenRouter; gpt-6-luna or gpt-6.1-terra for direct OpenAI; a loaded model name for a local server.")
             .translation("config.aicompanion.model")
             .define("model", "openrouter/auto");
 
     public static final ModConfigSpec.ConfigValue<String> API_URL = BUILDER
-            .comment("OpenAI-compatible chat server. Empty means OpenRouter; for example http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio. A local server needs no API key.")
+            .comment("Empty means OpenRouter. https://api.openai.com/v1 uses Responses API directly; compatible/local servers keep Chat Completions, e.g. http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio.")
             .translation("config.aicompanion.api_url")
             .define("apiUrl", "");
 
@@ -129,11 +129,21 @@ public final class OpenRouterConfig {
             .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
             .translation("config.aicompanion.urgent_order")
             .define("urgentOrder", true);
+    /** Whether he gets into the player's boat with a seat free and out of it with the player. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue BOAT_RIDE = BUILDER
+            .comment("Get into the player's boat or raft when a seat is free, and out of it with the player, onto land beside it; never stay in a boat without the player. Off: he swims after the boat.")
+            .translation("config.aicompanion.boat_ride")
+            .define("boatRide", true);
     /** Whether a hurtful fall the water bucket does not catch is caught in a boat from his bag. On unless the player turns it off. */
     public static final ModConfigSpec.BooleanValue BOAT_CLUTCH = BUILDER
             .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")
             .translation("config.aicompanion.boat_clutch")
             .define("boatClutch", true);
+    /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue REPLANT_SAPLINGS = BUILDER
+            .comment("Put a sapling of the same wood from his bag on the stump of a tree he felled (a dark oak only from four). Off: the stumps stay bare.")
+            .translation("config.aicompanion.replant_saplings")
+            .define("replantSaplings", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")

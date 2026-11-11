@@ -210,6 +210,16 @@ public final class CompanionPickUpTests {
                 "Rotten flesh: " + CompanionLocalCommands.route("подбери гниль в воде", "Олег"));
         h.assertTrue("companion work pick_up 64 minecraft:rotten_flesh".equals(CompanionLocalCommands.route("подбери гнилую плоть", "Олег")),
                 "Rotten flesh: " + CompanionLocalCommands.route("подбери гнилую плоть", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:bucket".equals(CompanionLocalCommands.route("подбери ведро", "Олег")),
+                "Bucket: " + CompanionLocalCommands.route("подбери ведро", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернила", "Олег")),
+                "Ink: " + CompanionLocalCommands.route("подбери чернила", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернильный мешок", "Олег")),
+                "Ink: " + CompanionLocalCommands.route("подбери чернильный мешок", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("подбери свинину жареную", "Олег")),
+                "Pork: " + CompanionLocalCommands.route("подбери свинину жареную", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег")),
+                "Trailing verb: " + CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег"));
         h.assertTrue(CompanionLocalCommands.route("принеси мне курицу", "Олег") == null, "«Принеси» is not the pickup");
         h.assertTrue(CompanionLocalCommands.route("подбери курицу и брёвна", "Олег") == null, "Two things at once are a plan");
         PlannedAction step = CompanionLocalCommands.action("companion work pick_up 64 minecraft:chicken");
@@ -352,8 +362,6 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:bucket".equals(CompanionLocalCommands.route("подбери ведро", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери ведро", "Олег"));
         ItemEntity bucket = item(h, 12, 1, 8, Items.WATER_BUCKET, 1);
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:bucket", 64);
         h.assertTrue(result.success(), "The order was refused: " + result.message());
@@ -371,10 +379,6 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернила", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери чернила", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернильный мешок", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери чернильный мешок", "Олег"));
         pool(h, 12, 6, 5, 2);
         ItemEntity sac = floating(h, 13, 2, 8, Items.INK_SAC, 1);
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:ink_sac", 64);
@@ -393,10 +397,6 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("подбери свинину жареную", "Олег")),
-                "Phrase: " + CompanionLocalCommands.route("подбери свинину жареную", "Олег"));
-        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег")),
-                "Trailing verb: " + CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег"));
         boolean[] hunted = {false};
         h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
         pool(h, 12, 6, 5, 2);

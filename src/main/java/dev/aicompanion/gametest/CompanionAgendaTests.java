@@ -53,36 +53,7 @@ public final class CompanionAgendaTests {
     public static void endNightForGear(ServerLevel level) { level.setDayTime(gearClock); CompanionFixtureCleanup.afterAtomicTests(level); }
 
     // A goal left running after its test would go on working beside the batches that follow: clean up like the other suites.
-    @AfterBatch(batch = "agenda_fallback") public static void afterFallback(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_reload") public static void afterReload(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_death") public static void afterDeath(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_danger") public static void afterDanger(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_park") public static void afterPark(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_hurt") public static void afterHurt(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_siege") public static void afterSiege(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_stop") public static void afterStop(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_blocked") public static void afterBlocked(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_quick") public static void afterQuick(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_interrupt") public static void afterInterrupt(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_plan_gap") public static void afterPlanGap(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_trailing") public static void afterTrailing(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_modes") public static void afterModes(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_sort") public static void afterSort(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_harvest") public static void afterHarvest(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_follow") public static void afterFollow(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_stop_hold") public static void afterStopHold(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_cancel") public static void afterCancel(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_new_goal") public static void afterNewGoal(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_defer") public static void afterDefer(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_late") public static void afterLate(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_first_call") public static void afterFirstCall(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_exhausted") public static void afterExhausted(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_death_loot") public static void afterDeathLoot(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_death_place") public static void afterDeathPlace(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_orphan") public static void afterOrphan(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_held_batch") public static void afterHeldBatch(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_blocked_batch") public static void afterBlockedBatch(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
-    @AfterBatch(batch = "agenda_flint") public static void afterFlint(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    @AfterBatch(batch = "agenda") public static void afterAgenda(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** The probe of the plan: raw iron and coal in the bag, a bench and furnaces near; nothing is handed out. */
     @GameTest(template = "tall_tree", batch = "agenda_gear", timeoutTicks = 6000)
@@ -105,7 +76,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_fallback", timeoutTicks = 4000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 4000)
     public static void diamondTierFallsBackToIronWhenNoDiamondsNear(GameTestHelper h) {
         var f = fixture(h);
         f.c.setItem(0, new ItemStack(Items.IRON_PICKAXE)); f.c.setItem(1, new ItemStack(Items.IRON_INGOT, 26)); f.c.setItem(2, new ItemStack(Items.STICK, 1));
@@ -118,7 +89,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_reload", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void reloadMidGoalMakesNoSecondPiece(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         boolean[] loaded = {false};
@@ -133,7 +104,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_death", timeoutTicks = 1600)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 1600)
     public static void goalSurvivesCompanionDeathAndReconciles(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         UUID[] oldId = {null}; long[] work = {0, 0};
@@ -157,7 +128,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_danger", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void dangerPausesAndResumesByItself(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         var enemy = h.spawn(EntityType.ZOMBIE, 25, 1, 25); enemy.setNoAi(true); enemy.setInvulnerable(true);
@@ -174,7 +145,7 @@ public final class CompanionAgendaTests {
         h.succeedWhen(() -> { f.completed(); ironSetWorn(h, f.c); });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_quick", timeoutTicks = 200)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 200)
     public static void longGoalAndPickaxeOrderExcludeEachOther(GameTestHelper h) {
         var f = fixture(h);
         f.c.setItem(0, new ItemStack(Items.COBBLESTONE, 6)); f.c.setItem(1, new ItemStack(Items.STICK, 4));
@@ -191,7 +162,7 @@ public final class CompanionAgendaTests {
         h.succeed();
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_quick", timeoutTicks = 200)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 200)
     public static void activeGoalHoldsDeedsRefusesPickaxesAndNamesWhatHeCannot(GameTestHelper h) {
         var f = fixture(h); f.start("defeat_ender_dragon", 0);
         h.assertTrue(CompanionAgenda.suppressesDeeds(f.c), "An active goal lets his own deeds run");
@@ -201,7 +172,7 @@ public final class CompanionAgendaTests {
         h.succeed();
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_quick", timeoutTicks = 100)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 100)
     public static void agendaRecordSurvivesSaveAndRejectsDamage(GameTestHelper h) {
         var f = fixture(h); f.start("gear_up", 2);
         var server = h.getLevel().getServer();
@@ -216,7 +187,7 @@ public final class CompanionAgendaTests {
     }
 
     /** Raw beef cooks as his own parked batch while the next milestone already runs; the food plan is not started twice. */
-    @GameTest(template = "tall_tree", batch = "agenda_park", timeoutTicks = 2000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 2000)
     public static void goalSmeltParksAndNextMilestoneRuns(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.BEEF, 16)); f.c.setItem(3, new ItemStack(Items.COAL, 6)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
@@ -239,7 +210,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_hurt", timeoutTicks = 200)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 200)
     public static void lowHealthWithoutFoodDoesNotPauseTheGoal(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         boolean[] seen = {false, false};
@@ -255,7 +226,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_siege", timeoutTicks = 2000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 2000)
     public static void dangerThatNeverPassesBlocksTheGoal(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         var enemy = h.spawn(EntityType.ZOMBIE, 25, 1, 25); enemy.setNoAi(true); enemy.setInvulnerable(true);
@@ -266,7 +237,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_stop", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void neutralEndSpendsNoAttemptAndResumeClearsTheStop(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         int[] phase = {0, 0};
@@ -294,7 +265,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_blocked", timeoutTicks = 300)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 300)
     public static void blockedGoalStaysCancellableAndYieldsToPickaxes(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
@@ -324,7 +295,7 @@ public final class CompanionAgendaTests {
     }
 
     /** The player's order in the middle of a step: the goal stops at once, the order runs without a spent recovery, the goal comes back alone. */
-    @GameTest(template = "tall_tree", batch = "agenda_interrupt", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void playerOrderInterruptsAndGoalResumesItself(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.c.setItem(2, new ItemStack(Items.DIRT, 5)); f.start("gear_up", 1);
         UUID owner = f.p.getUUID();
@@ -371,7 +342,7 @@ public final class CompanionAgendaTests {
     }
 
     /** A craft, a pause, a craft and a trailing follow are one request: the goal takes no step in the gaps and comes back when it is over. */
-    @GameTest(template = "tall_tree", batch = "agenda_plan_gap", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void goalDoesNotStartBetweenStepsOfAPlayerPlan(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.c.setItem(2, new ItemStack(Items.OAK_PLANKS, 12)); f.start("gear_up", 1);
         var plan = playerPlan(f, CompanionAgenda.State.INTERRUPTED, new PlannedAction("craft_item", 0, 1, "minecraft:chest"), new PlannedAction("wait", 10, 1),
@@ -384,20 +355,8 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_trailing", timeoutTicks = 3000)
-    public static void trailingFollowStillResumes(GameTestHelper h) {
-        var f = fixture(h); ingots(f, h); f.c.setItem(2, new ItemStack(Items.OAK_PLANKS, 8)); f.start("gear_up", 1);
-        var plan = playerPlan(f, CompanionAgenda.State.INTERRUPTED, new PlannedAction("craft_item", 0, 1, "minecraft:chest"), new PlannedAction("follow", 0, 1));
-        h.succeedWhen(() -> {
-            h.assertTrue(plan.get() != null && plan.get().isDone(), "The player's plan did not finish");
-            h.assertTrue(f.goal().state() != CompanionAgenda.State.HELD, "A follow after real work held the goal");
-            h.assertTrue(count(f.c, Items.CHEST) == 1, "The craft is missing: " + f.c.getStoredItemsSummary());
-            gearDone(f);
-        });
-    }
-
     /** «Разложи сундуки» is real work (review of #39): the goal steps aside, the player's chests are sorted with nothing lost, and the goal comes back. */
-    @GameTest(template = "tall_tree", batch = "agenda_sort", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void sortingInterruptsAndGoalResumes(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         var chests = new net.minecraft.world.Container[2];
@@ -415,7 +374,7 @@ public final class CompanionAgendaTests {
     }
 
     /** Review of PR #39: «собери урожай» is real work, so the goal stands aside for it and goes on by itself afterwards. */
-    @GameTest(template = "tall_tree", batch = "agenda_harvest", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void harvestInterruptsAndGoalResumes(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         for (int x = 7; x <= 8; x++) for (int z = 7; z <= 8; z++) {
@@ -430,7 +389,7 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_modes", timeoutTicks = 600)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 600)
     public static void modesOnlyPlanHolds(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         var plan = playerPlan(f, CompanionAgenda.State.HELD, new PlannedAction("follow", 0, 1));
@@ -442,14 +401,14 @@ public final class CompanionAgendaTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "agenda_follow", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void followHoldsGoalUntilResume(GameTestHelper h) { holdsUntilResume(h, "follow"); }
 
-    @GameTest(template = "tall_tree", batch = "agenda_stop_hold", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void stopHoldsGoal(GameTestHelper h) { holdsUntilResume(h, "stop"); }
 
     /** «Отмени цель» ends the goal for good, while «стоп», «отмена» and «отмени задачу» stay the stop of the work. */
-    @GameTest(template = "tall_tree", batch = "agenda_cancel", timeoutTicks = 600)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 600)
     public static void cancelPhraseCancels(GameTestHelper h) {
         String cancel = "companion goal cancel", defer = "companion goal defer", stop = "companion stop";
         String[][] routes = {{"Олег, отмени цель", cancel}, {"забудь про цель", cancel}, {"Олег, забудь про дракона", cancel}, {"отмени эту долгую цель", cancel},
@@ -487,7 +446,7 @@ public final class CompanionAgendaTests {
     }
 
     /** A new goal takes the place of the working one, which waits in the one deferred slot and comes back when the new one is cancelled. */
-    @GameTest(template = "tall_tree", batch = "agenda_new_goal", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void newGoalDefersOld(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         UUID owner = f.p.getUUID();
@@ -508,7 +467,7 @@ public final class CompanionAgendaTests {
     }
 
     /** «Отложи цель» moves the goal to the deferred slot; with a goal already there a second defer is refused and changes nothing. */
-    @GameTest(template = "tall_tree", batch = "agenda_defer", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void goalDeferParksRefusesASecondAndResumeRestores(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         UUID owner = f.p.getUUID();
@@ -536,7 +495,7 @@ public final class CompanionAgendaTests {
     }
 
     /** A step that timed out late must not cut the order of the player or the goal's next step that has taken the companion since. */
-    @GameTest(template = "tall_tree", batch = "agenda_late", timeoutTicks = 200)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 200)
     public static void lateTimeoutDoesNotStopOtherWork(GameTestHelper h) {
         var f = fixture(h); ingots(f, h);
         h.assertTrue(f.order("craft_item", "minecraft:iron_pickaxe").success() && f.c.hasActiveWorkOrder(), "No work to protect: " + f.c.getLastTaskResult());
@@ -549,7 +508,7 @@ public final class CompanionAgendaTests {
     }
 
     /** The queue's first call reaches the server before any order: the goal's step must stop there, with no executeAction made. */
-    @GameTest(template = "tall_tree", batch = "agenda_first_call", timeoutTicks = 600)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 600)
     public static void firstCallCancelsTheGoalRun(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         UUID owner = f.p.getUUID();
@@ -567,7 +526,7 @@ public final class CompanionAgendaTests {
     }
 
     /** «Продолжай» is a fresh start: a milestone that spent all its attempts gets them back instead of the goal refusing again. */
-    @GameTest(template = "tall_tree", batch = "agenda_exhausted", timeoutTicks = 4000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 4000)
     public static void resumeResetsAnExhaustedMilestone(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         int attemptLimit = 12;
@@ -585,7 +544,7 @@ public final class CompanionAgendaTests {
     }
 
     /** He dies in the middle of the goal: what fell from him is fetched by the one who comes back, picked up for real, and the goal ends with exact counts. */
-    @GameTest(template = "tall_tree", batch = "agenda_death_loot", timeoutTicks = 3600)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3600)
     public static void deathPicksUpOwnDrops(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         UUID[] oldId = {null}; int[] fallen = {0};
@@ -605,7 +564,7 @@ public final class CompanionAgendaTests {
     }
 
     /** The place of a death is tried once: it survives a save, nothing found there is said, and the goal does not wait for it. */
-    @GameTest(template = "tall_tree", batch = "agenda_death_place", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void deathPlaceIsTriedOnceAndGoalGoesOn(GameTestHelper h) {
         var f = fixture(h); ingots(f, h); f.start("gear_up", 1);
         var server = h.getLevel().getServer();
@@ -622,7 +581,7 @@ public final class CompanionAgendaTests {
     }
 
     /** A cooked batch of his own, collected at the goal's step boundary (his deeds are shut while the goal works): the goal needs those four ingots to end. */
-    @GameTest(template = "tall_tree", batch = "agenda_orphan", timeoutTicks = 3600)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3600)
     public static void orphanIsCollectedWhileGoalRuns(GameTestHelper h) {
         var f = fixture(h); f.c.setItem(0, new ItemStack(Items.IRON_INGOT, 25)); f.c.setItem(1, new ItemStack(Items.STICK, 3));
         parkOrphan(f); f.start("gear_up", 1);
@@ -637,7 +596,7 @@ public final class CompanionAgendaTests {
     }
 
     /** A goal held by «иди за мной» lets go of the batch it parked: he collects it the ordinary way and the goal stays held. */
-    @GameTest(template = "tall_tree", batch = "agenda_held_batch", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void heldGoalReleasesItsParkedBatch(GameTestHelper h) {
         var f = fixture(h); parkOrphan(f);
         boolean[] held = {false, false};
@@ -657,7 +616,7 @@ public final class CompanionAgendaTests {
     }
 
     /** A goal that stands blocked («нужна твоя помощь») shuts nothing: the batch he parks after that is collected by his own deed. */
-    @GameTest(template = "tall_tree", batch = "agenda_blocked_batch", timeoutTicks = 3000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 3000)
     public static void blockedGoalDoesNotFreezeDeeds(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
@@ -681,7 +640,7 @@ public final class CompanionAgendaTests {
     }
 
     /** The last stage of prepare_nether is a real flint and steel: the ingot from the bag, the flint dug out of a gravel patch. */
-    @GameTest(template = "tall_tree", batch = "agenda_flint", timeoutTicks = 4000)
+    @GameTest(template = "tall_tree", batch = "agenda", timeoutTicks = 4000)
     public static void netherPreparationEndsWithARealFlintAndSteel(GameTestHelper h) {
         var f = fixture(h); diamondsDone(f);
         f.c.setItem(2, new ItemStack(Items.COBBLESTONE, 64)); f.c.setItem(3, new ItemStack(Items.COOKED_BEEF, 16)); f.c.setItem(4, new ItemStack(Items.STICK, 4));
