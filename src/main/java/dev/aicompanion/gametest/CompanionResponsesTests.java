@@ -119,8 +119,60 @@ public final class CompanionResponsesTests {
     }
 
     @GameTest(template = "empty")
-    public static void malformedOrEmptyOutputIsRejected(GameTestHelper h) {
-        rejected(h, () -> message(response()));
+    public static void tokenLimitDiscardsPartialOutputAndExplainsHowToRetry(GameTestHelper h) {
+        JsonObject response = response(); response.addProperty("status", "incomplete");
+        response.add("incomplete_details", json("{\"reason\":\"max_output_tokens\"}"));
+        response.getAsJsonArray("output").add(call("queue_companion_plan", "{\"steps\":[{\"action\":\"come\"}]}"));
+        response.getAsJsonArray("output").add(json("{\"type\":\"message\",\"role\":\"assistant\",\"status\":\"incomplete\",\"content\":[{\"type\":\"output_text\",\"text\":\"partial\"}]}"));
+        JsonObject decoded = OpenAiResponses.completion(response);
+        JsonObject choice = decoded.getAsJsonArray("choices").get(0).getAsJsonObject();
+        h.assertTrue(choice.get("finish_reason").getAsString().equals("length"), "Token limit lost its finish reason");
+        h.assertTrue(choice.getAsJsonObject("message").get("content").getAsString().isEmpty()
+                && !choice.getAsJsonObject("message").has("tool_calls"), "A truncated answer retained partial output");
+        rejected(h, () -> CompanionPlanCodec.decode(choice.getAsJsonObject("message")));
+        try {
+            OpenRouterClient.completionText(decoded); h.fail("Truncated text was accepted");
+        } catch (IllegalStateException expected) {
+            h.assertTrue(expected.getMessage().toLowerCase(java.util.Locale.ROOT).contains("меньше действий"), "Unhelpful retry: " + expected.getMessage());
+        }
+        response.add("incomplete_details", json("{\"reason\":\"content_filter\"}"));
+        rejected(h, () -> OpenAiResponses.completion(response));
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void completedEmptyOutputAllowsSilenceButNeverAnEmptyPlan(GameTestHelper h) {
+        for (String output : new String[]{"[]", "[{\"type\":\"reasoning\",\"summary\":[]}]",
+                "[{\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[]}]",
+                "[{\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"  \"}]}]"}) {
+            JsonObject response = response(); response.add("output", JsonParser.parseString(output));
+            JsonObject decoded = OpenAiResponses.completion(response);
+            h.assertTrue(OpenRouterClient.completionText(decoded).isBlank(), "Completed silence was not preserved");
+            rejected(h, () -> CompanionPlanCodec.decode(message(response)));
+        }
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void directOpenAiRequiresItsOwnKey(GameTestHelper h) {
+        var endpoint = OpenRouterClient.endpoint("https://API.OPENAI.COM/v1");
+        h.assertTrue(OpenRouterClient.keyRequired(endpoint), "Direct OpenAI attempted requests without a key");
+        h.assertTrue(!OpenRouterClient.sendsKey(endpoint, "Bearer sk-or-v1-test"), "An OpenRouter key could reach OpenAI");
+        h.assertTrue(OpenRouterClient.service(endpoint).equalsIgnoreCase("api.openai.com"), "OpenAI was labelled OpenRouter");
+        h.assertTrue(!OpenRouterClient.withheldKeyNote(endpoint, "sk-or-v1-test").isEmpty(), "Wrong provider key was not explained");
+        h.assertTrue(!OpenRouterClient.modelNote(endpoint, "openrouter/auto").isEmpty(), "OpenRouter auto model was accepted for OpenAI");
+        h.assertTrue(OpenRouterClient.missingKeyNote(endpoint, " \t").equals("Добавь API-ключ OpenAI в настройках мода."), "Missing OpenAI key had no useful hint");
+        h.assertTrue(OpenRouterClient.missingKeyNote(endpoint, "sk-test").isEmpty(), "A configured OpenAI key was rejected");
+        h.assertTrue(OpenRouterClient.missingKeyNote(OpenRouterClient.endpoint(""), "").contains("API-ключ OpenRouter"), "Changed the OpenRouter hint");
+        for (String address : new String[]{"http://localhost:11434/v1", "https://api.openai.com.example/v1"}) {
+            var other = OpenRouterClient.endpoint(address);
+            h.assertTrue(!OpenRouterClient.keyRequired(other) && OpenRouterClient.missingKeyNote(other, "").isEmpty(), "A compatible server now requires a key");
+        }
+        h.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void malformedOutputIsRejected(GameTestHelper h) {
         for (String bad : new String[]{"{\"type\":\"web_search_call\"}", "{\"type\":\"function_call\",\"name\":\"queue_companion_plan\",\"arguments\":{}}",
                 "{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":null}]}"}) {
             JsonObject response = response(); response.getAsJsonArray("output").add(json(bad)); rejected(h, () -> message(response));

@@ -39,14 +39,19 @@ public final class OpenAiResponses {
         return body;
     }
 
-    /** Normalize only a complete answer, before the existing codec validates the entire plan. */
+    /** Normalize complete answers or an empty token-limit result, before the existing plan checks. */
     public static JsonObject completion(JsonObject response) {
-        if (!string(response, "status").equals("completed"))
+        String status = string(response, "status");
+        boolean length = status.equals("incomplete") && response.has("incomplete_details")
+                && response.get("incomplete_details").isJsonObject()
+                && string(response.getAsJsonObject("incomplete_details"), "reason").equals("max_output_tokens");
+        if (!status.equals("completed") && !length)
             throw new IllegalStateException("OpenAI не завершил ответ. Поручение не запущено; попробуй ещё раз.");
         if (!response.has("output") || !response.get("output").isJsonArray()) throw malformed();
         JsonArray calls = new JsonArray();
         StringBuilder text = new StringBuilder();
-        for (JsonElement element : response.getAsJsonArray("output")) {
+        // A limited answer may contain complete calls before an unfinished one. Never expose any of them.
+        if (!length) for (JsonElement element : response.getAsJsonArray("output")) {
             if (!element.isJsonObject()) throw malformed();
             JsonObject item = element.getAsJsonObject();
             if (item.has("status") && !string(item, "status").equals("completed"))
@@ -80,12 +85,12 @@ public final class OpenAiResponses {
                 default -> throw malformed();
             }
         }
-        if (text.toString().isBlank() && calls.isEmpty()) throw malformed();
+        // Completed silence is valid for ambient remarks; the foreground codec still rejects an empty plan.
         JsonObject message = new JsonObject();
         message.addProperty("content", text.toString());
         if (!calls.isEmpty()) message.add("tool_calls", calls);
         JsonObject choice = new JsonObject();
-        choice.addProperty("finish_reason", calls.isEmpty() ? "stop" : "tool_calls");
+        choice.addProperty("finish_reason", length ? "length" : calls.isEmpty() ? "stop" : "tool_calls");
         choice.add("message", message);
         JsonArray choices = new JsonArray(); choices.add(choice);
         JsonObject result = new JsonObject(); result.add("choices", choices);

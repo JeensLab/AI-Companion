@@ -55,7 +55,7 @@ public final class OpenRouterClient {
         try {
             URI uri = new URI(base);
             if (("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null) {
-                if ("api.openai.com".equalsIgnoreCase(uri.getHost())) {
+                if (isOpenAi(uri)) {
                     String path = uri.getPath();
                     if (path.endsWith("/chat/completions")) path = path.substring(0, path.length() - "/chat/completions".length());
                     if (!path.endsWith("/responses")) path += "/responses";
@@ -69,15 +69,22 @@ public final class OpenRouterClient {
         // Not repeated back: an address may carry a password or a token.
         throw new IllegalStateException("Адрес сервера модели в настройках неверный. Пример: http://localhost:11434/v1");
     }
-    /** OpenRouter needs the player's key; a local server (Ollama, LM Studio) runs without one. */
-    public static boolean keyRequired(URI endpoint) { return "openrouter.ai".equalsIgnoreCase(endpoint.getHost()); }
+    private static boolean isOpenRouter(URI endpoint) { return "openrouter.ai".equalsIgnoreCase(endpoint.getHost()); }
+    private static boolean isOpenAi(URI endpoint) { return "api.openai.com".equalsIgnoreCase(endpoint.getHost()); }
+    /** OpenRouter and direct OpenAI need a key; a local server (Ollama, LM Studio) runs without one. */
+    public static boolean keyRequired(URI endpoint) { return isOpenRouter(endpoint) || isOpenAi(endpoint); }
+    public static String missingKeyNote(URI endpoint, String key) {
+        if (!keyRequired(endpoint) || !key.isBlank()) return "";
+        return isOpenAi(endpoint) ? "Добавь API-ключ OpenAI в настройках мода."
+                : "Добавь API-ключ OpenRouter в настройках мода или укажи адрес своего сервера модели.";
+    }
     /**
      * The key goes over https or to this computer: plain http across a network would show it to everyone on the way.
      * An OpenRouter key (sk-or-…) goes to OpenRouter only, even when left in the settings after switching servers.
      */
     public static boolean sendsKey(URI endpoint, String key) {
         // Anywhere and in any case: a key pasted as «Bearer sk-or-…» or in quotes is still an OpenRouter key.
-        if (key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !keyRequired(endpoint)) return false;
+        if (key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !isOpenRouter(endpoint)) return false;
         String host = endpoint.getHost().toLowerCase(java.util.Locale.ROOT);
         // A numeric loopback address only: «127.example.com» is a name anyone can register.
         return "https".equalsIgnoreCase(endpoint.getScheme()) || host.equals("localhost") || host.matches("127(\\.\\d{1,3}){3}") || host.equals("[::1]");
@@ -85,23 +92,23 @@ public final class OpenRouterClient {
     /** Why a key that was set stayed home: told with a 401/403, or the player only sees the server refuse. */
     public static String withheldKeyNote(URI endpoint, String key) {
         if (key.isEmpty() || sendsKey(endpoint, key)) return "";
-        return key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !keyRequired(endpoint)
+        return key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !isOpenRouter(endpoint)
                 ? "Ключ OpenRouter мод отправляет только в OpenRouter: для этого сервера впиши его собственный ключ."
                 : "Ключ не отправлен: по обычному http через сеть мод его не передаёт — нужен адрес https или сервер на этом компьютере.";
     }
     /** The model field defaults to openrouter/auto: an own server answers «model not found», which alone does not say what to change. */
     public static String modelNote(URI endpoint, String model) {
         String id = model == null ? "" : model.trim().toLowerCase(java.util.Locale.ROOT);
-        return !keyRequired(endpoint) && (id.isEmpty() || id.startsWith("openrouter/"))
+        return !isOpenRouter(endpoint) && (id.isEmpty() || id.startsWith("openrouter/"))
                 ? "В поле «Модель» стоит модель OpenRouter: для своего сервера впиши название загруженной в него модели." : "";
     }
     /** The server named in errors and diagnostics: host and port, never credentials written into the address. */
     public static String service(URI endpoint) {
-        return keyRequired(endpoint) ? "OpenRouter" : endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());
+        return isOpenRouter(endpoint) ? "OpenRouter" : endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());
     }
     private static URI endpoint() { return endpoint(OpenRouterConfig.API_URL.get()); }
     private static boolean missingKey(URI endpoint) { return keyRequired(endpoint) && OpenRouterConfig.API_KEY.get().isBlank(); }
-    /** A model server is set up to answer: the address is valid and OpenRouter has its key. */
+    /** A model server is set up to answer: the address is valid and a provider requiring a key has one. */
     static boolean modelConfigured() {
         try { return !missingKey(endpoint()); } catch (IllegalStateException badAddress) { return false; }
     }
@@ -150,7 +157,7 @@ public final class OpenRouterClient {
         URI endpoint;
         try { endpoint = endpoint(); } catch (IllegalStateException badAddress) { return CompletableFuture.failedFuture(badAddress); }
         if (missingKey(endpoint)) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Нет ключа OpenRouter"));
+            return CompletableFuture.failedFuture(new IllegalStateException(missingKeyNote(endpoint, OpenRouterConfig.API_KEY.get())));
         }
         JsonObject body = new JsonObject();
         body.addProperty("model", OpenRouterConfig.MODEL.get().trim().isEmpty() ? "openrouter/auto" : OpenRouterConfig.MODEL.get().trim());
@@ -166,7 +173,7 @@ public final class OpenRouterClient {
     public static String completionText(JsonObject response) {
         JsonObject choice = response.getAsJsonArray("choices").get(0).getAsJsonObject();
         if ("length".equals(scalar(choice, "finish_reason"))) {
-            throw new IllegalStateException("Ответ модели оборвался на пределе токенов.");
+            throw new IllegalStateException("Ответ модели оборвался на пределе токенов. Попроси выполнить меньше действий за раз.");
         }
         JsonObject reply = choice.getAsJsonObject("message");
         return reply != null && reply.has("content") && !reply.get("content").isJsonNull() ? reply.get("content").getAsString() : "";
@@ -295,7 +302,7 @@ public final class OpenRouterClient {
         URI endpoint;
         try { endpoint = endpoint(); } catch (IllegalStateException badAddress) { return CompletableFuture.failedFuture(badAddress); }
         if (missingKey(endpoint)) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Добавь API-ключ OpenRouter в настройках мода или укажи адрес своего сервера модели."));
+            return CompletableFuture.failedFuture(new IllegalStateException(missingKeyNote(endpoint, OpenRouterConfig.API_KEY.get())));
         }
         // History keeps the player's words; the world snapshot goes only with the current message (review 22.10, В10:
         // up to a dozen old snapshots per request made it slow, costly and confusing).
@@ -600,7 +607,7 @@ public final class OpenRouterClient {
             body.addProperty("tool_choice", forcePlan ? "required" : "auto");
             body.addProperty("parallel_tool_calls", false);
             // OpenRouter's own routing field; another server could reject a field it does not know.
-            if (keyRequired(endpoint)) {
+            if (isOpenRouter(endpoint)) {
                 JsonObject provider = new JsonObject();
                 provider.addProperty("require_parameters", true);
                 provider.addProperty("allow_fallbacks", true);
@@ -626,7 +633,7 @@ public final class OpenRouterClient {
     public static final Duration ANSWER_LIMIT = Duration.ofSeconds(90);
 
     private static CompletableFuture<JsonObject> post(URI endpoint, JsonObject body, boolean withTools, String trace) {
-        boolean responses = "api.openai.com".equalsIgnoreCase(endpoint.getHost());
+        boolean responses = isOpenAi(endpoint);
         JsonObject wireBody = responses ? OpenAiResponses.request(body) : body;
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(60))
@@ -637,7 +644,7 @@ public final class OpenRouterClient {
         String withheld = withheldKeyNote(endpoint, key);
         HttpRequest request = builder.build();
         String service = service(endpoint);
-        String logged = keyRequired(endpoint) ? "openrouter" : service;  // the diagnostics label OpenRouter always had
+        String logged = isOpenRouter(endpoint) ? "openrouter" : service;  // the diagnostics label OpenRouter always had
         var attempts = new java.util.concurrent.atomic.AtomicInteger();
         return OpenRouterRetry.execute(() -> {
             int attempt = attempts.incrementAndGet();
@@ -676,7 +683,7 @@ public final class OpenRouterClient {
         }).exceptionallyCompose(error -> {
             // A local server that is not running is the usual failure there; the bare exception says nothing to a player.
             Throwable cause = error.getCause() == null ? error : error.getCause();
-            return CompletableFuture.failedFuture(!keyRequired(endpoint) && cause instanceof java.net.ConnectException
+            return CompletableFuture.failedFuture(!isOpenRouter(endpoint) && cause instanceof java.net.ConnectException
                     ? new IllegalStateException("Сервер модели " + service + " не отвечает: проверь, что он запущен и адрес в настройках верный.") : error);
         });
     }
