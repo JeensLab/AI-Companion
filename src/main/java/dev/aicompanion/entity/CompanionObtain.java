@@ -61,6 +61,12 @@ public final class CompanionObtain {
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
         CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)));
+        // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
+        var species = CompanionWoodKind.of(id.toString());
+        if (species != null) {
+            int have = carried.stream().filter(stack -> stack.is(species.items)).mapToInt(ItemStack::getCount).sum();
+            return new Plan(have >= count ? List.of() : List.of(new Step("gather_wood", id.toString(), count - have)), null);
+        }
         String target = key(item);
         if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
         // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.

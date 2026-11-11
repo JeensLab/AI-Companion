@@ -126,6 +126,8 @@ public final class CompanionPlanCodec {
                 // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
                 if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
                 if ("walk_heading".equals(type) && !dev.aicompanion.entity.CompanionCourse.valid(item)) throw invalid();
+                // A species of wood or nothing (any log): the reply of the model is untrusted, a stone is no wood.
+                if ("gather_wood".equals(type) && !item.isEmpty() && dev.aicompanion.entity.CompanionWoodKind.of(item) == null) throw invalid();
                 if ("gather_loose".equals(type) && (!LOOSE_ITEMS.contains(item) || FLINT.equals(item) && count > FLINT_STEP)) throw invalid();
                 if ("place_block".equals(type) && !"minecraft:chest".equals(item) && count != 1) throw invalid();
                 if (("store_items".equals(type) || "take_items".equals(type)) && !item.isEmpty() && !Set.of("resources", "all", "logs", "stone").contains(item)

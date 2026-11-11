@@ -95,6 +95,19 @@ public final class CompanionNamedWoodTests {
         });
     }
 
+    /** «Добудь берёзовые брёвна» names the species; the logs inside a craft chain stay any logs. */
+    @GameTest(template = "tall_tree")
+    public static void obtainedLogsKeepTheirSpeciesOnlyAtTheTop(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        companion.setItem(0, new net.minecraft.world.item.ItemStack(Items.OAK_LOG, 5));
+        var top = companion.obtainPlan("minecraft:birch_log", 3);
+        h.assertTrue(top.steps().size() == 1 && top.steps().get(0).type().equals("gather_wood") && top.steps().get(0).item().equals("minecraft:birch_log")
+                && top.steps().get(0).count() == 3, "Top-level species lost (oaks in the bag are no birch): " + top);
+        var chain = companion.obtainPlan("minecraft:birch_planks", 40);
+        h.assertTrue(chain.steps().stream().filter(step -> step.type().equals("gather_wood")).allMatch(step -> step.item().isEmpty()), "Wood in a chain named a species: " + chain);
+        h.succeed();
+    }
+
     private static CompanionActionResult order(GameTestHelper h, CompanionEntity companion, String item, int count) {
         ServerPlayer owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
         return CompanionEvents.executeAction(owner, "gather_wood", item, count);
