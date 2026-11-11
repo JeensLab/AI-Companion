@@ -24,10 +24,12 @@ final class CompanionPlacement {
     /** The recipe needs a bench and one is a few steps away: walk there first, like a player (any recipe, not only the known chains). */
     public boolean benchWalkNeeded(String requestedItemId, int requestedCount) {
         if (!(c.level() instanceof ServerLevel serverLevel) || hasCraftingTableNearby() || !c.hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK)) return false;
-        var atBench = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, true);
+        // At a stonecutter in reach its recipes count here and at the bench alike: stairs are cut here, not made from six at the bench.
+        boolean cutter = inReach(Blocks.STONECUTTER) != null;
+        var atBench = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, true, cutter);
         if (!atBench.success()) return false;
         // Possible at a bench, and here it either needs one set down or is impossible without one.
-        var here = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, false);
+        var here = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, false, cutter);
         return here.placeTable() || !here.success();
     }
 
@@ -38,8 +40,9 @@ final class CompanionPlacement {
 
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return CompanionActionResult.failed("Крафт доступен только в загруженном мире.");
+        BlockPos cutter = inReach(Blocks.STONECUTTER);
         CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId,
-                requestedCount, hasCraftingTableNearby());
+                requestedCount, hasCraftingTableNearby(), cutter != null);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "craft_decision", "entity", c.getUUID(),
                 "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(), "message", plan.message());
         if (!plan.success()) return recordActionResult(plan.shortage() ? CompanionActionResult.shortage(plan.message()) : CompanionActionResult.failed(plan.message()));
@@ -59,7 +62,10 @@ final class CompanionPlacement {
         if (tablePosition != null) dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed",
                 "entity", c.getUUID(), "block", "minecraft:crafting_table", "position", tablePosition, "reason", "craft_prerequisite");
         c.refreshInventorySummary();
-        c.animateAction(tablePosition == null ? 2 : 1, tablePosition == null ? c.blockPosition() : tablePosition,
+        if (plan.cutter() && tablePosition == null) {
+            c.animateAction(3, cutter, new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(requestedItemId))));
+            serverLevel.playSound(null, cutter, net.minecraft.sounds.SoundEvents.UI_STONECUTTER_TAKE_RESULT, net.minecraft.sounds.SoundSource.BLOCKS, .7F, 1F);
+        } else c.animateAction(tablePosition == null ? 2 : 1, tablePosition == null ? c.blockPosition() : tablePosition,
                 tablePosition == null ? new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(requestedItemId))) : new ItemStack(net.minecraft.world.item.Items.CRAFTING_TABLE));
         if (tablePosition != null) {
             var table = Blocks.CRAFTING_TABLE.defaultBlockState(); var sound = table.getSoundType();
@@ -116,21 +122,44 @@ final class CompanionPlacement {
         return result;
     }
 
-    public boolean hasCraftingTableNearby() {
+    public boolean hasCraftingTableNearby() { return inReach(Blocks.CRAFTING_TABLE) != null; }
+
+    /**
+     * A stonecutter a few steps away (as far as a bench is walked to) pays for the walk when the item comes out of less there,
+     * or is not made at all without it: stairs, not slabs or walls, which the bench makes as cheaply.
+     */
+    BlockPos cutterWalk(String requestedItemId, int requestedCount) {
+        if (!(c.level() instanceof ServerLevel level) || inReach(Blocks.STONECUTTER) != null) return null;
+        BlockPos origin = c.blockPosition(), cutter = null;
+        int far = CompanionToolSense.BENCH_WALK;
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-far, -4, -far), origin.offset(far, 4, far)))
+            if (level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.STONECUTTER) && (cutter == null || pos.distSqr(origin) < cutter.distSqr(origin))) cutter = pos.immutable();
+        if (cutter == null) return null;
+        boolean bench = hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK);
+        var cut = CompanionCrafting.plan(level, c.companionInventory, requestedItemId, requestedCount, bench, true);
+        if (!cut.success() || !cut.cutter()) return null;
+        var plain = CompanionCrafting.plan(level, c.companionInventory, requestedItemId, requestedCount, bench, false);
+        return !plain.success() || left(cut.inventory()) > left(plain.inventory()) ? cutter : null;
+    }
+
+    private static int left(java.util.List<ItemStack> bag) { return bag.stream().mapToInt(ItemStack::getCount).sum(); }
+
+    /** The block of this kind he can work at from where he stands, as a player at a bench: in reach and in sight. */
+    BlockPos inReach(Block block) {
         BlockPos origin = c.blockPosition();
         for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, -2, -4), origin.offset(4, 2, 4))) {
-            if (c.level().hasChunkAt(pos) && c.level().getBlockState(pos).is(Blocks.CRAFTING_TABLE)
+            if (c.level().hasChunkAt(pos) && c.level().getBlockState(pos).is(block)
                     && c.distanceToSqr(pos.getCenter()) <= 3.2 * 3.2) {
                 // Walking targets are chosen by the view from a cell's centre. Standing a few hundredths off it
                 // must not turn "I am at the bench" into "cannot reach the bench" (game log 22.10, a step beside the bench).
                 Vec3 centredEye = Vec3.atBottomCenterOf(c.blockPosition()).add(0, c.getEyeHeight(), 0);
                 if (seesBlock(c.getEyePosition(), pos) || c.onGround() && seesBlock(centredEye, pos)) {
                     if (!c.level().isClientSide) c.rememberObserved(pos);
-                    return true;
+                    return pos.immutable();
                 }
             }
         }
-        return false;
+        return null;
     }
     private boolean seesBlock(Vec3 eye, BlockPos pos) { return seesBlock(c, eye, pos); }
 
