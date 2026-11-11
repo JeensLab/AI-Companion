@@ -31,9 +31,9 @@ import java.util.UUID;
 
 /**
  * «Запомни это место, дача» (3GFBJ): named markers of the player — saving by phrase, recognition in free speech by
- * Russian word forms, one honest question for an unknown or ambiguous name, a real walk by the normal path, another
- * dimension said as it is, renaming, deleting, coordinates, the cap and its eviction, persistence, the settings switch,
- * and the two plan actions with their codec and runner wiring.
+ * Russian word forms, one honest question for an unknown or ambiguous name, «забудь дачу» taking one or every marker off
+ * the list, a real walk by the normal path, another dimension said as it is, renaming, deleting, coordinates, the cap and
+ * its eviction, persistence, the settings switch, and the two plan actions with their codec and runner wiring.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -269,6 +269,231 @@ public final class CompanionPlaceMarkerTests {
                 "«охраняй дачу и всё»: " + CompanionLocalCommands.route("охраняй дачу и всё", "Олег", markers, true));
         h.assertTrue("companion place carry дом".equals(CompanionLocalCommands.route("отнеси ресы в дом и всё", "Олег", List.of("дом"), true)),
                 "«отнеси ресы в дом и всё»: " + CompanionLocalCommands.route("отнеси ресы в дом и всё", "Олег", List.of("дом"), true));
+        h.succeed();
+    }
+
+    // ---- «забудь дачу»: the player's own list, one honest line, and no «какую?» for two named markers ----
+
+    /** «забудь точку дачу», «забудь метку дачу», «забудь дачу», «удали точку дачу», «удали метку дачу»: the marker goes. */
+    @GameTest(template = "empty")
+    public static void everyForgetPhraseTakesTheMarkerItNamesOffTheList(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        for (String phrase : List.of("забудь точку дачу", "забудь метку дачу", "забудь дачу", "удали точку дачу", "удали метку дачу")) {
+            store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+            var speech = CompanionPlaceSpeech.parse(phrase, "Олег", List.of("дача"), true);
+            h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.FORGET && "дача".equals(speech.name()),
+                    "«" + phrase + "»: " + speech.kind() + " «" + speech.name() + "»");
+            h.assertTrue(speech.question() == null, "«" + phrase + "» asked instead of forgetting: " + speech.question());
+            h.assertTrue("companion place forget дача".equals(CompanionLocalCommands.route(phrase, "Олег", List.of("дача"), true)),
+                    "«" + phrase + "» routed: " + CompanionLocalCommands.route(phrase, "Олег", List.of("дача"), true));
+            var forgotten = CompanionMarkerBoard.forgetSpoken(owner, speech.name());
+            h.assertTrue(forgotten.count() == 1 && forgotten.message().contains("«дача»"), "«" + phrase + "» answer: " + forgotten.message());
+            h.assertTrue(forgotten.message().chars().filter(ch -> ch == '?').count() == 0, "A question instead of the line: " + forgotten.message());
+            h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "«" + phrase + "» left the marker: " + store.all(c.getOwnerId()));
+        }
+        h.succeed();
+    }
+
+    /** A name no marker has: one question with the known names, and the marker stays where it was. */
+    @GameTest(template = "empty")
+    public static void anUnknownForgetNameAsksOnceAndForgetsNothing(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+        var speech = CompanionPlaceSpeech.parse("забудь озеро", "Олег", List.of("дача"), true);
+        h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.UNKNOWN, "Unknown forget name: " + speech.kind());
+        h.assertTrue(speech.question() != null && speech.question().contains("«дача»"), "The known names are not listed: " + speech.question());
+        h.assertTrue(speech.question().chars().filter(ch -> ch == '?').count() == 1, "Not one question: " + speech.question());
+        h.assertTrue(CompanionLocalCommands.route("забудь озеро", "Олег", List.of("дача"), true) == null, "An unknown name became a command");
+        h.assertTrue(store.all(c.getOwnerId()).size() == 1, "An unknown name forgot the marker: " + store.all(c.getOwnerId()));
+        // «Забудь остров» with the two islands he saved: no name fits, and the one question lists them both.
+        var islands = CompanionPlaceSpeech.parse("забудь остров", "Олег", List.of("второй остров", "островок"), true);
+        h.assertTrue(islands.question() != null && islands.question().contains("«второй остров»") && islands.question().contains("«островок»"),
+                "The islands are not listed: " + islands.question());
+        h.assertTrue(islands.question().chars().filter(ch -> ch == '?').count() == 1, "Not one question: " + islands.question());
+        h.succeed();
+    }
+
+    /** «Забудь колодец» with «колодец» and «колодцы» saved: one question «какую?», and both stay. */
+    @GameTest(template = "empty")
+    public static void severalSimilarMarkersAskOnceAndBothStay(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "колодец", h.getLevel().dimension(), c.blockPosition(), 1);
+        store.add(c.getOwnerId(), "колодцы", h.getLevel().dimension(), c.blockPosition().offset(2, 0, 0), 2);
+        var speech = CompanionPlaceSpeech.parse("забудь колодец", "Олег", List.of("колодец", "колодцы"), true);
+        h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.AMBIGUOUS, "Similar markers: " + speech.kind());
+        h.assertTrue(speech.question().contains("«колодец»") && speech.question().contains("«колодцы»"), "Both not named: " + speech.question());
+        h.assertTrue(speech.question().chars().filter(ch -> ch == '?').count() == 1, "Not one question: " + speech.question());
+        h.assertTrue(CompanionLocalCommands.route("забудь колодец", "Олег", List.of("колодец", "колодцы"), true) == null,
+                "An ambiguous name became a command");
+        h.assertTrue(store.all(c.getOwnerId()).size() == 2, "An ambiguous name forgot a marker: " + store.all(c.getOwnerId()));
+        h.succeed();
+    }
+
+    /** «Забудь всё» / «забудь все метки»: every marker goes, and the line names how many there were. */
+    @GameTest(template = "empty")
+    public static void forgettingEverythingNamesTheCountAndEmptiesTheList(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        for (int index = 1; index <= 3; index++)
+            store.add(c.getOwnerId(), "метка" + index, h.getLevel().dimension(), c.blockPosition().offset(index, 0, 0), index);
+        List<String> names = List.of("метка1", "метка2", "метка3");
+        h.assertTrue(CompanionPlaceSpeech.parse("забудь всё", "Олег", names, true).kind() == CompanionPlaceSpeech.Kind.FORGET_ALL,
+                "«забудь всё» is not the whole list");
+        h.assertTrue("companion place forget".equals(CompanionLocalCommands.route("забудь все метки", "Олег", names, true)),
+                "«забудь все метки» routed: " + CompanionLocalCommands.route("забудь все метки", "Олег", names, true));
+        var forgotten = CompanionMarkerBoard.forgetAll(owner);
+        h.assertTrue(forgotten.count() == 3 && forgotten.message().contains("3"), "No count: " + forgotten.message());
+        h.assertTrue(forgotten.message().chars().filter(ch -> ch == '?').count() == 0, "A question instead of the line: " + forgotten.message());
+        h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "The list is not empty: " + store.all(c.getOwnerId()));
+        var again = CompanionMarkerBoard.forgetAll(owner);
+        h.assertTrue(again.count() == 0 && again.message().contains("нет"), "An empty list: " + again.message());
+        h.succeed();
+    }
+
+    /** «Забудь дом»: the marker of that name goes; with no such marker it is the home he knows, and the line says so. */
+    @GameTest(template = "empty")
+    public static void theHomeWordIsForgottenOnlyWhenAMarkerHasThatName(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+        var home = CompanionPlaceSpeech.parse("забудь дом", "Олег", List.of("дача"), true);
+        h.assertTrue(home.kind() == CompanionPlaceSpeech.Kind.HOME, "«забудь дом» without a marker: " + home.kind());
+        h.assertTrue(home.question() != null && home.question().contains("дом") && home.question().chars().filter(ch -> ch == '?').count() == 0,
+                "The home is not said as it is: " + home.question());
+        h.assertTrue(CompanionLocalCommands.route("забудь дом", "Олег", List.of("дача"), true) == null, "The home word became a command");
+        h.assertTrue(store.all(c.getOwnerId()).size() == 1, "The home word forgot a marker: " + store.all(c.getOwnerId()));
+        // A marker named «дом» is a marker: that word takes it off the list, and the neighbour stays.
+        store.add(c.getOwnerId(), "дом", h.getLevel().dimension(), c.blockPosition().offset(2, 0, 0), 2);
+        var marker = CompanionPlaceSpeech.parse("забудь дом", "Олег", List.of("дача", "дом"), true);
+        h.assertTrue(marker.kind() == CompanionPlaceSpeech.Kind.FORGET && "дом".equals(marker.name()),
+                "A marker «дом»: " + marker.kind() + " «" + marker.name() + "»");
+        var forgotten = CompanionMarkerBoard.forgetSpoken(owner, marker.name());
+        h.assertTrue(forgotten.count() == 1 && forgotten.message().contains("«дом»"), "The marker «дом» was not forgotten: " + forgotten.message());
+        var left = store.all(c.getOwnerId());
+        h.assertTrue(left.size() == 1 && left.getFirst().name().equals("дача"), "The home word forgot more: " + left);
+        h.succeed();
+    }
+
+    /** With «Метки на карте» off the list is still the player's: «забудь дачу» takes the marker off it. */
+    @GameTest(template = "empty")
+    public static void forgettingWorksWithTheFeatureSwitchedOff(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+        c.setMarkersEnabled(false);
+        var speech = CompanionPlaceSpeech.parse("забудь дачу", "Олег", List.of("дача"), false);
+        h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.FORGET, "A switched-off feature lost the forget word: " + speech.kind());
+        h.assertTrue("companion place forget дача".equals(CompanionLocalCommands.route("забудь дачу", "Олег", List.of("дача"), false)),
+                "A switched-off feature routed: " + CompanionLocalCommands.route("забудь дачу", "Олег", List.of("дача"), false));
+        h.assertTrue(CompanionMarkerBoard.forgetSpoken(owner, speech.name()).count() == 1, "The marker stayed with the switch off");
+        h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "The list is not empty: " + store.all(c.getOwnerId()));
+        h.succeed();
+    }
+
+    /** Forgetting one marker leaves its neighbours, and a name that fits none changes nothing. */
+    @GameTest(template = "empty")
+    public static void forgettingOneMarkerLeavesItsNeighbours(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+        store.add(c.getOwnerId(), "колодец", h.getLevel().dimension(), c.blockPosition().offset(2, 0, 0), 2);
+        store.add(c.getOwnerId(), "баня", h.getLevel().dimension(), c.blockPosition().offset(4, 0, 0), 3);
+        var forgotten = CompanionMarkerBoard.forgetSpoken(owner, "даче");
+        h.assertTrue(forgotten.count() == 1 && forgotten.message().contains("«дача»"), "The answer: " + forgotten.message());
+        var left = store.all(c.getOwnerId());
+        h.assertTrue(left.size() == 2 && left.stream().noneMatch(marker -> marker.name().equals("дача")), "The neighbours: " + left);
+        h.assertTrue(CompanionMarkerBoard.forgetSpoken(owner, "озеру").count() == 0, "A name that fits none forgot something");
+        h.assertTrue(store.all(c.getOwnerId()).size() == 2, "A name that fits none changed the list: " + store.all(c.getOwnerId()));
+        h.succeed();
+    }
+
+    /** «Забудь дачу и колодец»: two names, two markers, both go — no «какую?». */
+    @GameTest(template = "empty")
+    public static void twoNamesInOneForgetPhraseAreBothForgotten(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        var store = CompanionMarkers.get(h.getLevel().getServer());
+        store.add(c.getOwnerId(), "дача", h.getLevel().dimension(), c.blockPosition(), 1);
+        store.add(c.getOwnerId(), "колодец", h.getLevel().dimension(), c.blockPosition().offset(2, 0, 0), 2);
+        var speech = CompanionPlaceSpeech.parse("забудь дачу и колодец", "Олег", List.of("дача", "колодец"), true);
+        h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.FORGET && speech.question() == null,
+                "Two names became a question: " + speech.kind() + " " + speech.question());
+        h.assertTrue("companion place forget дачу и колодец".equals(CompanionLocalCommands.route("забудь дачу и колодец", "Олег", List.of("дача", "колодец"), true)),
+                "Two names routed: " + CompanionLocalCommands.route("забудь дачу и колодец", "Олег", List.of("дача", "колодец"), true));
+        var forgotten = CompanionMarkerBoard.forgetSpoken(owner, speech.name());
+        h.assertTrue(forgotten.count() == 2 && forgotten.message().contains("«дача»") && forgotten.message().contains("«колодец»"),
+                "Both not named: " + forgotten.message());
+        h.assertTrue(store.all(c.getOwnerId()).isEmpty(), "A marker stayed: " + store.all(c.getOwnerId()));
+        h.succeed();
+    }
+
+    /** Two markers named as two legs are no ambiguity: the model plans the whole route, not one walk. */
+    @GameTest(template = "empty")
+    public static void twoNamedLegsGoToTheModelInsteadOfAQuestion(GameTestHelper h) {
+        List<String> islands = List.of("второй остров", "первый остров");
+        String both = "иди на второй остров потом на первый остров, так 5 раз";
+        var speech = CompanionPlaceSpeech.parse(both, "Олег", islands, true);
+        h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.NONE && speech.question() == null,
+                "Two islands became a question: " + speech.kind() + " " + speech.question());
+        h.assertTrue(CompanionLocalCommands.route(both, "Олег", islands, true) == null, "Two islands became one walk");
+        List<String> two = List.of("второй остров", "островок");
+        String back = "иди на второй остров потом на островок и обратно, и так 5 раз";
+        var islandAndIslet = CompanionPlaceSpeech.parse(back, "Олег", two, true);
+        h.assertTrue(islandAndIslet.kind() == CompanionPlaceSpeech.Kind.NONE && islandAndIslet.question() == null,
+                "The island and the islet became a question: " + islandAndIslet.kind() + " " + islandAndIslet.question());
+        h.assertTrue(CompanionLocalCommands.route(back, "Олег", two, true) == null, "The island and the islet became one walk");
+        // One place that several markers fit still asks once.
+        var one = CompanionPlaceSpeech.parse("иди к колодцу", "Олег", List.of("колодец", "колодцы"), true);
+        h.assertTrue(one.kind() == CompanionPlaceSpeech.Kind.AMBIGUOUS, "One place with two markers: " + one.kind());
+        h.assertTrue(CompanionLocalCommands.route("иди к колодцу", "Олег", List.of("колодец", "колодцы"), true) == null, "An ambiguous place walked");
+        // «Иди к острову» with the two islands saved is still one question and no walk.
+        var island = CompanionPlaceSpeech.parse("иди к острову", "Олег", two, true);
+        h.assertTrue(island.question() != null && CompanionLocalCommands.route("иди к острову", "Олег", two, true) == null,
+                "The island word walked without asking: " + island.kind());
+        // A single name with a return trip stays local.
+        h.assertTrue("companion place go дача".equals(CompanionLocalCommands.route("иди к даче и обратно", "Олег", List.of("дача"), true)),
+                "«иди к даче и обратно»: " + CompanionLocalCommands.route("иди к даче и обратно", "Олег", List.of("дача"), true));
+        h.succeed();
+    }
+
+    /** «Иди ко мне» and «веди меня ко мне»: a person word is never a marker, even when a marker is called «мне». */
+    @GameTest(template = "empty")
+    public static void personWordsAreNeverMarkerNames(GameTestHelper h) {
+        List<String> markers = List.of("мне", "дача");
+        for (String phrase : List.of("иди ко мне", "иди к нам", "подойди ко мне", "веди меня ко мне")) {
+            var speech = CompanionPlaceSpeech.parse(phrase, "Олег", markers, true);
+            h.assertTrue(speech.kind() == CompanionPlaceSpeech.Kind.NONE && speech.question() == null,
+                    "«" + phrase + "»: " + speech.kind() + " " + speech.question());
+        }
+        h.assertTrue("companion summon".equals(CompanionLocalCommands.route("иди ко мне", "Олег", markers, true)),
+                "«иди ко мне» lost the summon: " + CompanionLocalCommands.route("иди ко мне", "Олег", markers, true));
+        h.assertTrue("companion place go дом".equals(CompanionLocalCommands.route("иди к дому", "Олег", List.of("дом"), true)),
+                "«иди к дому»: " + CompanionLocalCommands.route("иди к дому", "Олег", List.of("дом"), true));
+        h.assertTrue(CompanionPlaceSpeech.parse("забудь меня", "Олег", markers, true).kind() == CompanionPlaceSpeech.Kind.NONE,
+                "«забудь меня» asked about a marker");
+        h.succeed();
+    }
+
+    /** «Забудь цель» and «забудь задачу» stay the orders they were: the goal and stop grammar own those words. */
+    @GameTest(template = "empty")
+    public static void forgettingAnOrderIsNotAMarkerQuestion(GameTestHelper h) {
+        List<String> markers = List.of("дача");
+        h.assertTrue("companion goal cancel".equals(CompanionLocalCommands.route("забудь цель", "Олег", markers, true)),
+                "«забудь цель»: " + CompanionLocalCommands.route("забудь цель", "Олег", markers, true));
+        h.assertTrue(CompanionPlaceSpeech.parse("забудь цель", "Олег", markers, true).kind() == CompanionPlaceSpeech.Kind.NONE,
+                "«забудь цель» asked about a marker");
+        h.assertTrue(CompanionLocalCommands.route("забудь задачу", "Олег", markers, true) == null,
+                "«забудь задачу» became a marker question: " + CompanionLocalCommands.route("забудь задачу", "Олег", markers, true));
+        h.assertTrue(CompanionLocalCommands.route("забудь про молоко", "Олег", markers, true) == null,
+                "«забудь про молоко» became a marker question: " + CompanionLocalCommands.route("забудь про молоко", "Олег", markers, true));
         h.succeed();
     }
 

@@ -63,6 +63,41 @@ public final class CompanionMarkerBoard {
         return true;
     }
 
+    /** What a forget by a spoken name did: how many markers went, and the one honest line naming them. */
+    public record Forgotten(int count, String message) { }
+
+    /**
+     * «Забудь дачу», «забудь метку дачу», «забудь дачу и колодец»: every marker the spoken name means is taken off the
+     * list, and the line names them. A name that fits none says so and touches nothing. The list is the player's, so the
+     * switch of the feature does not stop this.
+     */
+    public static Forgotten forgetSpoken(ServerPlayer player, String said) {
+        if (player == null) return new Forgotten(0, "Тебя нет на сервере — метку забыть не удалось.");
+        var server = player.level().getServer();
+        if (server == null) return new Forgotten(0, "Мир не загружен — метку забыть не удалось.");
+        CompanionMarkers store = CompanionMarkers.get(server);
+        List<CompanionMarkers.Marker> found = store.matching(player.getUUID(), said);
+        if (found.isEmpty()) return new Forgotten(0, "Метки «" + CompanionMarkerNames.clean(said) + "» уже нет.");
+        for (CompanionMarkers.Marker marker : found) store.remove(player.getUUID(), marker.id());
+        refresh(player);
+        List<String> names = found.stream().map(marker -> "«" + marker.name() + "»").toList();
+        return found.size() == 1 ? new Forgotten(1, "Забыл метку " + names.getFirst() + ".")
+                : new Forgotten(found.size(), "Забыл метки " + String.join(", ", names) + ".");
+    }
+
+    /** «Забудь всё»: every marker of this player goes, and the line says how many there were. */
+    public static Forgotten forgetAll(ServerPlayer player) {
+        if (player == null) return new Forgotten(0, "Тебя нет на сервере — метки забыть не удалось.");
+        var server = player.level().getServer();
+        if (server == null) return new Forgotten(0, "Мир не загружен — метки забыть не удалось.");
+        CompanionMarkers store = CompanionMarkers.get(server);
+        List<CompanionMarkers.Marker> all = store.all(player.getUUID());
+        if (all.isEmpty()) return new Forgotten(0, "Меток и так нет.");
+        for (CompanionMarkers.Marker marker : all) store.remove(player.getUUID(), marker.id());
+        refresh(player);
+        return new Forgotten(all.size(), "Забыл все метки: их было " + all.size() + ".");
+    }
+
     /** Moves a marker to the given point, clamped to the world border and the build height of its dimension. */
     public static boolean move(ServerPlayer player, UUID markerId, int x, int y, int z) {
         var server = player.level().getServer();

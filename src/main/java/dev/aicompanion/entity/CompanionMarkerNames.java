@@ -57,6 +57,16 @@ public final class CompanionMarkerNames {
     }
 
     /**
+     * The words of the phrase the name takes («дача» in «иди к даче, потом домой»), as the index of its first and last
+     * word, or null when it fits none of them: the same window {@link #matches} finds.
+     */
+    public static int[] span(String markerName, String said) {
+        List<String> name = tokens(markerName);
+        int from = window(name, tokens(said));
+        return from < 0 ? null : new int[]{from, from + name.size() - 1};
+    }
+
+    /**
      * The spoken phrase without the words the name matched: «даче, потом домой» without «дача» is «потом домой»,
      * and a phrase that is only the name leaves nothing. The words are dropped by their own span, so the punctuation
      * and the words around them stay as the player said them.

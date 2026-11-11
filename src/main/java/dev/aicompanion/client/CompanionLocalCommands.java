@@ -88,6 +88,10 @@ public final class CompanionLocalCommands {
         // («сад и огород», «дом и баня») leaves nothing, so it stays one local step; «иди к даче, потом домой» leaves
         // «потом домой», and the model plans both legs, which one local walk would lose.
         CompanionPlaceSpeech.Result place = CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled);
+        // «Забудь дачу», «удали метку дачу», «забудь всё»: the list is the player's, and the word takes markers off it.
+        // The chat answers it from the store, so no step is checked here and no plan is made.
+        if (place.kind() == CompanionPlaceSpeech.Kind.FORGET || place.kind() == CompanionPlaceSpeech.Kind.FORGET_ALL)
+            return "companion place forget" + (place.name().isEmpty() ? "" : " " + place.name());
         if (place.kind() == CompanionPlaceSpeech.Kind.GO || place.kind() == CompanionPlaceSpeech.Kind.GUARD
                 || place.kind() == CompanionPlaceSpeech.Kind.CARRY) {
             if (!oneStep(place.leftover())) return null;
@@ -126,9 +130,9 @@ public final class CompanionLocalCommands {
         return CompanionEquipmentCommands.parse(normalized);
     }
 
-    /** Words that only soften the order: «и всё», «пожалуйста» after the place ask no second step of him. */
+    /** Words that only soften the order: «и всё», «пожалуйста» after the place ask no second step of him, and «и обратно» is the same one place walked to and back. */
     private static final java.util.Set<String> SOFTENERS = java.util.Set.of("и", "все", "всё", "пожалуйста", "пожалуста",
-            "пожалуй", "спасибо", "ладно", "хорошо", "ок", "ok", "давай", "ну", "плиз");
+            "пожалуй", "спасибо", "ладно", "хорошо", "ок", "ok", "давай", "ну", "плиз", "обратно");
 
     /**
      * True when the words left after the place name are no second step: nothing, or only the words that soften the
@@ -171,7 +175,8 @@ public final class CompanionLocalCommands {
         return give ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
     }
 
-    /** «companion place remember|go|guard|carry <name>»: the name is the rest of the command and may hold spaces. */
+    /** «companion place remember|go|guard|carry <name>»: the name is the rest of the command and may hold spaces.
+     * «companion place forget …» never comes here: the chat answers it from the player's own list. */
     private static PlannedAction placeAction(String command) {
         String rest = command.substring("companion place ".length());
         int cut = rest.indexOf(' ');
@@ -202,6 +207,8 @@ public final class CompanionLocalCommands {
         if (command.startsWith("companion memory ")) return false;
         // Naming a place is a word, not an order: whatever he is busy with goes on, as with the home.
         if (command.startsWith("companion place remember ")) return false;
+        // Forgetting a marker is a word about the player's list too: the walk he is on goes on.
+        if (command.startsWith("companion place forget")) return false;
         // «Построй новый портал» answers his offer to lead the player to one: it replaces that walk.
         return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ")
                 || command.equals("companion work build_portal 1 new");
