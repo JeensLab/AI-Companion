@@ -16,6 +16,7 @@
   "config.aicompanion.long_term_memory": "Long-term memory",
   "config.aicompanion.short_murmurs": "Short idle remarks",
   "config.aicompanion.murmur_interval_percent": "Pause between remarks, %",
+  "config.aicompanion.boat_ride": "Ride in the player's boat",
   "config.aicompanion.guard_nearest_to_player": "Guard: monster nearest to the player",
   "config.aicompanion.other_containers": "Containers other than chests",
   "config.aicompanion.boat_clutch": "Catch a fall in a boat",

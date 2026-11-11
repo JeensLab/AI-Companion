@@ -49,6 +49,7 @@ public final class CompanionPreferences {
                 companion.setMurmurIntervalPercent(murmurInterval);
                 companion.setConversationAvailable(conversationAvailable);
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());
+                companion.setBoatRide(OpenRouterConfig.BOAT_RIDE.get());
                 companion.setGuardByPlayer(OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get());
                 companion.setOtherContainers(OpenRouterConfig.OTHER_CONTAINERS.get());
                 companion.setPickUpNearby(OpenRouterConfig.PICK_UP_NEARBY.get(), OpenRouterConfig.PICK_UP_RADIUS.get());
