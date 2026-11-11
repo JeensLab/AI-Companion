@@ -43,6 +43,9 @@ public final class CompanionWork {
     final CompanionPen pen = new CompanionPen(this); final CompanionBreeding breeding = new CompanionBreeding(this);
     final CompanionCourse course = new CompanionCourse(this);
     final CompanionHouse house;
+    /** A building of the catalogue, kept apart from the plank house so that neither forgets the other. */
+    private final CompanionHouse templateHouse;
+    private boolean templateJob;
     final CompanionObsidian obsidian;
     final CompanionPortalBuild portal;
     /** disenchant_item: the walk to a grindstone, or his own one, and the grinding. */
@@ -283,7 +286,7 @@ public final class CompanionWork {
     }
 
     public CompanionWork(CompanionEntity owner) {
-        this.owner = owner; house = new CompanionHouse(owner); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this);
+        this.owner = owner; house = new CompanionHouse(owner); templateHouse = new CompanionHouse(owner, true); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this);
         pickaxeSense = new CompanionToolSense(owner, "pickaxe", ItemTags.PICKAXES, Blocks.STONE.defaultBlockState());
         shovelSense = new CompanionToolSense(owner, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
     }
@@ -488,7 +491,14 @@ public final class CompanionWork {
             }
             case "build_house" -> {
                 if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
-                job = Job.HOUSE; phase = Phase.BUILD; house.begin();
+                boolean resume = "resume".equals(item);
+                var named = resume ? null : CompanionVillageBuildings.find(item);
+                if (named == null && !resume && item != null && !item.isBlank()) return CompanionActionResult.failed("Такой постройки у меня нет. Умею: " + CompanionVillageBuildings.names() + ".");
+                // «Дострой» names nothing: it goes on with the building left unfinished, if the plank house is not the one left.
+                // No name and no «resume» is always the plank house.
+                templateJob = named != null || resume && templateHouse.unfinished() && !house.unfinished();
+                job = Job.HOUSE; phase = Phase.BUILD;
+                if (named != null) templateHouse.begin(named); else if (templateJob) templateHouse.begin(); else house.begin();
             }
             case "build_pen" -> { CompanionActionResult refusal = pen.begin(item, count); if (refusal != null) return refusal; job = Job.PEN; phase = Phase.PEN; }
             case "breed_animals" -> { CompanionActionResult refusal = breeding.begin(item, count); if (refusal != null) return refusal; job = Job.BREED; phase = Phase.BREED; }
@@ -581,7 +591,7 @@ public final class CompanionWork {
         lots.clear(); heading = null; chests.kind = null;
         clearCracks();
         closeChest();
-        house.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
+        house.cancel(); templateHouse.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null;
         cooldown = 0;
@@ -770,10 +780,11 @@ public final class CompanionWork {
 
     private void buildHouse(ServerLevel level) {
         if (!owner.onGround()) return;
-        var site = house.ensureSite(level);
+        CompanionHouse active = templateJob ? templateHouse : house;
+        var site = active.ensureSite(level);
         if (site != null) { finish(false, site.message()); return; }
-        if (house.needsPreparation() && crafting.approachCraftingTable()) return;
-        CompanionHouse.Result result = house.tick(level);
+        if (active.needsPreparation() && crafting.approachCraftingTable()) return;
+        CompanionHouse.Result result = active.tick(level);
         switch (result.state()) {
             case NEED_WOOD -> crafting.requestWood(Phase.BUILD, result.logs());
             case DONE -> finish(true, result.message());
@@ -891,7 +902,7 @@ public final class CompanionWork {
         tag.putBoolean("WorkActive", isActive());
         tag.putLong("WorkSequence", taskId);
         if (completedResult != null) { tag.putLong("CompletedWorkId", completedId); tag.put("CompletedWorkResult", completedResult.save()); }
-        house.save(tag); pen.save(tag);
+        house.save(tag); templateHouse.save(tag); pen.save(tag);
         if (rememberedChest != null) {
             tag.putLong("StorageChest", rememberedChest.asLong());
             tag.putString("StorageDimension", owner.level().dimension().location().toString());
@@ -902,7 +913,7 @@ public final class CompanionWork {
         taskId = Math.max(taskId, tag.getLong("WorkSequence"));
         completedId = tag.contains("CompletedWorkResult") ? tag.getLong("CompletedWorkId") : -1;
         completedResult = tag.contains("CompletedWorkResult") ? CompanionActionResult.load(tag.getCompound("CompletedWorkResult")) : null;
-        house.load(tag); pen.load(tag);
+        house.load(tag); templateHouse.load(tag); pen.load(tag);
         if (tag.contains("StorageChest") && owner.level().dimension().location().toString().equals(tag.getString("StorageDimension"))) rememberedChest = BlockPos.of(tag.getLong("StorageChest"));
         else if (tag.contains("StorageChest")) { storageElsewhere = new CompoundTag(); storageElsewhere.putLong("StorageChest", tag.getLong("StorageChest")); storageElsewhere.putString("StorageDimension", tag.getString("StorageDimension")); }
         owner.storageStatus(storageForAi());

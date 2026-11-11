@@ -13,11 +13,13 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
@@ -32,8 +34,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** One modest house, built from real items. The saved blueprint also allows interrupted work to resume. */
+/**
+ * One modest house, built from real items. The saved blueprint also allows interrupted work to resume. The same loop builds the
+ * 5×5 plank house or, in an instance made for it, a building of the catalogue from the game's structure template.
+ */
 final class CompanionHouse {
+    static final String TEMPLATE_KEY = "TemplateBuild";
     enum State { WORKING, NEED_WOOD, DONE, FAILED }
     record Result(State state, String message, int logs) {
         static Result working() { return new Result(State.WORKING, "", 0); }
@@ -41,10 +47,19 @@ final class CompanionHouse {
     }
     private record Step(BlockPos pos, BlockState state, int stage) {
         boolean door() { return state.getBlock() instanceof DoorBlock; }
+        /** The cell of the other half put down with this one (a door's upper half, a bed's head), or null for a single block. */
+        BlockPos second() { return door() ? pos.above() : state.getBlock() instanceof BedBlock ? pos.relative(state.getValue(BedBlock.FACING)) : null; }
+        BlockState secondState() { return door() ? state.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER) : state.setValue(BedBlock.PART, BedPart.HEAD); }
         Item item() { return state.getBlock().asItem(); }
     }
     private static final List<String> WOODS = List.of("oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "crimson", "warped");
     private final CompanionEntity owner;
+    /** Builds a building of the catalogue (saved under its own key) instead of the plank house. */
+    private final boolean template;
+    private CompanionVillageBuildings.Building building;
+    private CompanionTemplates.Loaded loaded;
+    /** The number of blocks of the saved building: known before its template is read again after a load. */
+    private int total;
     private BlockPos base;
     private String wood = "oak";
     private final BitSet placed = new BitSet();
@@ -60,7 +75,22 @@ final class CompanionHouse {
     private double bestDistance;
     private final java.util.HashSet<Integer> unreachable = new java.util.HashSet<>();
 
-    CompanionHouse(CompanionEntity owner) { this.owner = owner; }
+    CompanionHouse(CompanionEntity owner) { this(owner, false); }
+    CompanionHouse(CompanionEntity owner, boolean template) { this.owner = owner; this.template = template; }
+
+    /** A building of the catalogue: the one already under way goes on, any other (or a finished one) starts at a new site. */
+    void begin(CompanionVillageBuildings.Building next) {
+        if (building != next || base != null && placed.cardinality() == total) {
+            building = next; loaded = null; steps = List.of(); total = 0; base = null; placed.clear(); workbench = null; elsewhere = null;
+        }
+        begin();
+    }
+
+    /** A saved building or house with blocks still to place. */
+    boolean unfinished() {
+        int size = steps.isEmpty() ? total : steps.size();
+        return base != null && (size == 0 || placed.cardinality() < size);
+    }
 
     void begin() {
         prepared = false;
@@ -100,25 +130,43 @@ final class CompanionHouse {
                 && !level.getBlockState(base.offset(4, 1, 2)).isAir()
                 && !level.getBlockState(base.offset(2, 1, 4)).isAir();
     }
+    private String key() { return template ? TEMPLATE_KEY : "SmallHouse"; }
+    private int width() { return template ? loaded.sizeX() : 5; }
+    private int depth() { return template ? loaded.sizeZ() : 5; }
+    private int height() { return template ? loaded.sizeY() : 6; }
+    private boolean planks(Item item) { return template ? new ItemStack(item).is(ItemTags.PLANKS) : item == block("planks").asItem(); }
+    private String label() { return template ? building.name() : "дом"; }
+
+    private Result loadTemplate(ServerLevel level) {
+        if (!template || loaded != null) return null;
+        loaded = CompanionTemplates.load(level, building);
+        return loaded == null ? Result.failed("Не нашёл в игре шаблон постройки «" + building.name() + "».") : null;
+    }
+
     Result ensureSite(ServerLevel level) {
+        Result unreadable = loadTemplate(level);
+        if (unreadable != null) return unreadable;
         if (base != null) return null;
         int busy = owner.work.route.busyAnswers();
         base = findSite(level);
         // A site it could not search to for want of this tick's cells is not rejected: tick() looks again next tick.
-        return base == null && owner.work.route.busyAnswers() == busy ? Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.") : null;
+        return base == null && owner.work.route.busyAnswers() == busy ? Result.failed("Не нашёл ровную свободную площадку " + (width() + 2) + "×" + (depth() + 2) + " рядом. Давай выберем место попросторнее.") : null;
     }
 
     Result tick(ServerLevel level) {
         if (!owner.onGround()) return Result.working();
+        Result unreadable = loadTemplate(level);
+        if (unreadable != null) return unreadable;
         if (base == null) {
             int busy = owner.work.route.busyAnswers();
             base = findSite(level);
             if (base == null && owner.work.route.busyAnswers() != busy) return Result.working();
-            if (base == null) return Result.failed("Не нашёл ровную свободную площадку 7×7 рядом. Давай выберем место попросторнее.");
+            if (base == null) return Result.failed("Не нашёл ровную свободную площадку " + (width() + 2) + "×" + (depth() + 2) + " рядом. Давай выберем место попросторнее.");
         }
         if (!prepared) {
-            if (placed.isEmpty()) wood = chooseWood();
+            if (placed.isEmpty() && !template) wood = chooseWood();
             steps = blueprint();
+            total = steps.size();
             Result checked = checkBlueprint(level);
             if (checked != null) return checked;
             if (placed.cardinality() == steps.size()) return finished();
@@ -164,12 +212,13 @@ final class CompanionHouse {
             if (material.isEmpty()) { prepared = false; cancel(); return Result.working(); }
             if (!supported(level, step) || !step.state.canSurvive(level, step.pos)) return Result.failed("Опора дома изменилась. Сначала нужно восстановить площадку.");
             BlockState previous = level.getBlockState(step.pos);
-            BlockState above = step.door() ? level.getBlockState(step.pos.above()) : null;
+            BlockPos second = step.second();
+            BlockState beside = second == null ? null : level.getBlockState(second);
             if (!level.setBlock(step.pos, step.state, 3)) return Result.failed("Не получилось поставить блок дома. Материалы сохранил.");
-            if (step.door() && !level.setBlock(step.pos.above(), step.state.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER), 3)) {
+            if (second != null && !level.setBlock(second, step.secondState(), 3)) {
                 level.setBlock(step.pos, previous, 3);
-                level.setBlock(step.pos.above(), above, 3);
-                return Result.failed("Не получилось установить дверь. Материалы сохранил.");
+                level.setBlock(second, beside, 3);
+                return Result.failed("Не получилось установить дверь или кровать. Материалы сохранил.");
             }
             owner.animateAction(1, step.pos, material);
             owner.rememberPlaced(step.pos);
@@ -179,7 +228,7 @@ final class CompanionHouse {
             var sound = step.state.getSoundType();
             level.playSound(null, step.pos, sound.getPlaceSound(), SoundSource.BLOCKS, .65F, 1F);
             placed.set(target);
-            owner.workStatus("Строю дом: " + placed.cardinality() + " из " + steps.size() + " блоков. Место: " + base.toShortString() + ".");
+            owner.workStatus("Строю " + label() + ": " + placed.cardinality() + " из " + steps.size() + " блоков. Место: " + base.toShortString() + ".");
             target = -1; path = null; cooldown = 5; unreachable.clear();
         } else {
             if (level.getGameTime() - progressTime > 160) {
@@ -198,10 +247,17 @@ final class CompanionHouse {
         target = index; path = null; progressTime = level.getGameTime(); bestDistance = Double.MAX_VALUE;
     }
 
-    private Result finished() { return new Result(State.DONE, "Дом готов. Вход с северной стороны, координаты: " + base.offset(2, 1, 0).toShortString() + ".", 0); }
+    private Result finished() {
+        if (template) return new Result(State.DONE, "Построил: " + building.name() + ". Место: " + base.toShortString() + ".", 0);
+        return new Result(State.DONE, "Дом готов. Вход с северной стороны, координаты: " + base.offset(2, 1, 0).toShortString() + ".", 0);
+    }
 
     private List<Step> blueprint() {
         List<Step> result = new ArrayList<>();
+        if (template) {
+            for (var cell : loaded.cells()) result.add(new Step(base.offset(cell.rel()), cell.state(), cell.stage()));
+            return List.copyOf(result);
+        }
         BlockState planks = block("planks").defaultBlockState();
         for (int z = 0; z < 5; z++) for (int x = 0; x < 5; x++) result.add(new Step(base.offset(x, 0, z), planks, 0));
         result.add(new Step(base.offset(2, 0, -1), block("stairs").defaultBlockState().setValue(StairBlock.FACING, Direction.SOUTH), 0));
@@ -256,12 +312,12 @@ final class CompanionHouse {
         }
         Map<Item, Integer> required = new LinkedHashMap<>();
         // Planks must be planned last: the other recipes consume some of them.
-        for (int index = 0; index < steps.size(); index++) if (!placed.get(index) && !steps.get(index).state.is(block("planks"))) required.merge(steps.get(index).item(), 1, Integer::sum);
-        for (int index = 0; index < steps.size(); index++) if (!placed.get(index) && steps.get(index).state.is(block("planks"))) required.merge(steps.get(index).item(), 1, Integer::sum);
+        for (int index = 0; index < steps.size(); index++) if (!placed.get(index) && !planks(steps.get(index).item())) required.merge(steps.get(index).item(), 1, Integer::sum);
+        for (int index = 0; index < steps.size(); index++) if (!placed.get(index) && planks(steps.get(index).item())) required.merge(steps.get(index).item(), 1, Integer::sum);
         List<ItemStack> trial = inventory();
         boolean tableNearby = owner.hasCraftingTableNearby();
         boolean needsStation = false;
-        for (var entry : required.entrySet()) if (entry.getKey() != block("planks").asItem() && count(trial, entry.getKey()) < entry.getValue()) needsStation = true;
+        for (var entry : required.entrySet()) if (!planks(entry.getKey()) && count(trial, entry.getKey()) < entry.getValue()) needsStation = true;
         if (needsStation && !tableNearby && workbench != null && level.hasChunkAt(workbench) && level.getBlockState(workbench).is(Blocks.CRAFTING_TABLE)) {
             Step station = new Step(workbench, Blocks.CRAFTING_TABLE.defaultBlockState(), 0);
             Path returnPath = route(level, station);
@@ -278,6 +334,7 @@ final class CompanionHouse {
                         Math.min(64, entry.getValue() - count(trial, entry.getKey())), tableNearby || placeTable);
                 if (!plan.success()) {
                     if (plan.message().contains("места") || plan.message().contains("сложная")) return Result.failed(plan.message());
+                    if (template) return Result.failed(shortage(required, trial));
                     int equivalent = required.getOrDefault(block("planks").asItem(), 0)
                             + ((required.getOrDefault(block("slab").asItem(), 0) + 5) / 6) * 3
                             + ((required.getOrDefault(block("stairs").asItem(), 0) + 3) / 4) * 6
@@ -311,6 +368,16 @@ final class CompanionHouse {
         return null;
     }
 
+    /** What the bag still lacks for the building, item by item; the bag and the world stay as they are. */
+    private String shortage(Map<Item, Integer> required, List<ItemStack> bag) {
+        List<String> lacking = new ArrayList<>();
+        for (var entry : required.entrySet()) {
+            int missing = entry.getValue() - count(bag, entry.getKey());
+            if (missing > 0) lacking.add(missing + " × " + new ItemStack(entry.getKey()).getHoverName().getString());
+        }
+        return "Для постройки «" + building.name() + "» не хватает: " + String.join(", ", lacking) + ". Материалы сохранил, ничего не построил.";
+    }
+
     private List<ItemStack> inventory() {
         List<ItemStack> result = new ArrayList<>();
         for (int slot = 0; slot < owner.getContainerSize(); slot++) result.add(owner.getItem(slot).copy());
@@ -333,7 +400,7 @@ final class CompanionHouse {
         }
         return null;
     }
-    private boolean reserved(BlockPos pos) { return pos.getX() >= base.getX() - 1 && pos.getX() <= base.getX() + 5 && pos.getZ() >= base.getZ() - 1 && pos.getZ() <= base.getZ() + 5; }
+    private boolean reserved(BlockPos pos) { return pos.getX() >= base.getX() - 1 && pos.getX() <= base.getX() + width() && pos.getZ() >= base.getZ() - 1 && pos.getZ() <= base.getZ() + depth(); }
 
     private BlockPos findSite(ServerLevel level) {
         BlockPos center = owner.blockPosition();
@@ -341,7 +408,7 @@ final class CompanionHouse {
             for (int dx = -radius; dx <= radius; dx += 2) for (int dz = -radius; dz <= radius; dz += 2) {
                 if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
                 for (int dy : new int[]{0, -1, 1, -2, 2, -3}) {
-                    BlockPos corner = center.offset(dx - 2, dy, dz - 2);
+                    BlockPos corner = center.offset(dx - width() / 2, dy, dz - depth() / 2);
                     if (siteClear(level, corner)) return corner;
                 }
             }
@@ -349,13 +416,13 @@ final class CompanionHouse {
         return null;
     }
     private boolean siteClear(ServerLevel level, BlockPos corner) {
-        for (int x = -1; x <= 5; x++) for (int z = -1; z <= 5; z++) {
+        for (int x = -1; x <= width(); x++) for (int z = -1; z <= depth(); z++) {
             BlockPos floor = corner.offset(x, -1, z);
             if (!level.hasChunkAt(floor) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP) || !level.getFluidState(floor).isEmpty()) return false;
-            for (int y = 0; y <= 5; y++) if (!replaceable(level, corner.offset(x, y, z))) return false;
+            for (int y = 0; y < height(); y++) if (!replaceable(level, corner.offset(x, y, z))) return false;
         }
-        if (!level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner.offset(-1, 0, -1)), Vec3.atLowerCornerOf(corner.offset(6, 6, 6))), entity -> entity.isAlive()).isEmpty()) return false;
-        return owner.work.route.toCells(Set.of(corner.offset(2, 0, -1), corner.offset(-1, 0, 2), corner.offset(5, 0, 2))) != null;
+        if (!level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner.offset(-1, 0, -1)), Vec3.atLowerCornerOf(corner.offset(width() + 1, height(), depth() + 1))), entity -> entity.isAlive()).isEmpty()) return false;
+        return owner.work.route.toCells(Set.of(corner.offset(width() / 2, 0, -1), corner.offset(-1, 0, depth() / 2), corner.offset(width(), 0, depth() / 2))) != null;
     }
 
     private Result checkBlueprint(ServerLevel level) {
@@ -363,18 +430,23 @@ final class CompanionHouse {
             Step step = steps.get(index);
             if (!level.hasChunkAt(step.pos)) return Result.failed("Стройка сейчас за пределами загруженной области. Вернёмся поближе и продолжим.");
             if (placed.get(index) && !matches(level, step)) placed.clear(index);
+            // A building is judged by its blocks in the world: one that already stands (a saved bit lost) is not placed again.
+            if (template && !placed.get(index) && matches(level, step)) placed.set(index);
             if (!placed.get(index) && !free(level, step)) return Result.failed("На месте дома появились чужие блоки. Не буду их ломать; освободи площадку и попроси достроить дом.");
         }
         return null;
     }
     private boolean matches(ServerLevel level, Step step) {
         BlockState actual = level.getBlockState(step.pos);
-        if (!step.door()) return actual.equals(step.state);
+        // Neighbours reshape stairs and panes after the block is down, so a building counts by the kind of block.
+        if (step.state.getBlock() instanceof BedBlock) return actual.is(step.state.getBlock()) && actual.getValue(BedBlock.PART) == BedPart.FOOT
+                && level.getBlockState(step.second()).is(step.state.getBlock());
+        if (!step.door()) return template ? actual.is(step.state.getBlock()) : actual.equals(step.state);
         BlockState top = level.getBlockState(step.pos.above());
         return actual.is(step.state.getBlock()) && actual.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER
                 && top.is(step.state.getBlock()) && top.getValue(DoorBlock.HALF) == DoubleBlockHalf.UPPER;
     }
-    private boolean free(ServerLevel level, Step step) { return replaceable(level, step.pos) && (!step.door() || replaceable(level, step.pos.above())); }
+    private boolean free(ServerLevel level, Step step) { return replaceable(level, step.pos) && (step.second() == null || replaceable(level, step.second())); }
     private boolean replaceable(ServerLevel level, BlockPos pos) {
         return level.hasChunkAt(pos) && level.getWorldBorder().isWithinBounds(pos) && !level.isOutsideBuildHeight(pos)
                 && level.getBlockEntity(pos) == null && level.getFluidState(pos).isEmpty() && level.getBlockState(pos).canBeReplaced();
@@ -387,9 +459,9 @@ final class CompanionHouse {
         return false;
     }
     private boolean canPlaceFromHere(ServerLevel level, Step step) {
-        if (!owner.onGround() || step.door() && owner.getZ() >= base.getZ()) return false;
+        if (!owner.onGround() || !template && step.door() && owner.getZ() >= base.getZ()) return false;
         AABB box = new AABB(step.pos);
-        if (step.door()) box = box.expandTowards(0, 1, 0);
+        if (step.second() != null) box = box.minmax(new AABB(step.second()));
         return level.noCollision(box) && visible(level, owner.getEyePosition(), step.pos);
     }
     private boolean visible(ServerLevel level, Vec3 eye, BlockPos pos) {
@@ -410,11 +482,11 @@ final class CompanionHouse {
         Set<BlockPos> feet = new java.util.HashSet<>();
         for (int y = 0; y <= 1; y++) for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) {
             BlockPos pos = new BlockPos(step.pos.getX() + dx, base.getY() + y, step.pos.getZ() + dz);
-            if (step.door() && pos.getZ() >= base.getZ()) continue;
+            if (!template && step.door() && pos.getZ() >= base.getZ()) continue;
             if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.below()) || !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty()) continue;
             if (!level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) continue;
             AABB body = new AABB(pos.getX() + .2, pos.getY(), pos.getZ() + .2, pos.getX() + .8, pos.getY() + owner.getBbHeight(), pos.getZ() + .8);
-            if (body.intersects(new AABB(step.pos)) || step.door() && body.intersects(new AABB(step.pos.above()))) continue;
+            if (body.intersects(new AABB(step.pos)) || step.second() != null && body.intersects(new AABB(step.second()))) continue;
             if (!level.noCollision(owner, body) || !visible(level, Vec3.atBottomCenterOf(pos).add(0, owner.getEyeHeight(), 0), step.pos)) continue;
             feet.add(pos);
         }
@@ -424,23 +496,28 @@ final class CompanionHouse {
     }
 
     void save(CompoundTag tag) {
-        if (base == null) { if (elsewhere != null) tag.put("SmallHouse", elsewhere.copy()); return; }
+        if (base == null) { if (elsewhere != null) tag.put(key(), elsewhere.copy()); return; }
         CompoundTag data = new CompoundTag();
         data.putLong("Base", base.asLong());
-        data.putString("Wood", wood);
+        if (template) { data.putString("Building", building.name()); data.putInt("Total", total); }
+        else data.putString("Wood", wood);
         data.putString("Dimension", owner.level().dimension().location().toString());
         data.putLongArray("Placed", placed.toLongArray());
         if (workbench != null) data.putLong("Workbench", workbench.asLong());
-        tag.put("SmallHouse", data);
+        tag.put(key(), data);
     }
     void load(CompoundTag tag) {
         base = null; workbench = null; placed.clear(); begin(); elsewhere = null;
-        CompoundTag data = tag.getCompound("SmallHouse");
-        if (!data.contains("Base") || !WOODS.contains(data.getString("Wood"))) return;
+        if (template) { building = null; loaded = null; steps = List.of(); total = 0; }
+        CompoundTag data = tag.getCompound(key());
+        if (!data.contains("Base") || (template ? CompanionVillageBuildings.find(data.getString("Building")) == null : !WOODS.contains(data.getString("Wood")))) return;
         if (!owner.level().dimension().location().toString().equals(data.getString("Dimension"))) { elsewhere = data.copy(); return; }
-        base = BlockPos.of(data.getLong("Base")); wood = data.getString("Wood"); steps = blueprint();
+        base = BlockPos.of(data.getLong("Base"));
+        if (template) { building = CompanionVillageBuildings.find(data.getString("Building")); total = data.getInt("Total"); }
+        else { wood = data.getString("Wood"); steps = blueprint(); }
         if (data.contains("Workbench")) workbench = BlockPos.of(data.getLong("Workbench"));
         placed.or(BitSet.valueOf(data.getLongArray("Placed")));
-        placed.clear(steps.size(), Math.max(steps.size(), placed.length()));
+        int size = template ? total : steps.size();
+        placed.clear(size, Math.max(size, placed.length()));
     }
 }

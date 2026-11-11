@@ -64,7 +64,7 @@ public final class CompanionDialogue {
             case "store_items" -> "Сейчас сложу " + CompanionContainers.into(actions.getFirst().location()) + ".";
             case "sort_chests" -> "Сейчас разложу по сундукам.";
             case "take_items" -> "Сейчас заберу " + CompanionContainers.from(actions.getFirst().location()) + ".";
-            case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
+            case "build_house" -> actions.getFirst().item().isEmpty() ? "Окей, построю нам небольшой деревянный дом." : "resume".equals(actions.getFirst().item()) ? "Окей, дострою." : "Окей, построю: " + actions.getFirst().item() + ".";
             case "build_portal" -> "Окей, займусь порталом в Незер.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";

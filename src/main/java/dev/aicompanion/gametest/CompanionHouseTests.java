@@ -7,6 +7,15 @@ import dev.aicompanion.client.CompanionWorkCommands;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -138,6 +147,7 @@ public final class CompanionHouseTests {
     public static void theHouseProtocolIsValidated(GameTestHelper helper) {
         helper.assertTrue("build_house".equals(CompanionWorkCommands.parse("Олег, построй нам небольшой деревянный дом", "Олег").type()), "House command not recognized");
         helper.assertTrue("build_house".equals(CompanionWorkCommands.parse("дострой дом", "Олег").type()), "Resume not recognized");
+        helper.assertTrue("resume".equals(CompanionWorkCommands.parse("дострой дом", "Олег").item()) && CompanionWorkCommands.parse("построй дом", "Олег").item().isEmpty(), "Only «дострой» resumes; «построй дом» is the plank house");
         helper.assertTrue(CompanionWorkCommands.parse("не построй дом", "Олег") == null && CompanionWorkCommands.parse("построй дом и вернись", "Олег") == null, "Partial/negative command accepted");
         helper.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"build_house\"}]")).size() == 1, "House model protocol rejected");
         boolean rejected = false;
@@ -158,6 +168,118 @@ public final class CompanionHouseTests {
             helper.assertTrue(!companion.didLastTaskSucceed() && count(companion, Items.OAK_LOG) == 32, "Occupied site used or inventory changed");
             helper.assertTrue(countBlocks(helper, Blocks.GOLD_BLOCK) == 64 && countBlocks(helper, Blocks.OAK_PLANKS) == 0, "Existing blocks were removed");
         });
+    }
+
+    private static final String VILLAGE_HOUSE = "пустынный дом";
+    private static final ResourceLocation VILLAGE_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/desert/houses/desert_small_house_4");
+
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void villageHouseStandsLikeItsTemplateAndSpendsTheBag(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        Map<Item, Integer> bag = placeReference(helper);
+        fill(companion, bag);
+        helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains(VILLAGE_HOUSE), companion.getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(companion));
+            for (Item item : bag.keySet()) helper.assertTrue(count(companion, item) == 0, "Bag still holds " + item + ": blocks were not all taken from it");
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 9000)
+    public static void villageHouseResumesAfterStopAndReloadWithoutDuplicates(GameTestHelper helper) {
+        CompanionEntity original = setup(helper);
+        Map<Item, Integer> bag = placeReference(helper);
+        fill(original, bag);
+        int total = bag.values().stream().mapToInt(Integer::intValue).sum();
+        CompanionEntity[] current = {original};
+        long[] stopped = {-1};
+        helper.onEachTick(() -> {
+            if (stopped[0] < 0 && saved(current[0]).getCompound("TemplateBuild").getLongArray("Placed").length > 0
+                    && bag.keySet().stream().mapToInt(item -> count(original, item)).sum() < total - 60) {
+                current[0].stopGathering();
+                stopped[0] = helper.getTick();
+                CompoundTag data = new CompoundTag(); original.saveWithoutId(data); original.discard();
+                helper.runAfterDelay(1, () -> {
+                    CompanionEntity replacement = AICompanionMod.COMPANION.get().create(helper.getLevel());
+                    replacement.load(data); helper.getLevel().addFreshEntity(replacement); current[0] = replacement;
+                });
+            }
+            if (stopped[0] >= 0 && helper.getTick() - stopped[0] == 30) helper.assertTrue(current[0].startWork("build_house", "resume", 1).success(), "Resume rejected");
+        });
+        helper.assertTrue(original.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stopped[0] >= 0 && helper.getTick() - stopped[0] > 40, "Not resumed yet");
+            done(helper, current[0]);
+            helper.assertTrue(current[0].didLastTaskSucceed(), current[0].getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(current[0]));
+            for (Item item : bag.keySet()) helper.assertTrue(count(current[0], item) == 0, "Resume spent or left a different amount of " + item);
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void villageHouseWithMissingMaterialsNamesThemAndBuildsNothing(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 10));
+        helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("не хватает"), companion.getLastTaskResult());
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == 10 && countBlocks(helper, Blocks.COBBLESTONE) == 0, "Shortage consumed materials or placed blocks");
+        });
+    }
+
+    @GameTest(template = "empty")
+    public static void buildingNamesComeOnlyFromTheCatalogue(GameTestHelper helper) {
+        var named = CompanionWorkCommands.parse("построй " + VILLAGE_HOUSE, "Олег");
+        helper.assertTrue(named != null && "build_house".equals(named.type()) && VILLAGE_HOUSE.equals(named.item()), "Catalogue building not recognized");
+        helper.assertTrue(CompanionWorkCommands.parse("построй дом", "Олег").item().isEmpty(), "Plain house got a building name");
+        helper.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"build_house\",\"item\":\"" + VILLAGE_HOUSE + "\"}]")).getFirst().item().equals(VILLAGE_HOUSE), "Catalogue name rejected");
+        boolean rejected = false;
+        try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"wait\"},{\"action\":\"build_house\",\"item\":\"замок дракона\"}]")); } catch (IllegalStateException expected) { rejected = true; }
+        helper.assertTrue(rejected, "A building outside the catalogue was accepted");
+        helper.succeed();
+    }
+
+    /** The vanilla template placed in the arena corner is the reference; returns what the bag needs to build one more like it. */
+    private static Map<Item, Integer> placeReference(GameTestHelper helper) {
+        var template = helper.getLevel().getServer().getStructureManager().get(VILLAGE_HOUSE_TEMPLATE).orElseThrow();
+        BlockPos at = helper.absolutePos(new BlockPos(1, 1, 1));
+        template.placeInWorld(helper.getLevel(), at, at, new StructurePlaceSettings().setIgnoreEntities(true), RandomSource.create(1), 2);
+        Map<Item, Integer> needed = new LinkedHashMap<>();
+        for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(7, 7, 7))) {
+            BlockState state = helper.getBlockState(rel);
+            if (state.isAir() || state.is(Blocks.JIGSAW) || state.is(Blocks.STRUCTURE_VOID) || isSecondHalf(state)) continue;
+            needed.merge(state.getBlock().asItem(), 1, Integer::sum);
+        }
+        return needed;
+    }
+    private static boolean isSecondHalf(BlockState state) {
+        return state.getBlock() instanceof DoorBlock && state.getValue(DoorBlock.HALF) == DoubleBlockHalf.UPPER
+                || state.getBlock() instanceof BedBlock && state.getValue(BedBlock.PART) == BedPart.HEAD;
+    }
+    private static void fill(CompanionEntity companion, Map<Item, Integer> needed) {
+        int slot = 0;
+        for (var entry : needed.entrySet()) companion.setItem(slot++, new ItemStack(entry.getKey(), entry.getValue()));
+    }
+    private static BlockPos templateBase(CompanionEntity companion) { return BlockPos.of(saved(companion).getCompound("TemplateBuild").getLong("Base")); }
+    /** Every block of the reference stands at the same place of the new building: the kind, and the properties that turn it. */
+    private static void assertLooksLikeReference(GameTestHelper helper, BlockPos base) {
+        int checked = 0;
+        for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(7, 7, 7))) {
+            BlockState want = helper.getBlockState(rel);
+            if (want.isAir() || want.is(Blocks.JIGSAW) || want.is(Blocks.STRUCTURE_VOID)) continue;
+            BlockState got = helper.getLevel().getBlockState(base.offset(rel.getX() - 1, rel.getY() - 1, rel.getZ() - 1));
+            helper.assertTrue(got.is(want.getBlock()), "Block " + rel + " is " + got.getBlock() + ", the template has " + want.getBlock());
+            if (want.is(Blocks.CHEST)) helper.assertTrue(helper.getLevel().getBlockEntity(base.offset(rel.getX() - 1, rel.getY() - 1, rel.getZ() - 1)) instanceof Container chest && chest.isEmpty(), "Chest is not empty");
+            for (var property : want.getProperties()) {
+                if (Set.of("facing", "axis", "half", "part").contains(property.getName()))
+                    helper.assertTrue(got.getValue(property).equals(want.getValue(property)), "Block " + rel + " is turned differently: " + property.getName());
+            }
+            checked++;
+        }
+        helper.assertTrue(checked > 60, "Reference too small to prove anything: " + checked);
     }
 
     private static CompanionEntity setup(GameTestHelper helper) {
