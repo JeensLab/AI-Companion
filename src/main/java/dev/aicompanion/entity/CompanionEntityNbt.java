@@ -44,6 +44,7 @@ final class CompanionEntityNbt {
         tag.putBoolean("GuardByPlayer", c.guardByPlayer());
         tag.putBoolean("OtherContainers", c.otherContainers());
         tag.putBoolean("BoatClutch", c.boatClutch());
+        tag.putBoolean("Replant", c.replantSaplings());
         tag.putInt("DeathRecoveryAttempts", c.deathRecoveryAttempts());
         tag.putInt("DeathRecoveryDeaths", c.deathRecoveryDeaths());
         c.goals.save(tag);
@@ -83,6 +84,7 @@ final class CompanionEntityNbt {
         c.setGuardByPlayer(!tag.contains("GuardByPlayer") || tag.getBoolean("GuardByPlayer"));
         c.setOtherContainers(!tag.contains("OtherContainers") || tag.getBoolean("OtherContainers"));
         c.setBoatClutch(!tag.contains("BoatClutch") || tag.getBoolean("BoatClutch"));
+        c.setReplantSaplings(!tag.contains("Replant") || tag.getBoolean("Replant"));
         c.setDeathRecoveryLimits(tag.contains("DeathRecoveryAttempts") ? tag.getInt("DeathRecoveryAttempts") : 5,
                 tag.contains("DeathRecoveryDeaths") ? tag.getInt("DeathRecoveryDeaths") : 10); c.refreshPlaces();
         c.social.load(tag);

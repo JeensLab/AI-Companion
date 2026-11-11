@@ -139,6 +139,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
+    private boolean replantOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -151,6 +152,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
+    /** Saplings for the stumps of the trees he fells (RYVTB). */
+    final CompanionReplant replant = new CompanionReplant(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -633,6 +636,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
     public boolean boatClutch() { return boatClutchOn; }
     public void setBoatClutch(boolean on) { boatClutchOn = on; }
+    /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag (the player can turn it off in the settings). */
+    public boolean replantSaplings() { return replantOn; }
+    public void setReplantSaplings(boolean on) { replantOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
