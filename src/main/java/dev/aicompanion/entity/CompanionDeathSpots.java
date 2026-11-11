@@ -74,7 +74,7 @@ public final class CompanionDeathSpots extends SavedData {
     public void died(UUID owner, UUID id, ResourceKey<Level> dimension, BlockPos pos, double worth, long tick, List<Entry> manifest) {
         List<Spot> list = spots.computeIfAbsent(owner, key -> new ArrayList<>());
         list.add(new Spot(id, dimension, pos.immutable(), worth, tick, 0, 0, manifest));
-        while (list.size() > MOST) list.remove(0);
+        while (list.size() > MOST) list.remove(list.indexOf(list.subList(0, list.size() - 1).stream().min(Comparator.comparingDouble(Spot::worth)).get())); // the cheapest before this one, the older on a tie
         setDirty();
     }
 

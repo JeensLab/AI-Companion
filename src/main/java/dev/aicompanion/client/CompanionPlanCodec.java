@@ -98,6 +98,7 @@ public final class CompanionPlanCodec {
             List<PlannedAction> result = new ArrayList<>();
             for (JsonElement element : steps) {
                 JsonObject step = element.getAsJsonObject();
+                step.entrySet().removeIf(field -> field.getValue().isJsonNull()); // "count": null is a missing count, not a broken plan
                 String type = step.get("action").getAsString();
                 if (!ACTIONS.contains(type)) throw invalid();
                 // No number from the model: what the prompt promises it (ore 4, stone 8), not a single block (game log 22.10).
