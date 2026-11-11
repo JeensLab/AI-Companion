@@ -25,6 +25,8 @@ final class CompanionChests {
     /** The block id a store or take order named («в бочку»); null for an order that names none, which means the chests. */
     String kind;
     private static final int ORDER_MAX = 64;
+    /** How long «the chest I just set down» stays the target of a store order: a later request must go the old way. */
+    private static final int PLACED_HINT_TICKS = 20 * 60;
     static final CompanionActionResult COUNT_REFUSED = CompanionActionResult.failed("За раз можно добыть от 1 до 64 блоков.");
 
     CompanionChests(CompanionWork w) { this.w = w; }
@@ -272,9 +274,18 @@ final class CompanionChests {
     private BlockPos placedChest(ServerLevel level) {
         BlockPos pos = w.owner.lastPlacedPosition();
         if (pos == null) return null;
+        // A chest whose walk already failed is not handed back: the old order moves on to the next one (main did).
+        if (w.triedChests.contains(pos)) return null;
+        // The hint is good for the request it was placed for only: an old placement must not hijack a later one.
+        if (level.getGameTime() - w.owner.lastPlacedTick > PLACED_HINT_TICKS) {
+            w.owner.lastPlacedPosition = null;
+            return null;
+        }
         int radius = Math.min(32, w.owner.getSearchRadius());
         if (pos.distSqr(w.owner.blockPosition()) > radius * radius) return null;
         if (w.owner.ownPlacesOnly() && (!w.owner.placedByMe(pos) || !w.owner.leashAllows(pos))) return null;
+        // An order inside the house uses only its interior, as usableChests does.
+        if (w.insideHouse && !w.house.inside(pos)) return null;
         Container chest = containerAt(level, pos);
         if (chest == null) {
             // What he set down is gone or is no container this order may use: the next order goes the old way.

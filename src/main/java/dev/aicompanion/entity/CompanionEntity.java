@@ -162,6 +162,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private net.minecraft.world.phys.Vec3 previousActivityPosition;
     private boolean activityMoved;
     BlockPos lastPlacedPosition;
+    /** Game tick of that placement: the hint of «the chest I just set down» is good for a limited time only. */
+    long lastPlacedTick;
     BlockPos lastPlacedPosition() { return lastPlacedPosition; }
     final CompanionSocial social = new CompanionSocial(this);
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);

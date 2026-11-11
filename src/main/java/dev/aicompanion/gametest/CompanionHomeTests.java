@@ -459,7 +459,7 @@ public final class CompanionHomeTests {
     private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos pos, Block block) { h.setBlock(pos, block); placedByPlayer(h, c, pos); }
 
     /** The house of a save from before homes: its blocks, and a blueprint with every step placed. */
-    private static void house(GameTestHelper h, CompanionEntity c, BlockPos base) {
+    static void house(GameTestHelper h, CompanionEntity c, BlockPos base) {
         for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
             h.setBlock(base.offset(x, 0, z), Blocks.OAK_PLANKS); h.setBlock(base.offset(x, 4, z), Blocks.OAK_SLAB);
             if (x == 0 || x == 4 || z == 0 || z == 4) for (int y = 1; y <= 3; y++) h.setBlock(base.offset(x, y, z), Blocks.OAK_PLANKS);

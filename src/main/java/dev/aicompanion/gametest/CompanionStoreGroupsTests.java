@@ -144,4 +144,110 @@ public final class CompanionStoreGroupsTests {
             helper.assertTrue(count(companion, Items.COBBLESTONE) == 0, "Stone stayed in the bag: " + companion.getStoredItemsSummary());
         });
     }
+
+    /** An unreachable placed chest is marked tried, so the next usable chest is filled instead of retrying it until the order stalls. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void unreachablePlacedChestFallsBackToTheNextUsableChest(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        Container fallback = chest(helper, 2);
+        fallback.setItem(0, new ItemStack(Items.COBBLESTONE, 5));
+        companion.setItem(0, new ItemStack(Items.CHEST));
+        companion.setItem(1, new ItemStack(Items.COBBLESTONE, 12));
+        companion.startWork("place_chest", "", 1);
+        boolean[] storeStarted = {false};
+        helper.onEachTick(() -> {
+            if (storeStarted[0] || companion.hasActiveWorkOrder()) return;
+            BlockPos fresh = null;
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 4, 31)))
+                if (helper.getBlockState(pos).is(Blocks.CHEST) && !pos.equals(new BlockPos(2, 1, 13))) { fresh = pos.immutable(); break; }
+            helper.assertTrue(fresh != null, "The place order set no chest down: " + companion.getLastTaskResult());
+            // Wall it in: no cell within reach has a clear view or a floor to stand on, so the walk cannot get there.
+            // The cell above stays a slab: the chest is still openable there, but nobody can stand in it.
+            for (int dx = -2; dx <= 2; dx++) for (int dy = -2; dy <= 2; dy++) for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dy == 0 && dz == 0 || dx == 0 && dy == 1 && dz == 0) continue;
+                helper.setBlock(fresh.offset(dx, dy, dz), Blocks.BEDROCK);
+            }
+            helper.setBlock(fresh.above(), Blocks.OAK_SLAB);
+            BlockPos spawn = helper.absolutePos(new BlockPos(16, 1, 16));
+            companion.teleportTo(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
+            var player = helper.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+            if (player != null) {
+                BlockPos beside = helper.absolutePos(new BlockPos(16, 1, 17));
+                player.teleportTo(beside.getX() + 0.5, beside.getY(), beside.getZ() + 0.5);
+            }
+            storeStarted[0] = true;
+            companion.startWork("store_items", "stone", 1);
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(storeStarted[0] && !companion.hasActiveWorkOrder(), "Still working: " + companion.getLastTaskResult());
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(count(fallback, Items.COBBLESTONE) == 17, "The next usable chest was not filled: " + count(fallback, Items.COBBLESTONE) + " " + companion.getLastTaskResult());
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == 0, "Stone stayed in the bag: " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** An inside_house store fills the chest inside the house, not one he placed outside it for another request. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void insideHouseStoreDoesNotFillAPlacedChestOutside(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        BlockPos base = new BlockPos(20, 0, 20);
+        CompanionHomeTests.house(helper, companion, base);
+        BlockPos inside = base.offset(2, 1, 2);
+        helper.setBlock(inside, Blocks.CHEST);
+        Container insideChest = (Container)helper.getBlockEntity(inside);
+        companion.setItem(0, new ItemStack(Items.CHEST));
+        companion.setItem(1, new ItemStack(Items.COBBLESTONE, 12));
+        companion.startWork("place_chest", "", 1);
+        boolean[] storeStarted = {false};
+        BlockPos[] outside = {null};
+        helper.onEachTick(() -> {
+            if (storeStarted[0] || companion.hasActiveWorkOrder()) return;
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 4, 31)))
+                if (helper.getBlockState(pos).is(Blocks.CHEST) && !pos.equals(inside)) { outside[0] = pos.immutable(); break; }
+            helper.assertTrue(outside[0] != null, "The place order set no chest down outside the house: " + companion.getLastTaskResult());
+            // Stand him inside by the chest: the order is about where the chest is, not about walking through the door.
+            BlockPos spot = helper.absolutePos(base.offset(2, 1, 1));
+            companion.teleportTo(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5);
+            storeStarted[0] = true;
+            companion.startWork("store_items", "stone", 1, "inside_house");
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(storeStarted[0] && !companion.hasActiveWorkOrder(), "Still working: " + companion.getLastTaskResult());
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(count(insideChest, Items.COBBLESTONE) == 12, "The chest inside the house was not filled: " + count(insideChest, Items.COBBLESTONE) + " " + companion.getLastTaskResult());
+            helper.assertTrue(count((Container)helper.getBlockEntity(outside[0]), Items.COBBLESTONE) == 0, "The chest outside the house was filled: " + count((Container)helper.getBlockEntity(outside[0]), Items.COBBLESTONE));
+        });
+    }
+
+    /** A chest placed for an earlier request stops winning once the hint is older than the order it was placed for. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void oldPlacedChestHintNoLongerWins(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        Container group = chest(helper, 2);
+        group.setItem(0, new ItemStack(Items.COBBLESTONE, 10));
+        companion.setItem(0, new ItemStack(Items.CHEST));
+        companion.setItem(1, new ItemStack(Items.COBBLESTONE, 12));
+        companion.startWork("place_chest", "", 1);
+        boolean[] storeStarted = {false};
+        long[] placeDone = {-1};
+        BlockPos[] placed = {null};
+        helper.onEachTick(() -> {
+            if (placeDone[0] < 0) {
+                if (companion.hasActiveWorkOrder()) return;
+                placeDone[0] = helper.getLevel().getGameTime();
+                for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 4, 31)))
+                    if (helper.getBlockState(pos).is(Blocks.CHEST) && !pos.equals(new BlockPos(2, 1, 13))) { placed[0] = pos.immutable(); break; }
+                return;
+            }
+            if (storeStarted[0] || helper.getLevel().getGameTime() < placeDone[0] + 1250) return;
+            storeStarted[0] = companion.startWork("store_items", "stone", 1).success();
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(storeStarted[0] && !companion.hasActiveWorkOrder(), "Still working: " + companion.getLastTaskResult());
+            helper.assertTrue(placed[0] != null, "The place order set no chest down: " + companion.getLastTaskResult());
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            helper.assertTrue(count(group, Items.COBBLESTONE) == 22, "The group chest was not filled: " + count(group, Items.COBBLESTONE) + " " + companion.getLastTaskResult());
+            helper.assertTrue(count((Container)helper.getBlockEntity(placed[0]), Items.COBBLESTONE) == 0, "The old placed chest still won: " + count((Container)helper.getBlockEntity(placed[0]), Items.COBBLESTONE));
+        });
+    }
 }
