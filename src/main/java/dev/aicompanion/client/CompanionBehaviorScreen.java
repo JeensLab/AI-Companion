@@ -76,11 +76,32 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(urgentLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
+        addRenderableWidget(Button.builder(boatRideLabel(), b -> {
+            OpenRouterConfig.BOAT_RIDE.set(!OpenRouterConfig.BOAT_RIDE.get()); OpenRouterConfig.BOAT_RIDE.save();
+            b.setMessage(boatRideLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Ты сел в лодку или на плот, где есть место, — он подходит и садится вторым; ты вышел — выходит и он, на берег. В лодке без тебя не сидит. Выключено: плывёт следом."))).build());
         addRenderableWidget(Button.builder(boatClutchLabel(), b -> {
             OpenRouterConfig.BOAT_CLUTCH.set(!OpenRouterConfig.BOAT_CLUTCH.get()); OpenRouterConfig.BOAT_CLUTCH.save();
             b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Падение, которое ведро воды не ловит (Незер, нет ведра): он ставит под себя лодку из сумки, садится, потом ломает её и забирает. Выключено: падает как есть."))).build());
+        addRenderableWidget(Button.builder(replantLabel(), b -> {
+            OpenRouterConfig.REPLANT_SAPLINGS.set(!OpenRouterConfig.REPLANT_SAPLINGS.get()); OpenRouterConfig.REPLANT_SAPLINGS.save();
+            b.setMessage(replantLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Срубил дерево — сажает на его место саженец той же породы из своей сумки (тёмный дуб — только из четырёх). У построек не сажает. Выключено: на месте срубленных деревьев ничего не сажает."))).build());
+        addRenderableWidget(Button.builder(pickUpLabel(), b -> {
+            OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
+            b.setMessage(pickUpLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "«Подбери курицу» — взять то, что уже лежит рядом, в том числе в воде и на другой высоте, а не начинать охоту или добычу. Выключено: сразу обычная охота или добыча."))).build());
+        addRenderableWidget(Button.builder(pickUpRadiusLabel(), b -> {
+            int next = OpenRouterConfig.PICK_UP_RADIUS.get() + 8;
+            OpenRouterConfig.PICK_UP_RADIUS.set(next > 32 ? 4 : next);
+            OpenRouterConfig.PICK_UP_RADIUS.save(); b.setMessage(pickUpRadiusLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Насколько далеко он осматривает землю вокруг себя, блоков."))).build());
         addRenderableWidget(Button.builder(pickUpLabel(), b -> {
             OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
             b.setMessage(pickUpLabel()); CompanionPreferences.sync();
@@ -123,8 +144,10 @@ final class CompanionBehaviorScreen extends Screen {
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }
     private Component guardLabel() { return Component.literal("Охрана: цель ближе к игроку: " + (OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get() ? "вкл." : "выкл.")); }
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
+    private static Component replantLabel() { return Component.literal("Саженцы на месте срубленных деревьев: " + (OpenRouterConfig.REPLANT_SAPLINGS.get() ? "вкл." : "выкл.")); }
     private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
+    private static Component boatRideLabel() { return Component.literal("Лодка с игроком: " + (OpenRouterConfig.BOAT_RIDE.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }

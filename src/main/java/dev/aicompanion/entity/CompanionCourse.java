@@ -29,6 +29,8 @@ public final class CompanionCourse {
     private static final int LEG = 12;
     /** The next point is taken this near the current one, so the walk goes on without a stop at every point. */
     private static final double NEXT_AT = 5;
+    /** The last point lies this far past the end: the route stops two blocks short of its point, the walk ends on the count. */
+    private static final int PAST = 3;
     /** Points tried when the one on the line is unfit or out of reach: on it, then aside of it. */
     private static final int[] ASIDE = {0, 8, -8, 16, -16};
     /** Water this wide along the way is a crossing (a brook, a river); wider is a lake or the sea. */
@@ -130,7 +132,7 @@ public final class CompanionCourse {
         long now = level.getGameTime();
         double along = along(owner.getX(), owner.getZ());
         if (along > best + 1) { best = along; lastAdvance = now; }
-        if (blocks > 0 && along >= blocks - 3) { w.finish(true, "Прошли " + blocks + " " + blocksWord(blocks) + " на " + heading.name + "."); return; }
+        if (blocks > 0 && along >= blocks - .5) { w.finish(true, "Прошли " + blocks + " " + blocksWord(blocks) + " на " + heading.name + "."); return; }
         if (now - began >= LIMIT_SECONDS * 20L) { w.finish(true, "Идём на " + heading.name + " уже двадцать минут, остановился передохнуть."); return; }
         // What was in sight at the start is not what was looked for: «пока не найдём воду» by a pond means another water.
         if (target != null && now >= nextScan && along >= SCAN_RADIUS) {
@@ -182,7 +184,7 @@ public final class CompanionCourse {
 
     /** The next fit point from the current {@code aside} on, or null: not loaded yet (aside kept), or none fit (aside past the end). */
     private BlockPos nextPoint(ServerLevel level, double along) {
-        double ahead = blocks > 0 ? Math.min(along + LEG, blocks) : along + LEG;
+        double ahead = blocks > 0 ? Math.min(along + LEG, blocks + PAST) : along + LEG;
         for (; aside < ASIDE.length; aside++) {
             if (!level.hasChunkAt(column(along + LEG + CROSSING, ASIDE[aside]))) return null;
             BlockPos fit = fit(level, along, ahead, ASIDE[aside]);

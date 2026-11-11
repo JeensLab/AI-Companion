@@ -136,9 +136,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
+    private boolean boatRideOn = true;
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
+    private boolean replantOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
@@ -151,8 +153,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private final CompanionShieldDefense shieldDefense = new CompanionShieldDefense(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
+    final CompanionBoatRide boatRide = new CompanionBoatRide(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
+    /** Saplings for the stumps of the trees he fells (RYVTB). */
+    final CompanionReplant replant = new CompanionReplant(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -638,9 +643,15 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
     public boolean otherContainers() { return otherContainers; }
     public void setOtherContainers(boolean on) { otherContainers = on; }
+    /** Whether he gets into the player's boat and out of it with the player (the player can turn it off in the settings). */
+    public boolean boatRide() { return boatRideOn; }
+    public void setBoatRide(boolean on) { boatRideOn = on; }
     /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
     public boolean boatClutch() { return boatClutchOn; }
     public void setBoatClutch(boolean on) { boatClutchOn = on; }
+    /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag (the player can turn it off in the settings). */
+    public boolean replantSaplings() { return replantOn; }
+    public void setReplantSaplings(boolean on) { replantOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
@@ -972,6 +983,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         waterBucket.tick();
         boatClutch.tick();
+        boatRide.tick();
         waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
@@ -1101,6 +1113,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (id == net.minecraft.world.entity.EntityEvent.ATTACK_BLOCKED) damageNumbers.blocked(tickCount);
     }
 
+    /** Not back into a vehicle right after getting out, as a player; switched on, into a boat only with the player (CompanionBoatRide). */
+    @Override protected boolean canRide(Entity vehicle) { return super.canRide(vehicle) && boatRide.mayRide(vehicle); }
+    boolean justGotOut() { return boardingCooldown > 0; }
+
     /**
      * Falling fast, his client draws him where the server has him, not eased in over three ticks: three ticks behind he was blocks
      * over the boat or water he had already landed in (08.11). Walking is eased as before.
@@ -1124,6 +1140,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     public boolean benchWalkNeeded(String requestedItemId, int requestedCount) { return placement.benchWalkNeeded(requestedItemId, requestedCount); }
+    BlockPos cutterWalk(String requestedItemId, int requestedCount) { return placement.cutterWalk(requestedItemId, requestedCount); }
     public CompanionActionResult craftItemResult(String requestedItemId, int requestedCount) { return placement.craftItemResult(requestedItemId, requestedCount); }
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount); }
     public CompanionActionResult placeBlockResult(String requestedBlockId) { return placement.placeBlockResult(requestedBlockId); }

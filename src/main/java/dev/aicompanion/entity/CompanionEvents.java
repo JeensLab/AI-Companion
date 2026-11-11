@@ -300,8 +300,8 @@ public final class CompanionEvents {
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
-                // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order.
-                if (!action.equals("pursue_goal")) companion.goals().playerOrder(action);
+                // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order. Nor does switching autonomy on: «будь самостоятельным» is a switch, not an order.
+                if (!action.equals("pursue_goal") && !(action.equals("autonomy") && "on".equals(item))) companion.goals().playerOrder(action);
                 // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
@@ -332,11 +332,12 @@ public final class CompanionEvents {
                 CompanionActionResult repeat = count == 1 && !goalDispatch ? companion.alreadyMade(item) : null;
                 if (repeat != null) yield repeat;
                 if (CompanionCraftCosts.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
+                if (companion.cutterWalk(item, count) != null) yield companion.startWork("cutter_craft", item, count);
                 if (companion.benchWalkNeeded(item, count)) yield companion.startWork("bench_craft", item, count);
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket", "mine_obsidian", "build_portal" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket", "mine_obsidian", "build_portal", "disenchant_item", "compost_items" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -377,7 +378,7 @@ public final class CompanionEvents {
                 yield CompanionActionResult.ok("protect".equals(action) ? "Защищаю тебя." : "Закончил охрану.");
             }
             case "gather_wood" -> {
-                yield companion.startWork("gather_wood", "", count);
+                yield companion.startWork("gather_wood", item, count);
             }
             // Handed over physically: walked to the player and tossed at their feet, never put into their inventory.
             case "give_wood" -> companion.startWork("give_items", "logs", 64);
@@ -390,6 +391,8 @@ public final class CompanionEvents {
             case "pick_up" -> companion.pickUpNearby(item, count);
             case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
+            // «Почини кирку»: two alike folded where he stands, as in the crafting grid; no walk, so no work.
+            case "repair_item" -> CompanionGrinding.repair(companion, item);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.
             case "autonomy" -> companion.autonomy().setEnabled("on".equals(item));
             default -> CompanionActionResult.failed("Неподдерживаемое действие: " + action);

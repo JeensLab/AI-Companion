@@ -79,6 +79,11 @@ public final class CompanionLocalCommands {
         if (water != null) return water;
         String obsidian = CompanionWorkCommands.obsidian(text, companionName);
         if (obsidian != null) return obsidian;
+        // Before the equipment: «сними чары с меча» is the grindstone, not «сними меч».
+        String grind = CompanionWorkCommands.grind(text, companionName);
+        if (grind != null) return grind;
+        String compost = CompanionWorkCommands.compost(text, companionName);
+        if (compost != null) return compost;
         // «Запомни это место, это дом» names a marker: after the work grammar, so «запомни это место как дом» stays the
         // home it always was.
         CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);
@@ -104,6 +109,8 @@ public final class CompanionLocalCommands {
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
         if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(зайди|заходи|войди|входи|шагни|прыгни|пройди|проходи|иди)\\s+(в|через)\\s+(\\p{L}+\\s+)?(портал|незер)\\b.*")) return "companion enter_portal";
+        // «Не стой столбом» is no order; in «стой, не иди туда» only the negated verb is cut out, the rest is read below.
+        normalized = normalized.replaceAll("(?U)\\bне\\s+(стой|останься|жди|защищай|защити|прикрывай|помогай|(?:пре)?следуй(?:те)?|иди|пойдем|пошли|приди|подойди|вернись|появись|телепортируйся)\\b", " ");
         if (normalized.matches("(?sU).*\\b(стой|останься|жди)\\b.*")
                 || normalized.contains("стой здесь") || normalized.contains("жди тут")) {
             return "companion stay";

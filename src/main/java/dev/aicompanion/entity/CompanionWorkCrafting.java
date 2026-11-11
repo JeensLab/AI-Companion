@@ -29,7 +29,9 @@ final class CompanionWorkCrafting {
     }
 
     void craftRequested() {
-        if (needsWorkbench(w.requestedItem) && approachCraftingTable()) return;
+        if (w.cutter != null && approachCutter()) return;
+        // At the stonecutter the order counted on, the bench of the plain recipe is not walked to.
+        if (w.cutter == null && needsWorkbench(w.requestedItem) && approachCraftingTable()) return;
         if (!w.items.moveHandMaterialsToBag()) return;
         int remainder = w.owner.goals().craftRemainder(w.taskId);
         if (remainder == 0) { w.finish(true, "Нужные пригодные кирки уже есть."); return; }
@@ -112,6 +114,29 @@ final class CompanionWorkCrafting {
         w.phase = CompanionWork.Phase.WOOD;
         w.woodBeforeRequest = w.owner.collectedLogs();
         w.owner.startGatheringLogsForWork(count);
+    }
+
+    /** cutter_craft: to the stonecutter first; with no way there the item is crafted as without one. */
+    private boolean approachCutter() {
+        // In the air no way is searched at all, which is no evidence of none (as for the bench). In water he goes on, as to a
+        // furnace: waiting there for firm ground stood him still until the stall check ended the order (game 10.11, at the shore).
+        if (!w.owner.onGround() && !w.owner.isInWater()) return true;
+        if (!(w.owner.level() instanceof ServerLevel level) || w.owner.placement.inReach(Blocks.STONECUTTER) != null) return false;
+        if (level.getBlockState(w.cutter).is(Blocks.STONECUTTER)) {
+            if (!w.cutter.equals(w.heading)) { w.heading = w.cutter; w.resetApproach(); }
+            w.owner.movementIntent(w.cutter);
+            if (w.approach(level, w.cutter, 2.8D)) { w.owner.workStatus("Иду к камнерезу на " + w.cutter.toShortString() + "."); return true; }
+        }
+        BlockPos missed = w.cutter;
+        w.cutter = null; w.heading = null; w.resetApproach();
+        // Without it the item cannot be made at all: say why, not «not enough materials» (game 10.11, a cutter walled in by a hill).
+        if (!CompanionCrafting.plan(level, w.owner.companionInventory, w.requestedItem, w.requestedCount, true).success()) {
+            boolean there = level.getBlockState(missed).is(Blocks.STONECUTTER);
+            w.finish(false, (there ? "Не смог подойти к камнерезу на " + missed.toShortString() : "Камнереза на " + missed.toShortString() + " больше нет")
+                    + ", а без него на " + w.requestedCount + " «" + CompanionWork.itemName(w.requestedItem) + "» материалов не хватает. Материалы у меня.");
+            return true;
+        }
+        return false;
     }
 
     /** Reuse a reachable workbench before spending more wood on another one; one rule with CompanionCrafting.plan. */
