@@ -51,17 +51,17 @@ public final class OpenRouterConfig {
             .define("macosVoice", true);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
-            .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
+            .comment("Your provider's API key: OpenRouter or direct OpenAI; usually not needed for a local server. Stored in the local Minecraft config folder.")
             .translation("config.aicompanion.api_key")
             .define("apiKey", "");
 
     public static final ModConfigSpec.ConfigValue<String> MODEL = BUILDER
-            .comment("Model ID. With OpenRouter, openrouter/auto lets OpenRouter choose; with your own server, the name of a model it has loaded.")
+            .comment("Model ID: openrouter/auto for OpenRouter; gpt-6-luna or gpt-6.1-terra for direct OpenAI; a loaded model name for a local server.")
             .translation("config.aicompanion.model")
             .define("model", "openrouter/auto");
 
     public static final ModConfigSpec.ConfigValue<String> API_URL = BUILDER
-            .comment("OpenAI-compatible chat server. Empty means OpenRouter; for example http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio. A local server needs no API key.")
+            .comment("Empty means OpenRouter. https://api.openai.com/v1 uses Responses API directly; compatible/local servers keep Chat Completions, e.g. http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio.")
             .translation("config.aicompanion.api_url")
             .define("apiUrl", "");
 
