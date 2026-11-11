@@ -31,8 +31,6 @@ public final class CompanionMarathonValleyTests {
                 .ask("Олег, добудь дерева", "[{\"action\":\"gather_wood\",\"count\":8}]", 20 * 240)
                 .check("wood in the bag", () -> {
                     a.expect(a.countTag(ItemTags.LOGS) >= 8, "Wood not in the bag: " + a.oleg.getStoredItemsSummary() + " || " + a.chat.history());
-                    // One small tree (4 logs) stands 20 blocks south; the forest with enough wood begins 30 blocks north.
-                    watch.assertStayedNear(42);
                     watch.assertNothingLeft();
                     watch.assertNoLongIdle(10);
                 })

@@ -61,6 +61,12 @@ public final class CompanionObtain {
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
         CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)));
+        // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
+        var species = CompanionWoodKind.of(id.toString());
+        if (species != null && plainLog(id.getPath())) {
+            int have = carried.stream().filter(stack -> stack.is(species.items)).mapToInt(ItemStack::getCount).sum();
+            return new Plan(have >= count ? List.of() : List.of(new Step("gather_wood", id.toString(), count - have)), null);
+        }
         String target = key(item);
         if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
         // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.
@@ -85,11 +91,11 @@ public final class CompanionObtain {
     /** Gets {@code count} of the key into the bag and takes it straight out again (it is used by the caller). */
     private boolean produce(String key, int count, int depth) {
         switch (key) {
-            case LOGS -> { return add("gather_wood", "", count); }
-            case STONE -> { return add("gather_stone", "", count); }
+            case LOGS -> { return addSplit("gather_wood", "", count, 64); }
+            case STONE -> { return addSplit("gather_stone", "", count, 64); }
             case PLANKS -> { return need(LOGS, ceil(count, 4), depth + 1); }               // the craft that needs them makes them
             case "minecraft:stick" -> { return need(PLANKS, ceil(count, 4) * 2, depth + 1); }
-            case "minecraft:dirt" -> { return add("gather_dirt", "", count); }
+            case "minecraft:dirt" -> { return addSplit("gather_dirt", "", count, 64); }
             case "minecraft:sand", "minecraft:red_sand", "minecraft:gravel" -> { return addSplit("gather_loose", key, count, 64); }
             case FLINT -> { return addSplit("gather_loose", key, count, FLINT_STEP); }   // gravel dug (and re-placed) until this much flint drops
             // An empty bucket of his (or one made now) filled from living water (CompanionWaterFill); none to be had in the Nether or the
@@ -233,6 +239,9 @@ public final class CompanionObtain {
         }
         return result;
     }
+
+    /** A log as it grows: stripped logs and wood blocks are crafted or made with an axe, chopping does not give them. */
+    private static boolean plainLog(String path) { return !path.startsWith("stripped_") && (path.endsWith("_log") || path.endsWith("_stem")); }
 
     /** Wood and crafting stone are families: any log, any planks, any cobblestone-like block serve the same recipes. */
     private static String key(Item item) {

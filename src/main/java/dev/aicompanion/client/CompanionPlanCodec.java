@@ -15,7 +15,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up", "repair_item", "disenchant_item", "compost_items");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -98,6 +98,7 @@ public final class CompanionPlanCodec {
             List<PlannedAction> result = new ArrayList<>();
             for (JsonElement element : steps) {
                 JsonObject step = element.getAsJsonObject();
+                step.entrySet().removeIf(field -> field.getValue().isJsonNull()); // "count": null is a missing count, not a broken plan
                 String type = step.get("action").getAsString();
                 if (!ACTIONS.contains(type)) throw invalid();
                 // No number from the model: what the prompt promises it (ore 4, stone 8), not a single block (game log 22.10).
@@ -117,6 +118,8 @@ public final class CompanionPlanCodec {
                 if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
+                // «Закинь саженцы в компостер» names no number: all of them, not one (as the smelting above).
+                if ("compost_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
@@ -129,11 +132,19 @@ public final class CompanionPlanCodec {
                 // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
                 if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
                 if ("walk_heading".equals(type) && !dev.aicompanion.entity.CompanionCourse.valid(item)) throw invalid();
+                // A species of wood or nothing: whatever else the model wrote there («logs», a stone) names no species and is any log, as before.
+                if ("gather_wood".equals(type) && dev.aicompanion.entity.CompanionWoodKind.of(item) == null) item = "";
                 if ("gather_loose".equals(type) && (!LOOSE_ITEMS.contains(item) || FLINT.equals(item) && count > FLINT_STEP)) throw invalid();
                 if ("place_block".equals(type) && !"minecraft:chest".equals(item) && count != 1) throw invalid();
                 if (("store_items".equals(type) || "take_items".equals(type)) && !item.isEmpty() && !Set.of("resources", "all", "logs", "stone").contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if ("give_items".equals(type) && !"logs".equals(item) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                // «Почини кирку» / «сними чары с меча»: an item, or a kind with no material (any pickaxe of his).
+                if (("repair_item".equals(type) || "disenchant_item".equals(type)) && !dev.aicompanion.entity.CompanionGrinding.KINDS.contains(item)
+                        && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                // «Сделай костную муку в компостере»: plant scrap or one of its parts, or an item the player named.
+                if ("compost_items".equals(type) && !item.isEmpty() && !dev.aicompanion.entity.CompanionComposting.GROUPS.contains(item)
+                        && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
                         || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";

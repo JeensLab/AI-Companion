@@ -34,8 +34,19 @@ public final class CompanionEnduranceTests {
         CompanionFixtureCleanup.afterAtomicTests(level);
     }
 
+    // The short tests share one batch of their own: the long scenarios keep "endurance", which the fast gate skips.
+    @BeforeBatch(batch="endurance_short")
+    public static void sprintShort(net.minecraft.server.level.ServerLevel level) {
+        sprint(level);
+    }
+
+    @AfterBatch(batch="endurance_short")
+    public static void cleanupShort(net.minecraft.server.level.ServerLevel level) {
+        cleanup(level);
+    }
+
     /** Reproduces e003a157: a new batch must not turn the previous descent into its new surface. */
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void successiveBatchesKeepTheOriginalSurface(GameTestHelper h) throws Exception {
         var a=yard(h,false); a.oleg.setNoAi(true); a.oleg.autonomy().setEnabled(true);
         BlockPos surface=a.oleg.autonomy().workArea();
@@ -49,7 +60,7 @@ public final class CompanionEnduranceTests {
         h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void quarryCannotDeepenBelowTheWorkplaceLimit(GameTestHelper h) throws Exception {
         var a=yard(h,false); a.oleg.setNoAi(true); a.oleg.autonomy().setEnabled(true);
         BlockPos surface=a.oleg.autonomy().workArea();
@@ -62,10 +73,13 @@ public final class CompanionEnduranceTests {
         var method=field(work,"stoneMining").getClass().getDeclaredMethod("safeToMine",net.minecraft.server.level.ServerLevel.class,BlockPos.class,boolean.class);
         method.setAccessible(true);
         h.assertTrue(!(boolean)method.invoke(field(work,"stoneMining"),h.getLevel(),tooDeep,true),"Autonomous quarry permits another descent below the fixed depth limit");
+        // Control: with the work paused the depth limit is off and the same block is safe, so the refusal above was the depth.
+        set(a.oleg.autonomy(),"starting",false);
+        h.assertTrue((boolean)method.invoke(field(work,"stoneMining"),h.getLevel(),tooDeep,true),"The deep block is refused even without the depth limit");
         h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=1200)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=1200)
     public static void reloadKeepsFailureBackoff(GameTestHelper h) {
         var a=yard(h,false); a.oleg.autonomy().setEnabled(true);
         boolean[] loaded={false}; int[] before={0};
@@ -110,7 +124,7 @@ public final class CompanionEnduranceTests {
                     a.expect(a.oleg.planProgress("gather_wood")>=48,"No sustained physical wood harvest");
                     a.expect(worn.isEmpty(),"Original worn pick never broke");
                     a.expect(w.toolsSeen.contains("minecraft:stone_pickaxe"),"Broken pick not replaced/upgraded during the session");
-                    a.expect(w.total(Items.COBBLESTONE)>=dev.aicompanion.entity.CompanionAutonomy.STONE_RESERVE,"Stone reserve was not replenished after the player's withdrawals");
+                    a.expect(w.total(Items.COBBLESTONE)>=dev.aicompanion.entity.CompanionAutonomy.STONE_RESERVE-dev.aicompanion.entity.CompanionAutonomy.STONE_BATCH,"Stone reserve was not replenished after the player's withdrawals");
                     a.expect(wasFar[0],"Owner never left for the long session");
                     a.expect(a.toPlayer()<5&&a.oleg.getY()>=a.oleg.autonomy().workArea().getY()-.5,"Did not physically return to the surface");
                     a.expect(a.watch.everyRescue().size()==rescuesBeforeReturn[0],"Had to dig a new escape instead of using the return path");
@@ -200,7 +214,7 @@ public final class CompanionEnduranceTests {
         finish(a,"endurance-reload-100",w::summary);
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=2400)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=2400)
     public static void diskReloadDuringWorkReclaimsDropsAndExplainsInterruption(GameTestHelper h) {
         var a=yard(h,true);seed(a);var w=new EnduranceWatch(a,"interrupted-disk-reload");boolean[] loaded={false};
         a.script.ask("Добудь 64 камня",null,2*MINUTE)
@@ -219,7 +233,7 @@ public final class CompanionEnduranceTests {
         finish(a,"endurance-interrupted-reload",w::summary);
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void aQueuedStoneStairUnderfootNeverStartsASwing(GameTestHelper h) throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_PICKAXE));
@@ -232,7 +246,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue(h.getLevel().getBlockState(under).is(Blocks.STONE),"Own support destroyed");h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void dirtApproachNeverEndsAboveAnInvisibleBuriedBlock(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);BlockPos buried=h.absolutePos(a.cell(52,11,48));
         h.getLevel().setBlock(buried.above(),Blocks.BEDROCK.defaultBlockState(),2);
@@ -240,10 +254,13 @@ public final class CompanionEnduranceTests {
         var goals=(net.minecraft.world.entity.ai.goal.GoalSelector)selector.get(a.oleg);
         Object dirt=goals.getAvailableGoals().stream().map(net.minecraft.world.entity.ai.goal.WrappedGoal::getGoal).filter(g->g.getClass().getSimpleName().equals("CompanionDigGoal")).findFirst().orElseThrow();
         var approach=dirt.getClass().getDeclaredMethod("findDirtApproachPath",BlockPos.class);approach.setAccessible(true);
-        h.assertTrue(approach.invoke(dirt,buried)==null,"Dirt route leads above an enclosed block without a visible/collectable face");h.succeed();
+        h.assertTrue(approach.invoke(dirt,buried)==null,"Dirt route leads above an enclosed block without a visible/collectable face");
+        // Controls: null must mean "no stand cell", not "search unfinished", and open dirt on flat ground does get a route.
+        h.assertTrue(!(boolean)field(dirt,"searching"),"The search was still busy, so the null above proves nothing");
+        h.assertTrue(approach.invoke(dirt,h.absolutePos(a.cell(58,11,48)))!=null,"Open dirt on flat ground gets no route");h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=100)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=100)
     public static void aBenchBelowALedgeIsNotBrokenFromAnUnsafePickupSpot(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_AXE));
@@ -262,7 +279,7 @@ public final class CompanionEnduranceTests {
                 }).thenSucceed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void aNewQuarryKeepsThePreviousBatchesReturnStair(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);
         for(int x=43;x<=55;x++)for(int z=45;z<=51;z++)for(int y=9;y<=20;y++)h.setBlock(a.cell(x,y,z),Blocks.BEDROCK);
@@ -285,7 +302,7 @@ public final class CompanionEnduranceTests {
         mine.invoke(field(work,"stoneMining"),h.getLevel());h.assertTrue((int)field(field(work,"breaking"),"ticks")==0,"Final return step one below the surface was swung at");h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void miningKeepsFloorAndWallTorchSupports(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.startWork("gather_stone","",32);Object work=field(a.oleg,"work");
         BlockPos support=h.absolutePos(a.cell(50,12,50));h.getLevel().setBlock(support,Blocks.STONE.defaultBlockState(),2);
@@ -293,11 +310,12 @@ public final class CompanionEnduranceTests {
         h.getLevel().setBlock(support.above(),Blocks.TORCH.defaultBlockState(),2);
         h.assertTrue(!(boolean)safe.invoke(field(work,"stoneMining"),h.getLevel(),support,true),"Floor torch support can be mined");
         h.getLevel().setBlock(support.above(),Blocks.AIR.defaultBlockState(),2);
+        h.assertTrue((boolean)safe.invoke(field(work,"stoneMining"),h.getLevel(),support,true),"Free stone with no torch is refused");
         h.getLevel().setBlock(support.east(),Blocks.WALL_TORCH.defaultBlockState().setValue(net.minecraft.world.level.block.WallTorchBlock.FACING,net.minecraft.core.Direction.EAST),2);
         h.assertTrue(!(boolean)safe.invoke(field(work,"stoneMining"),h.getLevel(),support,true),"Wall torch support can be mined");h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void returnSearchTriesAnotherSideAndReachesTheActualExitHeight(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);
         for(int x=43;x<=54;x++)for(int z=45;z<=52;z++)for(int y=9;y<=20;y++)h.setBlock(a.cell(x,y,z),Blocks.BEDROCK);
@@ -312,7 +330,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue(!(boolean)back.invoke(null,a.oleg,exit,exit.getY()+1),"An enclosed cell one below the exit counts as reaching the surface");h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void returnSearchNeverFallsThroughAnObstructedColumn(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);
         for(int x=44;x<=57;x++)for(int z=46;z<=51;z++)for(int y=8;y<=22;y++)h.setBlock(a.cell(x,y,z),Blocks.BEDROCK);
@@ -327,7 +345,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue(!(boolean)back.invoke(null,a.oleg,from,exit.getY()),"Safety search falls through solid blocks between the start and landing");h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=1200)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=1200)
     public static void stopThenComeKeepsTheLastPhysicalDropOnThePickupList(GameTestHelper h)throws Exception {
         var a=yard(h,false);seed(a);a.oleg.autonomy().setEnabled(true);
         var player=h.absolutePos(a.cell(46,12,42));a.player.teleportTo(player.getX()+.5,player.getY(),player.getZ()+.5);
@@ -342,7 +360,7 @@ public final class CompanionEnduranceTests {
         finish(a,"endurance-stop-come-pickup",a.watch::summary);
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=600)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=600)
     public static void aBushPickupWalksCloserToTheLastLeafInsteadOfGivingUp(GameTestHelper h){
         var a=yard(h,false);a.oleg.setFollowing(false);
         var at=h.absolutePos(a.cell(47,12,48));a.oleg.setPos(at.getX()+.8,at.getY(),at.getZ()+.5);
@@ -371,7 +389,7 @@ public final class CompanionEnduranceTests {
         return new MarathonArena(h,96,40,80,46,48,48,48,24);
     }
     private static void seed(MarathonArena a){a.oleg.setItem(0,new ItemStack(Items.OAK_LOG,16));a.oleg.setItem(1,new ItemStack(Items.COBBLESTONE,32));a.oleg.setItem(2,new ItemStack(Items.STONE_PICKAXE));}
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void automaticWorkbenchNeverClosesTheOnlyReturnPassage(GameTestHelper h)throws Exception {
         var a=returnStair(h);a.oleg.setItem(0,new ItemStack(Items.CRAFTING_TABLE));
         var place=CompanionEntity.class.getDeclaredMethod("placeBlockNearResult",String.class,BlockPos.class);place.setAccessible(true);
@@ -379,7 +397,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue(returnable(a),"Automatic bench closed the only safe return passage");h.succeed();
     }
 
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=200)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=200)
     public static void soilAndPackedBenchesKeepTheOnlyReturnStep(GameTestHelper h)throws Exception {
         var a=returnStair(h);BlockPos step=h.absolutePos(a.cell(47,12,48));h.getLevel().setBlock(step,Blocks.DIRT.defaultBlockState(),2);
         var gathering=field(a.oleg,"gathering");var mine=gathering.getClass().getDeclaredMethod("mineDirt",BlockPos.class);mine.setAccessible(true);mine.invoke(gathering,step);
@@ -401,7 +419,7 @@ public final class CompanionEnduranceTests {
     private static boolean returnable(MarathonArena a){
         try{var t=Class.forName("dev.aicompanion.entity.CompanionMiningNavigation");var m=t.getDeclaredMethod("canWalkBackUp",CompanionEntity.class,BlockPos.class,int.class);m.setAccessible(true);return (boolean)m.invoke(null,a.oleg,a.oleg.blockPosition(),a.oleg.autonomy().workArea().getY());}catch(Exception e){throw new IllegalStateException(e);}
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void autonomousMiningStopsWhenNoReturnCanBeProven(GameTestHelper h)throws Exception {
         var a=returnStair(h);h.setBlock(a.cell(47,13,48),Blocks.STONE);h.setBlock(a.cell(47,14,48),Blocks.STONE);
         a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_PICKAXE));a.oleg.startWork("gather_stone","",32);
@@ -412,7 +430,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue((int)field(field(work,"breaking"),"ticks")==0,"Autonomous mining started a swing with no proven return");
         h.assertTrue(h.getLevel().getBlockState(target).is(Blocks.STONE),"Continued digging without a safe exit");h.succeed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void quarryPickupNeverDescendsIntoAnOldShaft(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);
         for(int y=8;y<=10;y++)h.setBlock(a.cell(47,y,48),Blocks.AIR);
@@ -423,7 +441,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue((int)field(field(work,"breaking"),"ticks")==0,"Surface quarry started opening a plug whose pickup falls into an old shaft");
         h.assertTrue(h.getLevel().getBlockState(plug).is(Blocks.DIRT),"Unsafe shaft plug was mined");h.succeed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void resumingAfterAnOrderKeepsTheWorkplaceSurface(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.autonomy().setEnabled(true);BlockPos original=a.oleg.autonomy().workArea();
         var order=a.oleg.autonomy().getClass().getDeclaredMethod("playerOrder",String.class);order.setAccessible(true);order.invoke(a.oleg.autonomy(),"wait");
@@ -432,7 +450,7 @@ public final class CompanionEnduranceTests {
         order.invoke(a.oleg.autonomy(),"wait");a.oleg.setPos(a.oleg.getX()+80,original.getY(),a.oleg.getZ());a.oleg.autonomy().setEnabled(true);
         h.assertTrue(a.oleg.blockPosition().equals(a.oleg.autonomy().workArea()),"A genuinely relocated workplace was not adopted");h.succeed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=600)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=600)
     public static void theLastRejectedDropIsRetriedFromANewPickupOrigin(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setFollowing(false);
         var drop=CompanionEntity.class.getDeclaredMethod("dropHarvest",BlockPos.class,List.class);drop.setAccessible(true);drop.invoke(a.oleg,h.absolutePos(a.cell(49,12,48)),List.of(new ItemStack(Items.COBBLESTONE)));
@@ -442,7 +460,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue((boolean)pending.invoke(loot),"The last rejected drop prevents its own reconsideration after a real change of pickup origin");
         a.oleg.setNoAi(false);h.startSequence().thenWaitUntil(()->h.assertTrue(a.oleg.planProgress("gather_stone")==1&&!item.isAlive(),"Drop was not physically recovered from the new side")).thenSucceed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void aSwingLosingItsCornerViewDoesNotRestartTheSameStone(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_PICKAXE));a.oleg.startWork("gather_stone","",32);
         BlockPos target=h.absolutePos(a.cell(47,13,49));h.getLevel().setBlock(target,Blocks.STONE.defaultBlockState(),2);
@@ -452,7 +470,7 @@ public final class CompanionEnduranceTests {
         h.setBlock(a.cell(47,13,48),Blocks.STONE);h.setBlock(a.cell(46,13,49),Blocks.STONE);mine.invoke(field(work,"stoneMining"),h.getLevel());
         h.assertTrue(((java.util.Set<?>)field(work,"rejected")).contains(target),"Lost corner view merely reset the swing and leaves the same target eligible forever");h.succeed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void anExplicitDirtOrderKeepsThePausedWorkplacesReturnStep(GameTestHelper h)throws Exception {
         var a=returnStair(h);set(a.oleg.autonomy(),"starting",false);
         var order=a.oleg.autonomy().getClass().getDeclaredMethod("playerOrder",String.class);order.setAccessible(true);order.invoke(a.oleg.autonomy(),"gather_dirt");
@@ -462,7 +480,7 @@ public final class CompanionEnduranceTests {
         var gathering=field(a.oleg,"gathering");var mine=gathering.getClass().getDeclaredMethod("mineDirt",BlockPos.class);mine.setAccessible(true);mine.invoke(gathering,step);
         h.assertTrue(h.getLevel().getBlockState(step).is(Blocks.DIRT)&&returnable(a),"Temporary explicit soil order destroyed the saved workplace's exit");h.succeed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void firstWorkbenchCanBeMadeBelowAnUnreachableOldWorkplace(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setItem(0,new ItemStack(Items.OAK_LOG,14));
         a.oleg.autonomy().setEnabled(true);set(a.oleg.autonomy(),"workArea",a.oleg.blockPosition().above(8));
@@ -470,7 +488,7 @@ public final class CompanionEnduranceTests {
         h.assertTrue(result.success(),"No initial bench/pick below an old unreachable workplace: "+result.message());
         h.assertTrue(carriedTool(a,Items.WOODEN_PICKAXE)==1,"Recipe did not produce the initial pickaxe");h.succeed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void firstWorkbenchBelowTheOldWorkplaceKeepsThePartialClimb(GameTestHelper h)throws Exception {
         var a=returnStair(h);set(a.oleg.autonomy(),"workArea",h.absolutePos(a.cell(51,20,48)));
         h.setBlock(a.cell(46,12,47),Blocks.AIR);h.setBlock(a.cell(46,13,47),Blocks.AIR);
@@ -479,7 +497,7 @@ public final class CompanionEnduranceTests {
         var t=Class.forName("dev.aicompanion.entity.CompanionMiningNavigation");var back=t.getDeclaredMethod("canWalkBackUp",CompanionEntity.class,BlockPos.class,int.class);back.setAccessible(true);
         h.assertTrue((boolean)back.invoke(null,a.oleg,a.oleg.blockPosition(),h.absolutePos(a.cell(51,17,48)).getY()),"Placement destroyed the existing partial climb");h.succeed();
     }
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=4*MINUTE)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=4*MINUTE)
     public static void requestedStoneToolsBootstrapFromLogsBelowTheOldWorkplace(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setItem(0,new ItemStack(Items.OAK_LOG,14));a.oleg.autonomy().setEnabled(true);set(a.oleg.autonomy(),"workArea",a.oleg.blockPosition().above(8));
         for(int x=50;x<=54;x++)for(int z=46;z<=50;z++)for(int y=12;y<=14;y++)h.setBlock(a.cell(x,y,z),Blocks.STONE);
@@ -490,7 +508,7 @@ public final class CompanionEnduranceTests {
                 });finish(a,"endurance-tools-below-old-camp",()->"");
     }
     private static int carriedTool(MarathonArena a,net.minecraft.world.item.Item item){int n=0;for(int i=0;i<a.oleg.getContainerSize();i++)if(a.oleg.getItem(i).is(item))n+=a.oleg.getItem(i).getCount();for(var slot:EquipmentSlot.values())if(a.oleg.getItemBySlot(slot).is(item))n+=a.oleg.getItemBySlot(slot).getCount();return n;}
-    @GameTest(template="marathon_valley",batch="endurance",timeoutTicks=40)
+    @GameTest(template="marathon_valley",batch="endurance_short",timeoutTicks=40)
     public static void aQueuedStoneStepLosingItsCornerViewChoosesAnotherDescent(GameTestHelper h)throws Exception {
         var a=yard(h,false);a.oleg.setNoAi(true);a.oleg.setOnGround(true);a.oleg.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_PICKAXE));a.oleg.startWork("gather_stone","",32);
         BlockPos target=h.absolutePos(a.cell(47,13,49));h.getLevel().setBlock(target,Blocks.STONE.defaultBlockState(),2);

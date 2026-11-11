@@ -228,6 +228,16 @@ public final class CompanionPickUpTests {
         // The word is the game's own name in the language it runs in; a test server runs en_us, and so does this route.
         h.assertTrue("companion work pick_up 64 minecraft:spyglass".equals(CompanionLocalCommands.route("подбери Spyglass", "Олег")),
                 "The game's own name: " + CompanionLocalCommands.route("подбери Spyglass", "Олег"));
+        h.assertTrue("companion work pick_up 64 minecraft:bucket".equals(CompanionLocalCommands.route("подбери ведро", "Олег", RU)),
+                "Bucket: " + CompanionLocalCommands.route("подбери ведро", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернила", "Олег", RU)),
+                "Ink: " + CompanionLocalCommands.route("подбери чернила", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернильный мешок", "Олег", RU)),
+                "Ink: " + CompanionLocalCommands.route("подбери чернильный мешок", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("подбери свинину жареную", "Олег", RU)),
+                "Pork: " + CompanionLocalCommands.route("подбери свинину жареную", "Олег", RU));
+        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег", RU)),
+                "Trailing verb: " + CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег", RU));
         h.assertTrue(CompanionLocalCommands.route("принеси мне курицу", "Олег") == null, "«Принеси» is not the pickup");
         h.assertTrue(CompanionLocalCommands.route("подбери курицу и брёвна", "Олег") == null, "Two things at once are a plan");
         PlannedAction step = CompanionLocalCommands.action("companion work pick_up 64 minecraft:chicken");
@@ -370,8 +380,6 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:bucket".equals(CompanionLocalCommands.route("подбери ведро", "Олег", RU)),
-                "Phrase: " + CompanionLocalCommands.route("подбери ведро", "Олег", RU));
         ItemEntity bucket = item(h, 12, 1, 8, Items.WATER_BUCKET, 1);
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:bucket", 64);
         h.assertTrue(result.success(), "The order was refused: " + result.message());
@@ -389,10 +397,6 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернила", "Олег", RU)),
-                "Phrase: " + CompanionLocalCommands.route("подбери чернила", "Олег", RU));
-        h.assertTrue("companion work pick_up 64 minecraft:ink_sac".equals(CompanionLocalCommands.route("подбери чернильный мешок", "Олег", RU)),
-                "Phrase: " + CompanionLocalCommands.route("подбери чернильный мешок", "Олег", RU));
         pool(h, 12, 6, 5, 2);
         ItemEntity sac = floating(h, 13, 2, 8, Items.INK_SAC, 1);
         var result = CompanionEvents.executeAction(player(h, companion), "pick_up", "minecraft:ink_sac", 64);
@@ -411,10 +415,6 @@ public final class CompanionPickUpTests {
         arena(h);
         CompanionEntity companion = spawn(h);
         companion.setPickUpNearby(true, 16);
-        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("подбери свинину жареную", "Олег", RU)),
-                "Phrase: " + CompanionLocalCommands.route("подбери свинину жареную", "Олег", RU));
-        h.assertTrue("companion work pick_up 64 minecraft:porkchop".equals(CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег", RU)),
-                "Trailing verb: " + CompanionLocalCommands.route("жареная свининка в воде кусок подбери", "Олег", RU));
         boolean[] hunted = {false};
         h.onEachTick(() -> { if (companion.workPhase().startsWith("GAME")) hunted[0] = true; });
         pool(h, 12, 6, 5, 2);
@@ -1544,34 +1544,34 @@ public final class CompanionPickUpTests {
     }
 
     /**
-     * Judge finding 6: the Russian stand-in is not a table of ours that drifts from the real translation — every name
-     * it gives is read from the shipped ru_ru lang file the client reads, and checked against it here.
+     * Judge finding 6: the Russian stand-in is a small hand-picked table, not a copy of the game's lang file (the mod
+     * ships none). Every name in it must name its own item and nothing else, so a wrong Russian name — a birch log
+     * called «Дубовое бревно», a lapis ore called «Камень» — fails here instead of quietly standing in for the
+     * player's word.
      */
     @GameTest(template = "large_search")
-    public static void theRussianNamesAreTheShippedOnes(GameTestHelper h) {
-        java.util.Map<String, String> lang = shippedRussianLang();
+    public static void theRussianNamesNameTheirOwnItems(GameTestHelper h) {
         int checked = 0;
         for (var entry : RU_NAMES.entrySet()) {
             var id = ResourceLocation.withDefaultNamespace(entry.getKey());
             Item item = BuiltInRegistries.ITEM.getOptional(id).orElse(null);
             h.assertTrue(item != null, "No item «" + id + "» for the stand-in name «" + entry.getValue() + "»");
-            String shipped = lang.get("item.minecraft." + entry.getKey());
-            if (shipped == null) shipped = lang.get("block.minecraft." + entry.getKey());
-            h.assertTrue(shipped != null, "The shipped ru_ru has no name for «" + id + "»");
-            h.assertTrue(entry.getValue().equals(shipped),
-                    "The stand-in drifted from ru_ru for «" + id + "»: «" + entry.getValue() + "» is «" + shipped + "»");
             h.assertTrue(entry.getValue().equals(russianName(item)), "The resolver does not read the stand-in for «" + id + "»");
+            List<Item> named = CompanionItemLookup.resolve(entry.getValue(), RU);
+            h.assertTrue(!named.isEmpty() && named.getFirst() == item,
+                    "The stand-in «" + entry.getValue() + "» does not name «" + id + "»: "
+                            + named.stream().map(found -> BuiltInRegistries.ITEM.getKey(found).toString()).toList());
             checked++;
         }
-        h.assertTrue(checked >= 2, "Too few names checked against the shipped lang: " + checked);
+        h.assertTrue(checked >= 40, "Too few names checked: " + checked);
         h.succeed();
     }
 
     /**
-     * The names a Russian client shows, as the game's own ru_ru lang file gives them. The GameTest server runs en_us,
-     * so these stand in for the player's language: the resolver is the same one the client runs, only the names come
-     * from here instead of the client's lang. Every one of them is checked against the shipped ru_ru file
-     * ({@link #theRussianNamesAreTheShippedOnes}), so a drift from the real translation fails a test.
+     * The names a Russian client shows, hand-picked here because the GameTest server runs en_us and the game's jar
+     * carries no other language. They stand in for the player's language: the resolver is the same one the client
+     * runs, only the names come from here instead of the client's lang. Each one is held to naming its own item
+     * ({@link #theRussianNamesNameTheirOwnItems}), so a wrong name fails a test.
      */
     private static final java.util.Map<String, String> RU_NAMES = java.util.Map.ofEntries(
             java.util.Map.entry("chicken", "Сырая курица"),
@@ -1630,19 +1630,6 @@ public final class CompanionPickUpTests {
     private static String russianName(Item item) {
         String name = RU_NAMES.get(BuiltInRegistries.ITEM.getKey(item).getPath());
         return name != null ? name : new ItemStack(item).getHoverName().getString();
-    }
-
-    /** The shipped Russian lang file the client reads, as a map of keys to the player's words. */
-    private static java.util.Map<String, String> shippedRussianLang() {
-        try (var stream = CompanionPickUpTests.class.getResourceAsStream("/assets/minecraft/lang/ru_ru.json")) {
-            if (stream == null) throw new IllegalStateException("The shipped ru_ru.json is not on the classpath");
-            var json = com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(stream, java.nio.charset.StandardCharsets.UTF_8));
-            java.util.Map<String, String> lang = new java.util.HashMap<>();
-            for (var entry : json.getAsJsonObject().entrySet()) lang.put(entry.getKey(), entry.getValue().getAsString());
-            return lang;
-        } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException(e);
-        }
     }
 
     private static ItemEntity item(GameTestHelper h, int x, int y, int z, Item item, int count) {

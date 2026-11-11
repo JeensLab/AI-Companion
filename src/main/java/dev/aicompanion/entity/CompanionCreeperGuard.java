@@ -382,11 +382,23 @@ final class CompanionCreeperGuard {
             Vec3 spot = LandRandomPos.getPosAway(owner, FLEE_RANGE, FLEE_HEIGHT, house);
             if (spot != null) spots.add(spot);
         }
-        List<Vec3> ranked = spots.stream().filter(spot -> spot.distanceTo(house) > from && clear(spot, threats, GAP_SLACK))
+        List<Vec3> ranked = spots.stream().filter(spot -> spot.distanceTo(house) > from && overFloor(spot) && clear(spot, threats, GAP_SLACK))
                 .sorted(Comparator.comparingDouble((Vec3 spot) -> -spot.distanceTo(house))).limit(PATH_TESTS).toList();
         leadTried = ranked.size();
         for (Vec3 spot : ranked) if (reachable(spot)) return spot;
         return null;
+    }
+
+    /**
+     * A spot he may stand at: the ring is drawn on his own level, so past an edge its spots hang in the air and by a slope or a wall they
+     * lie inside a block. There is no way to those, and the farthest of them took every search for one from the spots he can reach.
+     */
+    private boolean overFloor(Vec3 spot) {
+        BlockPos feet = BlockPos.containing(spot);
+        var level = owner.level();
+        var at = level.getBlockState(feet);
+        if (at.isCollisionShapeFullBlock(level, feet)) return false;
+        return !at.getCollisionShape(level, feet).isEmpty() || !level.getBlockState(feet.below()).getCollisionShape(level, feet.below()).isEmpty();
     }
 
     /** Spots round him on the level he stands at, in every heading and at each ring radius. */

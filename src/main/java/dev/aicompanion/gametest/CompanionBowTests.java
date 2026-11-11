@@ -160,7 +160,7 @@ public final class CompanionBowTests {
     }
 
     /** Plan only: arrows come from what he can get (flint dug out of gravel, feathers off chickens, sticks); a bow wants string, which he cannot, and he says so. */
-    @GameTest(template = "empty", batch = "bow")
+    @GameTest(template = "empty")
     public static void arrowsArePlannedABowIsRefused(GameTestHelper h) {
         var arrows = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), java.util.List.of(), false, "minecraft:arrow", 8);
         h.assertTrue(!arrows.refused() && arrows.steps().stream().anyMatch(step -> step.type().equals("gather_loose") && step.item().equals("minecraft:flint"))

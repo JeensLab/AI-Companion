@@ -41,7 +41,7 @@ public final class CompanionMineK14Tests {
         CompanionFuseEscape escape = new CompanionFuseEscape(c);
         int length = escape.plan(h.getLevel(), List.of(creeper));
         BlockPos goal = escape.goal();
-        h.assertTrue(goal == null || !lavaBeside(h.getLevel(), goal),
+        h.assertTrue(goal != null && !lavaBeside(h.getLevel(), goal),
                 "The way out of the fuse ends at " + rel(h, goal) + ", beside lava (length " + length + ")");
         h.succeed();
     }

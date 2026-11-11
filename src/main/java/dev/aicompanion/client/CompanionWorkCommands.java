@@ -47,6 +47,72 @@ public final class CompanionWorkCommands {
     }
 
     /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
+    private static final Pattern REPAIR = Pattern.compile("^(?:почини|почини-ка|подлатай)(?: свою| свои| твою| твои)? (.+)$");
+    private static final Pattern DISENCHANT = Pattern.compile("^(?:сними|снимай|убери|счисти)(?: все)? чары (?:с|со) (всех )?(.+)$");
+    private static final String[][] KINDS = {{"кирк", "pickaxe"}, {"топор", "axe"}, {"меч", "sword"}, {"лопат", "shovel"}, {"мотыг", "hoe"},
+            {"шлем", "helmet"}, {"нагрудник", "chestplate"}, {"понож", "leggings"}, {"ботин", "boots"}};
+    private static final String[][] THINGS = {{"лук", "minecraft:bow"}, {"арбалет", "minecraft:crossbow"}, {"удочк", "minecraft:fishing_rod"},
+            {"ножниц", "minecraft:shears"}, {"огнив", "minecraft:flint_and_steel"}, {"трезуб", "minecraft:trident"}, {"щит", "minecraft:shield"},
+            {"элитр", "minecraft:elytra"}, {"книг", "minecraft:enchanted_book"}};
+    private static final String[][] MATERIALS = {{"деревян", "wooden"}, {"камен", "stone"}, {"желез", "iron"}, {"золот", "golden"},
+            {"алмаз", "diamond"}, {"незерит", "netherite"}, {"кожан", "leather"}, {"кольчуж", "chainmail"}};
+
+    /**
+     * «Почини кирку» folds two alike, «сними чары с меча» takes it to a grindstone, «со всех луков» every one (CompanionGrinding).
+     * Only a thing's name is read here: a material and a word of the kind, nothing more. Anything else («мой», «мне», a number,
+     * a comma, «а не …», «потом») is left to the model: a wrong local guess grinds off what the player wanted kept (review 10.11).
+     */
+    public static String grind(String text, String name) {
+        String value = plain(text, name).replaceAll("\\s+", " ");
+        var repair = REPAIR.matcher(value);
+        var disenchant = DISENCHANT.matcher(value);
+        boolean fold = repair.matches();
+        if (!fold && !disenchant.matches()) return null;
+        String words = fold ? repair.group(1) : disenchant.group(2);
+        if (!words.matches("(?U)\\p{L}+(?: \\p{L}+)?")) return null;
+        String[] parts = words.split(" ");
+        String kind = word(KINDS, parts[parts.length - 1]), thing = word(THINGS, parts[parts.length - 1]);
+        String material = parts.length == 2 ? word(MATERIALS, parts[0]) : null;
+        if (parts.length == 2 && (material == null || kind == null)) return null;
+        String item = kind == null ? thing : material == null ? kind : "minecraft:" + material + "_" + kind;
+        // «Деревянный шлем», «кольчужный меч»: no such thing; the model says so better than «У меня нет …».
+        if (item == null || item.contains(":") && !net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(net.minecraft.resources.ResourceLocation.parse(item))) return null;
+        return fold ? "companion work repair_item 1 " + item : "companion work disenchant_item " + (disenchant.group(1) != null ? 64 : 1) + " " + item;
+    }
+
+    private static final Pattern COMPOST_MEAL = Pattern.compile("^(?:сделай|наделай|приготовь|добудь) (?:(\\d{1,2}) )?костн(?:ую|ой) мук[уи] (?:в|на|из) компостер[ае]$");
+    private static final Pattern COMPOST_SCRAP = Pattern.compile("^(?:перегной|переработай|закинь|положи|кинь|засыпь) (?:весь )?(?:хлам|мусор|растительный хлам|растительный мусор) в компостер[е]?$");
+    private static final Pattern COMPOST_PUT = Pattern.compile("^(?:закинь|положи|кинь|брось|засыпь|загрузи) (?:(\\d{1,2}) |все |всю )?(\\p{L}+) в компостер$", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final String[][] COMPOST_GROUPS = {{"саженц", "saplings"}, {"семен", "seeds"}, {"семян", "seeds"}, {"листв", "leaves"}, {"листь", "leaves"}};
+
+    /**
+     * «Сделай костную муку в компостере», «закинь саженцы в компостер» (CompanionComposting): scrap until it ends or so much bone meal,
+     * or a named group, all of it or so many. Only these plain phrases; a thing by its own name, «и», «потом» go to the model.
+     */
+    public static String compost(String text, String name) {
+        String value = plain(text, name).replaceAll("\\s+", " ");
+        var meal = COMPOST_MEAL.matcher(value);
+        if (meal.matches()) return number(meal.group(1)) < 0 ? null : "companion work compost_items " + number(meal.group(1)) + " scrap";
+        if (COMPOST_SCRAP.matcher(value).matches()) return "companion work compost_items " + PlannedAction.ALL_CARRIED + " scrap";
+        var put = COMPOST_PUT.matcher(value);
+        String group = put.matches() ? word(COMPOST_GROUPS, put.group(2)) : null;
+        if (group == null || number(put.group(1)) < 0) return null;
+        return "companion work compost_items " + number(put.group(1)) + " " + group;
+    }
+
+    /** The number said, «all» when none; -1 for one the order cannot carry (a «0» is no order of one, over a stack goes to the model). */
+    private static int number(String said) {
+        if (said == null) return PlannedAction.ALL_CARRIED;
+        int count = Integer.parseInt(said);
+        return count < 1 || count > 64 ? -1 : count;
+    }
+
+    /** The id of the word's stem in the table, or null. */
+    private static String word(String[][] table, String word) {
+        for (String[] entry : table) if (word.startsWith(entry[0])) return entry[1];
+        return null;
+    }
+
     private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
