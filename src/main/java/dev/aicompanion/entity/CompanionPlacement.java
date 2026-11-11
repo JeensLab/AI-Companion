@@ -152,19 +152,20 @@ final class CompanionPlacement {
     /** The block of this kind he can work at from where he stands, as a player at a bench: in reach and in sight. */
     BlockPos inReach(Block block) {
         BlockPos origin = c.blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, -2, -4), origin.offset(4, 2, 4))) {
-            if (c.level().hasChunkAt(pos) && c.level().getBlockState(pos).is(block)
-                    && c.distanceToSqr(pos.getCenter()) <= 3.2 * 3.2) {
-                // Walking targets are chosen by the view from a cell's centre. Standing a few hundredths off it
-                // must not turn "I am at the bench" into "cannot reach the bench" (game log 22.10, a step beside the bench).
-                Vec3 centredEye = Vec3.atBottomCenterOf(c.blockPosition()).add(0, c.getEyeHeight(), 0);
-                if (seesBlock(c.getEyePosition(), pos) || c.onGround() && seesBlock(centredEye, pos)) {
-                    if (!c.level().isClientSide) c.rememberObserved(pos);
-                    return pos.immutable();
-                }
-            }
-        }
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, -2, -4), origin.offset(4, 2, 4)))
+            if (reaches(pos, block)) return pos.immutable();
         return null;
+    }
+
+    /** This block, if it is of the kind, in reach and in sight: the one he chose, when others of its kind stand nearer. */
+    boolean reaches(BlockPos pos, Block block) {
+        if (!c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(block) || c.distanceToSqr(pos.getCenter()) > 3.2 * 3.2) return false;
+        // Walking targets are chosen by the view from a cell's centre. Standing a few hundredths off it
+        // must not turn "I am at the bench" into "cannot reach the bench" (game log 22.10, a step beside the bench).
+        Vec3 centredEye = Vec3.atBottomCenterOf(c.blockPosition()).add(0, c.getEyeHeight(), 0);
+        if (!seesBlock(c.getEyePosition(), pos) && !(c.onGround() && seesBlock(centredEye, pos))) return false;
+        if (!c.level().isClientSide) c.rememberObserved(pos);
+        return true;
     }
     private boolean seesBlock(Vec3 eye, BlockPos pos) { return seesBlock(c, eye, pos); }
 

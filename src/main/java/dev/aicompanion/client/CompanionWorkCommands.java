@@ -80,6 +80,33 @@ public final class CompanionWorkCommands {
         return fold ? "companion work repair_item 1 " + item : "companion work disenchant_item " + (disenchant.group(1) != null ? 64 : 1) + " " + item;
     }
 
+    private static final Pattern COMPOST_MEAL = Pattern.compile("^(?:сделай|наделай|приготовь|добудь) (?:(\\d{1,2}) )?костн(?:ую|ой) мук[уи] (?:в|на|из) компостер[ае]$");
+    private static final Pattern COMPOST_SCRAP = Pattern.compile("^(?:перегной|переработай|закинь|положи|кинь|засыпь) (?:весь )?(?:хлам|мусор|растительный хлам|растительный мусор) в компостер[е]?$");
+    private static final Pattern COMPOST_PUT = Pattern.compile("^(?:закинь|положи|кинь|брось|засыпь|загрузи) (?:(\\d{1,2}) |все |всю )?(\\p{L}+) в компостер$", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final String[][] COMPOST_GROUPS = {{"саженц", "saplings"}, {"семен", "seeds"}, {"семян", "seeds"}, {"листв", "leaves"}, {"листь", "leaves"}};
+
+    /**
+     * «Сделай костную муку в компостере», «закинь саженцы в компостер» (CompanionComposting): scrap until it ends or so much bone meal,
+     * or a named group, all of it or so many. Only these plain phrases; a thing by its own name, «и», «потом» go to the model.
+     */
+    public static String compost(String text, String name) {
+        String value = plain(text, name).replaceAll("\\s+", " ");
+        var meal = COMPOST_MEAL.matcher(value);
+        if (meal.matches()) return number(meal.group(1)) < 0 ? null : "companion work compost_items " + number(meal.group(1)) + " scrap";
+        if (COMPOST_SCRAP.matcher(value).matches()) return "companion work compost_items " + PlannedAction.ALL_CARRIED + " scrap";
+        var put = COMPOST_PUT.matcher(value);
+        String group = put.matches() ? word(COMPOST_GROUPS, put.group(2)) : null;
+        if (group == null || number(put.group(1)) < 0) return null;
+        return "companion work compost_items " + number(put.group(1)) + " " + group;
+    }
+
+    /** The number said, «all» when none; -1 for one the order cannot carry (a «0» is no order of one, over a stack goes to the model). */
+    private static int number(String said) {
+        if (said == null) return PlannedAction.ALL_CARRIED;
+        int count = Integer.parseInt(said);
+        return count < 1 || count > 64 ? -1 : count;
+    }
+
     /** The id of the word's stem in the table, or null. */
     private static String word(String[][] table, String word) {
         for (String[] entry : table) if (word.startsWith(entry[0])) return entry[1];

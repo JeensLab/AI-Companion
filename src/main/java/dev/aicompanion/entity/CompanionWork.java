@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, GRIND }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, GRIND }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, GRIND, COMPOST }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, GRIND, COMPOST }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -47,6 +47,8 @@ public final class CompanionWork {
     final CompanionPortalBuild portal;
     /** disenchant_item: the walk to a grindstone, or his own one, and the grinding. */
     final CompanionGrinding grinding = new CompanionGrinding(this);
+    /** compost_items: the walk to a composter, or his own one, and the filling. */
+    final CompanionComposting composting = new CompanionComposting(this);
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
     CompanionStoneSearch stoneSearch;
@@ -324,6 +326,7 @@ public final class CompanionWork {
             case WATER -> "за водой";
             case PICKUP -> "подбор";
             case GRIND -> "у точила";
+            case COMPOST -> "у компостера";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -355,6 +358,7 @@ public final class CompanionWork {
             case PORTAL -> portal.jobName();
             case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
             case GRIND -> grinding.jobName();
+            case COMPOST -> composting.jobName();
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -442,6 +446,7 @@ public final class CompanionWork {
             case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
             case "build_portal" -> { CompanionActionResult answer = portal.begin(item); if (answer != null) return answer; job = Job.PORTAL; phase = Phase.PORTAL; }
+            case "compost_items" -> { CompanionActionResult refusal = composting.begin(item, count); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
             case "disenchant_item" -> { CompanionActionResult refusal = grinding.begin(item, count); if (refusal != null) return refusal; job = Job.GRIND; phase = Phase.GRIND; }
             case "give_items" -> {
                 if (!"logs".equals(item) && (ResourceLocation.tryParse(item) == null || !BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse(item))))
@@ -640,6 +645,7 @@ public final class CompanionWork {
             case PORTAL -> portal.tick(level);
             case PICKUP -> pickUp(level);
             case GRIND -> grinding.tick(level);
+            case COMPOST -> composting.tick(level);
             case WOOD -> { }
         }
     }
