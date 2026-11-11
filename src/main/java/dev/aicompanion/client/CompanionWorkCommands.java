@@ -47,6 +47,45 @@ public final class CompanionWorkCommands {
     }
 
     /** Lower case, ё as е, without his name in front and the full stop or «!» at the end. */
+    private static final Pattern REPAIR = Pattern.compile("^(?:почини|почини-ка|подлатай)(?: свою| свои| твою| твои)? (.+)$");
+    private static final Pattern DISENCHANT = Pattern.compile("^(?:сними|снимай|убери|счисти)(?: все)? чары (?:с|со) (всех )?(.+)$");
+    private static final String[][] KINDS = {{"кирк", "pickaxe"}, {"топор", "axe"}, {"меч", "sword"}, {"лопат", "shovel"}, {"мотыг", "hoe"},
+            {"шлем", "helmet"}, {"нагрудник", "chestplate"}, {"понож", "leggings"}, {"ботин", "boots"}};
+    private static final String[][] THINGS = {{"лук", "minecraft:bow"}, {"арбалет", "minecraft:crossbow"}, {"удочк", "minecraft:fishing_rod"},
+            {"ножниц", "minecraft:shears"}, {"огнив", "minecraft:flint_and_steel"}, {"трезуб", "minecraft:trident"}, {"щит", "minecraft:shield"},
+            {"элитр", "minecraft:elytra"}, {"книг", "minecraft:enchanted_book"}};
+    private static final String[][] MATERIALS = {{"деревян", "wooden"}, {"камен", "stone"}, {"желез", "iron"}, {"золот", "golden"},
+            {"алмаз", "diamond"}, {"незерит", "netherite"}, {"кожан", "leather"}, {"кольчуж", "chainmail"}};
+
+    /**
+     * «Почини кирку» folds two alike, «сними чары с меча» takes it to a grindstone, «со всех луков» every one (CompanionGrinding).
+     * Only a thing's name is read here: a material and a word of the kind, nothing more. Anything else («мой», «мне», a number,
+     * a comma, «а не …», «потом») is left to the model: a wrong local guess grinds off what the player wanted kept (review 10.11).
+     */
+    public static String grind(String text, String name) {
+        String value = plain(text, name).replaceAll("\\s+", " ");
+        var repair = REPAIR.matcher(value);
+        var disenchant = DISENCHANT.matcher(value);
+        boolean fold = repair.matches();
+        if (!fold && !disenchant.matches()) return null;
+        String words = fold ? repair.group(1) : disenchant.group(2);
+        if (!words.matches("(?U)\\p{L}+(?: \\p{L}+)?")) return null;
+        String[] parts = words.split(" ");
+        String kind = word(KINDS, parts[parts.length - 1]), thing = word(THINGS, parts[parts.length - 1]);
+        String material = parts.length == 2 ? word(MATERIALS, parts[0]) : null;
+        if (parts.length == 2 && (material == null || kind == null)) return null;
+        String item = kind == null ? thing : material == null ? kind : "minecraft:" + material + "_" + kind;
+        // «Деревянный шлем», «кольчужный меч»: no such thing; the model says so better than «У меня нет …».
+        if (item == null || item.contains(":") && !net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(net.minecraft.resources.ResourceLocation.parse(item))) return null;
+        return fold ? "companion work repair_item 1 " + item : "companion work disenchant_item " + (disenchant.group(1) != null ? 64 : 1) + " " + item;
+    }
+
+    /** The id of the word's stem in the table, or null. */
+    private static String word(String[][] table, String word) {
+        for (String[] entry : table) if (word.startsWith(entry[0])) return entry[1];
+        return null;
+    }
+
     private static String plain(String text, String name) {
         String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");

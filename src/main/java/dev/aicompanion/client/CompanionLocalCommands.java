@@ -70,6 +70,9 @@ public final class CompanionLocalCommands {
         if (water != null) return water;
         String obsidian = CompanionWorkCommands.obsidian(text, companionName);
         if (obsidian != null) return obsidian;
+        // Before the equipment: «сними чары с меча» is the grindstone, not «сними меч».
+        String grind = CompanionWorkCommands.grind(text, companionName);
+        if (grind != null) return grind;
         if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
                 || normalized.matches("(?s).*\\d.*")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.

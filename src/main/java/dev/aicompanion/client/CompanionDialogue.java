@@ -88,6 +88,8 @@ public final class CompanionDialogue {
             case "harvest_crops" -> "Ага, пойду соберу урожай.";
             case "obtain_item" -> "Ага, добуду.";
             case "pick_up" -> "Ага, подберу, что лежит рядом.";
+            case "repair_item" -> "Сейчас сложу две в одну.";
+            case "disenchant_item" -> "Ага, сниму чары на точиле.";
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
@@ -143,6 +145,8 @@ public final class CompanionDialogue {
             case "harvest_crops" -> "собрать урожай";
             case "obtain_item" -> "добыть «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "pick_up" -> "подобрать «" + itemName(action.item()) + "» (до " + action.count() + " шт.)";
+            case "repair_item" -> "починить «" + dev.aicompanion.entity.CompanionGrinding.label(action.item()) + "»";
+            case "disenchant_item" -> "снять чары: «" + dev.aicompanion.entity.CompanionGrinding.label(action.item()) + "», на точиле";
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
             case "fill_bucket" -> "набрать воды в ведро (" + action.count() + " шт.)";
             case "mine_obsidian" -> "добыть обсидиан (" + action.count() + " шт.)";
