@@ -11,8 +11,10 @@ import java.util.regex.Pattern;
 /**
  * What the player says about a named place: «запомни это место, это дом» saves a marker, «иди к колодцу», «проведи меня
  * до железного рудника», «отведи меня к даче», «охраняй дачу» and «отнеси ресы в дом» walk to one, and «забудь дачу»,
- * «забудь метку дачу», «удали точку дачу» or «забудь всё» take one or every marker off his list. A name that fits no
- * marker, or one place that more than one marker fits, is answered with one honest question and no walk; two markers
+ * «забудь метку дачу», «удали точку дачу» or «забудь всё» take one or every marker off his list. A forget word about a
+ * thing, not a place — «забудь, что я говорил», «забудь, где дача», «забудь про молоко», «забудь всё про метку» — names
+ * no marker and stays the model's. A name that fits no marker, or one place that more than one marker fits, is answered
+ * with one honest question and no walk; two markers
  * named as two legs («иди на второй остров потом на первый остров») are left to the model, which plans the whole route.
  * <p>
  * No client classes, so the chat screen and the GameTests read the same phrases. Names are the player's own words: the
@@ -39,8 +41,8 @@ public final class CompanionPlaceSpeech {
     /** «Забудь метку дачу», «удали точку дачу»: the object word says the name is a marker, not a thing to forget about. */
     private static final Pattern FORGET_NAMED = Pattern.compile("(?U)^(?:забудь|забудьте|удали|удалите)\\b"
             + "\\s*[,:;—-]?\\s*(?:(?:эту|ту|мою|нашу|это)\\s+)?(?:метк[ауие]|точк[ауие]|мест[оа])\\b\\s*[,:;—-]?\\s*(.*)$");
-    /** «Забудь всё», «забудь все метки»: every marker of the list goes. */
-    private static final Pattern FORGET_ALL = Pattern.compile("(?U)^(?:забудь|забудьте|удали|удалите)\\b\\s*[,:;—-]?\\s*вс[её]\\b.*$");
+    /** «Забудь всё», «забудь все метки»: every marker of the list goes. The tail is what follows «всё». */
+    private static final Pattern FORGET_ALL = Pattern.compile("(?U)^(?:забудь|забудьте|удали|удалите)\\b\\s*[,:;—-]?\\s*вс[её]\\b\\s*(.*)$");
     private static final Pattern GO = Pattern.compile("(?U)^(?:иди|идите|пойди|пойдите|сходи|сходите|сбегай|беги|бегите|шагай|шагайте"
             + "|ступай|ступайте|веди|ведите|проведи|проведите|проводи|проводите|отведи|отведите|доведи|доведите|подведи|подведите"
             + "|дойди|дойдите|доберись|доберитесь|подойди|подойдите|вернись|вернитесь|возвращайся|пошли|пойдем|идем)\\b"
@@ -56,6 +58,8 @@ public final class CompanionPlaceSpeech {
             "мне", "нам", "себе", "ему", "ей", "им", "вам", "тебе");
     /** «Забудь про молоко», «забудь об этом»: the word is a thing he is told about, not a place to take off the list. */
     private static final Set<String> PREPOSITIONS = Set.of("про", "о", "об", "обо");
+    /** «Забудь, что я говорил», «забудь, где дача»: a clause opener says what he is told about, not a place on the list. */
+    private static final Set<String> CLAUSE_WORDS = Set.of("что", "как", "когда", "где");
     /** «Забудь цель», «забудь задачу»: an order he is doing, not a place on the list — the goal and stop grammar own them. */
     private static final Set<String> ORDER_WORDS = Set.of("цель", "цели", "дракона", "задачу", "задачи");
     /** «дом» and «домик» are the home he already knows: with no marker of that name the phrase stays the model's. */
@@ -107,7 +111,13 @@ public final class CompanionPlaceSpeech {
 
     /** The forget order of the phrase, or null when the phrase is not about taking a marker off the list. */
     private static Result forget(String said, List<String> knownNames) {
-        if (FORGET_ALL.matcher(said).matches()) return new Result(Kind.FORGET_ALL, "", null);
+        var all = FORGET_ALL.matcher(said);
+        if (all.matches()) {
+            // «Забудь всё про молоко», «забудь всё про метку»: «всё» with a preposition after it is a subject he is told
+            // about, not the list, so the model answers and no marker goes. The bare «забудь всё» still empties it.
+            if (PREPOSITIONS.contains(firstWord(all.group(1)))) return Result.none();
+            return new Result(Kind.FORGET_ALL, "", null);
+        }
         var named = FORGET_NAMED.matcher(said);
         String target;
         if (named.matches()) target = named.group(1).strip();
@@ -118,9 +128,10 @@ public final class CompanionPlaceSpeech {
         }
         List<String> words = CompanionMarkerNames.tokens(target);
         if (words.isEmpty()) return new Result(Kind.EMPTY_NAME, "", forgetEmpty(knownNames));
-        // A person word, a preposition or an order's own word names no marker: «забудь меня», «забудь про молоко»,
-        // «забудь задачу» stay the model's.
-        if (personWord(words) || PREPOSITIONS.contains(words.getFirst()) || ORDER_WORDS.contains(words.getFirst())) return Result.none();
+        // A person word, a clause opener, a preposition or an order's own word names no marker: «забудь меня»,
+        // «забудь, что я говорил», «забудь про молоко», «забудь задачу» stay the model's.
+        if (personWord(words) || CLAUSE_WORDS.contains(words.getFirst()) || PREPOSITIONS.contains(words.getFirst())
+                || ORDER_WORDS.contains(words.getFirst())) return Result.none();
         List<String> matches = matching(target, knownNames);
         if (matches.isEmpty()) {
             // «Дом» is the home he knows: with no marker of that name the line says so, and the home is never forgotten.
@@ -177,6 +188,12 @@ public final class CompanionPlaceSpeech {
         if (said.contains(",")) return true;
         for (String word : CompanionMarkerNames.tokens(said)) if (STEPS.contains(word)) return true;
         return false;
+    }
+
+    /** The first word of a tail, or "" when it has none: what «забудь всё про …» says after «всё». */
+    private static String firstWord(String tail) {
+        List<String> words = CompanionMarkerNames.tokens(tail);
+        return words.isEmpty() ? "" : words.getFirst();
     }
 
     /** A word that points at a person is never a marker name, whatever the list holds. */
