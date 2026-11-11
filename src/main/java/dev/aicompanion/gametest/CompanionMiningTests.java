@@ -190,7 +190,7 @@ public final class CompanionMiningTests {
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 600)
-    public static void waterAdjacentStoneAndExistingChestsArePreserved(GameTestHelper helper) {
+    public static void waterAdjacentStoneIsPreserved(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); BlockPos stone = new BlockPos(20, 1, 16);
         helper.setBlock(stone, Blocks.STONE); helper.setBlock(stone.east(), Blocks.WATER);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE)); companion.startWork("gather_stone", "", 1);
