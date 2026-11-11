@@ -423,8 +423,6 @@ public final class CompanionDeathWalkTests {
         c.teleportTo(start.getX() + .5, start.getY(), start.getZ() + .5);
         h.assertTrue(setOut(h, c), "He did not set out");
         int ticks = walk(h, c, 1800);
-        for (int chunkX = SectionPos.blockToSectionCoord(feet.getX()); chunkX <= SectionPos.blockToSectionCoord(feet.getX() + 80); chunkX++)
-            h.getLevel().setChunkForced(chunkX, SectionPos.blockToSectionCoord(feet.getZ()), false);
         h.assertTrue(item.isRemoved() || item.getItem().isEmpty(),
                 "The stack eighty blocks off was not taken: " + item.getItem() + " at " + item.blockPosition() + ", he at "
                         + c.blockPosition() + ", " + c.deathTrip.verdict(item.getUUID()));

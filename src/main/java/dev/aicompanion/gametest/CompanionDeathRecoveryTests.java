@@ -560,7 +560,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(c.deathTrip.verdict(item.getUUID()) == null
                         || c.deathTrip.verdict(item.getUUID()).fate() == CompanionDeathTrip.Fate.PENDING,
                 "An unloaded stack was judged: " + c.deathTrip.verdict(item.getUUID()));
-        c.discard(); // the walk is still on: left alive he would go east through the arenas of other tests
+        c.discard(); // the walk is still on: he does not go on with it after his test is over
         h.succeed();
     }
 
