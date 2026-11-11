@@ -430,7 +430,8 @@ final class CompanionGatherGoals {
         private void finish(String message) {
             c.woodBreaking.reset();
             if (!accessIssue.isBlank()) message += " " + accessIssue + ".";
-            c.lastTaskSucceeded = logs() >= inventoryTarget;
+            c.lastTaskSucceeded = CompanionTools.count(c, ItemTags.LOGS) >= inventoryTarget;
+            if (kind != null) c.lastTaskSucceeded = logs() >= inventoryTarget;
             c.gatheringLogs = false;
             c.logsRemaining = 0;
             c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, false);
