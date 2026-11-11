@@ -560,6 +560,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(c.deathTrip.verdict(item.getUUID()) == null
                         || c.deathTrip.verdict(item.getUUID()).fate() == CompanionDeathTrip.Fate.PENDING,
                 "An unloaded stack was judged: " + c.deathTrip.verdict(item.getUUID()));
+        c.discard(); // the walk is still on: left alive he would go east through the arenas of other tests
         h.succeed();
     }
 
@@ -943,7 +944,7 @@ public final class CompanionDeathRecoveryTests {
     }
 
     /** A stranger's junk far off is not a reason for a trip: only the manifest is walked to. */
-    @GameTest(template = "empty")
+    @GameTest(template = "large_search")
     public static void aStrangersJunkFarOffIsNotFetched(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
@@ -956,7 +957,7 @@ public final class CompanionDeathRecoveryTests {
         h.assertTrue(setOut(h, c), "He did not set out");
         int ticks = walk(h, c, 600);
         boolean junkLeft = junk.isAlive() && junk.getItem().getCount() == 64;
-        junk.discard(); // it lies past this test's own arena, where the companion of the next test can pick it up
+        junk.discard(); // nothing of this test's is left lying for the companion of another test to pick up
         h.assertTrue(mine.isRemoved() || mine.getItem().isEmpty(), "His diamond was not fetched");
         h.assertTrue(junkLeft, "He walked to a stranger's junk");
         h.assertTrue(ticks < 200, "The walk to one stack took too long: " + ticks);
@@ -1452,12 +1453,17 @@ public final class CompanionDeathRecoveryTests {
         BlockPos feet = yard(h, c, 4);
         // A chunk the yard does not cover: the test's own edit brings it into being, as a fresh arena's ground does.
         BlockPos fresh = feet.offset(64, 0, 0);
+        var groundWas = h.getLevel().getBlockState(fresh.below());
+        var airWas = h.getLevel().getBlockState(fresh);
         put(h, fresh.below(), Blocks.STONE);
         put(h, fresh, Blocks.AIR);
         var item = stack(h, fresh, new ItemStack(Items.DIAMOND, 2));
         boolean handedOut = h.getLevel().getEntity(item.getUUID()) == item;
         boolean scanned = h.getLevel().getEntitiesOfClass(ItemEntity.class, new AABB(fresh).inflate(1)).contains(item);
-        item.discard(); // it lies 64 blocks off, in the arena of another test, where that test's companion can pick it up
+        // The place is 64 blocks off, in the arena of another test: nothing of this test's stays there.
+        item.discard();
+        put(h, fresh.below(), groundWas);
+        put(h, fresh, airWas);
         h.assertTrue(handedOut,
                 "The stack is not in the world the game hands out: it lies in a chunk whose entities nobody has taken yet");
         h.assertTrue(scanned,
