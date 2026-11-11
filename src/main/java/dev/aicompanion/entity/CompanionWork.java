@@ -779,8 +779,8 @@ public final class CompanionWork {
     }
 
     private void buildHouse(ServerLevel level) {
-        if (!owner.onGround()) return;
         CompanionHouse active = templateJob ? templateHouse : house;
+        if (!owner.onGround() && !active.scaffolding()) return;
         var site = active.ensureSite(level);
         if (site != null) { finish(false, site.message()); return; }
         if (active.needsPreparation() && crafting.approachCraftingTable()) return;

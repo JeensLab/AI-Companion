@@ -74,9 +74,19 @@ final class CompanionHouse {
     private long progressTime;
     private double bestDistance;
     private final java.util.HashSet<Integer> unreachable = new java.util.HashSet<>();
+    /** Dirt scaffolding of a building (template instance): what is out of reach from the ground is placed from a column he stands on. */
+    private final CompanionScaffold scaffold;
+    private boolean onScaffold;
+    private int scaffolds;
+    private static final int MAX_SCAFFOLDS = 12;
+    /** Blocks a column was already put up for: a second one for the same block would change nothing. */
+    private final java.util.HashSet<Integer> scaffoldTried = new java.util.HashSet<>();
+    /** The end of the work (done or failed) waits for the scaffolding to come down: none stands in a building reported done. */
+    private Result afterScaffold;
+    private record Column(BlockPos ground, int levels, double score) { }
 
     CompanionHouse(CompanionEntity owner) { this(owner, false); }
-    CompanionHouse(CompanionEntity owner, boolean template) { this.owner = owner; this.template = template; }
+    CompanionHouse(CompanionEntity owner, boolean template) { this.owner = owner; this.template = template; scaffold = new CompanionScaffold(owner); }
 
     /** A building of the catalogue: the one already under way goes on, any other (or a finished one) starts at a new site. */
     void begin(CompanionVillageBuildings.Building next) {
@@ -89,23 +99,28 @@ final class CompanionHouse {
     /** A saved building or house with blocks still to place. */
     boolean unfinished() {
         int size = steps.isEmpty() ? total : steps.size();
-        return base != null && (size == 0 || placed.cardinality() < size);
+        return base != null && (size == 0 || placed.cardinality() < size || scaffold.hasBlocks());
     }
 
     void begin() {
         prepared = false;
         cancel();
-        unreachable.clear();
+        unreachable.clear(); scaffoldTried.clear(); scaffolds = 0; afterScaffold = null;
+        // Scaffolding left by an interruption comes down first.
+        if (scaffold.hasBlocks()) scaffold.startDescend();
     }
 
     void cancel() {
         target = -1;
         path = null;
         cooldown = 0;
+        onScaffold = false; scaffold.reset();
         // Placed blocks and the blueprint belong to the world, not the active command.
     }
 
-    boolean needsPreparation() { return !prepared; }
+    boolean needsPreparation() { return !prepared && !(template && scaffold.hasBlocks()); }
+    /** The climb and the descent need a tick in the air too, between two jumps. */
+    boolean scaffolding() { return template && scaffold.busy(); }
     BlockPos interiorAnchor() { return base == null ? null : base.offset(2, 1, 2); }
     boolean inside(BlockPos pos) {
         return base != null && pos.getY() == base.getY() + 1
@@ -154,6 +169,42 @@ final class CompanionHouse {
     }
 
     Result tick(ServerLevel level) {
+        if (!template) return build(level);
+        Result onTheColumn = scaffoldStep(level);
+        if (onTheColumn != null) return onTheColumn;
+        Result result = build(level);
+        if ((result.state() == State.DONE || result.state() == State.FAILED) && scaffold.hasBlocks()) {
+            afterScaffold = result; onScaffold = false; scaffold.startDescend();
+            return Result.working();
+        }
+        return result;
+    }
+
+    /** The climb up the column, the descent from it; null when the building itself is what to do now. */
+    private Result scaffoldStep(ServerLevel level) {
+        if (scaffold.descending()) {
+            var outcome = scaffold.descend(level);
+            if (outcome == CompanionScaffold.Outcome.WORKING) { owner.workStatus("Разбираю леса."); return Result.working(); }
+            onScaffold = false; target = -1; path = null;
+            if (outcome == CompanionScaffold.Outcome.FAILED) { afterScaffold = null; return Result.failed(scaffold.failure() + " Стройку сохранил; скажи «дострой», когда смогу до них дотянуться."); }
+            Result end = afterScaffold;
+            afterScaffold = null;
+            return end;
+        }
+        if (!scaffold.climbing()) return null;
+        var outcome = scaffold.climb(level);
+        if (outcome == CompanionScaffold.Outcome.WORKING) { owner.workStatus("Поднимаюсь на леса."); return Result.working(); }
+        if (outcome == CompanionScaffold.Outcome.FAILED) {
+            Result failed = Result.failed(scaffold.failure() + (scaffold.hasBlocks() ? " Леса разберу." : ""));
+            if (!scaffold.hasBlocks()) return failed;
+            afterScaffold = failed;
+            return Result.working();
+        }
+        if (!onScaffold) { onScaffold = true; target = -1; path = null; unreachable.clear(); }
+        return null;
+    }
+
+    private Result build(ServerLevel level) {
         if (!owner.onGround()) return Result.working();
         Result unreadable = loadTemplate(level);
         if (unreadable != null) return unreadable;
@@ -193,11 +244,18 @@ final class CompanionHouse {
                 if (!free(level, step)) return Result.failed("На месте стройки появился другой блок. Не буду его ломать. Освободи место и попроси достроить дом.");
                 if (!supported(level, step)) continue;
                 if (canPlaceFromHere(level, step)) { select(index, level); break; }
+                // From the column only what is within reach is placed; the rest waits for the descent.
+                if (onScaffold) continue;
                 Path route = route(level, step);
                 if (route != null && route.canReach()) { select(index, level); path = route; break; }
                 // The tick's cells went elsewhere: the rest of the steps are asked next tick, none is written off.
                 if (route == null && routeBusy) return Result.working();
                 unreachable.add(index);
+            }
+            if (target < 0 && onScaffold) { onScaffold = false; scaffold.startDescend(); return Result.working(); }
+            if (target < 0 && template) {
+                Result up = scaffoldFor(level, stage);
+                if (up != null) return up;
             }
             if (target < 0) return Result.failed("Не могу подойти к оставшимся блокам дома. Освободи проход и скажи «дострой дом».");
         }
@@ -231,6 +289,7 @@ final class CompanionHouse {
             owner.workStatus("Строю " + label() + ": " + placed.cardinality() + " из " + steps.size() + " блоков. Место: " + base.toShortString() + ".");
             target = -1; path = null; cooldown = 5; unreachable.clear();
         } else {
+            if (onScaffold) { target = -1; path = null; return Result.working(); }
             if (level.getGameTime() - progressTime > 160) {
                 unreachable.add(target); target = -1; path = null; owner.getNavigation().stop();
                 return Result.working();
@@ -241,6 +300,67 @@ final class CompanionHouse {
             }
         }
         return Result.working();
+    }
+
+    /** What the steps not yet built still take of an item: the scaffolding does not stand on the building's own material. */
+    private int stillNeeded(Item item) {
+        int count = 0;
+        for (int index = 0; index < steps.size(); index++) if (!placed.get(index) && steps.get(index).item() == item) count++;
+        return count;
+    }
+
+    /** Nothing of this stage is reached from the ground: a column of dirt for the nearest block that one reaches. Null when no column helps. */
+    private Result scaffoldFor(ServerLevel level, int stage) {
+        if (scaffolds >= MAX_SCAFFOLDS) return null;
+        List<Integer> unreached = new ArrayList<>();
+        for (int index = 0; index < steps.size(); index++)
+            if (!placed.get(index) && steps.get(index).stage == stage && !scaffoldTried.contains(index) && supported(level, steps.get(index))) unreached.add(index);
+        unreached.sort(Comparator.comparingDouble(index -> owner.distanceToSqr(steps.get(index).pos.getCenter())));
+        Set<BlockPos> cells = new java.util.HashSet<>();
+        for (Step step : steps) { cells.add(step.pos); if (step.second() != null) cells.add(step.second()); }
+        for (int index : unreached) {
+            routeBusy = false;
+            Column column = column(level, steps.get(index), cells);
+            if (column == null) {
+                if (routeBusy) return Result.working();
+                continue;
+            }
+            int have = CompanionScaffold.supply(owner, this::stillNeeded);
+            if (have < column.levels()) return Result.failed("Не хватает земли для лесов: нужно " + column.levels() + ", в сумке " + have + ". Положи землю в сумку и скажи «дострой».");
+            scaffoldTried.add(index); scaffolds++;
+            scaffold.begin(column.ground(), column.levels(), this::stillNeeded);
+            return Result.working();
+        }
+        return null;
+    }
+
+    /** The lowest column of dirt, on ground he can walk to, from whose top the block is placed: within reach, in sight, off its cell. */
+    private Column column(ServerLevel level, Step step, Set<BlockPos> cells) {
+        List<Column> options = new ArrayList<>();
+        for (int dx = -4; dx <= 4; dx++) for (int dz = -4; dz <= 4; dz++) for (int dy : new int[]{0, -1, 1, -2}) {
+            BlockPos ground = new BlockPos(step.pos.getX() + dx, base.getY() + dy, step.pos.getZ() + dz);
+            if (!level.hasChunkAt(ground) || cells.contains(ground) || !level.getBlockState(ground.below()).isFaceSturdy(level, ground.below(), Direction.UP)) continue;
+            for (int levels = 1; levels <= CompanionScaffold.MAX_HEIGHT; levels++) {
+                BlockPos block = ground.above(levels - 1);
+                // The column itself: free cells, not the building's.
+                if (cells.contains(block) || !level.getFluidState(block).isEmpty() || !level.getBlockState(block).canBeReplaced() || !level.getBlockState(block).getCollisionShape(level, block).isEmpty()) break;
+                BlockPos feet = ground.above(levels);
+                if (cells.contains(feet) || cells.contains(feet.above()) || !level.hasChunkAt(feet.above()) || !level.noCollision(new AABB(feet.getX(), feet.getY(), feet.getZ(), feet.getX() + 1, feet.getY() + 2, feet.getZ() + 1))) continue;
+                AABB body = new AABB(ground.getX() + .2, feet.getY(), ground.getZ() + .2, ground.getX() + .8, feet.getY() + owner.getBbHeight(), ground.getZ() + .8);
+                if (body.intersects(new AABB(step.pos)) || step.second() != null && body.intersects(new AABB(step.second()))) continue;
+                if (!visible(level, Vec3.atBottomCenterOf(feet).add(0, owner.getEyeHeight(), 0), step.pos)) continue;
+                options.add(new Column(ground.immutable(), levels, levels * 1000D + owner.distanceToSqr(ground.getCenter())));
+                break;
+            }
+        }
+        options.sort(Comparator.comparingDouble(Column::score));
+        // The way to the foot of the column is asked of the first few only: each is a search.
+        for (Column option : options.subList(0, Math.min(5, options.size()))) {
+            int busy = owner.work.route.busyAnswers();
+            if (owner.work.route.toCells(Set.of(option.ground())) != null) return option;
+            if (owner.work.route.busyAnswers() != busy) { routeBusy = true; return null; }
+        }
+        return null;
     }
 
     private void select(int index, ServerLevel level) {
@@ -499,7 +619,7 @@ final class CompanionHouse {
         if (base == null) { if (elsewhere != null) tag.put(key(), elsewhere.copy()); return; }
         CompoundTag data = new CompoundTag();
         data.putLong("Base", base.asLong());
-        if (template) { data.putString("Building", building.name()); data.putInt("Total", total); }
+        if (template) { data.putString("Building", building.name()); data.putInt("Total", total); scaffold.save(data); }
         else data.putString("Wood", wood);
         data.putString("Dimension", owner.level().dimension().location().toString());
         data.putLongArray("Placed", placed.toLongArray());
@@ -507,13 +627,13 @@ final class CompanionHouse {
         tag.put(key(), data);
     }
     void load(CompoundTag tag) {
-        base = null; workbench = null; placed.clear(); begin(); elsewhere = null;
+        base = null; workbench = null; placed.clear(); scaffold.forget(); begin(); elsewhere = null;
         if (template) { building = null; loaded = null; steps = List.of(); total = 0; }
         CompoundTag data = tag.getCompound(key());
         if (!data.contains("Base") || (template ? CompanionVillageBuildings.find(data.getString("Building")) == null : !WOODS.contains(data.getString("Wood")))) return;
         if (!owner.level().dimension().location().toString().equals(data.getString("Dimension"))) { elsewhere = data.copy(); return; }
         base = BlockPos.of(data.getLong("Base"));
-        if (template) { building = CompanionVillageBuildings.find(data.getString("Building")); total = data.getInt("Total"); }
+        if (template) { building = CompanionVillageBuildings.find(data.getString("Building")); total = data.getInt("Total"); scaffold.load(data); }
         else { wood = data.getString("Wood"); steps = blueprint(); }
         if (data.contains("Workbench")) workbench = BlockPos.of(data.getLong("Workbench"));
         placed.or(BitSet.valueOf(data.getLongArray("Placed")));

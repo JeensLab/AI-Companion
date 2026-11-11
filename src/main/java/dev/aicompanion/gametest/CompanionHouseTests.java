@@ -176,7 +176,7 @@ public final class CompanionHouseTests {
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void villageHouseStandsLikeItsTemplateAndSpendsTheBag(GameTestHelper helper) {
         CompanionEntity companion = setup(helper);
-        Map<Item, Integer> bag = placeReference(helper);
+        Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(companion, bag);
         helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
         helper.succeedWhen(() -> {
@@ -190,7 +190,7 @@ public final class CompanionHouseTests {
     @GameTest(template = "tall_tree", timeoutTicks = 9000)
     public static void villageHouseResumesAfterStopAndReloadWithoutDuplicates(GameTestHelper helper) {
         CompanionEntity original = setup(helper);
-        Map<Item, Integer> bag = placeReference(helper);
+        Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(original, bag);
         int total = bag.values().stream().mapToInt(Integer::intValue).sum();
         CompanionEntity[] current = {original};
@@ -230,6 +230,90 @@ public final class CompanionHouseTests {
         });
     }
 
+    private static final String GABLED_HOUSE = "деревенский дом";
+    private static final ResourceLocation GABLED_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/plains/houses/plains_small_house_1");
+    private static final String LOG_HOUSE = "бревенчатый дом";
+    private static final ResourceLocation LOG_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/plains/houses/plains_small_house_3");
+    private static final int DIRT = 24;
+
+    /** A gabled roof is out of reach from the ground: he stands on a dirt column for it, and nothing of it is left afterwards. */
+    @GameTest(template = "tall_tree", timeoutTicks = 9000)
+    public static void gabledHouseIsBuiltFromScaffoldingThatLeavesNoTrace(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        Map<Item, Integer> bag = placeReference(helper, GABLED_HOUSE_TEMPLATE);
+        fill(companion, bag);
+        companion.setItem(companion.getContainerSize() - 1, new ItemStack(Items.DIRT, DIRT));
+        boolean[] stoodOnDirt = {false};
+        helper.onEachTick(() -> { if (helper.getTick() % 5 == 0 && countBlocks(helper, Blocks.DIRT) > 0) stoodOnDirt[0] = true; });
+        helper.assertTrue(companion.startWork("build_house", GABLED_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains(GABLED_HOUSE), companion.getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(companion));
+            helper.assertTrue(stoodOnDirt[0], "The roof was reached without any scaffolding");
+            helper.assertTrue(countBlocks(helper, Blocks.DIRT) == 0, "Scaffolding dirt is left in the world");
+            helper.assertTrue(count(companion, Items.DIRT) == DIRT, "The dirt did not come back to the bag: " + count(companion, Items.DIRT));
+            for (Item item : bag.keySet()) helper.assertTrue(count(companion, item) == 0, "Bag still holds " + item);
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    public static void gabledHouseWithoutDirtSaysHowMuchIsNeeded(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        fill(companion, placeReference(helper, GABLED_HOUSE_TEMPLATE));
+        helper.assertTrue(companion.startWork("build_house", GABLED_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            String said = companion.getLastTaskResult();
+            helper.assertTrue(!companion.didLastTaskSucceed() && said.contains("земл") && said.matches(".*\\d.*"), said);
+            helper.assertTrue(countBlocks(helper, Blocks.DIRT) == 0, "Dirt appeared in the world without any in the bag");
+        });
+    }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 12000)
+    public static void scaffoldingLeftByAnInterruptionIsTakenDownOnResume(GameTestHelper helper) {
+        CompanionEntity original = setup(helper);
+        Map<Item, Integer> bag = placeReference(helper, LOG_HOUSE_TEMPLATE);
+        fill(original, bag);
+        original.setItem(original.getContainerSize() - 1, new ItemStack(Items.DIRT, DIRT));
+        CompanionEntity[] current = {original};
+        long[] stopped = {-1};
+        helper.onEachTick(() -> {
+            if (stopped[0] < 0 && countBlocks(helper, Blocks.DIRT) >= 2) {
+                current[0].stopGathering();
+                var scaffolding = saved(current[0]).getCompound("TemplateBuild").getList("Scaffold", 4);
+                helper.assertTrue(scaffolding.size() >= 2, "The scaffolding was not saved");
+                BlockPos column = BlockPos.of(((net.minecraft.nbt.LongTag) scaffolding.get(0)).getAsLong());
+                stopped[0] = helper.getTick();
+                CompoundTag data = new CompoundTag(); original.saveWithoutId(data); original.discard();
+                helper.runAfterDelay(1, () -> {
+                    CompanionEntity replacement = AICompanionMod.COMPANION.get().create(helper.getLevel());
+                    replacement.load(data);
+                    // Resumed from a distance, as after «стоп» and a walk with the player: he has to come back to the column.
+                    BlockPos far = null;
+                    for (BlockPos corner : new BlockPos[]{new BlockPos(28, 1, 28), new BlockPos(28, 1, 4), new BlockPos(4, 1, 28)}) {
+                        BlockPos at = helper.absolutePos(corner);
+                        if (far == null || at.distSqr(column) > far.distSqr(column)) far = at;
+                    }
+                    helper.assertTrue(far.distSqr(column) > 12 * 12, "The far spot is not far from the column");
+                    replacement.moveTo(far.getX() + .5, far.getY(), far.getZ() + .5);
+                    helper.getLevel().addFreshEntity(replacement); current[0] = replacement;
+                });
+            }
+            if (stopped[0] >= 0 && helper.getTick() - stopped[0] == 30) helper.assertTrue(current[0].startWork("build_house", "resume", 1).success(), "Resume rejected");
+        });
+        helper.assertTrue(original.startWork("build_house", LOG_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stopped[0] >= 0 && helper.getTick() - stopped[0] > 40, "Not resumed yet");
+            done(helper, current[0]);
+            helper.assertTrue(current[0].didLastTaskSucceed(), current[0].getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(current[0]));
+            helper.assertTrue(countBlocks(helper, Blocks.DIRT) == 0, "Scaffolding dirt is left in the world");
+            helper.assertTrue(count(current[0], Items.DIRT) == DIRT, "The dirt did not come back to the bag: " + count(current[0], Items.DIRT));
+            for (Item item : bag.keySet()) helper.assertTrue(count(current[0], item) == 0, "Resume spent or left a different amount of " + item);
+        });
+    }
+
     @GameTest(template = "empty")
     public static void buildingNamesComeOnlyFromTheCatalogue(GameTestHelper helper) {
         var named = CompanionWorkCommands.parse("построй " + VILLAGE_HOUSE, "Олег");
@@ -243,8 +327,8 @@ public final class CompanionHouseTests {
     }
 
     /** The vanilla template placed in the arena corner is the reference; returns what the bag needs to build one more like it. */
-    private static Map<Item, Integer> placeReference(GameTestHelper helper) {
-        var template = helper.getLevel().getServer().getStructureManager().get(VILLAGE_HOUSE_TEMPLATE).orElseThrow();
+    private static Map<Item, Integer> placeReference(GameTestHelper helper, ResourceLocation id) {
+        var template = helper.getLevel().getServer().getStructureManager().get(id).orElseThrow();
         BlockPos at = helper.absolutePos(new BlockPos(1, 1, 1));
         template.placeInWorld(helper.getLevel(), at, at, new StructurePlaceSettings().setIgnoreEntities(true), RandomSource.create(1), 2);
         Map<Item, Integer> needed = new LinkedHashMap<>();
