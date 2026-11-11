@@ -62,7 +62,7 @@ public final class CompanionDialogue {
         if (wood && crafting) return "Окей, схожу за деревом и сделаю инструменты.";
         if (wood) return "Ладно, я за деревом. Лесопилка на выезде.";
         if (actions.isEmpty()) return "";
-        return switch (actions.getFirst().type()) {
+        String text = switch (actions.getFirst().type()) {
             case "gather_dirt" -> "Окей, накопаю земли.";
             case "gather_loose" -> "Ладно, возьму лопату и накопаю " + looseWord(actions.getFirst()) + ".";
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
@@ -78,7 +78,7 @@ public final class CompanionDialogue {
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
             case "set_home" -> "Запомнил, наш дом здесь.";
             case "remember_place" -> "Запомнил это место как «" + actions.getFirst().item() + "».";
-            case "go_to_place" -> "Ага, иду к метке «" + actions.getFirst().item() + "»." + routeRepeat(actions, repeat);
+            case "go_to_place" -> "Ага, иду к метке «" + actions.getFirst().item() + "».";
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
             case "enter_portal" -> "Попробую зайти в портал.";
@@ -98,13 +98,25 @@ public final class CompanionDialogue {
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
+        // The count belongs to the walk wherever the steps start: a remembered place or a placed block is said once, then the route.
+        return text + routeRepeat(actions, repeat);
     }
 
-    /** «Маршрут «дом» → «дача» — 50 раз.»: the route and the count, once, for a walking route walked more than once. */
+    /** «Маршрут «дом» → «дача» → «дом» — 2 раза.»: every written leg in order, and the count in the player's own word. */
     private static String routeRepeat(List<PlannedAction> actions, int repeat) {
         if (repeat <= 1) return "";
-        String route = actions.stream().map(action -> "«" + action.item() + "»").distinct().collect(java.util.stream.Collectors.joining(" → "));
-        return " Маршрут " + route + " — " + repeat + " раз.";
+        String route = actions.stream().filter(action -> "go_to_place".equals(action.type()))
+                .map(action -> "«" + action.item() + "»").collect(java.util.stream.Collectors.joining(" → "));
+        if (route.isBlank()) return "";
+        return " Маршрут " + route + " — " + repeat + " " + times(repeat) + ".";
+    }
+
+    /** «2 раза», «5 раз», «11 раз», «21 раз», «22 раза»: how a Russian player says the count. */
+    public static String times(int count) {
+        int lastTwo = count % 100;
+        int last = count % 10;
+        if (lastTwo >= 11 && lastTwo <= 14) return "раз";
+        return last >= 2 && last <= 4 ? "раза" : "раз";
     }
 
     /** The note of a sorting that an order ended while he carried things (CompanionSorting): said whatever step of the plan it came with. */

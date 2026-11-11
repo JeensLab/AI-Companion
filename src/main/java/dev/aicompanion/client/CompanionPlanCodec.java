@@ -24,10 +24,10 @@ public final class CompanionPlanCodec {
     static final int FLINT_DEFAULT = 2;
     /** The items a gather_loose order may name: the loose blocks the server digs with a shovel, and the flint in gravel. */
     private static final Set<String> LOOSE_ITEMS = Set.of("minecraft:sand", "minecraft:red_sand", "minecraft:gravel", FLINT);
-    private static final Pattern DSML = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>.*?"
-            + "<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>.*?</\\|DSML\\|invoke>");
-    /** The fallback text may carry the repeat beside the steps; it writes one invoke, so its first such parameter is the plan's. */
-    private static final Pattern DSML_REPEAT = Pattern.compile("<\\|DSML\\|parameter\\s+name=\"repeat\"[^>]*>(.*?)</\\|DSML\\|parameter>");
+    /** One invoke of the plan tool: its parameters are read inside its own tags, so another invoke's repeat is not taken for this plan's. */
+    private static final Pattern DSML_INVOKE = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>(.*?)</\\|DSML\\|invoke>");
+    private static final Pattern DSML_STEPS = Pattern.compile("(?s)<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>");
+    private static final Pattern DSML_REPEAT = Pattern.compile("(?s)<\\|DSML\\|parameter\\s+name=\"repeat\"[^>]*>(.*?)</\\|DSML\\|parameter>");
 
     private CompanionPlanCodec() { }
 
@@ -54,12 +54,22 @@ public final class CompanionPlanCodec {
             }
         }
         String raw = textContent(message.get("content"));
-        var matcher = DSML.matcher(raw);
+        var matcher = DSML_INVOKE.matcher(raw);
         List<PlannedAction> embedded = new ArrayList<>();
-        while (matcher.find()) embedded.addAll(parsePlan(JsonParser.parseString(matcher.group(1))));
+        int embeddedRepeat = 1;
+        while (matcher.find()) {
+            String invoke = matcher.group(1);
+            var steps = DSML_STEPS.matcher(invoke);
+            if (!steps.find()) continue;
+            DecodedPlan plan = parsePlanWithRepeat(JsonParser.parseString(steps.group(1)));
+            embedded.addAll(plan.actions());
+            // Two invokes of one answer may not ask for different counts, as two tool calls may not.
+            embeddedRepeat = mergedRepeat(embeddedRepeat, plan.repeat());
+            embeddedRepeat = mergedRepeat(embeddedRepeat, dsmlRepeat(invoke));
+        }
         if (actions.isEmpty()) {
             actions.addAll(embedded);
-            if (!embedded.isEmpty()) repeat = mergedRepeat(repeat, dsmlRepeat(raw));
+            if (!embedded.isEmpty()) repeat = mergedRepeat(repeat, embeddedRepeat);
         }
         String reply = raw.replaceAll("(?s)<\\|DSML\\|invoke\\b.*?</\\|DSML\\|invoke>", "")
                 .replaceAll("</?\\|DSML\\|[^>]*>", "").trim().replaceFirst("(?i)^assistant\\s*:\\s*", "").trim();
@@ -95,9 +105,9 @@ public final class CompanionPlanCodec {
         return declared;
     }
 
-    /** The repeat the fallback text names beside the steps, or 1 when it names none. */
-    private static int dsmlRepeat(String raw) {
-        var matcher = DSML_REPEAT.matcher(raw);
+    /** The repeat named beside the steps inside one invoke, or 1 when it names none. */
+    private static int dsmlRepeat(String invoke) {
+        var matcher = DSML_REPEAT.matcher(invoke);
         return matcher.find() ? repeatValue(JsonParser.parseString(matcher.group(1).trim())) : 1;
     }
 
@@ -114,9 +124,14 @@ public final class CompanionPlanCodec {
         return repeat;
     }
 
-    /** A repeat is a route over markers: every written step must be go_to_place, or the whole plan is invalid. */
+    /**
+     * A repeat is a route over markers: every written step must be go_to_place, or a remember_place that runs once, and
+     * at least one leg must be walked, or the whole plan is invalid.
+     */
     private static void requireWalkOnly(List<PlannedAction> steps, int repeat) {
-        if (repeat > 1 && steps.stream().anyMatch(step -> !"go_to_place".equals(step.type()))) throw invalid();
+        if (repeat <= 1) return;
+        if (steps.stream().noneMatch(step -> "go_to_place".equals(step.type()))) throw invalid();
+        if (steps.stream().anyMatch(step -> !"go_to_place".equals(step.type()) && !"remember_place".equals(step.type()))) throw invalid();
     }
 
     /** The `location` values the model is offered: the two places and every container a store or take order may name. */
@@ -139,7 +154,7 @@ public final class CompanionPlanCodec {
         return parsePlanWithRepeat(input).actions();
     }
 
-    /** The written steps and how many times they are walked: only a route of go_to_place steps may carry a repeat. */
+    /** The written steps and how many times the walk is walked: only a route of go_to_place steps, with an optional remember_place once, may carry a repeat. */
     public static DecodedPlan parsePlanWithRepeat(JsonElement input) {
         try {
             JsonArray steps = input.isJsonArray() ? input.getAsJsonArray() : input.getAsJsonObject().getAsJsonArray("steps");
@@ -236,11 +251,17 @@ public final class CompanionPlanCodec {
     /** A validated plan: the steps as the model wrote them and the repeat it asked for, 1 when it named none. */
     public record DecodedPlan(List<PlannedAction> actions, int repeat) { }
 
-    /** The written steps as the queue runs them: {@code repeat} copies in order, or the same list when it is one. */
+    /**
+     * The written steps as the queue runs them: the go_to_place steps {@code repeat} times in order, and every other step
+     * — a remembered place, a block the wording added — once before the walk; the same list when the repeat is one.
+     */
     public static List<PlannedAction> repeated(List<PlannedAction> actions, int repeat) {
         if (repeat <= 1) return actions;
-        List<PlannedAction> result = new ArrayList<>(actions.size() * repeat);
-        for (int copy = 0; copy < repeat; copy++) result.addAll(actions);
+        List<PlannedAction> once = actions.stream().filter(step -> !"go_to_place".equals(step.type())).toList();
+        List<PlannedAction> walk = actions.stream().filter(step -> "go_to_place".equals(step.type())).toList();
+        List<PlannedAction> result = new ArrayList<>(once.size() + walk.size() * repeat);
+        result.addAll(once);
+        for (int copy = 0; copy < repeat; copy++) result.addAll(walk);
         return List.copyOf(result);
     }
 

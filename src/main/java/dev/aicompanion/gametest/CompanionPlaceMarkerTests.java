@@ -1,14 +1,17 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionDialogue;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionMarkerView;
 import dev.aicompanion.client.CompanionParkHold;
 import dev.aicompanion.client.CompanionPlaceSpeech;
 import dev.aicompanion.client.CompanionPlanCodec;
+import dev.aicompanion.client.CompanionPlanRequirements;
 import dev.aicompanion.client.CompanionPlanRunner;
 import dev.aicompanion.client.CompanionServerPlanPort;
 import dev.aicompanion.client.CompanionSettingsLayout;
+import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.client.PlannedAction;
 import dev.aicompanion.entity.CompanionCrafting;
 import dev.aicompanion.entity.CompanionEntity;
@@ -1191,6 +1194,119 @@ public final class CompanionPlaceMarkerTests {
         h.assertTrue(queued.stream().allMatch(step -> "go_to_place".equals(step.type())), "A step of another kind was queued");
         h.assertTrue(CompanionPlanCodec.repeated(written, 1).equals(written), "One repeat changed the plan");
         h.succeed();
+    }
+
+    /** «Патрулируй дом→дача→дом 2 раза»: the spoken route keeps every leg in order, and the count in the player's word. */
+    @GameTest(template = "empty")
+    public static void theSpokenRouteKeepsEveryLegAndItsNumeral(GameTestHelper h) {
+        var two = CompanionPlanCodec.decode(toolCall(
+                "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"},"
+                        + "{\"action\":\"go_to_place\",\"item\":\"дом\"}],\"repeat\":2}"));
+        h.assertTrue(two.text().contains("Маршрут «дом» → «дача» → «дом» — 2 раза."),
+                "The return leg or the count is not said: " + two.text());
+        var five = CompanionPlanCodec.decode(toolCall(
+                "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"}],\"repeat\":5}"));
+        h.assertTrue(five.text().contains("— 5 раз."), "The count is not said in the player's word: " + five.text());
+        h.assertTrue(!five.text().contains("5 раза") && !two.text().contains("2 раз."), "A wrong numeral: " + two.text() + " / " + five.text());
+        // «11 раз», «21 раз», «22 раза»: the teens and the ones decide the word, not the last digit alone.
+        h.assertTrue("раз".equals(CompanionDialogue.times(11)) && "раз".equals(CompanionDialogue.times(21))
+                && "раза".equals(CompanionDialogue.times(22)) && "раза".equals(CompanionDialogue.times(4)),
+                "The numeral does not follow the count");
+        h.succeed();
+    }
+
+    /**
+     * «Поставь метки и патрулируй дом→дача 50 раз»: a placement wording that changes nothing returns the decoded plan as it
+     * was, and one that adds a step still keeps the count for the walk.
+     */
+    @GameTest(template = "empty")
+    public static void aRewrittenPlanKeepsTheRepeatItWasDecodedWith(GameTestHelper h) {
+        var decoded = CompanionPlanCodec.decode(toolCall(
+                "{\"steps\":[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"}],\"repeat\":50}"));
+        var unchanged = CompanionPlanRequirements.apply("поставь метки и патрулируй дом и дачу 50 раз", decoded);
+        h.assertTrue(unchanged.repeat() == 50 && unchanged.actions().equals(decoded.actions()),
+                "The rewritten plan lost its repeat: " + unchanged);
+        h.assertTrue(unchanged.text().contains("50"), "The spoken count disappeared: " + unchanged.text());
+        var added = CompanionPlanRequirements.apply("поставь сундук и патрулируй дом и дачу 50 раз", decoded);
+        h.assertTrue(added.repeat() == 50 && added.actions().stream().anyMatch(step -> "place_block".equals(step.type())),
+                "The added chest dropped the count: " + added);
+        h.assertTrue(added.text().contains("— 50 раз."), "The count is not said with the added step: " + added.text());
+        h.succeed();
+    }
+
+    /** Two invokes in one answer: one and the same repeat is the plan's, two different counts spoil it. */
+    @GameTest(template = "empty")
+    public static void twoInvokesMayNotDisagreeOnTheRepeat(GameTestHelper h) {
+        String route = "[{\"action\":\"go_to_place\",\"item\":\"дом\"},{\"action\":\"go_to_place\",\"item\":\"дача\"}]";
+        String same = invoke(route, "5") + invoke(route, "5");
+        JsonObject acceptedText = new JsonObject();
+        acceptedText.addProperty("content", same);
+        var accepted = CompanionPlanCodec.decode(acceptedText);
+        h.assertTrue(accepted.repeat() == 5 && accepted.actions().size() == 4, "Two agreeing invokes were refused: " + accepted);
+
+        String different = invoke(route, "5") + invoke(route, "2");
+        JsonObject refusedText = new JsonObject();
+        refusedText.addProperty("content", different);
+        boolean refused = false;
+        try { CompanionPlanCodec.decode(refusedText); } catch (RuntimeException expected) { refused = true; }
+        h.assertTrue(refused, "Two invokes with different counts were accepted: " + different);
+
+        // A repeat parameter of another invoke is not the plan's.
+        JsonObject otherText = new JsonObject();
+        otherText.addProperty("content", "<|DSML|invoke name=\"queue_companion_plan\">"
+                + "<|DSML|parameter name=\"steps\" string=\"false\">" + route + "</|DSML|parameter></|DSML|invoke>"
+                + "<|DSML|invoke name=\"remember_note\">"
+                + "<|DSML|parameter name=\"repeat\" string=\"false\">9</|DSML|parameter></|DSML|invoke>");
+        var other = CompanionPlanCodec.decode(otherText);
+        h.assertTrue(other.repeat() == 1 && other.actions().size() == 2, "Another invoke's repeat became the plan's: " + other);
+        h.succeed();
+    }
+
+    /** «Запомни это место как дача и патрулируй дом→дача 50 раз»: remembering once, then the route fifty times. */
+    @GameTest(template = "empty")
+    public static void aRememberedPlaceBesideARepeatRunsOnce(GameTestHelper h) {
+        var reply = CompanionPlanCodec.decode(toolCall(
+                "{\"steps\":[{\"action\":\"remember_place\",\"item\":\"дача\"},{\"action\":\"go_to_place\",\"item\":\"дом\"},"
+                        + "{\"action\":\"go_to_place\",\"item\":\"дача\"}],\"repeat\":50}"));
+        h.assertTrue(reply.repeat() == 50 && reply.actions().size() == 3, "The remembered place spoiled the plan: " + reply);
+        var queued = CompanionPlanCodec.repeated(reply.actions(), reply.repeat());
+        h.assertTrue(queued.size() == 101, "The remembered place was repeated: " + queued.size());
+        h.assertTrue("remember_place".equals(queued.getFirst().type()) && "дача".equals(queued.getFirst().item()),
+                "Remembering is not first: " + queued.getFirst());
+        h.assertTrue(queued.subList(1, queued.size()).stream().allMatch(step -> "go_to_place".equals(step.type())),
+                "A non-walk step went into the route: " + queued.subList(0, 4));
+        h.assertTrue("дом".equals(queued.get(1).item()) && "дача".equals(queued.get(2).item())
+                && "дом".equals(queued.get(3).item()) && "дача".equals(queued.get(100).item()),
+                "The route is out of order: " + queued.subList(0, 4) + " … " + queued.getLast());
+        h.assertTrue(reply.text().contains("Запомнил это место как «дача»") && reply.text().contains("— 50 раз."),
+                "The player does not hear the place and the count: " + reply.text());
+        h.succeed();
+    }
+
+    /** A patrol's report names the same arrival every lap: the model history keeps each distinct line once, with its count. */
+    @GameTest(template = "empty")
+    public static void theHistoryCollapsesRepeatedLegLines(GameTestHelper h) {
+        StringBuilder report = new StringBuilder();
+        for (int lap = 0; lap < 50; lap++)
+            report.append("Пришёл к метке «дом»: 14, 65, 8.\n").append("Пришёл к метке «дача»: 20, 65, 6.\n");
+        String collapsed = OpenRouterClient.collapsedReport(report.toString());
+        h.assertTrue(collapsed.lines().count() == 2, "Identical legs were not collapsed: " + collapsed);
+        h.assertTrue(collapsed.contains("Пришёл к метке «дом»: 14, 65, 8. (×50)")
+                && collapsed.contains("Пришёл к метке «дача»: 20, 65, 6. (×50)"), "The count of the legs is lost: " + collapsed);
+        OpenRouterClient.resetSession();
+        // A reply first: a history with a system prompt would read the config, which a gametest server has not loaded.
+        OpenRouterClient.recordReply(OpenRouterClient.generation(), "Ладно, иду.");
+        OpenRouterClient.recordActionResult(report.toString());
+        String stored = OpenRouterClient.historySnapshot().getLast().get("content").getAsString();
+        h.assertTrue(stored.length() < 200 && stored.contains("(×50)"), "The raw report reached the history: " + stored);
+        OpenRouterClient.resetSession();
+        h.succeed();
+    }
+
+    private static String invoke(String steps, String repeat) {
+        return "<|DSML|invoke name=\"queue_companion_plan\">"
+                + "<|DSML|parameter name=\"steps\" string=\"false\">" + steps + "</|DSML|parameter>"
+                + "<|DSML|parameter name=\"repeat\" string=\"false\">" + repeat + "</|DSML|parameter></|DSML|invoke>";
     }
 
     /** The local command becomes the plan step: remembering keeps the name, going keeps the name as it was said. */
