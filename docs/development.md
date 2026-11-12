@@ -57,7 +57,7 @@ Java 21, Minecraft 1.21.1, NeoForge 21.1.262. Номер версии мода (
 | --- | --- |
 | Регистрация, события, владелец компаньона | `AICompanionMod.java`, `entity/CompanionEvents.java` |
 | Чат и прямые команды | `client/CompanionChatScreen.java`, `CompanionLocalCommands.java`, `CompanionWorkCommands.java`, `CompanionGoalCommands.java` |
-| Запрос модели, промпт, таймауты | `client/OpenRouterClient.java`, `OpenRouterRetry.java`, `GameContext.java`; прямой OpenAI Responses — `client/OpenAiResponses.java`, контракты — `gametest/CompanionResponsesTests.java` |
+| Запрос модели, промпт, таймауты | `client/OpenRouterClient.java`, `OpenRouterRetry.java`, `GameContext.java`; прямой OpenAI Responses — `client/OpenAiResponses.java`, контракты — `gametest/CompanionResponsesTests.java`; настройки модели (размышление, температура, top_p) — `client/CompanionModelScreen.java` и `client/CompanionModelLayout.java`, вход — первая строка экрана «Поведение», проверка — `gametest/CompanionScreenLayoutTests.java` |
 | Допустимые действия и параметры | `client/CompanionPlanCodec.java`, `CompanionPlanRequirements.java`, `PlannedAction.java` |
 | Очередь, приоритеты, отмена, восстановление плана | `client/CompanionTaskQueue.java`, `CompanionActionExecutor.java`, `CompanionPlanRunner.java`, `CompanionServerPlanPort.java` |
 | Поведение, добыча, крафт, хранение | `entity/CompanionEntity.java`, `CompanionWork.java` и классы конкретной механики в `entity/` |

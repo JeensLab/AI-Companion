@@ -1,10 +1,8 @@
 package dev.aicompanion.client;
 
 import dev.aicompanion.OpenRouterConfig;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -13,10 +11,11 @@ final class CompanionBehaviorScreen extends Screen {
     private final Screen parent;
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
-        int left = width / 2 - 150, top = CompanionSwitchLayout.top(height); // the sampling fields hold the first rows, the switches start below them
-        // Sampling is free entry: models differ, so the mod sends the number as typed and lets the server judge its range.
-        addSamplingField(left + 72, 30, 80, OpenRouterConfig.TEMPERATURE);
-        addSamplingField(left + 200, 30, 100, OpenRouterConfig.TOP_P);
+        int left = width / 2 - 150, top = CompanionSwitchLayout.top(height);
+        // The only row here that is not a gameplay switch: the model's own settings live on their own screen now.
+        addRenderableWidget(Button.builder(Component.literal(CompanionSwitchLayout.MODEL_ENTRY_LABEL), b -> minecraft.setScreen(new CompanionModelScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                        "Размышление модели, температура и top_p: что и как он отвечает."))).build());
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();
@@ -108,11 +107,6 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.PICK_UP_RADIUS.save(); b.setMessage(pickUpRadiusLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Насколько далеко он осматривает землю вокруг себя, блоков."))).build());
-        addRenderableWidget(Button.builder(thinkingLabel(), b -> {
-            OpenRouterConfig.THINKING.set(!OpenRouterConfig.THINKING.get()); OpenRouterConfig.THINKING.save();
-            b.setMessage(thinkingLabel());
-        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
-                "Выключено: модель отвечает сразу — замерено 4–12 с вместо 1,5–3 мин. Включено: модель думает перед ответом, это медленнее, но иногда удачнее выбор материалов."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -149,26 +143,6 @@ final class CompanionBehaviorScreen extends Screen {
     private Component damageNumbersLabel() { return Component.literal("Цифры урона над Олегом: " + (OpenRouterConfig.DAMAGE_NUMBERS.get() ? "вкл." : "выкл.")); }
     private Component pickUpLabel() { return Component.literal("Подбирать лежащее рядом: " + (OpenRouterConfig.PICK_UP_NEARBY.get() ? "вкл." : "выкл.")); }
     private Component pickUpRadiusLabel() { return Component.literal("Радиус подбора: " + OpenRouterConfig.PICK_UP_RADIUS.get() + " блоков"); }
-    private static Component thinkingLabel() { return Component.literal("Размышление модели: " + (OpenRouterConfig.THINKING.get() ? "вкл." : "выкл.")); }
-    /**
-     * A free-entry sampling field: any number the owner types is sent as is — dot or comma, negative too. The mod sets no
-     * range of its own; a value the server rejects comes back as the server's own error. Empty means «не задавать».
-     * The rule is drawn on the screen's own line under the fields: a hover box there covered the red «не число» line
-     * and the first switches.
-     */
-    private EditBox addSamplingField(int x, int y, int width, net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<String> setting) {
-        EditBox field = addRenderableWidget(new EditBox(font, x, y, width, 20, Component.literal("")));
-        field.setMaxLength(24);
-        field.setHint(Component.literal("не задавать").withStyle(ChatFormatting.GRAY));
-        field.setValue(setting.get() == null ? "" : setting.get());
-        field.setResponder(text -> {
-            setting.set(text.trim());
-            setting.save();
-            field.setTextColor(OpenRouterClient.samplingHint(text).isEmpty() ? 0xE0E0E0 : 0xFF5555);
-        });
-        field.setTextColor(OpenRouterClient.samplingHint(setting.get()).isEmpty() ? 0xE0E0E0 : 0xFF5555);
-        return field;
-    }
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
@@ -180,22 +154,8 @@ final class CompanionBehaviorScreen extends Screen {
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 18, 0xFFFFFF);
-        int left = width / 2 - 150;
-        graphics.drawString(font, "Температура", left, 35, 0xFFFFFF);
-        graphics.drawString(font, "top_p", left + 160, 35, 0xFFFFFF);
-        // A typed value that is not a number is not sent; say so visibly, the text itself stays as typed.
-        String hint = OpenRouterClient.samplingHint(OpenRouterConfig.TEMPERATURE.get());
-        if (!hint.isEmpty()) hint = "Температура — " + hint;
-        else {
-            hint = OpenRouterClient.samplingHint(OpenRouterConfig.TOP_P.get());
-            if (!hint.isEmpty()) hint = "top_p — " + hint;
-        }
-        if (!hint.isEmpty()) graphics.drawCenteredString(font, hint, width / 2, 52, 0xFF5555);
-        else graphics.drawCenteredString(font, "Значение уходит как есть; допустимое решает сервер модели.", width / 2, 52, 0xB8C3D1);
         graphics.drawCenteredString(font, "Свои темы и редкие реплики об обстановке идут на сервер модели и в Inworld.", width / 2, height - 64, 0xB8C3D1);
     }
-    /** The temperature field would take the keyboard on opening; Tab reaches the fields and the switches alike. */
-    @Override protected void setInitialFocus() { }
     @Override public void onClose() { minecraft.setScreen(parent); }
 
     private static final int ROW_WIDTH = CompanionSwitchLayout.ROW_WIDTH, ROW_HEIGHT = CompanionSwitchLayout.ROW_HEIGHT;
@@ -204,8 +164,8 @@ final class CompanionBehaviorScreen extends Screen {
     /**
      * The switches, every button as wide as a row, stand one under another in the order they were added: from the
      * usual top and 30 apart while there is room, higher up and closer (down to touching) when they would reach the
-     * note. So a switch added anywhere in init needs no place of its own, and the sampling fields above keep their own
-     * row, leaving about four switch rows at a GUI height of 240.
+     * note. So a switch added anywhere in init needs no place of its own, and the first row opens the model
+     * screen, leaving about four switch rows at a GUI height of 240.
      * More than fit 24 apart go on pages, turned by a button beside «Назад»: a small GUI shows fewer rows at a time but
      * every switch stays reachable, and the button names the page it opens.
      */
