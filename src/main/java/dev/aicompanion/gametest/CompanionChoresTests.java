@@ -230,6 +230,23 @@ public final class CompanionChoresTests {
         });
     }
 
+    /** A full nest his hand would reach only from the top of the trunk, where he does not get: said, and his campfire is not spent under it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void noCampfireIsSpentUnderANestOutOfReach(GameTestHelper h) {
+        ground(h);
+        for (int y = GROUND + 1; y <= GROUND + 6; y++) h.setBlock(new BlockPos(20, y, 15), Blocks.BIRCH_LOG);
+        h.setBlock(new BlockPos(20, GROUND + 6, 16), Blocks.BEE_NEST.defaultBlockState().setValue(BeehiveBlock.HONEY_LEVEL, 5));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        c.setItem(1, new ItemStack(Items.CAMPFIRE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:honeycomb\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("подойти не смог"), "The nest out of reach is not told of: " + future.join().report());
+            h.assertTrue(count(c, Items.CAMPFIRE) == 1 && count(c, Items.HONEYCOMB) == 0 && h.getBlockState(new BlockPos(20, GROUND + 1, 16)).isAir(), "His campfire is spent under a nest he cannot reach");
+        });
+    }
+
     private static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;

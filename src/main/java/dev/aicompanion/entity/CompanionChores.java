@@ -7,6 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.animal.Animal;
@@ -27,6 +28,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Comparator;
@@ -86,10 +88,12 @@ final class CompanionChores {
     private int due;
     private long settle;
     private boolean lit;
+    /** He has stood where his hand reaches this hive: only then is a campfire of his spent under it. */
+    private boolean reached;
     /** The cells a block is worked from, the block they are for, his walks to them. */
     private Set<BlockPos> stands = Set.of();
     private BlockPos standsOf;
-    private int legs, waited;
+    private int legs, waited, crowded;
     /** Hives he found no way to, and what he says of them. */
     private final Set<BlockPos> skipped = new HashSet<>();
     private String missed;
@@ -139,22 +143,34 @@ final class CompanionChores {
         return state.getBlock() instanceof BeehiveBlock && state.getValue(BeehiveBlock.HONEY_LEVEL) >= BeehiveBlock.MAX_HONEY_LEVELS;
     }
 
-    /** The nearest full hive or nest he may work: a campfire burns under it, or ({@code smoked} false) there is room for his. */
+    /**
+     * The nearest full hive or nest he may work: his hand reaches it from the ground (a nest high on a birch is not his, and no
+     * campfire is spent under it), and a campfire burns under it or ({@code smoked} false) there is room for his.
+     */
     private static BlockPos fullHive(CompanionEntity c, ServerLevel level, Set<BlockPos> skipped, boolean smoked) {
+        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
         return CompanionObsidian.nearest(c, level, DEPTH, CompanionChores::full, pos -> !skipped.contains(pos) && c.leashAllows(pos)
-                && (CampfireBlock.isSmokeyPos(level, pos) || !smoked && hearth(level, pos) != null));
+                && (CampfireBlock.isSmokeyPos(level, pos) || !smoked && hearth(level, pos, site) != null) && !standsBy(c, pos).isEmpty());
+    }
+
+    /** The cells the hive is worked from: within his reach and in sight, never in its own column, where the campfire burns. */
+    private static Set<BlockPos> standsBy(CompanionEntity c, BlockPos hive) {
+        Set<BlockPos> cells = new HashSet<>(CompanionMiningNavigation.standCells(c, hive, HIVE_REACH, false, true));
+        cells.removeIf(cell -> cell.getX() == hive.getX() && cell.getZ() == hive.getZ());
+        return cells;
     }
 
     /**
      * Where his campfire goes: the first free cell under the hive that has a floor, with nothing between to stop the smoke. Null when
-     * there is none (a hive that stands on the ground, a flower under the nest): the player's ground is not dug up for it.
+     * there is none (a hive that stands on the ground, a flower under the nest: the player's ground is not dug up for it), where
+     * the player builds (a fire in the passage of his house burns him) and on leaves (a fire in the crown of a tree).
      */
-    private static BlockPos hearth(ServerLevel level, BlockPos hive) {
+    private static BlockPos hearth(ServerLevel level, BlockPos hive, Predicate<BlockPos> site) {
         for (int down = 1; down <= SMOKE; down++) {
             BlockPos cell = hive.below(down);
-            BlockState state = level.getBlockState(cell);
+            BlockState state = level.getBlockState(cell), floor = level.getBlockState(cell.below());
             if (!state.canBeReplaced() || !state.getFluidState().isEmpty()) return null;
-            if (level.getBlockState(cell.below()).isFaceSturdy(level, cell.below(), Direction.UP)) return cell;
+            if (floor.isFaceSturdy(level, cell.below(), Direction.UP)) return floor.is(BlockTags.LEAVES) || site.test(cell) ? null : cell;
         }
         return null;
     }
@@ -363,13 +379,21 @@ final class CompanionChores {
             if (hive == null) { out(got, missed == null ? "Рядом нет полного улья, под которым горит костёр или есть место для него. Пчёлы наполняют улей долго." : missed); return; }
         }
         if (!CampfireBlock.isSmokeyPos(level, hive)) {
-            BlockPos fire = hearth(level, hive);
+            BlockPos fire = hearth(level, hive, CompanionPicking.sites(c, level));
             if (fire == null) { skip("Под ульем не осталось места для костра, а без дыма пчёлы нападут."); return; }
             // Some cut already: obtain_item plans the rest again, a campfire first.
             if (w.items.countCarried(Items.CAMPFIRE) == 0) { out(got, "Под ульем нет дыма, а костра у меня нет: без дыма пчёлы нападут."); return; }
+            // To the hive first: one he finds no way to (a nest over a trunk he cannot climb) gets no campfire of his.
+            if (!reached) { if (!at(level, hive)) return; reached = true; }
             if (!at(level, fire)) return;
+            // Someone stands under the hive (the player, a cow): no fire is set under their feet. They are waited for, not for ever.
+            if (!level.isUnobstructed(Blocks.CAMPFIRE.defaultBlockState(), fire, CollisionContext.empty())) {
+                if (++crowded > WAIT) skip("Под ульем кто-то стоит: костёр поставить некуда.");
+                return;
+            }
             ItemStack kit = w.items.takeCarried(Items.CAMPFIRE, 1);
             level.setBlock(fire, Blocks.CAMPFIRE.defaultBlockState(), 3);
+            dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed", "entity", c.getUUID(), "block", "minecraft:campfire", "position", fire, "reason", "hive_smoke");
             c.animateAction(1, fire, kit);
             level.playSound(null, fire, Blocks.CAMPFIRE.defaultBlockState().getSoundType().getPlaceSound(), SoundSource.BLOCKS, .7F, 1F);
             c.rememberPlaced(fire);
@@ -408,11 +432,9 @@ final class CompanionChores {
         if (!block.equals(standsOf)) {
             standsOf = block; path = null; legs = waited = 0;
             // A hive has a body and is worked in sight; the cell of the campfire is empty yet: from the ground beside it.
-            stands = new HashSet<>(level.getBlockState(block).canBeReplaced() ? Set.of() : CompanionMiningNavigation.standCells(c, block, HIVE_REACH, false, true));
-            if (stands.isEmpty()) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
-                if (CompanionMiningNavigation.standable(c, block.offset(dx, dy, dz))) stands.add(block.offset(dx, dy, dz));
-            // Never in the column of the hive: that is where the campfire burns.
-            stands.removeIf(cell -> cell.getX() == hive.getX() && cell.getZ() == hive.getZ());
+            stands = block.equals(hive) ? standsBy(c, hive) : new HashSet<>();
+            if (!block.equals(hive)) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
+                if ((dx != 0 || dz != 0) && CompanionMiningNavigation.standable(c, block.offset(dx, dy, dz))) stands.add(block.offset(dx, dy, dz));
         }
         if (stands.contains(c.blockPosition())) { c.getNavigation().stop(); return true; }
         c.workStatus("Иду к улью.");
@@ -430,7 +452,7 @@ final class CompanionChores {
 
     private void skip(String why) { missed = why; skipped.add(hive); release(); }
 
-    private void release() { target = null; path = null; nextPath = 0; hive = null; standsOf = null; stands = Set.of(); legs = waited = 0; }
+    private void release() { target = null; path = null; nextPath = 0; hive = null; standsOf = null; stands = Set.of(); legs = waited = crowded = 0; reached = false; }
 
     /** The order is called off: his log is not left standing. */
     void cancel() { takeBack(); }

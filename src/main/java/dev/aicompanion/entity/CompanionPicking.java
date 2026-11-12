@@ -89,7 +89,7 @@ final class CompanionPicking {
         return !sources.isEmpty() && level.dimension() == Level.OVERWORLD && find(c, level, sources, sites(c, level), Set.of()) != null;
     }
 
-    private static Predicate<BlockPos> sites(CompanionEntity c, ServerLevel level) {
+    static Predicate<BlockPos> sites(CompanionEntity c, ServerLevel level) {
         return c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
     }
 
