@@ -288,12 +288,13 @@ final class CompanionHouse {
         var outcome = scaffold.climb(level);
         if (outcome == CompanionScaffold.Outcome.WORKING) { owner.workStatus("Поднимаюсь на леса."); return Result.working(); }
         if (outcome == CompanionScaffold.Outcome.FAILED) {
-            // Found below the column (pushed, fell): no end of the order. The rest comes down and the block gets a column again (their number is limited).
-            boolean slipped = scaffold.slipped();
-            if (slipped) scaffoldTried.clear();
+            // A column that failed for its spot (taken, no room above, pushed off it) is no end of the order: the rest comes down and the block gets a
+            // column on another spot, or again after a fall; their number since the last block is limited.
+            boolean again = scaffold.elsewhere();
+            if (scaffold.slipped()) scaffoldTried.clear();
             Result failed = Result.failed(scaffold.failure() + (scaffold.hasBlocks() ? " Леса разберу." : ""));
-            if (!scaffold.hasBlocks()) return slipped ? Result.working() : failed;
-            afterScaffold = slipped ? null : failed;
+            if (!scaffold.hasBlocks()) return again ? Result.working() : failed;
+            afterScaffold = again ? null : failed;
             return Result.working();
         }
         if (!onScaffold) { onScaffold = true; target = -1; path = null; unreachable.clear(); }

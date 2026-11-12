@@ -98,7 +98,7 @@ final class CompanionSiteClearing {
         if (state.getBlock() instanceof LeavesBlock && state.getValue(LeavesBlock.PERSISTENT)) return false;
         return state.is(BlockTags.DIRT) || state.is(BlockTags.SAND) || state.is(Blocks.GRAVEL) || state.is(Blocks.CLAY) || state.is(BlockTags.BASE_STONE_OVERWORLD)
                 || state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES) || state.is(BlockTags.FLOWERS) || state.is(BlockTags.SNOW) || state.is(Blocks.SNOW_BLOCK)
-                || state.is(Blocks.SWEET_BERRY_BUSH) || state.canBeReplaced();
+                || state.is(Blocks.SWEET_BERRY_BUSH) || state.is(Blocks.BROWN_MUSHROOM_BLOCK) || state.is(Blocks.RED_MUSHROOM_BLOCK) || state.is(Blocks.MUSHROOM_STEM) || state.canBeReplaced();
     }
     /** Ground rather than growth: a hill of it above the floor level is the height difference, no more than one block of it is dug. */
     private static boolean terrain(BlockState state) { return !state.canBeReplaced() && !state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES) && !state.is(BlockTags.FLOWERS) && !state.is(Blocks.SWEET_BERRY_BUSH); }

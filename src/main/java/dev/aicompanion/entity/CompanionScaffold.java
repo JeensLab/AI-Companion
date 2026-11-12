@@ -50,7 +50,7 @@ final class CompanionScaffold {
     private boolean descending;
     private String failure = "";
     /** The last climb ended because he was found below the column (pushed, fell, knocked off): the building goes on. */
-    private boolean slipped;
+    private boolean slipped, elsewhere;
     /** Dirt that lay where its block was because the bag was full on the way down, and where the last of it lies (said once, by takeNote). */
     private int leftDirt;
     private BlockPos leftAt;
@@ -67,6 +67,8 @@ final class CompanionScaffold {
     List<BlockPos> blocks() { return List.copyOf(blocks); }
     String failure() { return failure; }
     boolean slipped() { return slipped; }
+    /** The column failed for its spot (taken, no room above, no way to it, no jump there, pushed off): another spot may do. */
+    boolean elsewhere() { return elsewhere; }
     /** What the descent left on the ground (the bag was full), in words for the player; empty when it left nothing. Said once. */
     String takeNote() {
         if (leftDirt == 0) return "";
@@ -92,7 +94,7 @@ final class CompanionScaffold {
     void begin(BlockPos feet, int levels, ToIntFunction<Item> reserve) {
         reserved = reserve;
         base = feet.immutable(); height = Math.min(MAX_HEIGHT, levels);
-        jumpCell = null; jumpTicks = failedJumps = cooldown = ticks = 0; approach = null; descending = false; failure = ""; slipped = false;
+        jumpCell = null; jumpTicks = failedJumps = cooldown = ticks = 0; approach = null; descending = false; failure = ""; slipped = false; elsewhere = false;
     }
 
     void startDescend() { descending = !blocks.isEmpty(); base = descending ? blocks.getFirst() : null; jumpCell = null; approach = null; idle = walkTicks = 0; breaking.reset(); }
@@ -106,7 +108,7 @@ final class CompanionScaffold {
         if (jumpCell != null) return jump(level);
         double horizontal = horizontalDistanceSqr();
         if (horizontal > .0144D || Math.abs(owner.getY() - surface) > .2D) {
-            if (!blocks.isEmpty() && owner.getY() < surface - .2D) { slipped = true; return fail("Соскользнул с лесов."); }
+            if (!blocks.isEmpty() && owner.getY() < surface - .2D) { slipped = elsewhere = true; return fail("Соскользнул с лесов."); }
             if (blocks.isEmpty() && (horizontal > 2.25D || Math.abs(owner.getY() - surface) > .2D)) {
                 if (approach == null || owner.getNavigation().isDone() && ticks % 20 == 0) {
                     int busy = owner.work.route.busyAnswers();
@@ -114,7 +116,7 @@ final class CompanionScaffold {
                     // This tick's cells went elsewhere: asked again next tick, not a failure.
                     if (approach == null && owner.work.route.busyAnswers() != busy) return Outcome.WORKING;
                 }
-                if (approach == null) return fail("К месту для лесов не пройти.");
+                if (approach == null) { elsewhere = true; return fail("К месту для лесов не пройти."); }
                 owner.work.route.walk(approach);
             } else {
                 owner.getNavigation().stop();
@@ -130,7 +132,7 @@ final class CompanionScaffold {
         for (int dy = 0; dy <= 2; dy++) {
             BlockPos above = cell.above(dy);
             if (!level.hasChunkAt(above) || !level.getFluidState(above).isEmpty() || !level.getBlockState(above).getCollisionShape(level, above).isEmpty()
-                    || dy == 0 && !level.getBlockState(above).canBeReplaced()) return fail("Над лесами нет места.");
+                    || dy == 0 && !level.getBlockState(above).canBeReplaced()) { elsewhere = true; return fail("Над лесами нет места."); }
         }
         if (!holdMaterial()) return fail("Для лесов нужна земля в сумке.");
         Vec3 motion = owner.getDeltaMovement();
@@ -147,7 +149,7 @@ final class CompanionScaffold {
         AABB cell = new AABB(jumpCell);
         if (owner.getBoundingBox().minY >= jumpCell.getY() + 1.001D && !owner.getBoundingBox().intersects(cell)) {
             if (!holdMaterial() || !level.getBlockState(jumpCell).canBeReplaced() || !level.getFluidState(jumpCell).isEmpty()
-                    || !level.getEntities(owner, cell, entity -> entity.isAlive() && entity.blocksBuilding).isEmpty()) return fail("Место для лесов занято.");
+                    || !level.getEntities(owner, cell, entity -> entity.isAlive() && entity.blocksBuilding).isEmpty()) { elsewhere = true; return fail("Место для лесов занято."); }
             ItemStack hand = owner.getMainHandItem();
             BlockState state = ((BlockItem) hand.getItem()).getBlock().defaultBlockState();
             if (!level.setBlockAndUpdate(jumpCell, state)) return fail("Не удалось поставить леса.");
@@ -167,7 +169,7 @@ final class CompanionScaffold {
         }
         if (jumpTicks > 28 && owner.onGround()) {
             jumpCell = null; cooldown = 6;
-            if (++failedJumps >= 3) return fail("Здесь не получается подпрыгнуть.");
+            if (++failedJumps >= 3) { elsewhere = true; return fail("Здесь не получается подпрыгнуть."); }
         }
         return Outcome.WORKING;
     }
