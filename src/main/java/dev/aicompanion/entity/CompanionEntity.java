@@ -585,12 +585,6 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Read only: his own drops still to pick up (after «стоп» too: nothing of his is left lying). */
     public boolean isCollectingDrops() { return loot.hasPending(); }
     public String workPhase() { return work.watchPhase(); }
-    /** Read only, for the GameTest observer: the hands a stack is held in while the bag has no cell for a craft. */
-    public java.util.List<String> heldStackHands() { return work.items.heldHands(); }
-    /** The work's own step, for the GameTest observer: one stack into a free hand while the bag has no cell for a craft. */
-    public boolean holdOneStackInHand() { return work.items.holdOneStack(java.util.Set.of()); }
-    /** The work's own craft step, for the GameTest observer: a stack into a hand only after the bag said it has no cell. */
-    public CompanionActionResult craftHoldingIfTheBagIsFull(String itemId, int count) { return work.items.craftFromBagMakingRoom(itemId, count); }
     public String watchDetail() { return diagnosticState(); }
     public boolean isVisiblyBusy() { return isSwingingAtBlock() || isMiningAnimation() || actionAnimation() != 0 || eatTicks > 0 || temporaryPillar.isActive() || temporaryPillar.isRecovering(); }
     public void enableProtectionForWork() { protecting = true; entityData.set(DATA_PROTECTING, true); }

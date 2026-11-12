@@ -28,10 +28,6 @@ public final class CompanionCrafting {
     private int searches;
     private boolean needsTable;
     private boolean inventoryFull;
-    /** The stack the bag had no cell for: what the player has to make room for. */
-    private Item blockedItem;
-    /** The thing the chain ran out of at its deepest step: what the player has to bring. */
-    private Item missingItem;
     /** He stands at a stonecutter: its recipes are tried first (stairs one for one, not six for four). */
     private final boolean cutterNearby;
     private boolean usedCutter;
@@ -56,92 +52,21 @@ public final class CompanionCrafting {
         if (count < 1 || count > 64) return new Plan(false, "За раз можно сделать от 1 до 64 предметов.", bag, false);
         CompanionCrafting planner = new CompanionCrafting(level, cutterNearby);
         int before = count(bag, target);
-        // Two half stacks of one thing take two cells: merging them is what a player does before crafting, and it gives the
-        // chain the one cell it needs when the bag is otherwise full (the owner's five-step plan, 163 things carried).
-        mergeStacks(bag);
-        // A bench made and set down before the chain: its cell is free again for the planks and the product, while a full bag
-        // has no second cell to spare for a bench made after them. Nothing to make, nothing to set down.
-        boolean benchFirst = count(bag, target) < before + count && !tableNearby && needsBench(level, target)
-                && !(cutterNearby && cuttable(level, target));
-        if (benchFirst && !planner.craftBench(bag))
-            return new Plan(false, planner.failureMessage(target, true), copy(inventory), false, planner.shortage());
-        if (!planner.ensure(bag, target, before + count))
-            return new Plan(false, planner.failureMessage(target, false), copy(inventory), false, planner.shortage());
+        if (!planner.ensure(bag, target, before + count)) {
+            if (planner.inventoryFull) return new Plan(false, "В моей сумке нет места для всей цепочки крафта. Освободи несколько ячеек; материалы сохранены.", copy(inventory), false);
+            if (planner.searches > MAX_SEARCH) return new Plan(false, "Цепочка рецептов слишком сложная. Попроси сначала сделать промежуточные материалы; сумка не изменена.", copy(inventory), false);
+            return new Plan(false, "Не могу сделать " + count + " «" + target.getDescription().getString()
+                    + "»: в моей сумке недостаточно подходящих материалов для полной цепочки крафта. Материалы сохранены.", copy(inventory), false, true);
+        }
         int made = count(bag, target) - before;
-        boolean placeTable = benchFirst || !tableNearby && planner.needsTable;
-        if (!benchFirst && placeTable && (!planner.ensure(bag, Items.CRAFTING_TABLE, 1) || !take(bag, Items.CRAFTING_TABLE)))
-            return new Plan(false, planner.failureMessage(target, true), copy(inventory), false, planner.shortage());
-        // The same step in a row (four stairs cut one by one) is said once with the counts added; a cut step says where it was cut.
+        boolean placeTable = planner.needsTable && !tableNearby;
+        if (placeTable && (!planner.ensure(bag, Items.CRAFTING_TABLE, 1) || !take(bag, Items.CRAFTING_TABLE))) {
+            return new Plan(false, "Для этого нужен верстак. Не хватает материалов, чтобы сделать и верстак, и запрошенный предмет. Материалы сохранены.", copy(inventory), false, true);
+        }
         String chain = String.join("; ", merged(planner.steps));
         return new Plan(true, (planner.usedCutter ? "Нарезал на камнерезе " : "Скрафтил ") + made + " «" + target.getDescription().getString() + "»."
                 + (chain.isEmpty() ? "" : " Цепочка: " + chain + "."), bag, placeTable, false, planner.usedCutter);
     }
-
-    /** A bench made and taken out of the bag before the chain: the cell it was made in is free again for what follows. */
-    private boolean craftBench(NonNullList<ItemStack> bag) {
-        return ensure(bag, Items.CRAFTING_TABLE, 1) && take(bag, Items.CRAFTING_TABLE);
-    }
-
-    /** The requested item's own recipes all need the 3×3 grid, so a bench has to be made before its chain, not after it. */
-    public static boolean needsBench(ServerLevel level, Item target) {
-        boolean any = false;
-        for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
-            CraftingRecipe recipe = holder.value();
-            if (recipe.getResultItem(level.registryAccess()).getItem() != target) continue;
-            any = true;
-            if (recipe.canCraftInDimensions(2, 2)) return false;
-        }
-        return any;
-    }
-
-    /** Whether the stonecutter has a recipe for the item: it is cut, not crafted, so no bench is made before its chain. */
-    private static boolean cuttable(ServerLevel level, Item target) {
-        for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.STONECUTTING))
-            if (holder.value().getResultItem(level.registryAccess()).getItem() == target) return true;
-        return false;
-    }
-
-    /**
-     * Everything the chain for an item is made of, the item itself too — what a hand must not take out of the bag while
-     * the plan reads the bag (the torch chain's coal, the chest chain's logs and planks). The scan is bounded: a chain
-     * that loops over more than a bagful of kinds has no single stack to spare anyway.
-     */
-    public static Set<Item> chainMaterials(ServerLevel level, Item target) {
-        Set<Item> materials = new HashSet<>();
-        java.util.Deque<Item> queue = new java.util.ArrayDeque<>();
-        materials.add(target); queue.add(target);
-        while (!queue.isEmpty() && materials.size() < 64) {
-            Item item = queue.poll();
-            for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
-                CraftingRecipe recipe = holder.value();
-                if (recipe.getResultItem(level.registryAccess()).getItem() != item) continue;
-                for (Ingredient ingredient : recipe.getIngredients())
-                    for (ItemStack option : ingredient.getItems())
-                        if (materials.add(option.getItem())) queue.add(option.getItem());
-            }
-        }
-        return materials;
-    }
-
-    /**
-     * What the player hears when the craft did not happen: the thing that was in the way, in plain words — the cell the bag
-     * had none of, or the material the chain ran out of — never a «chain» that says nothing about what to bring or free.
-     */
-    private String failureMessage(Item target, boolean bench) {
-        String name = "«" + target.getDescription().getString() + "»";
-        String need = bench ? ": для него нужен верстак, а " : ": ";
-        if (searches > MAX_SEARCH)
-            return "Не могу сделать " + name + ": цепочка рецептов слишком сложная. Попроси сначала сделать промежуточные материалы; сумка не изменена.";
-        if (inventoryFull && blockedItem != null)
-            return "Не могу сделать " + name + need + "в сумке нет места, чтобы положить «" + blockedItem.getDescription().getString()
-                    + "» — нужна одна свободная ячейка. Освободи ячейку или сложи вещи в сундук; материалы сохранены.";
-        if (missingItem != null)
-            return "Не могу сделать " + name + need + "не хватает «" + missingItem.getDescription().getString() + "». Материалы сохранены.";
-        return "Не могу сделать " + name + need + "в сумке не хватает подходящих материалов. Материалы сохранены.";
-    }
-
-    /** False when the bag itself was too full; true when materials (or a chain too long) were missing. */
-    private boolean shortage() { return !inventoryFull && searches <= MAX_SEARCH; }
 
     private boolean ensure(NonNullList<ItemStack> bag, Item target, int wanted) {
         if (count(bag, target) >= wanted) return true;
@@ -169,11 +94,7 @@ public final class CompanionCrafting {
                     rollback(checkpoint, previousTable, previousCutter);
                     if (searches > MAX_SEARCH) break;
                 }
-                if (!crafted) {
-                    // The deepest thing the chain could not get: what the player has to bring.
-                    if (missingItem == null) missingItem = target;
-                    return false;
-                }
+                if (!crafted) return false;
             }
             return true;
         } finally {
@@ -194,9 +115,9 @@ public final class CompanionCrafting {
             if (!recipe.matches(input, level)) return false;
             ItemStack output = recipe.assemble(input, level.registryAccess());
             if (output.isEmpty()) return false;
-            if (!store(bag, output.copy())) { inventoryFull = true; if (blockedItem == null) blockedItem = output.getItem(); return false; }
+            if (!store(bag, output.copy())) { inventoryFull = true; return false; }
             for (ItemStack remainder : recipe.getRemainingItems(input)) {
-                if (!remainder.isEmpty() && !store(bag, remainder.copy())) { inventoryFull = true; if (blockedItem == null) blockedItem = remainder.getItem(); return false; }
+                if (!remainder.isEmpty() && !store(bag, remainder.copy())) { inventoryFull = true; return false; }
             }
             steps.add(output.getCount() + " " + output.getHoverName().getString());
             return true;
@@ -266,7 +187,7 @@ public final class CompanionCrafting {
                         steps.add(output.getCount() + " " + output.getHoverName().getString() + " на камнерезе");
                         return true;
                     }
-                    inventoryFull = true; if (blockedItem == null) blockedItem = output.getItem();
+                    inventoryFull = true;
                 }
                 rollback(checkpoint, previousTable, previousCutter);
                 if (searches > MAX_SEARCH) return false;
@@ -307,23 +228,6 @@ public final class CompanionCrafting {
             if (offered.isEmpty()) return true;
         }
         return offered.isEmpty();
-    }
-
-    /** Half stacks of one thing into one cell: the same items and components, no item lost or made. */
-    private static void mergeStacks(NonNullList<ItemStack> bag) {
-        for (int slot = 0; slot < bag.size(); slot++) {
-            ItemStack stack = bag.get(slot);
-            if (stack.isEmpty() || stack.getCount() >= stack.getMaxStackSize()) continue;
-            for (int other = slot + 1; other < bag.size() && stack.getCount() < stack.getMaxStackSize(); other++) {
-                ItemStack candidate = bag.get(other);
-                if (candidate.isEmpty() || !ItemStack.isSameItemSameComponents(stack, candidate)) continue;
-                int moved = Math.min(candidate.getCount(), stack.getMaxStackSize() - stack.getCount());
-                if (moved <= 0) continue;
-                stack.grow(moved);
-                candidate.shrink(moved);
-                if (candidate.isEmpty()) bag.set(other, ItemStack.EMPTY);
-            }
-        }
     }
 
     private static NonNullList<ItemStack> copy(List<ItemStack> inventory) {

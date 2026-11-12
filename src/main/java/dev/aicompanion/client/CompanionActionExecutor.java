@@ -20,12 +20,7 @@ public final class CompanionActionExecutor {
     public static CompletableFuture<String> execute(List<PlannedAction> actions, long generation) {
         return execute(actions, generation, CompanionDiagnostics.newTrace());
     }
-    public static CompletableFuture<String> execute(List<PlannedAction> actions, long generation, String trace) {
-        return execute(actions, 1, generation, trace);
-    }
-    /** {@code repeat} copies of a walking route are queued as written steps, so cancel, progress and reporting stay as they are. */
-    public static synchronized CompletableFuture<String> execute(List<PlannedAction> actions, int repeat, long generation, String trace) {
-        actions = CompanionPlanCodec.repeated(actions, repeat);
+    public static synchronized CompletableFuture<String> execute(List<PlannedAction> actions, long generation, String trace) {
         if (actions.isEmpty()) return CompletableFuture.completedFuture("");
         if (generation != planGeneration.get()) return CompletableFuture.completedFuture("План отменён игроком.");
         if (link.contains(actions)) {
@@ -35,7 +30,7 @@ public final class CompanionActionExecutor {
         Minecraft client = Minecraft.getInstance();
         var server = client.getSingleplayerServer();
         var playerId = client.player == null ? null : client.player.getUUID();
-        CompanionDiagnostics.event(trace, "plan_queued", "generation", generation, "repeat", repeat, "actions", actions);
+        CompanionDiagnostics.event(trace, "plan_queued", "generation", generation, "actions", actions);
         link.bind(server, playerId);
         return link.submit(actions, trace, () -> generation != planGeneration.get());
     }
