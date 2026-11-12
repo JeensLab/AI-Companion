@@ -87,6 +87,121 @@ public final class CompanionFullBagTests {
     }
 
     /**
+     * The owner's own bag from his screenshot: all 27 cells taken, four pickaxes and two water buckets among the things,
+     * and two pairs of half stacks (12+12 diamonds, 3+9 gold) that a player merges before crafting. «Поставь сундук
+     * здесь» must merge them, make the bench first, set down the chest and keep every item: only the wood the chest and
+     * its bench are made of is spent, and no stack is dropped or invented. He may be holding a pickaxe, which must not
+     * stop the free hand from taking a stack.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void theOwnersFullBagPlacesTheChestAndKeepsEveryItem(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        ItemStack[] carried = {
+                new ItemStack(Items.DIAMOND_PICKAXE), new ItemStack(Items.DIAMOND_PICKAXE),
+                new ItemStack(Items.IRON_PICKAXE), new ItemStack(Items.WOODEN_PICKAXE),
+                new ItemStack(Items.ROTTEN_FLESH, 3), new ItemStack(Items.WATER_BUCKET),
+                new ItemStack(Items.COBBLESTONE, 45), new ItemStack(Items.DIAMOND, 12),
+                new ItemStack(Items.RED_MUSHROOM, 6), new ItemStack(Items.DIAMOND, 12),
+                new ItemStack(Items.PORKCHOP, 8), new ItemStack(Items.OAK_LOG, 4),
+                new ItemStack(Items.ARROW, 5), new ItemStack(Items.STRING, 4),
+                new ItemStack(Items.WATER_BUCKET), new ItemStack(Items.GOLD_INGOT, 3),
+                new ItemStack(Items.DIRT, 2), new ItemStack(Items.FEATHER, 1),
+                new ItemStack(Items.LAPIS_LAZULI, 3), new ItemStack(Items.GOLD_INGOT, 9),
+                new ItemStack(Items.BREAD, 64), new ItemStack(Items.REDSTONE, 40),
+                new ItemStack(Items.BROWN_MUSHROOM, 1), new ItemStack(Items.BONE, 12),
+                new ItemStack(Items.FLINT, 11), new ItemStack(Items.BEEF, 64),
+                new ItemStack(Items.SAND, 1)};
+        for (int slot = 0; slot < carried.length; slot++) c.setItem(slot, carried[slot].copy());
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_PICKAXE));
+        List<ItemStack> before = bag(c);
+        h.assertTrue(freeCells(before) == 0, "The bag is not full: " + freeCells(before));
+        var direct = CompanionCrafting.plan(h.getLevel(), before, "minecraft:chest", 1, false);
+        h.assertTrue(direct.success(), "The plan itself refused the owner's bag: " + direct.message());
+        h.assertTrue(countIn(direct.inventory(), Items.DIAMOND) == 24 && countIn(direct.inventory(), Items.GOLD_INGOT) == 12,
+                "The half stacks were not merged: " + direct.message());
+        var plan = CompanionPlanRunner.run(List.of(new PlannedAction("place_block", 0, 1, "minecraft:chest")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-owners-full-bag", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.report().contains("Поставил minecraft:chest: 1"), "The chest was not placed: " + outcome.report());
+            BlockPos placed = blockNear(h, Blocks.CHEST, c.blockPosition(), 6);
+            h.assertTrue(placed != null, "No chest in the world: " + outcome.report());
+            List<ItemStack> after = bag(c);
+            // Nothing dropped: a stack that found no cell would lie on the ground.
+            h.assertTrue(h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                            new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(8)).isEmpty(),
+                    "A stack was dropped: " + outcome.report());
+            for (ItemStack stack : before) {
+                Item item = stack.getItem();
+                if (item == Items.OAK_LOG) continue; // the chest and its bench are made of three of the four logs
+                h.assertTrue(countIn(after, item) == countIn(before, item),
+                        "The bag lost or gained " + item + ": " + countIn(before, item) + " before, " + countIn(after, item) + " after: " + outcome.report());
+            }
+            h.assertTrue(countIn(after, Items.OAK_LOG) == 1, "The logs do not add up: " + countIn(after, Items.OAK_LOG));
+            h.assertTrue(countIn(after, Items.CHEST) == 0, "The chest is still in the bag: " + outcome.report());
+            h.assertTrue(c.getMainHandItem().is(Items.DIAMOND_PICKAXE), "The held pickaxe was taken: " + c.getMainHandItem());
+        });
+    }
+
+    /**
+     * The bag the owner really had when the order failed (his game log, 21:21): all 27 cells taken, both hands busy
+     * with a pickaxe and a shield, four oak logs — and no pair that merging could put into one cell (the two cooked
+     * porkchops are 64 and 11: the full stack takes no more). The chest still has to be made and set down, and every
+     * stack must stay: the chain's planks live in the crafting grid, the chest leaves the grid into the world.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void theOwnersRealFullBagWithBothHandsBusyStillPlacesTheChest(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        ItemStack[] carried = {
+                new ItemStack(Items.DIAMOND_HOE), new ItemStack(Items.DIAMOND_HOE),
+                new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.WOODEN_PICKAXE),
+                new ItemStack(Items.INK_SAC, 3), new ItemStack(Items.WATER_BUCKET),
+                new ItemStack(Items.COBBLESTONE, 45), new ItemStack(Items.ZOMBIE_SPAWN_EGG, 12),
+                new ItemStack(Items.CHICKEN_SPAWN_EGG, 6), new ItemStack(Items.DIAMOND, 12),
+                new ItemStack(Items.CHICKEN, 8), new ItemStack(Items.OAK_LOG, 4),
+                new ItemStack(Items.ARROW, 5), new ItemStack(Items.STRING, 4),
+                new ItemStack(Items.WATER_BUCKET), new ItemStack(Items.RAW_GOLD, 3),
+                new ItemStack(Items.DIRT, 2), new ItemStack(Items.FEATHER, 1),
+                new ItemStack(Items.LAPIS_LAZULI, 3), new ItemStack(Items.GOLD_INGOT, 9),
+                new ItemStack(Items.COOKED_PORKCHOP, 64), new ItemStack(Items.REDSTONE, 40),
+                new ItemStack(Items.SPRUCE_BOAT), new ItemStack(Items.BONE, 12),
+                new ItemStack(Items.COOKED_PORKCHOP, 11), new ItemStack(Items.ROTTEN_FLESH, 34),
+                new ItemStack(Items.SAND, 1)};
+        for (int slot = 0; slot < carried.length; slot++) c.setItem(slot, carried[slot].copy());
+        // As in the log: a pickaxe in the main hand and a shield in the offhand leave no free hand to hold a stack.
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        List<ItemStack> before = bag(c);
+        h.assertTrue(freeCells(before) == 0, "The bag is not full: " + freeCells(before));
+        h.assertTrue(!c.holdOneStackInHand(), "A hand was free after all: " + c.heldStackHands());
+        var plan = CompanionPlanRunner.run(List.of(new PlannedAction("place_block", 0, 1, "minecraft:chest")),
+                new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-owners-real-full-bag", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + c.getLastTaskResult());
+            var outcome = plan.join();
+            h.assertTrue(outcome.report().contains("Поставил minecraft:chest: 1"), "The chest was not placed: " + outcome.report());
+            h.assertTrue(blockNear(h, Blocks.CHEST, c.blockPosition(), 6) != null, "No chest in the world: " + outcome.report());
+            List<ItemStack> after = bag(c);
+            h.assertTrue(h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                            new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(8)).isEmpty(),
+                    "A stack was dropped: " + outcome.report());
+            for (ItemStack stack : before) {
+                Item item = stack.getItem();
+                if (item == Items.OAK_LOG) continue; // the chest and its bench are made of three of the four logs
+                h.assertTrue(countIn(after, item) == countIn(before, item),
+                        "The bag lost or gained " + item + ": " + countIn(before, item) + " before, " + countIn(after, item) + " after: " + outcome.report());
+            }
+            h.assertTrue(countIn(after, Items.OAK_LOG) == 1, "The logs do not add up: " + countIn(after, Items.OAK_LOG));
+            h.assertTrue(countIn(after, Items.CHEST) == 0, "The chest is still in the bag: " + outcome.report());
+            h.assertTrue(c.getMainHandItem().is(Items.IRON_PICKAXE) && c.getOffhandItem().is(Items.SHIELD),
+                    "The held pickaxe or shield moved: " + c.getMainHandItem() + " " + c.getOffhandItem());
+        });
+    }
+
+    /**
      * Two steps of one order with a full bag: the first stack goes into the free hand, and once the cell it freed is taken
      * again the next step must take the other free hand instead of claiming the bag has room. Before the fix the second
      * step returned at once, so nothing was taken and the craft refused for space although the other hand was free.
@@ -153,12 +268,12 @@ public final class CompanionFullBagTests {
     }
 
     /**
-     * A full bag, the wood for a chest, but no cell for the planks and no free hand to hold one stack in: the answer names
-     * what is missing in plain words, the plan says which step failed, lists the rest as not done, and nothing claims the
-     * storing happened.
+     * A full bag, the wood for a chest, no cell and both hands taken: the planks live in the 3×3 grid, the chest leaves
+     * it into the world, and the storing goes on. Before the fix this bag refused for space, though the chain fitted
+     * into the grid; every filler stack must end up in the bag or in the chest, and the held things stay in the hands.
      */
-    @GameTest(template = "large_search", timeoutTicks = 600)
-    public static void aFullBagSaysWhatIsMissingForTheChestAndThePlanSaysWhatFailed(GameTestHelper h) {
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void aFullBagWithBothHandsBusyMakesTheChestInTheGridAndGoesOnStoring(GameTestHelper h) {
         arena(h);
         CompanionEntity c = spawn(h);
         for (int slot = 0; slot < 26; slot++) c.setItem(slot, new ItemStack(FILLER[slot], 2));
@@ -174,17 +289,22 @@ public final class CompanionFullBagTests {
             h.assertTrue(plan.isDone() && !plan.isCompletedExceptionally(), "The plan is still running: " + c.getLastTaskResult());
             var outcome = plan.join();
             String report = outcome.report();
-            h.assertTrue(report.contains("План остановлен: Поставил 0 из 1."), "The failed step is not named: " + report);
-            h.assertTrue(report.contains("нет места") && report.toLowerCase(java.util.Locale.ROOT).contains("planks"),
-                    "What is missing is not named: " + report);
-            h.assertTrue(!report.contains("цепочки крафта"), "The craft chain is named for a chest: " + report);
-            h.assertTrue(outcome.skipped().size() == 1 && "store_items".equals(outcome.skipped().getFirst().type()),
-                    "The rest of the plan is not listed as not done: " + outcome.skipped());
-            h.assertTrue(report.contains("Не выполнено: сложить вещи в сундук"), "The skipped step is not said: " + report);
-            h.assertTrue(!report.contains("Сложил"), "A failed plan claimed the storing: " + report);
-            h.assertTrue(!c.didLastTaskSucceed(), "The failed step claimed success: " + c.getLastTaskResult());
-            h.assertTrue(countIn(bag(c), Items.OAK_LOG) == 3, "The materials were spent: " + c.getLastTaskResult());
-            h.assertTrue(blockNear(h, Blocks.CHEST, c.blockPosition(), 5) == null, "A chest was placed after all: " + c.getLastTaskResult());
+            h.assertTrue(report.contains("Поставил minecraft:chest: 1"), "The chest was not placed: " + report);
+            h.assertTrue(outcome.skipped().isEmpty(), "A step was skipped: " + report);
+            h.assertTrue(report.contains("Сложил"), "The storing did not go on: " + report);
+            BlockPos placed = blockNear(h, Blocks.CHEST, c.blockPosition(), 6);
+            h.assertTrue(placed != null, "No chest in the world: " + report);
+            h.assertTrue(countIn(bag(c), Items.OAK_LOG) == 0 && countIn(bag(c), Items.CHEST) == 0,
+                    "The logs or the chest are still in the bag: " + report);
+            var chest = (Container) h.getLevel().getBlockEntity(placed);
+            // Every filler stack is in the bag or in the chest: the grid left nothing behind and dropped nothing.
+            for (int index = 0; index < 26; index++) {
+                Item filler = FILLER[index];
+                int kept = countIn(bag(c), filler) + countIn(contents(chest), filler);
+                h.assertTrue(kept == 2, "The bag lost or gained " + filler + ": " + kept + " of 2: " + report);
+            }
+            h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE) && c.getOffhandItem().is(Items.TORCH) && c.getOffhandItem().getCount() == 8,
+                    "The held things moved: " + c.getMainHandItem() + " " + c.getOffhandItem());
         });
     }
 
@@ -230,6 +350,49 @@ public final class CompanionFullBagTests {
         h.assertTrue(plan.message().contains("«Chest»") && plan.message().contains("не хватает"), "What is missing is not named: " + plan.message());
         h.assertTrue(plan.message().toLowerCase(java.util.Locale.ROOT).contains("log"), "The logs are not named: " + plan.message());
         h.assertTrue(!plan.message().contains("цепочки крафта"), "The craft chain is named: " + plan.message());
+        h.succeed();
+    }
+
+    /**
+     * A full bag whose only free cell comes from merging two half stacks of one thing: that cell is enough for the whole
+     * chain (planks, the bench, the planks for the chest, the chest), and the merged stack keeps every diamond.
+     */
+    @GameTest(template = "empty")
+    public static void aCellFreedOnlyByMergingTwoPartialStacksIsEnoughForTheChest(GameTestHelper h) {
+        List<ItemStack> bag = new java.util.ArrayList<>();
+        bag.add(new ItemStack(Items.DIAMOND, 12));
+        bag.add(new ItemStack(Items.DIAMOND, 12));
+        bag.add(new ItemStack(Items.OAK_LOG, 4));
+        for (int at = 0; bag.size() < 27; at++) bag.add(new ItemStack(FILLER[at], 2));
+        h.assertTrue(freeCells(bag) == 0 && countIn(bag, Items.DIAMOND) == 24, "The bag is not full of two half stacks: " + freeCells(bag));
+        var plan = CompanionCrafting.plan(h.getLevel(), bag, "minecraft:chest", 1, false);
+        h.assertTrue(plan.success(), "The chest was refused although merging frees a cell: " + plan.message());
+        h.assertTrue(countIn(plan.inventory(), Items.DIAMOND) == 24, "The diamonds do not add up: " + countIn(plan.inventory(), Items.DIAMOND));
+        h.assertTrue(plan.inventory().stream().filter(stack -> stack.is(Items.DIAMOND)).count() == 1, "The two half stacks were not merged: " + plan.message());
+        h.assertTrue(countIn(plan.inventory(), Items.CHEST) == 1 && countIn(plan.inventory(), Items.OAK_LOG) == 1,
+                "No chest made, or the logs do not add up: " + plan.message());
+        h.assertTrue(plan.placeTable(), "The bench he had to make first is not set down: " + plan.message());
+        h.succeed();
+    }
+
+    /**
+     * A full bag with no pair to merge, wood for the chest, and no cell to spare: the refusal names the item that had no
+     * cell («Oak Planks») and the cell, claims no shortage, and the bag comes back untouched.
+     */
+    @GameTest(template = "empty")
+    public static void aFullBagWithNoMergeablePairStillNamesTheItemItHasNoCellFor(GameTestHelper h) {
+        List<ItemStack> bag = new java.util.ArrayList<>();
+        bag.add(new ItemStack(Items.OAK_LOG, 3));
+        for (int at = 0; bag.size() < 27; at++) bag.add(new ItemStack(FILLER[at], 2));
+        h.assertTrue(freeCells(bag) == 0, "The bag is not full: " + freeCells(bag));
+        var plan = CompanionCrafting.plan(h.getLevel(), bag, "minecraft:chest", 1, false);
+        h.assertTrue(!plan.success() && !plan.shortage(), "A space refusal claimed a shortage: " + plan.message());
+        h.assertTrue(plan.message().contains("нет места") && plan.message().contains("одна свободная ячейка"),
+                "The missing cell is not named: " + plan.message());
+        h.assertTrue(plan.message().toLowerCase(java.util.Locale.ROOT).contains("planks"), "The item without a cell is not named: " + plan.message());
+        h.assertTrue(plan.message().contains("«Chest»") && plan.message().contains("верстак"), "The answer does not say what is being made: " + plan.message());
+        h.assertTrue(countIn(plan.inventory(), Items.OAK_LOG) == 3 && freeCells(plan.inventory()) == 0,
+                "The refused plan changed the bag: " + plan.message());
         h.succeed();
     }
 

@@ -156,16 +156,31 @@ final class CompanionWorkItems {
      * The craft as the work does it: the plan first, and only when it says the bag has no cell is a stack taken in a free
      * hand and the plan tried again. A hand takes a stack out of the bag while the plan reads the bag, so holding before
      * the plan hides a material of the chain from it; a retry that still fails puts the stack back and keeps the plan's
-     * own answer about the cell.
+     * own answer about the cell. With both hands busy the 3×3 grid is the last cell: the planks of the chain sit there
+     * while it runs, and the block made there is kept as the grid block until it is set down.
      */
     CompanionActionResult craftFromBagMakingRoom(String itemId, int count) {
         CompanionActionResult crafted = w.owner.craftFromBag(itemId, count);
         if (!spaceRefusal(crafted)) return crafted;
-        if (!holdOneStack(chainMaterials(itemId))) return crafted;
+        if (!holdOneStack(chainMaterials(itemId))) {
+            CompanionActionResult inGrid = w.owner.craftFromBagInGrid(itemId, count);
+            return inGrid.success() ? inGrid : crafted;
+        }
         CompanionActionResult again = w.owner.craftFromBag(itemId, count);
         if (again.success()) return again;
         putHeldStackBack();
         return crafted;
+    }
+
+    /** The block the plan made in the grid and the bag had no cell for: set down from there, or stored once a cell frees. */
+    private ItemStack gridBlock = ItemStack.EMPTY;
+    /** The saved grid block: a save without the key holds none. */
+    private static final String GRID_BLOCK = "WorkGridBlock";
+
+    void keepGridBlock(ItemStack stack) { gridBlock = stack.copy(); }
+    ItemStack gridBlock() { return gridBlock; }
+    boolean gridBlockIs(String itemId) {
+        return !gridBlock.isEmpty() && BuiltInRegistries.ITEM.getKey(gridBlock.getItem()).toString().equals(itemId);
     }
 
     /** The plan's own words for a bag with no cell: the one refusal a free hand can lift. */
@@ -192,6 +207,13 @@ final class CompanionWorkItems {
             if (!held.isEmpty()) w.owner.setItemSlot(hand, held);
             else heldHands.remove(hand);
         }
+        // The block made in the grid has no cell either: it goes back into the bag as soon as one is free (the block
+        // itself was set down from the grid and is gone), else it lies at his feet rather than staying unseen.
+        if (gridBlock.isEmpty()) { gridBlock = ItemStack.EMPTY; return; }
+        ItemStack rest = gridBlock.copy();
+        w.owner.storeLoot(rest);
+        if (!rest.isEmpty() && w.owner.level() instanceof ServerLevel level) Block.popResource(level, w.owner.blockPosition(), rest);
+        gridBlock = ItemStack.EMPTY;
     }
 
     /** The hands holding a stack, in a fixed order, for the GameTest observer. */
@@ -204,8 +226,10 @@ final class CompanionWorkItems {
 
     /** A stack held in a hand is the work's, not equipment: the save carries it, so the reload returns it to the bag. */
     void save(CompoundTag tag) {
-        if (heldHands.isEmpty()) { tag.remove(HELD_HANDS); return; }
-        tag.putString(HELD_HANDS, String.join(",", heldHands()));
+        if (heldHands.isEmpty()) tag.remove(HELD_HANDS); else tag.putString(HELD_HANDS, String.join(",", heldHands()));
+        // The grid block is the work's too: the save carries it, so a reload does not lose it.
+        if (gridBlock.isEmpty()) tag.remove(GRID_BLOCK);
+        else tag.put(GRID_BLOCK, gridBlock.save(w.owner.level().registryAccess()));
     }
 
     /** The hands of the save: a hand that is empty now holds nothing, whatever the save said. */
@@ -215,6 +239,9 @@ final class CompanionWorkItems {
             EquipmentSlot hand = "mainhand".equals(name) ? EquipmentSlot.MAINHAND : "offhand".equals(name) ? EquipmentSlot.OFFHAND : null;
             if (hand != null && !w.owner.getItemBySlot(hand).isEmpty()) heldHands.add(hand);
         }
+        gridBlock = tag.contains(GRID_BLOCK)
+                ? ItemStack.parse(w.owner.level().registryAccess(), tag.getCompound(GRID_BLOCK)).orElse(ItemStack.EMPTY)
+                : ItemStack.EMPTY;
     }
 
     int takeFromSlot(Container container, int slot, int max) {

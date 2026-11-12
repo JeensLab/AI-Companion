@@ -115,7 +115,8 @@ final class CompanionChests {
     private void placeRequestedChests() {
         if (!w.owner.onGround()) return;
         if (w.newChests >= w.requestedCount) { finishPlacedChests(); return; }
-        boolean hasItem = w.items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem) && !stack.isEmpty());
+        boolean hasItem = w.items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem) && !stack.isEmpty())
+                || w.items.gridBlockIs(w.requestedItem);
         if (!hasItem) {
             if (!CompanionCraftCosts.supportsCraft(w.requestedItem, 1)) { w.finish(false, "Нет блока " + w.requestedItem + " в сумке, его подготовку пока не умею."); return; }
             if (w.crafting.needsWorkbench(w.requestedItem) && w.crafting.approachCraftingTable()) return;
@@ -455,5 +456,5 @@ final class CompanionChests {
         return resource(stack);
     }
 
-    private boolean hasChestItem() { return w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
+    private boolean hasChestItem() { return w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)) || w.items.gridBlockIs("minecraft:chest"); }
 }

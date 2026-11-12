@@ -1089,6 +1089,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     BlockPos cutterWalk(String requestedItemId, int requestedCount) { return placement.cutterWalk(requestedItemId, requestedCount); }
     public CompanionActionResult craftItemResult(String requestedItemId, int requestedCount) { return placement.craftItemResult(requestedItemId, requestedCount); }
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount); }
+    /** The same craft with the 3×3 grid as one more cell, for a bag with no free cell and no free hand. */
+    CompanionActionResult craftFromBagInGrid(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount, true); }
     public CompanionActionResult placeBlockResult(String requestedBlockId) { return placement.placeBlockResult(requestedBlockId); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin) { return placement.placeBlockNearResult(requestedBlockId, origin); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) { return placement.placeBlockNearResult(requestedBlockId, origin, allowed); }

@@ -19,7 +19,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Plans against a detached bag. No ingredients or world blocks change until the entire craft is possible. */
+/**
+ * Plans against a detached bag. No ingredients or world blocks change until the entire craft is possible. The bag may
+ * carry one more cell than the inventory has (the 3×3 grid): a chain's planks sit there, and what is left in it is the
+ * caller's to place or store.
+ */
 public final class CompanionCrafting {
     private static final int MAX_SEARCH = 8000;
     private final ServerLevel level;
