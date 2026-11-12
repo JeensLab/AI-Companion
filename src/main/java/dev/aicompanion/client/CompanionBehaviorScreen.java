@@ -13,7 +13,7 @@ final class CompanionBehaviorScreen extends Screen {
     private final Screen parent;
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
-        int left = width / 2 - 150, top = Math.max(64, height / 2 - 90); // the sampling fields hold the first rows, the switches start below them
+        int left = width / 2 - 150, top = CompanionSwitchLayout.top(height); // the sampling fields hold the first rows, the switches start below them
         // Sampling is free entry: models differ, so the mod sends the number as typed and lets the server judge its range.
         addSamplingField(left + 72, 30, 80, OpenRouterConfig.TEMPERATURE);
         addSamplingField(left + 200, 30, 100, OpenRouterConfig.TOP_P);
@@ -153,6 +153,8 @@ final class CompanionBehaviorScreen extends Screen {
     /**
      * A free-entry sampling field: any number the owner types is sent as is — dot or comma, negative too. The mod sets no
      * range of its own; a value the server rejects comes back as the server's own error. Empty means «не задавать».
+     * The rule is drawn on the screen's own line under the fields: a hover box there covered the red «не число» line
+     * and the first switches.
      */
     private EditBox addSamplingField(int x, int y, int width, net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<String> setting) {
         EditBox field = addRenderableWidget(new EditBox(font, x, y, width, 20, Component.literal("")));
@@ -165,8 +167,6 @@ final class CompanionBehaviorScreen extends Screen {
             field.setTextColor(OpenRouterClient.samplingHint(text).isEmpty() ? 0xE0E0E0 : 0xFF5555);
         });
         field.setTextColor(OpenRouterClient.samplingHint(setting.get()).isEmpty() ? 0xE0E0E0 : 0xFF5555);
-        field.setTooltip(Tooltip.create(Component.literal(
-                "Значение отправляется как есть; допустимый диапазон зависит от вашей модели. Пусто — не задавать, остаётся настройка сервера модели.")));
         return field;
     }
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
@@ -191,11 +191,14 @@ final class CompanionBehaviorScreen extends Screen {
             if (!hint.isEmpty()) hint = "top_p — " + hint;
         }
         if (!hint.isEmpty()) graphics.drawCenteredString(font, hint, width / 2, 52, 0xFF5555);
+        else graphics.drawCenteredString(font, "Значение уходит как есть; допустимое решает сервер модели.", width / 2, 52, 0xB8C3D1);
         graphics.drawCenteredString(font, "Свои темы и редкие реплики об обстановке идут на сервер модели и в Inworld.", width / 2, height - 64, 0xB8C3D1);
     }
+    /** The temperature field would take the keyboard on opening; Tab reaches the fields and the switches alike. */
+    @Override protected void setInitialFocus() { }
     @Override public void onClose() { minecraft.setScreen(parent); }
 
-    private static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 64, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
+    private static final int ROW_WIDTH = CompanionSwitchLayout.ROW_WIDTH, ROW_HEIGHT = CompanionSwitchLayout.ROW_HEIGHT;
     /** The page of switches shown when they do not all fit above the note. */
     private int page;
     /**
@@ -203,24 +206,25 @@ final class CompanionBehaviorScreen extends Screen {
      * usual top and 30 apart while there is room, higher up and closer (down to touching) when they would reach the
      * note. So a switch added anywhere in init needs no place of its own, and the sampling fields above keep their own
      * row, leaving about four switch rows at a GUI height of 240.
-     * More than fit 24 apart go on pages, turned by a button beside «Назад».
+     * More than fit 24 apart go on pages, turned by a button beside «Назад»: a small GUI shows fewer rows at a time but
+     * every switch stays reachable, and the button names the page it opens.
      */
     private void fitRows(int top) {
         var all = children().stream().filter(child -> child instanceof Button button && button.getWidth() == ROW_WIDTH)
                 .map(Button.class::cast).toList();
-        int bottom = height - NOTE_FROM_BOTTOM - 4, perPage = Math.max(1, (bottom - HIGHEST_ROW - ROW_HEIGHT) / PAGED_STEP + 1);
+        int perPage = CompanionSwitchLayout.perPage(height), pages = CompanionSwitchLayout.pages(all.size(), height);
         var rows = all;
         if (all.size() > perPage) {
-            int pages = (all.size() + perPage - 1) / perPage, shown = page % pages, from = shown * perPage;
-            rows = all.subList(from, Math.min(all.size(), from + perPage));
+            int shown = page % pages, from = CompanionSwitchLayout.firstRow(all.size(), height, shown),
+                    onPage = CompanionSwitchLayout.rowsOnPage(all.size(), height, shown);
+            rows = all.subList(from, from + onPage);
             for (Button row : all) row.visible = rows.contains(row);
             addRenderableWidget(Button.builder(Component.literal("Ещё (" + (shown + 1) + "/" + pages + ")"), b -> {
                 page = shown + 1; rebuildWidgets();
             }).bounds(width / 2 + 54, height - 35, 100, 20).build());
         }
-        int gaps = Math.max(1, rows.size() - 1);
-        int step = Math.max(ROW_HEIGHT, Math.min(ROW_STEP, (bottom - HIGHEST_ROW - ROW_HEIGHT) / gaps));
-        int y = Math.max(HIGHEST_ROW, Math.min(top, bottom - ROW_HEIGHT - step * gaps));
+        int step = CompanionSwitchLayout.step(height, rows.size());
+        int y = CompanionSwitchLayout.firstY(top, height, rows.size());
         for (Button row : rows) { row.setY(y); y += step; }
     }
 }

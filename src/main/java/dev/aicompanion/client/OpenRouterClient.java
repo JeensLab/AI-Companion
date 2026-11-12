@@ -1,6 +1,7 @@
 package dev.aicompanion.client;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.aicompanion.OpenRouterConfig;
@@ -624,14 +625,14 @@ public final class OpenRouterClient {
     }
 
     /**
-     * One answer of the plan protocol, with the one bigger retry an empty cut-off answer gets. A request may have fallen
-     * back to a server that thinks by default (its template switch was refused), so the retry starts from the thinking-on
-     * budget: 2048 was below the measured 2263 hidden tokens and every plan after such a fallback died truncated.
+     * One answer of the plan protocol, with the one bigger retry an empty cut-off answer gets: the retry doubles the
+     * budget of the request that was cut off, capped by {@link #retryBudget(int)} — a thinking-off plan retries at 2048,
+     * a thinking-on one at 8192. A server that refused the template switch raises its own budget to the thinking-on one
+     * inside that retry ({@link #fallbackBody(JsonObject)}), so the retry still fits the 2263 hidden tokens measured there.
      */
     private static CompletableFuture<JsonObject> answer(URI endpoint, boolean withTools, boolean forcePlan, boolean thinking, int maxTokens,
                                                         String trace, JsonObject current, String context) {
-        int retryBase = Math.max(maxTokens, answerBudget(true));
-        return ensureAnswer(request(endpoint, withTools, forcePlan, thinking, maxTokens, trace, current, context), retryBase,
+        return ensureAnswer(request(endpoint, withTools, forcePlan, thinking, maxTokens, trace, current, context), maxTokens,
                 bigger -> request(endpoint, withTools, forcePlan, thinking, bigger, trace, current, context));
     }
 
@@ -652,8 +653,9 @@ public final class OpenRouterClient {
      * prompt was answered in 4-12 s instead of 180 s when the model did not spend its whole budget on hidden reasoning
      * (2263 tokens on our prompt); on when the owner turned thinking on, or a server whose template default is off would
      * ignore the switch and only the budget would change. Sampling is sent only when the owner set it, exactly as typed;
-     * an absent field keeps the server's default. Direct OpenAI carries the same rules in its own wire format: see
-     * {@link OpenAiResponses#request(JsonObject)}, which reads this body's switch and sampling.
+     * an absent field keeps the server's default. The two providers that do not take this body as it is carry the same
+     * rules in their own wire format: direct OpenAI in Responses ({@link OpenAiResponses#request(JsonObject)}) and
+     * OpenRouter in its reasoning field ({@link #openRouterBody(JsonObject)}).
      * Public so that a GameTest can check the fields without a request.
      */
     public static JsonObject requestBody(String model, JsonArray messages, int maxTokens, boolean thinking,
@@ -668,6 +670,35 @@ public final class OpenRouterClient {
         if (temperature != null) body.addProperty("temperature", temperature);
         if (topP != null) body.addProperty("top_p", topP);
         return body;
+    }
+
+    /**
+     * The OpenRouter wire body of a chat request. OpenRouter does not document the template switch the plain chat body
+     * carries: there the thinking switch is its own field, reasoning.effort «none» when thinking is off (the same 4–12 s
+     * answers measured with the template switch off), and no reasoning field when the owner turned thinking on, so the
+     * provider's own effort stands instead of one the mod invents. Reasoning tokens count against max_tokens there, so
+     * the budget stays the one {@link #answerBudget(boolean)} gives for the same thinking state.
+     * Public so that a GameTest can check the fields without a request.
+     */
+    public static JsonObject openRouterBody(JsonObject chat) { return openRouterBody(chat, false); }
+
+    /** The same body without its reasoning field, for a provider that refused the field by name. */
+    private static JsonObject openRouterBody(JsonObject chat, boolean dropReasoning) {
+        JsonObject body = chat.deepCopy();
+        body.remove("chat_template_kwargs");
+        if (!dropReasoning && !thinking(chat)) {
+            JsonObject reasoning = new JsonObject();
+            reasoning.addProperty("effort", "none");
+            body.add("reasoning", reasoning);
+        }
+        return body;
+    }
+
+    /** Whether the chat body asked for thinking. Absent means off: that is the chat body's own default and the owner's. */
+    private static boolean thinking(JsonObject chat) {
+        JsonElement kwargs = chat.get("chat_template_kwargs");
+        return kwargs != null && kwargs.isJsonObject() && kwargs.getAsJsonObject().has("enable_thinking")
+                && kwargs.getAsJsonObject().get("enable_thinking").getAsBoolean();
     }
 
     /**
@@ -744,8 +775,39 @@ public final class OpenRouterClient {
         return messages;
     }
 
-    /** One attempt may take this long, the whole answer included; then the queue moves on (review 22.10, К3: 64–131 s answers). */
+    /**
+     * One HTTP attempt may take this long, headers and body included; then the queue moves on (review 22.10, К3: 64–131 s
+     * answers). The limit is per attempt, not for the whole answer: the one retry of an empty cut-off answer is a second
+     * attempt of its own, so the worst case is two such attempts, not 90 s in total.
+     */
     public static final Duration ANSWER_LIMIT = Duration.ofSeconds(90);
+
+    /** The one message a timeout gets, whichever timer ended the attempt: a player must not read «request timed out». */
+    public static String timeoutNote() {
+        return "Модель не ответила за " + ANSWER_LIMIT.toSeconds() + " секунд. Попробуй ещё раз или выбери модель побыстрее в настройках.";
+    }
+
+    /**
+     * The player's words for a failed attempt. A timeout gets {@link #timeoutNote()} whichever timer ended it — the
+     * bounded limit of the attempt or a timeout of the transport's own; a connect timeout is not a slow answer but a
+     * server that never answered. Public so that a GameTest can check both paths without waiting 90 seconds.
+     */
+    public static Throwable explained(URI endpoint, Throwable error) {
+        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+        if (cause instanceof java.net.http.HttpConnectTimeoutException || cause instanceof java.net.ConnectException) {
+            return new IllegalStateException(silentServer(endpoint));
+        }
+        if (cause instanceof java.net.http.HttpTimeoutException || cause instanceof java.util.concurrent.TimeoutException) {
+            return new IllegalStateException(timeoutNote());
+        }
+        return error;
+    }
+
+    /** A server that never answered: an own one is usually not running, OpenRouter is the network. */
+    private static String silentServer(URI endpoint) {
+        return isOpenRouter(endpoint) ? "OpenRouter не отвечает: проверь подключение к интернету."
+                : "Сервер модели " + service(endpoint) + " не отвечает: проверь, что он запущен и адрес в настройках верный.";
+    }
 
     /**
      * A body with fields the server may not know. A refusal of the thinking switch is retried once without it, as the
@@ -759,16 +821,18 @@ public final class OpenRouterClient {
             UnsupportedThinkingException refused = (UnsupportedThinkingException) cause;
             CompanionDiagnostics.event(trace, "model_protocol_fallback", "reason", "thinking_field_unsupported",
                     "field", refused.field, "protocol", withTools ? "tools" : "text");
-            // Both transports keep the same policy: the chat body loses its template switch, and the Responses body — built
-            // from that same chat body — loses the reasoning switch the provider refused, with the thinking-on budget.
-            return post(endpoint, fallbackBody(body), withTools, trace, isOpenAi(endpoint));
+            // Both transports keep the same policy: the chat body loses its template switch, and the Responses and
+            // OpenRouter bodies — built from that same chat body — lose the reasoning switch the provider refused, with
+            // the thinking-on budget.
+            return post(endpoint, fallbackBody(body), withTools, trace, true);
         });
     }
 
     /**
      * The same body without the template switch, for a server that refused it as a field it does not know. Without the
      * switch the server's own template default stands, and on the servers that refuse the field that default is thinking
-     * on: the budget must then fit the reasoning too, or the measured 2263 hidden tokens cut the plan off again.
+     * on: the budget must then fit the reasoning too, or the measured 2263 hidden tokens cut the plan off again. The
+     * Responses and OpenRouter retry also drops its own reasoning field from this body.
      */
     public static JsonObject fallbackBody(JsonObject body) {
         JsonObject plain = body.deepCopy();
@@ -791,25 +855,40 @@ public final class OpenRouterClient {
                 || lower.contains("unrecognized field") || lower.contains("additional propert");
     }
 
+    /**
+     * The body in the wire format the server takes: Responses for direct OpenAI, OpenRouter's own reasoning field for
+     * OpenRouter, and the chat body as it is for any other OpenAI-compatible server. Public so that a GameTest can check
+     * which provider gets which fields without a request.
+     */
+    public static JsonObject wireBody(URI endpoint, JsonObject body) { return wireBody(endpoint, body, false); }
+
+    private static JsonObject wireBody(URI endpoint, JsonObject body, boolean dropReasoning) {
+        if (isOpenAi(endpoint)) {
+            JsonObject sent = OpenAiResponses.request(body);
+            return dropReasoning ? OpenAiResponses.withoutReasoning(sent) : sent;
+        }
+        if (isOpenRouter(endpoint)) return openRouterBody(body, dropReasoning);
+        return body;
+    }
+
     private static CompletableFuture<JsonObject> post(URI endpoint, JsonObject body, boolean withTools, String trace) {
         return post(endpoint, body, withTools, trace, false);
     }
 
     /**
-     * One HTTP attempt. {@code dropReasoning} is set only by the retry after a provider refused the Responses reasoning
-     * switch; the chat transport's fallback already leaves the chat body without its template switch.
+     * One HTTP attempt. {@code dropReasoning} is set only by the retry after a provider refused the thinking field its
+     * wire format carries (reasoning on Responses and OpenRouter); the plain chat transport's fallback already leaves the
+     * chat body without its template switch.
      */
     private static CompletableFuture<JsonObject> post(URI endpoint, JsonObject body, boolean withTools, String trace,
                                                       boolean dropReasoning) {
         boolean responses = isOpenAi(endpoint);
-        JsonObject wireBody = responses && dropReasoning
-                ? OpenAiResponses.withoutReasoning(OpenAiResponses.request(body))
-                : responses ? OpenAiResponses.request(body) : body;
+        JsonObject sent = wireBody(endpoint, body, dropReasoning);
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint)
-                // The same limit as the whole answer: 60 s ended the attempt before the declared 90 s cap could be reached.
-                .timeout(ANSWER_LIMIT)
+                // No timeout of its own: the bounded future below is the only limit of the attempt, so a slow answer ends
+                // with one message instead of whichever of two timers fired first.
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(wireBody.toString()));
+                .POST(HttpRequest.BodyPublishers.ofString(sent.toString()));
         String key = clientSetting(OpenRouterConfig.API_KEY).trim();
         if (!key.isEmpty() && sendsKey(endpoint, key)) builder.header("Authorization", "Bearer " + key);
         String withheld = withheldKeyNote(endpoint, key);
@@ -822,9 +901,9 @@ public final class OpenRouterClient {
             long started = System.nanoTime();
             CompanionDiagnostics.event(trace, "http_attempt", "service", logged, "attempt", attempt, "tools", withTools,
                     "protocol", responses ? "responses" : "chat_completions");
-            // The request timeout above ends at the response headers; the body could keep the queue waiting for ever.
+            // The limit below ends the attempt, headers and body alike: a body that never ends must not hold the queue.
             return OpenRouterRetry.bounded(HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofString()), ANSWER_LIMIT,
-                    "Модель не ответила за " + ANSWER_LIMIT.toSeconds() + " секунд. Попробуй ещё раз или выбери модель побыстрее в настройках.").whenComplete((response, error) -> {
+                    timeoutNote()).whenComplete((response, error) -> {
                 if (error != null) CompanionDiagnostics.failure(trace, "openrouter_transport_attempt_" + attempt, error);
                 else CompanionDiagnostics.event(trace, "http_result", "service", logged, "attempt", attempt,
                         "status", response.statusCode(), "elapsedMs", (System.nanoTime() - started) / 1_000_000,
@@ -836,21 +915,23 @@ public final class OpenRouterClient {
                 String error = readError(service, response.body(), response.statusCode());
                 // The server's own words decide, not its name (tools.lan, function-gw…).
                 String lower = error.toLowerCase(java.util.Locale.ROOT).replace(service.toLowerCase(java.util.Locale.ROOT), "");
-                if (!responses && withTools && (response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422)
-                        && (lower.contains("tool") || lower.contains("parameter") || lower.contains("function"))) {
+                boolean rejected = response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422;
+                // The thinking switch first, in the name its own wire format gives it: reasoning on Responses and
+                // OpenRouter, chat_template_kwargs on a plain chat server. «Unknown parameter: 'chat_template_kwargs'.»
+                // names a parameter, so the tools check below would take it as a refusal of tools and drop to the JSON
+                // protocol without them — a second refused request and no tool calls for good. A server that only
+                // disliked this one field can still take the tools, so it is retried without the field, tools kept.
+                if (rejected && (responses || isOpenRouter(endpoint)) && sent.has("reasoning") && lower.contains("reasoning")) {
+                    throw new UnsupportedThinkingException("reasoning", error);
+                }
+                if (rejected && !responses && !isOpenRouter(endpoint) && sent.has("chat_template_kwargs") && refusedUnknownField(lower, withTools)) {
+                    throw new UnsupportedThinkingException("chat_template_kwargs", error);
+                }
+                // Only then the tools, whose own refusal falls back to the JSON planning protocol.
+                if (!responses && withTools && rejected && (lower.contains("tool") || lower.contains("parameter") || lower.contains("function"))) {
                     throw new UnsupportedToolsException(error);
                 }
                 boolean refused = response.statusCode() == 401 || response.statusCode() == 403;
-                boolean rejected = response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422;
-                // Responses carries the thinking switch as reasoning: a provider that does not take the field names it.
-                if (rejected && responses && wireBody.has("reasoning") && lower.contains("reasoning")) {
-                    throw new UnsupportedThinkingException("reasoning", error);
-                }
-                // A server that does not know the template switch says «unknown field», «extra field» or «additional properties»;
-                // a bare phrase is trusted only without tools, where no max_tokens or temperature complaint is likely.
-                if (rejected && !responses && body.has("chat_template_kwargs") && refusedUnknownField(lower, withTools)) {
-                    throw new UnsupportedThinkingException("chat_template_kwargs", error);
-                }
                 String note = refused ? withheld : rejected ? modelNote(endpoint, clientSetting(OpenRouterConfig.MODEL)) : "";
                 throw new IllegalStateException(note.isEmpty() ? error : error + " " + note);
             }
@@ -861,10 +942,9 @@ public final class OpenRouterClient {
             }
             return parsed;
         }).exceptionallyCompose(error -> {
-            // A local server that is not running is the usual failure there; the bare exception says nothing to a player.
-            Throwable cause = error.getCause() == null ? error : error.getCause();
-            return CompletableFuture.failedFuture(!isOpenRouter(endpoint) && cause instanceof java.net.ConnectException
-                    ? new IllegalStateException("Сервер модели " + service + " не отвечает: проверь, что он запущен и адрес в настройках верный.") : error);
+            // A local server that is not running is the usual failure there, and a timeout must read as one message,
+            // not as the transport's bare English words; both are told in the player's language here.
+            return CompletableFuture.failedFuture(explained(endpoint, error));
         });
     }
 

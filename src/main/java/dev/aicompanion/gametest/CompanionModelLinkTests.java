@@ -19,6 +19,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -26,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -218,6 +220,42 @@ public final class CompanionModelLinkTests {
         h.succeed();
     }
 
+    /**
+     * OpenRouter does not document the template switch, so the chat body's switch never reaches it: there the thinking
+     * switch is reasoning.effort «none», and reasoning tokens count against max_tokens, so the budget follows the same
+     * thinking state. A plain chat server keeps the template switch and is never sent a reasoning field.
+     */
+    @GameTest(template = "empty")
+    public static void openRouterGetsItsOwnThinkingFieldAndNoTemplateSwitch(GameTestHelper h) {
+        JsonArray messages = new JsonArray();
+        messages.add(message("user", "привет"));
+        JsonObject off = OpenRouterClient.requestBody("openrouter/auto", messages, OpenRouterClient.answerBudget(false), false, null, null);
+        JsonObject sentOff = OpenRouterClient.wireBody(OpenRouterClient.endpoint(""), off);
+        h.assertTrue(sentOff.has("reasoning") && sentOff.getAsJsonObject("reasoning").get("effort").getAsString().equals("none"),
+                "Thinking off is not sent as reasoning.effort none on OpenRouter");
+        h.assertTrue(!sentOff.has("chat_template_kwargs"), "OpenRouter was sent the template switch it does not document");
+        h.assertTrue(sentOff.get("max_tokens").getAsInt() == OpenRouterClient.answerBudget(false),
+                "The OpenRouter budget does not match the thinking state: " + sentOff.get("max_tokens"));
+        JsonObject on = OpenRouterClient.requestBody("openrouter/auto", messages, OpenRouterClient.answerBudget(true), true, null, null);
+        JsonObject sentOn = OpenRouterClient.wireBody(OpenRouterClient.endpoint(""), on);
+        h.assertTrue(!sentOn.has("reasoning") && !sentOn.has("chat_template_kwargs"),
+                "Thinking on imposed an effort of ours on OpenRouter");
+        h.assertTrue(sentOn.get("max_tokens").getAsInt() == OpenRouterClient.answerBudget(true),
+                "The thinking-on budget was lost on OpenRouter");
+        JsonObject tuned = OpenRouterClient.requestBody("openrouter/auto", messages, 1024, false, 0.7, 1.5);
+        JsonObject sentTuned = OpenRouterClient.wireBody(OpenRouterClient.endpoint(""), tuned);
+        h.assertTrue(sentTuned.get("temperature").getAsDouble() == 0.7 && sentTuned.get("top_p").getAsDouble() == 1.5,
+                "The owner's sampling was lost on OpenRouter");
+        h.assertTrue(sentOff.get("messages").toString().equals(messages.toString()), "The OpenRouter body lost the prompt");
+        JsonObject local = OpenRouterClient.wireBody(OpenRouterClient.endpoint("http://localhost:11434/v1"), off);
+        h.assertTrue(local.has("chat_template_kwargs") && !local.has("reasoning")
+                && !local.getAsJsonObject("chat_template_kwargs").get("enable_thinking").getAsBoolean(),
+                "A plain chat server lost its template switch");
+        h.assertTrue(off.has("chat_template_kwargs") && !off.has("reasoning") && !tuned.has("reasoning"),
+                "The chat body itself was changed");
+        h.succeed();
+    }
+
     /** 2048 was below the measured 2263 reasoning tokens + plan; the budget now fits thinking on, and is small without it. */
     @GameTest(template = "empty")
     public static void theBudgetFitsTheReasoningItAsksFor(GameTestHelper h) {
@@ -229,18 +267,26 @@ public final class CompanionModelLinkTests {
         h.succeed();
     }
 
-    /** The measured failure: finish_reason «length», the whole budget in hidden reasoning, no text, the plan lost silently. */
+    /**
+     * The retry doubles the budget of the request that was cut off, capped: a thinking-off plan retries at 2048, a
+     * thinking-on one at 8192, never 1024 at 8192. A still empty answer fails honestly after that one retry.
+     */
     @GameTest(template = "empty")
     public static void anEmptyCutOffAnswerIsRetriedOnceWithABiggerBudget(GameTestHelper h) {
         JsonObject cut = response("length", null, false), plan = response("stop", "{\"steps\":[]}", false);
+        // The budget answer() hands to the retry: the request's own, doubled.
+        h.assertTrue(OpenRouterClient.retryBudget(OpenRouterClient.answerBudget(false)) == 2048
+                && OpenRouterClient.retryBudget(OpenRouterClient.answerBudget(true)) == 8192,
+                "The retry does not double the budget of the request that was cut off");
         List<Integer> budgets = new ArrayList<>();
-        var first = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(cut), 1024, budget -> {
+        var first = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(cut), OpenRouterClient.answerBudget(false), budget -> {
             budgets.add(budget);
             return CompletableFuture.completedFuture(plan);
         });
-        h.assertTrue(plan == first.join() && budgets.equals(List.of(2048)), "The empty cut-off answer was not retried once with a bigger budget");
+        h.assertTrue(plan == first.join() && budgets.equals(List.of(2048)),
+                "The empty cut-off answer was not retried once with 2048: " + budgets);
         budgets.clear();
-        var twice = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(cut), 1024, budget -> {
+        var twice = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(cut), OpenRouterClient.answerBudget(true), budget -> {
             budgets.add(budget);
             return CompletableFuture.completedFuture(cut);
         });
@@ -249,7 +295,7 @@ public final class CompanionModelLinkTests {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             honest = cause instanceof IllegalStateException && cause.getMessage().contains("оборвался");
         }
-        h.assertTrue(honest && budgets.equals(List.of(2048)), "A still empty answer did not fail honestly once: " + budgets);
+        h.assertTrue(honest && budgets.equals(List.of(8192)), "A still empty answer did not fail honestly once: " + budgets);
         List<Integer> untouched = new ArrayList<>();
         var good = OpenRouterClient.ensureAnswer(CompletableFuture.completedFuture(plan), 1024, budget -> {
             untouched.add(budget);
@@ -282,6 +328,37 @@ public final class CompanionModelLinkTests {
                 value -> value, value -> "", delay -> CompletableFuture.completedFuture(null));
         h.assertTrue(retried.join() == 200 && attempts.get() == 2, "A transport failure stopped being retried");
         h.assertTrue(OpenRouterClient.ANSWER_LIMIT.equals(Duration.ofSeconds(90)), "The attempt limit left the 90 s answer cap");
+        h.succeed();
+    }
+
+    /**
+     * Two timers raced on one attempt — the request timeout and the bounded future — so one game run said «Модель не
+     * ответила за 90 секунд…» and another a bare «request timed out». The bounded future is now the only limit, and a
+     * timeout of any origin is told in the same words: the transport's English line never reaches the player.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void aTimeoutGetsOneHonestMessageWhicheverTimerFires(GameTestHelper h) {
+        String note = OpenRouterClient.timeoutNote();
+        h.assertTrue(note.contains("90") && note.contains("Модель не ответила") && note.contains("модель побыстрее"),
+                "The timeout message lost its own words: " + note);
+        var bounded = OpenRouterRetry.bounded(new CompletableFuture<>(), Duration.ofMillis(20), note);
+        String fromLimit = "";
+        try { bounded.join(); } catch (Exception error) {
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            fromLimit = cause instanceof TimeoutException ? cause.getMessage() : "";
+        }
+        h.assertTrue(note.equals(fromLimit), "The bounded limit said something else: " + fromLimit);
+        var openRouter = OpenRouterClient.endpoint("");
+        Throwable transport = OpenRouterClient.explained(openRouter, new HttpTimeoutException("request timed out"));
+        Throwable wrapped = OpenRouterClient.explained(openRouter, new CompletionException(new HttpTimeoutException("request timed out")));
+        h.assertTrue(transport instanceof IllegalStateException && note.equals(transport.getMessage()),
+                "A transport timeout kept the English words: " + transport.getMessage());
+        h.assertTrue(note.equals(wrapped.getMessage()), "A wrapped transport timeout was not given the same words");
+        Throwable connect = OpenRouterClient.explained(openRouter, new HttpConnectTimeoutException("HTTP connect timed out"));
+        h.assertTrue(connect.getMessage().contains("не отвечает") && !connect.getMessage().contains("request timed out"),
+                "A connect timeout was read as a slow model: " + connect.getMessage());
+        Throwable other = new IllegalStateException("Модель не нашлась");
+        h.assertTrue(OpenRouterClient.explained(openRouter, other) == other, "An ordinary failure was rewritten");
         h.succeed();
     }
 
@@ -343,6 +420,68 @@ public final class CompanionModelLinkTests {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             h.fail("Interrupted while waiting for the fallback chain");
+        } finally {
+            stub.stop(0);
+        }
+        h.succeed();
+    }
+
+    /**
+     * «Unknown parameter: 'chat_template_kwargs'.» contains «parameter», which the tools check used to take as a refusal
+     * of tools: the request fell to the JSON protocol without them, got a second 400 and only then retried without the
+     * field — three requests per reply and no tool calls for good. The thinking field is tested before the tools now:
+     * two requests, and the retry keeps the tools, losing only the field it refused.
+     */
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void aRefusedTemplateSwitchKeepsTheTools(GameTestHelper h) {
+        HttpServer stub;
+        try {
+            stub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        } catch (IOException noPort) {
+            h.fail("No local stub server: " + noPort);
+            return;
+        }
+        List<String> bodies = Collections.synchronizedList(new ArrayList<>());
+        stub.createContext("/v1/chat/completions", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            bodies.add(body);
+            byte[] reply = bodies.size() == 1
+                    ? "{\"error\":{\"message\":\"Unknown parameter: 'chat_template_kwargs'.\"}}".getBytes(StandardCharsets.UTF_8)
+                    : "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"steps\\\":[]}\"}}]}"
+                            .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(bodies.size() == 1 ? 400 : 200, reply.length);
+            exchange.getResponseBody().write(reply);
+            exchange.close();
+        });
+        stub.start();
+        try {
+            URI endpoint = URI.create("http://127.0.0.1:" + stub.getAddress().getPort() + "/v1/chat/completions");
+            JsonArray messages = new JsonArray();
+            messages.add(message("user", "построй дом"));
+            JsonObject body = OpenRouterClient.requestBody("Dingo", messages, OpenRouterClient.answerBudget(false), false, null, null);
+            JsonArray tools = new JsonArray();
+            tools.add(OpenRouterClient.planTool());
+            body.add("tools", tools);
+            body.addProperty("tool_choice", "required");
+            JsonObject answer = OpenRouterClient.postAdapted(endpoint, body, true, "refusal-order").get(15, TimeUnit.SECONDS);
+            h.assertTrue(bodies.size() == 2, "The stub saw " + bodies.size() + " requests, not two");
+            JsonObject first = JsonParser.parseString(bodies.get(0)).getAsJsonObject();
+            JsonObject retry = JsonParser.parseString(bodies.get(1)).getAsJsonObject();
+            h.assertTrue(first.has("chat_template_kwargs") && first.has("tools"), "The first request lost the switch or the tools");
+            h.assertTrue(!retry.has("chat_template_kwargs"), "The retry kept the refused field");
+            h.assertTrue(retry.get("tools").equals(first.get("tools")), "The retry lost the tools: " + retry.get("tools"));
+            h.assertTrue(retry.get("tool_choice").getAsString().equals("required"), "The retry lost the forced plan");
+            h.assertTrue(retry.get("max_tokens").getAsInt() == OpenRouterClient.answerBudget(true),
+                    "The retry kept a budget too small for a server that now thinks: " + retry.get("max_tokens"));
+            h.assertTrue(retry.get("messages").equals(first.get("messages")), "The retry changed the prompt");
+            h.assertTrue(answer.has("choices"), "The fallback answer was not the server's completion");
+        } catch (ExecutionException error) {
+            h.fail("The refusal chain failed: " + error.getCause());
+        } catch (TimeoutException slow) {
+            h.fail("The refusal chain did not finish in 15 s");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            h.fail("Interrupted while waiting for the refusal chain");
         } finally {
             stub.stop(0);
         }
