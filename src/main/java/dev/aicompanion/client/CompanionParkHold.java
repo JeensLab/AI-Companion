@@ -28,10 +28,6 @@ public final class CompanionParkHold {
     private static final Set<String> GENERIC = Set.of("", "all", "resources");
     private static final Set<String> STONE = Set.of("stone", "cobblestone", "blackstone", "cobbled_deepslate");
     private static final Set<String> LOG_SUFFIXES = Set.of("_log", "_stem", "_wood", "_hyphae");
-    // Actions that never need a furnace product, so they do not wait for a parked batch.
-    // ponytail: merge into the `false` case list in depends() once the open PRs that extend it are in.
-    private static final Set<String> NO_FURNACE_PRODUCT = Set.of("harvest_crops", "farm_crops", "pick_up", "build_pen", "breed_animals",
-            "pursue_goal", "autonomy", "goal_status", "goal_cancel", "goal_defer", "goal_resume");
     private static final int MAX_RECIPE_ITEMS = 64;
     private static final Function<String, Set<String>> NO_INGREDIENTS = item -> Set.of();
     private CompanionParkHold() { }
@@ -51,7 +47,6 @@ public final class CompanionParkHold {
 
     private static boolean depends(PlannedAction step, Parked batch, Function<String, Set<String>> ingredients) {
         String type = step.type(), item = id(step.item());
-        if (NO_FURNACE_PRODUCT.contains(type)) return false;
         if (ITEM_BOUND.contains(type)) return GENERIC.contains(item) || touches(item, batch) || RECIPE_BOUND.contains(type) && needs(item, batch, ingredients);
         return switch (type) {
             case "smelt_items" -> item.equals(id(batch.input())) || item.equals(id(batch.output()))
@@ -65,7 +60,12 @@ public final class CompanionParkHold {
             case "gather_stone" -> touches("stone", batch);
             case "gather_loose" -> touches(item, batch);
             case "gather_dirt", "set_home", "follow", "wait", "come", "walk_heading", "protect", "stop_protect", "wander", "stop", "enter_portal", "collect_smelt",
-                 "take_items", "sort_chests", "build_house", "build_portal", "give_wood", "equip_item", "unequip_item", "hunt_mobs", "repair_item", "disenchant_item", "compost_items" -> false;
+                 "take_items", "sort_chests", "build_house", "build_portal", "give_wood", "equip_item", "unequip_item", "hunt_mobs",
+                 // Actions that never need a furnace product, so they do not wait for a parked batch: a place to walk to or a word
+                 // to save, a crop taken by hand, a grindstone or a composter, the goal bookkeeping.
+                 "harvest_crops", "farm_crops", "pick_up", "build_pen", "breed_animals", "pursue_goal", "autonomy",
+                 "goal_status", "goal_cancel", "goal_defer", "goal_resume",
+                 "repair_item", "disenchant_item", "compost_items", "go_to_place", "remember_place" -> false;
             default -> true;
         };
     }

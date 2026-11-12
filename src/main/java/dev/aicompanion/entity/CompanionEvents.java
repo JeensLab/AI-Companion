@@ -285,14 +285,14 @@ public final class CompanionEvents {
         }
         // An order of the player comes before the walk back for his own things too: the walk gives way and waits (CompanionDeathTrip).
         // An order of his own (a goal step, a deed), naming the home and asking about a goal are not orders.
-        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("goal_status")
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("remember_place") && !action.equals("goal_status")
                 && !action.equals("goal_cancel") && !action.equals("goal_defer") && companion.deathTrip.active()) {
             companion.deathTrip.giveWay();
             dev.aicompanion.CompanionDiagnostics.event(trace, "death_recovery_gave_way", "action", action);
         }
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         // Naming the home is a word, not an order: whatever he is busy with goes on.
-        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("remember_place")) {
             // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
             CompanionAgenda.playerOrder(player, companion, action);
             // The dig is put aside before the goal hears the order and ends it; neither the agenda's, the goal's nor a deed's dig is parked.
@@ -355,6 +355,10 @@ public final class CompanionEvents {
                 companion.refreshPlaces();
                 yield CompanionActionResult.ok("Запомнил: наш дом здесь.");
             }
+            // «Запомни это место, дача»: a named marker of this player, at the point the companion stands on.
+            case "remember_place" -> companion.rememberPlace(item);
+            // «Иди к колодцу»: a real walk to the named marker by the normal path, or the honest reason it cannot happen.
+            case "go_to_place" -> companion.goToPlace(item);
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }

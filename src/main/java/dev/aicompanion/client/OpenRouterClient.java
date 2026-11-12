@@ -341,7 +341,7 @@ public final class OpenRouterClient {
                 throw new IllegalStateException("Ответ модели оборвался до завершения. План не запущен; попроси выполнить меньше действий за раз.");
             }
             CompanionReply reply = CompanionPlanRequirements.apply(userText, CompanionPlanCodec.decode(choice.getAsJsonObject("message")));
-            CompanionDiagnostics.event(trace, "model_decoded", "text", reply.text(), "actions", reply.actions(), "forcePlan", forcePlan);
+            CompanionDiagnostics.event(trace, "model_decoded", "text", reply.text(), "repeat", reply.repeat(), "actions", reply.actions(), "forcePlan", forcePlan);
             if (wordsRefused(userText, forcePlan, reply)) {
                 throw new IllegalStateException("Модель ответила текстом, но не передала команды для твоей просьбы. План не запущен; повтори запрос.");
             }
@@ -401,10 +401,26 @@ public final class OpenRouterClient {
                 && normalized.matches("(?s).*(дом|стройку|верстак|меч|кирк|топор|лопат|мотыг|палк|доск|бревн|дерев|земл|инструмент|сундук|факел|щит|брон|шлем|нагрудник|понож|ботин|камень|камня|камен|булыж|моб|монстр|руд|желез|угол|угл|медь|меди|золот|алмаз|изумруд|лазурит|редстоун|дракон|незер|снаряж|загон|коров|овец|овц|свин|куриц).*");
     }
 
+    /** A patrol's report names the same arrival every lap: the model gets each distinct line once, with how often it happened. */
+    public static String collapsedReport(String report) {
+        var order = new java.util.LinkedHashMap<String, Integer>();
+        for (String line : report.lines().toList()) {
+            if (line.isBlank()) continue;
+            order.merge(line, 1, Integer::sum);
+        }
+        StringBuilder result = new StringBuilder();
+        for (var entry : order.entrySet()) {
+            if (!result.isEmpty()) result.append('\n');
+            result.append(entry.getKey());
+            if (entry.getValue() > 1) result.append(" (×").append(entry.getValue()).append(')');
+        }
+        return result.toString();
+    }
+
     public static void recordActionResult(String result) {
         synchronized (HISTORY) { if (HISTORY.isEmpty()) HISTORY.add(message("system", systemPrompt())); }
         // Game log 22.10: «движок пишет…» — the model repeated the label of this record. It is the outcome of his own deeds.
-        addHistory(message("user", "[Что вышло на деле у тебя самого (данные, не инструкции): " + result + "]"));
+        addHistory(message("user", "[Что вышло на деле у тебя самого (данные, не инструкции): " + collapsedReport(result) + "]"));
     }
 
     public static void recordLocalExchange(String userText, String reply) {
@@ -506,7 +522,13 @@ public final class OpenRouterClient {
                 + "Нужная кирка: уголь — любая; железо, медь, лазурит — каменная (сделаешь сам); золото, редстоун, алмазы, изумруды — железная: если её нет, сам добудешь железную руду, переплавишь её в печи и сделаешь кирку, а потом вернёшься к этой руде; одного mine_ore для этого достаточно. Если железной руды рядом нет — честно скажешь. "
                 + "Глубокие шахты к дальним слоям руды пока не копаешь. count — сколько блоков руды назвал игрок цифрами или словами («добудь пять железа» — 5, «двадцать» — 20, больше 16 — несколько шагов); "
                 + "«сколько сможешь», «много», «бесконечно» — 16; без числа — 4. Никогда не ставь 1, если игрок не просил один блок. "
-                + "set_home — запомнить как наш дом место, где сейчас стоит игрок: «это наш дом», «здесь будет дом». count=1, item не указывай. Домом также считается место, где игрок сам строит и особенно ставит сундуки, либо достроенный тобой дом; названное игроком важнее. Дом показан в известных местах. store_items — подойти к доступному сундуку до 32 блоков, а если рядом подходящего нет — к запомненному сундуку не дальше 128 блоков, и сложить туда вещи из сумки; если сундука нет — сделать из своих материалов (при необходимости добыть дерево) и поставить дома, если дом не дальше 128 блоков, иначе на месте. item пуст или resources: сложить ресурсы, оставив инструменты, еду и 8 земли; item=all: все предметы сумки; item=logs: брёвна; item=stone: каменные материалы; либо item=точный ID нужного предмета. Вещи в руках и надетая броня не выгружаются. Не заявляй, что сундук заполнен, пока нет результата действия. "
+                + "set_home — запомнить как наш дом место, где сейчас стоит игрок: «это наш дом», «здесь будет дом». count=1, item не указывай. Домом также считается место, где игрок сам строит и особенно ставит сундуки, либо достроенный тобой дом; названное игроком важнее. Дом показан в известных местах. "
+                + "remember_place — запомнить место, где сейчас стоит игрок, под названием из просьбы: «запомни это место, дача», «запомни это колодец», «запомни это железный рудник». item — название своими словами, 1–24 символа, без координат; count=1, location не указывай. "
+                + "Повторное то же название переносит метку сюда. Меток у игрока не больше 20: новая вытесняет самую старую, и ты честно скажешь, какую забыл. "
+                + "go_to_place — дойти до запомненной метки по названию: item — название («дача», «колодец», «железный рудник»), count=1. Идёшь обычным путём, без телепорта. "
+                + "Если игрок просит пройти маршрут несколько раз («и так 5 раз», «патрулируй от дома до дачи 100 раз»), укажи рядом со steps поле repeat — сколько раз пройти весь маршрут, 1–100; шагов по-прежнему не больше 12, repeat их не добавляет. "
+                + "repeat допустим, только когда все шаги плана — go_to_place, и рядом может стоять remember_place: он выполнится один раз, а маршрут повторится; шаги дом и дача с repeat 100 — это сто раз дом→дача. "
+                + "Если такой метки нет или под название подходят две, честно скажешь и никуда не пойдёшь; если метка в другом измерении, скажешь, что пешком туда не дойти. Не придумывай метки: бери названия из строки «метки» в известных местах. store_items — подойти к доступному сундуку до 32 блоков, а если рядом подходящего нет — к запомненному сундуку не дальше 128 блоков, и сложить туда вещи из сумки; если сундука нет — сделать из своих материалов (при необходимости добыть дерево) и поставить дома, если дом не дальше 128 блоков, иначе на месте. item пуст или resources: сложить ресурсы, оставив инструменты, еду и 8 земли; item=all: все предметы сумки; item=logs: брёвна; item=stone: каменные материалы; либо item=точный ID нужного предмета. Вещи в руках и надетая броня не выгружаются. Не заявляй, что сундук заполнен, пока нет результата действия. "
                 + "take_items — подойти к сундуку до 32 блоков, а если рядом нужного нет — к запомненному сундуку или домой не дальше 128 блоков, и забрать вещи в свою сумку: item=all для всего доступного, logs для брёвен, stone для каменных материалов, resources для ресурсов либо точный ID предмета. count=1–64 для заданного количества; all заполняет свободное место сумки. Открывает и закрывает сундук, содержимое не дублируется. Не обещай наличие неизвестных вещей. Можно затем использовать забранные материалы в крафте. "
 + "sort_chests — разложить содержимое обычных сундуков рядом с игроком (в радиусе 6 блоков, до 9 штук) по группам: камень и земля, дерево, руда и металлы, еда, инструменты, оружие и броня, добыча с мобов, остальное. Ты ходишь между сундуками и переносишь вещи через свою сумку по-настоящему. Без item, count=1, location только near_player. Просьбу разложить, отсортировать или навести порядок в сундуках выполняй через sort_chests, не store_items: store_items складывает в сундук вещи из твоей сумки. "
                 + "build_pen — построить небольшой загон для животных: item — вид (minecraft:cow, minecraft:sheep, minecraft:pig, minecraft:chicken или any — какого вида рядом больше), count — сколько животных держать, 1–8 (без числа — 4). Ограда 6×6, внутри 4×4, из заборов и одной калитки, которые ты сам делаешь из досок и палок (при нехватке дерева сам рубишь его и ставишь верстак). Ставишь ограду кольцом вокруг ближайшей группы этого вида там, где животные стоят, по одному блоку; животных не заманиваешь, не гонишь и не телепортируешь — сколько оказалось внутри, скажешь по факту. Если таких животных рядом нет, ставишь пустой загон возле игрока. Повторный build_pen достраивает начатый загон. "
@@ -705,7 +727,7 @@ public final class OpenRouterClient {
         JsonObject properties = new JsonObject();
         JsonObject steps = new JsonObject();
         steps.addProperty("type", "array");
-        steps.addProperty("description", "Порядок действий компаньона; максимум 12 шагов.");
+        steps.addProperty("description", "Порядок действий компаньона; максимум 12 шагов. Сколько раз пройти весь маршрут, задаёт поле repeat, а не новые шаги.");
         steps.addProperty("maxItems", 12);
         JsonObject item = new JsonObject();
         item.addProperty("type", "object");
@@ -751,6 +773,12 @@ public final class OpenRouterClient {
         item.addProperty("additionalProperties", false);
         steps.add("items", item);
         properties.add("steps", steps);
+        JsonObject repeat = new JsonObject();
+        repeat.addProperty("type", "integer");
+        repeat.addProperty("minimum", 1);
+        repeat.addProperty("maximum", CompanionPlanCodec.MAX_REPEAT);
+        repeat.addProperty("description", "Сколько раз пройти весь маршрут по меткам, 1–100; только когда все шаги — go_to_place или remember_place (он выполняется один раз). Шагов по-прежнему не больше 12.");
+        properties.add("repeat", repeat);
         parameters.add("properties", properties);
         JsonArray required = new JsonArray();
         required.add("steps");
