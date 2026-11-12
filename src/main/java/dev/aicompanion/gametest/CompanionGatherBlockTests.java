@@ -49,8 +49,9 @@ public final class CompanionGatherBlockTests {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 2, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + ": " + plan);
         }
-        // Chance drops, the mine's stone, crops and saplings, what grows under water: no block is broken for them.
-        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple", "minecraft:kelp")) {
+        // Chance drops, the mine's stone, crops and saplings, what grows under water, someone's lamp, egg or trap: no block is broken for them.
+        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple", "minecraft:kelp",
+                "minecraft:glowstone_dust", "minecraft:prismarine_crystals", "minecraft:dragon_egg", "minecraft:sniffer_egg", "minecraft:ochre_froglight", "minecraft:stripped_bamboo_block", "minecraft:string")) {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 1, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block")), item + " is not picked: " + plan);
         }

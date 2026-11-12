@@ -10,6 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.lang.ref.WeakReference;
@@ -36,6 +37,8 @@ final class CompanionPickable {
 
     /** A drop that comes by chance is seen to fail within this many tries (a dead bush gives sticks two times in three). */
     private static final int ROLLS = 16;
+    /** Light of a lamp: a brown mushroom glows at one, glowstone and the lanterns at fifteen. */
+    private static final int LAMP = 10;
     // ponytail: built once for a server; a data pack reloaded in a running world keeps the old tables until the world is reopened.
     private static WeakReference<MinecraftServer> builtFor = new WeakReference<>(null);
     private static Map<Item, List<Source>> sources = Map.of();
@@ -79,6 +82,11 @@ final class CompanionPickable {
         if (state.is(BlockTags.CROPS) || state.is(BlockTags.SAPLINGS)) return false;
         // Outside those tags: a bamboo shoot is a sapling, a dripleaf's stem brings its head down unclaimed, a tripwire is someone's trap.
         if (state.is(Blocks.BAMBOO_SAPLING) || state.is(Blocks.BIG_DRIPLEAF_STEM) || state.is(Blocks.TRIPWIRE)) return false;
+        // Someone's things no recipe makes, standing where no building of the player's is known: a lamp (glowstone for its dust, a sea
+        // lantern, a froglight), a dragon egg (it falls, as nothing else here does: sand and gravel are another skill's), a sniffer egg,
+        // a stripped block (stripping is not his skill, so one that stands was put there).
+        if (state.getLightEmission() >= LAMP || state.getBlock() instanceof FallingBlock || state.is(Blocks.SNIFFER_EGG)
+                || BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().startsWith("stripped_")) return false;
         return !state.is(BlockTags.MINEABLE_WITH_PICKAXE);
     }
 
