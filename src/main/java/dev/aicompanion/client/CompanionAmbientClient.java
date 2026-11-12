@@ -12,8 +12,6 @@ final class CompanionAmbientClient {
     private static UUID companion;
     private static final CompanionConversation conversation = new CompanionConversation();
     private static final dev.aicompanion.CompanionJokes jokes = new dev.aicompanion.CompanionJokes();
-    private static java.util.concurrent.CompletableFuture<dev.aicompanion.CompanionJokeBank.Bank> jokeBank;
-    private static boolean russianPlayer, bundledRussian;
     private static boolean pending;
     private static int transcriptions;
     private static String urgentText = "";
@@ -25,25 +23,7 @@ final class CompanionAmbientClient {
     static void transcriptionFinished() { transcriptions = Math.max(0, transcriptions - 1); conversationActivity(); }
     static boolean transcribing() { return transcriptions > 0; }
     private static boolean busy() { return pending || transcriptions > 0 || AICompanionClient.recordingSpeech() || OpenRouterClient.isBusy(); }
-    static void playerMessage(String text) {
-        conversation.playerMessage(now(), jitter());
-        if (!russianPlayer && dev.aicompanion.CompanionJokeBank.hasRussian(text)) {
-            russianPlayer = true;
-            if (!bundledRussian) loadJokes();
-        }
-    }
-    private static boolean wantsRussianJokes() {
-        return dev.aicompanion.CompanionJokeBank.allowBundled(
-                Minecraft.getInstance().getLanguageManager().getSelected(),
-                java.util.Locale.getDefault().getLanguage(), russianPlayer);
-    }
-    private static void loadJokes() {
-        boolean russian = wantsRussianJokes();
-        bundledRussian = russian;
-        jokeBank = java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                dev.aicompanion.CompanionJokeBank.load(
-                        net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("aicompanion-jokes.txt"), russian));
-    }
+    static void playerMessage(String text) { conversation.playerMessage(now(), jitter()); CompanionJokeFiles.playerMessage(text); }
     static void replyDelivered(String text) {
         conversation.delivered(text, now(), jitter()); CompanionPreferences.speechExpression(text);
     }
@@ -132,33 +112,54 @@ final class CompanionAmbientClient {
         });
     }
     /** A joke uses a free initiative slot; no model request and no scan while its slower timer is waiting. */
-    private static boolean tellJoke(dev.aicompanion.entity.CompanionEntity speaker, boolean shortMurmurs) {
+    private static boolean tellJoke(dev.aicompanion.entity.CompanionEntity speaker, CompanionConversation.Scene scene) {
         int minutes = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get();
-        if (jokeBank != null || now() % 20 != 0 || !OpenRouterConfig.JOKES.get() || !jokes.due(now(), minutes)) return false;
-        if (!conversation.ready(now()) || busy() || InworldTtsClient.isSpeaking() || !safe(speaker)
-                || speaker.isGatheringTask() || speaker.isVisiblyBusy() || speaker.fighting()) return false;
-        String joke = jokes.poll(now(), minutes, true, java.util.concurrent.ThreadLocalRandom.current().nextInt());
-        if (joke == null) return false;
-        var delivery = CompanionConversation.decide(true, CompanionVoiceAudio.audible(speaker), false, false, shortMurmurs);
-        CompanionChatScreen.autonomousReply(joke, dev.aicompanion.CompanionDiagnostics.newTrace(), delivery == Delivery.VOICE);
+        if (now() % 20 != 0 || !jokes.due(now(), minutes) || !jokeAllowed(speaker)) return false;
+        var client = Minecraft.getInstance();
+        var server = client.getSingleplayerServer();
+        if (server == null || client.player == null) return false;
+        Object capturedWorld = world; UUID capturedCompanion = speaker.getUUID(), owner = client.player.getUUID();
+        long revision = conversation.revision();
+        int serial = speaker.socialSequence();
+        pending = true;
+        server.execute(() -> {
+            var player = server.getPlayerList().getPlayer(owner);
+            var context = player == null ? null : dev.aicompanion.entity.CompanionJokeContext.capture(player, scene == CompanionConversation.Scene.TRAVEL);
+            client.execute(() -> {
+                if (client.level != capturedWorld || world != capturedWorld) return;
+                pending = false;
+                var current = CompanionVoiceAudio.speaker();
+                if (context == null || current == null || !current.getUUID().equals(capturedCompanion)
+                        || conversation.revision() != revision || current.socialSequence() != serial
+                        || conversation.urgentPending(now()) != 0 || !jokeAllowed(current)) return;
+                String joke = jokes.poll(now(), minutes, true, java.util.concurrent.ThreadLocalRandom.current().nextInt(),
+                        context.surroundings(), context.recent(), java.util.concurrent.ThreadLocalRandom.current());
+                if (joke == null) return;
+                boolean voiced = CompanionVoiceAudio.audible(current);
+                CompanionChatScreen.autonomousReply(joke, dev.aicompanion.CompanionDiagnostics.newTrace(), voiced);
+            });
+        });
         return true;
     }
+    private static boolean jokeAllowed(dev.aicompanion.entity.CompanionEntity speaker) {
+        var client = Minecraft.getInstance();
+        return !CompanionJokeFiles.loading() && OpenRouterConfig.JOKES.get() && OpenRouterConfig.AUTONOMOUS_SPEECH.get()
+                && client.player != null && !client.isPaused() && client.screen == null
+                && conversation.ready(now()) && !busy() && !InworldTtsClient.isSpeaking() && safe(speaker)
+                && !speaker.isGatheringTask() && !speaker.isVisiblyBusy() && !speaker.fighting()
+                && (OpenRouterConfig.SHORT_MURMURS.get() || CompanionVoiceAudio.audible(speaker));
+    }
+    static void updateJokeFiles() { CompanionJokeFiles.tick(jokes); }
     static void tick() {
         var client = Minecraft.getInstance();
         if (client.level != world) {
             world = client.level; companion = null; pending = false; lastSpot = null; travelUntil = 0; idleSince = now();
             conversation.reset(now(), jitter());
             jokes.reset(now(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
-            russianPlayer = false;
-            if (client.level != null) loadJokes();
-            else jokeBank = null;
+            jokes.reloadBank(java.util.List.of());
+            CompanionJokeFiles.reset(client.level != null);
         }
-        if (client.level != null && bundledRussian != wantsRussianJokes()) loadJokes();
-        if (jokeBank != null && jokeBank.isDone()) {
-            var loaded = jokeBank.join();
-            jokes.reloadBank(loaded.lines(), loaded.customFile(), java.util.concurrent.ThreadLocalRandom.current().nextInt());
-            jokeBank = null;
-        }
+        if (client.level != null) CompanionJokeFiles.tick(jokes);
         if (client.level == null || client.player == null || client.isPaused() || client.screen != null || !OpenRouterConfig.AUTONOMOUS_SPEECH.get()) return;
         var speaker = CompanionVoiceAudio.speaker();
         boolean shortMurmurs = OpenRouterConfig.SHORT_MURMURS.get();
@@ -181,7 +182,7 @@ final class CompanionAmbientClient {
         boolean urgentNow = conversation.urgentPending(now()) != 0 || fresh && CompanionConversation.isUrgent(speaker.socialObservation());
         if (urgentNow && !CompanionVoiceAudio.audible(speaker)) return;
         if (!fresh && conversation.urgentPending() == 0) {
-            if (tellJoke(speaker, shortMurmurs)) return;
+            if (tellJoke(speaker, scene)) return;
             // A topic needs the model to go on talking, and the memory of the player to know which topics he has raised.
             if (conversation.topicReady(now(), scene) && !busy() && safe(speaker) && OpenRouterConfig.LONG_TERM_MEMORY.get()
                     && OpenRouterClient.modelConfigured()) raiseTopic(scene);
