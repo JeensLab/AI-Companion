@@ -178,7 +178,8 @@ final class CompanionMobDrops {
      */
     void watch() {
         if (w.job != CompanionWork.Job.HUNT || w.phase != CompanionWork.Phase.DROPS || !(c.level() instanceof ServerLevel level)) return;
-        if (!(c.getTarget() instanceof Mob mob) || !w.huntTargets.contains(mob.getUUID())) { chased = null; return; }
+        // One he has killed is not one he failed to get to.
+        if (!(c.getTarget() instanceof Mob mob) || !mob.isAlive() || !w.huntTargets.contains(mob.getUUID())) { chased = null; return; }
         // Hurt in the middle of it: he lets go, and the work says so when its turn comes.
         if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) { c.setTarget(null); return; }
         long now = level.getGameTime();
