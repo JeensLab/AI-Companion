@@ -976,7 +976,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
         // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.isHunting() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
+        var guardedOwner = protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && CompanionGuardWatch.strayed(this, guardedOwner, getTarget())) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();

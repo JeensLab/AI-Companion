@@ -259,10 +259,13 @@ public final class CompanionWork {
         Lot(BlockPos pos, boolean placed) { this.pos = pos.immutable(); this.placed = placed; }
         boolean open() { return loaded && !emptied && !gaveUp; }
     }
-    boolean isHunting() { return job == Job.HUNT; }
+    /** hunt_mobs. A hunt for a drop is no such fight: the player is still stood up for while it goes on. */
+    boolean isHunting() { return job == Job.HUNT && phase != Phase.DROPS; }
+    /** Either of them: the fight goes where the order's monsters are, not only by the player's side. */
+    boolean fightsByOrder() { return job == Job.HUNT; }
     boolean isHuntTarget(java.util.UUID id) { return huntTargets.contains(id); }
     void hitEnemy(LivingEntity enemy) {
-        if (isHunting() && huntTargets.contains(enemy.getUUID())) {
+        if (job == Job.HUNT && huntTargets.contains(enemy.getUUID())) {
             orderProgressTime = owner.level().getGameTime();
             if (!enemy.isAlive() && huntDead.add(enemy.getUUID())) huntKills++;
         }
@@ -731,7 +734,7 @@ public final class CompanionWork {
         }
     }
 
-    void watchChase() { hunting.watchChase(); }
+    void watchChase() { hunting.watchChase(); drops.watch(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /**

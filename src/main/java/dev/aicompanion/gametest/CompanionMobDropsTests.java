@@ -81,6 +81,21 @@ public final class CompanionMobDropsTests {
         });
     }
 
+    /** A spider in a closed cave under his feet is not «about»: he says he sees none and stays where he is. */
+    @GameTest(template = "tall_tree", timeoutTicks = 300)
+    public static void aSpiderUnderTheGroundIsNotAbout(GameTestHelper h) {
+        ground(h);
+        for (int x = 13; x <= 15; x++) for (int z = 15; z <= 17; z++) for (int y = GROUND - 3; y <= GROUND - 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        Mob spider = h.spawnWithNoFreeWill(EntityType.SPIDER, 14, GROUND - 3, 16);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.IRON_SWORD));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:string\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("Рядом не вижу") && spider.isAlive() && !c.isWorking(), future.join().report());
+        });
+    }
+
     /** A slime is no Monster for the game, yet an enemy: its balls are fought for the same way. */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void smallSlimesAreFoughtForSlimeBalls(GameTestHelper h) {

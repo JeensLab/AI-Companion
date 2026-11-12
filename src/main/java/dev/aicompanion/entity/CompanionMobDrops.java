@@ -56,6 +56,11 @@ final class CompanionMobDrops {
     private int wanted, before;
     /** Monsters he could not get to. */
     private final Set<UUID> passed = new HashSet<>();
+    /** The one he is after now, how near he got and how much life it had when he last gained on it. */
+    private UUID chased;
+    private double best;
+    private float health;
+    private long since;
 
     CompanionMobDrops(CompanionWork w) { this.w = w; }
 
@@ -78,7 +83,8 @@ final class CompanionMobDrops {
             LootParams params = new LootParams.Builder(level).withParameter(LootContextParams.THIS_ENTITY, mob).withParameter(LootContextParams.ORIGIN, Vec3.ZERO)
                     .withParameter(LootContextParams.DAMAGE_SOURCE, level.damageSources().generic()).create(LootContextParamSets.ENTITY);
             Map<Item, Integer> seen = new HashMap<>();
-            for (int seed = 0; seed < ROLLS; seed++) {
+            // From one: a seed of nought means «none», and the roll would come from the world's own sequence.
+            for (int seed = 1; seed <= ROLLS; seed++) {
                 Set<Item> once = new HashSet<>();
                 for (ItemStack drop : table.getRandomItems(params, seed)) if (!drop.isEmpty()) once.add(drop.getItem());
                 for (Item drop : once) seen.merge(drop, 1, Integer::sum);
@@ -102,15 +108,21 @@ final class CompanionMobDrops {
 
     /** Whether a monster that drops the item is within his search radius where he may fight it. */
     static boolean near(CompanionEntity c, ServerLevel level, Item item) {
-        return !targets(c, level, sources(level, item), Set.of()).isEmpty();
+        return !targets(c, level, sources(level, item), Set.of(), Set.of()).isEmpty();
     }
 
-    private static List<Mob> targets(CompanionEntity c, ServerLevel level, List<EntityType<?>> kinds, Set<UUID> passed) {
+    /** Those he may go for: one he has not struck yet must be in his sight (not the cave under the hill, not behind a wall). */
+    private static List<Mob> targets(CompanionEntity c, ServerLevel level, List<EntityType<?>> kinds, Set<UUID> passed, Set<UUID> engaged) {
         if (kinds.isEmpty() || level.dimension() != Level.OVERWORLD) return List.of();
         int radius = c.getSearchRadius();
-        return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> kinds.contains(mob.getType()) && mob.isAlive()
-                && !passed.contains(mob.getUUID()) && !mob.hasCustomName() && !mob.isInWater() && !mob.isPassenger() && !mob.isVehicle()
-                && c.leashAllows(mob.blockPosition()) && c.fairTarget(mob, true));
+        return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID())
+                && fought(c, kinds, mob) && (engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob)));
+    }
+
+    /** Of the kind, alive, nobody's (no name), on land, on its own feet, and one he may fight by this order. */
+    private static boolean fought(CompanionEntity c, List<EntityType<?>> kinds, Mob mob) {
+        return kinds.contains(mob.getType()) && mob.isAlive() && !mob.hasCustomName() && !mob.isInWater() && !mob.isPassenger() && !mob.isVehicle()
+                && c.leashAllows(mob.blockPosition()) && c.fairTarget(mob, true);
     }
 
     /** hunt_drop: {@code count} more of the item in his bag. Null when the work may start, else why not. */
@@ -122,7 +134,7 @@ final class CompanionMobDrops {
         if (kinds.isEmpty()) return CompanionActionResult.failed("Такое я с монстров не добываю: " + id + ".");
         if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) return CompanionActionResult.blocked("Я ранен: в бой за «" + new ItemStack(asked).getHoverName().getString() + "» сейчас не пойду. Поем — тогда.");
         item = asked; wanted = count; before = w.items.countCarried(item);
-        passed.clear();
+        passed.clear(); chased = null;
         return null;
     }
 
@@ -135,29 +147,45 @@ final class CompanionMobDrops {
         if (got >= wanted) { end(CompanionActionResult.ok("Добыл: «" + name() + "», " + got + " шт.")); return; }
         // Hurt, he does not go on striking first: what comes for him he still meets, as always.
         if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) { end(CompanionActionResult.blocked("Меня сильно побили, дальше в бой не лезу. Добыл «" + name() + "»: " + got + " из " + wanted + ".")); return; }
-        List<Mob> alive = targets(c, level, kinds, passed);
+        // What has fallen is picked up before the next one is struck: one pearl ordered is one enderman.
+        if (c.hasPendingLoot()) { c.setTarget(null); return; }
+        if (!w.items.canStore(List.of(new ItemStack(item)))) { end(CompanionActionResult.blocked(CompanionPicking.FULL_BAG + (got == 0 ? "" : " Добыл " + got + " из " + wanted + "."))); return; }
+        List<Mob> alive = targets(c, level, kinds, passed, w.huntTargets);
         if (alive.isEmpty()) {
-            c.setTarget(null);
-            // What fell from the last of them is picked up before he says how far he got.
-            if (c.hasPendingLoot()) return;
             String rest = passed.isEmpty() ? "больше рядом не с кого" : "до остальных не добрался";
             // Some got: obtain_item plans the rest again and says what is missing. None: it ends here.
             if (got > 0) end(CompanionActionResult.failed("Добыл «" + name() + "»: " + got + " из " + wanted + ", " + rest + "."));
+            else if (w.huntKills > 0) end(CompanionActionResult.blocked("Убил " + w.huntKills + ", но «" + name() + "» не выпало, а " + rest + "."));
             else end(CompanionActionResult.blocked(passed.isEmpty() ? "Рядом не нашёл, с кого добыть «" + name() + "»." : "Вижу, с кого добыть «" + name() + "», но добраться не смог."));
             return;
         }
         Mob target = alive.stream().min(Comparator.comparingDouble(c::distanceToSqr)).orElseThrow();
-        if (w.orderHasStalled(level, STALL)) {
-            passed.add(target.getUUID());
-            w.orderProgressTime = level.getGameTime();
-            c.setTarget(null);
-            return;
-        }
-        // The order's own targets: the blows on them count as progress, and nothing else is picked for a fight meanwhile.
+        // The order's own targets: the blows on them are counted, and one struck is his until it is dead or passed over.
         w.huntTargets.add(target.getUUID());
         c.selectWeaponForCombat(); c.setTarget(target); c.movementIntent(target.blockPosition());
         c.workStatus("Добываю «" + name() + "»: " + got + " из " + wanted + ".");
         if (w.route.follow(target.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
+    }
+
+    /**
+     * Every tick, also while the melee goal has taken the legs (as CompanionHunting.watchChase for game): a monster he gets no
+     * nearer to and lands no blow on for {@link #STALL} ticks (up a tree, behind a fence), or one gone from where he may fight it
+     * (an enderman that teleported away), is passed over.
+     */
+    void watch() {
+        if (w.job != CompanionWork.Job.HUNT || w.phase != CompanionWork.Phase.DROPS || !(c.level() instanceof ServerLevel level)) return;
+        if (!(c.getTarget() instanceof Mob mob) || !w.huntTargets.contains(mob.getUUID())) { chased = null; return; }
+        // Hurt in the middle of it: he lets go, and the work says so when its turn comes.
+        if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) { c.setTarget(null); return; }
+        long now = level.getGameTime();
+        double distance = c.distanceToSqr(mob);
+        if (!mob.getUUID().equals(chased) || distance + .5 < best || mob.getHealth() < health) { chased = mob.getUUID(); best = distance; health = mob.getHealth(); since = now; }
+        int radius = c.getSearchRadius();
+        boolean gone = !fought(c, kinds, mob) || distance > radius * radius;
+        if (now - since <= STALL && !gone) return;
+        passed.add(mob.getUUID()); chased = null;
+        c.setTarget(null);
+        c.getNavigation().stop();
     }
 
     private void end(CompanionActionResult result) {
