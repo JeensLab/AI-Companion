@@ -7,11 +7,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
-import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 
 import java.util.Comparator;
 import java.util.List;
@@ -53,8 +53,11 @@ final class CompanionFurnaces {
             w.lots.add(new CompanionWork.Lot(free, false));
         }
         if (w.lots.isEmpty() && w.trip.toStation("minecraft:furnace")) return;
-        boolean carriesFurnace = w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.FURNACE));
-        if (w.lots.size() < wanted && carriesFurnace && w.furnacesPlaced < CompanionWork.MAX_FURNACES + 2) {
+        // Food cooks twice as fast in a smoker: with none free nearby he makes one from his bag (Oleg's choice, 10.11).
+        boolean smoker = smokerWanted(level);
+        if (smoker && !carries(Items.SMOKER)) { makeSmoker(level); return; }
+        boolean carriesFurnace = carries(Items.FURNACE);
+        if (smoker || w.lots.size() < wanted && carriesFurnace && w.furnacesPlaced < CompanionWork.MAX_FURNACES + 2) {
             BlockPos group = w.lots.isEmpty() ? null : w.lots.getFirst().pos;
             if (group != null && w.owner.distanceToSqr(group.getCenter()) > 4.5 * 4.5) {
                 // Set the new furnaces down next to the free one, not where he happens to stand.
@@ -67,7 +70,15 @@ final class CompanionFurnaces {
                     if (w.approach(level, w.furnaceRoom, 2.5D)) { w.owner.workStatus("Здесь тесно для печи, выхожу туда, где есть место."); return; }
                 }
                 if (w.lots.isEmpty() && w.furnaceRoom == null && w.trip.toHome()) return;
-                CompanionActionResult placed = w.trip.place("minecraft:furnace");
+                CompanionActionResult placed = w.trip.place(smoker ? "minecraft:smoker" : "minecraft:furnace");
+                if (smoker) w.smokerTried = true;
+                if (placed.success() && w.owner.lastPlacedPosition() != null && smoker) {
+                    w.lots.addFirst(new CompanionWork.Lot(w.owner.lastPlacedPosition(), true));
+                    // The smoker takes a furnace's place in the batch, it is not one furnace more.
+                    if (w.lots.size() > wanted) for (int i = w.lots.size() - 1; i > 0; i--) if (!w.lots.get(i).loaded) { w.lots.remove(i); break; }
+                    w.owner.workStatus("Ставлю коптильню: в ней еда жарится вдвое быстрее.");
+                    w.cooldown = 10; return;
+                }
                 if (placed.success() && w.owner.lastPlacedPosition() != null) {
                     w.furnacesPlaced++;
                     w.lots.add(new CompanionWork.Lot(w.owner.lastPlacedPosition(), true));
@@ -111,14 +122,65 @@ final class CompanionFurnaces {
         // On success the crafting gesture finishes first; the furnace is set down on the next stage.
     }
 
+    private boolean carries(Item item) { return w.items.carriedItems().stream().anyMatch(stack -> stack.is(item)); }
+
+    /**
+     * Food, and no smoker among the furnaces taken: one from the bag, or one he can make of a furnace (or its stone) and four
+     * logs — at a bench he stands at or knows a short walk away — while what is left still burns the whole batch.
+     */
+    private boolean smokerWanted(ServerLevel level) {
+        // On a deed of his own the wood he keeps in stock is not spent on a new block: a smoker standing free is still used.
+        if (w.owner.ownPlacesOnly() || !CompanionSmelting.smokes(level, w.smelt) || w.lots.stream().anyMatch(lot -> CompanionFurnaceReader.fast(level, lot.pos))) return false;
+        // A smoker he carries is his furnace for food: with no other one taken it is set down like one, also after a cramped first try.
+        if (carries(Items.SMOKER)) return !w.smokerTried || w.lots.isEmpty();
+        // A smoker stands near, if busy (the player's own): not a second one beside it.
+        if (w.smokerTried || w.chests.blockEntitiesNear(level).stream().anyMatch(pos -> level.getBlockState(pos).is(Blocks.SMOKER))) return false;
+        // No new bench for it either.
+        if (!w.owner.hasCraftingTableNearby() && nearBench() == null) return false;
+        var plan = CompanionCrafting.plan(level, w.owner.companionInventory, "minecraft:smoker", 1, true);
+        if (!plan.success()) return false;
+        long fuel = 0;
+        int items = w.smeltCount - loadedTotal();
+        for (ItemStack stack : plan.inventory()) {
+            if (stack.isEmpty() || stack.is(w.smelt.input())) continue;
+            if (CompanionSmelting.fuelRank(stack) >= 0) fuel += (long) stack.getCount() * CompanionSmelting.burnTicks(stack);
+            // «Пожарь мясо» of every kind: the kinds after this one burn the same fuel.
+            else if (w.mixedMeat && stack.is(ItemTags.MEAT) && CompanionSmelting.recipeFor(level, stack) != null) items += stack.getCount();
+        }
+        return fuel >= (long) items * w.smelt.cookTicks();
+    }
+
+    private BlockPos nearBench() {
+        BlockPos here = w.owner.blockPosition();
+        return w.owner.knownCraftingTables().stream().filter(pos -> pos.distSqr(here) <= CompanionWork.BENCH_TRIP * CompanionWork.BENCH_TRIP)
+                .min(Comparator.comparingDouble(pos -> pos.distSqr(here))).orElse(null);
+    }
+
+    /** To the bench, then the smoker is crafted; set down on the next stage like a furnace from the bag. No way to the bench: furnaces. */
+    private void makeSmoker(ServerLevel level) {
+        BlockPos bench = w.owner.hasCraftingTableNearby() ? null : nearBench();
+        if (bench != null) {
+            if (!bench.equals(w.heading)) { w.heading = bench; w.resetApproach(); }
+            w.owner.movementIntent(bench);
+            if (w.approach(level, bench, 2.8D)) { w.owner.workStatus("Иду к верстаку сделать коптильню."); return; }
+            w.smokerTried = true; w.heading = null; w.resetApproach(); return;
+        }
+        // From the bag only (the plan was made from it): nothing in his hands is moved, so a full bag cannot end the order here.
+        w.smokerTried = !w.owner.craftFromBag("minecraft:smoker", 1).success();
+        if (!w.smokerTried) w.owner.workStatus("Сделал коптильню: в ней еда жарится вдвое быстрее.");
+    }
+
     private BlockPos findFurnace(ServerLevel level) {
         BlockPos center = w.owner.blockPosition();
         BlockPos group = w.lots.isEmpty() ? null : w.lots.getFirst().pos;
         return w.chests.blockEntitiesNear(level).stream().filter(pos -> !w.triedFurnaces.contains(pos)
                         && w.lots.stream().noneMatch(lot -> lot.pos.equals(pos)) && !w.owner.batches().reserved(level, pos)
                         && (group == null || pos.distSqr(group) <= CompanionWork.FURNACE_GROUP * CompanionWork.FURNACE_GROUP)
-                        && level.getBlockEntity(pos) instanceof FurnaceBlockEntity oven && freeFor(oven) && allowed(level, pos, oven))
-                .min(Comparator.comparingDouble(pos -> pos.distSqr(center))).map(BlockPos::immutable).orElse(null);
+                        && level.getBlockEntity(pos) instanceof AbstractFurnaceBlockEntity oven && CompanionSmelting.cooks(level, oven, w.smelt)
+                        && freeFor(oven) && allowed(level, pos, oven))
+                // A smoker for food, a blast furnace for ore: twice as fast, so taken before a nearer furnace.
+                .min(Comparator.comparing((BlockPos pos) -> !CompanionFurnaceReader.fast(level, pos)).thenComparingDouble(pos -> pos.distSqr(center)))
+                .map(BlockPos::immutable).orElse(null);
     }
 
     /**
@@ -236,7 +298,7 @@ final class CompanionFurnaces {
                 "input", BuiltInRegistries.ITEM.getKey(w.smelt.input()), "count", lot.count, "fuel", fuel == null ? "none" : BuiltInRegistries.ITEM.getKey(fuel.item()) + " x" + fuel.count(),
                 "fuelSlot", BuiltInRegistries.ITEM.getKey(oven.getItem(1).getItem()) + " x" + oven.getItem(1).getCount(), "placedByCompanion", lot.placed,
                 "furnace", w.lots.indexOf(lot) + 1, "furnaces", w.lots.size());
-        w.owner.workStatus("Заложил в печь " + lot.count + " «" + CompanionWork.itemName(w.smelt.input()) + "»"
+        w.owner.workStatus("Заложил " + CompanionContainers.into(CompanionFurnaceReader.kind(level, lot.pos)) + " " + lot.count + " «" + CompanionWork.itemName(w.smelt.input()) + "»"
                 + (fuel == null ? "" : " и " + fuel.count() + " «" + CompanionWork.itemName(fuel.item()) + "» на растопку")
                 + (w.lots.size() > 1 ? " (печь " + (w.lots.indexOf(lot) + 1) + " из " + w.lots.size() + ")" : "") + ".");
         w.cooldown = 10;
@@ -252,7 +314,7 @@ final class CompanionFurnaces {
         for (ItemStack stack : w.items.carriedItems()) if (!stack.isEmpty() && !stack.is(w.smelt.input()) && CompanionSmelting.fuelRank(stack) >= 0) have += (long) stack.getCount() * CompanionSmelting.burnTicks(stack);
         for (ItemStack stack : w.items.carriedItems()) {
             if (have >= needTicks) return;
-            if (stack.isEmpty() || !stack.is(ItemTags.LOGS) || stack.is(w.smelt.input())) continue;
+            if (stack.isEmpty() || !stack.is(ItemTags.LOGS_THAT_BURN) || stack.is(w.smelt.input())) continue;
             String type = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().replaceFirst("^stripped_", "").replaceFirst("_(log|wood|stem|hyphae)$", "");
             int burn = CompanionSmelting.burnTicks(stack);
             int logs = (int) Math.min(stack.getCount(), (needTicks - have + 4L * 300 - 1) / (4L * 300));
@@ -334,7 +396,7 @@ final class CompanionFurnaces {
         level.playSound(null, lot.pos, SoundEvents.ITEM_PICKUP, SoundSource.BLOCKS, .4F, 1F);
         dev.aicompanion.CompanionDiagnostics.event(w.owner.diagnosticTrace(), "furnace_emptied", "entity", w.owner.getUUID(), "position", lot.pos,
                 "reason", reason, "product", product, "taken", lot.taken, "rawBack", lot.rawBack, "rawLeft", raw - lot.rawBack, "fuelBack", fuelBack);
-        w.owner.workStatus("Забрал из печи " + lot.taken + " «" + CompanionWork.itemName(w.smelt.result().getItem()) + "».");
+        w.owner.workStatus("Забрал " + CompanionContainers.from(CompanionFurnaceReader.kind(level, lot.pos)) + " " + lot.taken + " «" + CompanionWork.itemName(w.smelt.result().getItem()) + "».");
         w.cooldown = 5;
     }
 
@@ -343,8 +405,9 @@ final class CompanionFurnaces {
         int taken = w.lots.stream().mapToInt(lot -> lot.taken).sum(), rawBack = w.lots.stream().mapToInt(lot -> lot.rawBack).sum();
         List<CompanionWork.Lot> used = w.lots.stream().filter(lot -> lot.loaded).toList();
         String inName = CompanionWork.itemName(w.smelt.input()), outName = CompanionWork.itemName(w.smelt.result().getItem());
-        String where = used.size() == 1 ? " Печь на " + used.getFirst().pos.toShortString() + "."
-                : " Печи: " + String.join("; ", used.stream().map(lot -> lot.pos.toShortString()).toList()) + ".";
+        String where = (used.size() == 1 ? " Печь на " + used.getFirst().pos.toShortString() + "."
+                : " Печи: " + String.join("; ", used.stream().map(lot -> lot.pos.toShortString()).toList()) + ".")
+                + (used.stream().anyMatch(lot -> lot.placed && level.getBlockState(lot.pos).is(Blocks.SMOKER)) ? " Жарил в своей коптильне, она осталась стоять." : "");
         String stuck = used.stream().anyMatch(lot -> lot.stuck) ? " Часть не влезла в сумку и осталась в печи." : "";
         int more = CompanionSmelting.count(w.items.carriedItems(), w.smelt.input()) - rawBack;
         String rest = w.smeltAll && more > 0 ? " В сумке ещё " + more + " «" + inName + "» — больше стопки за раз не беру." : "";

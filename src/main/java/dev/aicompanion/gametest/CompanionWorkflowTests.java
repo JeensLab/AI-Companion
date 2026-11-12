@@ -168,7 +168,9 @@ public final class CompanionWorkflowTests {
     public static void escapesEndStonePitWithThePickaxeFromTheBag(GameTestHelper helper) {
         CompanionEntity companion = pit(helper, Blocks.END_STONE, 4); companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
         companion.removeAllGoals(goal -> goal instanceof WaterAvoidingRandomStrollGoal);
-        stablePitExit(helper, companion);
+        boolean[] inHand = {false};
+        helper.onEachTick(() -> inHand[0] |= companion.getMainHandItem().is(Items.WOODEN_PICKAXE));
+        stablePitExit(helper, companion, () -> helper.assertTrue(inHand[0], "The pickaxe from the bag never went into his hand"));
     }
 
     /**
@@ -215,11 +217,13 @@ public final class CompanionWorkflowTests {
         return companion;
     }
 
-    private static void stablePitExit(GameTestHelper helper, CompanionEntity companion) {
+    private static void stablePitExit(GameTestHelper helper, CompanionEntity companion) { stablePitExit(helper, companion, () -> { }); }
+
+    private static void stablePitExit(GameTestHelper helper, CompanionEntity companion, Runnable alsoAtTheEnd) {
         double top = helper.absolutePos(new BlockPos(16, 5, 16)).getY();
         int[] stable = {0};
         helper.onEachTick(() -> stable[0] = companion.onGround() && companion.getY() >= top && !companion.isSelfRescuing() ? stable[0] + 1 : 0);
-        helper.succeedWhen(() -> helper.assertTrue(stable[0] >= 20, diagnostic(companion)));
+        helper.succeedWhen(() -> { helper.assertTrue(stable[0] >= 20, diagnostic(companion)); alsoAtTheEnd.run(); });
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 700)

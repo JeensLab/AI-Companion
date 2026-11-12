@@ -350,6 +350,9 @@ final class CompanionWaterBucket {
         return null;
     }
 
+    /** Whether he is to go back for water of his out of reach (he does not get into the player's boat meanwhile). */
+    boolean goesForWater() { return astray() != null; }
+
     void fetchBegin() { fetching = null; }
 
     /**

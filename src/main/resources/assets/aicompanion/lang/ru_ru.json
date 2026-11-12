@@ -16,7 +16,9 @@
   "config.aicompanion.long_term_memory": "Долговременная память",
   "config.aicompanion.short_murmurs": "Короткие самостоятельные реплики",
   "config.aicompanion.murmur_interval_percent": "Пауза между репликами, %",
+  "config.aicompanion.boat_ride": "Лодка с игроком",
   "config.aicompanion.guard_nearest_to_player": "Охрана: монстр ближе к игроку",
   "config.aicompanion.other_containers": "Контейнеры, кроме сундуков",
-  "config.aicompanion.boat_clutch": "Лодка при падении"
+  "config.aicompanion.boat_clutch": "Лодка при падении",
+  "config.aicompanion.replant_saplings": "Саженцы на месте срубленных деревьев"
 }

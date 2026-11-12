@@ -25,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
-/** Chat completion client with a constrained tool-calling loop for in-game plans. */
+/** Model client with constrained tool calls for in-game plans. */
 public final class OpenRouterClient {
     private static final String OPENROUTER = "https://openrouter.ai/api/v1";
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
@@ -47,30 +47,44 @@ public final class OpenRouterClient {
             + "minecraft:hopper, minecraft:dispenser, minecraft:dropper, minecraft:shulker_box. Для сундука и без названия контейнера — near_player. ";
     public static synchronized boolean isBusy() { return !pendingRequests.isDone(); }
 
-    /** Chat completions of the configured OpenAI-compatible server (issue #2): OpenRouter when empty, a base address completed as OpenAI clients do. */
+    /** Direct OpenAI uses Responses; OpenRouter and compatible servers keep Chat Completions. */
     public static URI endpoint(String configured) {
         String base = configured == null ? "" : configured.trim();
         while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
         if (base.isEmpty()) base = OPENROUTER;
-        if (!base.endsWith("/chat/completions")) base += "/chat/completions";
         try {
             URI uri = new URI(base);
-            if (("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null) return uri;
+            if (("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null) {
+                if (isOpenAi(uri)) {
+                    String path = uri.getPath();
+                    if (path.endsWith("/chat/completions")) path = path.substring(0, path.length() - "/chat/completions".length());
+                    if (!path.endsWith("/responses")) path += "/responses";
+                    return new URI(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(), path, uri.getQuery(), uri.getFragment());
+                }
+                return new URI(base.endsWith("/chat/completions") ? base : base + "/chat/completions");
+            }
         } catch (java.net.URISyntaxException ignored) {
             // Reported below in the player's words.
         }
         // Not repeated back: an address may carry a password or a token.
         throw new IllegalStateException("Адрес сервера модели в настройках неверный. Пример: http://localhost:11434/v1");
     }
-    /** OpenRouter needs the player's key; a local server (Ollama, LM Studio) runs without one. */
-    public static boolean keyRequired(URI endpoint) { return "openrouter.ai".equalsIgnoreCase(endpoint.getHost()); }
+    private static boolean isOpenRouter(URI endpoint) { return "openrouter.ai".equalsIgnoreCase(endpoint.getHost()); }
+    private static boolean isOpenAi(URI endpoint) { return "api.openai.com".equalsIgnoreCase(endpoint.getHost()); }
+    /** OpenRouter and direct OpenAI need a key; a local server (Ollama, LM Studio) runs without one. */
+    public static boolean keyRequired(URI endpoint) { return isOpenRouter(endpoint) || isOpenAi(endpoint); }
+    public static String missingKeyNote(URI endpoint, String key) {
+        if (!keyRequired(endpoint) || !key.isBlank()) return "";
+        return isOpenAi(endpoint) ? "Добавь API-ключ OpenAI в настройках мода."
+                : "Добавь API-ключ OpenRouter в настройках мода или укажи адрес своего сервера модели.";
+    }
     /**
      * The key goes over https or to this computer: plain http across a network would show it to everyone on the way.
      * An OpenRouter key (sk-or-…) goes to OpenRouter only, even when left in the settings after switching servers.
      */
     public static boolean sendsKey(URI endpoint, String key) {
         // Anywhere and in any case: a key pasted as «Bearer sk-or-…» or in quotes is still an OpenRouter key.
-        if (key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !keyRequired(endpoint)) return false;
+        if (key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !isOpenRouter(endpoint)) return false;
         String host = endpoint.getHost().toLowerCase(java.util.Locale.ROOT);
         // A numeric loopback address only: «127.example.com» is a name anyone can register.
         return "https".equalsIgnoreCase(endpoint.getScheme()) || host.equals("localhost") || host.matches("127(\\.\\d{1,3}){3}") || host.equals("[::1]");
@@ -78,23 +92,23 @@ public final class OpenRouterClient {
     /** Why a key that was set stayed home: told with a 401/403, or the player only sees the server refuse. */
     public static String withheldKeyNote(URI endpoint, String key) {
         if (key.isEmpty() || sendsKey(endpoint, key)) return "";
-        return key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !keyRequired(endpoint)
+        return key.toLowerCase(java.util.Locale.ROOT).contains("sk-or-") && !isOpenRouter(endpoint)
                 ? "Ключ OpenRouter мод отправляет только в OpenRouter: для этого сервера впиши его собственный ключ."
                 : "Ключ не отправлен: по обычному http через сеть мод его не передаёт — нужен адрес https или сервер на этом компьютере.";
     }
     /** The model field defaults to openrouter/auto: an own server answers «model not found», which alone does not say what to change. */
     public static String modelNote(URI endpoint, String model) {
         String id = model == null ? "" : model.trim().toLowerCase(java.util.Locale.ROOT);
-        return !keyRequired(endpoint) && (id.isEmpty() || id.startsWith("openrouter/"))
+        return !isOpenRouter(endpoint) && (id.isEmpty() || id.startsWith("openrouter/"))
                 ? "В поле «Модель» стоит модель OpenRouter: для своего сервера впиши название загруженной в него модели." : "";
     }
     /** The server named in errors and diagnostics: host and port, never credentials written into the address. */
     public static String service(URI endpoint) {
-        return keyRequired(endpoint) ? "OpenRouter" : endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());
+        return isOpenRouter(endpoint) ? "OpenRouter" : endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());
     }
     private static URI endpoint() { return endpoint(OpenRouterConfig.API_URL.get()); }
     private static boolean missingKey(URI endpoint) { return keyRequired(endpoint) && OpenRouterConfig.API_KEY.get().isBlank(); }
-    /** A model server is set up to answer: the address is valid and OpenRouter has its key. */
+    /** A model server is set up to answer: the address is valid and a provider requiring a key has one. */
     static boolean modelConfigured() {
         try { return !missingKey(endpoint()); } catch (IllegalStateException badAddress) { return false; }
     }
@@ -143,7 +157,7 @@ public final class OpenRouterClient {
         URI endpoint;
         try { endpoint = endpoint(); } catch (IllegalStateException badAddress) { return CompletableFuture.failedFuture(badAddress); }
         if (missingKey(endpoint)) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Нет ключа OpenRouter"));
+            return CompletableFuture.failedFuture(new IllegalStateException(missingKeyNote(endpoint, OpenRouterConfig.API_KEY.get())));
         }
         JsonObject body = new JsonObject();
         body.addProperty("model", OpenRouterConfig.MODEL.get().trim().isEmpty() ? "openrouter/auto" : OpenRouterConfig.MODEL.get().trim());
@@ -159,7 +173,7 @@ public final class OpenRouterClient {
     public static String completionText(JsonObject response) {
         JsonObject choice = response.getAsJsonArray("choices").get(0).getAsJsonObject();
         if ("length".equals(scalar(choice, "finish_reason"))) {
-            throw new IllegalStateException("Ответ модели оборвался на пределе токенов.");
+            throw new IllegalStateException("Ответ модели оборвался на пределе токенов. Попроси выполнить меньше действий за раз.");
         }
         JsonObject reply = choice.getAsJsonObject("message");
         return reply != null && reply.has("content") && !reply.get("content").isJsonNull() ? reply.get("content").getAsString() : "";
@@ -288,7 +302,7 @@ public final class OpenRouterClient {
         URI endpoint;
         try { endpoint = endpoint(); } catch (IllegalStateException badAddress) { return CompletableFuture.failedFuture(badAddress); }
         if (missingKey(endpoint)) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Добавь API-ключ OpenRouter в настройках мода или укажи адрес своего сервера модели."));
+            return CompletableFuture.failedFuture(new IllegalStateException(missingKeyNote(endpoint, OpenRouterConfig.API_KEY.get())));
         }
         // History keeps the player's words; the world snapshot goes only with the current message (review 22.10, В10:
         // up to a dozen old snapshots per request made it slow, costly and confusing).
@@ -457,7 +471,7 @@ public final class OpenRouterClient {
                 + "Когда игрок явно просит выполнить поддерживаемое действие, используй queue_companion_plan. "
                 + "Можно составить до 12 коротких шагов: follow — идти рядом с игроком; wait — остановиться на заданное число секунд; "
                 + "come — вернуться к игроку; wander — свободно гулять и осматриваться, пока игрок не позовёт или не даст другую задачу; walk_heading — вести игрока по стороне света, обходя препятствия: item — north, northeast, east, southeast, south, southwest, west или northwest, а если надо что-то найти по пути — через двоеточие village, water, forest, animals или вид животного (cow, pig, sheep, chicken, rabbit), например south:village; count — сколько блоков пройти (до 500), без count — пока игрок не скажет «стоп» или пока не найдёте цель. Если игрок просит что-то найти, можешь предложить направление словами, но walk_heading запускай только когда игрок согласился («веди», «пошли»). Если ты остановился у воды и предложил обход, а игрок согласен, план — два шага walk_heading: сначала в сторону обхода с count из твоего предложения, потом прежнее направление. Не веди туда, где уже упёрся в воду или лаву. Если ты уже дважды упёрся в большую воду или вы на острове, не предлагай новых направлений наугад: честно скажи, что дальше только через воду, которой ты побаиваешься, а лодкой править пока не умеешь; protect — следовать за игроком и атаковать ближайших угрожающих монстров; "
-                + "stop_protect — прекратить охрану и снова следовать; stop — отменить текущую задачу; gather_wood — найти ближайшие брёвна и положить добытые в свою сумку (1–16). "
+                + "stop_protect — прекратить охрану и снова следовать; stop — отменить текущую задачу; gather_wood — найти ближайшие брёвна и положить добытые в свою сумку (1–16); item — только если игрок назвал породу («берёзы»: minecraft:birch_log), иначе пусто, тогда рубятся ближайшие деревья любой породы. "
                 + "Лук и стрелы из сумки ты пускаешь в ход сам, без отдельного шага плана: враг на расстоянии получает стрелу, подошедший вплотную — меч; стрела настоящая и тратится из сумки, пока на линии огня игрок или животные, ты не стреляешь, а по летающим врагам (гасты, фантомы) бьёшь только луком. Лук и стрелы тебе могут дать, они падают со скелетов; стрелы можно добыть через obtain_item (minecraft:arrow), нитки для лука добывать ты пока не умеешь. "
                 + "Если игрок уходит через портал в Незер или Край, а ты следуешь за ним и не занят поручением, ты сам доходишь до этого портала и входишь в него; шаг плана для этого не нужен. На «стой» ты остаёшься, начатое поручение сначала заканчиваешь. "
                 + "enter_portal — по просьбе игрока дойти до ближайшего портала в Незер (до 64 блоков, чей угодно) и войти в него без игрока; это всегда последний шаг плана. "
@@ -524,6 +538,13 @@ public final class OpenRouterClient {
                 + "place_block — поставить новый блок; item — полный ID блока. Сундук, верстак и печь сам готовишь из реальных материалов, если их нет в сумке. Для minecraft:chest count задаёт число новых сундуков (1–64), для остальных count=1. location=inside_house обязательно для установки внутри дома; near_player для установки рядом с игроком. Тот же location применим к store_items и take_items. Если дом не подтверждён, установка внутри блокируется, подмена местом снаружи запрещена. Включай ВСЕ явно заказанные действия: поставить сундук, печь и сложить вещи — три шага, а не один. "
                 + "equip_item — взять предмет из своей сумки в руку или надеть броню; item — точный ID предмета, slot — auto, mainhand, offhand, head, chest, legs или feet. "
                 + "Для мечей и инструментов используй mainhand, для щита offhand, для брони auto. unequip_item убирает предмет из указанного slot в сумку. "
+                + "repair_item — «почини»: сложить две одинаковые изношенные вещи из своей сумки в одну, как в сетке крафта; зачарованные не складывает (чары пропали бы); "
+                + "item — точный ID (minecraft:iron_pickaxe) или вид без материала: pickaxe, axe, sword, shovel, hoe, helmet, chestplate, leggings, boots. "
+                + "disenchant_item — «сними чары»: снять чары на точиле рядом (или на своём, сделанном из сумки), опыт выпадает у точила; item — как у repair_item, "
+                + "count — сколько вещей (1 — самую дешёвую по чарам; «со всех» — 64). Проклятия точило не снимает. Обе — только со своими вещами; вещь игрока («мой меч») — попроси положить тебе в сумку. "
+                + "compost_items — костная мука в компостере рядом (или в своём, сделанном из сумки): кладёт растения из своей сумки по одному, готовую муку забирает себе. "
+                + "item — scrap (растительный хлам: саженцы, семена, листва, трава, цветы; еду и урожай не трогает, по 4 саженца и 16 семян каждого вида бережёт), saplings, seeds, leaves или точный ID того, что назвал игрок (названное кладёт как сказано, без запаса, хоть еду; группы saplings, seeds, leaves тоже без запаса: на «лишние саженцы» укажи saplings и count = сколько их в сумке минус 4). "
+                + "count — для scrap сколько костной муки сделать, для остального сколько штук положить (1–64); если игрок не назвал число, count не указывай — тогда всё, что есть. «Сделай костную муку» без слова «компостер» — это craft_item из костей. "
                 + "Экипировка и сумка показаны отдельно. Вещь в сумке ещё не находится в руке. По команде «возьми меч» вызывай equip_item; не отвечай одним обещанием. "
                 + "В бою автоматически выбирается имеющийся меч или топор, при рубке топор, при копании лопата. Имеющийся во второй руке щит поднимается против близкого противника или видимого скелета. Стрельба и сложные боевые манёвры пока не реализованы. "
                 + "За деревом ты можешь самостоятельно отходить от игрока на расстояние поиска из снимка мира, обычно до 64 блоков. Не проси каждый раз подводить тебя к ближайшему дереву. По завершении возвращайся. "
@@ -593,7 +614,7 @@ public final class OpenRouterClient {
             body.addProperty("tool_choice", forcePlan ? "required" : "auto");
             body.addProperty("parallel_tool_calls", false);
             // OpenRouter's own routing field; another server could reject a field it does not know.
-            if (keyRequired(endpoint)) {
+            if (isOpenRouter(endpoint)) {
                 JsonObject provider = new JsonObject();
                 provider.addProperty("require_parameters", true);
                 provider.addProperty("allow_fallbacks", true);
@@ -619,21 +640,24 @@ public final class OpenRouterClient {
     public static final Duration ANSWER_LIMIT = Duration.ofSeconds(90);
 
     private static CompletableFuture<JsonObject> post(URI endpoint, JsonObject body, boolean withTools, String trace) {
+        boolean responses = isOpenAi(endpoint);
+        JsonObject wireBody = responses ? OpenAiResponses.request(body) : body;
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(60))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
+                .POST(HttpRequest.BodyPublishers.ofString(wireBody.toString()));
         String key = OpenRouterConfig.API_KEY.get().trim();
         if (!key.isEmpty() && sendsKey(endpoint, key)) builder.header("Authorization", "Bearer " + key);
         String withheld = withheldKeyNote(endpoint, key);
         HttpRequest request = builder.build();
         String service = service(endpoint);
-        String logged = keyRequired(endpoint) ? "openrouter" : service;  // the diagnostics label OpenRouter always had
+        String logged = isOpenRouter(endpoint) ? "openrouter" : service;  // the diagnostics label OpenRouter always had
         var attempts = new java.util.concurrent.atomic.AtomicInteger();
         return OpenRouterRetry.execute(() -> {
             int attempt = attempts.incrementAndGet();
             long started = System.nanoTime();
-            CompanionDiagnostics.event(trace, "http_attempt", "service", logged, "attempt", attempt, "tools", withTools);
+            CompanionDiagnostics.event(trace, "http_attempt", "service", logged, "attempt", attempt, "tools", withTools,
+                    "protocol", responses ? "responses" : "chat_completions");
             // The request timeout above ends at the response headers; the body could keep the queue waiting for ever.
             return OpenRouterRetry.bounded(HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofString()), ANSWER_LIMIT,
                     "Модель не ответила за " + ANSWER_LIMIT.toSeconds() + " секунд. Попробуй ещё раз или выбери модель побыстрее в настройках.").whenComplete((response, error) -> {
@@ -648,7 +672,7 @@ public final class OpenRouterClient {
                 String error = readError(service, response.body(), response.statusCode());
                 // The server's own words decide, not its name (tools.lan, function-gw…).
                 String lower = error.toLowerCase(java.util.Locale.ROOT).replace(service.toLowerCase(java.util.Locale.ROOT), "");
-                if (withTools && (response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422)
+                if (!responses && withTools && (response.statusCode() == 400 || response.statusCode() == 404 || response.statusCode() == 422)
                         && (lower.contains("tool") || lower.contains("parameter") || lower.contains("function"))) {
                     throw new UnsupportedToolsException(error);
                 }
@@ -658,6 +682,7 @@ public final class OpenRouterClient {
                 throw new IllegalStateException(note.isEmpty() ? error : error + " " + note);
             }
             JsonObject parsed = JsonParser.parseString(response.body()).getAsJsonObject();
+            if (responses) return OpenAiResponses.completion(parsed);
             if (!parsed.has("choices") || !parsed.get("choices").isJsonArray() || parsed.getAsJsonArray("choices").isEmpty()) {
                 throw new IllegalStateException(service + " вернул ответ без сообщения модели. " + readError(service, response.body(), response.statusCode()));
             }
@@ -665,7 +690,7 @@ public final class OpenRouterClient {
         }).exceptionallyCompose(error -> {
             // A local server that is not running is the usual failure there; the bare exception says nothing to a player.
             Throwable cause = error.getCause() == null ? error : error.getCause();
-            return CompletableFuture.failedFuture(!keyRequired(endpoint) && cause instanceof java.net.ConnectException
+            return CompletableFuture.failedFuture(!isOpenRouter(endpoint) && cause instanceof java.net.ConnectException
                     ? new IllegalStateException("Сервер модели " + service + " не отвечает: проверь, что он запущен и адрес в настройках верный.") : error);
         });
     }

@@ -67,6 +67,12 @@ neoForge {
             if (quickPlay != null) programArguments.addAll('--quickPlaySingleplayer', quickPlay)
         }
 
+        responsesClientProbe {
+            client()
+            gameDirectory = project.file('build/responses-client')
+            systemProperty 'aicompanion.responsesProbe', 'true'
+        }
+
         server {
             server()
             programArgument '--nogui'

@@ -28,20 +28,29 @@ public final class CompanionCrafting {
     private int searches;
     private boolean needsTable;
     private boolean inventoryFull;
+    /** He stands at a stonecutter: its recipes are tried first (stairs one for one, not six for four). */
+    private final boolean cutterNearby;
+    private boolean usedCutter;
 
-    private CompanionCrafting(ServerLevel level) { this.level = level; }
+    private CompanionCrafting(ServerLevel level, boolean cutterNearby) { this.level = level; this.cutterNearby = cutterNearby; }
 
-    public record Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable, boolean shortage) {
-        public Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable) { this(success, message, inventory, placeTable, false); }
+    /** cutter: some step was cut at the stonecutter, so the gesture and the sound are made there. */
+    public record Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable, boolean shortage, boolean cutter) {
+        public Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable) { this(success, message, inventory, placeTable, false, false); }
+        public Plan(boolean success, String message, NonNullList<ItemStack> inventory, boolean placeTable, boolean shortage) { this(success, message, inventory, placeTable, shortage, false); }
     }
 
     public static Plan plan(ServerLevel level, List<ItemStack> inventory, String requestedId, int count, boolean tableNearby) {
+        return plan(level, inventory, requestedId, count, tableNearby, false);
+    }
+
+    public static Plan plan(ServerLevel level, List<ItemStack> inventory, String requestedId, int count, boolean tableNearby, boolean cutterNearby) {
         ResourceLocation id = ResourceLocation.tryParse(requestedId);
         Item target = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         NonNullList<ItemStack> bag = copy(inventory);
         if (target == null || target == Items.AIR) return new Plan(false, "Неизвестный предмет: " + requestedId + ".", bag, false);
         if (count < 1 || count > 64) return new Plan(false, "За раз можно сделать от 1 до 64 предметов.", bag, false);
-        CompanionCrafting planner = new CompanionCrafting(level);
+        CompanionCrafting planner = new CompanionCrafting(level, cutterNearby);
         int before = count(bag, target);
         if (!planner.ensure(bag, target, before + count)) {
             if (planner.inventoryFull) return new Plan(false, "В моей сумке нет места для всей цепочки крафта. Освободи несколько ячеек; материалы сохранены.", copy(inventory), false);
@@ -54,9 +63,9 @@ public final class CompanionCrafting {
         if (placeTable && (!planner.ensure(bag, Items.CRAFTING_TABLE, 1) || !take(bag, Items.CRAFTING_TABLE))) {
             return new Plan(false, "Для этого нужен верстак. Не хватает материалов, чтобы сделать и верстак, и запрошенный предмет. Материалы сохранены.", copy(inventory), false, true);
         }
-        String chain = String.join("; ", planner.steps);
-        return new Plan(true, "Скрафтил " + made + " «" + target.getDescription().getString() + "»."
-                + (chain.isEmpty() ? "" : " Цепочка: " + chain + "."), bag, placeTable);
+        String chain = String.join("; ", merged(planner.steps));
+        return new Plan(true, (planner.usedCutter ? "Нарезал на камнерезе " : "Скрафтил ") + made + " «" + target.getDescription().getString() + "»."
+                + (chain.isEmpty() ? "" : " Цепочка: " + chain + "."), bag, placeTable, false, planner.usedCutter);
     }
 
     private boolean ensure(NonNullList<ItemStack> bag, Item target, int wanted) {
@@ -65,13 +74,13 @@ public final class CompanionCrafting {
         try {
             while (count(bag, target) < wanted) {
                 int before = count(bag, target);
-                boolean crafted = false;
-                for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
+                boolean crafted = cutterNearby && cut(bag, target);
+                if (!crafted) for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
                     CraftingRecipe recipe = holder.value();
                     if (recipe.getResultItem(level.registryAccess()).getItem() != target) continue;
                     NonNullList<ItemStack> trial = copy(bag);
                     int checkpoint = steps.size();
-                    boolean previousTable = needsTable;
+                    boolean previousTable = needsTable, previousCutter = usedCutter;
                     List<Ingredient> ingredients = recipe.getIngredients();
                     if (ingredients.isEmpty() || ingredients.size() > 9) continue;
                     ItemStack[] grid = new ItemStack[ingredients.size()];
@@ -82,7 +91,7 @@ public final class CompanionCrafting {
                         crafted = true;
                         break;
                     }
-                    rollback(checkpoint, previousTable);
+                    rollback(checkpoint, previousTable, previousCutter);
                     if (searches > MAX_SEARCH) break;
                 }
                 if (!crafted) return false;
@@ -129,7 +138,7 @@ public final class CompanionCrafting {
         for (ItemStack choice : choices) {
             NonNullList<ItemStack> trial = copy(bag);
             int checkpoint = steps.size();
-            boolean previousTable = needsTable;
+            boolean previousTable = needsTable, previousCutter = usedCutter;
             if (ensure(trial, choice.getItem(), 1)) {
                 ItemStack actual = takeMatching(trial, ingredient, choice.getItem());
                 if (!actual.isEmpty()) {
@@ -141,15 +150,55 @@ public final class CompanionCrafting {
                 }
             }
             grid[index] = ItemStack.EMPTY;
-            rollback(checkpoint, previousTable);
+            rollback(checkpoint, previousTable, previousCutter);
             if (searches > MAX_SEARCH) break;
         }
         return false;
     }
 
-    private void rollback(int checkpoint, boolean previousTable) {
+    /** «1 X на камнерезе» four times over reads as «4 X на камнерезе»: the same step in a row is said once with the counts added. */
+    private static List<String> merged(List<String> steps) {
+        List<String> result = new ArrayList<>();
+        for (String step : steps) {
+            int last = result.size() - 1, space = step.indexOf(' ');
+            String what = step.substring(space + 1);
+            if (last >= 0 && result.get(last).substring(result.get(last).indexOf(' ') + 1).equals(what) && space > 0) {
+                String previous = result.get(last);
+                result.set(last, (Integer.parseInt(previous.substring(0, previous.indexOf(' '))) + Integer.parseInt(step.substring(0, space))) + " " + what);
+            } else result.add(step);
+        }
+        return result;
+    }
+
+    /** At the stonecutter: one block in, the recipe's count out. Never costs more than the bench, often less (stairs). */
+    private boolean cut(NonNullList<ItemStack> bag, Item target) {
+        for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.STONECUTTING)) {
+            ItemStack output = holder.value().getResultItem(level.registryAccess());
+            if (output.getItem() != target) continue;
+            Ingredient ingredient = holder.value().getIngredients().getFirst();
+            for (ItemStack option : ingredient.getItems()) {
+                NonNullList<ItemStack> trial = copy(bag);
+                int checkpoint = steps.size();
+                boolean previousTable = needsTable, previousCutter = usedCutter;
+                if (ensure(trial, option.getItem(), 1) && !takeMatching(trial, ingredient, option.getItem()).isEmpty()) {
+                    if (store(trial, output.copy())) {
+                        replace(bag, trial);
+                        usedCutter = true;
+                        steps.add(output.getCount() + " " + output.getHoverName().getString() + " на камнерезе");
+                        return true;
+                    }
+                    inventoryFull = true;
+                }
+                rollback(checkpoint, previousTable, previousCutter);
+                if (searches > MAX_SEARCH) return false;
+            }
+        }
+        return false;
+    }
+
+    private void rollback(int checkpoint, boolean previousTable, boolean previousCutter) {
         while (steps.size() > checkpoint) steps.removeLast();
-        needsTable = previousTable;
+        needsTable = previousTable; usedCutter = previousCutter;
     }
 
     private static ItemStack takeMatching(List<ItemStack> bag, Ingredient ingredient, Item item) {
