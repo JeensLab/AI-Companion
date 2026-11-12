@@ -92,18 +92,25 @@ public final class CompanionGatherBlockTests {
         });
     }
 
-    /** Clay in the ground gives its four balls; the poppies by the player's chest are his, so the red dye is made of the rose bush farther off. */
+    /**
+     * Clay in the ground gives its four balls, the clay under water nearer to him is left; the poppies by the player's chest are his, so
+     * the red dye is made of the rose bush farther off. The bush stands in a hollow, its top half the nearer one: it is taken by its foot.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void clayIsDugAndThePlayersFlowersAreLeftForTheWildOnes(GameTestHelper h) {
         ground(h);
         h.setBlock(new BlockPos(18, GROUND, 12), Blocks.CLAY);
+        BlockPos wet = new BlockPos(15, GROUND - 1, 14);
+        h.setBlock(wet, Blocks.CLAY);
+        h.setBlock(wet.above(), Blocks.WATER);
         CompanionEntity c = spawn(h, 14, 16);
         c.setItem(0, new ItemStack(Items.WOODEN_SHOVEL));
         // A chest of his on the surface makes it a building of his (CompanionPlayerBuilds.HOME_SCORE): the flower bed by it is part of it.
         placedByPlayer(h, c, new BlockPos(3, GROUND + 1, 3), Blocks.CHEST);
         List<BlockPos> bed = List.of(new BlockPos(4, GROUND + 1, 5), new BlockPos(5, GROUND + 1, 5));
         for (BlockPos cell : bed) placedByPlayer(h, c, cell, Blocks.POPPY);
-        BlockPos bush = new BlockPos(24, GROUND + 1, 24);
+        BlockPos bush = new BlockPos(24, GROUND, 24);
+        h.setBlock(bush, Blocks.AIR);
         h.setBlock(bush, Blocks.ROSE_BUSH);
         h.setBlock(bush.above(), Blocks.ROSE_BUSH.defaultBlockState().setValue(DoublePlantBlock.HALF, DoubleBlockHalf.UPPER));
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:clay_ball\",\"count\":4},{\"action\":\"obtain_item\",\"item\":\"minecraft:red_dye\",\"count\":2}]");
@@ -114,6 +121,7 @@ public final class CompanionGatherBlockTests {
             h.assertTrue(count(c, Items.RED_DYE) == 2, "Not two red dye: " + count(c, Items.RED_DYE) + ", " + report);
             for (BlockPos cell : bed) h.assertBlockPresent(Blocks.POPPY, cell);
             h.assertBlockNotPresent(Blocks.ROSE_BUSH, bush);
+            h.assertBlockPresent(Blocks.CLAY, wet);
         });
     }
 
