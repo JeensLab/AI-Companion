@@ -120,6 +120,7 @@ final class CompanionMobDrops {
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
         kinds = asked == null || !(c.level() instanceof ServerLevel level) || level.dimension() != Level.OVERWORLD ? List.of() : sources(level, asked);
         if (kinds.isEmpty()) return CompanionActionResult.failed("Такое я с монстров не добываю: " + id + ".");
+        if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) return CompanionActionResult.blocked("Я ранен: в бой за «" + new ItemStack(asked).getHoverName().getString() + "» сейчас не пойду. Поем — тогда.");
         item = asked; wanted = count; before = w.items.countCarried(item);
         passed.clear();
         return null;
@@ -132,6 +133,8 @@ final class CompanionMobDrops {
     void tick(ServerLevel level) {
         int got = got();
         if (got >= wanted) { end(CompanionActionResult.ok("Добыл: «" + name() + "», " + got + " шт.")); return; }
+        // Hurt, he does not go on striking first: what comes for him he still meets, as always.
+        if (c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) { end(CompanionActionResult.blocked("Меня сильно побили, дальше в бой не лезу. Добыл «" + name() + "»: " + got + " из " + wanted + ".")); return; }
         List<Mob> alive = targets(c, level, kinds, passed);
         if (alive.isEmpty()) {
             c.setTarget(null);

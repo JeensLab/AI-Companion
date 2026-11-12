@@ -58,12 +58,15 @@ public final class CompanionObtain {
     /** Whether a monster that drops the item is about him now; null when the world about him is not known: none is hunted then. */
     private final java.util.function.Predicate<Item> roams;
     private final Map<Item, Boolean> roamed = new HashMap<>();
+    /** He carries a sword or an axe for a fight. */
+    private final boolean blade;
     /** What he would pick and does not see about him: named when the plan is refused. */
     private final Set<String> absent = new java.util.LinkedHashSet<>();
     private static final String ABSENT = "Рядом не вижу";
 
     private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams) {
         this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams;
+        blade = carried.stream().anyMatch(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
 
@@ -179,7 +182,8 @@ public final class CompanionObtain {
         if (picked(item)) return addSplit("gather_block", key, count, 64);
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
         List<String> prey = CompanionMobDrops.names(level, item);
-        if (hunted(item)) return addSplit("hunt_drop", key, count, 64);
+        // Not with bare hands (in game 12.11: five spiders, one killed, and he was dead): a wooden sword first, unless he carries a blade.
+        if (hunted(item)) return (armed() || need("minecraft:wooden_sword", 1, depth + 1)) && addSplit("hunt_drop", key, count, 64);
         if (!CompanionPickable.sources(level, item).isEmpty()) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
         if (!prey.isEmpty()) { absent.add(name(item) + " (" + String.join(", ", prey) + ")"); return refuse(ABSENT + ", с кого добыть «" + name(item) + "» (" + String.join(", ", prey) + "): такие выходят ночью и в пещерах."); }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
@@ -268,6 +272,11 @@ public final class CompanionObtain {
 
     private boolean picked(Item item) {
         return grows != null && !CompanionPickable.sources(level, item).isEmpty() && grown.computeIfAbsent(item, grows::test);
+    }
+
+    /** A blade for the fight is his: carried, or made earlier in this plan. */
+    private boolean armed() {
+        return blade || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:wooden_sword"));
     }
 
     private boolean hunted(Item item) {

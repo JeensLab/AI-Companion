@@ -39,12 +39,16 @@ public final class CompanionMobDropsTests {
     public static void whatAMonsterDropsIsPlannedAsAHunt(GameTestHelper h) {
         var level = h.getLevel();
         for (String item : List.of("minecraft:string", "minecraft:bone", "minecraft:gunpowder", "minecraft:ender_pearl", "minecraft:slime_ball", "minecraft:rotten_flesh")) {
-            var plan = CompanionObtain.plan(level, List.of(), false, item, 3, thing -> false, thing -> true);
+            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_AXE)), false, item, 3, thing -> false, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("hunt_drop", item, 3))), item + ": " + plan);
         }
         var bow = CompanionObtain.plan(level, List.of(), true, "minecraft:bow", 1, thing -> false, thing -> true);
         h.assertTrue(!bow.refused() && bow.steps().contains(new CompanionObtain.Step("hunt_drop", "minecraft:string", 3))
                 && bow.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:bow", 1)), "Bow: " + bow);
+        // Bare hands: a wooden sword is made first, once for the whole plan.
+        var bare = CompanionObtain.plan(level, List.of(), true, "minecraft:string", 2, thing -> false, thing -> true);
+        h.assertTrue(bare.steps().equals(List.of(new CompanionObtain.Step("gather_wood", "", 2), new CompanionObtain.Step("craft_item", "minecraft:wooden_sword", 1),
+                new CompanionObtain.Step("hunt_drop", "minecraft:string", 2))), "String with bare hands: " + bare);
         // None about: said before anything starts, with who he looked for.
         var none = CompanionObtain.plan(level, List.of(), true, "minecraft:bow", 1, thing -> false, thing -> false);
         h.assertTrue(none.refused() && none.steps().isEmpty() && none.refusal().contains("Рядом не вижу") && none.refusal().contains("Spider"), "Bow with no spider about: " + none);
