@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
@@ -57,6 +58,12 @@ final class CompanionHouse {
     /** Builds a building of the catalogue (saved under its own key) instead of the plank house. */
     private final boolean template;
     private CompanionVillageBuildings.Building building;
+    /** The turn of the template the building is built in; saved with it (a save without one is not turned). */
+    private Rotation rotation = Rotation.NONE;
+    /** The game time the building waits for the player to set it down until (CompanionBuildPlacement); -1 while it waits for no one. */
+    private long awaitUntil = -1;
+    /** What the player was told of the building: shown while he is asked for the place. */
+    private String awaitText = "";
     private CompanionTemplates.Loaded loaded;
     /** The number of blocks of the saved building: known before its template is read again after a load. */
     private int total;
@@ -98,9 +105,26 @@ final class CompanionHouse {
     /** A building of the catalogue: the one already under way goes on, any other (or a finished one) starts at a new site. */
     void begin(CompanionVillageBuildings.Building next) {
         if (building != next || base != null && placed.cardinality() == total) {
-            building = next; loaded = null; steps = List.of(); total = 0; base = null; placed.clear(); workbench = null; elsewhere = null; materials.reset();
+            building = next; loaded = null; steps = List.of(); total = 0; base = null; placed.clear(); workbench = null; elsewhere = null; materials.reset(); rotation = Rotation.NONE;
         }
         begin();
+    }
+
+    boolean sited() { return base != null; }
+    CompanionVillageBuildings.Building building() { return building; }
+    /** From a fresh order until the player confirms where it goes (or the game time {@code until} comes): nothing is placed, dug or gathered. */
+    void awaitPlacement(long until, String told) { awaitUntil = until; awaitText = told; }
+    boolean awaiting() { return awaitUntil >= 0; }
+
+    /** Sets the building down with its lowest corner at {@code corner}, turned; the reason it cannot stand there, or null once it is set. */
+    String place(ServerLevel level, BlockPos corner, Rotation turn) {
+        var read = CompanionTemplates.load(level, building, turn);
+        if (read == null) return "не нашёл в игре шаблон постройки «" + building.name() + "».";
+        if (level.isOutsideBuildHeight(corner.below(2)) || level.isOutsideBuildHeight(corner.above(read.sizeY()))) return "это за пределами высоты мира.";
+        clearing.use(read);
+        if (clearing.assess(level, corner, true, clearing.playerSites(level)) < 0) return clearing.refusal();
+        loaded = read; rotation = turn; base = corner.immutable(); awaitUntil = -1;
+        return null;
     }
 
     /** A saved building or house with blocks still to place. */
@@ -122,7 +146,7 @@ final class CompanionHouse {
         path = null;
         cooldown = 0;
         onScaffold = false; scaffold.reset();
-        clearing.reset(); cleared = false;
+        clearing.reset(); cleared = false; awaitUntil = -1;
         // Placed blocks and the blueprint belong to the world, not the active command.
     }
 
@@ -162,12 +186,13 @@ final class CompanionHouse {
 
     private Result loadTemplate(ServerLevel level) {
         if (!template || loaded != null) return null;
-        loaded = CompanionTemplates.load(level, building);
+        loaded = CompanionTemplates.load(level, building, rotation);
         if (loaded != null) clearing.use(loaded);
         return loaded == null ? Result.failed("Не нашёл в игре шаблон постройки «" + building.name() + "».") : null;
     }
 
     Result ensureSite(ServerLevel level) {
+        if (awaiting()) return null;
         Result unreadable = loadTemplate(level);
         if (unreadable != null) return unreadable;
         if (base != null) return null;
@@ -178,6 +203,11 @@ final class CompanionHouse {
     }
 
     Result tick(ServerLevel level) {
+        if (awaiting()) {
+            if (level.getGameTime() < awaitUntil) { owner.workStatus(awaitText); return Result.working(); }
+            awaitUntil = -1;
+            return Result.failed("Место для «" + building.name() + "» не выбрано за " + CompanionBuildPlacement.TIMEOUT_TICKS / 1200 + " минуты, строить не буду. Ничего не тронул.");
+        }
         if (!template) return build(level);
         Result onTheColumn = scaffoldStep(level);
         if (onTheColumn != null) return onTheColumn;
@@ -693,7 +723,7 @@ final class CompanionHouse {
         if (base == null) { if (elsewhere != null) tag.put(key(), elsewhere.copy()); return; }
         CompoundTag data = new CompoundTag();
         data.putLong("Base", base.asLong());
-        if (template) { data.putString("Building", building.name()); data.putInt("Total", total); scaffold.save(data); data.put("Woods", materials.save()); }
+        if (template) { data.putString("Building", building.name()); data.putInt("Rotation", rotation.ordinal()); data.putInt("Total", total); scaffold.save(data); data.put("Woods", materials.save()); }
         else data.putString("Wood", wood);
         data.putString("Dimension", owner.level().dimension().location().toString());
         data.putLongArray("Placed", placed.toLongArray());
@@ -702,13 +732,14 @@ final class CompanionHouse {
     }
     void load(CompoundTag tag) {
         base = null; workbench = null; placed.clear(); scaffold.forget(); begin(); elsewhere = null;
-        if (template) { building = null; loaded = null; steps = List.of(); total = 0; materials.reset(); }
+        if (template) { building = null; loaded = null; steps = List.of(); total = 0; materials.reset(); rotation = Rotation.NONE; }
         CompoundTag data = tag.getCompound(key());
         if (!data.contains("Base") || (template ? CompanionVillageBuildings.find(data.getString("Building")) == null : !WOODS.contains(data.getString("Wood")))) return;
         if (!owner.level().dimension().location().toString().equals(data.getString("Dimension"))) { elsewhere = data.copy(); return; }
         base = BlockPos.of(data.getLong("Base"));
         if (template) {
             building = CompanionVillageBuildings.find(data.getString("Building")); total = data.getInt("Total"); scaffold.load(data);
+            rotation = Rotation.values()[Math.floorMod(data.getInt("Rotation"), Rotation.values().length)];
             if (data.contains("Woods")) materials.load(data.getCompound("Woods"));
         }
         else { wood = data.getString("Wood"); steps = blueprint(); }

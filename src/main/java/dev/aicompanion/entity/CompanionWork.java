@@ -402,6 +402,8 @@ public final class CompanionWork {
     /** The species of logs the work cuts: named by a wood order, chosen by a building; null for any. */
     CompanionWoodKind woodKind() { return job == Job.WOOD ? CompanionWoodKind.of(requestedItem) : job == Job.HOUSE && templateJob ? templateHouse.logKind() : null; }
     /** Stone a building under way has set aside: no tool is made of it. */
+    /** The building this order waits to have placed (CompanionBuildPlacement), or null. */
+    CompanionHouse awaitingHouse() { return job == Job.HOUSE && templateJob && templateHouse.awaiting() ? templateHouse : null; }
     int buildingStone() { return job == Job.HOUSE && templateJob ? templateHouse.stoneReserve() : 0; }
 
     /** What an unfinished template building still takes of the item: not to be spent on anything else (path lights, tools). */
@@ -506,7 +508,7 @@ public final class CompanionWork {
                 // No name and no «resume» is always the plank house.
                 templateJob = named != null || resume && templateHouse.unfinished() && !house.unfinished();
                 job = Job.HOUSE; phase = Phase.BUILD;
-                if (named != null) templateHouse.begin(named); else if (templateJob) templateHouse.begin(); else house.begin();
+                if (named != null) { templateHouse.begin(named); CompanionBuildPlacement.ask(owner, templateHouse); } else if (templateJob) templateHouse.begin(); else house.begin();
             }
             case "build_pen" -> { CompanionActionResult refusal = pen.begin(item, count); if (refusal != null) return refusal; job = Job.PEN; phase = Phase.PEN; }
             case "breed_animals" -> { CompanionActionResult refusal = breeding.begin(item, count); if (refusal != null) return refusal; job = Job.BREED; phase = Phase.BREED; }
@@ -673,7 +675,7 @@ public final class CompanionWork {
      * counters and no new status. Waiting at a loaded furnace is checked by its product instead.
      */
     private boolean stalled() {
-        if (phase == Phase.COOK) { stallTicks = 0; return false; }
+        if (phase == Phase.COOK || awaitingHouse() != null) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());
         if (news || signature != stallSignature || stallAnchor == null || owner.position().distanceToSqr(stallAnchor) >= 2 * 2) {

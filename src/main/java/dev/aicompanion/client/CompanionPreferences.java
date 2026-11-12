@@ -39,6 +39,7 @@ public final class CompanionPreferences {
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             if (player == null) return;
+            dev.aicompanion.entity.CompanionBuildPlacement.clientReady(player);
             CompanionMemoryView.pull(player, longTerm, digest -> client.execute(() -> {
                 if (client.level == clientWorld) CompanionMemoryView.deliver(session, forgetEpoch, digest, longTerm);
             }));

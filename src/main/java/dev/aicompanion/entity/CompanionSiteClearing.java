@@ -42,10 +42,15 @@ final class CompanionSiteClearing {
     private long progress;
     private double best;
     private String message = "";
+    /** Why the last site assessed was refused, for the player. */
+    private String refusal = "";
+    private static final String FREE_IT = " Освободи место и скажи «дострой».";
 
     CompanionSiteClearing(CompanionEntity owner, CompanionHouse house) { this.owner = owner; this.house = house; breaking = new CompanionBlockBreaking(owner); }
 
     String message() { return message; }
+    String refusal() { return refusal; }
+    private int no(String reason) { refusal = reason; return -1; }
 
     void use(CompanionTemplates.Loaded loaded) {
         sizeX = loaded.sizeX(); sizeY = loaded.sizeY(); sizeZ = loaded.sizeZ();
@@ -100,7 +105,7 @@ final class CompanionSiteClearing {
                 : !natural(state) || state.is(BlockTags.LOGS) && players.test(pos) ? "это не выросло само, похоже на постройку игрока; ломать не буду."
                 : state.requiresCorrectToolForDrops() && !hasTool(state) ? "мне нечем его сломать, нужен подходящий инструмент."
                 : null;
-        return why == null ? null : "Мешает «" + state.getBlock().getName().getString() + "» на " + pos.toShortString() + ": " + why + " Освободи место и скажи «дострой».";
+        return why == null ? null : "Мешает «" + state.getBlock().getName().getString() + "» на " + pos.toShortString() + ": " + why + FREE_IT;
     }
 
     // ---- the search for a site
@@ -114,34 +119,35 @@ final class CompanionSiteClearing {
         int cost = 0;
         for (int x = -1; x <= sizeX; x++) for (int z = -1; z <= sizeZ; z++) {
             BlockPos below = corner.offset(x, -1, z);
-            if (!level.hasChunkAt(below)) return -1;
+            if (!level.hasChunkAt(below)) return no("это место не загружено.");
             if (outside(new BlockPos(x, 0, z))) {
                 // Around the site only the ground to walk on is looked at: no pit, no fluid.
-                for (int y = 0; y <= 2; y++) if (!level.hasChunkAt(corner.offset(x, y, z)) || !level.getFluidState(corner.offset(x, y, z)).isEmpty()) return -1;
-                if (!sturdy(level, corner.offset(x, 0, z)) && !sturdy(level, below)) return -1;
+                for (int y = 0; y <= 2; y++) if (!level.hasChunkAt(corner.offset(x, y, z)) || !level.getFluidState(corner.offset(x, y, z)).isEmpty()) return no("рядом с площадкой вода или лава, или место не загружено.");
+                if (!sturdy(level, corner.offset(x, 0, z)) && !sturdy(level, below)) return no("рядом с площадкой яма: нет твёрдой земли на " + below.toShortString() + ".");
                 continue;
             }
-            if (!sturdy(level, below) || !level.getFluidState(below).isEmpty()) return -1;
+            if (!sturdy(level, below) || !level.getFluidState(below).isEmpty()) return no("под зданием на " + below.toShortString() + " нет твёрдой опоры или там жидкость.");
             for (int y = 0; y < sizeY; y++) {
                 BlockPos pos = corner.offset(x, y, z);
-                if (!level.hasChunkAt(pos)) return -1;
+                if (!level.hasChunkAt(pos)) return no("это место не загружено.");
                 BlockState state = level.getBlockState(pos);
-                if (!level.getFluidState(pos).isEmpty()) return -1;
+                if (!level.getFluidState(pos).isEmpty()) return no("на площадке вода или лава (" + pos.toShortString() + ").");
                 boolean building = own.contains(new BlockPos(x, y, z));
                 // The floor is sunk: ground (or the trunk standing in it) is where the floor goes. Air or grass there means the floor would lie on the ground.
                 if (y == 0 && !building) continue;
-                if (y == 0 && (state.isAir() || state.canBeReplaced())) return -1;
+                if (y == 0 && (state.isAir() || state.canBeReplaced())) return no("пол встал бы на траву или в воздухе (" + pos.toShortString() + "): его нужно опустить в землю, на склон или в яму так нельзя.");
                 if (state.isAir()) continue;
-                if (obstruction(level, pos, players) != null) return -1;
-                if (y >= 2 && terrain(state)) return -1;
+                String blocked = obstruction(level, pos, players);
+                if (blocked != null) return no(blocked.replace(FREE_IT, ""));
+                if (y >= 2 && terrain(state)) return no("холм выше блока (" + pos.toShortString() + ").");
                 if (y >= 1 && state.getDestroySpeed(level, pos) > 0) cost++;
             }
         }
         for (Door door : doors) {
             BlockPos before = corner.offset(door.rel()).relative(door.out());
-            if (!passable(level, before) || !passable(level, before.above()) || !sturdy(level, before.below()) && !sturdy(level, before.below(2))) return -1;
+            if (!passable(level, before) || !passable(level, before.above()) || !sturdy(level, before.below()) && !sturdy(level, before.below(2))) return no("перед дверью на " + before.toShortString() + " нет свободного прохода или опоры.");
         }
-        return digging || cost == 0 ? cost : -1;
+        return digging || cost == 0 ? cost : no("площадку пришлось бы расчищать.");
     }
     private static boolean sturdy(ServerLevel level, BlockPos pos) { return level.getBlockState(pos).isFaceSturdy(level, pos, Direction.UP) && level.getFluidState(pos).isEmpty(); }
     private static boolean passable(ServerLevel level, BlockPos pos) {

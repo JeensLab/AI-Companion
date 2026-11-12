@@ -11,11 +11,14 @@ import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.LadderBlock;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.WallSignBlock;
 import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -36,8 +39,8 @@ final class CompanionTemplates {
 
     private CompanionTemplates() { }
 
-    /** The template of the building, or null when the game has none by that id. */
-    static Loaded load(ServerLevel level, CompanionVillageBuildings.Building building) {
+    /** The template of the building turned {@code rotation} (by the game's own rules for a template), or null when the game has none by that id. */
+    static Loaded load(ServerLevel level, CompanionVillageBuildings.Building building, Rotation rotation) {
         var template = level.getServer().getStructureManager().get(building.template()).orElse(null);
         if (template == null) return null;
         // The template's saved form is the public view of its palette and blocks. Block entities (the «nbt» of a block) are never read: they stand empty.
@@ -59,7 +62,22 @@ final class CompanionTemplates {
         for (BlockPos rel : bottomUp) if (rel.getY() > 0 && (!solid.containsKey(rel.below()) || late.contains(rel.below()))) late.add(rel);
         List<Cell> cells = new ArrayList<>();
         for (BlockPos rel : bottomUp) if (!secondHalf(solid.get(rel))) cells.add(new Cell(rel, solid.get(rel), stage(solid.get(rel), rel, late.contains(rel))));
-        return new Loaded(size.getInt(0), size.getInt(1), size.getInt(2), List.copyOf(cells));
+        return turn(new Loaded(size.getInt(0), size.getInt(1), size.getInt(2), List.copyOf(cells)), rotation);
+    }
+
+    /** The building turned the way StructureTemplate turns a template (cells and block states), its footprint's lowest corner kept at the origin. */
+    private static Loaded turn(Loaded read, Rotation rotation) {
+        if (rotation == Rotation.NONE) return read;
+        // The footprint's other corner decides how far the turn pushed it below zero (its first corner, the origin, stays).
+        BlockPos far = StructureTemplate.transform(new BlockPos(read.sizeX() - 1, 0, read.sizeZ() - 1), Mirror.NONE, rotation, BlockPos.ZERO);
+        int shiftX = -Math.min(0, far.getX()), shiftZ = -Math.min(0, far.getZ());
+        List<Cell> cells = new ArrayList<>();
+        for (Cell cell : read.cells()) {
+            BlockPos at = StructureTemplate.transform(cell.rel(), Mirror.NONE, rotation, BlockPos.ZERO).offset(shiftX, 0, shiftZ);
+            cells.add(new Cell(at, cell.state().rotate(rotation), cell.stage()));
+        }
+        boolean swap = rotation == Rotation.CLOCKWISE_90 || rotation == Rotation.COUNTERCLOCKWISE_90;
+        return new Loaded(swap ? read.sizeZ() : read.sizeX(), read.sizeY(), swap ? read.sizeX() : read.sizeZ(), List.copyOf(cells));
     }
 
     /** The upper half of a door and the head of a bed are put down with the lower half and the foot. */
