@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.decoration.HangingEntity;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -14,6 +15,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Set;
@@ -66,6 +68,20 @@ final class CompanionHouseSite {
             if (level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP) && level.noCollision(new AABB(pos))) return pos;
         }
         return null;
+    }
+
+    /** A block is in sight from the eye: the visible faces and edges are looked at, as a player would. */
+    boolean visible(ServerLevel level, Vec3 eye, BlockPos pos) {
+        // A ray to the cube center alone is hidden by the finished wall beneath a roof tile or by an adjacent half-slab.
+        double x = Math.clamp(eye.x, pos.getX() + .01, pos.getX() + .99);
+        double z = Math.clamp(eye.z, pos.getZ() + .01, pos.getZ() + .99);
+        double y = Math.clamp(eye.y, pos.getY() + .01, pos.getY() + .99);
+        for (Vec3 aim : new Vec3[]{new Vec3(x, y, z), new Vec3(x, pos.getY() + .49, z), pos.getCenter()}) {
+            if (eye.distanceToSqr(aim) > 4.5 * 4.5) continue;
+            var hit = level.clip(new ClipContext(eye, aim, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, owner));
+            if (hit.getType() == HitResult.Type.MISS || hit.getBlockPos().equals(pos)) return true;
+        }
+        return false;
     }
 
     // ---- the cells of the building and what stands in them

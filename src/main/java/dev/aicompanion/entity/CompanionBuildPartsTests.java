@@ -189,6 +189,35 @@ public final class CompanionBuildPartsTests {
         });
     }
 
+    // ---- what stands round the box
+
+    /** When no way to the blocks is found, what is left standing above the roof and beside the walls is named with where it is (never the ground, never air). */
+    @GameTest(template = "tall_tree")
+    public static void whatStandsAboveTheRoofIsNamedWhereItCanBeTold(GameTestHelper h) {
+        var level = h.getLevel();
+        // The arena of the empty template has a ceiling of barriers, the tall one a tree: both are swept from the place.
+        for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(6, 2, 6), new BlockPos(16, 12, 16))) h.setBlock(rel, Blocks.AIR);
+        CompanionEntity oleg = h.spawn(AICompanionMod.COMPANION.get(), 2, 1, 2);
+        var read = CompanionTemplates.load(level, CompanionVillageBuildings.find("пустынный дом"), Rotation.NONE);
+        var clearing = new CompanionSiteClearing(oleg, new CompanionHouse(oleg, true));
+        clearing.use(read);
+        BlockPos base = h.absolutePos(new BlockPos(8, 2, 8));
+        h.assertTrue(clearing.inTheWay(level, base).isEmpty(), "Something was named in an empty place: " + clearing.inTheWay(level, base));
+        level.setBlock(base.offset(-1, 0, 2), Blocks.DIRT.defaultBlockState(), 3);
+        h.assertTrue(clearing.inTheWay(level, base).isEmpty(), "The ground was named");
+        BlockPos beside = base.offset(-1, 2, 2), above = base.offset(2, read.sizeY(), 2);
+        level.setBlock(beside, Blocks.OAK_LOG.defaultBlockState(), 3);
+        String said = clearing.inTheWay(level, base);
+        h.assertTrue(said.contains("Рядом со стенами") && said.contains(beside.toShortString()), "The log beside the wall was not named: " + said);
+        level.setBlock(above, Blocks.DARK_OAK_LEAVES.defaultBlockState(), 3);
+        said = clearing.inTheWay(level, base);
+        h.assertTrue(said.contains("Над крышей") && said.contains(above.toShortString()), "What is above the roof comes first: " + said);
+        level.setBlock(above, Blocks.AIR.defaultBlockState(), 3); level.setBlock(beside, Blocks.AIR.defaultBlockState(), 3);
+        level.setBlock(base.offset(2, read.sizeY() + 2, 2), Blocks.OAK_LOG.defaultBlockState(), 3);
+        h.assertTrue(clearing.inTheWay(level, base).isEmpty(), "A cell beyond the head room was named");
+        h.succeed();
+    }
+
     // ---- the dirt for the scaffolding
 
     /** Dirt is not dug from the ground the building stands on and walks in from, nor from its scaffolding; away from it, it is. */

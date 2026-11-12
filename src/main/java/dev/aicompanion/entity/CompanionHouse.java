@@ -13,7 +13,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -25,7 +24,6 @@ import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -97,7 +95,9 @@ final class CompanionHouse {
     /** The site of a template building: its floor is sunk into the ground, what stands on it is cleared (read from the world again after a load). */
     private final CompanionSiteClearing clearing;
     private boolean cleared;
+    private int clearedSeen;
     private final CompanionHouseSite site;
+    private final CompanionSiteWalk walk;
     /** The wood and the rounds of getting what a template building lacks. */
     private final CompanionHouseMaterials materials;
     /** The blocks the bag has material for cannot be reached: the next round gets the rest first. Set down a block, and it is over. */
@@ -113,7 +113,7 @@ final class CompanionHouse {
     private String lost = "";
 
     CompanionHouse(CompanionEntity owner) { this(owner, false); }
-    CompanionHouse(CompanionEntity owner, boolean template) { this.owner = owner; this.template = template; scaffold = new CompanionScaffold(owner); clearing = new CompanionSiteClearing(owner, this); site = new CompanionHouseSite(this, owner, template, clearing); room = new CompanionHouseRoom(owner, site); materials = new CompanionHouseMaterials(owner); }
+    CompanionHouse(CompanionEntity owner, boolean template) { this.owner = owner; this.template = template; scaffold = new CompanionScaffold(owner); clearing = new CompanionSiteClearing(owner, this); site = new CompanionHouseSite(this, owner, template, clearing); walk = new CompanionSiteWalk(owner); room = new CompanionHouseRoom(owner, site); materials = new CompanionHouseMaterials(owner); }
 
     /**
      * A building of the catalogue: the one already under way goes on, any other (or a finished one) starts at a new site. What is left of the old
@@ -185,7 +185,7 @@ final class CompanionHouse {
     void begin() {
         prepared = false;
         cancel();
-        unreachable.clear(); forgetColumns(); afterScaffold = null; materials.restart(); skipAffordable = false;
+        unreachable.clear(); forgetColumns(); afterScaffold = null; materials.restart(); skipAffordable = false; lost = "";
         // Scaffolding left by an interruption comes down first.
         if (scaffold.hasBlocks()) scaffold.startDescend();
     }
@@ -195,7 +195,7 @@ final class CompanionHouse {
         path = null;
         cooldown = 0;
         onScaffold = false; scaffold.reset();
-        clearing.reset(); cleared = false; room.reset();
+        clearing.reset(); cleared = false; room.reset(); walk.reset();
         // An order that waited for its place and ended without one: what it was to replace is still his.
         if (stash != null && awaiting()) restoreDropped(); else stash = null;
         awaitUntil = -1;
@@ -246,14 +246,9 @@ final class CompanionHouse {
         return base == null && owner.work.route.busyAnswers() == busy ? Result.failed("Не нашёл ровную свободную площадку " + (width() + 2) + "×" + (depth() + 2) + " рядом. Давай выберем место попросторнее.") : null;
     }
 
-    Result tick(ServerLevel level) {
-        touched = level.getGameTime();
-        Result result = step(level);
-        if (lost.isEmpty() || result.state() == State.WORKING || result.state() == State.NEED_WOOD) return result;
-        String said = lost;
-        lost = "";
-        return new Result(result.state(), result.message() + " " + said, result.logs());
-    }
+    Result tick(ServerLevel level) { touched = level.getGameTime(); return step(level); }
+    /** What the scaffolding left on the ground, to be said with the end of the order, whichever way it ends (once: it is taken). */
+    String takeLost() { String said = lost; lost = ""; return said.isEmpty() ? "" : " " + said; }
 
     private Result step(ServerLevel level) {
         if (awaiting()) {
@@ -265,6 +260,9 @@ final class CompanionHouse {
             return Result.failed(said);
         }
         if (!template) return build(level);
+        // Far from the site (or from the scaffolding to take down) the walk there comes first; at his bench with materials to prepare he is where he is wanted.
+        Result away = needsPreparation() && owner.hasCraftingTableNearby() ? null : walk.go(level, scaffold.descending() ? scaffold.blocks() : List.of(), base, loaded, building.name());
+        if (away != null) return away;
         Result onTheColumn = scaffoldStep(level);
         if (onTheColumn != null) return onTheColumn;
         Result result = build(level);
@@ -280,7 +278,7 @@ final class CompanionHouse {
         if (scaffold.descending()) {
             var outcome = scaffold.descend(level);
             if (outcome == CompanionScaffold.Outcome.WORKING) { owner.workStatus("Разбираю леса."); return Result.working(); }
-            onScaffold = false; target = -1; path = null; lost += scaffold.takeNote();
+            onScaffold = false; target = -1; path = null; lost = (lost + " " + scaffold.takeNote()).strip();
             if (outcome == CompanionScaffold.Outcome.FAILED) { afterScaffold = null; return Result.failed(scaffold.failure() + " Стройку сохранил; скажи «дострой», когда будет можно."); }
             Result end = afterScaffold;
             afterScaffold = null;
@@ -322,10 +320,14 @@ final class CompanionHouse {
             if (checked != null) return checked;
             if (placed.cardinality() == steps.size()) return finished();
             if (template && !cleared) {
-                switch (clearing.tick(level, base, builtCells())) {
+                if (clearing.cleared() != clearedSeen) { clearedSeen = clearing.cleared(); forgetColumns(); }
+                switch (clearing.tick(level, base, builtCells(), onScaffold)) {
                     case WORKING -> { return Result.working(); }
                     case BLOCKED -> { return Result.failed(clearing.message()); }
-                    case READY -> cleared = true;
+                    // Out of reach from the ground: a column of dirt, as for the building's own blocks; none helps: a cell round the box is left, a block of it ends the order.
+                    case HIGH -> { Result up = columnFor(level, clearing.high(), null); return up != null ? up : clearing.noColumn(level) ? Result.failed(clearing.message()) : Result.working(); }
+                    case DOWN -> { onScaffold = false; scaffold.startDescend(); return Result.working(); }
+                    case READY -> { cleared = true; if (onScaffold) { onScaffold = false; scaffold.startDescend(); return Result.working(); } }
                 }
             }
             Result stocked = prepareMaterials(level);
@@ -386,14 +388,14 @@ final class CompanionHouse {
                 if (up != null) return up;
             }
             if (target < 0 && template && !skipAffordable && lacksMaterial()) { skipAffordable = true; prepared = false; return Result.working(); }
-            if (target < 0) return Result.failed("Не могу подойти к оставшимся блокам дома. Освободи проход и скажи «дострой дом».");
+            if (target < 0) return Result.failed("Не могу подойти к оставшимся блокам дома. " + (template ? clearing.inTheWay(level, base) : "") + "Освободи проход и скажи «дострой дом».");
         }
         Step step = steps.get(target);
         if (!site.free(level, step)) {
             if (!template) return Result.failed("Место для следующего блока занято. Сохранил стройку; продолжу, когда освободишь место.");
             return switch (clearing.clear(level, base, site.vacant(level, step.pos) ? step.second() : step.pos)) {
                 case BLOCKED -> Result.failed(clearing.message());
-                case WORKING, READY -> Result.working();
+                case WORKING, READY, HIGH, DOWN -> Result.working();
             };
         }
         owner.getLookControl().setLookAt(step.pos.getX() + .5, step.pos.getY() + .5, step.pos.getZ() + .5);
@@ -463,27 +465,35 @@ final class CompanionHouse {
         for (int index = 0; index < steps.size(); index++)
             if (!placed.get(index) && steps.get(index).stage == stage && site.supported(level, steps.get(index)) && buildable(index, gate)) unreached.add(index);
         unreached.sort(Comparator.comparingDouble(index -> owner.distanceToSqr(steps.get(index).pos.getCenter())));
-        Set<BlockPos> cells = new java.util.HashSet<>();
-        for (Step step : steps) { cells.add(step.pos); if (step.second() != null) cells.add(step.second()); }
         int searched = 0;
         for (int index : unreached) {
             if (noColumn.contains(index)) continue;
             // Each search is many ray casts, and no column may help any block of the stage: a few per tick, the rest the next tick.
             if (searched++ >= COLUMN_SEARCHES_PER_TICK) return Result.working();
-            CompanionScaffoldColumns.Column column = CompanionScaffoldColumns.find(this, owner, level, base.getY(), steps.get(index).pos, steps.get(index).second(), cells, scaffoldTried);
-            if (column == CompanionScaffoldColumns.BUSY) return Result.working();
-            if (column == null) { noColumn.add(index); continue; }
-            int have = CompanionScaffold.supply(owner, this::stillNeeded);
-            if (have < column.levels()) {
-                // Dirt is dug where it lies; only when none is found is it asked of the player.
-                Result dig = materials.dirt(level, column.levels() - have);
-                return dig != null ? dig : Result.failed("Не хватает земли для лесов: нужно " + column.levels() + ", в сумке " + have + ". Положи землю в сумку и скажи «дострой».");
-            }
-            scaffoldTried.add(column.ground()); scaffolds++;
-            scaffold.begin(column.ground(), column.levels(), this::stillNeeded);
-            return Result.working();
+            Result up = columnFor(level, steps.get(index).pos, steps.get(index).second());
+            if (up == null) { noColumn.add(index); continue; }
+            return up;
         }
         return null;
+    }
+
+    /** A column of dirt from whose top the block at {@code pos} (and its other half) is within reach: working once it is put up, or dirt is dug for it, or the search goes on; null when no column helps. */
+    private Result columnFor(ServerLevel level, BlockPos pos, BlockPos second) {
+        if (scaffolds >= MAX_SCAFFOLDS) return null;
+        Set<BlockPos> cells = new java.util.HashSet<>();
+        for (Step step : steps) { cells.add(step.pos); if (step.second() != null) cells.add(step.second()); }
+        CompanionScaffoldColumns.Column column = CompanionScaffoldColumns.find(this, owner, level, base.getY(), pos, second, cells, scaffoldTried);
+        if (column == CompanionScaffoldColumns.BUSY) return Result.working();
+        if (column == null) return null;
+        int have = CompanionScaffold.supply(owner, this::stillNeeded);
+        if (have < column.levels()) {
+            // Dirt is dug where it lies; only when none is found is it asked of the player.
+            Result dig = materials.dirt(level, column.levels() - have);
+            return dig != null ? dig : Result.failed("Не хватает земли для лесов: нужно " + column.levels() + ", в сумке " + have + ". Положи землю в сумку и скажи «дострой».");
+        }
+        scaffoldTried.add(column.ground()); scaffolds++;
+        scaffold.begin(column.ground(), column.levels(), this::stillNeeded);
+        return Result.working();
     }
 
     /** He is waiting for a cell somebody stands in (the work does not count it as standing idle). */
@@ -717,19 +727,7 @@ final class CompanionHouse {
         if (step.second() != null) box = box.minmax(new AABB(step.second()));
         return level.noCollision(box) && visible(level, owner.getEyePosition(), step.pos);
     }
-    boolean visible(ServerLevel level, Vec3 eye, BlockPos pos) {
-        // Use visible faces/edges, as a player would. A ray to the cube center alone is
-        // hidden by the finished wall beneath a roof tile or by an adjacent half-slab.
-        double x = Math.clamp(eye.x, pos.getX() + .01, pos.getX() + .99);
-        double z = Math.clamp(eye.z, pos.getZ() + .01, pos.getZ() + .99);
-        double y = Math.clamp(eye.y, pos.getY() + .01, pos.getY() + .99);
-        for (Vec3 aim : new Vec3[]{new Vec3(x, y, z), new Vec3(x, pos.getY() + .49, z), pos.getCenter()}) {
-            if (eye.distanceToSqr(aim) > 4.5 * 4.5) continue;
-            var hit = level.clip(new ClipContext(eye, aim, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, owner));
-            if (hit.getType() == HitResult.Type.MISS || hit.getBlockPos().equals(pos)) return true;
-        }
-        return false;
-    }
+    boolean visible(ServerLevel level, Vec3 eye, BlockPos pos) { return site.visible(level, eye, pos); }
     private boolean routeBusy;  boolean routeBusy() { return routeBusy; }
     /** The way to a cell from which the block at {@code pos} is within reach and in sight (for the site clearing); null when there is none. */
     Path routeToBlock(ServerLevel level, BlockPos pos) { return route(level, new Step(pos, Blocks.AIR.defaultBlockState(), 0)); }

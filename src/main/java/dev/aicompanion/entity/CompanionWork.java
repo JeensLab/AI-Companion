@@ -407,7 +407,9 @@ public final class CompanionWork {
     private CompanionHouse building() { return job == Job.HOUSE && templateJob && !templateHouse.awaiting() ? templateHouse : null; }
     /** The template building whose unbuilt cells are set aside: the one this order builds (also while it waits for its place), or one left unfinished. What they need is its material, not path lights or tools. */
     private CompanionHouse holding() { return job == Job.HOUSE && templateJob || templateHouse.unfinished() ? templateHouse : null; }
-    int buildingStone() { var now = holding(); return now == null ? 0 : now.stoneReserve(); }
+    /** Stone is held back for a building only while its own order runs or waits for its place: one left unfinished takes none from a stone order (torches are kept for it, buildingNeeds). */
+    int buildingStone() { return job == Job.HOUSE && templateJob ? templateHouse.stoneReserve() : 0; }
+    /** What the scaffolding left on the ground, said with the end of whatever order it is (once). */ private String houseNote() { return job == Job.HOUSE && templateJob ? templateHouse.takeLost() : ""; }
     int buildingNeeds(net.minecraft.world.item.Item item) { var now = holding(); return now == null ? 0 : now.reserved(item); }
     boolean buildingGround(BlockPos pos) { var now = building(); return now != null && now.holds(pos); }
     /** A step of a building (a block set down or cleared, a scaffold block up or down) is progress: the time of the order starts again. */
@@ -596,7 +598,7 @@ public final class CompanionWork {
         owner.allowNewBench(false); benchHere = false; packTarget = null;
         if (job != null && completedId != taskId) {
             completedId = taskId;
-            completedResult = CompanionActionResult.cancelled("Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote());
+            completedResult = CompanionActionResult.cancelled("Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;
@@ -897,7 +899,7 @@ public final class CompanionWork {
         owner.allowNewBench(false);
         boolean returning = job == Job.COME || job == Job.COURSE;
         if (!success && job == Job.STORE && transferred > 0) message = "Сложил " + transferred + " предметов. " + message + " Остальное осталось в моей сумке.";
-        message += (job == Job.SORT ? sorting.endNote() : "") + furnaces.furnaceNote() + trip.note();
+        message += (job == Job.SORT ? sorting.endNote() : "") + furnaces.furnaceNote() + trip.note() + houseNote();
         completedId = taskId;
         completedResult = new CompanionActionResult(success, message, result.status(), result.evidence());
         cancel();

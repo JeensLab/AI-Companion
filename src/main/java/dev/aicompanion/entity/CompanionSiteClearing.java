@@ -27,7 +27,14 @@ import java.util.function.Predicate;
  * clear are read from the world again after a stop and a reload. Ported in idea from the clearing of PR #6 (0r1k).
  */
 final class CompanionSiteClearing {
-    enum Outcome { WORKING, READY, BLOCKED }
+    /** HIGH: the cell is out of reach from the ground, a column of dirt is wanted (see {@link #high}). DOWN: nothing more is in reach from the column he stands on. */
+    enum Outcome { WORKING, READY, BLOCKED, HIGH, DOWN }
+    /**
+     * How many layers above the roof are kept free: the column that reaches the top row has him standing at most one cell above it
+     * (feet at the top row's level plus one) and his body takes that cell and the next. The ring round the box is one block wide: the
+     * cells beside the walls where a column of dirt and he on it, or he on the ground, stand.
+     */
+    private static final int HEADROOM = 2;
     private record Door(BlockPos rel, Direction out) { }
     private static final int GIVE_UP_TICKS = 160;
     private final CompanionEntity owner;
@@ -38,7 +45,10 @@ final class CompanionSiteClearing {
     private Set<BlockPos> own = Set.of();
     private List<Door> doors = List.of();
     private List<BlockPos> queue;
-    private BlockPos target, cell;
+    /** The cells of the queue that are no part of the box: what grows above the roof and in the ring beside the walls. They are cleared when they can be, and left when not. */
+    private final Set<BlockPos> extra = new HashSet<>();
+    private BlockPos target, cell, needsColumn;
+    private int cleared;
     private Path path;
     private long progress;
     private double best;
@@ -51,6 +61,9 @@ final class CompanionSiteClearing {
 
     String message() { return message; }
     String refusal() { return refusal; }
+    BlockPos high() { return needsColumn; }
+    /** How many blocks were cleared so far: a column that did not help is tried again once one was (the same rule as for the building's own blocks). */
+    int cleared() { return cleared; }
     private int no(String reason) { refusal = reason; return -1; }
 
     void use(CompanionTemplates.Loaded loaded) {
@@ -71,7 +84,7 @@ final class CompanionSiteClearing {
     private boolean outside(BlockPos rel) { return rel.getX() < 0 || rel.getX() >= sizeX || rel.getZ() < 0 || rel.getZ() >= sizeZ; }
 
     /** The start of every pass: the cells are read from the world again, a drop left by an interruption is gone for again. */
-    void reset() { breaking.reset(); queue = null; target = cell = null; path = null; }
+    void reset() { breaking.reset(); queue = null; target = cell = needsColumn = null; path = null; }
 
     // ---- what may be broken
 
@@ -179,30 +192,66 @@ final class CompanionSiteClearing {
     // ---- the work
 
     /**
-     * Frees the cells of the box above the floor (the building's and its air) that are not yet what the building put there; {@code built}
-     * is what already stands as planned. READY when nothing is left.
+     * Frees the cells of the box above the floor (the building's and its air) that are not yet what the building put there, and what grows
+     * above the roof and in the ring beside the walls ({@link #HEADROOM}); {@code built} is what already stands as planned. READY when
+     * nothing is left. {@code onScaffold}: he stands on a column, and only what is in sight from it is cleared.
      */
-    Outcome tick(ServerLevel level, BlockPos base, Set<BlockPos> built) {
+    Outcome tick(ServerLevel level, BlockPos base, Set<BlockPos> built, boolean onScaffold) {
         if (queue == null) {
-            queue = new ArrayList<>();
-            for (int x = 0; x < sizeX; x++) for (int y = 1; y < sizeY; y++) for (int z = 0; z < sizeZ; z++) {
+            queue = new ArrayList<>(); extra.clear();
+            var players = playerSites(level);
+            for (int x = -1; x <= sizeX; x++) for (int z = -1; z <= sizeZ; z++) for (int y = 1; y < sizeY + HEADROOM; y++) {
                 BlockPos pos = base.offset(x, y, z);
-                if (!built.contains(pos) && !level.getBlockState(pos).isAir()) queue.add(pos);
+                BlockState state = level.getBlockState(pos);
+                if (state.isAir()) continue;
+                if (!outside(new BlockPos(x, 0, z)) && y < sizeY) { if (!built.contains(pos)) queue.add(pos); continue; }
+                // Round the box only what grew and may be broken: not the ground, not what a player put there.
+                if (!terrain(state) && obstruction(level, pos, players) == null) { queue.add(pos); extra.add(pos); }
             }
             // What a stop left lying (the drops are not saved) is gone for again.
             owner.retryHarvestPickup();
         }
         while (!queue.isEmpty()) {
-            if (target == null) target = queue.stream().min(java.util.Comparator.comparingDouble(pos -> owner.distanceToSqr(pos.getCenter()))).orElseThrow();
-            Outcome outcome = clear(level, base, target);
+            if (target == null || onScaffold && !seen(level, target)) target = nearest(level, onScaffold);
+            if (target == null) { cell = null; breaking.reset(); return Outcome.DOWN; }
+            // Put there since by somebody (a block round the box is his to break only while it grows): left alone.
+            if (extra.contains(target) && obstruction(level, target) != null) { queue.remove(target); target = null; continue; }
+            Outcome outcome = clear(level, base, target, true);
             if (outcome != Outcome.READY) return outcome;
             queue.remove(target); target = null;
         }
         return Outcome.READY;
     }
+    private boolean seen(ServerLevel level, BlockPos pos) { return house.visible(level, owner.getEyePosition(), pos); }
+    private BlockPos nearest(ServerLevel level, boolean onScaffold) {
+        return queue.stream().filter(pos -> !onScaffold || seen(level, pos)).min(java.util.Comparator.comparingDouble(pos -> owner.distanceToSqr(pos.getCenter()))).orElse(null);
+    }
+
+    /** No column of dirt helps to reach the cell asked for: a block of the box he cannot reach ends the order (true), a cell round it is only left. */
+    boolean noColumn(ServerLevel level) {
+        BlockPos pos = needsColumn;
+        needsColumn = null;
+        if (extra.contains(pos)) { queue.remove(pos); target = null; cell = null; return false; }
+        message = unreachableText(level, pos);
+        return true;
+    }
+
+    /** What is left standing round the box where it can tell (above the roof, beside the walls), for the player when no way to the blocks is found; empty when nothing is. */
+    String inTheWay(ServerLevel level, BlockPos base) {
+        if (sizeY == 0) return "";
+        for (int y = sizeY + HEADROOM - 1; y >= 1; y--) for (int x = -1; x <= sizeX; x++) for (int z = -1; z <= sizeZ; z++) {
+            if (!outside(new BlockPos(x, 0, z)) && y < sizeY) continue;
+            BlockPos pos = base.offset(x, y, z);
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir() || state.getCollisionShape(level, pos).isEmpty() || natural(state) && terrain(state)) continue;
+            return (y >= sizeY ? "Над крышей" : "Рядом со стенами") + " мешает «" + state.getBlock().getName().getString() + "» на " + pos.toShortString() + ". ";
+        }
+        return "";
+    }
 
     /** One block: the way to it, then the swing with the right tool, then the harvest drops. READY once the cell is air. */
-    Outcome clear(ServerLevel level, BlockPos base, BlockPos pos) {
+    Outcome clear(ServerLevel level, BlockPos base, BlockPos pos) { return clear(level, base, pos, false); }
+    private Outcome clear(ServerLevel level, BlockPos base, BlockPos pos, boolean column) {
         BlockState state = level.getBlockState(pos);
         if (state.isAir()) { cell = null; breaking.reset(); return Outcome.READY; }
         String why = obstruction(level, pos);
@@ -224,30 +273,35 @@ final class CompanionSiteClearing {
             owner.swing(InteractionHand.MAIN_HAND);
             owner.dropHarvest(pos, drops);
             breaking.reset();
-            owner.work.progressed();
+            owner.work.progressed(); cleared++;
             return Outcome.WORKING;
         }
-        return approach(level, pos);
+        return approach(level, pos, column);
     }
 
-    private Outcome approach(ServerLevel level, BlockPos pos) {
+    private Outcome approach(ServerLevel level, BlockPos pos, boolean column) {
         double distance = owner.distanceToSqr(pos.getCenter());
         if (distance + .05 < best) { best = distance; progress = level.getGameTime(); }
-        if (level.getGameTime() - progress > GIVE_UP_TICKS) return unreachable(level, pos);
+        if (level.getGameTime() - progress > GIVE_UP_TICKS) return unreachable(level, pos, column);
         if (path == null || owner.getNavigation().isDone() || owner.getNavigation().isStuck()) {
             path = house.routeToBlock(level, pos);
             // This tick's cells went elsewhere: asked again next tick, not a failure.
             if (path == null && house.routeBusy()) return Outcome.WORKING;
-            if (path == null || !path.canReach()) return unreachable(level, pos);
+            if (path == null || !path.canReach()) return unreachable(level, pos, column);
         }
         owner.work.route.walk(path);
         return Outcome.WORKING;
     }
 
-    private Outcome unreachable(ServerLevel level, BlockPos pos) {
-        message = "Не могу подойти к «" + level.getBlockState(pos).getBlock().getName().getString() + "» на " + pos.toShortString() + ", чтобы расчистить. Убери его сам и скажи «дострой».";
+    /** No way to a cell where he can work it from: a column of dirt is tried for it when the caller can put one up (HIGH), else the order ends. */
+    private Outcome unreachable(ServerLevel level, BlockPos pos, boolean column) {
         path = null; cell = null; breaking.reset();
         owner.getNavigation().stop();
+        if (column) { needsColumn = pos; return Outcome.HIGH; }
+        message = unreachableText(level, pos);
         return Outcome.BLOCKED;
+    }
+    private static String unreachableText(ServerLevel level, BlockPos pos) {
+        return "Не могу подойти к «" + level.getBlockState(pos).getBlock().getName().getString() + "» на " + pos.toShortString() + ", чтобы расчистить. Убери его сам и скажи «дострой».";
     }
 }
