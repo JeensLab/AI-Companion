@@ -70,6 +70,13 @@ public final class CompanionObtainTests {
             var plan = CompanionObtain.plan(h.getLevel(), List.of(), false, item, 1);
             h.assertTrue(plan.refused() && plan.steps().isEmpty(), item + " is not what chopping or digging gives: " + plan);
         }
+        // What he already carries is his: «набери и дай» goes on to the giving.
+        for (Item item : List.of(Items.STRIPPED_OAK_LOG, Items.STRIPPED_BIRCH_WOOD, Items.BLACKSTONE, Items.COBBLED_DEEPSLATE)) {
+            var plan = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(item, 10)), false, net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString(), 5);
+            h.assertTrue(!plan.refused() && plan.steps().isEmpty(), "Ten carried, five asked: " + item + " " + plan);
+        }
+        var hyphae = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.CRIMSON_STEM, 3)), false, "minecraft:crimson_hyphae", 4);
+        h.assertTrue(hyphae.steps().equals(List.of(new CompanionObtain.Step("gather_wood", "minecraft:crimson_stem", 5), new CompanionObtain.Step("craft_item", "minecraft:crimson_hyphae", 4))), "Hyphae: " + hyphae);
         var cobble = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:cobblestone", 5);
         h.assertTrue(types(cobble).equals(List.of("gather_stone")), "Cobblestone: " + cobble);
         var wool = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:blue_wool", 1);

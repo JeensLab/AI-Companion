@@ -71,7 +71,8 @@ public final class CompanionObtain {
         if (species != null) return namedWood(carried, id, item, count);
         String target = key(item);
         // Stone is a family inside a chain only: asked for by name, digging promises cobblestone and nothing else.
-        if (target.equals(STONE) && item != Items.COBBLESTONE) return new Plan(List.of(), "Камень копаю какой попадётся: именно «" + name(item) + "» добыть не умею.");
+        if (target.equals(STONE) && item != Items.COBBLESTONE)
+            return new Plan(List.of(), carried(carried, item) >= count ? null : "Камень копаю какой попадётся: именно «" + name(item) + "» добыть не умею.");
         if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
         // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
@@ -82,16 +83,20 @@ public final class CompanionObtain {
         return new Plan(List.copyOf(merged(planner.steps)), null);
     }
 
-    /** «birch_wood»: four logs of that species make three; a stripped log or wood block is refused. */
+    private static int carried(List<ItemStack> carried, Item item) {
+        return carried.stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum();
+    }
+
+    /** «birch_wood»: four logs of that species make three; a stripped log or wood block he does not carry is refused. */
     private static Plan namedWood(List<ItemStack> carried, ResourceLocation id, Item item, int count) {
         String path = id.getPath();
-        if (path.startsWith("stripped_")) return new Plan(List.of(), "Обтёсывать брёвна я не умею: «" + name(item) + "» не добуду.");
-        int missing = count - carried.stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum();
+        int missing = count - carried(carried, item);
         if (missing <= 0) return new Plan(List.of(), null);
+        if (path.startsWith("stripped_")) return new Plan(List.of(), "Обтёсывать брёвна я не умею: «" + name(item) + "» не добуду.");
         var log = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path.replace("_wood", "_log").replace("_hyphae", "_stem"));
         Item logItem = BuiltInRegistries.ITEM.getOptional(log).orElse(null);
         if (logItem == null) return new Plan(List.of(), "Не знаю, как добыть «" + name(item) + "».");
-        int logs = ceil(missing, 3) * 4 - carried.stream().filter(stack -> stack.is(logItem)).mapToInt(ItemStack::getCount).sum();
+        int logs = ceil(missing, 3) * 4 - carried(carried, logItem);
         List<Step> steps = new ArrayList<>();
         for (int left = logs; left > 0; left -= 64) steps.add(new Step("gather_wood", log.toString(), Math.min(64, left)));
         steps.add(new Step("craft_item", id.toString(), missing));
@@ -211,7 +216,7 @@ public final class CompanionObtain {
         return options;
     }
 
-    /** A family, an ore's drop or an animal's: got by one skill, with no recipe behind it. */
+    /** A family, an ore's drop or an animal's: one of his skills gets it, whatever the bag holds. */
     private static boolean direct(String key) {
         if (key.startsWith("#")) return true;
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
