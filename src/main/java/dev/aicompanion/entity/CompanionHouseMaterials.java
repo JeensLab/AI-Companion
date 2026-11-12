@@ -1,5 +1,6 @@
 package dev.aicompanion.entity;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -58,8 +59,10 @@ final class CompanionHouseMaterials {
 
     /** A new building. */
     void reset() { woods.clear(); decided = false; restart(); }
-    /** The same building taken up again: earlier failures say nothing about the world as it is now. */
-    void restart() { exhausted.clear(); unobtainable.clear(); last = null; rounds = 0; logKind = null; }
+    /** The same building taken up again: earlier failures say nothing about the world as it is now (nor does the species chosen with nothing placed yet). */
+    void restart() { exhausted.clear(); unobtainable.clear(); last = null; rounds = 0; logKind = null; decided = false; }
+    /** A gathering round is under way: a failure of the work in that time is the round's, not the building's. */
+    boolean gathering() { return last != null; }
     boolean cannotGet(Item item) { return unobtainable.contains(item); }
     boolean decided() { return decided; }
     /** The species the log gathering in progress is after, null for any log. */
@@ -83,9 +86,9 @@ final class CompanionHouseMaterials {
     }
     private static String path(Item item) { return BuiltInRegistries.ITEM.getKey(item).getPath(); }
 
-    /** The block as it is built here: its wood replaced where the template's species is not to be had, grass and podzol as plain dirt. */
+    /** The block as it is built here: its wood replaced where the template's species is not to be had, grass, podzol and a path as plain dirt (a path block is had only with silk touch). */
     BlockState adapt(BlockState state) {
-        if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.PODZOL)) return Blocks.DIRT.defaultBlockState();
+        if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.PODZOL) || state.is(Blocks.DIRT_PATH)) return Blocks.DIRT.defaultBlockState();
         String path = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
         String wood = species(path);
         String instead = wood == null ? null : woods.get(wood);
@@ -101,8 +104,9 @@ final class CompanionHouseMaterials {
     }
 
     /**
-     * The species the building is made of, once, before its first block: each one the template wants that is neither in the bag nor
-     * in a tree within his search is replaced by the species he has most of (the bag and the trees together), the same for every part.
+     * The species the building is made of, before its first block: each one the template wants that is neither in the bag nor
+     * in a tree he would cut within his search is replaced by the species he has most of (the bag and the trees together), the same
+     * for every part. A species whose round came back empty counts as having no trees. Once a block stands the choice is kept.
      */
     void chooseWoods(ServerLevel level, List<CompanionTemplates.Cell> cells) {
         decided = true; woods.clear();
@@ -117,8 +121,7 @@ final class CompanionHouseMaterials {
             if (wood != null) have.merge(wood, stack.getCount() * (stack.is(ItemTags.LOGS) ? 4 : 1), Integer::sum);
         }
         Map<String, Integer> around = new HashMap<>();
-        for (String wood : WOODS)
-            around.put(wood, Math.min(64, CompanionLogSearch.find(level, owner.blockPosition(), owner.getSearchRadius(), CompanionWoodKind.valueOf(wood.toUpperCase(Locale.ROOT)).blocks).size()));
+        for (String wood : WOODS) around.put(wood, exhausted.contains("logs:" + wood) ? 0 : cuttable(level, CompanionWoodKind.valueOf(wood.toUpperCase(Locale.ROOT))));
         List<String> absent = wanted.stream().filter(wood -> have.getOrDefault(wood, 0) + around.get(wood) == 0).toList();
         String best = null;
         int most = 0;
@@ -127,6 +130,24 @@ final class CompanionHouseMaterials {
             if (amount > most) { most = amount; best = wood; }
         }
         if (best != null) for (String wood : absent) woods.put(wood, best);
+    }
+
+    /**
+     * How many logs of the species the gathering would cut within his search (at most 64): not a player's log walls or the logs of the
+     * building itself, which it leaves standing (CompanionBuildings), so such a wall is no tree that «grows nearby».
+     */
+    private int cuttable(ServerLevel level, CompanionWoodKind kind) {
+        Set<BlockPos> seen = new HashSet<>();
+        int count = 0;
+        for (BlockPos seed : CompanionLogSearch.find(level, owner.blockPosition(), owner.getSearchRadius(), kind.blocks)) {
+            if (seen.contains(seed)) continue;
+            Set<BlockPos> group = CompanionLogSearch.connected(level, seed, kind.blocks);
+            seen.addAll(group);
+            if (CompanionBuildings.builtLogs(level, group) || owner.ownPlacesOnly() && CompanionBuildings.decorated(level, group)) continue;
+            count += group.size();
+            if (count >= 64) return 64;
+        }
+        return count;
     }
 
     /** What to get next for what is still to build ({@code required}: items by the layer they are first needed in), given nothing can be set down now. */
@@ -169,7 +190,8 @@ final class CompanionHouseMaterials {
         unobtainable.addAll(lacking.keySet());
         if (!raws.isEmpty()) {
             var first = raws.entrySet().iterator().next();
-            return new Round(new Gather(first.getKey(), first.getValue()), Map.of());
+            // What cannot be got is told along with the first round (the summary to the player), though the round itself goes first.
+            return new Round(new Gather(first.getKey(), first.getValue()), lacking);
         }
         return new Round(null, lacking);
     }
@@ -222,7 +244,7 @@ final class CompanionHouseMaterials {
         last = gather; lastBefore = have(gather); logKind = null;
         if (gather.raw().startsWith("logs:")) {
             logKind = CompanionWoodKind.valueOf(gather.raw().substring("logs:".length()).toUpperCase(Locale.ROOT));
-            if (CompanionLogSearch.find(level, owner.blockPosition(), owner.getSearchRadius(), logKind.blocks).isEmpty()) { exhausted.add(gather.raw()); return CompanionHouse.Result.working(); }
+            if (cuttable(level, logKind) == 0) { exhausted.add(gather.raw()); return CompanionHouse.Result.working(); }
             owner.workStatus("Не хватает дерева для постройки: иду рубить " + gather.count() + " брёвен " + logKind.genitive() + ".");
             work.crafting.requestWood(CompanionWork.Phase.BUILD, gather.count());
         } else if (gather.raw().equals("stone")) {
@@ -240,10 +262,13 @@ final class CompanionHouseMaterials {
         return exhausted.contains("dirt") ? null : start(level, new Gather("dirt", count));
     }
 
-    /** Called when the work is back at the building: a gathering that brought nothing is not tried again. */
+    /**
+     * Called when the work is back at the building: a gathering that brought nothing is not tried again (what needs it is told to the
+     * player, the rest is built). A species with no tree to cut is chosen again, while nothing of the building stands (the caller's rule).
+     */
     void settle() {
         if (last == null) return;
-        if (have(last) <= lastBefore) exhausted.add(last.raw());
+        if (have(last) <= lastBefore) { exhausted.add(last.raw()); decided &= !last.raw().startsWith("logs:"); }
         last = null;
     }
     private int have(Gather gather) {

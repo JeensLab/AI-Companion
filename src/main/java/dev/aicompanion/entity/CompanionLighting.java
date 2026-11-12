@@ -41,10 +41,11 @@ public final class CompanionLighting {
         int slot = torchSlot();
         // Do not consume a just-completed order's coal before its workId result is observed.
         // A long goal owns his sticks and coal: its smelt and crafts need them.
-        if (slot < 0 && freeTicks >= 100 && hasFuel() && hasStickMaterials() && !CompanionAgenda.suppressesDeeds(owner)) {
+        // Torches a building under way sets aside are no path lights: crafting more of them for the path would only be crafting again and again.
+        if (slot < 0 && freeTicks >= 100 && torches() + 4 > owner.work.buildingNeeds(Items.TORCH) && hasFuel() && hasStickMaterials() && !CompanionAgenda.suppressesDeeds(owner)) {
             var result = owner.craftFromBag("minecraft:torch", 4);
             if (result.success()) slot = torchSlot();
-            else nextPlacement = level.getGameTime() + COOLDOWN;
+            if (slot < 0) nextPlacement = level.getGameTime() + COOLDOWN;
         }
         if (slot < 0) return;
         var state = Blocks.TORCH.defaultBlockState();
@@ -65,12 +66,13 @@ public final class CompanionLighting {
     }
     /** The torches an unfinished building still takes are its material, not path lights: only those above that count may be put down. */
     private int torchSlot() {
-        int first = -1, count = 0;
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH) && !owner.carriedForPlayer(owner.getItem(slot))) {
-            if (first < 0) first = slot;
-            count += owner.getItem(slot).getCount();
-        }
-        return count > owner.work.buildingNeeds(Items.TORCH) ? first : -1;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH) && !owner.carriedForPlayer(owner.getItem(slot))) return torches() > owner.work.buildingNeeds(Items.TORCH) ? slot : -1;
+        return -1;
+    }
+    private int torches() {
+        int count = 0;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH) && !owner.carriedForPlayer(owner.getItem(slot))) count += owner.getItem(slot).getCount();
+        return count;
     }
     private boolean hasStickMaterials() {
         int planks = 0;

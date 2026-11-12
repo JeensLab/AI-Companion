@@ -66,11 +66,14 @@ final class CompanionGhostPlacement {
         building = null; preview = null; confirming = false; spot = null; locked = false; pollTicks = 0;
     }
 
-    /** Runs on the integrated server's thread as the player; the answer comes back on the client thread, and only for the world that asked. */
-    private static <T> void onServer(Function<ServerPlayer, T> job, Consumer<T> done) {
+    /**
+     * Runs on the integrated server's thread as the player; the answer comes back on the client thread, and only for the world that asked.
+     * The answer is null when the server has no such player (gone, left): every callback copes with it. False when nothing was sent at all.
+     */
+    private static <T> boolean onServer(Function<ServerPlayer, T> job, Consumer<T> done) {
         Minecraft minecraft = Minecraft.getInstance();
         var server = minecraft.getSingleplayerServer();
-        if (server == null || minecraft.player == null) return;
+        if (server == null || minecraft.player == null) return false;
         UUID id = minecraft.player.getUUID();
         var world = minecraft.level;
         server.execute(() -> {
@@ -78,6 +81,7 @@ final class CompanionGhostPlacement {
             T answer = player == null ? null : job.apply(player);
             minecraft.execute(() -> { if (minecraft.level == world) done.accept(answer); });
         });
+        return true;
     }
 
     static void tick() {
@@ -123,6 +127,7 @@ final class CompanionGhostPlacement {
             // A new order for the same building is not told from the old one: the ghost simply stays.
             return new Object[]{pending, pending == null || pending.equals(shown) ? null : CompanionBuildPlacement.preview(player.serverLevel(), pending, 0)};
         }, answer -> {
+            if (answer == null) return;
             String pending = (String) answer[0];
             if (pending == null) {
                 if (building != null) { close(); message("Размещение закончилось: заказ снят или время вышло."); }
@@ -153,11 +158,13 @@ final class CompanionGhostPlacement {
         confirming = true;
         String name = building; int turn = rotation; BlockPos at = corner;
         // An empty answer is the server's yes; anything else is its reason, and the ghost stays to be moved.
-        onServer(player -> { String why = CompanionBuildPlacement.confirm(player, name, turn, at); return why == null ? "" : why; }, answer -> {
+        boolean sent = onServer(player -> { String why = CompanionBuildPlacement.confirm(player, name, turn, at); return why == null ? "" : why; }, answer -> {
             confirming = false;
-            if (answer.isEmpty()) { close(); quiet = ticks + POLL_TICKS * 2; message("Принято, строю здесь."); }
+            if (answer == null) message("Не смог связаться с миром, нажми ещё раз.");
+            else if (answer.isEmpty()) { close(); quiet = ticks + POLL_TICKS * 2; message("Принято, строю здесь."); }
             else message(answer);
         });
+        if (!sent) confirming = false;
     }
 
     /** The block looked at is the ground the floor sinks into; the middle of the footprint is under the crosshair. */

@@ -9,6 +9,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
 
@@ -79,6 +80,8 @@ final class CompanionSiteClearing {
 
     /** Terrain and what grows on it. A block of anything else was put there by somebody. */
     private static boolean natural(BlockState state) {
+        // Leaves a player set down (persistent) are his: the crown of a tree never is.
+        if (state.getBlock() instanceof LeavesBlock && state.getValue(LeavesBlock.PERSISTENT)) return false;
         return state.is(BlockTags.DIRT) || state.is(BlockTags.SAND) || state.is(Blocks.GRAVEL) || state.is(Blocks.CLAY) || state.is(BlockTags.BASE_STONE_OVERWORLD)
                 || state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES) || state.is(BlockTags.FLOWERS) || state.is(BlockTags.SNOW) || state.is(Blocks.SNOW_BLOCK)
                 || state.is(Blocks.SWEET_BERRY_BUSH) || state.canBeReplaced();
@@ -102,10 +105,15 @@ final class CompanionSiteClearing {
         String why = !level.getFluidState(pos).isEmpty() ? "это жидкость, в воде и лаве строить не буду."
                 : level.getBlockEntity(pos) != null ? "это не моё, ломать не буду."
                 : state.getDestroySpeed(level, pos) < 0 ? "его не сломать."
-                : !natural(state) || state.is(BlockTags.LOGS) && players.test(pos) ? "это не выросло само, похоже на постройку игрока; ломать не буду."
+                : !natural(state) || state.is(BlockTags.LOGS) && (players.test(pos) || builtLog(level, pos)) ? "это не выросло само, похоже на постройку игрока; ломать не буду."
                 : state.requiresCorrectToolForDrops() && !hasTool(state) ? "мне нечем его сломать, нужен подходящий инструмент."
                 : null;
         return why == null ? null : "Мешает «" + state.getBlock().getName().getString() + "» на " + pos.toShortString() + ": " + why + FREE_IT;
+    }
+
+    /** The log is part of a wall or a frame (no living crown, crafted blocks against it), not of a tree: the same judgement as for the woodcutter. */
+    private static boolean builtLog(ServerLevel level, BlockPos pos) {
+        return CompanionBuildings.builtLogs(level, CompanionLogSearch.connected(level, pos, BlockTags.LOGS));
     }
 
     // ---- the search for a site
@@ -113,9 +121,10 @@ final class CompanionSiteClearing {
     /**
      * How many blocks of the site are to be cleared (not counting what breaks at a touch, grass and flowers, nor the ground the floor is
      * sunk into), or -1 when it cannot be built on: the corner's layer is the ground itself, below it stands the support, the box holds
-     * no fluid, nothing that is not his to break, no more than a block of hill; and the way in at the door is free.
+     * no fluid, nothing that is not his to break, no more than a block of hill; and the way in at the door is free. A site he picked
+     * himself ({@code strict}, no player placed it) is refused for stone and snow blocks too: only plants, trees and soil are broken for it.
      */
-    int assess(ServerLevel level, BlockPos corner, boolean digging, Predicate<BlockPos> players) {
+    int assess(ServerLevel level, BlockPos corner, boolean digging, Predicate<BlockPos> players, boolean strict) {
         int cost = 0;
         for (int x = -1; x <= sizeX; x++) for (int z = -1; z <= sizeZ; z++) {
             BlockPos below = corner.offset(x, -1, z);
@@ -140,6 +149,8 @@ final class CompanionSiteClearing {
                 String blocked = obstruction(level, pos, players);
                 if (blocked != null) return no(blocked.replace(FREE_IT, ""));
                 if (y >= 2 && terrain(state)) return no("холм выше блока (" + pos.toShortString() + ").");
+                if (strict && y >= 1 && terrain(state) && !state.is(BlockTags.DIRT) && !state.is(BlockTags.SAND) && !state.is(Blocks.GRAVEL))
+                    return no("на площадке «" + state.getBlock().getName().getString() + "» (" + pos.toShortString() + "): сам выбранное место ради него не расчищаю.");
                 if (y >= 1 && state.getDestroySpeed(level, pos) > 0) cost++;
             }
         }
@@ -202,6 +213,7 @@ final class CompanionSiteClearing {
             owner.swing(InteractionHand.MAIN_HAND);
             owner.dropHarvest(pos, drops);
             breaking.reset();
+            owner.work.progressed();
             return Outcome.WORKING;
         }
         return approach(level, pos);

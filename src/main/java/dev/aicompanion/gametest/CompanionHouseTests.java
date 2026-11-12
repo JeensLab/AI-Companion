@@ -38,8 +38,15 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionHouseTests {
-    /** The groves are heavy on the shared route searches of the tick: they run apart from the tests that time themselves in ticks. */
-    @AfterBatch(batch = "house_rounds") public static void afterRounds(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    /**
+     * Stopped or waiting for the place, with the building's torch in the bag (nothing is set aside then), he lights the dark with it: these tests
+     * run by day, the clock of a long run is at night part of the time. The groves are heavy on the shared route searches of the tick: they run apart.
+     */
+    private static long dayClock;
+    @BeforeBatch(batch = "house_rounds") public static void dayForRounds(ServerLevel level) { dayClock = level.getDayTime(); level.setDayTime(1000); }
+    @AfterBatch(batch = "house_rounds") public static void afterRounds(ServerLevel level) { level.setDayTime(dayClock); CompanionFixtureCleanup.afterAtomicTests(level); }
+    @BeforeBatch(batch = "house_day") public static void dayForStops(ServerLevel level) { dayClock = level.getDayTime(); level.setDayTime(1000); }
+    @AfterBatch(batch = "house_day") public static void endDayForStops(ServerLevel level) { level.setDayTime(dayClock); CompanionFixtureCleanup.afterAtomicTests(level); }
     /** A night of building: a torch in the bag is a path light after dark. */
     private static long nightClock;
     @BeforeBatch(batch = "house_night") public static void nightForTorches(ServerLevel level) { nightClock = level.getDayTime(); level.setDayTime(18000); }
@@ -182,8 +189,8 @@ public final class CompanionHouseTests {
         });
     }
 
-    private static final String VILLAGE_HOUSE = "пустынный дом";
-    private static final ResourceLocation VILLAGE_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/desert/houses/desert_small_house_4");
+    static final String VILLAGE_HOUSE = "пустынный дом";
+    static final ResourceLocation VILLAGE_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/desert/houses/desert_small_house_4");
 
     @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void villageHouseStandsLikeItsTemplateAndSpendsTheBag(GameTestHelper helper) {
@@ -201,7 +208,7 @@ public final class CompanionHouseTests {
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 9000)
+    @GameTest(template = "tall_tree", batch = "house_day", timeoutTicks = 9000)
     public static void villageHouseResumesAfterStopAndReloadWithoutDuplicates(GameTestHelper helper) {
         CompanionEntity original = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
@@ -234,28 +241,36 @@ public final class CompanionHouseTests {
         });
     }
 
-    private static final int SPARE_DIRT = 8;
+    static final int SPARE_DIRT = 8;
     /** Whether a block is reached from the ground or from a column of dirt depends on the cells the route offers that tick: both are right, so he has dirt for it. */
-    private static void spareDirt(CompanionEntity companion) { companion.setItem(companion.getContainerSize() - 5, new ItemStack(Items.DIRT, SPARE_DIRT)); }
-    private static void dirtBack(GameTestHelper helper, CompanionEntity companion) {
+    /** The whole time of the order is a few seconds (the game's limit is ten minutes): only the steps of the building itself (a block set down or cleared, scaffolding) may extend it. */
+    static void shortDeadline(GameTestHelper helper, CompanionEntity companion) {
+        try {
+            var work = CompanionEntity.class.getDeclaredField("work"); work.setAccessible(true);
+            var deadline = work.get(companion).getClass().getDeclaredField("deadline"); deadline.setAccessible(true);
+            deadline.setLong(work.get(companion), helper.getLevel().getGameTime() + 600);
+        } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+    }
+    static void spareDirt(CompanionEntity companion) { companion.setItem(companion.getContainerSize() - 5, new ItemStack(Items.DIRT, SPARE_DIRT)); }
+    static void dirtBack(GameTestHelper helper, CompanionEntity companion) {
         helper.assertTrue(count(companion, Items.DIRT) == SPARE_DIRT && countBlocks(helper, Blocks.DIRT) == 0,
                 "Scaffolding dirt: " + count(companion, Items.DIRT) + " in the bag, " + countBlocks(helper, Blocks.DIRT) + " in the world");
     }
 
-    private static final String LOG_HOUSE = "бревенчатый дом";
-    private static final ResourceLocation LOG_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/plains/houses/plains_small_house_3");
+    static final String LOG_HOUSE = "бревенчатый дом";
+    static final ResourceLocation LOG_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/plains/houses/plains_small_house_3");
     /** What no skill of his makes: glass needs a furnace, a torch coal, a bed wool. The player gives them; the rest of the log house he gets himself. */
-    private static final Set<Item> UNGETTABLE = Set.of(Items.GLASS_PANE, Items.TORCH, Items.YELLOW_BED);
+    static final Set<Item> UNGETTABLE = Set.of(Items.GLASS_PANE, Items.TORCH, Items.YELLOW_BED);
 
     /** The reference's materials, the ones he cannot make or all the others. */
-    private static Map<Item, Integer> only(Map<Item, Integer> reference, boolean ungettable) {
+    static Map<Item, Integer> only(Map<Item, Integer> reference, boolean ungettable) {
         Map<Item, Integer> result = new LinkedHashMap<>();
         for (var entry : reference.entrySet()) if (UNGETTABLE.contains(entry.getKey()) == ungettable) result.put(entry.getKey(), entry.getValue());
         return result;
     }
 
     /** Trees of the given species in turn, a grove at the far side of the arena; the reference corner and his start stay clear. */
-    private static void forest(GameTestHelper helper, String... species) {
+    static void forest(GameTestHelper helper, String... species) {
         int index = 0;
         for (int x = 2; x < 32; x += 4) for (int z = 2; z < 32; z += 4) {
             if (x < 22 && z < 22) continue;
@@ -268,29 +283,29 @@ public final class CompanionHouseTests {
         }
     }
     /** A block of stone to mine at the near side of the arena, away from the corner of the reference. */
-    private static void quarry(GameTestHelper helper) {
+    static void quarry(GameTestHelper helper) {
         for (int x = 12; x <= 17; x++) for (int z = 2; z <= 7; z++) for (int y = GROUND; y <= GROUND + 2; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.STONE);
     }
     /** Soil for the scaffolding of the tall roof: a patch to dig at the middle of the arena, or a few blocks in the bag. */
-    private static void dirtPatch(GameTestHelper helper) {
+    static void dirtPatch(GameTestHelper helper) {
         for (int x = 12; x <= 17; x++) for (int z = 10; z <= 12; z++) helper.setBlock(new BlockPos(x, GROUND, z), Blocks.DIRT);
     }
     /** The mock player stands where it was put and blocks a cell of the scaffolding for good: it goes to a free spot between the trees. */
-    private static void playerAway(GameTestHelper helper) {
+    static void playerAway(GameTestHelper helper) {
         BlockPos spot = helper.absolutePos(new BlockPos(20, GROUND + 1, 30));
         // Only this arena's player: the other tests of the batch have theirs in the same level.
         for (var player : helper.getLevel().players()) if (helper.getBounds().inflate(1).contains(player.position())) player.teleportTo(spot.getX() + .5, spot.getY(), spot.getZ() + .5);
     }
     /** The template's own tree and anything that grew from it: no tree of that wood is left in the arena. */
-    private static void noTrees(GameTestHelper helper) {
+    static void noTrees(GameTestHelper helper) {
         for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 30, 31)))
             if (helper.getBlockState(pos).is(net.minecraft.tags.BlockTags.LOGS) || helper.getBlockState(pos).is(net.minecraft.tags.BlockTags.LEAVES)) helper.setBlock(pos, Blocks.AIR);
     }
-    private static void tools(CompanionEntity companion) {
+    static void tools(CompanionEntity companion) {
         companion.setItem(companion.getContainerSize() - 3, new ItemStack(Items.IRON_AXE));
         companion.setItem(companion.getContainerSize() - 4, new ItemStack(Items.IRON_PICKAXE));
     }
-    private static boolean wooden(Item item) {
+    static boolean wooden(Item item) {
         var stack = item.getDefaultInstance();
         return stack.is(net.minecraft.tags.ItemTags.PLANKS) || stack.is(net.minecraft.tags.ItemTags.LOGS)
                 || stack.is(net.minecraft.tags.ItemTags.WOODEN_STAIRS) || stack.is(net.minecraft.tags.ItemTags.WOODEN_DOORS);
@@ -473,6 +488,7 @@ public final class CompanionHouseTests {
         boolean[] stoodOnDirt = {false};
         helper.onEachTick(() -> { if (helper.getTick() % 5 == 0 && countBlocks(helper, Blocks.DIRT) > 0) stoodOnDirt[0] = true; });
         helper.assertTrue(companion.startWork("build_house", GABLED_HOUSE, 1).success(), "Template house work rejected");
+        shortDeadline(helper, companion);
         helper.succeedWhen(() -> {
             done(helper, companion);
             helper.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains(GABLED_HOUSE), companion.getLastTaskResult());
@@ -497,7 +513,7 @@ public final class CompanionHouseTests {
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 12000)
+    @GameTest(template = "tall_tree", batch = "house_day", timeoutTicks = 12000)
     public static void scaffoldingLeftByAnInterruptionIsTakenDownOnResume(GameTestHelper helper) {
         CompanionEntity original = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, LOG_HOUSE_TEMPLATE);
@@ -552,6 +568,7 @@ public final class CompanionHouseTests {
         fill(companion, bag);
         spareDirt(companion);
         helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        shortDeadline(helper, companion);
         helper.succeedWhen(() -> {
             done(helper, companion);
             helper.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains(VILLAGE_HOUSE), companion.getLastTaskResult());
@@ -619,7 +636,7 @@ public final class CompanionHouseTests {
      * What he clears is his: the logs and the sand come to the bag as drops, nothing is left lying and nothing is lost, also when he is
      * stopped in the middle of it and the world is left and entered again.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 12000)
+    @GameTest(template = "tall_tree", batch = "house_day", timeoutTicks = 12000)
     public static void whatIsClearedIsPickedUpAndSurvivesAStopAndReload(GameTestHelper helper) {
         CompanionEntity original = wildSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
@@ -669,7 +686,7 @@ public final class CompanionHouseTests {
     }
 
     /** The vanilla template placed in the arena corner is the reference; returns what the bag needs to build one more like it. */
-    private static Map<Item, Integer> placeReference(GameTestHelper helper, ResourceLocation id) {
+    static Map<Item, Integer> placeReference(GameTestHelper helper, ResourceLocation id) {
         var template = helper.getLevel().getServer().getStructureManager().get(id).orElseThrow();
         // The ground of the arena is not part of the reference: its corner is cleared first.
         for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(7, 7, 7))) helper.setBlock(rel, Blocks.AIR);
@@ -687,13 +704,13 @@ public final class CompanionHouseTests {
         return state.getBlock() instanceof DoorBlock && state.getValue(DoorBlock.HALF) == DoubleBlockHalf.UPPER
                 || state.getBlock() instanceof BedBlock && state.getValue(BedBlock.PART) == BedPart.HEAD;
     }
-    private static void fill(CompanionEntity companion, Map<Item, Integer> needed) {
+    static void fill(CompanionEntity companion, Map<Item, Integer> needed) {
         int slot = 0;
         for (var entry : needed.entrySet()) companion.setItem(slot++, new ItemStack(entry.getKey(), entry.getValue()));
     }
-    private static BlockPos templateBase(CompanionEntity companion) { return BlockPos.of(saved(companion).getCompound("TemplateBuild").getLong("Base")); }
+    static BlockPos templateBase(CompanionEntity companion) { return BlockPos.of(saved(companion).getCompound("TemplateBuild").getLong("Base")); }
     /** Every block of the reference stands at the same place of the new building: the kind, and the properties that turn it. */
-    private static void assertLooksLikeReference(GameTestHelper helper, BlockPos base) {
+    static void assertLooksLikeReference(GameTestHelper helper, BlockPos base) {
         int checked = 0;
         for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(7, 7, 7))) {
             BlockState want = helper.getBlockState(rel);
@@ -702,7 +719,7 @@ public final class CompanionHouseTests {
             helper.assertTrue(got.is(want.getBlock()), "Block " + rel + " is " + got.getBlock() + ", the template has " + want.getBlock());
             if (want.is(Blocks.CHEST)) helper.assertTrue(helper.getLevel().getBlockEntity(base.offset(rel.getX() - 1, rel.getY() - 1, rel.getZ() - 1)) instanceof Container chest && chest.isEmpty(), "Chest is not empty");
             for (var property : want.getProperties()) {
-                if (Set.of("facing", "axis", "half", "part").contains(property.getName()))
+                if (Set.of("facing", "axis", "half", "part", "hinge").contains(property.getName()))
                     helper.assertTrue(got.getValue(property).equals(want.getValue(property)), "Block " + rel + " is turned differently: " + property.getName());
             }
             checked++;
@@ -711,10 +728,10 @@ public final class CompanionHouseTests {
     }
 
     /** The floor of a template building is sunk into the ground: the arena has red sand (no house of the catalogue is built of it) over its bedrock, and a shovel in the bag. */
-    private static final int GROUND = 1;
-    private static CompanionEntity groundedSetup(GameTestHelper helper) { return setup(helper, true); }
+    static final int GROUND = 1;
+    static CompanionEntity groundedSetup(GameTestHelper helper) { return setup(helper, true); }
     /** {@link #groundedSetup} with trees, bumps of red sand, grass and flowers everywhere (nothing around his start and the player). */
-    private static CompanionEntity wildSetup(GameTestHelper helper) {
+    static CompanionEntity wildSetup(GameTestHelper helper) {
         CompanionEntity companion = groundedSetup(helper);
         companion.setItem(companion.getContainerSize() - 3, new ItemStack(Items.IRON_AXE));
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) {
@@ -723,14 +740,14 @@ public final class CompanionHouseTests {
             if (x % 4 == 2 && z % 4 == 2) {
                 for (int y = GROUND + 1; y <= GROUND + 4; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.OAK_LOG);
                 for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int y = GROUND + 4; y <= GROUND + 5; y++)
-                    if (helper.getBlockState(new BlockPos(x + dx, y, z + dz)).isAir()) helper.setBlock(new BlockPos(x + dx, y, z + dz), Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true));
+                    if (helper.getBlockState(new BlockPos(x + dx, y, z + dz)).isAir()) helper.setBlock(new BlockPos(x + dx, y, z + dz), Blocks.OAK_LEAVES.defaultBlockState());
             } else if (x % 4 == 0 && z % 4 == 0) helper.setBlock(new BlockPos(x, GROUND + 1, z), Blocks.RED_SAND);
             else if ((x + z) % 3 == 0) helper.setBlock(new BlockPos(x, GROUND + 1, z), (x + z) % 7 == 0 ? Blocks.DANDELION : Blocks.SHORT_GRASS);
         }
         return companion;
     }
-    private static CompanionEntity setup(GameTestHelper helper) { return setup(helper, false); }
-    private static CompanionEntity setup(GameTestHelper helper, boolean ground) {
+    static CompanionEntity setup(GameTestHelper helper) { return setup(helper, false); }
+    static CompanionEntity setup(GameTestHelper helper, boolean ground) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) helper.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         if (ground) for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) if (helper.getBlockState(new BlockPos(x, GROUND, z)).isAir()) helper.setBlock(new BlockPos(x, GROUND, z), Blocks.RED_SAND);
         CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 16, ground ? GROUND + 1 : 1, 16);
@@ -740,19 +757,19 @@ public final class CompanionHouseTests {
         CompanionEvents.getOwnedCompanion(player); companion.setSearchRadius(16);
         return companion;
     }
-    private static void start(GameTestHelper helper, CompanionEntity companion) { helper.assertTrue(companion.startWork("build_house", "", 1).success(), "House work rejected"); }
-    private static void done(GameTestHelper helper, CompanionEntity companion) { helper.assertTrue(!companion.isGatheringTask(), companion.getLastTaskResult()); }
-    private static CompoundTag saved(CompanionEntity companion) { CompoundTag tag = new CompoundTag(); companion.addAdditionalSaveData(tag); return tag; }
-    private static BlockPos base(CompanionEntity companion) { return BlockPos.of(saved(companion).getCompound("SmallHouse").getLong("Base")); }
-    private static int count(Container bag, Item item) {
+    static void start(GameTestHelper helper, CompanionEntity companion) { helper.assertTrue(companion.startWork("build_house", "", 1).success(), "House work rejected"); }
+    static void done(GameTestHelper helper, CompanionEntity companion) { helper.assertTrue(!companion.isGatheringTask(), companion.getLastTaskResult()); }
+    static CompoundTag saved(CompanionEntity companion) { CompoundTag tag = new CompoundTag(); companion.addAdditionalSaveData(tag); return tag; }
+    static BlockPos base(CompanionEntity companion) { return BlockPos.of(saved(companion).getCompound("SmallHouse").getLong("Base")); }
+    static int count(Container bag, Item item) {
         int count = 0; for (int slot = 0; slot < bag.getContainerSize(); slot++) if (bag.getItem(slot).is(item)) count += bag.getItem(slot).getCount();
         if (bag instanceof CompanionEntity companion) for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();
         return count;
     }
-    private static int countBlocks(GameTestHelper helper, net.minecraft.world.level.block.Block block) {
+    static int countBlocks(GameTestHelper helper, net.minecraft.world.level.block.Block block) {
         int count = 0; for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 8, 31))) if (helper.getBlockState(pos).is(block)) count++; return count;
     }
-    private static void complete(GameTestHelper helper, CompanionEntity companion, String wood) {
+    static void complete(GameTestHelper helper, CompanionEntity companion, String wood) {
         helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult() + " Bag: " + companion.getStoredItemsSummary() + " Position: " + helper.relativePos(companion.blockPosition()));
         BlockPos base = base(companion);
         var level = helper.getLevel();

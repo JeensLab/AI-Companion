@@ -5,6 +5,9 @@ import dev.aicompanion.entity.CompanionBuildPlacement;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.gametest.framework.AfterBatch;
+import net.minecraft.gametest.framework.BeforeBatch;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -48,7 +51,12 @@ public final class CompanionBuildPlacementTests {
 
     private record Setup(CompanionEntity companion, ServerPlayer player) { }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 6000)
+    /** Waiting for the place with the building's torch in the bag (nothing is set aside then) he would light the dark with it: these run by day, whatever the clock of a long run says. */
+    private static long dayClock;
+    @BeforeBatch(batch = "placement_day") public static void day(ServerLevel level) { dayClock = level.getDayTime(); level.setDayTime(1000); }
+    @AfterBatch(batch = "placement_day") public static void endDay(ServerLevel level) { level.setDayTime(dayClock); CompanionFixtureCleanup.afterAtomicTests(level); }
+
+    @GameTest(template = "tall_tree", batch = "placement_day", timeoutTicks = 6000)
     public static void aConfirmedPlacementBuildsTheTemplateRotatedExactlyThere(GameTestHelper helper) {
         Setup s = setup(helper);
         Rotation turn = Rotation.CLOCKWISE_90;
@@ -104,7 +112,7 @@ public final class CompanionBuildPlacementTests {
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    @GameTest(template = "tall_tree", batch = "placement_day", timeoutTicks = 600)
     public static void whatTheServerCannotTrustInAConfirmationIsRefusedAndNothingIsBuilt(GameTestHelper helper) {
         Setup s = setup(helper);
         fill(s.companion, placeReference(helper, Rotation.NONE));
@@ -207,6 +215,108 @@ public final class CompanionBuildPlacementTests {
             }
         }
         helper.succeed();
+    }
+
+    /** Leaves a player set down and a wall of logs with planks on it are not his to break (a tree and its crown are): the site is refused, with the cell named. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aPlayersHedgeAndLogWallAreNotBrokenButATreeIs(GameTestHelper helper) {
+        Setup s = setup(helper);
+        clearSite(helper);
+        BlockPos corner = helper.absolutePos(CORNER);
+        helper.assertTrue(s.companion.startWork("build_house", NAME, 1).success(), "Order rejected");
+        helper.runAfterDelay(20, () -> {
+            var level = helper.getLevel();
+            BlockPos hedge = corner.offset(1, 2, 1);
+            level.setBlock(hedge, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true), 3);
+            String why = CompanionBuildPlacement.confirm(s.player, NAME, 0, corner);
+            helper.assertTrue(why != null && why.contains("Мешает") && why.contains(hedge.toShortString()), "A hedge a player set down was not named: " + why);
+            helper.assertTrue(level.getBlockState(hedge).is(Blocks.OAK_LEAVES), "The hedge was touched");
+            level.setBlock(hedge, Blocks.AIR.defaultBlockState(), 3);
+            for (int x = 1; x <= 3; x++) level.setBlock(corner.offset(x, 2, 1), Blocks.OAK_LOG.defaultBlockState(), 3);
+            level.setBlock(corner.offset(2, 3, 1), Blocks.OAK_PLANKS.defaultBlockState(), 3);
+            why = CompanionBuildPlacement.confirm(s.player, NAME, 0, corner);
+            helper.assertTrue(why != null && why.contains("Мешает") && why.contains(corner.offset(1, 2, 1).toShortString()), "A log wall was not named: " + why);
+            // The same logs with a living crown and no planks are a tree.
+            level.setBlock(corner.offset(2, 3, 1), Blocks.AIR.defaultBlockState(), 3);
+            for (int x = 1; x <= 3; x++) level.setBlock(corner.offset(x, 3, 1), Blocks.OAK_LEAVES.defaultBlockState(), 3);
+            helper.assertTrue(CompanionBuildPlacement.confirm(s.player, NAME, 0, corner) == null, "A tree with its crown was refused");
+            helper.succeed();
+        });
+    }
+
+    /** A decoration or an animal in the footprint refuses the site (nothing is dropped or pushed); the player standing there is no reason, the block waits for him. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aDecorationOrAnAnimalInTheFootprintRefusesTheSiteAndAPlayerDoesNot(GameTestHelper helper) {
+        Setup s = setup(helper);
+        clearSite(helper);
+        BlockPos corner = helper.absolutePos(CORNER);
+        helper.assertTrue(s.companion.startWork("build_house", NAME, 1).success(), "Order rejected");
+        helper.runAfterDelay(20, () -> {
+            for (var type : List.of(net.minecraft.world.entity.EntityType.ARMOR_STAND, net.minecraft.world.entity.EntityType.PIG)) {
+                var thing = helper.spawn(type, CORNER.offset(2, 1, 2));
+                String why = CompanionBuildPlacement.confirm(s.player, NAME, 0, corner);
+                helper.assertTrue(why != null && why.contains(thing.blockPosition().toShortString()), "A " + type + " in the footprint did not refuse the site: " + why);
+                thing.discard();
+            }
+            s.player.teleportTo(corner.getX() + 2.5, corner.getY() + 1, corner.getZ() + 2.5);
+            helper.assertTrue(CompanionBuildPlacement.confirm(s.player, NAME, 0, corner) == null, "The player standing in the footprint refused the site");
+            helper.succeed();
+        });
+    }
+
+    /**
+     * The player hovers in a cell of the building (his body covers two cells): no block is put into it while he is there, the building
+     * goes on with every other block, and only when nothing else is left it waits and says so (the work does not stop for it). Once he
+     * steps aside the block is set down and the building is finished.
+     */
+    @GameTest(template = "tall_tree", batch = "placement_day", timeoutTicks = 6000)
+    public static void aBlockIsNotPutIntoAPlayerItWaitsUntilHeStepsAside(GameTestHelper helper) {
+        Setup s = setup(helper);
+        Map<Item, Integer> bag = placeReference(helper, Rotation.NONE);
+        fill(s.companion, bag);
+        clearSite(helper);
+        BlockPos corner = helper.absolutePos(CORNER);
+        // The highest cell of the building that is no door, no bed and no wall torch: the last one of its blocks, the door excepted.
+        BlockPos top = null;
+        for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(8, 8, 8))) {
+            BlockState state = helper.getBlockState(rel);
+            if (state.isAir() || state.getBlock() instanceof DoorBlock || state.getBlock() instanceof BedBlock || state.is(Blocks.WALL_TORCH) || state.is(Blocks.JIGSAW)) continue;
+            if (top == null || rel.getY() > top.getY()) top = rel.immutable();
+        }
+        BlockPos cell = corner.offset(helper.absolutePos(top).subtract(helper.absolutePos(new BlockPos(1, 1, 1))));
+        int[] stage = {0};
+        long[] since = {0};
+        helper.assertTrue(s.companion.startWork("build_house", NAME, 1).success(), "Order rejected");
+        helper.runAfterDelay(20, () -> {
+            helper.assertTrue(CompanionBuildPlacement.confirm(s.player, NAME, 0, corner) == null, "Confirmation refused");
+            s.player.setNoGravity(true);
+            s.player.teleportTo(cell.getX() + .5, cell.getY(), cell.getZ() + .5);
+        });
+        helper.onEachTick(() -> {
+            CompoundTag build = saved(s.companion).getCompound("TemplateBuild");
+            int placed = java.util.BitSet.valueOf(build.getLongArray("Placed")).cardinality();
+            if (helper.getTick() > 25 && stage[0] < 2)
+                helper.assertTrue(helper.getLevel().getBlockState(cell).isAir() && helper.getLevel().getBlockState(cell.above()).isAir(), "A block was put into the player at " + cell.toShortString());
+            // He only waits when nothing else is left: the cells of the player's body and the door.
+            if (stage[0] == 0 && s.companion.getLastTaskResult().startsWith("Жду, пока освободится")) {
+                helper.assertTrue(placed >= build.getInt("Total") - 3, "He waits with " + (build.getInt("Total") - placed) + " blocks left: " + s.companion.getLastTaskResult());
+                stage[0] = 1; since[0] = helper.getTick();
+            }
+            if (stage[0] == 1) {
+                if (helper.getTick() - since[0] >= 2400) {
+                    helper.assertTrue(s.companion.hasActiveWorkOrder(), "The work ended instead of waiting: " + s.companion.getLastTaskResult());
+                    s.player.setNoGravity(false);
+                    s.player.teleportTo(corner.getX() - 6, corner.getY() + 1, corner.getZ() - 6);
+                    stage[0] = 2;
+                }
+            }
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stage[0] == 2, "The player has not stepped aside yet");
+            helper.assertTrue(!s.companion.isGatheringTask(), s.companion.getLastTaskResult());
+            helper.assertTrue(s.companion.didLastTaskSucceed(), s.companion.getLastTaskResult());
+            assertLooksLikeReference(helper, corner);
+        });
     }
 
     // ---- helpers

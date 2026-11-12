@@ -52,13 +52,13 @@ public final class CompanionBuildPlacement {
         return seen != null && player.server.getTickCount() - seen >= 0 && player.server.getTickCount() - seen <= CLIENT_SEEN_TICKS;
     }
 
-    /** A fresh order for a building: with a client to place it, tell the player what it is and what it takes, and wait. */
-    static void ask(CompanionEntity owner, CompanionHouse house) {
+    /** A fresh order for a building: with a client to place it, tell the player what it is and what it takes (after {@code note}), and wait. */
+    static void ask(CompanionEntity owner, CompanionHouse house, String note) {
         ServerPlayer player = owner.getOwnerPlayer();
         if (house.sited() || player == null || !hasClient(player) || !(owner.level() instanceof ServerLevel level)) return;
         var read = CompanionTemplates.load(level, house.building(), Rotation.NONE);
         if (read == null) return;
-        String text = summary(level, owner, house.building(), read);
+        String text = note + summary(level, owner, house.building(), read);
         house.awaitPlacement(level.getGameTime() + TIMEOUT_TICKS, text);
         player.sendSystemMessage(Component.literal(owner.getName().getString() + ": " + text));
     }
@@ -67,13 +67,7 @@ public final class CompanionBuildPlacement {
     private static String summary(ServerLevel level, CompanionEntity owner, CompanionVillageBuildings.Building building, CompanionTemplates.Loaded read) {
         var materials = new CompanionHouseMaterials(owner);
         materials.chooseWoods(level, read.cells());
-        var cells = read.cells().stream().sorted(Comparator.comparingInt(CompanionTemplates.Cell::stage)).toList();
-        Map<Item, Integer> required = new LinkedHashMap<>();
-        // Planks last, as the building plans its materials.
-        for (boolean last : new boolean[]{false, true}) for (var cell : cells) {
-            Item item = materials.adapt(cell.state()).getBlock().asItem();
-            if (new ItemStack(item).is(ItemTags.PLANKS) == last) required.merge(item, 1, Integer::sum);
-        }
+        Map<Item, Integer> required = required(materials, read);
         var lacking = materials.next(level, required).lacking();
         List<String> himself = new ArrayList<>(), given = new ArrayList<>();
         required.forEach((item, count) -> {
@@ -84,6 +78,16 @@ public final class CompanionBuildPlacement {
                 : (himself.isEmpty() ? "" : "Сам добуду или сделаю: " + listed(himself) + ". ") + (given.isEmpty() ? "" : "Принести придётся тебе: " + listed(given) + ". ");
         return "Могу построить «" + building.name() + "»: " + read.sizeX() + "×" + read.sizeZ() + "×" + read.sizeY() + " блоков (ширина × глубина × высота). " + needs
                 + "Выбери место призраком и подтверди; пока не подтвердишь, ничего не трогаю. Не выберешь за " + TIMEOUT_TICKS / 1200 + " минуты — отменю.";
+    }
+    /** The items the building takes, as it would be built with these materials, by the layer they are first needed in (planks last, as the building plans its materials). */
+    static Map<Item, Integer> required(CompanionHouseMaterials materials, CompanionTemplates.Loaded read) {
+        var cells = read.cells().stream().sorted(Comparator.comparingInt(CompanionTemplates.Cell::stage)).toList();
+        Map<Item, Integer> required = new LinkedHashMap<>();
+        for (boolean last : new boolean[]{false, true}) for (var cell : cells) {
+            Item item = materials.adapt(cell.state()).getBlock().asItem();
+            if (new ItemStack(item).is(ItemTags.PLANKS) == last) required.merge(item, 1, Integer::sum);
+        }
+        return required;
     }
     private static String listed(List<String> items) {
         return String.join(", ", items.subList(0, Math.min(MAX_LISTED, items.size()))) + (items.size() > MAX_LISTED ? " и ещё " + (items.size() - MAX_LISTED) + " видов" : "");

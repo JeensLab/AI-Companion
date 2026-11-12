@@ -29,7 +29,7 @@ public final class CompanionVillageBuildings {
     public static final int MAX_VOLUME = 1500, MAX_HEIGHT = 11;
 
     private static final List<Kind> KINDS = List.of(
-            new Kind("дом", "", List.of()),
+            new Kind("дом", "дом", List.of()),
             new Kind("кузница", "кузн", List.of("кузница", "кузницу")),
             new Kind("храм", "храм", List.of("храм", "церковь")));
 
@@ -55,7 +55,15 @@ public final class CompanionVillageBuildings {
 
     public static List<Building> all() { return ALL; }
 
-    private static String normalize(String text) { return text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim().replaceAll("\s+", " "); }
+    /** Lower case, «е» for «ё», one plain space for any run of spaces, tabs and no-break spaces. */
+    private static String normalize(String text) { return text.toLowerCase(Locale.ROOT).replace('ё', 'е').replaceAll("[\\s\\u00A0\\u2007\\u202F]+", " ").trim(); }
+
+    /** The plain 5×5 house by any common name a model may use for it: «дом», «домик», «маленький дом», «дом 5×5», «small house»; no catalogue building is meant. */
+    public static boolean plankHouse(String said) {
+        if (said == null) return false;
+        String key = normalize(said).replace('×', 'x').replace('х', 'x');
+        return key.matches("(?:(?:небольшой|маленький|малый|простой|деревянный|одноэтажный) )*(?:дом|домик)(?: 5 ?x ?5)?|(?:(?:small|little|simple|wooden|plank) )*(?:house|home|cabin)(?: 5 ?x ?5)?");
+    }
 
     /** The building of that exact name (any case, «е» for «ё»), or null. */
     public static Building find(String name) {
@@ -112,14 +120,15 @@ public final class CompanionVillageBuildings {
         return resolve(item, owner.level().getBiome((player == null ? owner : player).blockPosition()));
     }
 
-    /** What he says to a request that is nothing of the catalogue: a few buildings of the kind it looks like, else the kinds he builds. */
+    /** What he says to a request that is nothing of the catalogue: up to three buildings of the kind it looks like, else all the kinds he builds, houses and the plain 5×5 house among them. */
     public static String refusal(String said) {
         String key = said == null ? "" : normalize(said);
-        for (Kind kind : KINDS) {
+        // The specific kinds first: «кузница для дома» is a smithy, a house is only the last guess.
+        for (Kind kind : KINDS.reversed()) {
             if (kind.stem().isEmpty() || !key.contains(kind.stem())) continue;
             return "Такой постройки у меня нет. Похожие: " + String.join(", ", ALL.stream().filter(b -> b.kind().equals(kind.label())).limit(3).map(Building::name).toList()) + ".";
         }
-        return "Такой постройки у меня нет. Умею строить: " + String.join(", ", KINDS.stream().skip(1).map(Kind::label).toList()) + ".";
+        return "Такой постройки у меня нет. Умею строить: простой дом 5×5, " + String.join(", ", KINDS.stream().map(Kind::label).toList()) + " (по именам из набора).";
     }
 
     /** What the model is told of the catalogue: the names by kind, each with width x depth x height. */
@@ -137,7 +146,7 @@ public final class CompanionVillageBuildings {
 
     /** The part of the model's system prompt about buildings: how to ask for one, and the catalogue by kind with width x depth x height. */
     public static String modelText() {
-        return "Без item — дом 5×5. item — точное имя здания деревни из списка (Ш×Г×В): " + modelList() + ". item=resume — достроить недостроенное («дострой»). "
+        return "Без item — дом 5×5 («дом», «домик» тоже он). item — точное имя здания деревни из списка (Ш×Г×В): " + modelList() + ". item=resume — достроить то, что осталось недостроенным («дострой», «продолжи стройку»). "
                 + "Просят то, чего нет в списке, — не выдумывай имя: скажи, что такого нет, и назови похожее, build_house не запускай. ";
     }
 }

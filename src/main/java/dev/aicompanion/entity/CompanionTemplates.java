@@ -7,6 +7,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
@@ -28,7 +29,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Reads a building from the game's structure templates (no file of ours) as the cells to build, without air, voids, jigsaws and entities. */
+/**
+ * Reads a building from the game's structure templates (no file of ours) as the cells to build, without air, voids, jigsaws, entities and
+ * the plants and snow the template's ground carries: those are no part of the building, and their cells count as its air.
+ */
 final class CompanionTemplates {
     /** A block to place, relative to the building's corner; {@code stage} orders the work from the floor up. */
     record Cell(BlockPos rel, BlockState state, int stage) { }
@@ -53,7 +57,7 @@ final class CompanionTemplates {
             CompoundTag block = (CompoundTag) entry;
             BlockState state = palette.get(block.getInt("state"));
             ListTag at = block.getList("pos", Tag.TAG_INT);
-            if (!state.isAir() && !state.is(Blocks.STRUCTURE_VOID) && !state.is(Blocks.JIGSAW)) solid.put(new BlockPos(at.getInt(0), at.getInt(1), at.getInt(2)), state);
+            if (!state.isAir() && !state.is(Blocks.STRUCTURE_VOID) && !state.is(Blocks.JIGSAW) && !groundCover(state)) solid.put(new BlockPos(at.getInt(0), at.getInt(1), at.getInt(2)), state);
         }
         // What overhangs (eaves), and what stands on it, comes after the layers beside it: put up first it hides their faces from the ground
         // (the 5×5 house's roof is ordered the same way by hand).
@@ -63,6 +67,12 @@ final class CompanionTemplates {
         List<Cell> cells = new ArrayList<>();
         for (BlockPos rel : bottomUp) if (!secondHalf(solid.get(rel))) cells.add(new Cell(rel, solid.get(rel), stage(solid.get(rel), rel, late.contains(rel))));
         return turn(new Loaded(size.getInt(0), size.getInt(1), size.getInt(2), List.copyOf(cells)), rotation);
+    }
+
+    /** Grass, ferns, flowers, a dead bush, a layer of snow: they grow or fall on the ground, and he cannot pick them up whole (nor does a building need them). */
+    static boolean groundCover(BlockState state) {
+        return state.is(BlockTags.FLOWERS) || state.is(Blocks.SHORT_GRASS) || state.is(Blocks.TALL_GRASS) || state.is(Blocks.FERN) || state.is(Blocks.LARGE_FERN)
+                || state.is(Blocks.DEAD_BUSH) || state.is(Blocks.SNOW);
     }
 
     /** The building turned the way StructureTemplate turns a template (cells and block states), its footprint's lowest corner kept at the origin. */

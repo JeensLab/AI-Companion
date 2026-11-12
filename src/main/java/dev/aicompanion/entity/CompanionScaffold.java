@@ -14,6 +14,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.pathfinder.Path;
@@ -138,6 +139,7 @@ final class CompanionScaffold {
             BlockState state = ((BlockItem) hand.getItem()).getBlock().defaultBlockState();
             if (!level.setBlockAndUpdate(jumpCell, state)) return fail("Не удалось поставить леса.");
             blocks.add(jumpCell.immutable()); states.add(state);
+            owner.work.progressed();
             owner.rememberPlaced(jumpCell);
             owner.animateAction(1, jumpCell, hand.copy());
             hand.shrink(1);
@@ -166,10 +168,10 @@ final class CompanionScaffold {
         for (int index = blocks.size() - 1; index >= 0; index--) {
             BlockPos pos = blocks.get(index);
             if (!level.hasChunkAt(pos)) continue;
-            BlockState actual = level.getBlockState(pos);
-            // Loaded from the save before its chunk: the block is recognised by its material.
-            if (states.get(index) == null && MATERIALS.contains(actual.getBlock().asItem())) states.set(index, actual);
-            if (actual != states.get(index)) { blocks.remove(index); states.remove(index); }
+            BlockState actual = level.getBlockState(pos), recorded = states.get(index);
+            // Loaded from the save before its chunk: the block is recognised by its material. Grass and mycelium spread onto dirt: still his.
+            boolean ours = recorded == null ? MATERIALS.contains(actual.getBlock().asItem()) || spreads(actual) : recorded == actual || spreads(recorded) && spreads(actual);
+            if (ours) states.set(index, actual); else { blocks.remove(index); states.remove(index); }
         }
         if (blocks.isEmpty()) { descending = false; base = null; breaking.reset(); return Outcome.READY; }
         if (!owner.onGround()) return Outcome.WORKING;
@@ -187,15 +189,25 @@ final class CompanionScaffold {
         if (!breaking.tick(level, top)) return Outcome.WORKING;
         ItemStack tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, top, null, owner, tool);
+        // A drop that does not fit the bag would lie on the ground and go: the column stays, saved for «дострой» (as the site clearing does).
+        if (!owner.canStoreDrops(drops)) {
+            descending = false; base = null; approach = null; breaking.reset();
+            failure = "В сумке нет места для земли, которую снимаю с лесов («" + top.toShortString() + "»). Освободи место.";
+            return Outcome.FAILED;
+        }
         if (!level.destroyBlock(top, false, owner, 512)) return Outcome.WORKING;
         tool.getItem().mineBlock(tool, level, state, top, owner);
         owner.swing(InteractionHand.MAIN_HAND);
         owner.dropHarvest(top, drops);
         breaking.reset();
+        owner.work.progressed();
         blocks.remove(reach); states.remove(reach);
         cooldown = 4;
         return Outcome.WORKING;
     }
+
+    /** Dirt, or what grows over it (grass, mycelium): a column's block may have turned into it. */
+    private static boolean spreads(BlockState state) { return state.is(Blocks.DIRT) || state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.MYCELIUM); }
 
     /** Out of reach of every block (stopped, led away, loaded elsewhere): the way to the cells beside the foot of the column. */
     private Outcome walkBack(ServerLevel level) {

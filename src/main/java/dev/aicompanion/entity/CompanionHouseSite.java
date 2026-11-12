@@ -3,6 +3,10 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -33,6 +37,17 @@ final class CompanionHouseSite {
         return null;
     }
 
+    /** The first living thing or decoration (not the player, not a drop) in the building's box and a block around it; null when none. */
+    Entity standingIn(ServerLevel level, BlockPos corner, int width, int height, int depth) {
+        return level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner.offset(-1, 0, -1)), Vec3.atLowerCornerOf(corner.offset(width + 1, height, depth + 1))),
+                entity -> entity.isAlive() && !(entity instanceof Player) && !(entity instanceof ItemEntity) && !(entity instanceof ExperienceOrb)).stream().findFirst().orElse(null);
+    }
+
+    /** Whoever stands in the cells (a block goes into neither the player nor a mob), or null. */
+    Entity occupant(ServerLevel level, BlockPos pos, BlockPos second) {
+        return level.getEntities(owner, new AABB(pos).minmax(new AABB(second)), entity -> entity.isAlive() && entity.blocksBuilding).stream().findFirst().orElse(null);
+    }
+
     /** A cell near him for a bench, off the building's own ground and its margin of a block. */
     BlockPos tableSite(ServerLevel level, BlockPos base, int width, int depth) {
         for (int radius = 1; radius <= 4; radius++) for (int dy : new int[]{0, -1, 1}) for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
@@ -59,7 +74,8 @@ final class CompanionHouseSite {
     }
 
     private boolean clear(ServerLevel level, BlockPos corner, int width, int depth, int height, boolean digging, Predicate<BlockPos> players) {
-        if (template) { if (clearing.assess(level, corner, digging, players) < 0) return false; }
+        // Nobody placed it (no ghost): only plants, trees and the ground are broken for it, nothing that might be a player's.
+        if (template) { if (clearing.assess(level, corner, digging, players, true) < 0) return false; }
         else for (int x = -1; x <= width; x++) for (int z = -1; z <= depth; z++) {
             BlockPos floor = corner.offset(x, -1, z);
             if (!level.hasChunkAt(floor) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP) || !level.getFluidState(floor).isEmpty()) return false;
