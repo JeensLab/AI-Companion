@@ -61,7 +61,7 @@ public final class CompanionPlanCodec {
                     actions.addAll(parsePlan(envelope));
                     reply = envelope.has("reply") ? textContent(envelope.get("reply")) : "";
                 }
-            } catch (RuntimeException exception) { throw invalid(); }
+            } catch (RuntimeException exception) { throw refusedOrInvalid(exception); }
         }
         if (actions.size() > MAX_STEPS) throw invalid();
         requireGoalAlone(actions);
@@ -124,11 +124,12 @@ public final class CompanionPlanCodec {
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
                 if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
-                // A building is named from the catalogue or not at all («resume» goes on with the one left unfinished); the name is kept as the catalogue spells it.
+                // A building is named from the catalogue (or a kind of it) or not at all («resume» goes on with the one left unfinished); the name is kept as the catalogue spells it.
                 if ("build_house".equals(type) && !item.isEmpty() && !"resume".equals(item)) {
-                    var building = dev.aicompanion.entity.CompanionVillageBuildings.find(item);
-                    if (building == null) throw invalid();
-                    item = building.name();
+                    String named = dev.aicompanion.entity.CompanionVillageBuildings.named(item, false);
+                    // Not invalid(): the player is told what the model named and what is like it (the message is kept by decode).
+                    if (named == null) throw new IllegalStateException("Модель назвала постройку «" + item.substring(0, Math.min(item.length(), 40)) + "», ничего не запущено. " + dev.aicompanion.entity.CompanionVillageBuildings.refusal(item));
+                    item = named;
                 }
                 // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
                 if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item) && !"here".equals(item)) throw invalid();
@@ -193,7 +194,7 @@ public final class CompanionPlanCodec {
             requireGoalAlone(result);
             requirePortalLast(result);
             return List.copyOf(result);
-        } catch (RuntimeException exception) { throw invalid(); }
+        } catch (RuntimeException exception) { throw refusedOrInvalid(exception); }
     }
 
     /** A long goal runs on the server by itself: it is the only step of its plan, or the whole plan is invalid. */
@@ -214,6 +215,11 @@ public final class CompanionPlanCodec {
             if (part.isJsonObject() && part.getAsJsonObject().has("text")) result.append(part.getAsJsonObject().get("text").getAsString()).append('\n');
         }
         return result.toString().trim();
+    }
+
+    /** A building the model named that the catalogue lacks keeps its own message (what is like it); any other fault is an invalid plan. */
+    private static IllegalStateException refusedOrInvalid(RuntimeException exception) {
+        return exception instanceof IllegalStateException refused && refused.getMessage() != null && refused.getMessage().startsWith("Модель назвала постройку") ? refused : invalid();
     }
 
     private static IllegalStateException invalid() {

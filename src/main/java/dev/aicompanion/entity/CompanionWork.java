@@ -502,8 +502,8 @@ public final class CompanionWork {
             case "build_house" -> {
                 if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
                 boolean resume = "resume".equals(item);
-                var named = resume ? null : CompanionVillageBuildings.find(item);
-                if (named == null && !resume && item != null && !item.isBlank()) return CompanionActionResult.failed("Такой постройки у меня нет. Умею: " + CompanionVillageBuildings.names() + ".");
+                var named = resume ? null : CompanionVillageBuildings.resolve(item, owner);
+                if (named == null && !resume && item != null && !item.isBlank()) return CompanionActionResult.failed(CompanionVillageBuildings.refusal(item));
                 // «Дострой» names nothing: it goes on with the building left unfinished, if the plank house is not the one left.
                 // No name and no «resume» is always the plank house.
                 templateJob = named != null || resume && templateHouse.unfinished() && !house.unfinished();

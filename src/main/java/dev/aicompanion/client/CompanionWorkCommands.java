@@ -121,10 +121,10 @@ public final class CompanionWorkCommands {
 
     public static PlannedAction parse(String text, String name) {
         String value = plain(text, name);
-        // «Построй деревенский дом»: a building of the catalogue by its name; any other name stays the model's.
+        // «Построй деревенский дом», «построй кузницу»: a building of the catalogue by its name, or a kind of it (the server picks the one for the place); any other name stays the model's.
         var named = java.util.regex.Pattern.compile("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (.+?)(?: рядом)?$").matcher(value);
-        if (named.matches() && dev.aicompanion.entity.CompanionVillageBuildings.find(named.group(1)) != null)
-            return new PlannedAction("build_house", 0, 1, dev.aicompanion.entity.CompanionVillageBuildings.find(named.group(1)).name());
+        String building = named.matches() ? dev.aicompanion.entity.CompanionVillageBuildings.named(named.group(1), true) : null;
+        if (building != null) return new PlannedAction("build_house", 0, 1, building);
         if (value.matches("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1, value.startsWith("дострой") ? "resume" : "");
         // Said of the place the player stands on. A question («это наш дом?») keeps its mark and stays talk for the model.
         if (value.matches("^(?:(?:это|вот|здесь|тут)(?: и есть| теперь| будет)? (?:наш|мой) дом|наш дом (?:здесь|тут)|(?:здесь|тут) (?:будет|теперь)(?: наш)? дом|запомни(?:,)? (?:где наш дом|(?:здесь|тут) наш дом|(?:это|этот дом|это место) как (?:наш )?дом))$"))
