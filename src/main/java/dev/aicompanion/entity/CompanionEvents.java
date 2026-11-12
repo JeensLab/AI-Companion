@@ -338,7 +338,7 @@ public final class CompanionEvents {
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
             case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "compost_meal", "build_portal", "disenchant_item", "compost_items",
-                 "shear_sheep", "milk_animal", "collect_eggs", "strip_log" -> companion.startWork(action, item, count, location);
+                 "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);

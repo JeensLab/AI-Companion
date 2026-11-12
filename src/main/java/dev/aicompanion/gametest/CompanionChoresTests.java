@@ -17,7 +17,10 @@ import net.minecraft.world.entity.animal.Sheep;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.BeehiveBlock;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CampfireBlock;
+import net.minecraft.world.level.block.entity.BeehiveBlockEntity;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -27,7 +30,8 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * the player 12.11: he should get everything a player gets. What a tool in hand gets rather than a blow: wool shorn off a sheep
- * that lives, milk of a cow, the eggs that lie about the hens, a log of his stripped with an axe.
+ * that lives, milk of a cow, the eggs that lie about the hens, a log of his stripped with an axe, the combs and the honey of a
+ * full hive with a campfire smoking under it.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -159,6 +163,70 @@ public final class CompanionChoresTests {
             for (int x = 8; x <= 16; x++) for (int z = 12; z <= 20; z++) for (int y = GROUND + 1; y <= GROUND + 3; y++)
                 h.assertTrue(h.getBlockState(new BlockPos(x, y, z)).isAir(), "A log is left standing at " + x + " " + y + " " + z);
             h.assertTrue(count(c, Items.STRIPPED_OAK_LOG) + count(c, Items.OAK_LOG) == 2, "A log of his is lost: " + future.join().report());
+        });
+    }
+
+    /** Plan only: a full hive about him gives combs to shears and honey to a bottle; with no smoke under it a campfire of his goes first. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aFullHiveIsPlannedWithSmokeUnderIt(GameTestHelper h) {
+        var level = h.getLevel();
+        Step cut = new Step("harvest_hive", "minecraft:honeycomb", 3);
+        var comb = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, "minecraft:honeycomb", 3, thing -> true, thing -> false);
+        h.assertTrue(comb.steps().equals(List.of(cut)), "Combs with shears: " + comb);
+        var honey = CompanionObtain.plan(level, List.of(new ItemStack(Items.GLASS_BOTTLE)), false, "minecraft:honey_bottle", 1, thing -> true, thing -> false);
+        h.assertTrue(honey.steps().equals(List.of(new Step("harvest_hive", "minecraft:honey_bottle", 1))), "Honey with a bottle: " + honey);
+        // No smoke under the hive: the campfire he carries is enough, and none carried is made first.
+        var carried = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS), new ItemStack(Items.CAMPFIRE)), false, "minecraft:honeycomb", 3, thing -> thing != Items.CAMPFIRE, thing -> false);
+        h.assertTrue(carried.steps().equals(List.of(cut)), "Combs with his campfire: " + carried);
+        var made = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, "minecraft:honeycomb", 3, thing -> thing != Items.CAMPFIRE, thing -> false);
+        int fire = made.steps().indexOf(new Step("craft_item", "minecraft:campfire", 1));
+        h.assertTrue(!made.refused() && fire >= 0 && made.steps().indexOf(cut) > fire && made.steps().getLast().equals(cut), "Combs with no smoke and no campfire: " + made);
+        var none = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, "minecraft:honeycomb", 3, thing -> false, thing -> false);
+        h.assertTrue(none.refused() && none.steps().isEmpty() && none.refusal().contains("улья"), "Combs with no full hive about: " + none);
+        // Inside a chain too: a candle is a string over a comb.
+        var candle = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS), new ItemStack(Items.STRING)), false, "minecraft:candle", 1, thing -> true, thing -> false);
+        h.assertTrue(candle.steps().equals(List.of(new Step("harvest_hive", "minecraft:honeycomb", 1), new Step("craft_item", "minecraft:candle", 1))), "A candle: " + candle);
+        h.succeed();
+    }
+
+    /** «Добудь 3 соты» at a full nest with no smoke under it: his campfire is set under the nest first, the combs are cut, the bee stays in. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void combsAreCutOverHisCampfireAndTheBeeStaysIn(GameTestHelper h) {
+        ground(h);
+        BlockPos nest = new BlockPos(20, GROUND + 3, 16);
+        h.setBlock(nest, Blocks.BEE_NEST.defaultBlockState().setValue(BeehiveBlock.HONEY_LEVEL, 5));
+        BeehiveBlockEntity home = h.getBlockEntity(nest);
+        home.addOccupant(h.spawn(EntityType.BEE, 20, GROUND + 1, 18));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        c.setItem(1, new ItemStack(Items.CAMPFIRE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:honeycomb\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.HONEYCOMB) == 3 && h.getBlockState(nest).getValue(BeehiveBlock.HONEY_LEVEL) == 0, "Not three combs of the nest: " + future.join().report());
+            h.assertTrue(CampfireBlock.isLitCampfire(h.getBlockState(new BlockPos(20, GROUND + 1, 16))) && count(c, Items.CAMPFIRE) == 0, "His campfire does not burn under the nest");
+            h.assertTrue(home.getOccupantCount() == 1, "The bee was smoked out: the nest was cut with no smoke under it");
+            h.assertTrue(count(c, Items.SHEARS) == 1 && c.getMainHandItem().getDamageValue() > 0, "The shears are not worn");
+            h.assertTrue(future.join().report().contains("Костёр"), "The campfire he left is not told of: " + future.join().report());
+        });
+    }
+
+    /** «Добудь бутылочку мёда» at a full nest over a campfire that burns: his bottle comes back full, his own campfire stays in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void honeyIsBottledOverACampfireThatBurns(GameTestHelper h) {
+        ground(h);
+        BlockPos nest = new BlockPos(20, GROUND + 3, 16);
+        h.setBlock(nest, Blocks.BEE_NEST.defaultBlockState().setValue(BeehiveBlock.HONEY_LEVEL, 5));
+        h.setBlock(new BlockPos(20, GROUND + 1, 16), Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.GLASS_BOTTLE));
+        c.setItem(1, new ItemStack(Items.CAMPFIRE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:honey_bottle\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.HONEY_BOTTLE) == 1 && count(c, Items.GLASS_BOTTLE) == 0 && h.getBlockState(nest).getValue(BeehiveBlock.HONEY_LEVEL) == 0,
+                    "No honey for the bottle: " + future.join().report());
+            h.assertTrue(count(c, Items.CAMPFIRE) == 1, "His campfire was spent where one burns already");
         });
     }
 

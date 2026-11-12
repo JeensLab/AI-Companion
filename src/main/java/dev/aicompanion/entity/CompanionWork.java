@@ -53,7 +53,7 @@ public final class CompanionWork {
     final CompanionPicking picking = new CompanionPicking(this);
     /** hunt_drop: what a monster drops, fought for and picked up. */
     final CompanionMobDrops drops = new CompanionMobDrops(this);
-    /** shear_sheep, milk_animal, collect_eggs, strip_log: what a tool in hand gets. */
+    /** shear_sheep, milk_animal, collect_eggs, strip_log, harvest_hive: what a tool in hand gets. */
     final CompanionChores chores = new CompanionChores(this);
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
@@ -467,7 +467,7 @@ public final class CompanionWork {
                     return CompanionActionResult.failed("Не понял, какой предмет отдать.");
                 job = Job.GIVE; phase = Phase.HAND;
             }
-            case "shear_sheep", "milk_animal", "collect_eggs", "strip_log" -> { CompanionActionResult refusal = chores.begin(action, item, count); if (refusal != null) return refusal; job = Job.CHORE; phase = Phase.CHORE; }
+            case "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive" -> { CompanionActionResult refusal = chores.begin(action, item, count); if (refusal != null) return refusal; job = Job.CHORE; phase = Phase.CHORE; }
             case "hunt_mobs" -> { job = Job.HUNT; phase = Phase.FIGHT; }
             case "hunt_drop" -> { CompanionActionResult refusal = drops.begin(item, count); if (refusal != null) return refusal; job = Job.HUNT; phase = Phase.DROPS; }
             case "hunt_animals" -> {
