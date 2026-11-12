@@ -15,12 +15,15 @@ final class CompanionHouseOrders {
     private CompanionHouseOrders() { }
 
     static Order start(CompanionEntity owner, CompanionHouse plank, CompanionHouse built, String item) {
+        // The window's order carries the place the player set (CompanionBuildPlacement.Site).
+        var site = CompanionBuildPlacement.Site.parse(item);
+        item = CompanionBuildPlacement.Site.nameOf(item);
         String resume = CompanionVillageBuildings.resume(item);
         var named = resume != null ? null : CompanionVillageBuildings.resolve(item, owner);
         if (resume == null && named == null && item != null && !item.isBlank()) return refused(CompanionVillageBuildings.refusal(item));
         if (named != null) {
             String note = built.begin(named);
-            CompanionBuildPlacement.ask(owner, built, note);
+            CompanionBuildPlacement.ask(owner, built, note, site);
             // With a ghost to place it the player is told in the placement's own words; the unfinished building is not dropped before the place is set.
             if (built.awaiting()) note = "";
             else if (!note.isEmpty()) owner.workStatus(note.trim());
@@ -38,7 +41,7 @@ final class CompanionHouseOrders {
         // A building ordered whose place was never chosen: the order asks for the place again.
         if (built.unplaced() && (said.isEmpty() || built.is(said))) {
             built.begin();
-            CompanionBuildPlacement.ask(owner, built, "");
+            CompanionBuildPlacement.ask(owner, built, "", null);
             return new Order(true, "", null);
         }
         boolean plankLeft = plank.unfinished(), builtLeft = built.unfinished();

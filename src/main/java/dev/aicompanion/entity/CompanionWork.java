@@ -546,7 +546,7 @@ public final class CompanionWork {
                             && owner.fairTarget(monster, owner.provokes(monster)))) huntTargets.add(monster.getUUID());
             owner.enableProtectionForWork();
         }
-        requestedItem = action.equals("place_chest") ? "minecraft:chest" : item == null ? "" : item;
+        requestedItem = action.equals("place_chest") ? "minecraft:chest" : item == null ? "" : action.equals("build_house") ? CompanionBuildPlacement.Site.nameOf(item) : item;
         requestedCount = count;
         if (job == Job.TAKE && "all".equals(item)) requestedCount = 27 * 64;
         gathered = woodAttempts = craftAttempts = transferred = newChests = 0;
@@ -598,7 +598,7 @@ public final class CompanionWork {
         owner.allowNewBench(false); benchHere = false; packTarget = null;
         if (job != null && completedId != taskId) {
             completedId = taskId;
-            completedResult = CompanionActionResult.cancelled(job == Job.HOUSE && templateJob && templateHouse.takeReplaced() ? CompanionBuildPlacement.REPLACED : "Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
+            completedResult = CompanionActionResult.cancelled(job == Job.HOUSE && templateJob && templateHouse.takeReplaced() ? CompanionBuildPlacement.DROPPED : "Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;

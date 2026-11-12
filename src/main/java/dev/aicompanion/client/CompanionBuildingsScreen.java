@@ -25,8 +25,8 @@ import java.util.Map;
  * The window of buildings, like the choice of a building in a colony builder: the catalogue by kind on the left, and for the one chosen its
  * size and a table of what it takes (needed / in the bag / who gets it: the companion himself, or the player who has to bring it) on the
  * right. The numbers are the server's own summary (CompanionBuildPlacement.summary), read again every second. «Строить» closes the window
- * and makes the same order the phrase «построй …» makes (CompanionGhostPlacement.order), after which the ghost opens; «Отмена» and Esc
- * drop the order. The whole window works from the keyboard: Tab between the list and the buttons, Up/Down in the list, Enter or Space on
+ * and opens the ghost (CompanionGhostPlacement.show): looking is no order, the order is made by Enter on the ghost. «Отмена» and Esc
+ * drop an order that waits for its place, if there is one. The whole window works from the keyboard: Tab between the list and the buttons, Up/Down in the list, Enter or Space on
  * the list or a focused button, PageUp/PageDown scroll a long table. Client only.
  */
 public final class CompanionBuildingsScreen extends Screen {
@@ -66,11 +66,11 @@ public final class CompanionBuildingsScreen extends Screen {
         request();
     }
 
-    /** «Строить»: the window closes without dropping anything, and the order for the chosen building is made as the phrase makes it. */
+    /** «Строить»: the window closes without dropping anything, and the ghost of the chosen building opens. */
     private void build() {
         lastChosen = chosen;
         minecraft.setScreen(null);
-        CompanionGhostPlacement.order(chosen);
+        CompanionGhostPlacement.show(chosen);
     }
 
     /** «Отмена», Esc: the order is dropped on the server (world and bag were never touched), the window closes. */

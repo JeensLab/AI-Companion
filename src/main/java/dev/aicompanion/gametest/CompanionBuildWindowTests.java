@@ -79,10 +79,8 @@ public final class CompanionBuildWindowTests {
     private static CompanionBuildSummary.Summary summary(Row... rows) { return new CompanionBuildSummary.Summary("храм саванны", 7, 9, 7, List.of(rows)); }
 
     @GameTest(template = "empty", timeoutTicks = 600)
-    public static void theOrderSaysOneShortLineAndTheWindowsChoiceReplacesItWithoutDoubling(GameTestHelper h) {
+    public static void anOrderWithoutAPlaceSaysOneShortLineAndWaits(GameTestHelper h) {
         Setup s = setup(h);
-        h.assertTrue(CompanionBuildPlacement.replaceFor(s.player, NAME), "With no order waiting the window's «Строить» starts one");
-        h.assertTrue(CompanionBuildPlacement.pendingName(s.player) == null, "replaceFor started the order itself: it is the client's to start, like the phrase");
         h.assertTrue(s.companion.startWork("build_house", NAME, 1).success(), "Order rejected");
         h.runAfterDelay(20, () -> {
             h.assertTrue(NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The order does not wait for a placement");
@@ -91,79 +89,100 @@ public final class CompanionBuildWindowTests {
             for (String gone : new String[]{"×", "блоков", "Сам добуду", "Принести придётся", "подтверд", "Выбери", "Enter", "минут"})
                 h.assertTrue(!told.contains(gone), "The line still carries «" + gone + "»: " + told);
             h.assertTrue(told.length() < 120, "The line is not short: " + told);
-            // The same building again, an unknown one: nothing to start, the order stays.
-            h.assertTrue(!CompanionBuildPlacement.replaceFor(s.player, NAME) && !CompanionBuildPlacement.replaceFor(s.player, "замок дракона") && !CompanionBuildPlacement.replaceFor(s.player, null), "A choice that changes nothing asked for an order");
-            h.assertTrue(NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The order was lost");
-            // Another building: the waiting order is dropped, and the order the phrase makes is the one that waits.
-            h.assertTrue(CompanionBuildPlacement.replaceFor(s.player, OTHER_NAME), "The other building's order is not to be started");
-            h.assertTrue(CompanionBuildPlacement.pendingName(s.player) == null && !s.companion.isGatheringTask(), "The old order outlived the choice: " + s.companion.getLastTaskResult());
-            h.assertTrue(CompanionBuildPlacement.confirm(s.player, NAME, 0, BlockPos.ZERO) != null, "The dropped order could still be confirmed");
-            h.assertTrue(s.companion.startWork("build_house", OTHER_NAME, 1).success(), "Order rejected");
-            h.runAfterDelay(20, () -> {
-                h.assertTrue(OTHER_NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The new order does not wait: " + CompanionBuildPlacement.pendingName(s.player));
-                h.assertTrue(s.companion.getLastTaskResult().equals(CompanionBuildPlacement.summary(s.player, OTHER_NAME).line()), s.companion.getLastTaskResult());
-                CompanionBuildPlacement.cancel(s.player);
-                h.assertTrue(CompanionBuildPlacement.pendingName(s.player) == null && !s.companion.isGatheringTask(), "The cancel left an order");
-                h.succeed();
-            });
+            CompanionBuildPlacement.cancel(s.player);
+            h.assertTrue(CompanionBuildPlacement.pendingName(s.player) == null && !s.companion.isGatheringTask(), "The cancel left an order");
+            h.succeed();
         });
     }
 
     /**
-     * The window's path through the queue and the plan runner, as the client takes it: the phrase's order is in the queue and waits for its
-     * place, the window's «Строить» for another building drops it on the server and makes the new order. Nothing was placed, dug or gathered,
-     * so the dropped order's end is the plain «replaced» line (the client does not say it), not «Работа прервана».
+     * Looking at a building is no order (Oleg, 12.11: a ghost opened only to look stopped the building under way, and every look was a
+     * task «не выполнено»). With a building under way the player's Enter on a ghost of another one is checked on the server and touches
+     * nothing: a bad place is refused with the reason, a good one asks the client for the order, which waits its turn in the queue with
+     * the place in it and, when its turn comes, is set down there without asking again.
      */
-    @GameTest(template = "empty", timeoutTicks = 600)
-    public static void replacingAWaitingOrderFromTheWindowProducesNoInterruptionMessage(GameTestHelper h) {
+    @GameTest(template = "empty", timeoutTicks = 900)
+    public static void aGhostOfAnotherBuildingLeavesTheWorkUnderWayAloneAndItsOrderCarriesThePlace(GameTestHelper h) {
         Setup s = setup(h);
-        var link = CompanionMultitaskSupport.link(h, s.companion);
-        var old = link.submit(List.of(new dev.aicompanion.client.PlannedAction("build_house", 0, 1, NAME)), "gametest-window-old", () -> false);
+        var link = link(h, s.companion);
+        var first = link.submit(List.of(new dev.aicompanion.client.PlannedAction("build_house", 0, 1, NAME)), "gametest-window-first", () -> false);
+        BlockPos corner = h.absolutePos(new BlockPos(18, GROUND, 14)), other = h.absolutePos(new BlockPos(4, GROUND, 4));
+        // The arena's ceiling is lower than any building but the desert house: opened over the second site.
+        for (int x = 2; x < 14; x++) for (int z = 2; z < 14; z++) h.setBlock(new BlockPos(x, GROUND + 5, z), Blocks.AIR);
         int[] stage = {0};
-        var fresh = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<String>>();
-        h.succeedWhen(() -> {
-            if (stage[0] == 0) {
-                h.assertTrue(NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The phrase's order does not wait for a placement");
-                h.assertTrue(CompanionBuildPlacement.replaceFor(s.player, OTHER_NAME), "The window's choice did not ask for an order");
-                fresh.set(link.submit(List.of(new dev.aicompanion.client.PlannedAction("build_house", 0, 1, OTHER_NAME)), "gametest-window-new", () -> false));
-                stage[0] = 1;
-            }
-            h.assertTrue(old.isDone(), "The dropped order is still running");
-            String report = old.join();
-            h.assertTrue(report.contains(CompanionBuildPlacement.REPLACED) && !report.contains("прервана"), "The dropped order ends with: " + report);
-            h.assertTrue(OTHER_NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The new order does not wait: " + CompanionBuildPlacement.pendingName(s.player));
-            h.assertTrue(s.companion.getLastTaskResult().equals(CompanionBuildPlacement.summary(s.player, OTHER_NAME).line()), s.companion.getLastTaskResult());
-            h.assertTrue(!fresh.get().isDone(), "The new order ended: " + fresh.get().getNow(""));
-            CompanionBuildPlacement.cancel(s.player);
-            link.close();
-        });
-    }
-
-    /** A real work that is stopped keeps its message: the window's choice leaves a building that is under way alone, and a stop of the work itself (not through the queue) says «Работа прервана». */
-    @GameTest(template = "empty", timeoutTicks = 600)
-    public static void aRealWorkThatIsStoppedKeepsItsInterruptionMessage(GameTestHelper h) {
-        Setup s = setup(h);
-        var link = CompanionMultitaskSupport.link(h, s.companion);
-        var order = link.submit(List.of(new dev.aicompanion.client.PlannedAction("build_house", 0, 1, NAME)), "gametest-window-real", () -> false);
-        int[] stage = {0};
+        var second = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<String>>();
         h.succeedWhen(() -> {
             if (stage[0] == 0) {
                 h.assertTrue(NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The order does not wait for a placement");
-                String refused = CompanionBuildPlacement.confirm(s.player, NAME, 0, h.absolutePos(new BlockPos(18, GROUND, 14)));
+                String refused = CompanionBuildPlacement.confirm(s.player, NAME, 0, corner);
                 h.assertTrue(refused == null, "Confirmation refused: " + refused);
                 stage[0] = 1;
             }
             if (stage[0] == 1) {
-                // The building is under way: the window's choice of another one asks for an order but drops nothing.
-                h.assertTrue(CompanionBuildPlacement.replaceFor(s.player, OTHER_NAME) && s.companion.hasActiveWorkOrder() && !order.isDone(), "The work under way was dropped");
+                var far = CompanionBuildPlacement.settle(s.player, OTHER_NAME, 0, other.offset(300, 0, 300));
+                var turned = CompanionBuildPlacement.settle(s.player, OTHER_NAME, 7, other);
+                var unknown = CompanionBuildPlacement.settle(s.player, "замок дракона", 0, other);
+                h.assertTrue(far.why() != null && !far.order() && turned.why() != null && unknown.why() != null, "A bad place or building was accepted: " + far + turned + unknown);
+                var good = CompanionBuildPlacement.settle(s.player, OTHER_NAME, 1, other);
+                h.assertTrue(good.why() == null && good.order() && good.queued(), "The place was not accepted as an order to queue: " + good);
+                h.assertTrue(s.companion.hasActiveWorkOrder() && !first.isDone() && CompanionBuildPlacement.pendingName(s.player) == null, "Looking at another building touched the work under way");
+                second.set(link.submit(List.of(new dev.aicompanion.client.PlannedAction("build_house", 0, 1, new CompanionBuildPlacement.Site(OTHER_NAME, other, 1).item())), "gametest-window-second", () -> false));
+                h.assertTrue(s.companion.hasActiveWorkOrder() && !first.isDone() && !second.get().isDone(), "The new order did not wait its turn");
                 s.companion.stopGatheringForPlayer();
                 stage[0] = 2;
             }
-            h.assertTrue(order.isDone(), "The stopped work is still running");
-            String report = order.join();
-            h.assertTrue(report.contains("Работа прервана") && !report.contains(CompanionBuildPlacement.REPLACED), "The stopped work ends with: " + report);
+            h.assertTrue(first.isDone(), "The stopped work is still running");
+            h.assertTrue(first.join().contains("Работа прервана") && !first.join().contains(CompanionBuildPlacement.DROPPED), "The stopped work ends with: " + first.join());
+            // The second order's turn: it is under way at once, and no placement is asked for.
+            // (In the bare arena there is nothing to build it of, so it may already have ended, having built what it could.)
+            h.assertTrue(s.companion.hasActiveWorkOrder() && !second.get().isDone() || second.get().getNow("").contains("блоков «" + OTHER_NAME + "»"), "The order with the place is not under way: " + second.get().getNow("") + " / " + s.companion.getLastTaskResult());
+            h.assertTrue(CompanionBuildPlacement.pendingName(s.player) == null, "The order with a place asked for the place again");
             link.close();
         });
+    }
+
+    /**
+     * An order (the model's) that waits for its place and ends without one — given up, or another building's place set — was never begun:
+     * its end is the plain «dropped» line, not «Работа прервана», and it is not kept among the tasks.
+     */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void anOrderDroppedBeforeItsPlaceIsNotAmongTheTasks(GameTestHelper h) {
+        Setup s = setup(h);
+        var link = link(h, s.companion);
+        var old = link.submit(List.of(new dev.aicompanion.client.PlannedAction("build_house", 0, 1, OTHER_NAME)), "gametest-window-old", () -> false);
+        int[] stage = {0};
+        var again = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<String>>();
+        h.succeedWhen(() -> {
+            if (stage[0] == 0) {
+                h.assertTrue(OTHER_NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The order does not wait for a placement");
+                h.assertTrue(link.tasks().size() == 1, "The waiting order is not the one task: " + link.tasks());
+                var good = CompanionBuildPlacement.settle(s.player, NAME, 0, h.absolutePos(new BlockPos(18, GROUND, 14)));
+                h.assertTrue(good.why() == null && good.order() && !good.queued(), "The other building's place was not accepted: " + good);
+                stage[0] = 1;
+            }
+            if (stage[0] == 1) {
+                h.assertTrue(old.isDone(), "The dropped order is still running");
+                h.assertTrue(old.join().contains(CompanionBuildPlacement.DROPPED) && !old.join().contains("прервана"), "The dropped order ends with: " + old.join());
+                h.assertTrue(link.tasks().isEmpty(), "The order that was never begun is among the tasks: " + link.tasks());
+                again.set(link.submit(List.of(new dev.aicompanion.client.PlannedAction("build_house", 0, 1, OTHER_NAME)), "gametest-window-again", () -> false));
+                stage[0] = 2;
+            }
+            if (stage[0] == 2) {
+                h.assertTrue(OTHER_NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The order does not wait for a placement");
+                CompanionBuildPlacement.cancel(s.player);
+                stage[0] = 3;
+            }
+            h.assertTrue(again.get().isDone(), "The cancelled order is still running");
+            h.assertTrue(again.get().join().contains(CompanionBuildPlacement.DROPPED) && link.tasks().isEmpty(), "The order given up is among the tasks: " + again.get().join() + " / " + link.tasks());
+            link.close();
+        });
+    }
+
+    /** A queue of its own: CompanionMultitaskSupport.link closes every other test's link, and these two tests run side by side. */
+    private static dev.aicompanion.client.CompanionParkLink link(GameTestHelper h, CompanionEntity companion) {
+        var link = new dev.aicompanion.client.CompanionParkLink();
+        link.bind(h.getLevel().getServer(), companion.getOwnerId());
+        return link;
     }
 
     private static Setup setup(GameTestHelper helper) {

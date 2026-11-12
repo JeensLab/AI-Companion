@@ -26,9 +26,10 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Where a building goes: when the order of a building waits for the player's placement (asked of the integrated server twice a
- * second), the window of buildings opens on it (CompanionBuildingsScreen); its «Строить» (the same order the phrase makes) opens a
- * see-through ghost that follows the crosshair on the ground, and Enter confirms it where it stands, Backspace gives it
+ * Where a building goes: «построй <постройку>» said or typed opens the window of buildings (CompanionBuildingsScreen), and so does an
+ * order from the model that waits for the player's placement (asked of the integrated server twice a second). The window's «Строить»
+ * opens a see-through ghost that follows the crosshair on the ground. The ghost is no order: whatever he does goes on, and nothing is
+ * among the tasks, until Enter sets the place — then the order is made with the place in it and takes its turn. Backspace gives it
  * up. R turns it, the arrows and PageUp/PageDown nudge it (and hold it there), H lets it follow the crosshair again. The keys are
  * ordinary key mappings (Controls, «ИИ-компаньон»), read only while a placement is open and shown by CompanionGhostPanel. The
  * server decides everything that matters: what comes back from it is the only truth about the site. Client only.
@@ -44,7 +45,7 @@ final class CompanionGhostPlacement {
     static final List<KeyMapping> KEYS = List.of(CONFIRM, CANCEL, ROTATE, FOLLOW, FORWARD, BACK, LEFT, RIGHT, RAISE, LOWER);
     private static final double LOOK_DISTANCE = 64;
     private static final float ALPHA = .5F;
-    private static final int POLL_TICKS = 10, WANT_TICKS = 600;
+    private static final int POLL_TICKS = 10;
 
     private static final CompanionBuildGhost ghost = new CompanionBuildGhost();
     /** The building being placed (null: no placement is open) and what the server last sent of it for the current turn. */
@@ -52,9 +53,8 @@ final class CompanionGhostPlacement {
     private static CompanionBuildPlacement.Preview preview;
     private static int rotation;
     private static BlockPos corner = BlockPos.ZERO;
-    /** The building the window was opened for by the server's order (not to be offered twice), and the one the window's «Строить» asked for (the ghost opens for it, not the window). */
-    private static String offered, wanted;
-    private static int wantedUntil;
+    /** The building the window was opened for by the server's order (not to be offered twice). */
+    private static String offered;
     /** Nudged by keys: stays put; otherwise follows the crosshair. */
     private static boolean locked;
     /** The last block the crosshair rested on: looking at the sky leaves the ghost there. */
@@ -68,7 +68,7 @@ final class CompanionGhostPlacement {
 
     private static void close() {
         ghost.close();
-        building = null; preview = null; confirming = false; spot = null; locked = false; pollTicks = 0; offered = null; wanted = null;
+        building = null; preview = null; confirming = false; spot = null; locked = false; pollTicks = 0; offered = null;
     }
 
     /** The building whose ghost is open (for the panel), or null. */
@@ -125,41 +125,34 @@ final class CompanionGhostPlacement {
         close(); quiet = ticks + POLL_TICKS * 2;
     }
 
+    /** The window's «Строить»: the ghost of {@code name} opens. Nothing is ordered: the server only reads the building out. */
+    static void show(String name) {
+        onServer(player -> CompanionBuildPlacement.preview(player.serverLevel(), name, 0), first -> { if (first != null) open(name, first); });
+    }
+
     /**
-     * The window's «Строить»: the order for {@code name} is made as the phrase makes it (a waiting order of another building is dropped first,
-     * on the server; the order for this one is kept), and the ghost opens as soon as the server waits for the place.
+     * «Построй <постройку>» said or typed ({@code command} is the line the local parser made of it): the window opens on that building
+     * instead of an order. False for anything else: the plank house, «дострой», another command.
      */
-    static void order(String name) {
-        wanted = name; wantedUntil = ticks + WANT_TICKS; offered = null;
-        onServer(player -> CompanionBuildPlacement.replaceFor(player, name), start -> {
-            if (Boolean.TRUE.equals(start)) CompanionChatScreen.runLocalCommand("companion work build_house 1 " + name.replace(' ', '_'), CompanionDiagnostics.newTrace());
-            pollTicks = 0;
-        });
+    static boolean offer(String command) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!command.startsWith("companion work build_house ") || minecraft.level == null || minecraft.player == null || minecraft.getSingleplayerServer() == null) return false;
+        String item = CompanionLocalCommands.actions(command).getFirst().item();
+        var building = dev.aicompanion.entity.CompanionVillageBuildings.resolve(item, minecraft.level.getBiome(minecraft.player.blockPosition()));
+        if (building == null) return false;
+        CompanionBuildingsScreen.show(building.name());
+        return true;
     }
 
     private static void drain() { for (KeyMapping key : KEYS) while (key.consumeClick()) { } }
 
-    /** Does the server still wait for a placement: offers the window for a new order, opens the ghost for the one the window asked for, and closes it when the order is gone. */
+    /** Does an order (one the model made) wait for a placement: the window is offered for it, once, unless a ghost is already open. */
     private static void poll() {
-        if (ticks > wantedUntil) wanted = null;
-        String shown = building, asked = wanted;
-        onServer(player -> {
-            String pending = CompanionBuildPlacement.pendingName(player);
-            return new Object[]{pending, pending == null || pending.equals(shown) || !pending.equals(asked) ? null : CompanionBuildPlacement.preview(player.serverLevel(), pending, 0)};
-        }, answer -> {
-            if (answer == null) return;
-            String pending = (String) answer[0];
-            if (pending == null) {
-                offered = null;
-                if (building != null) { close(); message("Размещение закончилось: заказ снят или время вышло."); }
-            } else if (pending.equals(building)) wanted = null;
-            else if (ticks >= quiet) {
-                if (pending.equals(wanted) && answer[1] != null) { open(pending, (CompanionBuildPlacement.Preview) answer[1]); }
-                else if (!pending.equals(wanted) && !pending.equals(offered) && opensOver(Minecraft.getInstance().screen)) {
-                    close(); offered = pending;
-                    CompanionBuildingsScreen.show(pending);
-                }
-            }
+        onServer(CompanionBuildPlacement::pendingName, pending -> {
+            if (pending == null) { offered = null; return; }
+            if (building != null || pending.equals(offered) || ticks < quiet || !opensOver(Minecraft.getInstance().screen)) return;
+            offered = pending;
+            CompanionBuildingsScreen.show(pending);
         });
     }
 
@@ -169,8 +162,9 @@ final class CompanionGhostPlacement {
     }
 
     private static void open(String name, CompanionBuildPlacement.Preview first) {
+        String was = offered;
         close();
-        building = name; preview = first; rotation = 0;
+        offered = was; building = name; preview = first; rotation = 0;
         follow(Minecraft.getInstance());
         ghost.bake(first.blocks());
     }
@@ -188,12 +182,17 @@ final class CompanionGhostPlacement {
     private static void confirm() {
         confirming = true;
         String name = building; int turn = rotation; BlockPos at = corner;
-        // An empty answer is the server's yes; anything else is its reason, and the ghost stays to be moved.
-        boolean sent = onServer(player -> { String why = CompanionBuildPlacement.confirm(player, name, turn, at); return why == null ? "" : why; }, answer -> {
+        // The server's reason leaves the ghost to be moved; its yes either gave the place to the order that waited, or asks for the order now.
+        boolean sent = onServer(player -> CompanionBuildPlacement.settle(player, name, turn, at), answer -> {
             confirming = false;
             if (answer == null) message("Не смог связаться с миром, нажми ещё раз.");
-            else if (answer.isEmpty()) { close(); quiet = ticks + POLL_TICKS * 2; message("Принято, строю здесь."); }
-            else message(answer);
+            else if (answer.why() != null) message(answer.why());
+            else {
+                close(); quiet = ticks + POLL_TICKS * 2;
+                if (!answer.order()) { message("Принято, строю здесь."); return; }
+                CompanionChatScreen.runLocalCommand("companion work build_house 1 " + new CompanionBuildPlacement.Site(name, at, turn).item().replace(' ', '_'), CompanionDiagnostics.newTrace());
+                if (answer.queued()) message("Место запомнил. Построю, как закончу то, чем занят.");
+            }
         });
         if (!sent) confirming = false;
     }
@@ -222,5 +221,13 @@ final class CompanionGhostPlacement {
         Minecraft.getInstance().gui.getChat().addMessage(Component.literal(companion + ": " + text).withStyle(ChatFormatting.AQUA));
     }
 
-    private static String name(KeyMapping key) { return key.getTranslatedKeyMessage().getString(); }
+    /** A letter key is named as the keyboard layout has it now (R, or К in the Russian one): the game's own name of a key is read once and kept. */
+    private static String name(KeyMapping key) {
+        var bound = key.getKey();
+        if (bound.getType() == InputConstants.Type.KEYSYM && bound.getValue() >= GLFW.GLFW_KEY_SPACE && key.getKeyModifier() == net.neoforged.neoforge.client.settings.KeyModifier.NONE) {
+            String live = GLFW.glfwGetKeyName(bound.getValue(), -1);
+            if (live != null && !live.isBlank()) return live.toUpperCase(java.util.Locale.ROOT);
+        }
+        return key.getTranslatedKeyMessage().getString();
+    }
 }

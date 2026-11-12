@@ -61,6 +61,7 @@ public final class CompanionChatScreen extends Screen {
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
+            if (CompanionGhostPlacement.offer(action)) return;
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
             runLocalCommand(action, trace);
             return;
@@ -171,6 +172,7 @@ public final class CompanionChatScreen extends Screen {
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
+            if (CompanionGhostPlacement.offer(action)) return;
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
             runLocalCommand(action, trace);
             return;
@@ -323,8 +325,8 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private static void finishActions(List<PlannedAction> actions, String report, Throwable error, boolean local, String trace) {
-        // An order dropped by the window for another building is not an interruption to tell about: the new order speaks.
-        if (error == null && report != null && report.contains(dev.aicompanion.entity.CompanionBuildPlacement.REPLACED)) { CompanionDiagnostics.event(trace, "execution_report", "report", report); return; }
+        // An order dropped before its place was set (given up, or another building chosen) is not an interruption to tell about.
+        if (error == null && report != null && report.contains(dev.aicompanion.entity.CompanionBuildPlacement.DROPPED)) { CompanionDiagnostics.event(trace, "execution_report", "report", report); return; }
         String raw = error == null ? (report == null ? "Без отчёта." : report) : "Не завершено: " + error.getMessage();
         OpenRouterClient.recordActionResult(raw);
         CompanionDiagnostics.event(trace, "execution_report", "report", raw);

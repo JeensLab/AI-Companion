@@ -28,8 +28,12 @@ public final class CompanionBuildPlacement {
     public static final int MAX_DISTANCE = 96;
     /** A placement nobody confirms is dropped after two minutes. */
     public static final int TIMEOUT_TICKS = 20 * 120;
-    /** The end of an order that was dropped for another building before anything was done; the client does not say it (the new order is told instead). */
-    public static final String REPLACED = "Выбрано другое здание: прежний заказ снят.";
+    /** The end of an order dropped while it waited for its place (given up, or another building chosen): nothing was done, the client does not say it. */
+    public static final String DROPPED = "Место не выбрано: заказ снят, ничего не тронуто.";
+    /** The end of an order nobody placed in time. */
+    static final String TIMED_OUT = "строить не буду. Ничего не тронул.";
+    /** A report of an order for a building that ended before its place was set: such an order is not kept among the tasks done. */
+    public static boolean neverBegan(String report) { return report != null && (report.contains(DROPPED) || report.contains(TIMED_OUT)); }
     /** The client says it is there (CompanionPreferences.sync, every 40 ticks); one that has not for this long is taken to be gone. */
     private static final int CLIENT_SEEN_TICKS = 200;
     private static final Map<UUID, Integer> CLIENTS = new ConcurrentHashMap<>();
@@ -37,6 +41,31 @@ public final class CompanionBuildPlacement {
     /** One block of the building relative to its lowest corner (both halves of a door or a bed), for the ghost. */
     public record Block(BlockPos rel, BlockState state) { }
     public record Preview(String name, int sizeX, int sizeY, int sizeZ, List<Block> blocks) { }
+    /**
+     * A building with the place the player set for it in the window, as the order carries it: «name@x,y,z,turn». Only the client's own
+     * order has it (the plan codec lets no such name through from the model), and the server checks the place again when the order begins.
+     */
+    public record Site(String name, BlockPos corner, int rotation) {
+        public String item() { return name + "@" + corner.getX() + "," + corner.getY() + "," + corner.getZ() + "," + rotation; }
+        /** The name alone, for what is said and shown. */
+        public static String nameOf(String item) { return item == null || item.indexOf('@') < 0 ? item : item.substring(0, item.indexOf('@')); }
+        static Site parse(String item) {
+            if (item == null || item.indexOf('@') < 0) return null;
+            String[] parts = item.substring(item.indexOf('@') + 1).split(",");
+            try {
+                int turn = parts.length == 4 ? Integer.parseInt(parts[3].trim()) : -1;
+                if (turn < 0 || turn >= Rotation.values().length) return null;
+                return new Site(nameOf(item), new BlockPos(Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim()), Integer.parseInt(parts[2].trim())), turn);
+            } catch (NumberFormatException error) { return null; }
+        }
+    }
+    /**
+     * The answer to the player's Enter: the reason the building cannot go there, else whether the client is to make the order (false: the
+     * order that waited took the place) and whether that order will wait for a work of his that is under way.
+     */
+    public record Settled(String why, boolean order, boolean queued) {
+        Settled(String why) { this(why, false, false); }
+    }
 
     private CompanionBuildPlacement() { }
 
@@ -48,12 +77,25 @@ public final class CompanionBuildPlacement {
         return seen != null && player.server.getTickCount() - seen >= 0 && player.server.getTickCount() - seen <= CLIENT_SEEN_TICKS;
     }
 
-    /** A fresh order for a building: with a client to place it, say the one short line about it (after {@code note}), and wait. The window shows the rest. */
-    static void ask(CompanionEntity owner, CompanionHouse house, String note) {
+    /**
+     * A fresh order for a building. With the place the player set in the window ({@code site}) it is set down there at once; without one,
+     * or when it can stand there no longer, and with a client to place it, he says the one short line about it (after {@code note}) and waits.
+     */
+    static void ask(CompanionEntity owner, CompanionHouse house, String note, Site site) {
         ServerPlayer player = owner.getOwnerPlayer();
-        if (house.sited() || player == null || !hasClient(player) || !(owner.level() instanceof ServerLevel level)) return;
+        if (house.sited() || !(owner.level() instanceof ServerLevel level)) return;
         var read = CompanionTemplates.load(level, house.building(), Rotation.NONE);
         if (read == null) return;
+        if (site != null) {
+            String why = house.place(level, site.corner(), Rotation.values()[site.rotation()]);
+            if (why == null) {
+                house.takeDropNote();
+                if (player != null) player.sendSystemMessage(Component.literal(owner.getName().getString() + ": " + CompanionBuildSummary.of(level, owner, house.building(), read).line()));
+                return;
+            }
+            note += "На выбранном месте строить уже нельзя: " + why + " Выбери место заново. ";
+        }
+        if (player == null || !hasClient(player)) return;
         // An unfinished building an old order left is not dropped yet: it is dropped when the place is set.
         String text = (house.waitingNote().isEmpty() ? note : house.waitingNote()) + CompanionBuildSummary.of(level, owner, house.building(), read).line();
         house.awaitPlacement(level.getGameTime() + TIMEOUT_TICKS, text);
@@ -70,21 +112,33 @@ public final class CompanionBuildPlacement {
     }
 
     /**
-     * The window's «Строить» for {@code name}: whether the client is to start the order the way the phrase does (build_house with the catalogue
-     * name). A different building's order that waits for its place is dropped here, quietly (the player chose again, he did not give up), so
-     * exactly one order waits; true then. False when the order for this very building already waits, or for a name not in the catalogue.
+     * The player's Enter on a ghost: the building {@code name} at {@code corner}, turned. The ghost itself is no order (looking at buildings
+     * touches nothing he does), so this is where one begins. An order that already waits for this very building takes the place (confirm).
+     * Otherwise the place is checked as confirm checks it, without touching any work; if it is good, a different building's order that waits
+     * is dropped quietly, and the client makes the order with the place in it ({@link Site#item()}), which takes its turn in the queue.
      */
-    public static boolean replaceFor(ServerPlayer player, String name) {
-        var building = CompanionVillageBuildings.find(name);
-        if (building == null) return false;
+    public static Settled settle(ServerPlayer player, String name, int rotation, BlockPos corner) {
         CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
-        CompanionHouse house = companion == null ? null : companion.work.awaitingHouse();
-        if (house == null) return true;
-        if (house.building().equals(building)) return false;
+        var building = CompanionVillageBuildings.find(name);
+        if (companion == null) return new Settled("Меня сейчас нет в мире.");
+        if (building == null) return new Settled("Такой постройки я не знаю.");
+        CompanionHouse waits = companion.work.awaitingHouse();
+        if (waits != null && waits.building().equals(building)) return new Settled(confirm(player, name, rotation, corner));
+        if (rotation < 0 || rotation >= Rotation.values().length) return new Settled("Не понял, как повернуть постройку.");
+        if (corner == null || companion.level() != player.level() || !(player.level() instanceof ServerLevel level)) return new Settled("Отсюда не получится построить.");
+        if (corner.distSqr(player.blockPosition()) > (double) MAX_DISTANCE * MAX_DISTANCE) return new Settled("Это дальше " + MAX_DISTANCE + " блоков от тебя, так далеко не строю.");
+        String why = CompanionHouse.refusalAt(companion, level, building, corner, Rotation.values()[rotation]);
+        if (why != null) return new Settled("Здесь строить нельзя: " + why + " Сдвинь призрак.");
+        if (waits != null) drop(companion, waits);
+        return new Settled(null, true, waits == null && companion.hasActiveWorkOrder());
+    }
+
+    /** An order that waits for its place ends without one: its end is {@link #DROPPED}, not «work interrupted». */
+    private static void drop(CompanionEntity companion, CompanionHouse house) {
         house.replacing();
         companion.stopGatheringForPlayer();
+        // Given up: «дострой» does not ask for the place again (an unfinished building the order was to replace is his to finish).
         house.forgetPlacement();
-        return true;
     }
 
     private static CompanionHouse pending(ServerPlayer player) {
@@ -139,9 +193,7 @@ public final class CompanionBuildPlacement {
         CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
         CompanionHouse house = companion == null ? null : companion.work.awaitingHouse();
         if (house == null) return;
-        companion.stopGatheringForPlayer();
-        // Given up: «дострой» does not ask for the place again (an unfinished building the order was to replace is his to finish).
-        house.forgetPlacement();
+        drop(companion, house);
         companion.workStatus("Ладно, не строю: место не выбрано, ничего не тронул.");
     }
 }

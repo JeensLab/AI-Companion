@@ -143,7 +143,7 @@ final class CompanionHouse {
     CompanionVillageBuildings.Building building() { return building; }
     /** From a fresh order until the player confirms where it goes (or the game time {@code until} comes): nothing is placed, dug or gathered. */
     void awaitPlacement(long until, String told) { awaitUntil = until; awaitText = told; unplaced = true; replaced = false; }
-    /** The player chose another building while this order waited for its place: its end says so instead of «work interrupted» (nothing was done). */
+    /** The player gave the place up or chose another building while this order waited for its place: its end says so instead of «work interrupted» (nothing was done). */
     void replacing() { replaced = true; }
     boolean takeReplaced() { boolean was = replaced && awaiting(); replaced = false; return was; }
     boolean awaiting() { return awaitUntil >= 0; }
@@ -164,6 +164,13 @@ final class CompanionHouse {
     String elsewhereWhat() { return !elsewhereUnbuilt() ? null : template ? "«" + elsewhere.getString("Building") + "»" : "дом 5×5"; }
     /** A round of getting materials is under way. */
     boolean gathering() { return materials.gathering(); }
+
+    /** Why {@code building} cannot be set down at {@code corner}, or null when it can; asked before there is an order, so it touches no work of his. */
+    static String refusalAt(CompanionEntity owner, ServerLevel level, CompanionVillageBuildings.Building building, BlockPos corner, Rotation turn) {
+        CompanionHouse probe = new CompanionHouse(owner, true);
+        probe.building = building;
+        return probe.place(level, corner, turn);
+    }
 
     /** Sets the building down with its lowest corner at {@code corner}, turned; the reason it cannot stand there, or null once it is set. */
     String place(ServerLevel level, BlockPos corner, Rotation turn) {
@@ -259,7 +266,7 @@ final class CompanionHouse {
     private Result step(ServerLevel level) {
         if (awaiting()) {
             if (level.getGameTime() < awaitUntil) { owner.workStatus(awaitText); return Result.working(); }
-            String said = "Место для «" + building.name() + "» не выбрано за " + CompanionBuildPlacement.TIMEOUT_TICKS / 1200 + " минуты, строить не буду. Ничего не тронул."
+            String said = "Место для «" + building.name() + "» не выбрано за " + CompanionBuildPlacement.TIMEOUT_TICKS / 1200 + " минуты, " + CompanionBuildPlacement.TIMED_OUT
                     + (stash == null || stashName.isEmpty() ? "" : " Недостроенная «" + stashName + "» осталась: скажи «дострой», чтобы продолжить её.");
             awaitUntil = -1; unplaced = false;
             if (stash != null) restoreDropped();
