@@ -111,12 +111,16 @@ final class CompanionMobDrops {
         return !targets(c, level, sources(level, item), Set.of(), Set.of()).isEmpty();
     }
 
-    /** Those he may go for: one he has not struck yet must be in his sight (not the cave under the hill, not behind a wall). */
+    /**
+     * Those he may go for. One he has not struck yet walks the surface (behind a trunk or a rise it is still about: in game 12.11 the
+     * spiders had gone round the trees while he made his sword) or is in his sight: not the cave under the hill.
+     */
     private static List<Mob> targets(CompanionEntity c, ServerLevel level, List<EntityType<?>> kinds, Set<UUID> passed, Set<UUID> engaged) {
         if (kinds.isEmpty() || level.dimension() != Level.OVERWORLD) return List.of();
         int radius = c.getSearchRadius();
         return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID())
-                && fought(c, kinds, mob) && (engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob)));
+                && fought(c, kinds, mob) && (engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob)
+                || mob.getBlockY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, mob.getBlockX(), mob.getBlockZ()) - 1));
     }
 
     /** Of the kind, alive, nobody's (no name), on land, on its own feet, and one he may fight by this order. */
