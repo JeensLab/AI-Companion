@@ -19,6 +19,30 @@ import java.util.Set;
 @PrefixGameTestTemplate(false)
 public final class CompanionJokeBankTests {
     @GameTest(template = "empty")
+    public static void announcementAndStoryHaveTwoSecondsOfSilentPcm(GameTestHelper h) throws Exception {
+        for (int storyRate : new int[]{24000, 16000}) {
+            var first = tone(24000); var second = tone(storyRate);
+            var pcm = dev.aicompanion.client.VoicePcm.decode(dev.aicompanion.client.VoicePcm.joinWithPause(first, second));
+            int start = 24000 * 2, end = start + 24000 * 2 * 2;
+            h.assertTrue(Math.abs(pcm.bytes().length - 24000 * 2 * 4) < 200, "Audio length lost announcement, silence or story");
+            for (int i = start; i < end; i++) h.assertTrue(pcm.bytes()[i] == 0, "Pause contains audible PCM");
+            h.assertTrue(pcm.bytes()[start - 10] != 0 && pcm.bytes()[end + 100] != 0, "Speech was replaced by silence");
+            var mouth = new dev.aicompanion.client.CompanionSpeechEnvelope(pcm);
+            h.assertTrue(mouth.atSample(24000 * 2) == 0, "Mouth moves during silence");
+        }
+        h.succeed();
+    }
+    private static byte[] tone(int rate) throws Exception {
+        var pcm = java.nio.ByteBuffer.allocate(rate * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < rate; i++) pcm.putShort((short)1234);
+        var output = new java.io.ByteArrayOutputStream();
+        try (var input = new javax.sound.sampled.AudioInputStream(new java.io.ByteArrayInputStream(pcm.array()),
+                new javax.sound.sampled.AudioFormat(rate,16,1,true,false),rate)) {
+            javax.sound.sampled.AudioSystem.write(input,javax.sound.sampled.AudioFileFormat.Type.WAVE,output);
+        }
+        return output.toByteArray();
+    }
+    @GameTest(template = "empty")
     public static void oldLinesAndMultilineBlocksNormalizeAndCountRejections(GameTestHelper h) {
         var old = CompanionJokeBank.parse("\uFEFF# comment\r\nБайка 123.\r\nБайка  123.\nПлохо\u0000.\n" + "я ".repeat(151));
         h.assertTrue(old.jokes().size() == 1 && old.duplicates() == 1 && old.invalid() == 2, "Legacy validation/counts");
