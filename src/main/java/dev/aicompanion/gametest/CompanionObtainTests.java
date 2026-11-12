@@ -56,6 +56,28 @@ public final class CompanionObtainTests {
         h.succeed();
     }
 
+    /**
+     * Plan only: the plan ends in the item asked for or says it cannot. A wood block is logs of its species and a craft, a stripped
+     * log and a named stone of the cobblestone family are refused (they used to be planned as any log and any stone); white wool is
+     * found among the sixteen wools a dyeing recipe takes.
+     */
+    @GameTest(template = "empty")
+    public static void aPlanEndsInTheItemAskedFor(GameTestHelper h) {
+        var wood = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:birch_wood", 3);
+        h.assertTrue(!wood.refused() && wood.steps().size() == 2 && wood.steps().get(0).equals(new CompanionObtain.Step("gather_wood", "minecraft:birch_log", 4))
+                && wood.steps().get(1).equals(new CompanionObtain.Step("craft_item", "minecraft:birch_wood", 3)), "Birch wood: " + wood);
+        for (String item : List.of("minecraft:stripped_oak_log", "minecraft:stripped_birch_wood", "minecraft:blackstone", "minecraft:cobbled_deepslate")) {
+            var plan = CompanionObtain.plan(h.getLevel(), List.of(), false, item, 1);
+            h.assertTrue(plan.refused() && plan.steps().isEmpty(), item + " is not what chopping or digging gives: " + plan);
+        }
+        var cobble = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:cobblestone", 5);
+        h.assertTrue(types(cobble).equals(List.of("gather_stone")), "Cobblestone: " + cobble);
+        var wool = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:blue_wool", 1);
+        h.assertTrue(!wool.refused() && indexOf(wool, "hunt_animals", "minecraft:sheep") >= 0 && indexOf(wool, "mine_ore", "minecraft:lapis_ore") >= 0
+                && wool.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:blue_wool", 1)), "Blue wool: " + wool);
+        h.succeed();
+    }
+
     /** Plan only: a flint and steel from an empty bag is iron ore, the furnace, flint dug out of gravel, then the craft. */
     @GameTest(template = "empty")
     public static void flintAndSteelIsPlannedFromOreAndGravel(GameTestHelper h) {
