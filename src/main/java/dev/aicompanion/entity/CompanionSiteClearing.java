@@ -64,6 +64,9 @@ final class CompanionSiteClearing {
     BlockPos high() { return needsColumn; }
     /** How many blocks were cleared so far: a column that did not help is tried again once one was (the same rule as for the building's own blocks). */
     int cleared() { return cleared; }
+    /** The cells still to free this pass (a copy, empty before the pass reads the world), for the journal; whether a cell is one round the box. */
+    List<BlockPos> queued() { return queue == null ? List.of() : List.copyOf(queue); }
+    boolean extra(BlockPos pos) { return extra.contains(pos); }
     private int no(String reason) { refusal = reason; return -1; }
 
     void use(CompanionTemplates.Loaded loaded) {

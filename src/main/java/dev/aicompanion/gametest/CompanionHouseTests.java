@@ -619,7 +619,7 @@ public final class CompanionHouseTests {
             helper.assertTrue(placedAt[0] != null, "The chest is not put down yet");
             done(helper, companion);
             String said = companion.getLastTaskResult();
-            helper.assertTrue(!companion.didLastTaskSucceed() && said.contains(placedAt[0].toShortString()) && said.contains("Мешает"), said);
+            helper.assertTrue(!companion.didLastTaskSucceed() && said.contains(placedAt[0].toShortString()) && said.contains("мешает: " + Blocks.CHEST.getName().getString()), said);
             helper.assertTrue(helper.getLevel().getBlockState(placedAt[0]).is(Blocks.CHEST)
                     && helper.getLevel().getBlockEntity(placedAt[0]) instanceof Container held && held.getItem(0).is(Items.DIAMOND) && held.getItem(0).getCount() == 5, "The chest or what it held was touched");
         });
