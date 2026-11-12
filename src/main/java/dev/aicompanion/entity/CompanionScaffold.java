@@ -49,6 +49,11 @@ final class CompanionScaffold {
     private Path approach;
     private boolean descending;
     private String failure = "";
+    /** The last climb ended because he was found below the column (pushed, fell, knocked off): the building goes on. */
+    private boolean slipped;
+    /** Dirt that lay where its block was because the bag was full on the way down, and where the last of it lies (said once, by takeNote). */
+    private int leftDirt;
+    private BlockPos leftAt;
     /** What the building itself still needs of a material is not stood on: reserved items count only above that amount. */
     private ToIntFunction<Item> reserved = item -> 0;
 
@@ -61,6 +66,14 @@ final class CompanionScaffold {
     boolean busy() { return base != null || descending; }
     List<BlockPos> blocks() { return List.copyOf(blocks); }
     String failure() { return failure; }
+    boolean slipped() { return slipped; }
+    /** What the descent left on the ground (the bag was full), in words for the player; empty when it left nothing. Said once. */
+    String takeNote() {
+        if (leftDirt == 0) return "";
+        String note = "В сумке не было места: " + leftDirt + " блоков земли с лесов лежат на земле у " + leftAt.toShortString() + ", подбери их.";
+        leftDirt = 0; leftAt = null;
+        return note;
+    }
     boolean owns(BlockPos pos) { return blocks.contains(pos); }
 
     /** How much dirt he can stand on: what he carries above what the building still needs. */
@@ -79,7 +92,7 @@ final class CompanionScaffold {
     void begin(BlockPos feet, int levels, ToIntFunction<Item> reserve) {
         reserved = reserve;
         base = feet.immutable(); height = Math.min(MAX_HEIGHT, levels);
-        jumpCell = null; jumpTicks = failedJumps = cooldown = ticks = 0; approach = null; descending = false; failure = "";
+        jumpCell = null; jumpTicks = failedJumps = cooldown = ticks = 0; approach = null; descending = false; failure = ""; slipped = false;
     }
 
     void startDescend() { descending = !blocks.isEmpty(); base = descending ? blocks.getFirst() : null; jumpCell = null; approach = null; idle = walkTicks = 0; breaking.reset(); }
@@ -93,7 +106,7 @@ final class CompanionScaffold {
         if (jumpCell != null) return jump(level);
         double horizontal = horizontalDistanceSqr();
         if (horizontal > .0144D || Math.abs(owner.getY() - surface) > .2D) {
-            if (!blocks.isEmpty() && owner.getY() < surface - .2D) return fail("Соскользнул с лесов.");
+            if (!blocks.isEmpty() && owner.getY() < surface - .2D) { slipped = true; return fail("Соскользнул с лесов."); }
             if (blocks.isEmpty() && (horizontal > 2.25D || Math.abs(owner.getY() - surface) > .2D)) {
                 if (approach == null || owner.getNavigation().isDone() && ticks % 20 == 0) {
                     int busy = owner.work.route.busyAnswers();
@@ -190,10 +203,15 @@ final class CompanionScaffold {
         ItemStack tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, top, null, owner, tool);
         // A drop that does not fit the bag would lie on the ground and go: the column stays, saved for «дострой» (as the site clearing does).
+        // Not with him high up: the block under his feet is the first to break, and to stop there leaves him stranded. It comes down all the same,
+        // the dirt lies where it was, and the end of the work says how much and where.
         if (!owner.canStoreDrops(drops)) {
-            descending = false; base = null; approach = null; breaking.reset();
-            failure = "В сумке нет места для земли, которую снимаю с лесов («" + top.toShortString() + "»). Освободи место.";
-            return Outcome.FAILED;
+            if (owner.getY() - blocks.getFirst().getY() <= 1.1D) {
+                descending = false; base = null; approach = null; breaking.reset();
+                failure = "В сумке нет места для земли, которую снимаю с лесов («" + top.toShortString() + "»). Освободи место.";
+                return Outcome.FAILED;
+            }
+            leftDirt += drops.stream().mapToInt(ItemStack::getCount).sum(); leftAt = top;
         }
         if (!level.destroyBlock(top, false, owner, 512)) return Outcome.WORKING;
         tool.getItem().mineBlock(tool, level, state, top, owner);

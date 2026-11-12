@@ -85,6 +85,8 @@ final class CompanionHouseMaterials {
         return null;
     }
     private static String path(Item item) { return BuiltInRegistries.ITEM.getKey(item).getPath(); }
+    /** The block is made of a species of wood (planks, logs, stairs, a door of it): the species of a building is a choice until one stands. */
+    static boolean wooden(BlockState state) { return species(BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath()) != null; }
 
     /** The block as it is built here: its wood replaced where the template's species is not to be had, grass, podzol and a path as plain dirt (a path block is had only with silk touch). */
     BlockState adapt(BlockState state) {

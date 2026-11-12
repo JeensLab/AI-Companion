@@ -54,6 +54,7 @@ final class CompanionSiteClearing {
     private int no(String reason) { refusal = reason; return -1; }
 
     void use(CompanionTemplates.Loaded loaded) {
+        logVerdicts.clear();
         sizeX = loaded.sizeX(); sizeY = loaded.sizeY(); sizeZ = loaded.sizeZ();
         Set<BlockPos> cells = new HashSet<>();
         List<Door> found = new ArrayList<>();
@@ -111,9 +112,19 @@ final class CompanionSiteClearing {
         return why == null ? null : "Мешает «" + state.getBlock().getName().getString() + "» на " + pos.toShortString() + ": " + why + FREE_IT;
     }
 
-    /** The log is part of a wall or a frame (no living crown, crafted blocks against it), not of a tree: the same judgement as for the woodcutter. */
-    private static boolean builtLog(ServerLevel level, BlockPos pos) {
-        return CompanionBuildings.builtLogs(level, CompanionLogSearch.connected(level, pos, BlockTags.LOGS));
+    /** The verdict on each log met this tick: a search tries many corners, and every one of them meets the same trees. */
+    private final java.util.Map<BlockPos, Boolean> logVerdicts = new java.util.HashMap<>();
+    private long verdictTick = -1;
+    /** The log is part of a wall or a frame (no living crown, crafted blocks against it), not of a tree: the same judgement as for the woodcutter, once per connected group. */
+    private boolean builtLog(ServerLevel level, BlockPos pos) {
+        if (verdictTick != level.getGameTime()) { logVerdicts.clear(); verdictTick = level.getGameTime(); }
+        Boolean known = logVerdicts.get(pos);
+        if (known != null) return known;
+        var group = CompanionLogSearch.connected(level, pos, BlockTags.LOGS);
+        boolean built = CompanionBuildings.builtLogs(level, group);
+        for (BlockPos member : group) logVerdicts.put(member, built);
+        logVerdicts.put(pos.immutable(), built);
+        return built;
     }
 
     // ---- the search for a site
@@ -149,7 +160,7 @@ final class CompanionSiteClearing {
                 String blocked = obstruction(level, pos, players);
                 if (blocked != null) return no(blocked.replace(FREE_IT, ""));
                 if (y >= 2 && terrain(state)) return no("холм выше блока (" + pos.toShortString() + ").");
-                if (strict && y >= 1 && terrain(state) && !state.is(BlockTags.DIRT) && !state.is(BlockTags.SAND) && !state.is(Blocks.GRAVEL))
+                if (strict && terrain(state) && !state.is(BlockTags.DIRT) && !state.is(BlockTags.SAND) && !state.is(Blocks.GRAVEL))
                     return no("на площадке «" + state.getBlock().getName().getString() + "» (" + pos.toShortString() + "): сам выбранное место ради него не расчищаю.");
                 if (y >= 1 && state.getDestroySpeed(level, pos) > 0) cost++;
             }

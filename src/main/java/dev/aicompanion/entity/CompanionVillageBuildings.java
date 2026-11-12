@@ -73,6 +73,28 @@ public final class CompanionVillageBuildings {
         return null;
     }
 
+    /** The building is the one {@code said} names: by its name, by its kind, or by «дом» for any house of the catalogue. */
+    static boolean is(Building building, String said) {
+        Building exact = find(said);
+        if (exact != null) return exact == building;
+        return building.kind().equals(kindLabel(said, true)) || building.kind().equals("дом") && said != null && normalize(said).equals("дом");
+    }
+
+    /**
+     * «resume», or «resume» and what is to be gone on with (a name or kind of the catalogue, or «дом»), as the server reads it; null for anything
+     * else. The name comes out as the catalogue spells it.
+     */
+    public static String resume(String item) {
+        if (item == null) return null;
+        String key = normalize(item);
+        if (key.equals("resume")) return "resume";
+        if (!key.startsWith("resume ")) return null;
+        String rest = key.substring("resume ".length()).trim();
+        if (rest.equals("дом")) return "resume дом";
+        String named = named(rest, false);
+        return named == null ? null : "resume " + named;
+    }
+
     /** The label of the kind that {@code said} names exactly (its label, and the forms a player says when {@code spoken}), or null. */
     private static String kindLabel(String said, boolean spoken) {
         if (said == null) return null;
@@ -146,7 +168,7 @@ public final class CompanionVillageBuildings {
 
     /** The part of the model's system prompt about buildings: how to ask for one, and the catalogue by kind with width x depth x height. */
     public static String modelText() {
-        return "Без item — дом 5×5 («дом», «домик» тоже он). item — точное имя здания деревни из списка (Ш×Г×В): " + modelList() + ". item=resume — достроить то, что осталось недостроенным («дострой», «продолжи стройку»). "
+        return "Без item — дом 5×5 («дом», «домик» тоже он). item — точное имя здания деревни из списка (Ш×Г×В): " + modelList() + ". item=resume — достроить то, что осталось недостроенным («дострой», «продолжи стройку»); resume + имя, вид или «дом» — только его («дострой кузницу»). "
                 + "Просят то, чего нет в списке, — не выдумывай имя: скажи, что такого нет, и назови похожее, build_house не запускай. ";
     }
 }

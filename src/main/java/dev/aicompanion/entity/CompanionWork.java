@@ -291,7 +291,8 @@ public final class CompanionWork {
         shovelSense = new CompanionToolSense(owner, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
     }
     public boolean isActive() { return job != null; }
-    boolean swinging() { return breaking.swinging(); }
+    /** Busy with a block, or on a scaffold column (climbing, standing, coming down): the pickup of drops from the ground does not start then (CompanionLoot.canChase). */
+    boolean swinging() { return breaking.swinging() || job == Job.HOUSE && templateJob && templateHouse.scaffolding(); }
     boolean allowsRouteRecovery() {
         // Inside our own stair descent, walls around and the next cell above are the plan, not a trap. The generic
         // escape used to fill those stairs with soil and break their steps. It acts only once the walk back is confirmed gone.
@@ -404,8 +405,10 @@ public final class CompanionWork {
     CompanionHouse awaitingHouse() { return job == Job.HOUSE && templateJob && templateHouse.awaiting() ? templateHouse : null; }
     /** The template building this work builds right now (not one left unfinished, not one still waiting for its place): it alone sets things aside. */
     private CompanionHouse building() { return job == Job.HOUSE && templateJob && !templateHouse.awaiting() ? templateHouse : null; }
-    int buildingStone() { var now = building(); return now == null ? 0 : now.stoneReserve(); }
-    int buildingNeeds(net.minecraft.world.item.Item item) { var now = building(); return now == null ? 0 : now.reserved(item); }
+    /** The template building whose unbuilt cells are set aside: the one this order builds (also while it waits for its place), or one left unfinished. What they need is its material, not path lights or tools. */
+    private CompanionHouse holding() { return job == Job.HOUSE && templateJob || templateHouse.unfinished() ? templateHouse : null; }
+    int buildingStone() { var now = holding(); return now == null ? 0 : now.stoneReserve(); }
+    int buildingNeeds(net.minecraft.world.item.Item item) { var now = holding(); return now == null ? 0 : now.reserved(item); }
     boolean buildingGround(BlockPos pos) { var now = building(); return now != null && now.holds(pos); }
     /** A step of a building (a block set down or cleared, a scaffold block up or down) is progress: the time of the order starts again. */
     void progressed() { deadline = Math.max(deadline, owner.level().getGameTime() + 20 * 600); }
@@ -503,15 +506,10 @@ public final class CompanionWork {
             }
             case "build_house" -> {
                 if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
-                boolean resume = "resume".equals(item);
-                var named = resume ? null : CompanionVillageBuildings.resolve(item, owner);
-                if (named == null && !resume && item != null && !item.isBlank()) return CompanionActionResult.failed(CompanionVillageBuildings.refusal(item));
-                // «Дострой» names nothing: it goes on with the building left unfinished, if the plank house is not the one left.
-                // No name and no «resume» is always the plank house.
-                templateJob = named != null || resume && templateHouse.unfinished() && !house.unfinished();
-                job = Job.HOUSE; phase = Phase.BUILD;
-                if (named != null) { startNote = templateHouse.begin(named); if (!startNote.isEmpty()) owner.workStatus(startNote.trim()); CompanionBuildPlacement.ask(owner, templateHouse, startNote); }
-                else if (templateJob) templateHouse.begin(); else house.begin();
+                // A name or kind builds that building, no name the plank house; «дострой» goes on with what is unfinished and begins nothing (CompanionHouseOrders).
+                var order = CompanionHouseOrders.start(owner, house, templateHouse, item);
+                if (order.refusal() != null) return order.refusal();
+                templateJob = order.template(); startNote = order.note(); job = Job.HOUSE; phase = Phase.BUILD;
             }
             case "build_pen" -> { CompanionActionResult refusal = pen.begin(item, count); if (refusal != null) return refusal; job = Job.PEN; phase = Phase.PEN; }
             case "breed_animals" -> { CompanionActionResult refusal = breeding.begin(item, count); if (refusal != null) return refusal; job = Job.BREED; phase = Phase.BREED; }
@@ -619,7 +617,7 @@ public final class CompanionWork {
         if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
         if (stalled()) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
-        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && owner.hasPendingLoot()) return;
+        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }
@@ -888,7 +886,7 @@ public final class CompanionWork {
     }
     void finish(CompanionActionResult result) {
         // A round of getting what a building lacks that came to nothing is told to the player at the end, with the rest: back to the building.
-        if (job == Job.HOUSE && templateJob && phase != Phase.BUILD && result.status() == CompanionActionResult.Status.FAILED && !CompanionEntity.FULL_BAG_FOR_LOGS.equals(result.message()) && templateHouse.gathering()) { afterStone = null; phase = Phase.BUILD; resetTarget(); return; }
+        if (job == Job.HOUSE && templateJob && templateHouse.gathering() && CompanionHouseOrders.shortRound(phase, result)) { afterStone = null; phase = Phase.BUILD; resetTarget(); return; }
         owner.goals().skillCompleted(result.evidence());
         // A travelling bench is not left behind: pick it up first, then report the original result.
         if (phase != Phase.PACK && job != null && job != Job.COME && job != Job.COURSE && job != Job.HUNT) {

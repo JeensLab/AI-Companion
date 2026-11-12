@@ -58,7 +58,8 @@ public final class CompanionBuildPlacement {
         if (house.sited() || player == null || !hasClient(player) || !(owner.level() instanceof ServerLevel level)) return;
         var read = CompanionTemplates.load(level, house.building(), Rotation.NONE);
         if (read == null) return;
-        String text = note + summary(level, owner, house.building(), read);
+        // An unfinished building an old order left is not dropped yet: it is dropped when the place is set.
+        String text = (house.waitingNote().isEmpty() ? note : house.waitingNote()) + summary(level, owner, house.building(), read);
         house.awaitPlacement(level.getGameTime() + TIMEOUT_TICKS, text);
         player.sendSystemMessage(Component.literal(owner.getName().getString() + ": " + text));
     }
@@ -142,15 +143,18 @@ public final class CompanionBuildPlacement {
         if (corner.distSqr(player.blockPosition()) > (double) MAX_DISTANCE * MAX_DISTANCE) return "Это дальше " + MAX_DISTANCE + " блоков от тебя, так далеко не строю.";
         String why = house.place(level, corner, Rotation.values()[rotation]);
         if (why != null) return "Здесь строить нельзя: " + why + " Сдвинь призрак.";
-        companion.workStatus("Строю «" + house.building().name() + "» на " + corner.toShortString() + ", поворот " + rotation * 90 + "°.");
+        companion.workStatus(house.takeDropNote() + "Строю «" + house.building().name() + "» на " + corner.toShortString() + ", поворот " + rotation * 90 + "°.");
         return null;
     }
 
     /** The player gives the placement up: the order is dropped, the world and the bag are as they were. */
     public static void cancel(ServerPlayer player) {
         CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
-        if (companion == null || companion.work.awaitingHouse() == null) return;
+        CompanionHouse house = companion == null ? null : companion.work.awaitingHouse();
+        if (house == null) return;
         companion.stopGatheringForPlayer();
+        // Given up: «дострой» does not ask for the place again (an unfinished building the order was to replace is his to finish).
+        house.forgetPlacement();
         companion.workStatus("Ладно, не строю: место не выбрано, ничего не тронул.");
     }
 }

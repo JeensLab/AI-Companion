@@ -127,7 +127,8 @@ public final class CompanionPlanCodec {
                 // A building is named from the catalogue (or a kind of it) or not at all («resume» goes on with the one left unfinished); the name is kept as the catalogue spells it.
                 // «дом», «house», «маленький дом», «дом 5×5»: the plain house, as an empty item always was.
                 if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.plankHouse(item)) item = "";
-                if ("build_house".equals(type) && !item.isEmpty() && !"resume".equals(item)) {
+                if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.resume(item) != null) item = dev.aicompanion.entity.CompanionVillageBuildings.resume(item);
+                else if ("build_house".equals(type) && !item.isEmpty()) {
                     String named = dev.aicompanion.entity.CompanionVillageBuildings.named(item, false);
                     // Not invalid(): the player is told what the model named and what is like it (the message is kept by decode).
                     if (named == null) throw new IllegalStateException("Модель назвала постройку «" + item.substring(0, Math.min(item.length(), 40)) + "», ничего не запущено. " + dev.aicompanion.entity.CompanionVillageBuildings.refusal(item));

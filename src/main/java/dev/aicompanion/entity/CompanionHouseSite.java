@@ -4,9 +4,15 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.ExperienceOrb;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.decoration.HangingEntity;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -37,10 +43,13 @@ final class CompanionHouseSite {
         return null;
     }
 
-    /** The first living thing or decoration (not the player, not a drop) in the building's box and a block around it; null when none. */
+    /**
+     * The first decoration (a frame, a painting, an armor stand, a leash knot) inside the building's box; null when none. A mob, a pet beside the
+     * player, the player and a drop do not count: a block waits for them where they stand (CompanionHouseRoom).
+     */
     Entity standingIn(ServerLevel level, BlockPos corner, int width, int height, int depth) {
-        return level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner.offset(-1, 0, -1)), Vec3.atLowerCornerOf(corner.offset(width + 1, height, depth + 1))),
-                entity -> entity.isAlive() && !(entity instanceof Player) && !(entity instanceof ItemEntity) && !(entity instanceof ExperienceOrb)).stream().findFirst().orElse(null);
+        return level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner), Vec3.atLowerCornerOf(corner.offset(width, height, depth))),
+                entity -> entity.isAlive() && (entity instanceof HangingEntity || entity instanceof ArmorStand)).stream().findFirst().orElse(null);
     }
 
     /** Whoever stands in the cells (a block goes into neither the player nor a mob), or null. */
@@ -53,10 +62,40 @@ final class CompanionHouseSite {
         for (int radius = 1; radius <= 4; radius++) for (int dy : new int[]{0, -1, 1}) for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
             BlockPos pos = owner.blockPosition().offset(dx, dy, dz);
             boolean reserved = pos.getX() >= base.getX() - 1 && pos.getX() <= base.getX() + width && pos.getZ() >= base.getZ() - 1 && pos.getZ() <= base.getZ() + depth;
-            if (reserved || !house.replaceable(level, pos) || !level.hasChunkAt(pos.below())) continue;
+            if (reserved || !replaceable(level, pos) || !level.hasChunkAt(pos.below())) continue;
             if (level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP) && level.noCollision(new AABB(pos))) return pos;
         }
         return null;
+    }
+
+    // ---- the cells of the building and what stands in them
+
+    boolean replaceable(ServerLevel level, BlockPos pos) {
+        return level.hasChunkAt(pos) && level.getWorldBorder().isWithinBounds(pos) && !level.isOutsideBuildHeight(pos)
+                && level.getBlockEntity(pos) == null && level.getFluidState(pos).isEmpty() && level.getBlockState(pos).canBeReplaced();
+    }
+    /** A cell for a block of the building: for a template building empty air (what stands there, grass too, is dug out first), for the plank house anything replaceable. */
+    boolean vacant(ServerLevel level, BlockPos pos) { return replaceable(level, pos) && (!template || level.getBlockState(pos).isAir()); }
+    boolean free(ServerLevel level, CompanionHouse.Step step) { return vacant(level, step.pos()) && (step.second() == null || vacant(level, step.second())); }
+    boolean supported(ServerLevel level, CompanionHouse.Step step) {
+        for (Direction direction : Direction.values()) {
+            BlockPos pos = step.pos().relative(direction);
+            if (level.hasChunkAt(pos) && !level.getBlockState(pos).getCollisionShape(level, pos).isEmpty()) return true;
+        }
+        return false;
+    }
+    /** The step stands in the world as planned (by the kind of block: neighbours reshape stairs and panes after the block is down). */
+    boolean matches(ServerLevel level, CompanionHouse.Step step) {
+        BlockState actual = level.getBlockState(step.pos());
+        Block planned = step.state().getBlock();
+        if (planned instanceof BedBlock) return actual.is(planned) && actual.getValue(BedBlock.PART) == BedPart.FOOT && level.getBlockState(step.second()).is(planned);
+        if (!step.door()) return template ? actual.is(planned) || grown(step.state(), actual) : actual.equals(step.state());
+        BlockState top = level.getBlockState(step.pos().above());
+        return actual.is(planned) && actual.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER && top.is(planned) && top.getValue(DoorBlock.HALF) == DoubleBlockHalf.UPPER;
+    }
+    /** Grass spreads over dirt (and mycelium, podzol or a path are what it turns into): a cell planned as dirt that stands as one of them is built. */
+    private static boolean grown(BlockState planned, BlockState actual) {
+        return planned.is(Blocks.DIRT) && (actual.is(Blocks.GRASS_BLOCK) || actual.is(Blocks.MYCELIUM) || actual.is(Blocks.PODZOL) || actual.is(Blocks.DIRT_PATH));
     }
 
     private BlockPos search(ServerLevel level, int width, int depth, int height, boolean digging, Predicate<BlockPos> players) {
@@ -79,7 +118,7 @@ final class CompanionHouseSite {
         else for (int x = -1; x <= width; x++) for (int z = -1; z <= depth; z++) {
             BlockPos floor = corner.offset(x, -1, z);
             if (!level.hasChunkAt(floor) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP) || !level.getFluidState(floor).isEmpty()) return false;
-            for (int y = 0; y < height; y++) if (!house.replaceable(level, corner.offset(x, y, z))) return false;
+            for (int y = 0; y < height; y++) if (!replaceable(level, corner.offset(x, y, z))) return false;
         }
         if (!level.getEntities(owner, new AABB(Vec3.atLowerCornerOf(corner.offset(-1, 0, -1)), Vec3.atLowerCornerOf(corner.offset(width + 1, height, depth + 1))), entity -> entity.isAlive()).isEmpty()) return false;
         // The floor of a template building is sunk, so the ground to walk on beside it is one block above its corner.

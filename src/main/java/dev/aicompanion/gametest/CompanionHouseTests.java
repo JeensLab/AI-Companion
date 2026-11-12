@@ -38,16 +38,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionHouseTests {
-    /**
-     * Stopped or waiting for the place, with the building's torch in the bag (nothing is set aside then), he lights the dark with it: these tests
-     * run by day, the clock of a long run is at night part of the time. The groves are heavy on the shared route searches of the tick: they run apart.
-     */
-    private static long dayClock;
-    @BeforeBatch(batch = "house_rounds") public static void dayForRounds(ServerLevel level) { dayClock = level.getDayTime(); level.setDayTime(1000); }
-    @AfterBatch(batch = "house_rounds") public static void afterRounds(ServerLevel level) { level.setDayTime(dayClock); CompanionFixtureCleanup.afterAtomicTests(level); }
-    @BeforeBatch(batch = "house_day") public static void dayForStops(ServerLevel level) { dayClock = level.getDayTime(); level.setDayTime(1000); }
-    @AfterBatch(batch = "house_day") public static void endDayForStops(ServerLevel level) { level.setDayTime(dayClock); CompanionFixtureCleanup.afterAtomicTests(level); }
-    /** A night of building: a torch in the bag is a path light after dark. */
+    /** The groves are heavy on the shared route searches of the tick: they run apart. */
+    @AfterBatch(batch = "house_rounds") public static void afterRounds(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    /** A night of building: a torch in the bag is a path light after dark unless a building under way, or one left unfinished, still needs it. */
     private static long nightClock;
     @BeforeBatch(batch = "house_night") public static void nightForTorches(ServerLevel level) { nightClock = level.getDayTime(); level.setDayTime(18000); }
     @AfterBatch(batch = "house_night") public static void endNightForTorches(ServerLevel level) { level.setDayTime(nightClock); CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -166,7 +159,7 @@ public final class CompanionHouseTests {
     public static void theHouseProtocolIsValidated(GameTestHelper helper) {
         helper.assertTrue("build_house".equals(CompanionWorkCommands.parse("Олег, построй нам небольшой деревянный дом", "Олег").type()), "House command not recognized");
         helper.assertTrue("build_house".equals(CompanionWorkCommands.parse("дострой дом", "Олег").type()), "Resume not recognized");
-        helper.assertTrue("resume".equals(CompanionWorkCommands.parse("дострой дом", "Олег").item()) && CompanionWorkCommands.parse("построй дом", "Олег").item().isEmpty(), "Only «дострой» resumes; «построй дом» is the plank house");
+        helper.assertTrue("resume дом".equals(CompanionWorkCommands.parse("дострой дом", "Олег").item()) && CompanionWorkCommands.parse("построй дом", "Олег").item().isEmpty(), "Only «дострой» resumes; «построй дом» is the plank house");
         helper.assertTrue(CompanionWorkCommands.parse("не построй дом", "Олег") == null && CompanionWorkCommands.parse("построй дом и вернись", "Олег") == null, "Partial/negative command accepted");
         helper.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"build_house\"}]")).size() == 1, "House model protocol rejected");
         boolean rejected = false;
@@ -208,7 +201,7 @@ public final class CompanionHouseTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "house_day", timeoutTicks = 9000)
+    @GameTest(template = "tall_tree", timeoutTicks = 9000)
     public static void villageHouseResumesAfterStopAndReloadWithoutDuplicates(GameTestHelper helper) {
         CompanionEntity original = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
@@ -513,7 +506,7 @@ public final class CompanionHouseTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "house_day", timeoutTicks = 12000)
+    @GameTest(template = "tall_tree", timeoutTicks = 12000)
     public static void scaffoldingLeftByAnInterruptionIsTakenDownOnResume(GameTestHelper helper) {
         CompanionEntity original = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, LOG_HOUSE_TEMPLATE);
@@ -636,7 +629,7 @@ public final class CompanionHouseTests {
      * What he clears is his: the logs and the sand come to the bag as drops, nothing is left lying and nothing is lost, also when he is
      * stopped in the middle of it and the world is left and entered again.
      */
-    @GameTest(template = "tall_tree", batch = "house_day", timeoutTicks = 12000)
+    @GameTest(template = "tall_tree", timeoutTicks = 12000)
     public static void whatIsClearedIsPickedUpAndSurvivesAStopAndReload(GameTestHelper helper) {
         CompanionEntity original = wildSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);

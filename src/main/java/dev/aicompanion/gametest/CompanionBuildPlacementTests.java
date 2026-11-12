@@ -5,9 +5,6 @@ import dev.aicompanion.entity.CompanionBuildPlacement;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
-import net.minecraft.gametest.framework.AfterBatch;
-import net.minecraft.gametest.framework.BeforeBatch;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -51,12 +48,7 @@ public final class CompanionBuildPlacementTests {
 
     private record Setup(CompanionEntity companion, ServerPlayer player) { }
 
-    /** Waiting for the place with the building's torch in the bag (nothing is set aside then) he would light the dark with it: these run by day, whatever the clock of a long run says. */
-    private static long dayClock;
-    @BeforeBatch(batch = "placement_day") public static void day(ServerLevel level) { dayClock = level.getDayTime(); level.setDayTime(1000); }
-    @AfterBatch(batch = "placement_day") public static void endDay(ServerLevel level) { level.setDayTime(dayClock); CompanionFixtureCleanup.afterAtomicTests(level); }
-
-    @GameTest(template = "tall_tree", batch = "placement_day", timeoutTicks = 6000)
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void aConfirmedPlacementBuildsTheTemplateRotatedExactlyThere(GameTestHelper helper) {
         Setup s = setup(helper);
         Rotation turn = Rotation.CLOCKWISE_90;
@@ -112,7 +104,7 @@ public final class CompanionBuildPlacementTests {
         });
     }
 
-    @GameTest(template = "tall_tree", batch = "placement_day", timeoutTicks = 600)
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
     public static void whatTheServerCannotTrustInAConfirmationIsRefusedAndNothingIsBuilt(GameTestHelper helper) {
         Setup s = setup(helper);
         fill(s.companion, placeReference(helper, Rotation.NONE));
@@ -244,22 +236,25 @@ public final class CompanionBuildPlacementTests {
         });
     }
 
-    /** A decoration or an animal in the footprint refuses the site (nothing is dropped or pushed); the player standing there is no reason, the block waits for him. */
+    /** A decoration in the footprint refuses the site (nothing is dropped or pushed); a mob, a pet beside the player or the player himself does not: the block waits for it. */
     @GameTest(template = "tall_tree", timeoutTicks = 600)
-    public static void aDecorationOrAnAnimalInTheFootprintRefusesTheSiteAndAPlayerDoesNot(GameTestHelper helper) {
+    public static void aDecorationInTheFootprintRefusesTheSiteButAnAnimalOrAPlayerDoesNot(GameTestHelper helper) {
         Setup s = setup(helper);
         clearSite(helper);
         BlockPos corner = helper.absolutePos(CORNER);
         helper.assertTrue(s.companion.startWork("build_house", NAME, 1).success(), "Order rejected");
         helper.runAfterDelay(20, () -> {
-            for (var type : List.of(net.minecraft.world.entity.EntityType.ARMOR_STAND, net.minecraft.world.entity.EntityType.PIG)) {
-                var thing = helper.spawn(type, CORNER.offset(2, 1, 2));
-                String why = CompanionBuildPlacement.confirm(s.player, NAME, 0, corner);
-                helper.assertTrue(why != null && why.contains(thing.blockPosition().toShortString()), "A " + type + " in the footprint did not refuse the site: " + why);
-                thing.discard();
-            }
+            var stand = helper.spawn(net.minecraft.world.entity.EntityType.ARMOR_STAND, CORNER.offset(2, 1, 2));
+            String why = CompanionBuildPlacement.confirm(s.player, NAME, 0, corner);
+            helper.assertTrue(why != null && why.contains(stand.blockPosition().toShortString()), "An armor stand in the footprint did not refuse the site: " + why);
+            stand.discard();
+            // Animals in the box and a wolf sitting in the margin beside it: the build-time rule about occupied cells covers them.
+            helper.spawn(net.minecraft.world.entity.EntityType.PIG, CORNER.offset(2, 1, 2));
+            var wolf = helper.spawn(net.minecraft.world.entity.EntityType.WOLF, CORNER.offset(-1, 1, 2));
+            wolf.setInSittingPose(true);
             s.player.teleportTo(corner.getX() + 2.5, corner.getY() + 1, corner.getZ() + 2.5);
-            helper.assertTrue(CompanionBuildPlacement.confirm(s.player, NAME, 0, corner) == null, "The player standing in the footprint refused the site");
+            why = CompanionBuildPlacement.confirm(s.player, NAME, 0, corner);
+            helper.assertTrue(why == null, "An animal or the player refused the site: " + why);
             helper.succeed();
         });
     }
@@ -269,7 +264,7 @@ public final class CompanionBuildPlacementTests {
      * goes on with every other block, and only when nothing else is left it waits and says so (the work does not stop for it). Once he
      * steps aside the block is set down and the building is finished.
      */
-    @GameTest(template = "tall_tree", batch = "placement_day", timeoutTicks = 6000)
+    @GameTest(template = "tall_tree", timeoutTicks = 6000)
     public static void aBlockIsNotPutIntoAPlayerItWaitsUntilHeStepsAside(GameTestHelper helper) {
         Setup s = setup(helper);
         Map<Item, Integer> bag = placeReference(helper, Rotation.NONE);

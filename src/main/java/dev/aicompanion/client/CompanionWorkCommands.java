@@ -123,9 +123,15 @@ public final class CompanionWorkCommands {
         String value = plain(text, name);
         // «Дострой», «достраивай кузницу», «продолжи стройку»: what is left unfinished goes on where it stands. A name or kind said with it never starts another building.
         var resume = java.util.regex.Pattern.compile("^(?:(дострой|достраивай)|продолжи|продолжай)(?: мне| нам| себе)?(?: (.+?))?(?: рядом)?$").matcher(value);
-        if (resume.matches() && (resume.group(2) == null ? resume.group(1) != null : resume.group(2).matches("(?:стройку|строительство(?: дома)?|строить(?: (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик))?"
-                + "|(?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?)") || dev.aicompanion.entity.CompanionVillageBuildings.named(resume.group(2), true) != null))
-            return new PlannedAction("build_house", 0, 1, "resume");
+        if (resume.matches()) {
+            String said = resume.group(2);
+            // «Дострой», «продолжи стройку»: what was worked on last. «Дострой дом»: the plain house first. A name or kind said goes with the word: only that building.
+            if (said == null ? resume.group(1) != null : said.matches("стройку|строительство(?: дома)?|строить(?: (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик))?"))
+                return new PlannedAction("build_house", 0, 1, "resume");
+            if (said != null && said.matches("(?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?")) return new PlannedAction("build_house", 0, 1, "resume дом");
+            String kind = said == null ? null : dev.aicompanion.entity.CompanionVillageBuildings.named(said, true);
+            if (kind != null) return new PlannedAction("build_house", 0, 1, "resume " + kind);
+        }
         // «Построй деревенский дом», «построй кузницу»: a building of the catalogue by its name, or a kind of it (the server picks the one for the place); any other name stays the model's.
         var named = java.util.regex.Pattern.compile("^(?:построй|сделай)(?: мне| нам| себе)? (.+?)(?: рядом)?$").matcher(value);
         String building = named.matches() ? dev.aicompanion.entity.CompanionVillageBuildings.named(named.group(1), true) : null;
