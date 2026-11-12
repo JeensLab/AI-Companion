@@ -26,8 +26,9 @@ import java.util.Set;
  *
  * Wood is one family (any logs, any planks: the recipes take them all), so is crafting stone; planks and sticks are made by the
  * craft that needs them. Sand, gravel and flint are dug (flint out of gravel), so glass and a flint and steel follow from their
- * recipes. What a block gives when it is simply broken (sugar cane, flowers, clay: CompanionPickable) is found and picked. What
- * none of the skills can get (string, ender pearls…) is said before anything starts.
+ * recipes. What a block gives when it is simply broken (sugar cane, flowers, clay: CompanionPickable) is found and picked, what a
+ * monster drops (string, bones, gunpowder: CompanionMobDrops) is fought for when one is about. What none of the skills can get
+ * (an ink sac, a blaze rod…) is said before anything starts.
  */
 public final class CompanionObtain {
     /** One step of the chain: an allowlisted action, its item and count. */
@@ -54,12 +55,15 @@ public final class CompanionObtain {
     /** Whether a block that gives the item stands where he can get to it; null when the world about him is not known: nothing is picked then. */
     private final java.util.function.Predicate<Item> grows;
     private final Map<Item, Boolean> grown = new HashMap<>();
+    /** Whether a monster that drops the item is about him now; null when the world about him is not known: none is hunted then. */
+    private final java.util.function.Predicate<Item> roams;
+    private final Map<Item, Boolean> roamed = new HashMap<>();
     /** What he would pick and does not see about him: named when the plan is refused. */
     private final Set<String> absent = new java.util.LinkedHashSet<>();
     private static final String ABSENT = "Рядом не вижу";
 
-    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows) {
-        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows;
+    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams;
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
 
@@ -69,10 +73,16 @@ public final class CompanionObtain {
 
     /** {@code grows}: whether a block that gives the item is within his reach now, so of the flowers a dye takes the one that grows here is picked. */
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows) {
+        return plan(level, carried, benchNearby, requested, count, grows, null);
+    }
+
+    /** {@code roams}: whether a monster that drops the item is within his reach now. */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                            java.util.function.Predicate<Item> roams) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows);
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -166,10 +176,12 @@ public final class CompanionObtain {
         // A recipe makes it: its ingredients, then the craft.
         if (craft(item, count, depth)) return true;
         // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
-        if (!CompanionPickable.sources(level, item).isEmpty()) {
-            if (!picked(item)) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
-            return addSplit("gather_block", key, count, 64);
-        }
+        if (picked(item)) return addSplit("gather_block", key, count, 64);
+        // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
+        List<String> prey = CompanionMobDrops.names(level, item);
+        if (hunted(item)) return addSplit("hunt_drop", key, count, 64);
+        if (!CompanionPickable.sources(level, item).isEmpty()) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
+        if (!prey.isEmpty()) { absent.add(name(item) + " (" + String.join(", ", prey) + ")"); return refuse(ABSENT + ", с кого добыть «" + name(item) + "» (" + String.join(", ", prey) + "): такие выходят ночью и в пещерах."); }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
     }
 
@@ -258,12 +270,16 @@ public final class CompanionObtain {
         return grows != null && !CompanionPickable.sources(level, item).isEmpty() && grown.computeIfAbsent(item, grows::test);
     }
 
+    private boolean hunted(Item item) {
+        return roams != null && !CompanionMobDrops.sources(level, item).isEmpty() && roamed.computeIfAbsent(item, roams::test);
+    }
+
     /** A family, an ore's drop, an animal's or a block's that stands here: one of his skills gets it, whatever the bag holds. */
     private boolean direct(String key) {
         if (key.startsWith("#")) return true;
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
         for (CompanionOre.Kind ore : CompanionOre.Kind.values()) if (ore.drop == item) return true;
-        return animalFor(item) != null || picked(item);
+        return animalFor(item) != null || picked(item) || hunted(item);
     }
 
     private static CompanionGame.Kind animalFor(Item item) {
