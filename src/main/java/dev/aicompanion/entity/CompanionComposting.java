@@ -45,10 +45,17 @@ public final class CompanionComposting {
     private int count;
     /**
      * compost_meal, a step of «добудь костную муку»: the scrap of his bag goes in until {@code count} bone meal is made. Fewer is
-     * no success, so the chain plans the rest again; a composter a little farther off is walked back to from where he picked.
+     * no success, so the chain plans the rest again; the composter is looked for as far as the flowers were, and walked back to.
      */
     private boolean meal;
-    static final int MEAL_WALK = 32;
+    /** Blocks above and below his feet a composter is looked for by the chain, as the flowers are (CompanionPicking). */
+    private static final int MEAL_DEPTH = 12;
+
+    /** The nearest composter: a few steps away for an order, within his search radius for the chain. */
+    static BlockPos find(CompanionEntity c, boolean meal) {
+        if (!meal || !(c.level() instanceof ServerLevel level)) return c.placement.nearest(Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK);
+        return CompanionObsidian.nearest(c, level, MEAL_DEPTH, state -> state.is(Blocks.COMPOSTER), pos -> true);
+    }
     private BlockPos composter;
     /** His own was tried (made or not); and set down, so a broken one is gone, not «nothing to make it of». */
     private boolean ownTried, ownPlaced;
@@ -119,7 +126,7 @@ public final class CompanionComposting {
             if (ComposterBlock.getValue(new ItemStack(BuiltInRegistries.ITEM.get(id))) <= 0)
                 return CompanionActionResult.failed("«" + CompanionWork.itemName(BuiltInRegistries.ITEM.get(id)) + "» в компостер не кладут: он берёт только растения и еду из них.");
         }
-        composter = c.placement.nearest(Blocks.COMPOSTER, walk());
+        composter = find(c, meal);
         // Full or a moment from full: there is bone meal to take even with nothing to put in.
         boolean ready = composter != null && level.getBlockState(composter).getValue(ComposterBlock.LEVEL) >= ComposterBlock.MAX_LEVEL;
         // The bone meal must have a place in the bag before anything goes in, or the scrap is spent for meal left in the composter.
@@ -138,7 +145,7 @@ public final class CompanionComposting {
         CompanionEntity c = w.owner;
         // At the one he chose (a full one, say), not at whichever of a row the look meets first (review 10.11).
         if (composter != null && c.placement.reaches(composter, Blocks.COMPOSTER)) { work(level, composter); return; }
-        if (composter != null && !level.getBlockState(composter).is(Blocks.COMPOSTER)) composter = c.placement.nearest(Blocks.COMPOSTER, walk());
+        if (composter != null && !level.getBlockState(composter).is(Blocks.COMPOSTER)) composter = find(c, meal);
         if (composter == null) {
             if (ownTried) w.finish(false, (ownPlaced ? "Мой компостер пропал, а второго у меня нет." : NO_COMPOSTER) + done()); else own(level);
             return;
@@ -148,6 +155,8 @@ public final class CompanionComposting {
         if (!composter.equals(w.heading)) { w.heading = composter; w.resetApproach(); }
         c.movementIntent(composter);
         if (w.approach(level, composter, 2.8D)) { c.workStatus("Иду к компостеру на " + composter.toShortString() + "."); return; }
+        // The chain's far composter may be out of his way (behind a wall, across a river): his own then, if the bag makes one.
+        if (meal && !ownTried) { composter = null; return; }
         w.finish(false, "Не смог подойти к компостеру на " + composter.toShortString() + "." + done());
     }
 
@@ -220,7 +229,6 @@ public final class CompanionComposting {
         c.workStatus("Закладываю в компостер: " + put + " шт.");
     }
 
-    private int walk() { return meal ? MEAL_WALK : CompanionToolSense.BENCH_WALK; }
 
     private String report(int filled) {
         String rest = filled > 0 && filled < ComposterBlock.READY ? " В компостере осталось на " + filled + " из 7." : "";

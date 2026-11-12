@@ -332,7 +332,9 @@ public final class CompanionObtain {
         }
         // His own composter the work makes itself, of any wood (in game 12.11: planned as a recipe it came to oak slabs among dark
         // oaks, and the craft refused): seven slabs are two logs, a bench for them one more.
-        if (!about(Items.COMPOSTER) && bag.getOrDefault("minecraft:composter", 0) == 0 && !need(LOGS, bench ? 2 : 3, depth + 1)) return false;
+        // Planks and slabs he carries make it as well: wood is got only if the bag does not.
+        if (!about(Items.COMPOSTER) && bag.getOrDefault("minecraft:composter", 0) == 0 && !CompanionCrafting.plan(level, carried, "minecraft:composter", 1, bench).success()
+                && !need(LOGS, bench ? 2 : 3, depth + 1)) return false;
         return addSplit("compost_meal", "scrap", count, 64);
     }
 
