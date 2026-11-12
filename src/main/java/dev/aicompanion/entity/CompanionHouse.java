@@ -138,10 +138,14 @@ final class CompanionHouse {
         return dropped;
     }
 
+    private boolean replaced;
     boolean sited() { return base != null; }
     CompanionVillageBuildings.Building building() { return building; }
     /** From a fresh order until the player confirms where it goes (or the game time {@code until} comes): nothing is placed, dug or gathered. */
-    void awaitPlacement(long until, String told) { awaitUntil = until; awaitText = told; unplaced = true; }
+    void awaitPlacement(long until, String told) { awaitUntil = until; awaitText = told; unplaced = true; replaced = false; }
+    /** The player chose another building while this order waited for its place: its end says so instead of «work interrupted» (nothing was done). */
+    void replacing() { replaced = true; }
+    boolean takeReplaced() { boolean was = replaced && awaiting(); replaced = false; return was; }
     boolean awaiting() { return awaitUntil >= 0; }
     /** The player gave the place up: nothing waits for it any more. */
     void forgetPlacement() { unplaced = false; }

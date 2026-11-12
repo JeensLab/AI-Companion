@@ -96,6 +96,7 @@ public final class AICompanionClient {
         event.registerAboveAll(CompanionMoodPanel.ID, CompanionMoodPanel::render);
         event.registerAboveAll(CompanionThinking.ID, CompanionThinking::render);
         event.registerBelow(VanillaGuiLayers.CHAT, CompanionMarker.ID, CompanionMarker::render);
+        event.registerBelow(VanillaGuiLayers.CHAT, CompanionGhostPanel.ID, CompanionGhostPanel::render);
     }
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {

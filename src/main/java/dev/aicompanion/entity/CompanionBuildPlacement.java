@@ -4,9 +4,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.tags.ItemTags;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.Rotation;
@@ -15,8 +12,6 @@ import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,9 +28,10 @@ public final class CompanionBuildPlacement {
     public static final int MAX_DISTANCE = 96;
     /** A placement nobody confirms is dropped after two minutes. */
     public static final int TIMEOUT_TICKS = 20 * 120;
+    /** The end of an order that was dropped for another building before anything was done; the client does not say it (the new order is told instead). */
+    public static final String REPLACED = "Выбрано другое здание: прежний заказ снят.";
     /** The client says it is there (CompanionPreferences.sync, every 40 ticks); one that has not for this long is taken to be gone. */
     private static final int CLIENT_SEEN_TICKS = 200;
-    private static final int MAX_LISTED = 8;
     private static final Map<UUID, Integer> CLIENTS = new ConcurrentHashMap<>();
 
     /** One block of the building relative to its lowest corner (both halves of a door or a bed), for the ghost. */
@@ -52,52 +48,43 @@ public final class CompanionBuildPlacement {
         return seen != null && player.server.getTickCount() - seen >= 0 && player.server.getTickCount() - seen <= CLIENT_SEEN_TICKS;
     }
 
-    /** A fresh order for a building: with a client to place it, tell the player what it is and what it takes (after {@code note}), and wait. */
+    /** A fresh order for a building: with a client to place it, say the one short line about it (after {@code note}), and wait. The window shows the rest. */
     static void ask(CompanionEntity owner, CompanionHouse house, String note) {
         ServerPlayer player = owner.getOwnerPlayer();
         if (house.sited() || player == null || !hasClient(player) || !(owner.level() instanceof ServerLevel level)) return;
         var read = CompanionTemplates.load(level, house.building(), Rotation.NONE);
         if (read == null) return;
         // An unfinished building an old order left is not dropped yet: it is dropped when the place is set.
-        String text = (house.waitingNote().isEmpty() ? note : house.waitingNote()) + summary(level, owner, house.building(), read);
+        String text = (house.waitingNote().isEmpty() ? note : house.waitingNote()) + CompanionBuildSummary.of(level, owner, house.building(), read).line();
         house.awaitPlacement(level.getGameTime() + TIMEOUT_TICKS, text);
         player.sendSystemMessage(Component.literal(owner.getName().getString() + ": " + text));
     }
 
-    /** The name, the size and what the bag lacks of the building: what he gets himself and what the player has to give. Changes neither the bag nor the world. */
-    private static String summary(ServerLevel level, CompanionEntity owner, CompanionVillageBuildings.Building building, CompanionTemplates.Loaded read) {
-        var materials = new CompanionHouseMaterials(owner);
-        materials.chooseWoods(level, read.cells());
-        Map<Item, Integer> required = required(materials, read);
-        var lacking = materials.next(level, required).lacking();
-        List<String> himself = new ArrayList<>(), given = new ArrayList<>();
-        required.forEach((item, count) -> {
-            int missing = count - carried(owner, item);
-            if (missing > 0) (lacking.containsKey(item) ? given : himself).add(missing + " × " + new ItemStack(item).getHoverName().getString());
-        });
-        String needs = himself.isEmpty() && given.isEmpty() ? "Материалов в сумке хватает на всё здание. "
-                : (himself.isEmpty() ? "" : "Сам добуду или сделаю: " + listed(himself) + ". ") + (given.isEmpty() ? "" : "Принести придётся тебе: " + listed(given) + ". ");
-        return "Могу построить «" + building.name() + "»: " + read.sizeX() + "×" + read.sizeZ() + "×" + read.sizeY() + " блоков (ширина × глубина × высота). " + needs
-                + "Выбери место призраком и подтверди; пока не подтвердишь, ничего не трогаю. Не выберешь за " + TIMEOUT_TICKS / 1200 + " минуты — отменю.";
+    /** What the building {@code name} of the catalogue takes, for the window of buildings; null when there is no such building, no companion, or the template cannot be read. */
+    public static CompanionBuildSummary.Summary summary(ServerPlayer player, String name) {
+        CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+        var building = CompanionVillageBuildings.find(name);
+        if (companion == null || building == null || !(companion.level() instanceof ServerLevel level)) return null;
+        var read = CompanionTemplates.load(level, building, Rotation.NONE);
+        return read == null ? null : CompanionBuildSummary.of(level, companion, building, read);
     }
-    /** The items the building takes, as it would be built with these materials, by the layer they are first needed in (planks last, as the building plans its materials). */
-    static Map<Item, Integer> required(CompanionHouseMaterials materials, CompanionTemplates.Loaded read) {
-        var cells = read.cells().stream().sorted(Comparator.comparingInt(CompanionTemplates.Cell::stage)).toList();
-        Map<Item, Integer> required = new LinkedHashMap<>();
-        for (boolean last : new boolean[]{false, true}) for (var cell : cells) {
-            Item item = materials.adapt(cell.state()).getBlock().asItem();
-            if (new ItemStack(item).is(ItemTags.PLANKS) == last) required.merge(item, 1, Integer::sum);
-        }
-        return required;
-    }
-    private static String listed(List<String> items) {
-        return String.join(", ", items.subList(0, Math.min(MAX_LISTED, items.size()))) + (items.size() > MAX_LISTED ? " и ещё " + (items.size() - MAX_LISTED) + " видов" : "");
-    }
-    private static int carried(CompanionEntity owner, Item item) {
-        int count = owner.getMainHandItem().is(item) ? owner.getMainHandItem().getCount() : 0;
-        if (owner.getOffhandItem().is(item)) count += owner.getOffhandItem().getCount();
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(item)) count += owner.getItem(slot).getCount();
-        return count;
+
+    /**
+     * The window's «Строить» for {@code name}: whether the client is to start the order the way the phrase does (build_house with the catalogue
+     * name). A different building's order that waits for its place is dropped here, quietly (the player chose again, he did not give up), so
+     * exactly one order waits; true then. False when the order for this very building already waits, or for a name not in the catalogue.
+     */
+    public static boolean replaceFor(ServerPlayer player, String name) {
+        var building = CompanionVillageBuildings.find(name);
+        if (building == null) return false;
+        CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+        CompanionHouse house = companion == null ? null : companion.work.awaitingHouse();
+        if (house == null) return true;
+        if (house.building().equals(building)) return false;
+        house.replacing();
+        companion.stopGatheringForPlayer();
+        house.forgetPlacement();
+        return true;
     }
 
     private static CompanionHouse pending(ServerPlayer player) {

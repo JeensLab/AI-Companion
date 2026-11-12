@@ -84,11 +84,12 @@ public final class CompanionBuildPlacementTests {
         List<BlockState> before = snapshot(helper);
         String bagBefore = s.companion.getStoredItemsSummary();
         helper.assertTrue(s.companion.startWork("build_house", NAME, 1).success(), "Order rejected");
-        // With an empty bag he would set out to gather at once: instead the player is told the building, its size and what it takes.
+        // With an empty bag he would set out to gather at once: instead the player is told the building and its size in one short line, and the window shows what it takes.
         var size = CompanionBuildPlacement.preview(helper.getLevel(), NAME, 0);
         helper.runAfterDelay(10, () -> {
             String told = s.companion.getLastTaskResult();
-            helper.assertTrue(told.contains(NAME) && told.contains(size.sizeX() + "×" + size.sizeZ() + "×" + size.sizeY()) && told.contains("Сам добуду") && told.contains("подтверд"), "The order was not explained: " + told);
+            helper.assertTrue(told.equals(CompanionBuildPlacement.summary(s.player, NAME).line()) && told.startsWith("Пустынный дом, " + size.sizeX() + " на " + size.sizeZ() + ". "), "The order was not told in the one short line: " + told);
+            helper.assertTrue(!told.contains("×") && !told.contains("Сам добуду") && !told.contains("Принести придётся") && !told.contains("подтверд") && !told.contains("Enter"), "The line still carries the list or the key hints: " + told);
         });
         helper.runAfterDelay(30, () -> {
             helper.assertTrue(NAME.equals(CompanionBuildPlacement.pendingName(s.player)), "The order does not wait for a placement");

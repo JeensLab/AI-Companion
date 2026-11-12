@@ -598,7 +598,7 @@ public final class CompanionWork {
         owner.allowNewBench(false); benchHere = false; packTarget = null;
         if (job != null && completedId != taskId) {
             completedId = taskId;
-            completedResult = CompanionActionResult.cancelled("Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
+            completedResult = CompanionActionResult.cancelled(job == Job.HOUSE && templateJob && templateHouse.takeReplaced() ? CompanionBuildPlacement.REPLACED : "Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;

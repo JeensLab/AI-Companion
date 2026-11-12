@@ -110,7 +110,7 @@ public final class CompanionChatScreen extends Screen {
 
     private static String companionAction(String text) { return CompanionLocalCommands.route(text, companionName()); }
 
-    private static void runLocalCommand(String command, String trace) {
+    static void runLocalCommand(String command, String trace) {
         CompanionDiagnostics.event(trace, "message_route", "route", "local_parser", "command", command);
         List<PlannedAction> actions = CompanionLocalCommands.actions(command);
         long generation = CompanionActionExecutor.currentPlanGeneration();
@@ -323,6 +323,8 @@ public final class CompanionChatScreen extends Screen {
     }
 
     private static void finishActions(List<PlannedAction> actions, String report, Throwable error, boolean local, String trace) {
+        // An order dropped by the window for another building is not an interruption to tell about: the new order speaks.
+        if (error == null && report != null && report.contains(dev.aicompanion.entity.CompanionBuildPlacement.REPLACED)) { CompanionDiagnostics.event(trace, "execution_report", "report", report); return; }
         String raw = error == null ? (report == null ? "Без отчёта." : report) : "Не завершено: " + error.getMessage();
         OpenRouterClient.recordActionResult(raw);
         CompanionDiagnostics.event(trace, "execution_report", "report", raw);

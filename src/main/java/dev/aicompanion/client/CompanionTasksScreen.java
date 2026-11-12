@@ -221,6 +221,8 @@ public final class CompanionTasksScreen extends Screen {
             Row current = selection(); if (current != null && current.resume() != null) current.resume().run();
         }).bounds(detailX + buttonWidth + 6, bottom - 23, buttonWidth, 20).build());
         cancel.active = row != null && row.cancel() != null; resume.active = row != null && row.resume() != null;
+        Button buildings = addRenderableWidget(Button.builder(Component.literal("Постройки"), b -> CompanionNavigation.show(new CompanionBuildingsScreen(null))).bounds(width / 2 + 51, height - 28, 105, 20).build());
+        buildings.setTooltip(Tooltip.create(Component.literal("Список зданий, что Олег умеет строить: размер и материалы. «Строить» запускает тот же заказ, что и фраза «построй …».")));
         addRenderableWidget(Button.builder(Component.literal("Закрыть"), b -> onClose()).bounds(width / 2 - 45, height - 28, 90, 20).build());
     }
     @Override public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) { }

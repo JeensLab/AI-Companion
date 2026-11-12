@@ -55,6 +55,9 @@ public final class CompanionVillageBuildings {
 
     public static List<Building> all() { return ALL; }
 
+    /** The kinds of the catalogue (the labels of {@link Building#kind()}) in the order a list shows them. */
+    public static List<String> kinds() { return KINDS.stream().map(Kind::label).toList(); }
+
     /** Lower case, «е» for «ё», one plain space for any run of spaces, tabs and no-break spaces. */
     private static String normalize(String text) { return text.toLowerCase(Locale.ROOT).replace('ё', 'е').replaceAll("[\\s\\u00A0\\u2007\\u202F]+", " ").trim(); }
 

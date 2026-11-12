@@ -51,7 +51,7 @@ public final class CompanionBuildPartsTests {
                 h.assertTrue(!built.is(Blocks.DIRT_PATH) && !built.is(Blocks.GRASS_BLOCK) && !built.is(Blocks.PODZOL), "«" + building.name() + "» is built of " + built.getBlock() + ", which is had only with silk touch");
             }
             // A round plans only a few kinds at a time: the whole building says what is lacking of the first ones, each kind alone says it of every one.
-            var required = CompanionBuildPlacement.required(materials, read);
+            var required = CompanionBuildSummary.required(materials, read);
             java.util.List<java.util.Set<net.minecraft.world.item.Item>> lacking = new java.util.ArrayList<>();
             lacking.add(materials.next(h.getLevel(), required).lacking().keySet());
             for (var kind : required.entrySet()) lacking.add(new CompanionHouseMaterials(oleg).next(h.getLevel(), java.util.Map.of(kind.getKey(), kind.getValue())).lacking().keySet());
