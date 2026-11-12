@@ -120,7 +120,7 @@ public final class CompanionJokeClientProbe {
                 prepare(mc, speaker); OpenRouterConfig.MACOS_VOICE.set(true); OpenRouterConfig.MACOS_VOICE.save();
                 deliveryStarted = mc.level.getGameTime(); soundStarted = false; invokeTick(); phase = 4;
             } else if (phase == 4 && lastJoke() >= deliveryStarted) {
-                check(field(OpenRouterClient.class, "HISTORY").get(null).toString().contains(LONG_STORY), "Long story was truncated or missing from history");
+                check(field(OpenRouterClient.class, "HISTORY").get(null).toString().contains("Внимание, анекдот. " + LONG_STORY), "Custom story announcement or full text missing from history");
                 audio = (CompletableFuture<Void>) field(InworldTtsClient.class, "playbackQueue").get(null);
                 phase = 5;
             } else if (phase == 5 && audio.isDone()) {
@@ -199,7 +199,7 @@ public final class CompanionJokeClientProbe {
     private static void invokeTick() throws Exception { var method = ambient().getDeclaredMethod("tick"); method.setAccessible(true); method.invoke(null); }
     private static boolean historyContainsJoke() throws Exception {
         String history = field(OpenRouterClient.class, "HISTORY").get(null).toString();
-        return CompanionJokes.ALL.stream().anyMatch(history::contains);
+        return CompanionJokes.ALL.stream().anyMatch(joke -> history.contains("Внимание, анекдот. " + joke));
     }
     @SuppressWarnings("unchecked") private static void flag(CompanionEntity speaker, String name, boolean value) throws Exception {
         speaker.getEntityData().set((EntityDataAccessor<Boolean>) field(CompanionEntity.class, name).get(null), value);

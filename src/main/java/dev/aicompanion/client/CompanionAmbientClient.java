@@ -136,7 +136,7 @@ final class CompanionAmbientClient {
                         context.surroundings(), context.recent(), java.util.concurrent.ThreadLocalRandom.current());
                 if (joke == null) return;
                 boolean voiced = CompanionVoiceAudio.audible(current);
-                CompanionChatScreen.autonomousReply(joke, dev.aicompanion.CompanionDiagnostics.newTrace(), voiced);
+                CompanionChatScreen.autonomousReply("Внимание, анекдот. " + joke, dev.aicompanion.CompanionDiagnostics.newTrace(), voiced);
             });
         });
         return true;
