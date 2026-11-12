@@ -63,9 +63,14 @@ public final class CompanionLighting {
         for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(ItemTags.COALS) && !owner.carriedForPlayer(owner.getItem(slot))) return true;
         return false;
     }
+    /** The torches an unfinished building still takes are its material, not path lights: only those above that count may be put down. */
     private int torchSlot() {
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH) && !owner.carriedForPlayer(owner.getItem(slot))) return slot;
-        return -1;
+        int first = -1, count = 0;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(Items.TORCH) && !owner.carriedForPlayer(owner.getItem(slot))) {
+            if (first < 0) first = slot;
+            count += owner.getItem(slot).getCount();
+        }
+        return count > owner.work.buildingNeeds(Items.TORCH) ? first : -1;
     }
     private boolean hasStickMaterials() {
         int planks = 0;

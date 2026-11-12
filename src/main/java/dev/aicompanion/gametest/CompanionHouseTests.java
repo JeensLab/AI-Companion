@@ -16,9 +16,12 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlac
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.gametest.framework.AfterBatch;
+import net.minecraft.gametest.framework.BeforeBatch;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -35,6 +38,13 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionHouseTests {
+    /** The groves are heavy on the shared route searches of the tick: they run apart from the tests that time themselves in ticks. */
+    @AfterBatch(batch = "house_rounds") public static void afterRounds(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
+    /** A night of building: a torch in the bag is a path light after dark. */
+    private static long nightClock;
+    @BeforeBatch(batch = "house_night") public static void nightForTorches(ServerLevel level) { nightClock = level.getDayTime(); level.setDayTime(18000); }
+    @AfterBatch(batch = "house_night") public static void endNightForTorches(ServerLevel level) { level.setDayTime(nightClock); CompanionFixtureCleanup.afterAtomicTests(level); }
+
     @GameTest(template = "tall_tree", timeoutTicks = 3200)
     public static void buildsWalkableHouseFromRealLogs(GameTestHelper helper) {
         CompanionEntity companion = setup(helper);
@@ -180,12 +190,14 @@ public final class CompanionHouseTests {
         CompanionEntity companion = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(companion, bag);
+        spareDirt(companion);
         helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
         helper.succeedWhen(() -> {
             done(helper, companion);
             helper.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains(VILLAGE_HOUSE), companion.getLastTaskResult());
             assertLooksLikeReference(helper, templateBase(companion));
             for (Item item : bag.keySet()) helper.assertTrue(count(companion, item) == 0, "Bag still holds " + item + ": blocks were not all taken from it");
+            dirtBack(helper, companion);
         });
     }
 
@@ -194,6 +206,7 @@ public final class CompanionHouseTests {
         CompanionEntity original = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(original, bag);
+        spareDirt(original);
         int total = bag.values().stream().mapToInt(Integer::intValue).sum();
         CompanionEntity[] current = {original};
         long[] stopped = {-1};
@@ -217,25 +230,237 @@ public final class CompanionHouseTests {
             helper.assertTrue(current[0].didLastTaskSucceed(), current[0].getLastTaskResult());
             assertLooksLikeReference(helper, templateBase(current[0]));
             for (Item item : bag.keySet()) helper.assertTrue(count(current[0], item) == 0, "Resume spent or left a different amount of " + item);
+            dirtBack(helper, current[0]);
         });
     }
 
-    @GameTest(template = "tall_tree", timeoutTicks = 1600)
-    public static void villageHouseWithMissingMaterialsNamesThemAndBuildsNothing(GameTestHelper helper) {
+    private static final int SPARE_DIRT = 8;
+    /** Whether a block is reached from the ground or from a column of dirt depends on the cells the route offers that tick: both are right, so he has dirt for it. */
+    private static void spareDirt(CompanionEntity companion) { companion.setItem(companion.getContainerSize() - 5, new ItemStack(Items.DIRT, SPARE_DIRT)); }
+    private static void dirtBack(GameTestHelper helper, CompanionEntity companion) {
+        helper.assertTrue(count(companion, Items.DIRT) == SPARE_DIRT && countBlocks(helper, Blocks.DIRT) == 0,
+                "Scaffolding dirt: " + count(companion, Items.DIRT) + " in the bag, " + countBlocks(helper, Blocks.DIRT) + " in the world");
+    }
+
+    private static final String LOG_HOUSE = "бревенчатый дом";
+    private static final ResourceLocation LOG_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/plains/houses/plains_small_house_3");
+    /** What no skill of his makes: glass needs a furnace, a torch coal, a bed wool. The player gives them; the rest of the log house he gets himself. */
+    private static final Set<Item> UNGETTABLE = Set.of(Items.GLASS_PANE, Items.TORCH, Items.YELLOW_BED);
+
+    /** The reference's materials, the ones he cannot make or all the others. */
+    private static Map<Item, Integer> only(Map<Item, Integer> reference, boolean ungettable) {
+        Map<Item, Integer> result = new LinkedHashMap<>();
+        for (var entry : reference.entrySet()) if (UNGETTABLE.contains(entry.getKey()) == ungettable) result.put(entry.getKey(), entry.getValue());
+        return result;
+    }
+
+    /** Trees of the given species in turn, a grove at the far side of the arena; the reference corner and his start stay clear. */
+    private static void forest(GameTestHelper helper, String... species) {
+        int index = 0;
+        for (int x = 2; x < 32; x += 4) for (int z = 2; z < 32; z += 4) {
+            if (x < 22 && z < 22) continue;
+            String wood = species[index++ % species.length];
+            var log = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(ResourceLocation.withDefaultNamespace(wood + "_log"));
+            var leaves = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(ResourceLocation.withDefaultNamespace(wood + "_leaves"));
+            for (int y = GROUND + 1; y <= GROUND + 4; y++) helper.setBlock(new BlockPos(x, y, z), log);
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int y = GROUND + 4; y <= GROUND + 5; y++)
+                if (helper.getBlockState(new BlockPos(x + dx, y, z + dz)).isAir()) helper.setBlock(new BlockPos(x + dx, y, z + dz), leaves.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true));
+        }
+    }
+    /** A block of stone to mine at the near side of the arena, away from the corner of the reference. */
+    private static void quarry(GameTestHelper helper) {
+        for (int x = 12; x <= 17; x++) for (int z = 2; z <= 7; z++) for (int y = GROUND; y <= GROUND + 2; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+    }
+    /** Soil for the scaffolding of the tall roof: a patch to dig at the middle of the arena, or a few blocks in the bag. */
+    private static void dirtPatch(GameTestHelper helper) {
+        for (int x = 12; x <= 17; x++) for (int z = 10; z <= 12; z++) helper.setBlock(new BlockPos(x, GROUND, z), Blocks.DIRT);
+    }
+    /** The mock player stands where it was put and blocks a cell of the scaffolding for good: it goes to a free spot between the trees. */
+    private static void playerAway(GameTestHelper helper) {
+        BlockPos spot = helper.absolutePos(new BlockPos(20, GROUND + 1, 30));
+        // Only this arena's player: the other tests of the batch have theirs in the same level.
+        for (var player : helper.getLevel().players()) if (helper.getBounds().inflate(1).contains(player.position())) player.teleportTo(spot.getX() + .5, spot.getY(), spot.getZ() + .5);
+    }
+    /** The template's own tree and anything that grew from it: no tree of that wood is left in the arena. */
+    private static void noTrees(GameTestHelper helper) {
+        for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(31, 30, 31)))
+            if (helper.getBlockState(pos).is(net.minecraft.tags.BlockTags.LOGS) || helper.getBlockState(pos).is(net.minecraft.tags.BlockTags.LEAVES)) helper.setBlock(pos, Blocks.AIR);
+    }
+    private static void tools(CompanionEntity companion) {
+        companion.setItem(companion.getContainerSize() - 3, new ItemStack(Items.IRON_AXE));
+        companion.setItem(companion.getContainerSize() - 4, new ItemStack(Items.IRON_PICKAXE));
+    }
+    private static boolean wooden(Item item) {
+        var stack = item.getDefaultInstance();
+        return stack.is(net.minecraft.tags.ItemTags.PLANKS) || stack.is(net.minecraft.tags.ItemTags.LOGS)
+                || stack.is(net.minecraft.tags.ItemTags.WOODEN_STAIRS) || stack.is(net.minecraft.tags.ItemTags.WOODEN_DOORS);
+    }
+
+    /**
+     * An empty bag in a grove of two species and a heap of stone: the house of the template is got from the trees of its own wood,
+     * the stone and the crafts, and finished without a stop (the closed attempt halted at the first tree of the other species).
+     */
+    @GameTest(template = "tall_tree", batch = "house_rounds", timeoutTicks = 36000)
+    public static void villageHouseIsGatheredAndBuiltFromAnEmptyBagInAMixedForest(GameTestHelper helper) {
         CompanionEntity companion = groundedSetup(helper);
-        companion.setItem(0, new ItemStack(Items.COBBLESTONE, 10));
-        helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
+        Map<Item, Integer> reference = placeReference(helper, LOG_HOUSE_TEMPLATE);
+        fill(companion, only(reference, true));
+        tools(companion);
+        noTrees(helper);
+        forest(helper, "oak", "birch", "oak");
+        quarry(helper);
+        dirtPatch(helper);
+        playerAway(helper);
+        int stone = countBlocks(helper, Blocks.STONE);
+        helper.assertTrue(companion.startWork("build_house", LOG_HOUSE, 1).success(), "Template house work rejected");
         helper.succeedWhen(() -> {
             done(helper, companion);
-            helper.assertTrue(!companion.didLastTaskSucceed() && companion.getLastTaskResult().contains("не хватает"), companion.getLastTaskResult());
-            helper.assertTrue(count(companion, Items.COBBLESTONE) == 10 && countBlocks(helper, Blocks.COBBLESTONE) == 0, "Shortage consumed materials or placed blocks");
+            helper.assertTrue(companion.didLastTaskSucceed() && companion.getLastTaskResult().contains(LOG_HOUSE), companion.getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(companion));
+            helper.assertTrue(count(companion, Items.BIRCH_LOG) == 0, "Logs of the other species were cut for an oak house");
+            helper.assertTrue(stone - countBlocks(helper, Blocks.STONE) >= reference.get(Items.COBBLESTONE), "The cobblestone did not come from the stone of the arena");
+            for (Item item : only(reference, true).keySet()) helper.assertTrue(count(companion, item) == 0, "Bag still holds " + item);
+        });
+    }
+
+    /**
+     * An oak house where only spruce grows: the same house of spruce, all of its wooden parts of the one species. Also stopped and
+     * reloaded in the middle of the gathering: the saved choice and the logs in the bag carry on.
+     */
+    @GameTest(template = "tall_tree", batch = "house_rounds", timeoutTicks = 30000)
+    public static void villageHouseOfAnAbsentWoodIsBuiltOfTheOneThatGrowsAlsoAcrossAReload(GameTestHelper helper) {
+        CompanionEntity original = groundedSetup(helper);
+        Map<Item, Integer> reference = placeReference(helper, LOG_HOUSE_TEMPLATE);
+        Map<Item, Integer> bag = new LinkedHashMap<>(reference);
+        bag.keySet().removeIf(CompanionHouseTests::wooden);
+        fill(original, bag);
+        tools(original);
+        original.setItem(original.getContainerSize() - 5, new ItemStack(Items.DIRT, 8));
+        noTrees(helper);
+        forest(helper, "spruce");
+        quarry(helper);
+        playerAway(helper);
+        CompanionEntity[] current = {original};
+        long[] stopped = {-1};
+        helper.onEachTick(() -> {
+            if (stopped[0] < 0 && count(current[0], Items.SPRUCE_LOG) >= 8) {
+                current[0].stopGathering();
+                stopped[0] = helper.getTick();
+                CompoundTag data = new CompoundTag(); original.saveWithoutId(data); original.discard();
+                helper.runAfterDelay(1, () -> {
+                    CompanionEntity replacement = AICompanionMod.COMPANION.get().create(helper.getLevel());
+                    replacement.load(data); helper.getLevel().addFreshEntity(replacement); current[0] = replacement;
+                });
+            }
+            if (stopped[0] >= 0 && helper.getTick() - stopped[0] == 30) helper.assertTrue(current[0].startWork("build_house", "resume", 1).success(), "Resume rejected");
+        });
+        helper.assertTrue(original.startWork("build_house", LOG_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stopped[0] >= 0 && helper.getTick() - stopped[0] > 40, "Not stopped and resumed yet");
+            done(helper, current[0]);
+            helper.assertTrue(current[0].didLastTaskSucceed(), current[0].getLastTaskResult());
+            BlockPos base = templateBase(current[0]);
+            int checked = 0;
+            for (BlockPos rel : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(7, 7, 7))) {
+                BlockState want = helper.getBlockState(rel);
+                if (want.isAir() || want.is(Blocks.JIGSAW) || want.is(Blocks.STRUCTURE_VOID)) continue;
+                String path = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(want.getBlock()).getPath();
+                var expected = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(ResourceLocation.withDefaultNamespace(path.replace("oak", "spruce")));
+                BlockState got = helper.getLevel().getBlockState(base.offset(rel.getX() - 1, rel.getY() - 1, rel.getZ() - 1));
+                helper.assertTrue(got.is(expected), "Block " + rel + " is " + got.getBlock() + ", expected " + expected);
+                checked++;
+            }
+            helper.assertTrue(checked > 60, "Too little checked: " + checked);
+            helper.assertTrue(count(current[0], Items.OAK_LOG) == 0 && count(current[0], Items.OAK_PLANKS) == 0, "Oak appeared from nowhere");
+        });
+    }
+
+    /**
+     * The closed attempt ordered 18 cobblestone with 11 in the bag, a stone pickaxe was made out of 3 of the 11 and the order stood
+     * at 15. Here: no pickaxe, 11 of 37 cobblestone, a bench and planks to spare; the stone set aside for the building is not a tool's,
+     * so the pickaxe is of wood and exactly the 26 missing are mined.
+     */
+    @GameTest(template = "tall_tree", batch = "house_rounds", timeoutTicks = 12000)
+    public static void stoneSetAsideForTheBuildingIsNotMadeIntoATool(GameTestHelper helper) {
+        CompanionEntity companion = groundedSetup(helper);
+        Map<Item, Integer> reference = placeReference(helper, LOG_HOUSE_TEMPLATE);
+        Map<Item, Integer> bag = new LinkedHashMap<>(reference);
+        bag.put(Items.COBBLESTONE, 11);
+        bag.merge(Items.OAK_PLANKS, 9, Integer::sum);
+        fill(companion, bag);
+        companion.setItem(companion.getContainerSize() - 4, new ItemStack(Items.STICK, 2));
+        companion.setItem(companion.getContainerSize() - 5, new ItemStack(Items.DIRT, 8));
+        helper.setBlock(new BlockPos(17, GROUND + 1, 16), Blocks.CRAFTING_TABLE);
+        quarry(helper);
+        playerAway(helper);
+        int stone = countBlocks(helper, Blocks.STONE);
+        helper.assertTrue(companion.startWork("build_house", LOG_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(companion));
+            helper.assertTrue(count(companion, Items.STONE_PICKAXE) == 0, "The stone of the building went into a pickaxe");
+            helper.assertTrue(stone - countBlocks(helper, Blocks.STONE) == reference.get(Items.COBBLESTONE) - 11, "Mined " + (stone - countBlocks(helper, Blocks.STONE)) + " instead of exactly " + (reference.get(Items.COBBLESTONE) - 11));
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == 0, "Cobblestone left over: " + count(companion, Items.COBBLESTONE));
+        });
+    }
+
+    /** The torches of the building are its material, not his path lights: through a whole night of work not one is put down on the way. */
+    @GameTest(template = "tall_tree", batch = "house_night", timeoutTicks = 9000)
+    public static void torchesSetAsideForTheBuildingAreNotSpentOnPathLightsAtNight(GameTestHelper helper) {
+        CompanionEntity companion = groundedSetup(helper);
+        Map<Item, Integer> reference = placeReference(helper, LOG_HOUSE_TEMPLATE);
+        fill(companion, reference);
+        companion.setItem(companion.getContainerSize() - 5, new ItemStack(Items.DIRT, 8));
+        playerAway(helper);
+        helper.assertTrue(helper.getLevel().getDayTime() % 24000 > 13000, "The premise: it is night");
+        helper.assertTrue(companion.startWork("build_house", LOG_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(companion));
+            helper.assertTrue(countBlocks(helper, Blocks.TORCH) == 0, "A torch of the building was put down as a path light");
+            for (Item item : reference.keySet()) helper.assertTrue(count(companion, item) == 0, "Bag still holds " + item);
+        });
+    }
+
+    /** What he cannot make is said once with the counts, all the rest stands; after the player puts it into the bag «дострой» finishes the house. */
+    @GameTest(template = "tall_tree", timeoutTicks = 12000)
+    public static void whatHeCannotGetIsNamedOnceAndGivenLaterFinishesTheHouse(GameTestHelper helper) {
+        CompanionEntity companion = groundedSetup(helper);
+        Map<Item, Integer> reference = placeReference(helper, LOG_HOUSE_TEMPLATE);
+        fill(companion, only(reference, false));
+        companion.setItem(companion.getContainerSize() - 5, new ItemStack(Items.DIRT, 8));
+        playerAway(helper);
+        long[] stopped = {-1};
+        helper.onEachTick(() -> {
+            if (stopped[0] < 0 && helper.getTick() > 40 && !companion.isWorking() && !companion.isGatheringTask()) {
+                stopped[0] = helper.getTick();
+                String said = companion.getLastTaskResult();
+                helper.assertTrue(!companion.didLastTaskSucceed(), said);
+                for (Item item : UNGETTABLE) helper.assertTrue(said.contains(reference.get(item) + " × " + new ItemStack(item).getHoverName().getString()), "Not named with its count: " + item + " in " + said);
+                helper.assertTrue(!said.contains(new ItemStack(Items.OAK_STAIRS).getHoverName().getString()) && !said.contains(new ItemStack(Items.COBBLESTONE).getHoverName().getString()), "Named what he could get: " + said);
+                helper.assertTrue(countBlocks(helper, Blocks.OAK_PLANKS) > 33 && countBlocks(helper, Blocks.COBBLESTONE) > 37, "The rest of the house was not built before stopping");
+                // The door is the last block of all: it waits in the bag with the rest of what is carried in.
+                for (Item item : only(reference, false).keySet()) helper.assertTrue(count(companion, item) == (item == Items.OAK_DOOR ? 1 : 0), "Lost or kept " + item + ": " + count(companion, item));
+                helper.assertTrue(countBlocks(helper, Blocks.OAK_DOOR) == 2, "The door shut the house before what is carried in");
+                int slot = companion.getContainerSize() - 9;
+                for (Item item : UNGETTABLE) companion.setItem(slot++, new ItemStack(item, reference.get(item)));
+                helper.assertTrue(companion.startWork("build_house", "resume", 1).success(), "Resume rejected");
+            }
+        });
+        helper.assertTrue(companion.startWork("build_house", LOG_HOUSE, 1).success(), "Template house work rejected");
+        helper.succeedWhen(() -> {
+            helper.assertTrue(stopped[0] >= 0 && helper.getTick() - stopped[0] > 20, "Not stopped and given yet");
+            done(helper, companion);
+            helper.assertTrue(companion.didLastTaskSucceed(), companion.getLastTaskResult());
+            assertLooksLikeReference(helper, templateBase(companion));
+            for (Item item : reference.keySet()) helper.assertTrue(count(companion, item) == 0, "Bag still holds " + item);
         });
     }
 
     private static final String GABLED_HOUSE = "деревенский дом";
     private static final ResourceLocation GABLED_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/plains/houses/plains_small_house_1");
-    private static final String LOG_HOUSE = "бревенчатый дом";
-    private static final ResourceLocation LOG_HOUSE_TEMPLATE = ResourceLocation.withDefaultNamespace("village/plains/houses/plains_small_house_3");
     private static final int DIRT = 24;
 
     /** A gabled roof is out of reach from the ground: he stands on a dirt column for it, and nothing of it is left afterwards. */
@@ -325,6 +550,7 @@ public final class CompanionHouseTests {
         CompanionEntity companion = wildSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(companion, bag);
+        spareDirt(companion);
         helper.assertTrue(companion.startWork("build_house", VILLAGE_HOUSE, 1).success(), "Template house work rejected");
         helper.succeedWhen(() -> {
             done(helper, companion);
@@ -349,6 +575,7 @@ public final class CompanionHouseTests {
                         && level.getBlockState(outside.below()).isFaceSturdy(level, outside.below(), net.minecraft.core.Direction.UP);
             }
             helper.assertTrue(walksIn, "No level ground in front of the door: he would have to jump to get in");
+            dirtBack(helper, companion);
         });
     }
 
@@ -358,6 +585,7 @@ public final class CompanionHouseTests {
         CompanionEntity companion = groundedSetup(helper);
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         fill(companion, bag);
+        spareDirt(companion);
         var size = helper.getLevel().getServer().getStructureManager().get(VILLAGE_HOUSE_TEMPLATE).orElseThrow().getSize();
         BlockPos rel = null;
         for (int y = 2; y < size.getY() && rel == null; y++) for (int x = 0; x < size.getX() && rel == null; x++) for (int z = 0; z < size.getZ() && rel == null; z++) {
@@ -397,6 +625,7 @@ public final class CompanionHouseTests {
         Map<Item, Integer> bag = placeReference(helper, VILLAGE_HOUSE_TEMPLATE);
         helper.assertTrue(!bag.containsKey(Items.RED_SAND) && !bag.containsKey(Items.OAK_LOG), "The premise: the building takes neither red sand nor logs");
         fill(original, bag);
+        spareDirt(original);
         int logs = countBlocks(helper, Blocks.OAK_LOG), sand = countBlocks(helper, Blocks.RED_SAND);
         CompanionEntity[] current = {original};
         long[] stopped = {-1};
@@ -423,6 +652,7 @@ public final class CompanionHouseTests {
             helper.assertTrue(count(current[0], Items.OAK_LOG) == logs - countBlocks(helper, Blocks.OAK_LOG), "Logs: cleared " + (logs - countBlocks(helper, Blocks.OAK_LOG)) + ", in the bag " + count(current[0], Items.OAK_LOG));
             helper.assertTrue(count(current[0], Items.RED_SAND) == sand - countBlocks(helper, Blocks.RED_SAND), "Sand: dug " + (sand - countBlocks(helper, Blocks.RED_SAND)) + ", in the bag " + count(current[0], Items.RED_SAND));
             helper.assertTrue(logs > countBlocks(helper, Blocks.OAK_LOG), "No log was cleared: the premise of the test is gone");
+            dirtBack(helper, current[0]);
         });
     }
 

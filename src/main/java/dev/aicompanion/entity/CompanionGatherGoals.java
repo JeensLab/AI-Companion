@@ -100,7 +100,7 @@ final class CompanionGatherGoals {
             elapsedTicks = 0;
             gathered = Math.max(0, c.requestedLogs - c.logsRemaining);
             // What is still missing: after a reload the logs already chopped are not asked for again (review 22.10, М1).
-            kind = c.work.isActive() && c.work.job == CompanionWork.Job.WOOD ? CompanionWoodKind.of(c.work.requestedItem) : null;
+            kind = c.work.isActive() ? c.work.woodKind() : null;
             inventoryTarget = logs() + c.logsRemaining;
             axeSense.reset(); soilAttempts = 0;
             pathFailTicks = 0;

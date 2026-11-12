@@ -399,6 +399,14 @@ public final class CompanionWork {
     }
 
     /** Wood in the bag is for the work (house, tools, chest, fuel) unless the work is only walking, fighting or handing over. */
+    /** The species of logs the work cuts: named by a wood order, chosen by a building; null for any. */
+    CompanionWoodKind woodKind() { return job == Job.WOOD ? CompanionWoodKind.of(requestedItem) : job == Job.HOUSE && templateJob ? templateHouse.logKind() : null; }
+    /** Stone a building under way has set aside: no tool is made of it. */
+    int buildingStone() { return job == Job.HOUSE && templateJob ? templateHouse.stoneReserve() : 0; }
+
+    /** What an unfinished template building still takes of the item: not to be spent on anything else (path lights, tools). */
+    int buildingNeeds(net.minecraft.world.item.Item item) { return job == Job.HOUSE && templateJob || templateHouse.unfinished() ? templateHouse.reserved(item) : 0; }
+
     boolean woodSpareForSupports() {
         return job == null || job == Job.COME || job == Job.COURSE || job == Job.HUNT || job == Job.GIVE || job == Job.DIRT;
     }
@@ -636,7 +644,7 @@ public final class CompanionWork {
             case CLOSE -> chests.afterClose();
             case BUILD -> buildHouse(level);
             case SHOVEL -> crafting.prepareShovel();
-            case DIGGING -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
+            case DIGGING -> { if (job == Job.HOUSE) { phase = Phase.BUILD; resetTarget(); } else finish(owner.didLastTaskSucceed(), owner.getLastTaskResult()); }
             case RETURN -> returnToPlayer(level);
             case FIGHT -> hunting.fightNearby(level);
             case CHASE -> hunting.hunt(level);

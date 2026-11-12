@@ -72,7 +72,7 @@ final class CompanionWorkCrafting {
             if (approachCraftingTable()) return;
             if (!w.items.moveHandMaterialsToBag()) return;
             // A worn-out pickaxe with mined cobblestone in the bag is replaced by the better stone one.
-            String replacement = w.items.countStoneMaterials() >= 3 && w.items.keepingOrderStone(() -> w.owner.craftFromBag("minecraft:stone_pickaxe", 1).success())
+            String replacement = w.items.countStoneMaterials() - w.buildingStone() >= 3 && w.items.keepingOrderStone(() -> w.owner.craftFromBag("minecraft:stone_pickaxe", 1).success())
                     ? "minecraft:stone_pickaxe" : "minecraft:wooden_pickaxe";
             CompanionActionResult crafted = replacement.equals("minecraft:stone_pickaxe")
                     ? CompanionActionResult.ok("") : w.owner.craftFromBag(replacement, 1);
@@ -104,6 +104,18 @@ final class CompanionWorkCrafting {
 
     void requestWood(CompanionWork.Phase resume) {
         requestWood(resume, 4);
+    }
+
+    /** A building's round: the stone it lacks, a pickaxe made first if he has none; the work goes back to the building once it is mined. */
+    void requestStone(int count) {
+        w.wantedStone = count; w.gathered = 0; w.stoneCollectedBefore = w.owner.collectedStone(); w.stoneLootRetried = false;
+        w.stoneSearch = null; w.stoneCandidates = null; w.rejected.clear(); w.quarrySoil.clear(); w.quarryTried = w.selectingStone = false; w.exitCell = null; w.stairs = 0;
+        w.afterStone = CompanionWork.Phase.BUILD; w.phase = CompanionWork.Phase.PICKAXE;
+    }
+
+    /** A building's round: soil, sand or gravel dug where it lies. */
+    void requestDig(CompanionGround ground, int count) {
+        w.phase = CompanionWork.Phase.DIGGING; w.owner.startGatheringDirtForWork(count, ground);
     }
 
     void requestWood(CompanionWork.Phase resume, int count) {
