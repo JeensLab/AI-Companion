@@ -44,13 +44,13 @@ public final class CompanionWork {
     final CompanionCourse course = new CompanionCourse(this);
     final CompanionHouse house;
     final CompanionObsidian obsidian;
-    /** gather_block: what a block gives when broken, found, walked to and picked. */
-    final CompanionPicking picking;
     final CompanionPortalBuild portal;
     /** disenchant_item: the walk to a grindstone, or his own one, and the grinding. */
     final CompanionGrinding grinding = new CompanionGrinding(this);
     /** compost_items: the walk to a composter, or his own one, and the filling. */
     final CompanionComposting composting = new CompanionComposting(this);
+    /** gather_block: what a block gives when broken, found, walked to and picked. */
+    final CompanionPicking picking = new CompanionPicking(this);
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
     CompanionStoneSearch stoneSearch;
@@ -285,7 +285,7 @@ public final class CompanionWork {
     }
 
     public CompanionWork(CompanionEntity owner) {
-        this.owner = owner; house = new CompanionHouse(owner); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); picking = new CompanionPicking(this); portal = new CompanionPortalBuild(this);
+        this.owner = owner; house = new CompanionHouse(owner); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this);
         pickaxeSense = new CompanionToolSense(owner, "pickaxe", ItemTags.PICKAXES, Blocks.STONE.defaultBlockState());
         shovelSense = new CompanionToolSense(owner, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
     }

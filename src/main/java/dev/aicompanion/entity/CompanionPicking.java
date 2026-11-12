@@ -44,7 +44,8 @@ final class CompanionPicking {
     private static final int WAIT = 100;
 
     private final CompanionWork w;
-    private final CompanionEntity c;
+    /** The work is made before it knows its owner: taken at the order. */
+    private CompanionEntity c;
     private Item item;
     private List<CompanionPickable.Source> sources = List.of();
     /** Ordered, in his bag at the order, dropped by the blocks he broke (picked up or not). */
@@ -59,10 +60,11 @@ final class CompanionPicking {
     /** Blocks he found no way to. */
     private final Set<BlockPos> passed = new HashSet<>();
 
-    CompanionPicking(CompanionWork w) { this.w = w; this.c = w.owner; }
+    CompanionPicking(CompanionWork w) { this.w = w; }
 
     /** gather_block: {@code count} more of the item in his bag. Null when the work may start, else why not. */
     CompanionActionResult begin(String id, int count) {
+        c = w.owner;
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
         sources = asked == null || !(c.level() instanceof ServerLevel level) || level.dimension() != Level.OVERWORLD ? List.of() : CompanionPickable.sources(level, asked);
