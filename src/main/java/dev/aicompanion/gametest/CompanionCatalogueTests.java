@@ -68,6 +68,10 @@ public final class CompanionCatalogueTests {
             }
             // «Построй <name>» is that building and not the plank house, which keeps «дом», «маленький дом», «небольшой дом», «деревянный дом».
             var asked = CompanionWorkCommands.parse("Олег, построй " + building.name(), "Олег");
+            // The chat goes through a command line of words: a name of two words must come out of it whole (in the game «деревенский дом» came out as «деревенский» at the place «дом»).
+            var routed = dev.aicompanion.client.CompanionLocalCommands.action(dev.aicompanion.client.CompanionLocalCommands.route("Олег, построй " + building.name(), "Олег"));
+            h.assertTrue("build_house".equals(routed.type()) && building.name().equals(routed.item()) && "near_player".equals(routed.location()),
+                    "«построй " + building.name() + "» through the chat is " + routed.type() + " «" + routed.item() + "» at " + routed.location());
             h.assertTrue(asked != null && "build_house".equals(asked.type()) && building.name().equals(asked.item()), at + "the direct command does not name it");
         }
         for (String plank : new String[]{"дом", "маленький дом", "небольшой дом", "деревянный дом"})
@@ -81,6 +85,11 @@ public final class CompanionCatalogueTests {
 
     @GameTest(template = "empty")
     public static void aKindIsBuiltWithoutTheModelAsTheOneOfThePlaceAndAnUnknownRequestIsLeftToTheModel(GameTestHelper h) {
+        // Through the chat's command line the plank house has no name and «дострой» is «resume»: the word that stands for «no item» there is not a building.
+        var plain = dev.aicompanion.client.CompanionLocalCommands.action(dev.aicompanion.client.CompanionLocalCommands.route("Олег, построй дом", "Олег"));
+        var again = dev.aicompanion.client.CompanionLocalCommands.action(dev.aicompanion.client.CompanionLocalCommands.route("Олег, дострой", "Олег"));
+        h.assertTrue("build_house".equals(plain.type()) && plain.item().isEmpty(), "«построй дом» through the chat names «" + plain.item() + "»");
+        h.assertTrue("build_house".equals(again.type()) && "resume".equals(again.item()), "«дострой» through the chat is «" + again.item() + "»");
         var said = CompanionWorkCommands.parse("Олег, построй кузницу", "Олег");
         h.assertTrue(said != null && "build_house".equals(said.type()) && "кузница".equals(said.item()), "«построй кузницу» is not the kind smithy");
         h.assertTrue(CompanionWorkCommands.parse("построй храм", "Олег") != null, "«построй храм» was not understood");

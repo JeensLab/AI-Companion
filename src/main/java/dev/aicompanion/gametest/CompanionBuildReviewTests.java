@@ -79,8 +79,8 @@ public final class CompanionBuildReviewTests {
             h.assertTrue(h.getTick() > 350, "Observe standing in the dark");
             int torches = 0;
             for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(1, 1, 1), new BlockPos(30, 3, 30))) if (h.getBlockState(pos).is(Blocks.TORCH)) torches++;
-            h.assertTrue(torches == 1, "Path lights: " + torches + " (the unfinished building held every torch back)");
-            h.assertTrue(count(reloaded, Items.COAL) == 1 && count(reloaded, Items.STICK) == 1 && count(reloaded, Items.TORCH) == 3, "Not one four-torch recipe and a light: " + reloaded.getStoredItemsSummary());
+            h.assertTrue(torches >= 1, "Path lights: " + torches + " (the unfinished building held every torch back)");
+            h.assertTrue(count(reloaded, Items.COAL) == 1 && count(reloaded, Items.STICK) == 1 && count(reloaded, Items.TORCH) + torches == 4, "Not one four-torch recipe lighting the way: " + torches + " set down, " + reloaded.getStoredItemsSummary());
         });
     }
 

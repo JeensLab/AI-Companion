@@ -64,7 +64,8 @@ public final class CompanionLocalCommands {
         if (picked != null) return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
         if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " "
-                + (workAction.item().isEmpty() ? "resources" : workAction.item())
+                // The command is a line of words: a building's name of several («деревенский дом») goes as one, joined.
+                + (workAction.item().isEmpty() ? "resources" : "build_house".equals(workAction.type()) ? workAction.item().replace(' ', '_') : workAction.item())
                 + (NEAR_PLAYER.equals(workAction.location()) ? "" : " " + workAction.location());
         String water = CompanionWorkCommands.water(text, companionName);
         if (water != null) return water;
@@ -106,6 +107,8 @@ public final class CompanionLocalCommands {
         return CompanionEquipmentCommands.parse(normalized);
     }
 
+    /** A building's name out of the command line: its words joined there are apart again, and the word that stands for «no item» is no name (the plank house). */
+    private static String buildingName(String word) { return "resources".equals(word) ? "" : word.replace('_', ' '); }
     /** The plan step a local command runs. */
     public static PlannedAction action(String command) {
         String[] parts = command.split(" ");
@@ -119,7 +122,7 @@ public final class CompanionLocalCommands {
             case "summon" -> new PlannedAction("come", 0, 1);
             case "roam" -> new PlannedAction("wander", 0, 1);
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
-            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), parts[WORK_ITEM], "auto",
+            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), "build_house".equals(parts[2]) ? buildingName(parts[WORK_ITEM]) : parts[WORK_ITEM], "auto",
                     parts.length > WORK_LOCATION ? parts[WORK_LOCATION] : NEAR_PLAYER);
             default -> new PlannedAction(parts[1], 0, 1);
         };
