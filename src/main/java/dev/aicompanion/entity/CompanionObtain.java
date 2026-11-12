@@ -27,7 +27,9 @@ import java.util.Set;
  * Wood is one family (any logs, any planks: the recipes take them all), so is crafting stone; planks and sticks are made by the
  * craft that needs them. Sand, gravel and flint are dug (flint out of gravel), so glass and a flint and steel follow from their
  * recipes. What a block gives when it is simply broken (sugar cane, flowers, clay: CompanionPickable) is found and picked, what a
- * monster drops (string, bones, gunpowder: CompanionMobDrops) is fought for when one is about. What none of the skills can get
+ * monster drops (string, bones, gunpowder: CompanionMobDrops) is fought for when one is about. A ripe field about him is reaped
+ * (wheat, carrots, potatoes, beetroot; none ripe is said, nothing is sown and waited for), and bone meal comes out of a composter,
+ * of the scrap in his bag and the plants he picks for it, before any skeleton is fought. What none of the skills can get
  * (an ink sac, a blaze rod…) is said before anything starts.
  */
 public final class CompanionObtain {
@@ -52,7 +54,10 @@ public final class CompanionObtain {
     private final List<Step> steps = new ArrayList<>();
     private final Set<String> active = new HashSet<>();
     private String why;
-    /** Whether a block that gives the item stands where he can get to it; null when the world about him is not known: nothing is picked then. */
+    /**
+     * Whether the world about him has the item for the taking: a block that gives it, a ripe crop of it, a composter standing by.
+     * Null when the world about him is not known: nothing is picked or reaped then.
+     */
     private final java.util.function.Predicate<Item> grows;
     private final Map<Item, Boolean> grown = new HashMap<>();
     /** Whether a monster that drops the item is about him now; null when the world about him is not known: none is hunted then. */
@@ -63,6 +68,10 @@ public final class CompanionObtain {
     /** What he would pick and does not see about him: named when the plan is refused. */
     private final Set<String> absent = new java.util.LinkedHashSet<>();
     private static final String ABSENT = "Рядом не вижу";
+    private static final String BONE_MEAL = "minecraft:bone_meal";
+    /** Layers of a composter that make one bone meal, and how much more is gathered than the average needs: each piece fills by chance. */
+    private static final int LAYERS = 7;
+    private static final double SPARE = 1.25;
 
     private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams) {
         this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams;
@@ -165,6 +174,16 @@ public final class CompanionObtain {
                 if (refusal != null) return refuse(refusal);
                 return need("minecraft:water_bucket", 1, depth + 1) && add("mine_obsidian", key, count);
             }
+            // Bones he carries are ground as the recipe says; else a composter, the safe way; a skeleton only with nothing here to compost.
+            case BONE_MEAL -> {
+                if (bag.getOrDefault("minecraft:bone", 0) == 0 && bag.getOrDefault("minecraft:bone_block", 0) == 0) {
+                    var saved = save();
+                    boolean hadBench = bench;
+                    if (composted(count, depth)) return true;
+                    restore(saved);
+                    bench = hadBench;
+                }
+            }
             default -> { }
         }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
@@ -178,6 +197,14 @@ public final class CompanionObtain {
         if (smelted != null) return need(smelted, count, depth + 1) && add("smelt_items", BuiltInRegistries.ITEM.getKey(item).toString(), count);
         // A recipe makes it: its ingredients, then the craft.
         if (craft(item, count, depth)) return true;
+        // A field grows it: the ripe crops about him are reaped and sown again. None ripe: growing takes a day, he does not wait.
+        CompanionCrops.Kind crop = CompanionCrops.Kind.yielding(item);
+        if (crop != null) {
+            if (about(item)) return addSplit("harvest_crops", crop.seedId(), ceil(count, crop == CompanionCrops.Kind.CARROT || crop == CompanionCrops.Kind.POTATO ? 2 : 1), CompanionCrops.MAX_HARVEST);
+            // Named among what is not about him too: a refusal inside a recipe (bread) is forgotten with the recipe.
+            absent.add("спелой грядки, чтобы собрать " + crop.plant + " (могу сделать огород: вырастет — соберу)");
+            return refuse(ABSENT + " спелой грядки, чтобы собрать " + crop.plant + ". Могу сделать огород: вырастет — соберу.");
+        }
         // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
         if (picked(item)) return addSplit("gather_block", key, count, 64);
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
@@ -271,7 +298,44 @@ public final class CompanionObtain {
     }
 
     private boolean picked(Item item) {
-        return grows != null && !CompanionPickable.sources(level, item).isEmpty() && grown.computeIfAbsent(item, grows::test);
+        return !CompanionPickable.sources(level, item).isEmpty() && about(item);
+    }
+
+    private boolean about(Item item) {
+        return grows != null && grown.computeIfAbsent(item, grows::test);
+    }
+
+    /**
+     * Bone meal of a composter (compost_meal): the scrap of his bag if it is enough on average, else with the plant about him
+     * that takes the fewest blocks to pick; a composter of his own unless one stands by. False with neither.
+     */
+    private boolean composted(int count, int depth) {
+        double scrap = CompanionComposting.scrapLayers(carried);
+        String what = "scrap";
+        // ponytail: the scrap is counted as he carries it now, not less what this plan takes of it elsewhere (a flower for a dye);
+        // and a composter left part full by the last try is not known here. Either way the chain plans the rest again.
+        if (scrap < LAYERS * count) {
+            double missing = LAYERS * count * SPARE - scrap;
+            Item best = null;
+            int bestBlocks = Integer.MAX_VALUE, bestPieces = 0;
+            for (Item plant : BuiltInRegistries.ITEM) {
+                ItemStack one = new ItemStack(plant);
+                float chance = net.minecraft.world.level.block.ComposterBlock.getValue(one);
+                List<CompanionPickable.Source> sources = CompanionPickable.sources(level, plant);
+                if (chance <= 0 || sources.isEmpty() || CompanionComposting.rare(plant)) continue;
+                // A flower he carries is in the scrap already.
+                int have = CompanionComposting.scrap(one) ? 0 : bag.getOrDefault(key(plant), 0);
+                int pieces = Math.max(0, (int) Math.ceil(missing / chance) - have);
+                int blocks = ceil(pieces, sources.stream().mapToInt(CompanionPickable.Source::yield).max().orElse(1));
+                if (blocks >= bestBlocks || pieces > 0 && !picked(plant)) continue;
+                best = plant; bestBlocks = blocks; bestPieces = pieces;
+            }
+            if (best == null) return false;
+            what = key(best);
+            addSplit("gather_block", what, bestPieces, 64);
+        }
+        if (!about(Items.COMPOSTER) && !need("minecraft:composter", 1, depth + 1)) return false;
+        return add("compost_meal", what, count);
     }
 
     /** A blade for the fight is his: carried, or made earlier in this plan. */

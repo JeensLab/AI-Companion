@@ -150,7 +150,8 @@ final class CompanionBag {
     public CompanionObtain.Plan obtainPlan(String item, int count) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
         return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count,
-                wanted -> CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)), wanted -> CompanionMobDrops.near(c, serverLevel, wanted));
+                wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? c.placement.nearest(net.minecraft.world.level.block.Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK) != null
+                        : CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.ripeNear(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted));
     }
     /** The end of obtain_item: success only by the bag, never by the plan. */
     public CompanionActionResult carriedCheck(String item, int count) {
