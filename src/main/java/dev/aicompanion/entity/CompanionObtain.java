@@ -182,6 +182,8 @@ public final class CompanionObtain {
                     if (composted(count, depth)) return true;
                     restore(saved);
                     bench = hadBench;
+                    // The one way left is a bone, and that is a skeleton's: both are named when neither is about.
+                    if (!hunted(Items.BONE)) return refuse(ABSENT + " ни цветов для компостера, ни скелета, с которого падает кость.");
                 }
             }
             default -> { }
@@ -306,36 +308,32 @@ public final class CompanionObtain {
     }
 
     /**
-     * Bone meal of a composter (compost_meal): the scrap of his bag if it is enough on average, else with the plant about him
-     * that takes the fewest blocks to pick; a composter of his own unless one stands by. False with neither.
+     * Bone meal of a composter (compost_meal): the plant scrap of his bag (flowers, leaves, the saplings and seeds above his
+     * reserve), and where that is not enough on average, the flower about him that fills the most. Scrap only: the food, the
+     * harvest and the cane he carries are the player's. A composter of his own unless one stands by. False with nothing to compost.
      */
     private boolean composted(int count, int depth) {
         double scrap = CompanionComposting.scrapLayers(carried);
-        String what = "scrap";
         // ponytail: the scrap is counted as he carries it now, not less what this plan takes of it elsewhere (a flower for a dye);
         // and a composter left part full by the last try is not known here. Either way the chain plans the rest again.
         if (scrap < LAYERS * count) {
             double missing = LAYERS * count * SPARE - scrap;
             Item best = null;
-            int bestBlocks = Integer.MAX_VALUE, bestPieces = 0;
+            int bestPieces = Integer.MAX_VALUE;
             for (Item plant : BuiltInRegistries.ITEM) {
                 ItemStack one = new ItemStack(plant);
-                float chance = net.minecraft.world.level.block.ComposterBlock.getValue(one);
-                List<CompanionPickable.Source> sources = CompanionPickable.sources(level, plant);
-                if (chance <= 0 || sources.isEmpty() || CompanionComposting.rare(plant)) continue;
-                // A flower he carries is in the scrap already.
-                int have = CompanionComposting.scrap(one) ? 0 : bag.getOrDefault(key(plant), 0);
-                int pieces = Math.max(0, (int) Math.ceil(missing / chance) - have);
-                int blocks = ceil(pieces, sources.stream().mapToInt(CompanionPickable.Source::yield).max().orElse(1));
-                if (blocks >= bestBlocks || pieces > 0 && !picked(plant)) continue;
-                best = plant; bestBlocks = blocks; bestPieces = pieces;
+                if (!CompanionComposting.scrap(one) || CompanionPickable.sources(level, plant).isEmpty()) continue;
+                int pieces = (int) Math.ceil(missing / net.minecraft.world.level.block.ComposterBlock.getValue(one));
+                if (pieces < bestPieces && picked(plant)) { best = plant; bestPieces = pieces; }
             }
-            if (best == null) return false;
-            what = key(best);
-            addSplit("gather_block", what, bestPieces, 64);
+            if (best != null) addSplit("gather_block", key(best), bestPieces, 64);
+            // None to pick: the little he carries still goes into a composter that stands by; none is built for it.
+            else if (scrap <= 0 || !about(Items.COMPOSTER)) return false;
         }
-        if (!about(Items.COMPOSTER) && !need("minecraft:composter", 1, depth + 1)) return false;
-        return add("compost_meal", what, count);
+        // His own composter the work makes itself, of any wood (in game 12.11: planned as a recipe it came to oak slabs among dark
+        // oaks, and the craft refused): seven slabs are two logs, a bench for them one more.
+        if (!about(Items.COMPOSTER) && bag.getOrDefault("minecraft:composter", 0) == 0 && !need(LOGS, bench ? 2 : 3, depth + 1)) return false;
+        return addSplit("compost_meal", "scrap", count, 64);
     }
 
     /** A blade for the fight is his: carried, or made earlier in this plan. */

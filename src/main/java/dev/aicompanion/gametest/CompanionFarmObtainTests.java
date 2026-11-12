@@ -65,14 +65,23 @@ public final class CompanionFarmObtainTests {
         h.assertTrue(scrap.steps().equals(List.of(meal)), "Scrap carried: " + scrap);
         // The four saplings and sixteen seeds he keeps for planting are no scrap.
         var reserve = CompanionObtain.plan(level, List.of(new ItemStack(Items.OAK_SAPLING, 4), new ItemStack(Items.WHEAT_SEEDS, 16)), true, "minecraft:bone_meal", 1, thing -> false, thing -> false);
-        h.assertTrue(reserve.refused(), "The reserve was planned into a composter: " + reserve);
-        // No composter about: his own is made first.
+        h.assertTrue(reserve.refused() && reserve.refusal().contains("компостера"), "The reserve was planned into a composter: " + reserve);
+        // Food and harvest he carries are the player's, whatever a composter would make of them; a few flowers are not worth a composter of his own.
+        for (ItemStack kept : List.of(new ItemStack(Items.MELON_SLICE, 64), new ItemStack(Items.SUGAR_CANE, 64), new ItemStack(Items.POPPY, 3))) {
+            var plan = CompanionObtain.plan(level, List.of(kept), true, "minecraft:bone_meal", 1, thing -> false, thing -> false);
+            h.assertTrue(plan.refused(), kept + " was planned into a composter: " + plan);
+        }
+        // The step is the chain's own: a model cannot order it.
+        boolean taken = true;
+        try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"compost_meal\",\"item\":\"scrap\",\"count\":1}]")); } catch (RuntimeException refused) { taken = false; }
+        h.assertTrue(!taken, "compost_meal was taken from a model");
+        // No composter about: wood for his own first (the work makes it, of whatever wood that is).
         var own = CompanionObtain.plan(level, List.of(new ItemStack(Items.POPPY, 20)), true, "minecraft:bone_meal", 1, thing -> false, thing -> false);
-        h.assertTrue(!own.refused() && own.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:composter", 1)) && own.steps().getLast().equals(meal), "No composter about: " + own);
+        h.assertTrue(own.steps().equals(List.of(new CompanionObtain.Step("gather_wood", "", 2), meal)), "No composter about: " + own);
         // An empty bag among plants: they are picked and composted, the skeleton about is left alone.
         var picked = CompanionObtain.plan(level, List.of(), true, "minecraft:bone_meal", 1, thing -> true, thing -> true);
-        h.assertTrue(picked.steps().size() == 2 && picked.steps().getFirst().type().equals("gather_block")
-                && picked.steps().getLast().equals(new CompanionObtain.Step("compost_meal", picked.steps().getFirst().item(), 1)), "Plants about: " + picked);
+        h.assertTrue(picked.steps().size() == 2 && picked.steps().getFirst().type().equals("gather_block") && picked.steps().getFirst().count() == 14
+                && picked.steps().getLast().equals(meal), "Plants about: " + picked);
         // Nothing to compost: the skeleton it is.
         var fight = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_AXE)), true, "minecraft:bone_meal", 1, thing -> false, thing -> true);
         h.assertTrue(fight.steps().equals(List.of(new CompanionObtain.Step("hunt_drop", "minecraft:bone", 1), new CompanionObtain.Step("craft_item", "minecraft:bone_meal", 1))), "Nothing to compost: " + fight);

@@ -44,10 +44,11 @@ public final class CompanionComposting {
     private String what = "scrap";
     private int count;
     /**
-     * compost_meal, a step of «добудь костную муку»: the named plant and the scrap of his bag go in until {@code count} bone meal
-     * is made; fewer is no success, so the chain plans the rest again.
+     * compost_meal, a step of «добудь костную муку»: the scrap of his bag goes in until {@code count} bone meal is made. Fewer is
+     * no success, so the chain plans the rest again; a composter a little farther off is walked back to from where he picked.
      */
     private boolean meal;
+    static final int MEAL_WALK = 32;
     private BlockPos composter;
     /** His own was tried (made or not); and set down, so a broken one is gone, not «nothing to make it of». */
     private boolean ownTried, ownPlaced;
@@ -78,7 +79,6 @@ public final class CompanionComposting {
     }
 
     static boolean scrap(ItemStack stack) { return matches(stack, "scrap"); }
-    static boolean rare(Item item) { return RARE.contains(item); }
 
     /** The layers the scrap of a bag fills on average, the reserve left out: seven make one bone meal. */
     static double scrapLayers(List<ItemStack> carried) {
@@ -97,9 +97,8 @@ public final class CompanionComposting {
         CompanionEntity c = w.owner;
         for (int slot = 0; slot < c.getContainerSize(); slot++) {
             ItemStack stack = c.getItem(slot);
-            boolean named = matches(stack, what);
-            if (!named && !(meal && scrap(stack))) continue;
-            int keep = named && !"scrap".equals(what) ? 0 : reserve(stack);
+            if (!matches(stack, what)) continue;
+            int keep = !"scrap".equals(what) ? 0 : reserve(stack);
             if (keep == 0 || c.companionInventory.stream().filter(other -> other.is(stack.getItem())).mapToInt(ItemStack::getCount).sum() > keep) return stack;
         }
         return ItemStack.EMPTY;
@@ -111,7 +110,7 @@ public final class CompanionComposting {
     CompanionActionResult begin(String item, int count, boolean meal) {
         CompanionEntity c = w.owner;
         this.meal = meal;
-        what = item == null || item.isBlank() ? "scrap" : item;
+        what = meal || item == null || item.isBlank() ? "scrap" : item;
         this.count = Math.max(ALL, count); composter = null; ownTried = false; ownPlaced = false; put = 0; made = 0; taken = 0; ripening = null; nextAt = 0;
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Не могу без загруженного мира.");
         if (!GROUPS.contains(what)) {
@@ -120,7 +119,7 @@ public final class CompanionComposting {
             if (ComposterBlock.getValue(new ItemStack(BuiltInRegistries.ITEM.get(id))) <= 0)
                 return CompanionActionResult.failed("«" + CompanionWork.itemName(BuiltInRegistries.ITEM.get(id)) + "» в компостер не кладут: он берёт только растения и еду из них.");
         }
-        composter = c.placement.nearest(Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK);
+        composter = c.placement.nearest(Blocks.COMPOSTER, walk());
         // Full or a moment from full: there is bone meal to take even with nothing to put in.
         boolean ready = composter != null && level.getBlockState(composter).getValue(ComposterBlock.LEVEL) >= ComposterBlock.MAX_LEVEL;
         // The bone meal must have a place in the bag before anything goes in, or the scrap is spent for meal left in the composter.
@@ -139,7 +138,7 @@ public final class CompanionComposting {
         CompanionEntity c = w.owner;
         // At the one he chose (a full one, say), not at whichever of a row the look meets first (review 10.11).
         if (composter != null && c.placement.reaches(composter, Blocks.COMPOSTER)) { work(level, composter); return; }
-        if (composter != null && !level.getBlockState(composter).is(Blocks.COMPOSTER)) composter = c.placement.nearest(Blocks.COMPOSTER, CompanionToolSense.BENCH_WALK);
+        if (composter != null && !level.getBlockState(composter).is(Blocks.COMPOSTER)) composter = c.placement.nearest(Blocks.COMPOSTER, walk());
         if (composter == null) {
             if (ownTried) w.finish(false, (ownPlaced ? "Мой компостер пропал, а второго у меня нет." : NO_COMPOSTER) + done()); else own(level);
             return;
@@ -201,13 +200,14 @@ public final class CompanionComposting {
         // Full a moment ago and empty now, not by his hand: a hopper under the composter took the bone meal he made (review 10.11).
         // Another composter (the first broken, say) is no such sign (review 10.11, round 2).
         if (ripening != null) { if (filled == 0 && ripening.equals(at)) taken++; ripening = null; }
-        boolean enough = count != ALL && (byMeal() ? made + taken >= count : put >= count);
+        boolean enough = count != ALL && ("scrap".equals(what) ? made + taken >= count : put >= count);
         ItemStack next = enough ? ItemStack.EMPTY : next();
         if (next.isEmpty()) {
             dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "items_composted", "entity", c.getUUID(), "what", what, "put", put, "made", made, "composter", at);
             c.refreshInventorySummary();
             if (put == 0 && made == 0) { w.finish(false, "Класть в компостер больше нечего." + (filled > 0 ? " Он заполнен на " + filled + " из 7." : "")); return; }
-            w.finish((meal && made + taken < count ? CompanionActionResult.failed(report(filled)) : CompanionActionResult.ok(report(filled)))
+            // For the chain only the bone meal in his bag counts: what a hopper took ends it (he would pick and fill for ever), fewer is planned again.
+            w.finish((!meal || made >= count ? CompanionActionResult.ok(report(filled)) : taken > 0 ? CompanionActionResult.blocked(report(filled)) : CompanionActionResult.failed(report(filled)))
                     .withEvidence(new CompanionActionResult.Evidence(w.taskId, "compost_items", what, made, c.getUUID(), null, null)));
             return;
         }
@@ -220,15 +220,14 @@ public final class CompanionComposting {
         c.workStatus("Закладываю в компостер: " + put + " шт.");
     }
 
-    /** The order counts bone meal, not the things put in. */
-    private boolean byMeal() { return meal || "scrap".equals(what); }
+    private int walk() { return meal ? MEAL_WALK : CompanionToolSense.BENCH_WALK; }
 
     private String report(int filled) {
         String rest = filled > 0 && filled < ComposterBlock.READY ? " В компостере осталось на " + filled + " из 7." : "";
         String hopper = taken > 0 ? " Костную муку (" + taken + " шт.) из компостера забрала воронка под ним." : "";
         if (made > 0) return "Сделал в компостере костную муку: " + made + " шт." + (put > 0 ? " Ушло " + put + " шт. растительного." : "") + hopper + rest
-                + (byMeal() && count != ALL && made + taken < count ? " Просил " + count + " — растительного хлама больше нет." : "");
-        String fewer = byMeal() && count != ALL && made + taken < count ? " Просил " + count + " — растительного хлама больше нет." : "";
+                + ("scrap".equals(what) && count != ALL && made + taken < count ? " Просил " + count + " — растительного хлама больше нет." : "");
+        String fewer = "scrap".equals(what) && count != ALL && made + taken < count ? " Просил " + count + " — растительного хлама больше нет." : "";
         return "Заложил в компостер " + put + " шт." + (taken > 0 ? hopper : " На костную муку пока не хватило.") + rest + fewer;
     }
 
