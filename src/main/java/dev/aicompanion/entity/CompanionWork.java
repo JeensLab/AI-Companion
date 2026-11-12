@@ -579,6 +579,7 @@ public final class CompanionWork {
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;
+        items.putHeldStackBack();
         clearCracks();
         closeChest();
         house.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
@@ -892,12 +893,16 @@ public final class CompanionWork {
         tag.putLong("WorkSequence", taskId);
         if (completedResult != null) { tag.putLong("CompletedWorkId", completedId); tag.put("CompletedWorkResult", completedResult.save()); }
         house.save(tag); pen.save(tag);
+        // A stack held in a hand is the work's, not equipment: the save carries it, so the reload can return it.
+        items.save(tag);
         if (rememberedChest != null) {
             tag.putLong("StorageChest", rememberedChest.asLong());
             tag.putString("StorageDimension", owner.level().dimension().location().toString());
         } else if (storageElsewhere != null) tag.merge(storageElsewhere);
     }
     public void load(CompoundTag tag) {
+        // The held hands are the work's own: restored before the cancel below returns their stacks to the bag.
+        items.load(tag);
         cancel(); rememberedChest = null; storageElsewhere = null;
         taskId = Math.max(taskId, tag.getLong("WorkSequence"));
         completedId = tag.contains("CompletedWorkResult") ? tag.getLong("CompletedWorkId") : -1;
