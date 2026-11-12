@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, GRIND, COMPOST, BLOCK }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, GRIND, COMPOST, BLOCK, DROPS }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, GRIND, COMPOST, BLOCK, CHORE }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, GRIND, COMPOST, BLOCK, DROPS, CHORE }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -53,6 +53,8 @@ public final class CompanionWork {
     final CompanionPicking picking = new CompanionPicking(this);
     /** hunt_drop: what a monster drops, fought for and picked up. */
     final CompanionMobDrops drops = new CompanionMobDrops(this);
+    /** shear_sheep, milk_animal, collect_eggs, strip_log: what a tool in hand gets. */
+    final CompanionChores chores = new CompanionChores(this);
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
     CompanionStoneSearch stoneSearch;
@@ -334,6 +336,7 @@ public final class CompanionWork {
             case PICKUP -> "подбор";
             case GRIND -> "у точила";
             case COMPOST -> "у компостера";
+            case CHORE -> "по хозяйству";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -367,6 +370,7 @@ public final class CompanionWork {
             case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
             case GRIND -> grinding.jobName();
             case COMPOST -> composting.jobName();
+            case CHORE -> chores.jobName();
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -463,6 +467,7 @@ public final class CompanionWork {
                     return CompanionActionResult.failed("Не понял, какой предмет отдать.");
                 job = Job.GIVE; phase = Phase.HAND;
             }
+            case "shear_sheep", "milk_animal", "collect_eggs", "strip_log" -> { CompanionActionResult refusal = chores.begin(action, item, count); if (refusal != null) return refusal; job = Job.CHORE; phase = Phase.CHORE; }
             case "hunt_mobs" -> { job = Job.HUNT; phase = Phase.FIGHT; }
             case "hunt_drop" -> { CompanionActionResult refusal = drops.begin(item, count); if (refusal != null) return refusal; job = Job.HUNT; phase = Phase.DROPS; }
             case "hunt_animals" -> {
@@ -596,6 +601,7 @@ public final class CompanionWork {
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null;
         cooldown = 0;
+        chores.cancel();
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
         oreTunnel.clear(); oreSearch = null; oreCandidates = null;
         if (owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal) owner.setTarget(null);
@@ -659,6 +665,7 @@ public final class CompanionWork {
             case PICKUP -> pickUp(level);
             case GRIND -> grinding.tick(level);
             case COMPOST -> composting.tick(level);
+            case CHORE -> chores.tick(level);
             case WOOD -> { }
         }
     }

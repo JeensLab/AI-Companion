@@ -29,7 +29,9 @@ import java.util.Set;
  * recipes. What a block gives when it is simply broken (sugar cane, flowers, clay: CompanionPickable) is found and picked, what a
  * monster drops (string, bones, gunpowder: CompanionMobDrops) is fought for when one is about. A ripe field about him is reaped
  * (wheat, carrots, potatoes, beetroot; none ripe is said, nothing is sown and waited for), and bone meal comes out of a composter,
- * of the scrap in his bag and the plants he picks for it, before any skeleton is fought. What none of the skills can get
+ * of the scrap in his bag and the plants he picks for it, before any skeleton is fought. What a tool in hand gets (CompanionChores)
+ * is got so: wool shorn off a sheep with shears he has, milk of a cow into his bucket, the eggs that lie about the hens, a log
+ * of his stripped with an axe. What none of the skills can get
  * (an ink sac, a blaze rod…) is said before anything starts.
  */
 public final class CompanionObtain {
@@ -101,7 +103,10 @@ public final class CompanionObtain {
             int have = carried.stream().filter(stack -> stack.is(species.items)).mapToInt(ItemStack::getCount).sum();
             return new Plan(have >= count ? List.of() : List.of(new Step("gather_wood", id.toString(), count - have)), null);
         }
-        // Wood of a species that chopping does not give: the wood block is crafted of its own logs, stripping is not his skill.
+        // A stripped block is the plain one of his, set down and worked with an axe (CompanionChores): the plain one first, its own way.
+        var grown = CompanionChores.unstripped(item);
+        if (grown != null) return planner.stripped(id, item, grown.asItem(), count);
+        // Wood of a species that chopping does not give: the wood block is crafted of its own logs.
         if (species != null) return namedWood(carried, id, item, count);
         String target = key(item);
         // Stone is a family inside a chain only: asked for by name, digging promises cobblestone and nothing else.
@@ -125,12 +130,36 @@ public final class CompanionObtain {
         return carried.stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum();
     }
 
-    /** «birch_wood»: four logs of that species make three; a stripped log or wood block he does not carry is refused. */
+    /** «stripped_oak_log»: an axe of his, the logs of that species chopped (the wood block made, the bamboo block crafted), then strip_log. */
+    private Plan stripped(ResourceLocation id, Item item, Item grown, int count) {
+        int missing = count - carried(carried, item);
+        if (missing <= 0) return new Plan(List.of(), null);
+        if (!strip(id.toString(), grown, missing, 0)) return new Plan(List.of(), why == null ? "Не знаю, как добыть «" + name(item) + "»." : why);
+        return new Plan(List.copyOf(merged(steps)), null);
+    }
+
+    /** The steps that strip {@code count} more: an axe unless he has one, the plain blocks he does not carry, strip_log. */
+    private boolean strip(String stripped, Item grown, int count, int depth) {
+        boolean axe = carried.stream().anyMatch(stack -> stack.is(ItemTags.AXES)) || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:wooden_axe"));
+        if (!axe && !need("minecraft:wooden_axe", 1, depth + 1)) return false;
+        ResourceLocation plain = BuiltInRegistries.ITEM.getKey(grown);
+        // ponytail: the plain blocks are counted as he carries them now, not less what this plan takes of them elsewhere; short of them,
+        // strip_log says how many it made and the chain plans the rest again.
+        int lacking = count - carried(carried, grown);
+        if (lacking > 0 && plainLog(plain.getPath())) addSplit("gather_wood", plain.toString(), lacking, 64);
+        else if (lacking > 0 && CompanionWoodKind.of(plain.toString()) != null) {
+            Plan wood = namedWood(carried, plain, grown, count);
+            if (wood.refused()) return refuse(wood.refusal());
+            steps.addAll(wood.steps());
+        } else if (lacking > 0 && !produce(plain.toString(), lacking, depth + 1)) return false;
+        return addSplit("strip_log", stripped, count, 64);
+    }
+
+    /** «birch_wood»: four logs of that species make three. */
     private static Plan namedWood(List<ItemStack> carried, ResourceLocation id, Item item, int count) {
         String path = id.getPath();
         int missing = count - carried(carried, item);
         if (missing <= 0) return new Plan(List.of(), null);
-        if (path.startsWith("stripped_")) return new Plan(List.of(), "Обтёсывать брёвна я не умею: «" + name(item) + "» не добуду.");
         var log = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path.replace("_wood", "_log").replace("_hyphae", "_stem"));
         Item logItem = BuiltInRegistries.ITEM.getOptional(log).orElse(null);
         if (logItem == null) return new Plan(List.of(), "Не знаю, как добыть «" + name(item) + "».");
@@ -174,6 +203,11 @@ public final class CompanionObtain {
                 if (refusal != null) return refuse(refusal);
                 return need("minecraft:water_bucket", 1, depth + 1) && add("mine_obsidian", key, count);
             }
+            // An empty bucket of his (or one made now) under a cow, a mooshroom or a goat about him (CompanionChores).
+            case "minecraft:milk_bucket" -> {
+                if (!about(Items.MILK_BUCKET)) { absent.add("коровы, чтобы надоить молока"); return refuse(ABSENT + " коровы, чтобы надоить молока."); }
+                return need("minecraft:bucket", count, depth + 1) && add("milk_animal", key, count);
+            }
             // Bones he carries are ground as the recipe says; else a composter, the safe way; a skeleton only with nothing here to compost.
             case BONE_MEAL -> {
                 if (bag.getOrDefault("minecraft:bone", 0) == 0 && bag.getOrDefault("minecraft:bone_block", 0) == 0) {
@@ -189,6 +223,13 @@ public final class CompanionObtain {
             default -> { }
         }
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
+        // A stripped log inside a chain (a hanging sign takes six of its species): stripped of logs chopped by name.
+        var grown = CompanionChores.unstripped(item);
+        if (grown != null) { int lacking = count - carried(carried, item); return lacking <= 0 || strip(key, grown.asItem(), lacking, depth); }
+        // Wool of a sheep about him that wears the colour is shorn, with the shears he has: the sheep lives. No shears: as before.
+        if (CompanionChores.fleece(item) != null && about(item) && shears(depth)) return addSplit("shear_sheep", key, count, 64);
+        // A blow at a shorn sheep gives no wool: where the world about him is known, one is hunted for it only if it wears white wool.
+        if (item == Items.WHITE_WOOL && grows != null && !about(item)) { absent.add("овцы с шерстью"); return refuse(ABSENT + " овцы, на которой есть шерсть."); }
         for (CompanionOre.Kind ore : CompanionOre.Kind.values())
             if (ore.drop == item) return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);
         CompanionGame.Kind game = animalFor(item);
@@ -206,6 +247,12 @@ public final class CompanionObtain {
             // Named among what is not about him too: a refusal inside a recipe (bread) is forgotten with the recipe.
             absent.add("спелой грядки, чтобы собрать " + crop.plant + " (могу сделать огород: вырастет — соберу)");
             return refuse(ABSENT + " спелой грядки, чтобы собрать " + crop.plant + ". Могу сделать огород: вырастет — соберу.");
+        }
+        // Eggs lie where the hens walk: those are picked up. A hen lays in five to ten minutes, and that is not waited for.
+        if (item == Items.EGG) {
+            if (about(item)) return addSplit("collect_eggs", key, count, 64);
+            absent.add("снесённых яиц (куры несутся раз в 5–10 минут)");
+            return refuse(ABSENT + " снесённых яиц: куры несутся раз в 5–10 минут.");
         }
         // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
         if (picked(item)) return addSplit("gather_block", key, count, 64);
@@ -267,6 +314,9 @@ public final class CompanionObtain {
     /** Of the items an ingredient takes, the one already carried, else the one with the shortest chain; null if none can be got. */
     private String cheapest(Ingredient ingredient, int count, int depth) {
         if (ingredient == null) return null;
+        // A recipe that names one stripped block (a hanging sign) takes no other log: that block, not the family of logs.
+        ItemStack[] named = ingredient.getItems();
+        if (named.length == 1 && CompanionChores.unstripped(named[0].getItem()) != null) return cheapest(List.of(BuiltInRegistries.ITEM.getKey(named[0].getItem()).toString()), count, depth);
         List<String> options = new ArrayList<>();
         for (ItemStack option : ingredient.getItems()) { String key = key(option.getItem()); if (!options.contains(key)) options.add(key); }
         return cheapest(options, count, depth);
@@ -343,16 +393,22 @@ public final class CompanionObtain {
         return blade || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:wooden_sword"));
     }
 
+    /** Shears for the sheep are his: carried, made earlier in this plan, or made now of two ingots he carries; no mine is dug for them. */
+    private boolean shears(int depth) {
+        if (bag.getOrDefault("minecraft:shears", 0) > 0 || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:shears"))) return true;
+        return bag.getOrDefault("minecraft:iron_ingot", 0) >= 2 && need("minecraft:shears", 1, depth + 1);
+    }
+
     private boolean hunted(Item item) {
         return roams != null && !CompanionMobDrops.sources(level, item).isEmpty() && roamed.computeIfAbsent(item, roams::test);
     }
 
-    /** A family, an ore's drop, an animal's or a block's that stands here: one of his skills gets it, whatever the bag holds. */
+    /** A family, an ore's drop, an animal's, a block's that stands here or the wool of a sheep he has shears for: one of his skills gets it, whatever the bag holds. */
     private boolean direct(String key) {
         if (key.startsWith("#")) return true;
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
         for (CompanionOre.Kind ore : CompanionOre.Kind.values()) if (ore.drop == item) return true;
-        return animalFor(item) != null || picked(item) || hunted(item);
+        return animalFor(item) != null || picked(item) || hunted(item) || CompanionChores.fleece(item) != null && about(item) && bag.getOrDefault("minecraft:shears", 0) > 0;
     }
 
     private static CompanionGame.Kind animalFor(Item item) {

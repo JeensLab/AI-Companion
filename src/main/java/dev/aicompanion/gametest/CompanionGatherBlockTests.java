@@ -53,7 +53,7 @@ public final class CompanionGatherBlockTests {
         for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple", "minecraft:kelp",
                 "minecraft:glowstone_dust", "minecraft:prismarine_crystals", "minecraft:dragon_egg", "minecraft:sniffer_egg", "minecraft:ochre_froglight", "minecraft:stripped_bamboo_block", "minecraft:string")) {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 1, thing -> true);
-            h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block")), item + " is not picked: " + plan);
+            h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
         }
         // What has a recipe is still crafted, not taken from where it stands.
         var bench = CompanionObtain.plan(level, List.of(), false, "minecraft:crafting_table", 1, item -> true);
