@@ -15,6 +15,21 @@ public final class CompanionLocalCommands {
 
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
     public static String route(String text, String companionName) {
+        return route(text, companionName, dev.aicompanion.entity.CompanionItemLookup.GAME_NAMES);
+    }
+
+    /**
+     * The same, by the names the game shows for its items. The client's are the player's language; a GameTest, whose
+     * server runs en_us, passes its own stand-in for the Russian names the player sees.
+     */
+    public static String route(String text, String companionName, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
+        String command = routeInner(text, companionName, names);
+        // «Ещё» repeats only the pickup that was the last order; any other phrase ends that window.
+        if (command == null || !command.startsWith("companion work pick_up ")) CompanionPickUpCommands.forget();
+        return command;
+    }
+
+    private static String routeInner(String text, String companionName, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
@@ -60,8 +75,17 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
         // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
-        PlannedAction picked = CompanionPickUpCommands.parse(text, companionName);
-        if (picked != null) return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
+        // «Ещё» right after a pickup takes the rest of that same thing, not whatever the model guesses.
+        PlannedAction more = CompanionPickUpCommands.more(text, companionName);
+        if (more != null) {
+            CompanionPickUpCommands.remember(more);
+            return "companion work " + more.type() + " " + more.count() + " " + more.item();
+        }
+        PlannedAction picked = CompanionPickUpCommands.parse(text, companionName, names);
+        if (picked != null) {
+            CompanionPickUpCommands.remember(picked);
+            return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
+        }
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
         if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " "
                 + (workAction.item().isEmpty() ? "resources" : workAction.item())

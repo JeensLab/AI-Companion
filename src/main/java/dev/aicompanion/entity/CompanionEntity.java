@@ -747,7 +747,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         String honest = "Рядом нет " + meaning.genitive() + ". " + CompanionPickUp.lying(level, blockPosition(), pickUpRadius, getOwnerId());
         if (!fallback) return CompanionActionResult.failed(honest);
         CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        return CompanionActionResult.failed(honest + (taken.success() ? " " + meaning.fallbackNote() : ""));
+        if (!taken.success()) return CompanionActionResult.failed(honest);
+        // The fallback is the rest of this order, not a refusal of it: the workId is kept so the plan waits for that work,
+        // the honest answer stays in the report, and the following steps of the plan still run.
+        long workId = activeWorkId();
+        if (workId <= 0) return CompanionActionResult.failed(honest);
+        return recordActionResult(CompanionActionResult.accepted(honest + " " + meaning.fallbackNote())
+                .withEvidence(new CompanionActionResult.Evidence(workId, meaning.fallbackAction(), meaning.fallbackItem(),
+                        wanted, null, null, null)));
     }
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {

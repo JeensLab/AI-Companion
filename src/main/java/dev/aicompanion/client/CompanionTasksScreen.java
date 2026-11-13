@@ -98,7 +98,8 @@ public final class CompanionTasksScreen extends Screen {
             if (!task.report().isBlank()) {
                 String summary = CompanionDialogue.summarize(task.steps(), task.report());
                 if (summary.isBlank()) summary = CompanionDialogue.speakable(task.report());
-                details.add(""); details.add("Результат: " + (fullReport && selected.equals("queue:" + task.id()) ? task.report() : summary));
+                details.add(""); details.add("Результат: " + (fullReport && selected.equals("queue:" + task.id())
+                        ? CompanionDialogue.names(task.report()) : summary));
             }
             int color = queued || waiting ? 0xE6C77C : running ? 0x75D9CB : task.status() == CompanionTaskQueue.Status.COMPLETED ? 0x91C998 : 0xB6A8A8;
             result.add(new Row("queue:" + task.id(), CompanionDialogue.describe(task.steps().getFirst()), state, color,

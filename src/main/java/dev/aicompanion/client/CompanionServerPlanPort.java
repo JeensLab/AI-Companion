@@ -213,8 +213,20 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             else verified = CompletableFuture.completedFuture(result);
             // The bag note of a sorting this order ended came with the acceptance; the player hears the outcome (review round 3, finding 1).
             boolean note = result.message().contains(CompanionDialogue.BAG_NOTE);
-            return verified.thenApply(done -> new Attempt(!note || done.message().contains(CompanionDialogue.BAG_NOTE) ? done
-                    : new CompanionActionResult(done.success(), done.message() + " " + CompanionDialogue.BAG_NOTE, done.status(), done.evidence()), true));
+            // A «подбери» whose fallback work started is not a refusal: its work is waited for, and the honest answer about
+            // what lies around stays in the report while the plan goes on with the following steps (PR #133 remark).
+            boolean fallback = "pick_up".equals(action.type()) && result.status() == CompanionActionResult.Status.ACCEPTED
+                    && result.evidence() != null && result.evidence().workId() > 0;
+            return verified.thenApply(done -> {
+                String message = done.message();
+                if (fallback) {
+                    if (!result.message().isBlank() && !message.contains(result.message())) message = result.message() + " " + message;
+                    if (note && !message.contains(CompanionDialogue.BAG_NOTE)) message = message + " " + CompanionDialogue.BAG_NOTE;
+                    return new Attempt(new CompanionActionResult(true, message, CompanionActionResult.Status.ACCEPTED, done.evidence()), true);
+                }
+                return new Attempt(!note || message.contains(CompanionDialogue.BAG_NOTE) ? done
+                        : new CompanionActionResult(done.success(), message + " " + CompanionDialogue.BAG_NOTE, done.status(), done.evidence()), true);
+            });
         });
     }
 

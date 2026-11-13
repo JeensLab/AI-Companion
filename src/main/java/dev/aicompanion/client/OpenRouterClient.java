@@ -167,6 +167,17 @@ public final class OpenRouterClient {
     }
 
     /**
+     * One small question with a short answer, for a case the local route cannot settle by itself: the pickup's «which of
+     * the drops lying here did the player mean». Not queued with the talk: it is one quick request, not a conversation.
+     */
+    static CompletableFuture<String> ask(String system, String user, int maxTokens, String trace) {
+        JsonArray messages = new JsonArray();
+        messages.add(message("system", system));
+        messages.add(message("user", user));
+        return complete(messages, maxTokens, trace);
+    }
+
+    /**
      * The text of a plain completion; a reply cut off by the token limit is an error, not an answer that merely ends early.
      * Public so that a GameTest can check it on a canned response, without a network request.
      */
