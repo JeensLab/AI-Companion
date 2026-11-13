@@ -197,7 +197,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public CompanionCampfire campfire() { return campfire; }
     /** Client and server: CompanionCampfire.STANDING, SITTING or PLAYING. */
     public int campfirePose() { return entityData.get(DATA_CAMPFIRE); }
-    /** Client and server: the sound id of the tune playing now (aicompanion:guitar/… or aicompanion:guitar_folder/…), or empty. */
+    /** Client and server: the sound id of the tune playing now (aicompanion:guitar_folder/… or a vanilla minecraft:music…), or empty. */
     public String campfireTune() { return entityData.get(DATA_CAMPFIRE_TUNE); }
     void setCampfireTune(String soundId) { if (!level().isClientSide) entityData.set(DATA_CAMPFIRE_TUNE, soundId); }
     /** Whether he plays by the fire at all — by himself or on «сыграй» (the player's switch in «Поведение», on in old saves). */

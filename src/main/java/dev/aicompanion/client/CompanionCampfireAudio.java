@@ -2,7 +2,9 @@ package dev.aicompanion.client;
 
 import dev.aicompanion.entity.CompanionCampfire;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionMusicLibrary;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.LoadingOverlay;
 import net.minecraft.client.resources.sounds.EntityBoundSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.network.chat.Component;
@@ -21,8 +23,14 @@ import net.minecraft.sounds.SoundSource;
 final class CompanionCampfireAudio {
     /** He is looked for only this close: the sound itself fades out at sixteen blocks. */
     private static final double LOOK_RANGE = 48;
+    /** A recording is taken as played out this close to its length: the sound engine ends it within a tick or two of it. */
+    private static final int END_SLACK = 2;
     private static SoundInstance playing;
     private static String tune = "";
+    /** Ticks the recording has sounded, and its length in ticks (-1 when it cannot be told). */
+    private static int sounded, length;
+    /** An id whose recording has just played out: not started again while the server still names it. */
+    private static String finished = "";
     private static CompanionEntity companion;
     private static int lookAgain;
     /** The sound id already reported as not loaded, so one line is said once and not on every tick. */
@@ -44,25 +52,50 @@ final class CompanionCampfireAudio {
             if (companion == null) return;
         }
         String wanted = companion.campfirePose() == CompanionCampfire.PLAYING ? companion.campfireTune() : "";
+        if (!wanted.equals(finished)) finished = "";
         // A resource reload (F3+T) stops every sound: the tune that is still the one wanted is started again.
-        if (playing != null && wanted.equals(tune) && client.getSoundManager().isActive(playing)) return;
+        if (playing != null && wanted.equals(tune) && client.getSoundManager().isActive(playing)) { sounded++; return; }
+        // It is gone: it has played out, or a reload stopped it. The length tells the two apart.
+        boolean playedOut = playing != null && wanted.equals(tune) && length > 0 && sounded + END_SLACK >= length;
         stop();
         if (wanted.isEmpty()) return;
+        // A recording that has just played out is not started over: the server ends the tune now, and it would sound for a tick more.
+        if (playedOut) finished = wanted;
+        if (wanted.equals(finished)) return;
         ResourceLocation id = ResourceLocation.tryParse(wanted);
         if (id == null) return;
         if (client.getSoundManager().getSoundEvent(id) == null) {
-            // A recording added to the folder after the last resource reload: the sound engine has not read it yet. Said once.
-            if (!wanted.equals(reported)) {
+            // Not read yet — a recording added after the last resource reload, or one this client does not have at all. Said once, and
+            // not while a reload is queued or running: the sound engine is about to read the folder, so the line would be premature.
+            if (!wanted.equals(reported) && !(client.getOverlay() instanceof LoadingOverlay)) {
                 reported = wanted;
-                client.gui.getChat().addMessage(Component.literal("Новая запись ещё не загружена: перечитайте ресурсы (F3+T)."));
+                client.gui.getChat().addMessage(Component.literal(inClientFolder(wanted)
+                        ? "Запись ещё не загружена: перечитайте ресурсы (F3+T)."
+                        : "Этой записи нет на клиенте: положите её в папку config/aicompanion/music — на сервере она нужна и серверу, и клиенту."));
             }
             return;
         }
         reported = "";
+        length = lengthOf(wanted);
+        sounded = 0;
         playing = new EntityBoundSoundInstance(SoundEvent.createVariableRangeEvent(id), SoundSource.RECORDS, 1F, 1F, companion,
                 companion.getRandom().nextLong());
         client.getSoundManager().play(playing);
         tune = wanted;
+    }
+
+    /** Whether this client's own folder holds the recording: then only a resource reload is missing, not the file itself. */
+    private static boolean inClientFolder(String soundId) {
+        for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.scan(CompanionMusicLibrary.folder()))
+            if (track.soundId().equals(soundId)) return true;
+        return false;
+    }
+
+    /** The length of a recording in ticks, as the evening reads it; -1 when it cannot be told. */
+    private static int lengthOf(String soundId) {
+        for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.available())
+            if (track.soundId().equals(soundId)) return track.ticks();
+        return -1;
     }
 
     /** The evening is over, the tune changed or the world went: the sound stops here. */
@@ -70,8 +103,10 @@ final class CompanionCampfireAudio {
         if (playing != null) Minecraft.getInstance().getSoundManager().stop(playing);
         playing = null;
         tune = "";
+        sounded = 0;
+        length = -1;
     }
 
     /** Leaving the world: nothing of the old one is left sounding. */
-    static void forget() { stop(); companion = null; lookAgain = 0; reported = ""; }
+    static void forget() { stop(); companion = null; lookAgain = 0; reported = ""; finished = ""; }
 }

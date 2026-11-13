@@ -39,12 +39,6 @@ public final class CompanionMusicPack implements PackResources {
     static final String ID = "aicompanion_music";
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final String NAMESPACE = AICompanionMod.MOD_ID;
-    private static final String README = """
-            Музыка Олега у костра.
-            Положите сюда записи в Ogg Vorbis (.ogg, моно): каждую из них Олег сможет сыграть.
-            Настроение записи: рядом файл <имя>.mood со словом sad, calm или happy — или [sad], [calm], [happy] в имени файла.
-            Папка читается при запуске игры и при входе в мир; добавили записи на ходу — нажмите F3+T.
-            """;
 
     /** The folder's recordings the last built pack declared, by file name; null until the first one is built. */
     private static Set<String> built;
@@ -100,12 +94,16 @@ public final class CompanionMusicPack implements PackResources {
         return !now.equals(built);
     }
 
-    /** The folder is made on the first start, with a short note in it, so the player has where to put the recordings. */
+    /**
+     * The folder is made on the first start, and the note in it is brought up to this build's text on every start: an upgraded
+     * player would otherwise keep a note that still speaks of what this build no longer has.
+     */
     private static void ensureFolder(Path folder) {
         try {
-            if (Files.isDirectory(folder)) return;
             Files.createDirectories(folder);
-            Files.writeString(folder.resolve("README.txt"), README, StandardCharsets.UTF_8);
+            Path note = folder.resolve("README.txt");
+            if (!Files.isRegularFile(note) || !CompanionMusicLibrary.FOLDER_README.equals(Files.readString(note, StandardCharsets.UTF_8)))
+                Files.writeString(note, CompanionMusicLibrary.FOLDER_README, StandardCharsets.UTF_8);
         } catch (IOException error) {
             LOGGER.warn("AI Companion: cannot make the guitar folder {}: {}", folder, error.toString());
         }

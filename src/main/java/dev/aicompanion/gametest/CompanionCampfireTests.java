@@ -296,8 +296,8 @@ public final class CompanionCampfireTests {
 
     /**
      * The player's folder is read as it is: every .ogg in it is a playable recording with its own sound id, its length and its title;
-     * a mood comes from a {@code <name>.mood} sidecar or a {@code [sad]}/[calm]/[happy] marker in the name; a broken file is skipped,
-     * and a missing folder is simply empty.
+     * a mood comes from the digit the name starts with, 1 (sad) to 9 (happy), while a plain name or a longer number (a year) carries
+     * none; a broken file is skipped, and a missing folder is simply empty.
      */
     @GameTest(template = "empty")
     public static void theFolderIsReadForEveryRecordingInIt(GameTestHelper h) {
@@ -306,25 +306,27 @@ public final class CompanionCampfireTests {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-guitar");
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         try {
-            writeOgg(dir, "first.ogg", 100);
-            writeOgg(dir, "second [happy].ogg", 30);
+            writeOgg(dir, "1_first.ogg", 100);
+            writeOgg(dir, "8_second.ogg", 30);
             writeOgg(dir, "quiet_one.ogg", 50);
-            write(dir, "quiet_one.mood", "sad\n");
+            writeOgg(dir, "1999_live.ogg", 20);
             write(dir, "broken.ogg", "not an ogg file at all");
             var tracks = CompanionMusicLibrary.scan(dir);
-            h.assertTrue(tracks.size() == 3, "Found " + tracks.size() + " of three recordings: " + tracks);
+            h.assertTrue(tracks.size() == 4, "Found " + tracks.size() + " of four recordings: " + tracks);
             var byTitle = new java.util.HashMap<String, CompanionMusicLibrary.Track>();
             for (var track : tracks) byTitle.put(track.title(), track);
-            h.assertTrue(byTitle.containsKey("First") && byTitle.containsKey("Second") && byTitle.containsKey("Quiet one"),
+            h.assertTrue(byTitle.containsKey("First") && byTitle.containsKey("Second") && byTitle.containsKey("Quiet one")
+                            && byTitle.containsKey("1999 live"),
                     "Titles: " + byTitle.keySet());
             var first = byTitle.get("First");
             var second = byTitle.get("Second");
             var quiet = byTitle.get("Quiet one");
-            h.assertTrue(first.mood() == null && second.mood() == CompanionMusicLibrary.Mood.CHEERFUL
-                            && quiet.mood() == CompanionMusicLibrary.Mood.CALM,
-                    "Moods: " + first.mood() + ", " + second.mood() + ", " + quiet.mood());
-            h.assertTrue(first.ticks() == 2000 && second.ticks() == 600 && quiet.ticks() == 1000,
-                    "Lengths: " + first.ticks() + ", " + second.ticks() + ", " + quiet.ticks());
+            var year = byTitle.get("1999 live");
+            h.assertTrue(first.mood() == CompanionMusicLibrary.Mood.CALM && second.mood() == CompanionMusicLibrary.Mood.CHEERFUL
+                            && quiet.mood() == null && year.mood() == null,
+                    "Moods: " + first.mood() + ", " + second.mood() + ", " + quiet.mood() + ", " + year.mood());
+            h.assertTrue(first.ticks() == 2000 && second.ticks() == 600 && quiet.ticks() == 1000 && year.ticks() == 400,
+                    "Lengths: " + first.ticks() + ", " + second.ticks() + ", " + quiet.ticks() + ", " + year.ticks());
             var ids = new HashSet<String>();
             for (var track : tracks) {
                 h.assertTrue(track.soundId().startsWith("aicompanion:guitar_folder/") && ids.add(track.soundId()),
@@ -422,11 +424,14 @@ public final class CompanionCampfireTests {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-pack");
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         try {
-            writeOgg(dir, "evening.ogg", 40);
-            write(dir, "evening.mood", "calm\n");
+            writeOgg(dir, "3_evening.ogg", 40);
+            // An upgraded player keeps the folder made by an older build, with its older note in it.
+            write(dir, "README.txt", "Музыка: положите сюда записи.\n");
             var location = new net.minecraft.server.packs.PackLocationInfo("aicompanion_music_test",
                     net.minecraft.network.chat.Component.literal("test"), net.minecraft.server.packs.repository.PackSource.BUILT_IN, java.util.Optional.empty());
             var pack = new CompanionMusicPack(location, dir);
+            h.assertTrue(java.nio.file.Files.readString(dir.resolve("README.txt")).equals(CompanionMusicLibrary.FOLDER_README),
+                    "The note in the folder is not this build's: " + java.nio.file.Files.readString(dir.resolve("README.txt")));
             h.assertTrue(pack.getMetadataSection(net.minecraft.server.packs.metadata.pack.PackMetadataSection.TYPE) != null, "No pack metadata");
             h.assertTrue(pack.getRootResource("pack.mcmeta") != null, "No pack.mcmeta");
             var soundsId = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("aicompanion", "sounds.json");
@@ -449,7 +454,7 @@ public final class CompanionCampfireTests {
             h.assertTrue(listed.contains(fileId), "The recording is not listed: " + listed);
             var file = pack.getResource(net.minecraft.server.packs.PackType.CLIENT_RESOURCES, fileId);
             h.assertTrue(file != null, "The recording is not served");
-            h.assertTrue(file.get().readAllBytes().length == java.nio.file.Files.size(dir.resolve("evening.ogg")), "The served file is not the recording");
+            h.assertTrue(file.get().readAllBytes().length == java.nio.file.Files.size(dir.resolve("3_evening.ogg")), "The served file is not the recording");
             var built = net.minecraft.server.packs.repository.Pack.readMetaAndCreate(location, new net.minecraft.server.packs.repository.Pack.ResourcesSupplier() {
                 @Override public net.minecraft.server.packs.PackResources openPrimary(net.minecraft.server.packs.PackLocationInfo info) { return new CompanionMusicPack(info, dir); }
                 @Override public net.minecraft.server.packs.PackResources openFull(net.minecraft.server.packs.PackLocationInfo info,

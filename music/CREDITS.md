@@ -25,13 +25,13 @@ entity/CompanionMusicLibrary. Все семь файлов перекодиро�
 
 | File | Piece | Performer | Licence | Source |
 | --- | --- | --- | --- | --- |
-| romance.ogg | Romance Anónimo (Spanish Romance), composer unknown | Jim Greeninger (via Musopen) | CC0 1.0 | https://commons.wikimedia.org/wiki/File:Romance_An%C3%B3nimo_(Jeux_interdits).ogg |
-| gavotte.ogg | Suite in F-sharp minor, P. 439 — III. Gavotte, Johann Pachelbel | Bert Alink | CC BY 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Suite_in_F-sharp_minor,_P._439_-_III._Gavotte_(Guitar).ogg |
-| noi.ogg | El Noi de la Mare, Catalan folk song | Jujutacular | Public domain | https://commons.wikimedia.org/wiki/File:El_Noi_de_la_Mare_(guitar).ogg |
-| recuerdos.ogg | Recuerdos de la Alhambra, Francisco Tárrega | Carlo Alberto Boni | CC BY-SA 3.0 | https://commons.wikimedia.org/wiki/File:Recuerdos_de_la_Alhambra.ogg |
-| fugue143.ogg | Fugue in C major (no. 4, bicinium), P. 143, Johann Pachelbel | Bert Alink | CC BY 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Fugue_in_C_major_(no._4,_bicinium),_P._143_(Guitar).ogg |
-| fugue144.ogg | Fugue in C major (no. 5, bicinium), P. 144, Johann Pachelbel | Bert Alink | CC BY 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Fugue_in_C_major_(no._5,_bicinium),_P._144_(Guitar).ogg |
-| canon.ogg | Canon in D major, P. 37, Johann Pachelbel | Aitua (Free Music Archive) | CC BY-SA 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Canon_in_D_major,_P._37_(Guitar).ogg |
+| 2_romance.ogg | Romance Anónimo (Spanish Romance), composer unknown | Jim Greeninger (via Musopen) | CC0 1.0 | https://commons.wikimedia.org/wiki/File:Romance_An%C3%B3nimo_(Jeux_interdits).ogg |
+| 8_gavotte.ogg | Suite in F-sharp minor, P. 439 — III. Gavotte, Johann Pachelbel | Bert Alink | CC BY 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Suite_in_F-sharp_minor,_P._439_-_III._Gavotte_(Guitar).ogg |
+| 7_noi.ogg | El Noi de la Mare, Catalan folk song | Jujutacular | Public domain | https://commons.wikimedia.org/wiki/File:El_Noi_de_la_Mare_(guitar).ogg |
+| 1_recuerdos.ogg | Recuerdos de la Alhambra, Francisco Tárrega | Carlo Alberto Boni | CC BY-SA 3.0 | https://commons.wikimedia.org/wiki/File:Recuerdos_de_la_Alhambra.ogg |
+| 4_fugue_143.ogg | Fugue in C major (no. 4, bicinium), P. 143, Johann Pachelbel | Bert Alink | CC BY 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Fugue_in_C_major_(no._4,_bicinium),_P._143_(Guitar).ogg |
+| 4_fugue_144.ogg | Fugue in C major (no. 5, bicinium), P. 144, Johann Pachelbel | Bert Alink | CC BY 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Fugue_in_C_major_(no._5,_bicinium),_P._144_(Guitar).ogg |
+| 3_canon.ogg | Canon in D major, P. 37, Johann Pachelbel | Aitua (Free Music Archive) | CC BY-SA 4.0 | https://commons.wikimedia.org/wiki/File:Pachelbel_-_Canon_in_D_major,_P._37_(Guitar).ogg |
 
 Licences: CC0 1.0 — https://creativecommons.org/publicdomain/zero/1.0/ ;
 CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/ ; CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/ ;

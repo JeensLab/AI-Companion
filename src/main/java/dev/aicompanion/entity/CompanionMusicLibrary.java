@@ -22,9 +22,9 @@ import java.util.Set;
 /**
  * What he plays by the fire (the owner's ruling, 13.11): the player's own folder of recordings, not a fixed set baked into the JAR —
  * no music ships in the mod at all. Every .ogg in config/aicompanion/music can be played; while that folder has none, he plays
- * standard Minecraft music instead ({@link CompanionTunes}), and nothing is said about it. A recording may carry a mood — a sidecar
- * file {@code <name>.mood} with sad, calm or happy, or a {@code [sad]}, {@code [calm]} or {@code [happy]} marker in its file name — so
- * «сыграй грустное» and «повеселее» can pick one of that kind; with no such recording he honestly plays any.
+ * standard Minecraft music instead ({@link CompanionTunes}), and nothing is said about it. A recording's mood is the digit its file
+ * name starts with, 1 (sad) to 9 (happy): 1–4 is the calm kind («сыграй грустное»), 6–9 the cheerful one («повеселее»), and 5 is
+ * neither; so both requests can pick a recording of that kind. With no such recording he honestly plays any.
  *
  * <p>No client classes here: the server scans the same folder to choose the tune, and the client's own resource pack
  * (client/CompanionMusicPack) serves these files to the game's sound engine by the sound ids made here. The length of a recording is
@@ -34,6 +34,19 @@ public final class CompanionMusicLibrary {
     private static final Logger LOGGER = LogUtils.getLogger();
     /** The player's folder, beside the game's config: config/aicompanion/music. */
     public static final String FOLDER = "aicompanion/music";
+    /**
+     * The note the mod keeps in the folder, rewritten on every start so it always matches this build: what to put there, how the
+     * mood is written, and that on a server the same recordings are needed on both sides.
+     */
+    public static final String FOLDER_README = """
+            Музыка Олега у костра.
+            Положите сюда записи в Ogg Vorbis (.ogg, моно): каждую из них Олег сможет сыграть.
+            Настроение записи — число в начале имени файла, от 1 (самая грустная) до 9 (самая весёлая):
+            1–4 — спокойная или грустная, 5 — середина, 6–9 — весёлая. Например, 2_romance.ogg.
+            Папка читается при запуске игры и при входе в мир; добавили записи на ходу — нажмите F3+T.
+            На сервере записи нужны и серверу, и клиенту: сервер по своей папке выбирает мелодию, клиент по своей её играет,
+            поэтому одинаковый набор должен лежать в config/aicompanion/music и на сервере, и у каждого игрока.
+            """;
     /** How a recording may be tagged for «сыграй грустное» (calm and sad) or «повеселее» (cheerful). */
     public enum Mood { CALM, CHEERFUL }
 
@@ -98,7 +111,7 @@ public final class CompanionMusicLibrary {
                 LOGGER.warn("AI Companion: {} is not a readable Ogg Vorbis recording, skipped", name);
                 continue;
             }
-            tracks.add(new Track(name, "aicompanion:guitar_folder/" + unique(clean(base), keys), title(base), ticks, mood(dir, base)));
+            tracks.add(new Track(name, "aicompanion:guitar_folder/" + unique(clean(base), keys), title(base), ticks, mood(base)));
         }
         return List.copyOf(tracks);
     }
@@ -137,36 +150,27 @@ public final class CompanionMusicLibrary {
         return null;
     }
 
-    /** The mood a recording carries: its sidecar {@code <name>.mood} first, else a marker in its file name; null when untagged. */
-    private static Mood mood(Path dir, String base) {
-        String word = "";
-        Path sidecar = dir.resolve(base + ".mood");
-        try {
-            if (Files.isRegularFile(sidecar)) {
-                String text = Files.readString(sidecar).strip().toLowerCase(Locale.ROOT);
-                word = text.split("\\s+", 2)[0];
-            }
-        } catch (IOException error) {
-            LOGGER.warn("AI Companion: cannot read {}: {}", sidecar, error.toString());
-        }
-        if (moodOf(word) == null) {
-            String lower = base.toLowerCase(Locale.ROOT);
-            for (String marker : new String[]{"[sad]", "[calm]", "[happy]"})
-                if (lower.contains(marker)) word = marker.substring(1, marker.length() - 1);
-        }
-        return moodOf(word);
+    /**
+     * The mood a recording carries: the digit its file name starts with, 1 (sad) to 9 (happy). 1–4 is the calm kind, 6–9 the
+     * cheerful one; 5 and a name that starts with no digit (or with a longer number, such as a year) carry none.
+     */
+    private static Mood mood(String base) {
+        int scale = scale(base);
+        if (scale == 0 || scale == 5) return null;
+        return scale < 5 ? Mood.CALM : Mood.CHEERFUL;
     }
 
-    /** sad and calm are the calm kind («сыграй грустное»), happy is the cheerful one. */
-    private static Mood moodOf(String word) {
-        if ("sad".equals(word) || "calm".equals(word)) return Mood.CALM;
-        if ("happy".equals(word) || "cheerful".equals(word)) return Mood.CHEERFUL;
-        return null;
+    /** The digit 1–9 a file name starts with — its place on the sad–happy scale — or 0 when it starts with none or a longer number. */
+    private static int scale(String base) {
+        if (base.isEmpty() || base.charAt(0) < '1' || base.charAt(0) > '9') return 0;
+        if (base.length() > 1 && Character.isDigit(base.charAt(1))) return 0;
+        return base.charAt(0) - '0';
     }
 
-    /** The title he says: the file name without its mood marker, underscores as spaces, the first letter raised. */
+    /** The title he says: the file name without its mood digit, underscores as spaces, the first letter raised. */
     static String title(String base) {
-        String cleaned = base.replaceAll("(?i)\\[(sad|calm|happy)]", "").replace('_', ' ').strip().replaceAll("\\s+", " ");
+        String cleaned = (scale(base) == 0 ? base : base.substring(1))
+                .replaceFirst("^[ _.-]+", "").replace('_', ' ').strip().replaceAll("\\s+", " ");
         if (cleaned.isEmpty()) cleaned = base.strip();
         return cleaned.isEmpty() ? base : cleaned.substring(0, 1).toUpperCase(Locale.ROOT) + cleaned.substring(1);
     }
