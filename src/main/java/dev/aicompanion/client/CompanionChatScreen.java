@@ -98,7 +98,7 @@ public final class CompanionChatScreen extends Screen {
                 CompanionAmbientClient.replyDelivered(reply.text());
                 if (!reply.actions().isEmpty()) {
                     long executionGeneration = actionGeneration(reply.actions(), planGeneration, trace);
-                    CompanionActionExecutor.execute(reply.actions(), executionGeneration, trace).whenComplete((actionReport, actionError) ->
+                    CompanionActionExecutor.execute(reply.actions(), reply.repeat(), executionGeneration, trace).whenComplete((actionReport, actionError) ->
                             Minecraft.getInstance().execute(() -> {
                                 if (executionGeneration == CompanionActionExecutor.currentPlanGeneration()) finishActions(reply.actions(), actionReport, actionError, false, trace);
                             }));
@@ -298,7 +298,7 @@ public final class CompanionChatScreen extends Screen {
             addVoiceReply(reply.text(), trace, "model");
             if (!reply.actions().isEmpty()) {
                 long executionGeneration = actionGeneration(reply.actions(), planGeneration, trace);
-                CompanionActionExecutor.execute(reply.actions(), executionGeneration, trace).whenComplete((report, actionError) -> minecraft.execute(() -> {
+                CompanionActionExecutor.execute(reply.actions(), reply.repeat(), executionGeneration, trace).whenComplete((report, actionError) -> minecraft.execute(() -> {
                     if (executionGeneration == CompanionActionExecutor.currentPlanGeneration()) finishActions(reply.actions(), report, actionError, false, trace);
                 }));
             }
