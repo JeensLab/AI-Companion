@@ -19,6 +19,8 @@ final class CompanionBag {
     static final String BELONGINGS_SPOT = "aicompanion:belongings_spot";
     /** On junk he let go to make room for his own things: never counted as part of a death place again. */
     static final String JUNK = "aicompanion:junk";
+    /** How the AI summary names what a grid craft left in the 3×3 grid rather than in the bag. */
+    private static final String GRID_CELL = " (в сетке крафта)";
     final CompanionEntity c;
 
     CompanionBag(CompanionEntity c) { this.c = c; }
@@ -123,6 +125,10 @@ final class CompanionBag {
             if (!stack.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()) + (net.minecraft.world.item.enchantment.EnchantmentHelper.hasAnyEnchantments(stack) ? " (с чарами)" : "")
                     + (stack.isDamaged() ? " (с износом)" : ""), stack.getCount(), Integer::sum);
         }
+        // A block a grid craft left in the 3×3 grid is carried as much as the bag's stacks: without it the model sees
+        // neither the block it asked for nor the leftovers of a multi-output craft, which the bag has no cell for.
+        ItemStack inGrid = c.work.items.gridBlock();
+        if (!inGrid.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(inGrid.getItem()) + GRID_CELL, inGrid.getCount(), Integer::sum);
         c.getEntityData().set(CompanionEntity.DATA_INVENTORY_AI, items.isEmpty() ? "пусто" : items.entrySet().stream()
                 .map(entry -> entry.getValue() + "x " + entry.getKey()).collect(java.util.stream.Collectors.joining(", ")));
     }

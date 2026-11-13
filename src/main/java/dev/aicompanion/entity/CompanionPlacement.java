@@ -39,9 +39,21 @@ final class CompanionPlacement {
     }
 
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) {
+        return craftFromBag(requestedItemId, requestedCount, false);
+    }
+
+    /**
+     * The craft with the 3×3 grid as one more cell. A bag with no free cell and no free hand still leaves the planks of
+     * a chain in the grid — that is where a player's ingredients sit while he works — and the block made there has no
+     * cell of its own: it stays as the work's grid block and is set down from it. Nothing is made up: the grid is real
+     * space, and the block leaves it into the world instead of lying on the ground.
+     */
+    CompanionActionResult craftFromBag(String requestedItemId, int requestedCount, boolean gridCell) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return CompanionActionResult.failed("Крафт доступен только в загруженном мире.");
         BlockPos cutter = inReach(Blocks.STONECUTTER);
-        CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId,
+        java.util.List<ItemStack> bag = new java.util.ArrayList<>(c.companionInventory);
+        if (gridCell) bag.add(ItemStack.EMPTY);
+        CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, bag, requestedItemId,
                 requestedCount, hasCraftingTableNearby(), cutter != null);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "craft_decision", "entity", c.getUUID(),
                 "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(), "message", plan.message());
@@ -59,6 +71,15 @@ final class CompanionPlacement {
         if (tablePosition != null) { c.rememberPlaced(tablePosition); benchSetDown = tablePosition.immutable(); }
         if (tablePosition != null && fieldBench) c.fieldBenches.add(tablePosition.immutable());
         for (int slot = 0; slot < c.companionInventory.size(); slot++) c.companionInventory.set(slot, plan.inventory().get(slot).copy());
+        if (gridCell) {
+            // The grid's own cell: whatever the chain left there has no place in the bag, so the work keeps it until the
+            // block it is is set down (a stack of another kind is stored on the next end of the work, or lies at his feet).
+            ItemStack spare = plan.inventory().get(c.companionInventory.size());
+            if (!spare.isEmpty()) {
+                ItemStack rest = spare.copy();
+                if (!c.storeInCompanionInventory(rest)) c.work.items.keepGridBlock(rest);
+            }
+        }
         if (tablePosition != null) dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed",
                 "entity", c.getUUID(), "block", "minecraft:crafting_table", "position", tablePosition, "reason", "craft_prerequisite");
         c.refreshInventorySummary();
@@ -190,7 +211,9 @@ final class CompanionPlacement {
             ItemStack stack = c.getItemBySlot(slot);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() == block) return stack;
         }
-        return null;
+        // A block made in the grid and left there for lack of a cell is set down from the grid itself.
+        ItemStack grid = c.work.items.gridBlock();
+        return !grid.isEmpty() && grid.getItem() instanceof BlockItem blockItem && blockItem.getBlock() == block ? grid : null;
     }
 
     BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {

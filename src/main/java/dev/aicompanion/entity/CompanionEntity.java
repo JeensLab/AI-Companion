@@ -585,6 +585,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Read only: his own drops still to pick up (after «стоп» too: nothing of his is left lying). */
     public boolean isCollectingDrops() { return loot.hasPending(); }
     public String workPhase() { return work.watchPhase(); }
+    /** Read only, for the GameTest observer: the hands a stack is held in while the bag has no cell for a craft. */
+    public java.util.List<String> heldStackHands() { return work.items.heldHands(); }
+    /** Read only, for the GameTest observer: the block a grid craft left in the 3×3 grid for lack of a bag cell. */
+    public ItemStack gridBlockInGrid() { return work.items.gridBlock(); }
+    /** The work's own step, for the GameTest observer: one stack into a free hand while the bag has no cell for a craft. */
+    public boolean holdOneStackInHand() { return work.items.holdOneStack(java.util.Set.of()); }
+    /** The work's own craft step, for the GameTest observer: a stack into a hand only after the bag said it has no cell. */
+    public CompanionActionResult craftHoldingIfTheBagIsFull(String itemId, int count) { return work.items.craftFromBagMakingRoom(itemId, count); }
     public String watchDetail() { return diagnosticState(); }
     public boolean isVisiblyBusy() { return isSwingingAtBlock() || isMiningAnimation() || actionAnimation() != 0 || eatTicks > 0 || temporaryPillar.isActive() || temporaryPillar.isRecovering(); }
     public void enableProtectionForWork() { protecting = true; entityData.set(DATA_PROTECTING, true); }
@@ -1092,6 +1100,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     BlockPos cutterWalk(String requestedItemId, int requestedCount) { return placement.cutterWalk(requestedItemId, requestedCount); }
     public CompanionActionResult craftItemResult(String requestedItemId, int requestedCount) { return placement.craftItemResult(requestedItemId, requestedCount); }
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount); }
+    /** The same craft with the 3×3 grid as one more cell, for a bag with no free cell and no free hand. */
+    CompanionActionResult craftFromBagInGrid(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount, true); }
     public CompanionActionResult placeBlockResult(String requestedBlockId) { return placement.placeBlockResult(requestedBlockId); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin) { return placement.placeBlockNearResult(requestedBlockId, origin); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) { return placement.placeBlockNearResult(requestedBlockId, origin, allowed); }

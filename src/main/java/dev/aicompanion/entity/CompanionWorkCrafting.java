@@ -151,15 +151,14 @@ final class CompanionWorkCrafting {
         return false;
     }
 
-    /** Reuse a reachable workbench before spending more wood on another one. */
+    /** Reuse a reachable workbench before spending more wood on another one; one rule with CompanionCrafting.plan. */
     boolean needsWorkbench(String item) {
         if (!(w.owner.level() instanceof ServerLevel level)) return true;
         var id = ResourceLocation.tryParse(item);
         if (id == null) return true;
-        var targetItem = BuiltInRegistries.ITEM.get(id);
-        return level.getRecipeManager().getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING).stream()
-                .filter(holder -> holder.value().getResultItem(level.registryAccess()).is(targetItem))
-                .noneMatch(holder -> holder.value().canCraftInDimensions(2, 2));
+        var targetItem = BuiltInRegistries.ITEM.getOptional(id).orElse(null);
+        if (targetItem == null) return true;
+        return CompanionCrafting.needsBench(level, targetItem);
     }
 
     boolean approachCraftingTable() {
