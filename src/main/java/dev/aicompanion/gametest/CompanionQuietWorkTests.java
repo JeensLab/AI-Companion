@@ -162,6 +162,32 @@ public final class CompanionQuietWorkTests {
             h.assertTrue(said.length()<=80&&!said.contains("world")&&!said.contains("nether")&&!said.contains("Компаньон"),said);
         h.succeed();
     }
+    /**
+     * «Домой дойти не смог: нет пути.» is the walk note CompanionWork.finish puts after another order's own reason: a
+     * store that failed at the chest keeps its own reason in speech, and a quoted item is never named as a marker.
+     */
+    @GameTest(template="empty")
+    public static void anAppendedHomeNoteDoesNotSpeakForAnotherOrder(GameTestHelper h) {
+        var store=List.of(new PlannedAction("store_items",0,1,"stone"));
+        String report="План остановлен: Сложил 4 предметов. Рядом нет сундука с местом для этих вещей. Домой дойти не смог: нет пути.";
+        h.assertTrue(CompanionFailureMessages.kind(report)!=CompanionFailureMessages.Kind.NO_PATH,"The walk home made the order a no-path: "+CompanionFailureMessages.kind(report));
+        String chest=CompanionDialogue.summarize(store,report);
+        h.assertTrue(chest.contains("нет сундука с местом для этих вещей"),"The order's own reason was dropped: "+chest);
+        h.assertTrue(!chest.contains("Туда нет пути"),"The walk home spoke for the order: "+chest);
+        // A quoted item is no place: only a marker walk's own line names a marker.
+        String smelt="План остановлен: Переплавил 0 из 8 «Сырая говядина», забрал из печи 0 «Стейк». Печь пропала или недоступна. Домой дойти не смог: нет пути.";
+        String cooked=CompanionDialogue.summarize(List.of(new PlannedAction("smelt_items",0,1,"minecraft:iron_ingot")),smelt);
+        h.assertTrue(!cooked.contains("метке"),"A quoted item was named as a marker: "+cooked);
+        h.assertTrue(cooked.contains("Печь пропала"),"The furnace's own reason was dropped: "+cooked);
+        h.assertTrue(!CompanionFailureMessages.explain("", "План остановлен: Не смог дойти до сундука с «Булыжник»: нет пути.").contains("метке"),
+                "A quoted item named a marker in a no-path: "+CompanionFailureMessages.explain("", "План остановлен: Не смог дойти до сундука с «Булыжник»: нет пути."));
+        // A walk that itself found no way is still said as no way: the note is stripped, the reason is not.
+        h.assertTrue(CompanionFailureMessages.kind("План остановлен: До места на 20, 1, 8 дойти не смог: нет пути.")==CompanionFailureMessages.Kind.NO_PATH,
+                "A station walk's no-path was lost");
+        h.assertTrue(CompanionFailureMessages.kind("План остановлен: Домой дойти не смог: нет пути.")==CompanionFailureMessages.Kind.NO_PATH,
+                "A home walk's no-path was lost");
+        h.succeed();
+    }
     private static CompanionEntity companion(GameTestHelper h) {
         var c=h.spawn(AICompanionMod.COMPANION.get(),2,1,2);c.setNoAi(true);return c;
     }

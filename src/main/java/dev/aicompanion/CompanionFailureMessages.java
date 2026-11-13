@@ -7,11 +7,20 @@ public final class CompanionFailureMessages {
     public enum Kind { BAG, WOOD, MATERIALS, LAVA, WATER, ROUTE, ORE, STONE, FOOD, PLACE, TIMEOUT, HANDOVER, DIMENSION, NOT_LOADED, NO_PATH, OTHER }
     /** A quoted name in an engine line («Метка «дом»…»): the player's own word, which a short line may repeat. */
     private static final java.util.regex.Pattern QUOTED = java.util.regex.Pattern.compile("«([^»]{1,24})»");
+    /**
+     * The walk note CompanionWork.finish appends after another order's own reason («Домой дойти не смог: нет пути.»,
+     * «До места на 1, 64, 2 дойти не смог: нет пути.»): it tells of the walk home or to a station, not of the order.
+     */
+    private static final java.util.regex.Pattern TRIP_NOTE = java.util.regex.Pattern.compile(
+            "(?iu)\\s+(?:Домой дойти не смог|До места на -?\\d+, -?\\d+, -?\\d+ дойти не смог): нет пути\\.$");
     private CompanionFailureMessages() { }
     public static String primary(String report) {
         int stopped = report.lastIndexOf("План остановлен:");
         String text = stopped < 0 ? report : report.substring(stopped + "План остановлен:".length());
-        return text.split("В сумке:|У меня в сумке:|Известные места:|Цепочка:|Координаты:|Не выполнено:", 2)[0].strip();
+        String own = text.split("В сумке:|У меня в сумке:|Известные места:|Цепочка:|Координаты:|Не выполнено:", 2)[0].strip();
+        // The order's own reason, without the walk note put after it: «нет пути» in that note is the walk's, not the order's.
+        String withoutNote = TRIP_NOTE.matcher(own).replaceFirst("").strip();
+        return withoutNote.isEmpty() ? own : withoutNote;
     }
     /** Lava's own reasons in a report («рядом лава», «над лавой», «лавопад»), not the «лавы рядом» of the no-safe-way sentence. */
     public static boolean mentionsLava(String report) {
@@ -91,8 +100,11 @@ public final class CompanionFailureMessages {
     /** «До метки «дача» дойти не смог: нет пути.»: no way at all, said as no way and without coordinates. */
     private static String noPathLine(String report) {
         String text = primary(report);
-        var mark = QUOTED.matcher(text);
-        if (mark.find()) return "К метке «" + mark.group(1) + "» пути нет.";
+        // Only a marker walk's own line names a marker: a quoted item elsewhere («Сырая говядина») is no name of a place.
+        if (text.startsWith("До метки «")) {
+            var mark = QUOTED.matcher(text);
+            if (mark.find()) return "К метке «" + mark.group(1) + "» пути нет.";
+        }
         return text.startsWith("Домой") ? "Домой пути нет." : "Туда нет пути — пешком не дойти.";
     }
 }

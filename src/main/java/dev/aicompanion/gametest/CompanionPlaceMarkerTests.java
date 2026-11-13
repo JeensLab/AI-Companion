@@ -745,6 +745,38 @@ public final class CompanionPlaceMarkerTests {
         h.succeed();
     }
 
+    /**
+     * A home named in the Nether while a building of the player's stands here: the named home is the home, so «иди домой»
+     * says the other dimension instead of walking to the build in this one, which CompanionPlaces.home() falls back to.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theNamedHomeInAnotherDimensionOutranksTheBuildHere(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        h.assertTrue(CompanionEvents.executeAction(owner, "set_home", "", 1).success(), "Home not taken");
+        // A chest of his on the surface: a building of his here, which CompanionPlaces.home() would take for a home.
+        placedByPlayer(h, owner, new BlockPos(18, 1, 8), Blocks.CHEST);
+        h.assertTrue(c.getPlacesForAi().contains("дом на "), "No home of his in this dimension to fall back to: " + c.getPlacesForAi());
+        // The same save with the named home in the Nether: what the player named in another world, as it comes back from a load.
+        CompoundTag saved = new CompoundTag();
+        c.addAdditionalSaveData(saved);
+        CompoundTag home = saved.getCompound("HomePlace");
+        h.assertTrue(!home.isEmpty(), "No home saved");
+        home.putString("Dimension", "minecraft:the_nether");
+        saved.put("HomePlace", home);
+        c.readAdditionalSaveData(saved);
+        h.assertTrue(c.getPlacesForAi().contains("дом на "), "The build here was lost, so nothing was skipped: " + c.getPlacesForAi());
+        var result = c.goToPlace("дом");
+        h.assertTrue(!result.success(), "A walk home across dimensions reported success");
+        h.assertTrue(result.message().contains("в другом измерении") && result.message().contains("nether"),
+                "The other dimension is not said: " + result.message());
+        h.assertTrue(c.workPhase().isEmpty(), "He walked off to the build here: " + c.workPhase());
+        String said = CompanionDialogue.summarize(List.of(new PlannedAction("go_to_place", 0, 1, "дом")), "План остановлен: " + result.message());
+        h.assertTrue(said.equals("Дом в другом измерении — туда пешком не дойти."), "Not said as the home: " + said);
+        h.succeed();
+    }
+
     /** A marker in the Nether while he is in the overworld: said as it is, no walk and no timeout. */
     @GameTest(template = "empty")
     public static void aMarkerInAnotherDimensionIsAnsweredHonestly(GameTestHelper h) {
@@ -1325,6 +1357,14 @@ public final class CompanionPlaceMarkerTests {
 
     private static void arena(GameTestHelper h) {
         for (int x = 0; x < 24; x++) for (int z = 0; z < 24; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+    }
+
+    /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */
+    private static void placedByPlayer(GameTestHelper h, ServerPlayer player, BlockPos cell, Block block) {
+        h.setBlock(cell, block);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(new net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent(
+                net.neoforged.neoforge.common.util.BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)),
+                Blocks.GRASS_BLOCK.defaultBlockState(), player));
     }
 
     /** One saved marker as the store writes it, for the load tests. */

@@ -819,11 +819,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             }
         } else if (!homeWord) return PlaceTarget.refused("Метки на карте выключены.");
         if (!homeWord) return PlaceTarget.refused(CompanionMarkers.unknown(name, CompanionMarkers.get(level.getServer()).all(getOwnerId())));
-        CompanionPlaces.Home home = places.home();
-        if (home != null) return new PlaceTarget(home.pos(), "дом", true, "");
+        // The player's word outranks what he worked out himself: a home named in another world is still the home, and the
+        // walk home cannot cross. Said as it is, even when a build of the player's stands here (CompanionPlaces.home()).
         String elsewhere = places.homeElsewhere();
         if (!elsewhere.isEmpty())
             return PlaceTarget.refused("Дом в другом измерении (" + elsewhere + "), пешком отсюда туда не дойти.");
+        CompanionPlaces.Home home = places.home();
+        if (home != null) return new PlaceTarget(home.pos(), "дом", true, "");
         return PlaceTarget.refused("Я ещё не знаю, где наш дом. Скажи «это наш дом», и я запомню.");
     }
 
