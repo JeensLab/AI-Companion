@@ -125,7 +125,8 @@ final class CompanionPicking {
         BlockState state = level.getBlockState(pos);
         if (site.test(pos)) return false;
         // Clay on the bed of a pond has no water in its own cell: the water over it counts too. Only what grows there is dived for.
-        if (wet(level, pos) && (!grows(state) || depth(level, pos) < 0)) return false;
+        // A coral block under another one, or a sea pickle sat on it, is not under open water: none of it is dived for.
+        if (wet(level, pos) ? !grows(state) || depth(level, pos) < 0 : state.is(BlockTags.CORAL_BLOCKS)) return false;
         // A rose bush is taken by its foot: the top half gives nothing, and the foot it brings down would lie there unclaimed.
         if (state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF) && state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.UPPER) return false;
         if (state.getBlock() instanceof CocoaBlock && state.getValue(CocoaBlock.AGE) < CocoaBlock.MAX_AGE) return false;
@@ -140,16 +141,21 @@ final class CompanionPicking {
 
     private static boolean wet(ServerLevel level, BlockPos pos) { return !level.getFluidState(pos).isEmpty() || !level.getFluidState(pos.above()).isEmpty(); }
 
-    /** What grows in the water: holds it (kelp, seagrass, a sea pickle), or a coral block. */
-    private static boolean grows(BlockState state) { return state.getFluidState().is(FluidTags.WATER) || state.is(BlockTags.CORAL_BLOCKS); }
+    /**
+     * What grows on the bed of the sea: kelp, seagrass, a sea pickle, a coral block. Not a dry kind that happens to stand in water
+     * (mangrove roots in a swamp, glow lichen, dripleaf): those are not dived for.
+     */
+    private static boolean grows(BlockState state) {
+        return kelp(state) || state.is(Blocks.SEAGRASS) || state.is(Blocks.TALL_SEAGRASS) || state.is(Blocks.SEA_PICKLE) || state.is(BlockTags.CORAL_BLOCKS);
+    }
 
-    /** Still water over the block he swims through, up to the air: -1 under a roof, in running water or deeper than {@link #DEEP}. */
+    /** Still water over the block he swims through, up to the sky: -1 under a roof (a cave's too), in running water or deeper than {@link #DEEP}. */
     private static int depth(ServerLevel level, BlockPos pos) {
         BlockPos.MutableBlockPos cell = pos.above().mutable();
         for (int blocks = 0; blocks <= DEEP; blocks++, cell.move(0, 1, 0)) {
             var fluid = level.getFluidState(cell);
             boolean open = level.getBlockState(cell).getCollisionShape(level, cell).isEmpty();
-            if (fluid.isEmpty()) return open ? blocks : -1;
+            if (fluid.isEmpty()) return open && level.canSeeSky(cell) ? blocks : -1;
             if (!fluid.is(FluidTags.WATER) || !fluid.isSource() || !open) return -1;
         }
         return -1;
@@ -181,11 +187,12 @@ final class CompanionPicking {
      */
     private Set<BlockPos> standsFor(ServerLevel level, BlockPos block) {
         Set<BlockPos> cells = new HashSet<>();
-        // On the bed of the water: from the water over it and beside it, the surface the way comes to and the dive down from there.
+        // On the bed of the water: the open water straight over it (depth), the surface the way comes to and the dive down from there.
+        // Not the columns beside it: from the floor by a drop-off he could not sink to it (in game 13.11, 45 s on the spot).
         if (wet(level, block)) {
-            for (int dy = 0; dy <= DEEP + 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
-                BlockPos cell = block.offset(dx, dy, dz);
-                if (!cell.equals(block) && level.getFluidState(cell).is(FluidTags.WATER) && CompanionMiningNavigation.pickupStand(c, cell)) cells.add(cell);
+            for (int dy = 1; dy <= DEEP + 1; dy++) {
+                BlockPos cell = block.above(dy);
+                if (level.getFluidState(cell).is(FluidTags.WATER) && CompanionMiningNavigation.pickupStand(c, cell)) cells.add(cell);
             }
             return cells;
         }

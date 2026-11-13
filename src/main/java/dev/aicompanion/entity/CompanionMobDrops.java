@@ -132,9 +132,10 @@ final class CompanionMobDrops {
                 || mob.getBlockY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, mob.getBlockX(), mob.getBlockZ()) - 1));
     }
 
-    /** Of the kind, alive, nobody's (no name), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
+    /** Of the kind, alive, nobody's (no name, not let out of a bucket), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
     private static boolean fought(CompanionEntity c, List<EntityType<?>> kinds, Mob mob) {
-        return kinds.contains(mob.getType()) && mob.isAlive() && !mob.hasCustomName() && (swims(mob) || !mob.isInWater()) && !mob.isPassenger() && !mob.isVehicle()
+        return kinds.contains(mob.getType()) && mob.isAlive() && !mob.hasCustomName() && !(mob instanceof net.minecraft.world.entity.animal.Bucketable kept && kept.fromBucket())
+                && (swims(mob) || !mob.isInWater()) && !mob.isPassenger() && !mob.isVehicle()
                 && c.leashAllows(mob.blockPosition()) && c.fairTarget(mob, true);
     }
 

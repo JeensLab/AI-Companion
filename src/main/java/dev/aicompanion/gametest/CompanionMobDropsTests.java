@@ -118,7 +118,7 @@ public final class CompanionMobDropsTests {
         });
     }
 
-    /** «Добудь 2 трески и чернила» in a pond: the fish and the squid are fought in the water, the dolphin with them is left alone. */
+    /** «Добудь 2 трески и чернила» in a pond: the fish and the squid are fought in the water; the dolphin and a cod let out of the player's bucket are left alone. */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void fishAndASquidAreFoughtInAPond(GameTestHelper h) {
         ground(h);
@@ -126,6 +126,8 @@ public final class CompanionMobDropsTests {
         for (int i = 0; i < 3; i++) h.spawn(EntityType.COD, 18 + i * 2, 3, 14);
         h.spawn(EntityType.SQUID, 21, 2, 18);
         Mob dolphin = h.spawn(EntityType.DOLPHIN, 23, 3, 16);
+        var pet = h.spawn(EntityType.COD, 17, 3, 13);
+        pet.setFromBucket(true);
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, new ItemStack(Items.STONE_SWORD));
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:cod\",\"count\":2},{\"action\":\"obtain_item\",\"item\":\"minecraft:ink_sac\",\"count\":1}]");
@@ -134,6 +136,7 @@ public final class CompanionMobDropsTests {
             String report = future.join().report();
             h.assertTrue(count(c, Items.COD) >= 2 && count(c, Items.INK_SAC) >= 1, "Cod " + count(c, Items.COD) + ", ink " + count(c, Items.INK_SAC) + ": " + report);
             h.assertTrue(dolphin.isAlive() && dolphin.getHealth() == dolphin.getMaxHealth(), "The dolphin was struck");
+            h.assertTrue(pet.isAlive() && pet.getHealth() == pet.getMaxHealth(), "The player's cod was struck");
         });
     }
 

@@ -233,6 +233,7 @@ public final class CompanionGatherBlockTests {
     /**
      * «Добудь 3 ламинарии, траву, огурец и мёртвый коралл» from a pond five deep: he swims over, dives for what is out of his reach
      * from the surface, cuts the kelp above its root (the root stays and grows), shears the seagrass and mines the coral block.
+     * The sea pickle lies by a shelf one block under the water: from the shelf it is out of reach, he dives over the pickle itself.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void theBedOfAPondIsPickedUnderWater(GameTestHelper h) {
@@ -242,7 +243,9 @@ public final class CompanionGatherBlockTests {
         for (int up = 0; up < 3; up++) h.setBlock(root.above(up), Blocks.KELP_PLANT);
         h.setBlock(root.above(3), Blocks.KELP);
         h.setBlock(new BlockPos(20, 1, 18), Blocks.SEAGRASS);
-        h.setBlock(new BlockPos(17, 1, 19), Blocks.SEA_PICKLE);
+        for (int z = 14; z <= 20; z++) for (int y = 1; y < GROUND; y++) h.setBlock(new BlockPos(16, y, z), Blocks.STONE);
+        for (int z = 14; z <= 20; z++) for (int y = 1; y < GROUND; y++) if (z != 16) h.setBlock(new BlockPos(17, y, z), Blocks.STONE);
+        h.setBlock(new BlockPos(18, 1, 19), Blocks.SEA_PICKLE);
         h.setBlock(new BlockPos(21, 1, 15), Blocks.TUBE_CORAL_BLOCK);
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, new ItemStack(Items.SHEARS));
@@ -258,21 +261,31 @@ public final class CompanionGatherBlockTests {
         });
     }
 
-    /** Kelp under ice, with no air over the water to come up for: no dive under a roof, said at once. */
+    /**
+     * No dive under a roof, said at once: kelp in a lake of a cave (air over the water, rock over the air). Nor for a dry kind that
+     * stands in water (mangrove roots in a pond, a coral block under another): those are not dived for.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void kelpUnderARoofIsNotPlanned(GameTestHelper h) {
         ground(h);
-        pond(h, 16, 14, 22, 20, GROUND - 1);
-        for (int x = 16; x <= 22; x++) for (int z = 14; z <= 20; z++) h.setBlock(new BlockPos(x, GROUND, z), Blocks.ICE);
+        pond(h, 16, 14, 22, 20, GROUND - 2);
+        for (int x = 16; x <= 22; x++) for (int z = 14; z <= 20; z++) { h.setBlock(new BlockPos(x, GROUND - 1, z), Blocks.AIR); h.setBlock(new BlockPos(x, GROUND, z), Blocks.STONE); }
         BlockPos root = new BlockPos(18, 1, 16);
         h.setBlock(root, Blocks.KELP_PLANT);
         h.setBlock(root.above(), Blocks.KELP);
+        pond(h, 6, 22, 10, 26, GROUND);
+        h.setBlock(new BlockPos(8, 1, 24), Blocks.MANGROVE_ROOTS.defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED, true));
+        h.setBlock(new BlockPos(7, 1, 23), Blocks.TUBE_CORAL_BLOCK);
+        h.setBlock(new BlockPos(7, 2, 23), Blocks.BRAIN_CORAL_BLOCK);
         CompanionEntity c = spawn(h, 12, 16);
-        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:kelp\",\"count\":1}]");
+        c.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:kelp\",\"count\":1},{\"action\":\"obtain_item\",\"item\":\"minecraft:mangrove_roots\",\"count\":1},"
+                + "{\"action\":\"obtain_item\",\"item\":\"minecraft:dead_tube_coral_block\",\"count\":1}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
-            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.KELP) == 0, "Kelp under ice: " + report);
+            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.KELP) == 0 && count(c, Items.MANGROVE_ROOTS) == 0 && count(c, Items.DEAD_TUBE_CORAL_BLOCK) == 0, "Under a roof, roots, a covered coral: " + report);
+            h.assertBlockPresent(Blocks.TUBE_CORAL_BLOCK, new BlockPos(7, 1, 23));
         });
     }
 
