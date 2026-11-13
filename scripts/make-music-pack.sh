@@ -46,7 +46,8 @@ def mood(name):
         return None
     if len(name) > 1 and name[1].isdigit():
         return None
-    return "calm" if int(name[0]) <= 4 else "happy" if int(name[0]) >= 6 else None
+    number = int(name[0])
+    return "calm" if number <= 4 else "happy" if number >= 6 else "neutral"
 
 for file in sorted(folder.glob("*.ogg")):
     data = file.read_bytes()
