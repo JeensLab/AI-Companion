@@ -100,7 +100,8 @@ public final class CompanionObtain {
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
-            int have = carried.stream().filter(stack -> stack.is(species.items)).mapToInt(ItemStack::getCount).sum();
+            // Only the log itself: a wood block or a stripped log of the species is no log for the bag to count (named wood, #166).
+            int have = carried(carried, item);
             return new Plan(have >= count ? List.of() : List.of(new Step("gather_wood", id.toString(), count - have)), null);
         }
         // A stripped block is the plain one of his, set down and worked with an axe (CompanionChores): the plain one first, its own way.

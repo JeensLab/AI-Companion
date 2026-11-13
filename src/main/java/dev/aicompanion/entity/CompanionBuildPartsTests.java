@@ -34,7 +34,7 @@ public final class CompanionBuildPartsTests {
      */
     private static final Set<String> PLAYER_BRINGS = Set.of("glass_pane", "torch", "white_bed", "yellow_bed", "cyan_bed", "orange_bed", "blue_bed", "purple_bed",
             "blast_furnace", "smithing_table", "brewing_stand", "bricks", "smooth_stone", "smooth_sandstone", "smooth_sandstone_slab", "smooth_sandstone_stairs",
-            "terracotta", "white_terracotta", "yellow_terracotta", "red_terracotta", "blue_ice", "packed_ice", "stripped_oak_log", "acacia_wood");
+            "terracotta", "white_terracotta", "yellow_terracotta", "red_terracotta", "blue_ice", "packed_ice", "stripped_oak_log");
 
     @GameTest(template = "empty")
     public static void everyBlockOfTheCatalogueIsGettableOrOnTheListOfWhatThePlayerBrings(GameTestHelper h) {

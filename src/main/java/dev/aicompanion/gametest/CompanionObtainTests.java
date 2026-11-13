@@ -77,6 +77,9 @@ public final class CompanionObtainTests {
         }
         var hyphae = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.CRIMSON_STEM, 3)), false, "minecraft:crimson_hyphae", 4);
         h.assertTrue(hyphae.steps().equals(List.of(new CompanionObtain.Step("gather_wood", "minecraft:crimson_stem", 5), new CompanionObtain.Step("craft_item", "minecraft:crimson_hyphae", 4))), "Hyphae: " + hyphae);
+        // Acacia wood carried is no acacia log: the logs asked for are still to be cut (a village temple needs both).
+        var logs = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.ACACIA_WOOD, 6), new ItemStack(Items.ACACIA_LOG, 1)), false, "minecraft:acacia_log", 4);
+        h.assertTrue(logs.steps().equals(List.of(new CompanionObtain.Step("gather_wood", "minecraft:acacia_log", 3))), "Wood counted as logs: " + logs);
         var cobble = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:cobblestone", 5);
         h.assertTrue(types(cobble).equals(List.of("gather_stone")), "Cobblestone: " + cobble);
         var wool = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:blue_wool", 1);
