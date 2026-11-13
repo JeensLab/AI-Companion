@@ -151,8 +151,9 @@ public final class CompanionGatherBlockTests {
     }
 
     /**
-     * «Добудь 3 листвы и лиану» with shears in his bag: the leaves of the tree and the vine on its trunk are cut and carried as
-     * themselves, the shears wear, and the leaf block someone set down (it does not fade) is left where it stands.
+     * «Добудь 3 листвы и 3 лианы» with shears in his other hand: the leaves of the tree and the vines that hang from a log are
+     * cut (the vines from the lower end, or the ones under a cut fall with nothing) and carried as themselves, the shears wear,
+     * and the leaf block someone set down (it does not fade) is left where it stands.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void leavesAndAVineAreCutWithShears(GameTestHelper h) {
@@ -162,24 +163,43 @@ public final class CompanionGatherBlockTests {
         for (BlockPos cell : crown) h.setBlock(cell, Blocks.OAK_LEAVES);
         // The trunk after the leaves: they count their way to it and do not fade.
         for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
-        BlockPos vine = trunk.south();
-        h.setBlock(vine, Blocks.VINE.defaultBlockState().setValue(net.minecraft.world.level.block.VineBlock.NORTH, true));
+        // Held by a log at its top only: the two below hang from it.
+        BlockPos vine = new BlockPos(24, GROUND + 1, 21);
+        h.setBlock(vine.above(2).north(), Blocks.OAK_LOG);
+        for (int up = 2; up >= 0; up--) h.setBlock(vine.above(up), Blocks.VINE.defaultBlockState().setValue(net.minecraft.world.level.block.VineBlock.NORTH, true));
         BlockPos hedge = new BlockPos(14, GROUND + 1, 16);
         h.setBlock(hedge, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true));
         CompanionEntity c = spawn(h, 12, 16);
-        c.setItem(0, new ItemStack(Items.SHEARS));
-        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3},{\"action\":\"obtain_item\",\"item\":\"minecraft:vine\",\"count\":1}]");
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHEARS));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3},{\"action\":\"obtain_item\",\"item\":\"minecraft:vine\",\"count\":3}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(c, Items.OAK_LEAVES) == 3, "Not three leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
-            h.assertTrue(count(c, Items.VINE) == 1, "No vine: " + count(c, Items.VINE) + ", " + report);
+            h.assertTrue(count(c, Items.VINE) == 3, "Not three vines: " + count(c, Items.VINE) + ", " + report);
             h.assertBlockPresent(Blocks.OAK_LEAVES, hedge);
             h.assertBlockNotPresent(Blocks.VINE, vine);
             int worn = 0;
             for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.SHEARS)) worn = c.getItem(slot).getDamageValue();
             if (c.getMainHandItem().is(Items.SHEARS)) worn = c.getMainHandItem().getDamageValue();
-            h.assertTrue(worn == 4, "Shears worn by " + worn + ", not by the four cuts");
+            h.assertTrue(worn == 6, "Shears worn by " + worn + ", not by the six cuts");
+        });
+    }
+
+    /** A crown high over the ground is out of his reach: said at once, and the two ingots he carries are not spent on shears for it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void leavesOutOfReachAreNotPlanned(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(16, GROUND + 1, 16);
+        h.setBlock(trunk.above(5).west(), Blocks.OAK_LEAVES);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.IRON_INGOT, 2));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.IRON_INGOT) == 2 && count(c, Items.SHEARS) == 0, "Leaves out of reach: " + report + ", ingots " + count(c, Items.IRON_INGOT));
         });
     }
 
