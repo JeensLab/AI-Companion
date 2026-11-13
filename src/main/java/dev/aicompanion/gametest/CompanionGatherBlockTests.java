@@ -126,6 +126,63 @@ public final class CompanionGatherBlockTests {
         });
     }
 
+    /** Plan only: what a block gives to shears alone (leaves, a vine, a cobweb, grass) is picked with shears, made first if he has none. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void whatShearsTakeIsPlannedWithShears(GameTestHelper h) {
+        var level = h.getLevel();
+        for (String item : List.of("minecraft:oak_leaves", "minecraft:cherry_leaves", "minecraft:vine", "minecraft:cobweb", "minecraft:short_grass", "minecraft:fern", "minecraft:dead_bush", "minecraft:hanging_roots")) {
+            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, item, 2, thing -> true);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + " with shears: " + plan);
+        }
+        var made = CompanionObtain.plan(level, List.of(new ItemStack(Items.IRON_INGOT, 2)), false, "minecraft:vine", 2, thing -> true);
+        h.assertTrue(made.steps().equals(List.of(new CompanionObtain.Step("craft_item", "minecraft:shears", 1), new CompanionObtain.Step("gather_block", "minecraft:vine", 2))), "Vine with two ingots: " + made);
+        // No shears and no iron: the whole chain makes them, there is no other way to a leaf.
+        var chain = CompanionObtain.plan(level, List.of(), false, "minecraft:oak_leaves", 3, thing -> true);
+        int craft = chain.steps().indexOf(new CompanionObtain.Step("craft_item", "minecraft:shears", 1));
+        h.assertTrue(!chain.refused() && craft >= 0 && chain.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:oak_leaves", 3))
+                && chain.steps().stream().anyMatch(step -> step.type().equals("mine_ore")), "Leaves from nothing: " + chain);
+        // None about him: said at once, no shears are made for it.
+        var none = CompanionObtain.plan(level, List.of(new ItemStack(Items.IRON_INGOT, 2)), false, "minecraft:oak_leaves", 3, thing -> false);
+        h.assertTrue(none.refused() && none.steps().isEmpty() && none.refusal().contains("Рядом не вижу"), "Leaves with none about: " + none);
+        // The composter is fed with what a hand picks: no leaves are shorn for it.
+        var meal = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, "minecraft:bone_meal", 1, thing -> thing == Items.OAK_LEAVES || thing == Items.FERN, thing -> false);
+        h.assertTrue(meal.steps().stream().noneMatch(step -> step.type().equals("gather_block")), "Bone meal by leaves only: " + meal);
+        h.succeed();
+    }
+
+    /**
+     * «Добудь 3 листвы и лиану» with shears in his bag: the leaves of the tree and the vine on its trunk are cut and carried as
+     * themselves, the shears wear, and the leaf block someone set down (it does not fade) is left where it stands.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void leavesAndAVineAreCutWithShears(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(20, GROUND + 1, 16);
+        List<BlockPos> crown = List.of(trunk.above().west(), trunk.above().east(), trunk.above().north(), trunk.above(2).west());
+        for (BlockPos cell : crown) h.setBlock(cell, Blocks.OAK_LEAVES);
+        // The trunk after the leaves: they count their way to it and do not fade.
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        BlockPos vine = trunk.south();
+        h.setBlock(vine, Blocks.VINE.defaultBlockState().setValue(net.minecraft.world.level.block.VineBlock.NORTH, true));
+        BlockPos hedge = new BlockPos(14, GROUND + 1, 16);
+        h.setBlock(hedge, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3},{\"action\":\"obtain_item\",\"item\":\"minecraft:vine\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 3, "Not three leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(count(c, Items.VINE) == 1, "No vine: " + count(c, Items.VINE) + ", " + report);
+            h.assertBlockPresent(Blocks.OAK_LEAVES, hedge);
+            h.assertBlockNotPresent(Blocks.VINE, vine);
+            int worn = 0;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.SHEARS)) worn = c.getItem(slot).getDamageValue();
+            if (c.getMainHandItem().is(Items.SHEARS)) worn = c.getMainHandItem().getDamageValue();
+            h.assertTrue(worn == 4, "Shears worn by " + worn + ", not by the four cuts");
+        });
+    }
+
     /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */
     private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos cell, net.minecraft.world.level.block.Block block) {
         h.setBlock(cell, block);
