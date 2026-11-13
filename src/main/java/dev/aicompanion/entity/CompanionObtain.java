@@ -67,7 +67,12 @@ public final class CompanionObtain {
             int have = carried.stream().filter(stack -> stack.is(species.items)).mapToInt(ItemStack::getCount).sum();
             return new Plan(have >= count ? List.of() : List.of(new Step("gather_wood", id.toString(), count - have)), null);
         }
+        // Wood of a species that chopping does not give: the wood block is crafted of its own logs, stripping is not his skill.
+        if (species != null) return namedWood(carried, id, item, count);
         String target = key(item);
+        // Stone is a family inside a chain only: asked for by name, digging promises cobblestone and nothing else.
+        if (target.equals(STONE) && item != Items.COBBLESTONE)
+            return new Plan(List.of(), carried(carried, item) >= count ? null : "Камень копаю какой попадётся: именно «" + name(item) + "» добыть не умею.");
         if (planner.bag.getOrDefault(target, 0) >= count) return new Plan(List.of(), null);
         // The wood families are named by the exact item at the top: «доски» means real planks in the bag at the end.
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
@@ -76,6 +81,26 @@ public final class CompanionObtain {
         if (!ok) return new Plan(List.of(), planner.why == null ? "Не знаю, как добыть «" + name(item) + "»." : planner.why);
         if (planner.steps.size() > MAX_STEPS) return new Plan(List.of(), "Для «" + name(item) + "» слишком длинная цепочка дел. Давай по частям.");
         return new Plan(List.copyOf(merged(planner.steps)), null);
+    }
+
+    private static int carried(List<ItemStack> carried, Item item) {
+        return carried.stream().filter(stack -> stack.is(item)).mapToInt(ItemStack::getCount).sum();
+    }
+
+    /** «birch_wood»: four logs of that species make three; a stripped log or wood block he does not carry is refused. */
+    private static Plan namedWood(List<ItemStack> carried, ResourceLocation id, Item item, int count) {
+        String path = id.getPath();
+        int missing = count - carried(carried, item);
+        if (missing <= 0) return new Plan(List.of(), null);
+        if (path.startsWith("stripped_")) return new Plan(List.of(), "Обтёсывать брёвна я не умею: «" + name(item) + "» не добуду.");
+        var log = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path.replace("_wood", "_log").replace("_hyphae", "_stem"));
+        Item logItem = BuiltInRegistries.ITEM.getOptional(log).orElse(null);
+        if (logItem == null) return new Plan(List.of(), "Не знаю, как добыть «" + name(item) + "».");
+        int logs = ceil(missing, 3) * 4 - carried(carried, logItem);
+        List<Step> steps = new ArrayList<>();
+        for (int left = logs; left > 0; left -= 64) steps.add(new Step("gather_wood", log.toString(), Math.min(64, left)));
+        steps.add(new Step("craft_item", id.toString(), missing));
+        return new Plan(List.copyOf(steps), null);
     }
 
     /** Takes {@code count} of the key from the bag, getting what is missing first. */
@@ -167,7 +192,9 @@ public final class CompanionObtain {
         for (String option : options) if (bag.getOrDefault(option, 0) >= count) return option;
         String best = null;
         int bestCost = Integer.MAX_VALUE;
-        for (String option : options.subList(0, Math.min(options.size(), 6))) {
+        // Only six are tried, so what a skill takes straight from the world goes first: white wool among the sixteen a dyeing takes.
+        List<String> ordered = options.stream().sorted(java.util.Comparator.comparing((String option) -> !direct(option))).toList();
+        for (String option : ordered.subList(0, Math.min(ordered.size(), 6))) {
             var saved = save();
             int before = cost();
             if (need(option, count, depth + 1) && cost() - before < bestCost) { bestCost = cost() - before; best = option; }
@@ -187,6 +214,14 @@ public final class CompanionObtain {
         // What he carries first, then raw materials before blocks (the ore block itself is not what a pickaxe gives).
         options.sort(java.util.Comparator.comparing((String key) -> !key.contains("raw_")));
         return options;
+    }
+
+    /** A family, an ore's drop or an animal's: one of his skills gets it, whatever the bag holds. */
+    private static boolean direct(String key) {
+        if (key.startsWith("#")) return true;
+        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
+        for (CompanionOre.Kind ore : CompanionOre.Kind.values()) if (ore.drop == item) return true;
+        return animalFor(item) != null;
     }
 
     private static CompanionGame.Kind animalFor(Item item) {
