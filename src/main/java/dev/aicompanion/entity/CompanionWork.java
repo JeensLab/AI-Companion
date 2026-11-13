@@ -649,7 +649,8 @@ public final class CompanionWork {
         chores.cancel();
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
         oreTunnel.clear(); oreSearch = null; oreCandidates = null;
-        if (owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal) owner.setTarget(null);
+        // An order's game or catch is let go with the order (a fish or a squid is no Animal): the melee goal would strike on.
+        if (owner.getTarget() instanceof net.minecraft.world.entity.animal.Animal || owner.getTarget() != null && huntTargets.contains(owner.getTarget().getUUID())) owner.setTarget(null);
         gameTarget = null;
     }
 

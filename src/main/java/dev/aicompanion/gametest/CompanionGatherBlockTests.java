@@ -49,8 +49,8 @@ public final class CompanionGatherBlockTests {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 2, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + ": " + plan);
         }
-        // Chance drops, the mine's stone, crops and saplings, what grows under water, someone's lamp, egg or trap: no block is broken for them.
-        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple", "minecraft:kelp",
+        // Chance drops, the mine's stone, crops and saplings, someone's lamp, egg or trap: no block is broken for them.
+        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple",
                 "minecraft:glowstone_dust", "minecraft:prismarine_crystals", "minecraft:dragon_egg", "minecraft:sniffer_egg", "minecraft:ochre_froglight", "minecraft:stripped_bamboo_block", "minecraft:string")) {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 1, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
@@ -124,6 +124,174 @@ public final class CompanionGatherBlockTests {
             h.assertBlockNotPresent(Blocks.ROSE_BUSH, bush);
             h.assertBlockPresent(Blocks.CLAY, wet);
         });
+    }
+
+    /** Plan only: what a block gives to shears alone (leaves, a vine, a cobweb, grass) is picked with shears, made first if he has none. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void whatShearsTakeIsPlannedWithShears(GameTestHelper h) {
+        var level = h.getLevel();
+        for (String item : List.of("minecraft:oak_leaves", "minecraft:cherry_leaves", "minecraft:vine", "minecraft:cobweb", "minecraft:short_grass", "minecraft:fern", "minecraft:dead_bush", "minecraft:hanging_roots")) {
+            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, item, 2, thing -> true);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + " with shears: " + plan);
+        }
+        var made = CompanionObtain.plan(level, List.of(new ItemStack(Items.IRON_INGOT, 2)), false, "minecraft:vine", 2, thing -> true);
+        h.assertTrue(made.steps().equals(List.of(new CompanionObtain.Step("craft_item", "minecraft:shears", 1), new CompanionObtain.Step("gather_block", "minecraft:vine", 2))), "Vine with two ingots: " + made);
+        // No shears and no iron: the whole chain makes them, there is no other way to a leaf.
+        var chain = CompanionObtain.plan(level, List.of(), false, "minecraft:oak_leaves", 3, thing -> true);
+        int craft = chain.steps().indexOf(new CompanionObtain.Step("craft_item", "minecraft:shears", 1));
+        h.assertTrue(!chain.refused() && craft >= 0 && chain.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:oak_leaves", 3))
+                && chain.steps().stream().anyMatch(step -> step.type().equals("mine_ore")), "Leaves from nothing: " + chain);
+        // None about him: said at once, no shears are made for it.
+        var none = CompanionObtain.plan(level, List.of(new ItemStack(Items.IRON_INGOT, 2)), false, "minecraft:oak_leaves", 3, thing -> false);
+        h.assertTrue(none.refused() && none.steps().isEmpty() && none.refusal().contains("Рядом не вижу"), "Leaves with none about: " + none);
+        // The composter is fed with what a hand picks: no leaves are shorn for it.
+        var meal = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, "minecraft:bone_meal", 1, thing -> thing == Items.OAK_LEAVES || thing == Items.FERN, thing -> false);
+        h.assertTrue(meal.steps().stream().noneMatch(step -> step.type().equals("gather_block")), "Bone meal by leaves only: " + meal);
+        h.succeed();
+    }
+
+    /**
+     * «Добудь 3 листвы и 3 лианы» with shears in his other hand: the leaves of the tree and the vines that hang from a log are
+     * cut (the vines from the lower end, or the ones under a cut fall with nothing) and carried as themselves, the shears wear,
+     * and the leaf block someone set down (it does not fade) is left where it stands.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void leavesAndAVineAreCutWithShears(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(20, GROUND + 1, 16);
+        List<BlockPos> crown = List.of(trunk.above().west(), trunk.above().east(), trunk.above().north(), trunk.above(2).west());
+        for (BlockPos cell : crown) h.setBlock(cell, Blocks.OAK_LEAVES);
+        // The trunk after the leaves: they count their way to it and do not fade.
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        // Held by a log at its top only: the two below hang from it.
+        BlockPos vine = new BlockPos(24, GROUND + 1, 21);
+        h.setBlock(vine.above(2).north(), Blocks.OAK_LOG);
+        for (int up = 2; up >= 0; up--) h.setBlock(vine.above(up), Blocks.VINE.defaultBlockState().setValue(net.minecraft.world.level.block.VineBlock.NORTH, true));
+        BlockPos hedge = new BlockPos(14, GROUND + 1, 16);
+        h.setBlock(hedge, Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHEARS));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3},{\"action\":\"obtain_item\",\"item\":\"minecraft:vine\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 3, "Not three leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(count(c, Items.VINE) == 3, "Not three vines: " + count(c, Items.VINE) + ", " + report);
+            h.assertBlockPresent(Blocks.OAK_LEAVES, hedge);
+            h.assertBlockNotPresent(Blocks.VINE, vine);
+            int worn = 0;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(Items.SHEARS)) worn = c.getItem(slot).getDamageValue();
+            if (c.getMainHandItem().is(Items.SHEARS)) worn = c.getMainHandItem().getDamageValue();
+            h.assertTrue(worn == 6, "Shears worn by " + worn + ", not by the six cuts");
+        });
+    }
+
+    /** A crown high over the ground is out of his reach: said at once, and the two ingots he carries are not spent on shears for it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void leavesOutOfReachAreNotPlanned(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(16, GROUND + 1, 16);
+        h.setBlock(trunk.above(5).west(), Blocks.OAK_LEAVES);
+        for (int up = 0; up < 6; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.IRON_INGOT, 2));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.IRON_INGOT) == 2 && count(c, Items.SHEARS) == 0, "Leaves out of reach: " + report + ", ingots " + count(c, Items.IRON_INGOT));
+        });
+    }
+
+    /**
+     * Plan only: what grows on the bed of the sea is picked too: kelp, a sea pickle, seagrass (with shears), and a coral block
+     * mined with a pickaxe for the dead block it gives. A coral itself and its fan give anything only to Silk Touch: no source.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void whatGrowsUnderWaterIsPlannedAsPicking(GameTestHelper h) {
+        var level = h.getLevel();
+        for (String item : List.of("minecraft:kelp", "minecraft:sea_pickle")) {
+            var plan = CompanionObtain.plan(level, List.of(), false, item, 2, thing -> true);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + ": " + plan);
+        }
+        var grass = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, "minecraft:seagrass", 2, thing -> true);
+        h.assertTrue(grass.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:seagrass", 2))), "Seagrass: " + grass);
+        var dried = CompanionObtain.plan(level, List.of(), false, "minecraft:dried_kelp", 2, thing -> true);
+        h.assertTrue(dried.steps().getFirst().equals(new CompanionObtain.Step("gather_block", "minecraft:kelp", 2)) && dried.steps().getLast().type().equals("smelt_items"), "Dried kelp: " + dried);
+        var dead = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, "minecraft:dead_tube_coral_block", 1, thing -> true);
+        h.assertTrue(dead.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:dead_tube_coral_block", 1))), "Dead coral block: " + dead);
+        var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:dead_tube_coral_block", 1, thing -> true);
+        h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:dead_tube_coral_block", 1))
+                && bare.steps().stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith("_pickaxe")), "Dead coral block with no pickaxe: " + bare);
+        for (String item : List.of("minecraft:tube_coral", "minecraft:tube_coral_fan", "minecraft:dead_tube_coral", "minecraft:tube_coral_block")) {
+            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 1, thing -> true);
+            h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
+        }
+        h.succeed();
+    }
+
+    /**
+     * «Добудь 3 ламинарии, траву, огурец и мёртвый коралл» from a pond five deep: he swims over, dives for what is out of his reach
+     * from the surface, cuts the kelp above its root (the root stays and grows), shears the seagrass and mines the coral block.
+     * The sea pickle lies by a shelf one block under the water: from the shelf it is out of reach, he dives over the pickle itself.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theBedOfAPondIsPickedUnderWater(GameTestHelper h) {
+        ground(h);
+        pond(h, 16, 14, 22, 20, GROUND);
+        BlockPos root = new BlockPos(18, 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(root.above(up), Blocks.KELP_PLANT);
+        h.setBlock(root.above(3), Blocks.KELP);
+        h.setBlock(new BlockPos(20, 1, 18), Blocks.SEAGRASS);
+        for (int z = 14; z <= 20; z++) for (int y = 1; y < GROUND; y++) h.setBlock(new BlockPos(16, y, z), Blocks.STONE);
+        for (int z = 14; z <= 20; z++) for (int y = 1; y < GROUND; y++) if (z != 16) h.setBlock(new BlockPos(17, y, z), Blocks.STONE);
+        h.setBlock(new BlockPos(18, 1, 19), Blocks.SEA_PICKLE);
+        h.setBlock(new BlockPos(21, 1, 15), Blocks.TUBE_CORAL_BLOCK);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        c.setItem(1, new ItemStack(Items.WOODEN_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:kelp\",\"count\":3},{\"action\":\"obtain_item\",\"item\":\"minecraft:seagrass\",\"count\":1},"
+                + "{\"action\":\"obtain_item\",\"item\":\"minecraft:sea_pickle\",\"count\":1},{\"action\":\"obtain_item\",\"item\":\"minecraft:dead_tube_coral_block\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            for (Item item : List.of(Items.SEAGRASS, Items.SEA_PICKLE, Items.DEAD_TUBE_CORAL_BLOCK)) h.assertTrue(count(c, item) == 1, "Not one " + item + ": " + count(c, item) + ", " + report);
+            h.assertTrue(count(c, Items.KELP) == 3, "Not three kelp: " + count(c, Items.KELP) + ", " + report);
+            h.assertTrue(h.getBlockState(root).is(Blocks.KELP) || h.getBlockState(root).is(Blocks.KELP_PLANT), "The root of the kelp is gone");
+        });
+    }
+
+    /**
+     * No dive under a roof, said at once: kelp in a lake of a cave (air over the water, rock over the air). Nor for a dry kind that
+     * stands in water (mangrove roots in a pond, a coral block under another): those are not dived for.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void kelpUnderARoofIsNotPlanned(GameTestHelper h) {
+        ground(h);
+        pond(h, 16, 14, 22, 20, GROUND - 2);
+        for (int x = 16; x <= 22; x++) for (int z = 14; z <= 20; z++) { h.setBlock(new BlockPos(x, GROUND - 1, z), Blocks.AIR); h.setBlock(new BlockPos(x, GROUND, z), Blocks.STONE); }
+        BlockPos root = new BlockPos(18, 1, 16);
+        h.setBlock(root, Blocks.KELP_PLANT);
+        h.setBlock(root.above(), Blocks.KELP);
+        pond(h, 6, 22, 10, 26, GROUND);
+        h.setBlock(new BlockPos(8, 1, 24), Blocks.MANGROVE_ROOTS.defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED, true));
+        h.setBlock(new BlockPos(7, 1, 23), Blocks.TUBE_CORAL_BLOCK);
+        h.setBlock(new BlockPos(7, 2, 23), Blocks.BRAIN_CORAL_BLOCK);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:kelp\",\"count\":1},{\"action\":\"obtain_item\",\"item\":\"minecraft:mangrove_roots\",\"count\":1},"
+                + "{\"action\":\"obtain_item\",\"item\":\"minecraft:dead_tube_coral_block\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.KELP) == 0 && count(c, Items.MANGROVE_ROOTS) == 0 && count(c, Items.DEAD_TUBE_CORAL_BLOCK) == 0, "Under a roof, roots, a covered coral: " + report);
+            h.assertBlockPresent(Blocks.TUBE_CORAL_BLOCK, new BlockPos(7, 1, 23));
+        });
+    }
+
+    /** Water from the bedrock up to {@code top} over the given square of the ground. */
+    private static void pond(GameTestHelper h, int x0, int z0, int x1, int z1, int top) {
+        for (int x = x0; x <= x1; x++) for (int z = z0; z <= z1; z++) for (int y = 1; y <= top; y++) h.setBlock(new BlockPos(x, y, z), Blocks.WATER);
     }
 
     /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */
