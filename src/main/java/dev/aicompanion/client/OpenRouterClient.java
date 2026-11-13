@@ -854,6 +854,16 @@ public final class OpenRouterClient {
     }
 
     /**
+     * Whether a refusal is about the reasoning switch. The provider may name it; OpenRouter, asked to keep to providers
+     * that take every parameter sent (provider.require_parameters), instead answers that no endpoint can handle the
+     * request when the model has no reasoning at all. Without this the word «parameters» would read as a refusal of
+     * tools and every request would go without them. Public so that a GameTest can check the words without a request.
+     */
+    public static boolean refusedReasoning(String lower, boolean openRouter) {
+        return lower.contains("reasoning") || openRouter && lower.contains("no endpoints found");
+    }
+
+    /**
      * Whether a refusal names the field it did not know: llama.cpp says «unknown field chat_template_kwargs», others
      * «extra field» or «additional properties». A bare phrase is believed only when the body carries no tools: a strict
      * gateway can reject max_tokens or temperature with the same words, and disabling thinking for that would restore
@@ -932,7 +942,7 @@ public final class OpenRouterClient {
                 // names a parameter, so the tools check below would take it as a refusal of tools and drop to the JSON
                 // protocol without them — a second refused request and no tool calls for good. A server that only
                 // disliked this one field can still take the tools, so it is retried without the field, tools kept.
-                if (rejected && (responses || isOpenRouter(endpoint)) && sent.has("reasoning") && lower.contains("reasoning")) {
+                if (rejected && (responses || isOpenRouter(endpoint)) && sent.has("reasoning") && refusedReasoning(lower, isOpenRouter(endpoint))) {
                     throw new UnsupportedThinkingException("reasoning", error);
                 }
                 if (rejected && !responses && !isOpenRouter(endpoint) && sent.has("chat_template_kwargs") && refusedUnknownField(lower, withTools)) {

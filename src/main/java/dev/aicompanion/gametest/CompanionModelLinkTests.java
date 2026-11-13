@@ -549,4 +549,18 @@ public final class CompanionModelLinkTests {
                 "The Responses fallback changed more than the reasoning switch");
         h.succeed();
     }
+
+    /**
+     * OpenRouter with require_parameters and a model without reasoning: «No endpoints found that can handle the requested
+     * parameters». It is the reasoning switch that no endpoint takes, not the tools: the request is retried without it.
+     */
+    @GameTest(template = "empty")
+    public static void noOpenRouterEndpointForTheReasoningSwitchDropsTheSwitchNotTheTools(GameTestHelper h) {
+        String noEndpoint = "no endpoints found that can handle the requested parameters. to learn more about provider routing, visit: https://openrouter.ai/docs/provider-routing";
+        h.assertTrue(OpenRouterClient.refusedReasoning(noEndpoint, true), "OpenRouter's «no endpoints» is not read as a refusal of the reasoning switch");
+        h.assertTrue(!OpenRouterClient.refusedReasoning(noEndpoint, false), "Another server's words were taken for OpenRouter's");
+        h.assertTrue(OpenRouterClient.refusedReasoning("unrecognized request argument supplied: reasoning", false), "A refusal naming the field is missed");
+        h.assertTrue(!OpenRouterClient.refusedReasoning("invalid tool_choice parameter", true), "A refusal of tools was taken for the reasoning switch");
+        h.succeed();
+    }
 }
