@@ -128,8 +128,18 @@ final class CompanionMobDrops {
         if (kinds.isEmpty() || level.dimension() != Level.OVERWORLD) return List.of();
         int radius = c.getSearchRadius();
         return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID())
-                && fought(c, kinds, mob) && (engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob)
+                && fought(c, kinds, mob) && (engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob) || swims(mob) && open(level, mob)
                 || mob.getBlockY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, mob.getBlockX(), mob.getBlockZ()) - 1));
+    }
+
+    /**
+     * A fish or a squid under open water: the sea is about him, though the bank hides what swims at the bottom by it from his
+     * eyes on the shore (a squid at the foot of a pond's bank was «no one about» in a test); not a lake in a cave.
+     */
+    private static boolean open(ServerLevel level, Mob mob) {
+        net.minecraft.core.BlockPos.MutableBlockPos cell = mob.blockPosition().mutable();
+        for (int up = 0; up < 32 && level.getFluidState(cell).is(net.minecraft.tags.FluidTags.WATER); up++) cell.move(0, 1, 0);
+        return level.getFluidState(cell).isEmpty() && level.canSeeSky(cell);
     }
 
     /** Of the kind, alive, nobody's (no name, not let out of a bucket), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
@@ -178,7 +188,9 @@ final class CompanionMobDrops {
         w.huntTargets.add(target.getUUID());
         c.selectWeaponForCombat(); c.setTarget(target); c.movementIntent(target.blockPosition());
         c.workStatus("Добываю «" + name() + "»: " + got + " из " + wanted + ".");
-        if (w.route.follow(target.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
+        // In the water with it he swims at it (watch); a route there would pull him back to the surface over it.
+        if (swims(target) && target.isInWater() && c.isInWater()) c.getNavigation().stop();
+        else if (w.route.follow(target.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
     }
 
     /**
@@ -195,6 +207,11 @@ final class CompanionMobDrops {
         long now = level.getGameTime();
         double distance = c.distanceToSqr(mob);
         if (!mob.getUUID().equals(chased) || distance + .5 < best || mob.getHealth() < health) { chased = mob.getUUID(); best = distance; health = mob.getHealth(); since = now; }
+        // A squid or a fish under the surface: no route comes to it (the search starts at the top of the water) and the melee goal
+        // starts only within a blow, so he swims straight at it, as a player does; down to it is CompanionSwimming's dive
+        // (in game 13.11 two squids in the sea were passed over, not one blow landed).
+        if (swims(mob) && mob.isInWater() && c.isInWater() && !c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob))
+            c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
         int radius = c.getSearchRadius();
         boolean gone = !fought(c, kinds, mob) || distance > radius * radius;
         if (now - since <= STALL && !gone) return;

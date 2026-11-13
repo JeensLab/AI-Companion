@@ -118,15 +118,19 @@ public final class CompanionMobDropsTests {
         });
     }
 
-    /** «Добудь 2 трески и чернила» in a pond: the fish and the squid are fought in the water; the dolphin and a cod let out of the player's bucket are left alone. */
+    /** «Добудь 2 трески и чернила» in a pond: the fish and the squid at the bottom by the bank are fought in the water; the dolphin and a cod let out of the player's bucket are left alone. */
     @GameTest(template = "tall_tree", timeoutTicks = 2400)
     public static void fishAndASquidAreFoughtInAPond(GameTestHelper h) {
         ground(h);
         for (int x = 16; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.WATER);
-        for (int i = 0; i < 3; i++) h.spawn(EntityType.COD, 18 + i * 2, 3, 14);
-        h.spawn(EntityType.SQUID, 21, 2, 18);
-        Mob dolphin = h.spawn(EntityType.DOLPHIN, 23, 3, 16);
-        var pet = h.spawn(EntityType.COD, 17, 3, 13);
+        // Where they are put (the test is of his swim and dive, not of their wandering): one at the bottom by the bank, two up the water.
+        h.spawnWithNoFreeWill(EntityType.COD, 17, 1, 14);
+        h.spawnWithNoFreeWill(EntityType.COD, 21, 3, 14);
+        h.spawnWithNoFreeWill(EntityType.COD, 23, 2, 19);
+        // At the bottom by the bank: from the shore the bank hides it, yet the sea it is in is about him.
+        h.spawnWithNoFreeWill(EntityType.SQUID, 17, 1, 18);
+        Mob dolphin = h.spawnWithNoFreeWill(EntityType.DOLPHIN, 22, 4, 16);
+        var pet = h.spawnWithNoFreeWill(EntityType.COD, 19, 3, 13);
         pet.setFromBucket(true);
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, new ItemStack(Items.STONE_SWORD));
