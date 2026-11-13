@@ -210,7 +210,9 @@ final class CompanionMobDrops {
         // A squid or a fish under the surface: no route comes to it (the search starts at the top of the water) and the melee goal
         // starts only within a blow, so he swims straight at it, as a player does; down to it is CompanionSwimming's dive
         // (in game 13.11 two squids in the sea were passed over, not one blow landed).
-        if (swims(mob) && mob.isInWater() && c.isInWater() && !c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob))
+        // Not against the way up: with his air short the swim for air (CompanionBreath) and the float have him, not the fish.
+        if (swims(mob) && mob.isInWater() && c.isInWater() && !c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob)
+                && c.getAirSupply() > c.getMaxAirSupply() / 2)
             c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
         int radius = c.getSearchRadius();
         boolean gone = !fought(c, kinds, mob) || distance > radius * radius;

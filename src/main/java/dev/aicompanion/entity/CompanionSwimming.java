@@ -35,7 +35,9 @@ final class CompanionSwimming {
             var hand = c.getMainHandItem();
             boolean dives = target != null && target.isAlive() && c.isInWater() && !c.isInLava() && target.isInWater()
                     && target.getY() < c.getY() - .5 && c.getHealth() > c.getMaxHealth() / 2
-                    && (hand.is(net.minecraft.tags.ItemTags.SWORDS) || hand.is(net.minecraft.tags.ItemTags.AXES)) && !c.archery.armed()
+                    && (hand.is(net.minecraft.tags.ItemTags.SWORDS) || hand.is(net.minecraft.tags.ItemTags.AXES))
+                    // The bow is for a foe: a fish or a squid it never shoots, so a bow in the bag does not keep him from the dive for one.
+                    && (!c.archery.armed() || !(target instanceof net.minecraft.world.entity.monster.Enemy))
                     && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
             // «Подбери»: a drop that sank to the bottom of a pool is under him, and the float held him at the surface
             // over it, out of reach (game 08.11: the pork on the bottom of a four-deep pond was given up as out of reach).
