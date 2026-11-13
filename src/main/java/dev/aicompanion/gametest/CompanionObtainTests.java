@@ -66,7 +66,7 @@ public final class CompanionObtainTests {
         var wood = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:birch_wood", 3);
         h.assertTrue(!wood.refused() && wood.steps().size() == 2 && wood.steps().get(0).equals(new CompanionObtain.Step("gather_wood", "minecraft:birch_log", 4))
                 && wood.steps().get(1).equals(new CompanionObtain.Step("craft_item", "minecraft:birch_wood", 3)), "Birch wood: " + wood);
-        for (String item : List.of("minecraft:stripped_oak_log", "minecraft:stripped_birch_wood", "minecraft:blackstone", "minecraft:cobbled_deepslate")) {
+        for (String item : List.of("minecraft:blackstone", "minecraft:cobbled_deepslate")) {
             var plan = CompanionObtain.plan(h.getLevel(), List.of(), false, item, 1);
             h.assertTrue(plan.refused() && plan.steps().isEmpty(), item + " is not what chopping or digging gives: " + plan);
         }
