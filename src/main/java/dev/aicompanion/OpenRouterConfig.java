@@ -139,6 +139,11 @@ public final class OpenRouterConfig {
             .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")
             .translation("config.aicompanion.boat_clutch")
             .define("boatClutch", true);
+    /** Whether he plays his guitar by the fire at all: on his own by a fire the player lingers at, and on «сыграй». On by default. */
+    public static final ModConfigSpec.BooleanValue PLAYS_BY_THE_FIRE = BUILDER
+            .comment("Oleg sits down with his guitar by a campfire the player lingers at, and plays on «сыграй». Off: no guitar at all, and «сыграй» says so.")
+            .translation("config.aicompanion.plays_by_the_fire")
+            .define("playsByTheFire", true);
     /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag. On unless the player turns it off. */
     public static final ModConfigSpec.BooleanValue REPLANT_SAPLINGS = BUILDER
             .comment("Put a sapling of the same wood from his bag on the stump of a tree he felled (a dark oak only from four). Off: the stumps stay bare.")

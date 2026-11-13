@@ -8,55 +8,10 @@
     ],
     "subtitle": "subtitles.aicompanion.guitar"
   },
-  "guitar.noi": {
-    "sounds": [
-      {
-        "name": "aicompanion:guitar/noi",
-        "stream": true
-      }
-    ],
-    "subtitle": "subtitles.aicompanion.guitar"
-  },
-  "guitar.recuerdos": {
-    "sounds": [
-      {
-        "name": "aicompanion:guitar/recuerdos",
-        "stream": true
-      }
-    ],
-    "subtitle": "subtitles.aicompanion.guitar"
-  },
   "guitar.gavotte": {
     "sounds": [
       {
         "name": "aicompanion:guitar/gavotte",
-        "stream": true
-      }
-    ],
-    "subtitle": "subtitles.aicompanion.guitar"
-  },
-  "guitar.fugue143": {
-    "sounds": [
-      {
-        "name": "aicompanion:guitar/fugue143",
-        "stream": true
-      }
-    ],
-    "subtitle": "subtitles.aicompanion.guitar"
-  },
-  "guitar.fugue144": {
-    "sounds": [
-      {
-        "name": "aicompanion:guitar/fugue144",
-        "stream": true
-      }
-    ],
-    "subtitle": "subtitles.aicompanion.guitar"
-  },
-  "guitar.canon": {
-    "sounds": [
-      {
-        "name": "aicompanion:guitar/canon",
         "stream": true
       }
     ],

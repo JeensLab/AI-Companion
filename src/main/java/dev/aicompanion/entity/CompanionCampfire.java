@@ -6,7 +6,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Enemy;
@@ -19,12 +18,15 @@ import java.util.EnumSet;
 import java.util.List;
 
 /**
- * Music with his guitar (the owner asked, 09.11): he sits down on the ground, takes out his guitar and plays his own tunes
- * ({@link CompanionTunes}) until something else needs him. A fire is not needed, it only makes the evening: on «сыграй»
+ * Music with his guitar (the owner asked, 09.11): he sits down on the ground, takes out his guitar and plays the recordings
+ * ({@link CompanionMusicLibrary}: the player's own folder config/aicompanion/music, or the two standard ones in the mod while that
+ * folder is empty) until something else needs him. A fire is not needed, it only makes the evening: on «сыграй»
  * ({@code campfire_song}) he sits across a lit campfire near the player from him, else by a real campfire he sets down from his bag,
  * else simply beside the player. By himself he begins only by a lit fire the player has stayed at for half a minute while nothing
- * else is going on. The guitar is his own thing, drawn by the client: no item is made, carried or dropped. Nothing is saved: after a
- * reload he simply stands up.
+ * else is going on, and only while «Олег играет у костра» is on in «Поведение». The guitar is his own thing, drawn by the client:
+ * no item is made, carried or dropped. Nothing is saved: after a reload he simply stands up. The tune is played by the client from
+ * the sound id synced with his pose (client/CompanionCampfireAudio), so a recording from the folder sounds without the server
+ * knowing it as a registered sound event.
  */
 public final class CompanionCampfire {
     /** The player by one lit fire this long, nothing else going on: he sits down and plays on his own. */
@@ -57,7 +59,8 @@ public final class CompanionCampfire {
     private long approachUntil;
     // The last steps onto the seat are being walked by an exact path (the long walk gets only within two blocks of a goal).
     private boolean lastSteps;
-    private int tune = -1, timer, tunesStarted;
+    private CompanionMusicLibrary.Track tune;
+    private int timer, tunesStarted;
     // The kind of tune the player asked for, taken by the next tune that starts.
     private String wanted = "";
     // The lit fire the player has stood by, and since when (game time).
@@ -77,7 +80,7 @@ public final class CompanionCampfire {
     /** How long the tune playing now has sounded, in ticks; 0 between tunes. */
     public int playedTicks() { return phase == Phase.PLAY ? timer : 0; }
     /** The tune playing or last played this evening, or empty. */
-    public String tuneTitle() { return tune < 0 ? "" : CompanionTunes.ALL.get(tune).title(); }
+    public String tuneTitle() { return tune == null ? "" : tune.title(); }
     /** Why the last evening ended (fire_out, player_left, player_order:…), or empty. */
     public String ended() { return ended; }
 
@@ -89,14 +92,11 @@ public final class CompanionCampfire {
     public CompanionActionResult request(ServerPlayer player, String mood) {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для музыки нужен загруженный мир.");
         if (!MOODS.contains(mood)) return CompanionActionResult.failed("Не понял, какую мелодию сыграть.");
+        if (!c.playsByTheFire()) return CompanionActionResult.failed("Играть у костра выключено в настройках поведения.");
         if (active()) {
             wanted = mood;
             if (phase == Phase.PLAY || phase == Phase.REST) startTune();
-            return c.placement.recordActionResult(CompanionActionResult.ok(switch (mood) {
-                case "calm" -> "Сыграю спокойную.";
-                case "cheerful" -> "Сыграю повеселее.";
-                default -> "Сыграю другую.";
-            }));
+            return c.placement.recordActionResult(CompanionActionResult.ok(tuneAnswer(mood)));
         }
         if (c.getTarget() != null || danger(level, player.blockPosition()))
             return c.placement.recordActionResult(CompanionActionResult.blocked("Тут неспокойно, монстры рядом. Сыграю, когда отобьёмся."));
@@ -113,8 +113,21 @@ public final class CompanionCampfire {
         // No fire at all: none is needed for the music, he sits down beside the player.
         begin(level, lit != null ? lit : player.blockPosition(), lit != null, player, "request");
         wanted = mood;
-        return c.placement.recordActionResult(CompanionActionResult.ok(own ? "Поставил костёр. Сейчас сяду и сыграю."
-                : lit != null ? "Сяду у костра и сыграю." : "Сяду рядом и сыграю."));
+        String missing = mood.isEmpty() || CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood) ? "" : missingMood(mood) + " ";
+        return c.placement.recordActionResult(CompanionActionResult.ok(missing + (own ? "Поставил костёр. Сейчас сяду и сыграю."
+                : lit != null ? "Сяду у костра и сыграю." : "Сяду рядом и сыграю.")));
+    }
+
+    /** The answer to «сыграй грустное» or «повеселее» while he plays: honest when the folder has no recording of that kind. */
+    private String tuneAnswer(String mood) {
+        if ("calm".equals(mood)) return CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood) ? "Сыграю спокойную." : missingMood(mood);
+        if ("cheerful".equals(mood)) return CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood) ? "Сыграю повеселее." : missingMood(mood);
+        return "Сыграю другую.";
+    }
+
+    /** Said plainly when no recording of the kind asked for is there. */
+    private static String missingMood(String mood) {
+        return "calm".equals(mood) ? "Спокойных и грустных записей нет — сыграю любую." : "Весёлых записей нет — сыграю другую.";
     }
 
     /** The player gave an order: the guitar goes away at once. True if he was playing. */
@@ -129,6 +142,8 @@ public final class CompanionCampfire {
         if (!(c.level() instanceof ServerLevel level)) return;
         if (active()) { if (c.tickCount % 10 == 0) watch(level); return; }
         if (c.tickCount % 20 != 0) return;
+        // «Олег играет у костра» off: no evening begins by itself (CompanionEntity.playsByTheFire, the player's switch).
+        if (!c.playsByTheFire()) { lingerFire = null; return; }
         ServerPlayer player = c.getOwnerPlayer();
         if (player == null || player.level() != c.level() || player.isSpectator() || !player.isAlive()) { lingerFire = null; return; }
         if (spentFire != null && (!isLit(level, spentFire) || player.distanceToSqr(spentFire.getCenter()) > PLAYER_GONE * PLAYER_GONE)) spentFire = null;
@@ -210,7 +225,7 @@ public final class CompanionCampfire {
             case PLAY -> {
                 hold();
                 if (timer % 40 == 0) notes(level);
-                if (++timer >= CompanionTunes.ALL.get(tune).ticks()) rest();
+                if (++timer >= tune.ticks()) rest();
             }
             case REST -> {
                 hold();
@@ -261,24 +276,20 @@ public final class CompanionCampfire {
         CompanionDiagnostics.event(c.diagnosticTrace(), "campfire_sat_down", "entity", c.getUUID(), "at", c.blockPosition(), "spot", spot, "byFire", byFire);
     }
 
-    /** The next tune: of the kind asked for if any, and never the same one twice running. */
+    /** The next tune: of the kind asked for if the recordings carry it, and never the same one twice running. */
     private void startTune() {
         if (phase == Phase.PLAY) silence();
-        java.util.List<Integer> choices = new java.util.ArrayList<>();
-        for (int i = 0; i < CompanionTunes.ALL.size(); i++) {
-            boolean cheerful = CompanionTunes.ALL.get(i).cheerful();
-            if (i != tune && ("calm".equals(wanted) ? !cheerful : !"cheerful".equals(wanted) || cheerful)) choices.add(i);
-        }
-        if (choices.isEmpty()) for (int i = 0; i < CompanionTunes.ALL.size(); i++) if (i != tune) choices.add(i);
-        tune = choices.get(c.getRandom().nextInt(choices.size()));
+        var pick = CompanionMusicLibrary.pick(CompanionMusicLibrary.available(), wanted, tune == null ? "" : tune.soundId(), c.getRandom());
         wanted = "";
+        if (pick == null) { rest(); return; } // nothing to play at all: he rests and looks again later
+        tune = pick.track();
         timer = 0;
         phase = Phase.PLAY;
         pose(PLAYING);
-        // The recording sounds from him, wherever the listener stands (an entity-bound sound, as a mob's own).
-        c.level().playSound(null, c, dev.aicompanion.AICompanionMod.GUITAR_TUNES.get(CompanionTunes.ALL.get(tune).id()).get(), SoundSource.RECORDS, 1F, 1F);
+        // The client plays it from this id (client/CompanionCampfireAudio): the folder's files are no registered sound events.
+        c.setCampfireTune(tune.soundId());
         tunesStarted++;
-        CompanionDiagnostics.event(c.diagnosticTrace(), "campfire_tune", "entity", c.getUUID(), "tune", tuneTitle());
+        CompanionDiagnostics.event(c.diagnosticTrace(), "campfire_tune", "entity", c.getUUID(), "tune", tuneTitle(), "sound", tune.soundId());
     }
 
     private void rest() {
@@ -294,25 +305,25 @@ public final class CompanionCampfire {
         level.sendParticles(ParticleTypes.NOTE, guitar.x, guitar.y, guitar.z, 0, c.getRandom().nextInt(25) / 24.0, 0, 0, 1);
     }
 
-    /** The recording of the tune that was playing stops for everyone who could hear it: a new tune, a rest, or the end of the evening. */
+    /** The tune that was playing stops for the client that played it: a new tune, a rest, or the end of the evening. */
     private void silence() {
-        if (tune < 0 || !(c.level() instanceof ServerLevel level)) return;
-        var stop = new net.minecraft.network.protocol.game.ClientboundStopSoundPacket(
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(dev.aicompanion.AICompanionMod.MOD_ID, "guitar." + CompanionTunes.ALL.get(tune).id()), SoundSource.RECORDS);
-        for (ServerPlayer player : level.players()) if (player.distanceToSqr(c) <= 64 * 64) player.connection.send(stop);
+        if (tune == null) return;
+        c.setCampfireTune("");
     }
 
     /** For the model's picture of the moment: what he plays and where, said as the background it is. */
     public String forAi() {
         String where = byFire ? "у костра" : "рядом с игроком";
-        String what = phase == Phase.PLAY && tune >= 0 ? " «" + tuneTitle() + "» (" + (CompanionTunes.ALL.get(tune).cheerful() ? "весёлая" : "спокойная") + ")" : "";
+        String kind = tune == null ? "" : tune.mood() == CompanionMusicLibrary.Mood.CHEERFUL ? "весёлая"
+                : tune.mood() == CompanionMusicLibrary.Mood.CALM ? "спокойная" : "";
+        String what = phase == Phase.PLAY && tune != null ? " «" + tuneTitle() + "»" + (kind.isEmpty() ? "" : " (" + kind + ")") : "";
         return (phase == Phase.APPROACH ? "идёт сесть " + where + ", чтобы сыграть на гитаре" : "сидит " + where + " и играет на гитаре" + what)
                 + " — это фон, разговору он не мешает";
     }
 
-    /** The face while a tune sounds (the owner asked, 09.11): a smile for a cheerful one, a plain face for a calm or sad one. */
+    /** The face while a tune sounds (the owner asked, 09.11): a smile for a cheerful one, a plain face for a calm, sad or untagged one. */
     public dev.aicompanion.CompanionExpression mood() {
-        return tune >= 0 && CompanionTunes.ALL.get(tune).cheerful() ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.CALM;
+        return tune != null && tune.mood() == CompanionMusicLibrary.Mood.CHEERFUL ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.CALM;
     }
 
     /** Sitting: he stays where he sat, his eyes on the fire (or the ground before him) and nowhere else (owner 09.11: not on the player). */

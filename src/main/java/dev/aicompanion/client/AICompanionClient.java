@@ -15,6 +15,16 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
+import net.neoforged.neoforge.event.AddPackFindersEvent;
+import net.minecraft.commands.Commands;
+import net.minecraft.server.packs.PackLocationInfo;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.PackSelectionConfig;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.Pack;
+import net.minecraft.server.packs.repository.PackSource;
+import java.util.Optional;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.client.settings.KeyConflictContext;
@@ -68,8 +78,10 @@ public final class AICompanionClient {
         modEventBus.addListener(this::registerEntityRenderers);
         modEventBus.addListener(this::registerMenuScreens);
         modEventBus.addListener(this::registerGuiLayers);
+        modEventBus.addListener(this::addPackFinders);
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForge.EVENT_BUS.addListener(this::registerClientCommands);
         NeoForge.EVENT_BUS.addListener(this::onLoggingOut);
         NeoForge.EVENT_BUS.addListener(CompanionGhostPlacement::render);
     }
@@ -78,6 +90,7 @@ public final class AICompanionClient {
         OpenRouterClient.resetSession();
         CompanionMemoryFlow.unbind();
         CompanionAmbientClient.forgetWorld();
+        CompanionCampfireAudio.forget();
         GameContext.forgetWorld();
         CompanionMoodPanel.forgetWorld();
         CompanionGhostPlacement.forgetWorld();
@@ -90,6 +103,35 @@ public final class AICompanionClient {
         event.register(TOGGLE_MARKER);
         event.register(TOGGLE_MOOD);
         CompanionGhostPlacement.KEYS.forEach(event::register);
+    }
+
+    /**
+     * The guitar folder as a resource pack (CompanionMusicPack): the sound engine reads sounds.json only from packs, and this one is
+     * rebuilt from the folder on every resource reload. Always active, above the mod's own resources.
+     */
+    private void addPackFinders(AddPackFindersEvent event) {
+        if (event.getPackType() != PackType.CLIENT_RESOURCES) return;
+        event.addRepositorySource(packs -> {
+            PackLocationInfo location = new PackLocationInfo(CompanionMusicPack.ID,
+                    Component.literal("AI Companion: музыка из папки"), PackSource.BUILT_IN, Optional.empty());
+            Pack pack = Pack.readMetaAndCreate(location, new Pack.ResourcesSupplier() {
+                @Override public PackResources openPrimary(PackLocationInfo info) { return new CompanionMusicPack(info); }
+                @Override public PackResources openFull(PackLocationInfo info, Pack.Metadata metadata) { return new CompanionMusicPack(info); }
+            }, PackType.CLIENT_RESOURCES, new PackSelectionConfig(true, Pack.Position.TOP, true));
+            if (pack != null) packs.accept(pack);
+        });
+    }
+
+    /** «/companion music»: read the folder again and let the sound engine see what was added to it. */
+    private void registerClientCommands(RegisterClientCommandsEvent event) {
+        event.getDispatcher().register(Commands.literal("companion").then(Commands.literal("music").executes(context -> {
+            var client = Minecraft.getInstance();
+            int found = dev.aicompanion.entity.CompanionMusicLibrary.scan(dev.aicompanion.entity.CompanionMusicLibrary.folder()).size();
+            client.reloadResourcePacks().thenRun(() -> client.execute(() -> client.gui.getChat().addMessage(Component.literal(found == 0
+                    ? "Папка с музыкой пуста: играют две стандартные записи."
+                    : "Записей в папке: " + found + ". Игра перечитала папку."))));
+            return found;
+        })));
     }
 
     private void registerGuiLayers(RegisterGuiLayersEvent event) {
@@ -117,8 +159,10 @@ public final class AICompanionClient {
             dev.aicompanion.CompanionDiagnostics.event("", "world_changed", "dimension",
                     minecraft.level == null ? "disconnected" : minecraft.level.dimension().location());
             CompanionActionExecutor.cancelPendingPlans("", "world_changed"); InworldTtsClient.resetPlaybackQueue();
+            CompanionCampfireAudio.forget();
         }
         CompanionVoiceAudio.tick();
+        CompanionCampfireAudio.tick();
         CompanionAmbientClient.tick();
         CompanionAmbientClient.autonomyLines();
         CompanionMarker.tick();

@@ -26,7 +26,7 @@ public final class AICompanionMod {
     public static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, MOD_ID);
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MOD_ID);
     public static final DeferredRegister<net.minecraft.sounds.SoundEvent> SOUNDS = DeferredRegister.create(Registries.SOUND_EVENT, MOD_ID);
-    /** The guitar recordings he plays by the fire (entity/CompanionTunes), by their id: aicompanion:guitar.{id}. */
+    /** The two standard guitar recordings that stay in the mod (entity/CompanionTunes), by their id: aicompanion:guitar.{id}. */
     public static final java.util.Map<String, DeferredHolder<net.minecraft.sounds.SoundEvent, net.minecraft.sounds.SoundEvent>> GUITAR_TUNES =
             dev.aicompanion.entity.CompanionTunes.ALL.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(dev.aicompanion.entity.CompanionTunes.Tune::id,
                     tune -> SOUNDS.register("guitar." + tune.id(), () -> net.minecraft.sounds.SoundEvent.createVariableRangeEvent(

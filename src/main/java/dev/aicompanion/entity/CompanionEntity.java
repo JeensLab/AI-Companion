@@ -87,6 +87,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final EntityDataAccessor<Boolean> DATA_FIGHTING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     /** By the fire: standing, sitting with the guitar, or playing it (CompanionCampfire); drawn by CompanionRenderer. */
     static final EntityDataAccessor<Integer> DATA_CAMPFIRE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+    /** The sound id of the tune he plays now, empty between tunes: the client plays it from this (client/CompanionCampfireAudio). */
+    static final EntityDataAccessor<String> DATA_CAMPFIRE_TUNE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
     final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
@@ -142,6 +144,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
+    /** Whether he plays by the fire at all (the player's switch, on in old saves: CompanionEntityNbt). */
+    private boolean playsByTheFire = true;
     private boolean replantOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
@@ -193,6 +197,16 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public CompanionCampfire campfire() { return campfire; }
     /** Client and server: CompanionCampfire.STANDING, SITTING or PLAYING. */
     public int campfirePose() { return entityData.get(DATA_CAMPFIRE); }
+    /** Client and server: the sound id of the tune playing now (aicompanion:guitar/… or aicompanion:guitar_folder/…), or empty. */
+    public String campfireTune() { return entityData.get(DATA_CAMPFIRE_TUNE); }
+    void setCampfireTune(String soundId) { if (!level().isClientSide) entityData.set(DATA_CAMPFIRE_TUNE, soundId); }
+    /** Whether he plays by the fire at all — by himself or on «сыграй» (the player's switch in «Поведение», on in old saves). */
+    public boolean playsByTheFire() { return playsByTheFire; }
+    public void setPlaysByTheFire(boolean on) {
+        playsByTheFire = on;
+        // Turned off in the middle of an evening: the guitar goes away at once.
+        if (!on) campfire.end("switch_off");
+    }
     public CompanionLighting lighting() { return lighting; }
     /** «Порядок и запас»: deeds of his own while the player asks for nothing (CompanionAutonomy). */
     public CompanionAutonomy autonomy() { return autonomy; }
@@ -469,7 +483,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_SOCIAL, ""); builder.define(DATA_SOCIAL_SERIAL, 0); builder.define(DATA_SOCIAL_TIME, 0L);
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
         builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
-        builder.define(DATA_CAMPFIRE, CompanionCampfire.STANDING);
+        builder.define(DATA_CAMPFIRE, CompanionCampfire.STANDING); builder.define(DATA_CAMPFIRE_TUNE, "");
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
