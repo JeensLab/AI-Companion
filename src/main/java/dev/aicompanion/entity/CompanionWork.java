@@ -456,6 +456,7 @@ public final class CompanionWork {
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
             case "build_portal" -> { CompanionActionResult answer = portal.begin(item); if (answer != null) return answer; job = Job.PORTAL; phase = Phase.PORTAL; }
             case "compost_items" -> { CompanionActionResult refusal = composting.begin(item, count); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
+            case "compost_meal" -> { CompanionActionResult refusal = composting.begin(item, count, true); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
             case "disenchant_item" -> { CompanionActionResult refusal = grinding.begin(item, count); if (refusal != null) return refusal; job = Job.GRIND; phase = Phase.GRIND; }
             case "give_items" -> {
                 if (!"logs".equals(item) && (ResourceLocation.tryParse(item) == null || !BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse(item))))
