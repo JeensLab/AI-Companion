@@ -162,14 +162,16 @@ final class CompanionWorkItems {
     CompanionActionResult craftFromBagMakingRoom(String itemId, int count) {
         CompanionActionResult crafted = w.owner.craftFromBag(itemId, count);
         if (!spaceRefusal(crafted)) return crafted;
-        if (!holdOneStack(chainMaterials(itemId))) {
-            CompanionActionResult inGrid = w.owner.craftFromBagInGrid(itemId, count);
-            return inGrid.success() ? inGrid : crafted;
+        if (holdOneStack(chainMaterials(itemId))) {
+            CompanionActionResult again = w.owner.craftFromBag(itemId, count);
+            if (again.success()) return again;
+            // A retry that took nothing (the bag already had a cell) reads the bag unchanged, and one that took a stack
+            // still found no room: either way the grid is the next cell to try, before the plan's first answer is
+            // handed back as if nothing more could be done.
+            putHeldStackBack();
         }
-        CompanionActionResult again = w.owner.craftFromBag(itemId, count);
-        if (again.success()) return again;
-        putHeldStackBack();
-        return crafted;
+        CompanionActionResult inGrid = w.owner.craftFromBagInGrid(itemId, count);
+        return inGrid.success() ? inGrid : crafted;
     }
 
     /** The block the plan made in the grid and the bag had no cell for: set down from there, or stored once a cell frees. */
@@ -177,7 +179,12 @@ final class CompanionWorkItems {
     /** The saved grid block: a save without the key holds none. */
     private static final String GRID_BLOCK = "WorkGridBlock";
 
-    void keepGridBlock(ItemStack stack) { gridBlock = stack.copy(); }
+    void keepGridBlock(ItemStack stack) {
+        // A block still held from an earlier grid craft goes back first: two grid crafts before the first block is set
+        // down must not lose the first one, which would then have neither a cell nor a place in the world.
+        if (!gridBlock.isEmpty()) putHeldStackBack();
+        gridBlock = stack.copy();
+    }
     ItemStack gridBlock() { return gridBlock; }
     boolean gridBlockIs(String itemId) {
         return !gridBlock.isEmpty() && BuiltInRegistries.ITEM.getKey(gridBlock.getItem()).toString().equals(itemId);
@@ -209,11 +216,12 @@ final class CompanionWorkItems {
         }
         // The block made in the grid has no cell either: it goes back into the bag as soon as one is free (the block
         // itself was set down from the grid and is gone), else it lies at his feet rather than staying unseen.
-        if (gridBlock.isEmpty()) { gridBlock = ItemStack.EMPTY; return; }
+        if (gridBlock.isEmpty()) return;
         ItemStack rest = gridBlock.copy();
+        // Cleared before it is stored: the summary must not count the block twice while it is being put away.
+        gridBlock = ItemStack.EMPTY;
         w.owner.storeLoot(rest);
         if (!rest.isEmpty() && w.owner.level() instanceof ServerLevel level) Block.popResource(level, w.owner.blockPosition(), rest);
-        gridBlock = ItemStack.EMPTY;
     }
 
     /** The hands holding a stack, in a fixed order, for the GameTest observer. */

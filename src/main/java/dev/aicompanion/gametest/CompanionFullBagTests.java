@@ -308,6 +308,143 @@ public final class CompanionFullBagTests {
         });
     }
 
+    /**
+     * A bag with one cell free and both hands busy: the retry takes nothing (the cell was already there), so the same
+     * plan runs again and refuses for the second cell a chain needs at once — planks, then sticks. The grid is the next
+     * cell to try, and the torches are made there and stay as the work's block: before the fix the work stopped at
+     * «нужна одна свободная ячейка».
+     */
+    @GameTest(template = "empty")
+    public static void aCellInTheBagStillGetsTheGridTriedForAChainNeedingTwo(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        // One coal and two logs, 24 stacks that are none of the torch chain's materials: 26 cells taken, one free. The
+        // second log stays in its cell, so the sticks the torch needs have no cell of their own there.
+        Item[] plain = {Items.DIRT, Items.GRAVEL, Items.SAND, Items.FLINT, Items.ANDESITE, Items.DIORITE, Items.GRANITE,
+                Items.TUFF, Items.CALCITE, Items.DEEPSLATE, Items.IRON_INGOT, Items.GOLD_INGOT, Items.COPPER_INGOT,
+                Items.REDSTONE, Items.LAPIS_LAZULI, Items.STRING, Items.FEATHER, Items.LEATHER, Items.BONE,
+                Items.GUNPOWDER, Items.BRICK, Items.NETHER_BRICK, Items.AMETHYST_SHARD, Items.SLIME_BALL};
+        c.setItem(0, new ItemStack(Items.COAL, 1));
+        c.setItem(1, new ItemStack(Items.OAK_LOG, 2));
+        for (int at = 0; at < plain.length; at++) c.setItem(at + 2, new ItemStack(plain[at], 2));
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        h.assertTrue(freeCells(bag(c)) == 1, "The bag is not one cell short: " + freeCells(bag(c)));
+        h.assertTrue(c.holdOneStackInHand() && c.heldStackHands().isEmpty(),
+                "The free cell was not seen, or a stack was taken for it: " + c.heldStackHands());
+        var crafted = c.craftHoldingIfTheBagIsFull("minecraft:torch", 1);
+        h.assertTrue(crafted.success(), "The torch was refused although the grid can hold the chain: " + crafted.message());
+        h.assertTrue(countIn(bag(c), Items.COAL) == 0, "The coal is still in the bag: " + crafted.message());
+        // The torches had no bag cell either: they are the work's, in the grid, not on the ground and not lost.
+        h.assertTrue(c.gridBlockInGrid().is(Items.TORCH) && c.gridBlockInGrid().getCount() == 4,
+                "The torches are not the grid block: " + c.gridBlockInGrid());
+        h.assertTrue(countIn(bag(c), Items.TORCH) == 0, "The torches are in the bag after all: " + c.getStoredItemsSummary());
+        h.assertTrue(c.getStoredItemsForAi().contains("minecraft:torch (в сетке крафта)"),
+                "The model does not see the torches in the grid: " + c.getStoredItemsForAi());
+        h.assertTrue(h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(8)).isEmpty(),
+                "A stack was dropped: " + c.getStoredItemsSummary());
+        h.succeed();
+    }
+
+    /**
+     * A block a grid craft leaves in the 3×3 grid is the work's, not the bag's: the save carries it (WorkGridBlock) and
+     * a reload puts it back into the bag once a cell is free — never lost with the work, never counted twice. The model
+     * sees it as carried meanwhile, or it would ask for a chest it already has.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void aGridBlockComesBackAfterAReload(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        fullBagWithBothHandsBusyAndLogs(c, 4);
+        var crafted = c.craftHoldingIfTheBagIsFull("minecraft:chest", 1);
+        h.assertTrue(crafted.success(), "The chest was refused: " + crafted.message());
+        h.assertTrue(c.gridBlockInGrid().is(Items.CHEST), "The chest is not in the grid: " + c.gridBlockInGrid());
+        h.assertTrue(countIn(bag(c), Items.CHEST) == 0, "The chest is in the bag, not the grid: " + c.getStoredItemsSummary());
+        h.assertTrue(c.getStoredItemsForAi().contains("minecraft:chest (в сетке крафта)"),
+                "The model does not see the grid block: " + c.getStoredItemsForAi());
+        // A cell frees before the reload, as it does when he eats or sets something down.
+        c.setItem(0, ItemStack.EMPTY);
+        var saved = new CompoundTag();
+        c.addAdditionalSaveData(saved);
+        h.assertTrue(saved.contains("WorkGridBlock"), "The save does not carry the grid block: " + saved);
+        var loaded = AICompanionMod.COMPANION.get().create(h.getLevel());
+        loaded.readAdditionalSaveData(saved);
+        h.assertTrue(countIn(bag(loaded), Items.CHEST) == 1,
+                "The grid block did not come back into the bag: " + countIn(bag(loaded), Items.CHEST));
+        h.assertTrue(loaded.gridBlockInGrid().isEmpty(), "The block stayed in the grid after the reload: " + loaded.gridBlockInGrid());
+        h.succeed();
+    }
+
+    /**
+     * «Стой» ends the work: the block made in the grid and not yet set down goes back into the bag with the cell it
+     * finds, instead of disappearing with the work's state.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void aCancelledWorkPutsTheGridBlockBackIntoTheBag(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        fullBagWithBothHandsBusyAndLogs(c, 4);
+        var crafted = c.craftHoldingIfTheBagIsFull("minecraft:chest", 1);
+        h.assertTrue(crafted.success() && c.gridBlockInGrid().is(Items.CHEST), "No chest in the grid: " + crafted.message());
+        c.setItem(0, ItemStack.EMPTY);
+        h.assertTrue(CompanionEvents.executeAction(player(h, c), "wait", "", 1).success(), "The «стой» order was not taken");
+        h.assertTrue(c.gridBlockInGrid().isEmpty(), "The block stayed in the grid after the cancel: " + c.gridBlockInGrid());
+        h.assertTrue(countIn(bag(c), Items.CHEST) == 1, "The cancelled work lost the grid block: " + c.getStoredItemsSummary());
+        h.assertTrue(h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(8)).isEmpty(),
+                "A stack was dropped on the cancel: " + c.getStoredItemsSummary());
+        h.succeed();
+    }
+
+    /**
+     * Nowhere to set the block down: the placement fails and the grid block stays the work's, whole — not spent by the
+     * attempt, not dropped for want of a cell. The pocket is two cells: his own and the one the bench stands in, so the
+     * craft needs no placement of its own and only the chest is left without a cell.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void aGridBlockIsKeptWhenThereIsNowhereToSetItDown(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        BlockPos away = h.absolutePos(new BlockPos(2, 1, 2));
+        player(h, c).teleportTo(away.getCenter().x, away.getY(), away.getCenter().z);
+        pocket(h);
+        fullBagWithBothHandsBusyAndLogs(c, 4);
+        var crafted = c.craftHoldingIfTheBagIsFull("minecraft:chest", 1);
+        h.assertTrue(crafted.success() && c.gridBlockInGrid().is(Items.CHEST), "No chest in the grid: " + crafted.message());
+        var placed = c.placeBlockResult("minecraft:chest");
+        h.assertTrue(!placed.success() && placed.message().contains("безопасное место"),
+                "The chest was set down after all: " + placed.message());
+        h.assertTrue(c.gridBlockInGrid().is(Items.CHEST) && c.gridBlockInGrid().getCount() == 1,
+                "The failed placement spent the grid block: " + c.gridBlockInGrid());
+        h.assertTrue(countIn(bag(c), Items.CHEST) == 0, "The chest is in the bag after all: " + c.getStoredItemsSummary());
+        h.succeed();
+    }
+
+    /**
+     * Two grid crafts before the first block is set down: the second must not overwrite the first in silence — the first
+     * chest goes into the bag, or lies at his feet, but is never lost.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 900)
+    public static void aSecondGridCraftKeepsTheFirstBlockInsteadOfOverwritingIt(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        // Eight logs in one cell: the first chest takes three and leaves five, so the chest stays in the grid.
+        fullBagWithBothHandsBusyAndLogs(c, 8);
+        var first = c.craftHoldingIfTheBagIsFull("minecraft:chest", 1);
+        h.assertTrue(first.success() && c.gridBlockInGrid().is(Items.CHEST), "No chest in the grid: " + first.message());
+        var second = c.craftHoldingIfTheBagIsFull("minecraft:chest", 1);
+        h.assertTrue(second.success(), "The second chest was refused: " + second.message());
+        h.assertTrue(c.gridBlockInGrid().is(Items.CHEST) && c.gridBlockInGrid().getCount() == 1,
+                "The second chest is not the grid block: " + c.gridBlockInGrid());
+        int onTheGround = h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(c.blockPosition()).inflate(8)).stream()
+                .filter(entity -> entity.getItem().is(Items.CHEST)).mapToInt(entity -> entity.getItem().getCount()).sum();
+        h.assertTrue(countIn(bag(c), Items.CHEST) + onTheGround == 1,
+                "The first grid block was lost: " + countIn(bag(c), Items.CHEST) + " in the bag, " + onTheGround
+                        + " on the ground: " + c.getStoredItemsSummary());
+        h.succeed();
+    }
+
     /** Two half stacks of planks take two cells: merging them frees one, and the chest is made out of what they hold. */
     @GameTest(template = "empty")
     public static void mergingTwoPlanksStacksFreesTheCellTheChestNeeds(GameTestHelper h) {
@@ -441,6 +578,24 @@ public final class CompanionFullBagTests {
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -2, -radius), center.offset(radius, 2, radius)))
             if (h.getLevel().hasChunkAt(pos) && h.getLevel().getBlockState(pos).is(block)) return pos.immutable();
         return null;
+    }
+
+    /** A full bag with the wood for a chest in one cell and both hands busy, as the owner's bag was at the mine. */
+    private static void fullBagWithBothHandsBusyAndLogs(CompanionEntity c, int logs) {
+        for (int slot = 0; slot < 26; slot++) c.setItem(slot, new ItemStack(FILLER[slot], 2));
+        c.setItem(26, new ItemStack(Items.OAK_LOG, logs));
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+    }
+
+    /** Two cells and nothing else: his own with room for his head, and the one beside it, where a bench stands. */
+    private static void pocket(GameTestHelper h) {
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) for (int dy = -1; dy <= 2; dy++) {
+            boolean hisCell = dx == 0 && dz == 0 && (dy == 0 || dy == 1);
+            boolean benchCell = dx == 1 && dz == 0 && dy == 0;
+            if (hisCell) continue;
+            h.setBlock(new BlockPos(8 + dx, 1 + dy, 8 + dz), benchCell ? Blocks.CRAFTING_TABLE : Blocks.BEDROCK);
+        }
     }
 
     // ---- fixtures ----

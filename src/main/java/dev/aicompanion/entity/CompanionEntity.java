@@ -585,6 +585,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String workPhase() { return work.watchPhase(); }
     /** Read only, for the GameTest observer: the hands a stack is held in while the bag has no cell for a craft. */
     public java.util.List<String> heldStackHands() { return work.items.heldHands(); }
+    /** Read only, for the GameTest observer: the block a grid craft left in the 3×3 grid for lack of a bag cell. */
+    public ItemStack gridBlockInGrid() { return work.items.gridBlock(); }
     /** The work's own step, for the GameTest observer: one stack into a free hand while the bag has no cell for a craft. */
     public boolean holdOneStackInHand() { return work.items.holdOneStack(java.util.Set.of()); }
     /** The work's own craft step, for the GameTest observer: a stack into a hand only after the bag said it has no cell. */
