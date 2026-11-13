@@ -35,8 +35,8 @@ public final class CompanionCampfireTests {
     private static final BlockPos FIRE = new BlockPos(16, GROUND + 1, 16);
 
     /**
-     * These tests play the mod's own two recordings: the folder is pointed at an empty one, so whatever the player left in the run's
-     * config folder does not change what an evening by the fire plays.
+     * These tests play the fallback (standard Minecraft music, CompanionTunes): the folder is pointed at an empty one, so whatever
+     * the player left in the run's config folder does not change what an evening by the fire plays.
      */
     static {
         try {
@@ -260,52 +260,37 @@ public final class CompanionCampfireTests {
     }
 
     /**
-     * The two standard recordings that stay in the mod: each file is there, mono (so it sounds from where he sits) and as long as the
-     * catalog says (the evening goes on to the next tune by that length); one is cheerful and one calm. The five that left the JAR are
-     * named in the credits with where to get them.
+     * The fallback while the folder is empty: standard Minecraft music, not a recording of the mod's — no music ships in the JAR at
+     * all any more. Every disc is a registered vanilla sound (so the client resolves it from the game's own sounds.json) and is timed
+     * like a tune, so the evening goes on to the next one.
      */
     @GameTest(template = "empty")
-    public static void theStandardRecordingsAreThereAndAsLongAsTheCatalogSays(GameTestHelper h) {
+    public static void theFallbackIsVanillaMusicAndNoMusicShipsInTheJar(GameTestHelper h) {
         var titles = new HashSet<String>();
         var ids = new HashSet<String>();
-        h.assertTrue(CompanionTunes.ALL.size() >= 2, "Too few standard tunes: " + CompanionTunes.ALL.size());
+        h.assertTrue(CompanionTunes.ALL.size() >= 3, "Too few standard tunes: " + CompanionTunes.ALL.size());
         h.assertTrue(CompanionTunes.ALL.stream().anyMatch(CompanionTunes.Tune::cheerful) && CompanionTunes.ALL.stream().anyMatch(t -> !t.cheerful()),
                 "Both cheerful and calm tunes are needed");
-        h.assertTrue(CompanionCampfireTests.class.getResource("/assets/aicompanion/sounds/guitar/CREDITS.md") != null, "The credits are missing");
-        String credits;
-        try (var in = CompanionCampfireTests.class.getResourceAsStream("/assets/aicompanion/sounds/guitar/CREDITS.md")) {
-            credits = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
-        for (String left : new String[]{"noi.ogg", "recuerdos.ogg", "fugue143.ogg", "fugue144.ogg", "canon.ogg"})
-            h.assertTrue(credits.contains(left), "The credits do not say where " + left + " is");
-        var bundled = CompanionMusicLibrary.bundled();
-        h.assertTrue(bundled.size() == CompanionTunes.ALL.size(), "The fallback set is not the catalog: " + bundled.size());
         for (var tune : CompanionTunes.ALL) {
-            h.assertTrue(titles.add(tune.title()) && ids.add(tune.id()), "Two tunes alike: " + tune);
-            var fallback = bundled.stream().filter(t -> t.title().equals(tune.title())).findFirst().orElseThrow();
-            h.assertTrue(tune.id().equals(fallback.file().replace(".ogg", "")) && tune.ticks() == fallback.ticks()
-                            && fallback.mood() == (tune.cheerful() ? CompanionMusicLibrary.Mood.CHEERFUL : CompanionMusicLibrary.Mood.CALM),
-                    "The fallback disagrees with the catalog: " + fallback);
-            h.assertTrue(AICompanionMod.GUITAR_TUNES.get(tune.id()) != null && AICompanionMod.GUITAR_TUNES.get(tune.id()).get() != null, "No sound event for " + tune.id());
-            byte[] ogg;
-            try (var in = CompanionCampfireTests.class.getResourceAsStream("/assets/aicompanion/sounds/guitar/" + tune.id() + ".ogg")) {
-                h.assertTrue(in != null, "No file for " + tune.id());
-                ogg = in.readAllBytes();
-            } catch (java.io.IOException e) { throw new IllegalStateException(e); }
-            int header = indexOf(ogg, new byte[]{1, 'v', 'o', 'r', 'b', 'i', 's'}, 0);
-            h.assertTrue(header >= 0, tune.id() + " is not Ogg Vorbis");
-            int channels = ogg[header + 11] & 0xFF;
-            long rate = java.nio.ByteBuffer.wrap(ogg, header + 12, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt() & 0xFFFFFFFFL;
-            int last = -1;
-            for (int at = indexOf(ogg, new byte[]{'O', 'g', 'g', 'S'}, 0); at >= 0; at = indexOf(ogg, new byte[]{'O', 'g', 'g', 'S'}, at + 4)) last = at;
-            long granule = java.nio.ByteBuffer.wrap(ogg, last + 6, 8).order(java.nio.ByteOrder.LITTLE_ENDIAN).getLong();
-            double seconds = (double) granule / rate;
-            h.assertTrue(channels == 1, tune.id() + " has " + channels + " channels: only mono sounds from a place");
-            h.assertTrue(Math.abs(seconds * 20 - tune.ticks()) <= 10, tune.id() + " lasts " + seconds + " s, the catalog says " + tune.ticks() + " ticks");
-            h.assertTrue(seconds >= 30 && seconds <= 300, tune.id() + " lasts " + seconds + " s");
-            // The pair is compressed: well under the ~50 kbps the seven files had before.
-            h.assertTrue(ogg.length * 8.0 / seconds <= 40000, tune.id() + " is " + (ogg.length * 8 / seconds) + " bps, not re-encoded smaller");
+            h.assertTrue(titles.add(tune.title()) && ids.add(tune.soundId()), "Two tunes alike: " + tune);
+            var id = net.minecraft.resources.ResourceLocation.parse(tune.soundId());
+            h.assertTrue("minecraft".equals(id.getNamespace()) && id.getPath().startsWith("music_disc."),
+                    "Not vanilla music: " + tune.soundId());
+            h.assertTrue(net.minecraft.core.registries.BuiltInRegistries.SOUND_EVENT.containsKey(id), "Not a registered sound: " + id);
+            h.assertTrue(tune.ticks() >= 20 * 60 && tune.ticks() <= 20 * 330, "Not a tune's length: " + tune.ticks() + " ticks");
         }
+        var fallback = CompanionMusicLibrary.available();
+        h.assertTrue(fallback.size() == CompanionTunes.ALL.size(), "The fallback set is not the catalog: " + fallback.size());
+        for (var track : fallback) {
+            h.assertTrue(track.file().isEmpty() && track.soundId().startsWith("minecraft:"), "Not the vanilla fallback: " + track);
+            h.assertTrue(CompanionTunes.ALL.stream().anyMatch(t -> t.soundId().equals(track.soundId()) && t.ticks() == track.ticks()
+                            && track.mood() == (t.cheerful() ? CompanionMusicLibrary.Mood.CHEERFUL : CompanionMusicLibrary.Mood.CALM)),
+                    "The fallback disagrees with the catalog: " + track);
+        }
+        h.assertTrue(CompanionCampfireTests.class.getResource("/assets/aicompanion/sounds/guitar/romance.ogg") == null,
+                "A recording still ships in the JAR");
+        h.assertTrue(CompanionCampfireTests.class.getResource("/assets/aicompanion/sounds.json") == null,
+                "The JAR still declares guitar sounds");
         h.succeed();
     }
 
@@ -321,9 +306,9 @@ public final class CompanionCampfireTests {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-guitar");
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         try {
-            copyResource(dir, "romance.ogg", "first.ogg");
-            copyResource(dir, "gavotte.ogg", "second [happy].ogg");
-            copyResource(dir, "gavotte.ogg", "quiet_one.ogg");
+            writeOgg(dir, "first.ogg", 100);
+            writeOgg(dir, "second [happy].ogg", 30);
+            writeOgg(dir, "quiet_one.ogg", 50);
             write(dir, "quiet_one.mood", "sad\n");
             write(dir, "broken.ogg", "not an ogg file at all");
             var tracks = CompanionMusicLibrary.scan(dir);
@@ -338,8 +323,8 @@ public final class CompanionCampfireTests {
             h.assertTrue(first.mood() == null && second.mood() == CompanionMusicLibrary.Mood.CHEERFUL
                             && quiet.mood() == CompanionMusicLibrary.Mood.CALM,
                     "Moods: " + first.mood() + ", " + second.mood() + ", " + quiet.mood());
-            h.assertTrue(Math.abs(first.ticks() - 3336) <= 10 && Math.abs(second.ticks() - 974) <= 10,
-                    "Lengths: " + first.ticks() + " and " + second.ticks());
+            h.assertTrue(first.ticks() == 2000 && second.ticks() == 600 && quiet.ticks() == 1000,
+                    "Lengths: " + first.ticks() + ", " + second.ticks() + ", " + quiet.ticks());
             var ids = new HashSet<String>();
             for (var track : tracks) {
                 h.assertTrue(track.soundId().startsWith("aicompanion:guitar_folder/") && ids.add(track.soundId()),
@@ -349,6 +334,36 @@ public final class CompanionCampfireTests {
                 h.assertTrue(id.getPath().equals(track.soundId().substring("aicompanion:".length())), "Parsed: " + id);
             }
             h.assertTrue(CompanionMusicLibrary.scan(dir.resolve("no-such-folder")).isEmpty(), "A missing folder is not empty");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        } finally {
+            deleteTree(dir);
+        }
+        h.succeed();
+    }
+
+    /**
+     * A tiny file is skipped, not thrown on: a recording cut short after the identification header (191 bytes here, the marker at its
+     * very end) has no sample rate inside the file, and the scan used to fail on it with an IndexOutOfBoundsException, which broke the
+     * whole folder and the resource pack built from it. The good recording next to it is still found.
+     */
+    @GameTest(template = "empty")
+    public static void aTinyFileIsSkippedAndTheScanDoesNotThrow(GameTestHelper h) {
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-tiny");
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        try {
+            // The identification header starts at 180: only eleven bytes are left for the marker and nothing for the sample rate.
+            byte[] cut = new byte[191];
+            System.arraycopy(new byte[]{1, 'v', 'o', 'r', 'b', 'i', 's'}, 0, cut, 180, 7);
+            writeBytes(dir, "tiny.ogg", cut);
+            writeBytes(dir, "empty.ogg", new byte[0]);
+            writeBytes(dir, "short.ogg", new byte[63]);
+            writeOgg(dir, "good.ogg", 16);
+            var tracks = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(tracks.size() == 1 && tracks.getFirst().ticks() == 320,
+                    "The good recording was lost or a tiny one was taken: " + tracks);
         } catch (java.io.IOException e) {
             throw new IllegalStateException(e);
         } finally {
@@ -384,8 +399,8 @@ public final class CompanionCampfireTests {
         h.assertTrue(!CompanionMusicLibrary.hasMood(untagged, "calm") && !CompanionMusicLibrary.hasMood(untagged, "cheerful"),
                 "An untagged set claims a mood");
         h.assertTrue(CompanionMusicLibrary.hasMood(all, "calm") && CompanionMusicLibrary.hasMood(all, "cheerful"), "Tagged moods not seen");
-        // The fallback while the folder is empty: the two standard recordings, one calm and one cheerful.
-        var bundled = CompanionMusicLibrary.bundled();
+        // The fallback while the folder is empty: standard Minecraft music, one calm and one cheerful.
+        var bundled = CompanionMusicLibrary.fallback();
         var calmFallback = CompanionMusicLibrary.pick(bundled, "calm", "", random);
         var cheerfulFallback = CompanionMusicLibrary.pick(bundled, "cheerful", "", random);
         h.assertTrue(calmFallback.track().mood() == CompanionMusicLibrary.Mood.CALM && calmFallback.moodMatched()
@@ -407,7 +422,7 @@ public final class CompanionCampfireTests {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-pack");
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         try {
-            copyResource(dir, "gavotte.ogg", "evening.ogg");
+            writeOgg(dir, "evening.ogg", 40);
             write(dir, "evening.mood", "calm\n");
             var location = new net.minecraft.server.packs.PackLocationInfo("aicompanion_music_test",
                     net.minecraft.network.chat.Component.literal("test"), net.minecraft.server.packs.repository.PackSource.BUILT_IN, java.util.Optional.empty());
@@ -491,15 +506,6 @@ public final class CompanionCampfireTests {
         h.succeed();
     }
 
-    private static int indexOf(byte[] data, byte[] what, int from) {
-        outer:
-        for (int i = from; i <= data.length - what.length; i++) {
-            for (int j = 0; j < what.length; j++) if (data[i + j] != what[j]) continue outer;
-            return i;
-        }
-        return -1;
-    }
-
     /** The words: «сыграй» in its forms reaches him without the model, «хватит играть» stops, a game of hide-and-seek is not music. */
     @GameTest(template = "empty")
     public static void phrasesAndThePlanStep(GameTestHelper h) {
@@ -546,18 +552,46 @@ public final class CompanionCampfireTests {
         return companion;
     }
 
-    /** The recording he plays: one of the standard ones, or a file from the player's folder while that has recordings. */
+    /** The recording he plays: one of the vanilla fallback's, or a file from the player's folder while that has recordings. */
     private static CompanionMusicLibrary.Track tune(CompanionEntity c) {
-        for (var track : CompanionMusicLibrary.bundled()) if (track.title().equals(c.campfire().tuneTitle())) return track;
+        for (var track : CompanionMusicLibrary.fallback()) if (track.title().equals(c.campfire().tuneTitle())) return track;
         return CompanionMusicLibrary.scan(CompanionMusicLibrary.folder()).stream()
                 .filter(t -> t.title().equals(c.campfire().tuneTitle())).findFirst().orElseThrow();
     }
 
-    private static void copyResource(java.nio.file.Path dir, String from, String to) throws java.io.IOException {
-        try (var in = CompanionCampfireTests.class.getResourceAsStream("/assets/aicompanion/sounds/guitar/" + from)) {
-            if (in == null) throw new IllegalStateException("No resource " + from);
-            java.nio.file.Files.copy(in, dir.resolve(to));
-        }
+    /**
+     * A small Ogg Vorbis-like file of the given length in seconds: the identification header with its channels and sample rate, and a
+     * last page carrying the granule position. The library reads only those, so a fixture needs no real audio and no file of the
+     * repository's music folder.
+     */
+    private static byte[] ogg(int channels, int rate, int seconds) {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.writeBytes(new byte[]{'O', 'g', 'g', 'S', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}); // a page header, granule 0
+        out.writeBytes(new byte[]{1, 'v', 'o', 'r', 'b', 'i', 's'});                    // the identification header's marker
+        out.writeBytes(new byte[]{0, 0, 0, 0});                                         // version
+        out.write(channels);
+        out.writeBytes(little(rate, 4));                                                // sample rate
+        out.writeBytes(new byte[12]);                                                   // bitrates
+        out.writeBytes(new byte[]{0, 1});                                               // block sizes, framing
+        while (out.size() < 64) out.write(0);                                           // the scan reads a file from 64 bytes up
+        out.writeBytes(new byte[]{'O', 'g', 'g', 'S', 0, 0});                           // the last page: granule at +6
+        out.writeBytes(little((long) rate * seconds, 8));                               // samples played
+        return out.toByteArray();
+    }
+
+    private static byte[] little(long value, int bytes) {
+        byte[] out = new byte[bytes];
+        for (int i = 0; i < bytes; i++) out[i] = (byte) (value >>> (8 * i));
+        return out;
+    }
+
+    /** A mono 32 kHz recording of the given length, as the folder would hold it. */
+    private static void writeOgg(java.nio.file.Path dir, String name, int seconds) throws java.io.IOException {
+        writeBytes(dir, name, ogg(1, 32000, seconds));
+    }
+
+    private static void writeBytes(java.nio.file.Path dir, String name, byte[] bytes) throws java.io.IOException {
+        java.nio.file.Files.write(dir.resolve(name), bytes);
     }
 
     private static void write(java.nio.file.Path dir, String name, String text) throws java.io.IOException {

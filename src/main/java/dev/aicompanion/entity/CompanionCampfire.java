@@ -19,8 +19,8 @@ import java.util.List;
 
 /**
  * Music with his guitar (the owner asked, 09.11): he sits down on the ground, takes out his guitar and plays the recordings
- * ({@link CompanionMusicLibrary}: the player's own folder config/aicompanion/music, or the two standard ones in the mod while that
- * folder is empty) until something else needs him. A fire is not needed, it only makes the evening: on «сыграй»
+ * ({@link CompanionMusicLibrary}: the player's own folder config/aicompanion/music; while that folder has none, standard Minecraft
+ * music sounds instead) until something else needs him. A fire is not needed, it only makes the evening: on «сыграй»
  * ({@code campfire_song}) he sits across a lit campfire near the player from him, else by a real campfire he sets down from his bag,
  * else simply beside the player. By himself he begins only by a lit fire the player has stayed at for half a minute while nothing
  * else is going on, and only while «Олег играет у костра» is on in «Поведение». The guitar is his own thing, drawn by the client:
@@ -286,7 +286,7 @@ public final class CompanionCampfire {
         timer = 0;
         phase = Phase.PLAY;
         pose(PLAYING);
-        // The client plays it from this id (client/CompanionCampfireAudio): the folder's files are no registered sound events.
+        // The client plays it from this id (client/CompanionCampfireAudio): a folder's file is no registered sound event.
         c.setCampfireTune(tune.soundId());
         tunesStarted++;
         CompanionDiagnostics.event(c.diagnosticTrace(), "campfire_tune", "entity", c.getUUID(), "tune", tuneTitle(), "sound", tune.soundId());

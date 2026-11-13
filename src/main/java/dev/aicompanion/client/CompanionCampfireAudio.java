@@ -12,10 +12,11 @@ import net.minecraft.sounds.SoundSource;
 
 /**
  * The tune by the fire on this client (the owner's ruling, 13.11): the recordings come from the player's folder, which the game's
- * sound engine knows only through the dynamic resource pack ({@link CompanionMusicPack}), not as registered sound events. So the
- * server sends no sound packet: it syncs the sound id with his pose (CompanionEntity.campfireTune) and this plays that id from him
- * while he sits and plays, stopping when the tune changes, he stands up or the world goes. The «Jukebox/Note Blocks» volume and the
- * distance work as for any entity-bound sound.
+ * sound engine knows only through the dynamic resource pack ({@link CompanionMusicPack}), not as registered sound events; while the
+ * folder is empty the evening plays standard Minecraft music ({@link dev.aicompanion.entity.CompanionTunes}). So the server sends no
+ * sound packet: it syncs the sound id with his pose (CompanionEntity.campfireTune) and this plays that id from him while he sits and
+ * plays, stopping when the tune changes, he stands up or the world goes. The «Jukebox/Note Blocks» volume and the distance work as for
+ * any entity-bound sound.
  */
 final class CompanionCampfireAudio {
     /** He is looked for only this close: the sound itself fades out at sixteen blocks. */
@@ -24,6 +25,8 @@ final class CompanionCampfireAudio {
     private static String tune = "";
     private static CompanionEntity companion;
     private static int lookAgain;
+    /** The sound id already reported as not loaded, so one line is said once and not on every tick. */
+    private static String reported = "";
 
     private CompanionCampfireAudio() { }
 
@@ -41,16 +44,21 @@ final class CompanionCampfireAudio {
             if (companion == null) return;
         }
         String wanted = companion.campfirePose() == CompanionCampfire.PLAYING ? companion.campfireTune() : "";
-        if (playing != null && wanted.equals(tune)) return;
+        // A resource reload (F3+T) stops every sound: the tune that is still the one wanted is started again.
+        if (playing != null && wanted.equals(tune) && client.getSoundManager().isActive(playing)) return;
         stop();
         if (wanted.isEmpty()) return;
         ResourceLocation id = ResourceLocation.tryParse(wanted);
         if (id == null) return;
         if (client.getSoundManager().getSoundEvent(id) == null) {
-            // A recording added to the folder after the last resource reload: the sound engine has not read it yet.
-            client.gui.getChat().addMessage(Component.literal("Новая запись ещё не загружена: введите /companion music."));
+            // A recording added to the folder after the last resource reload: the sound engine has not read it yet. Said once.
+            if (!wanted.equals(reported)) {
+                reported = wanted;
+                client.gui.getChat().addMessage(Component.literal("Новая запись ещё не загружена: перечитайте ресурсы (F3+T)."));
+            }
             return;
         }
+        reported = "";
         playing = new EntityBoundSoundInstance(SoundEvent.createVariableRangeEvent(id), SoundSource.RECORDS, 1F, 1F, companion,
                 companion.getRandom().nextLong());
         client.getSoundManager().play(playing);
@@ -65,5 +73,5 @@ final class CompanionCampfireAudio {
     }
 
     /** Leaving the world: nothing of the old one is left sounding. */
-    static void forget() { stop(); companion = null; lookAgain = 0; }
+    static void forget() { stop(); companion = null; lookAgain = 0; reported = ""; }
 }

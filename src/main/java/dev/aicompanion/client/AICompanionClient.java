@@ -15,9 +15,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.event.AddPackFindersEvent;
-import net.minecraft.commands.Commands;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackSelectionConfig;
@@ -81,9 +79,19 @@ public final class AICompanionClient {
         modEventBus.addListener(this::addPackFinders);
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
-        NeoForge.EVENT_BUS.addListener(this::registerClientCommands);
+        NeoForge.EVENT_BUS.addListener(this::onLoggingIn);
         NeoForge.EVENT_BUS.addListener(this::onLoggingOut);
         NeoForge.EVENT_BUS.addListener(CompanionGhostPlacement::render);
+    }
+
+    /**
+     * Joining a world: the guitar folder is read again. A recording put there since the last resource reload needs the sound engine
+     * to see it, so the resources are reloaded once — only when the folder differs from what the last built pack declared, so an
+     * unchanged folder costs nothing.
+     */
+    private void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
+        if (!CompanionMusicPack.folderChanged()) return;
+        Minecraft.getInstance().reloadResourcePacks();
     }
 
     private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
@@ -120,18 +128,6 @@ public final class AICompanionClient {
             }, PackType.CLIENT_RESOURCES, new PackSelectionConfig(true, Pack.Position.TOP, true));
             if (pack != null) packs.accept(pack);
         });
-    }
-
-    /** «/companion music»: read the folder again and let the sound engine see what was added to it. */
-    private void registerClientCommands(RegisterClientCommandsEvent event) {
-        event.getDispatcher().register(Commands.literal("companion").then(Commands.literal("music").executes(context -> {
-            var client = Minecraft.getInstance();
-            int found = dev.aicompanion.entity.CompanionMusicLibrary.scan(dev.aicompanion.entity.CompanionMusicLibrary.folder()).size();
-            client.reloadResourcePacks().thenRun(() -> client.execute(() -> client.gui.getChat().addMessage(Component.literal(found == 0
-                    ? "Папка с музыкой пуста: играют две стандартные записи."
-                    : "Записей в папке: " + found + ". Игра перечитала папку."))));
-            return found;
-        })));
     }
 
     private void registerGuiLayers(RegisterGuiLayersEvent event) {

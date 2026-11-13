@@ -23,16 +23,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 /**
  * The client's dynamic resource pack for the player's guitar folder (the owner's ruling, 13.11: the recordings are the player's own
- * .ogg files, only a couple of standard ones stay in the JAR). The game's sound engine knows a sound only from a resource pack, so
- * this pack serves a sounds.json generated from the folder — every file there becomes a sound event — and the files themselves. It is
- * always active (a required pack at the top) and is rebuilt on every resource reload, so the folder is read at startup and again
- * after «/companion music».
+ * .ogg files; no music ships in the JAR). The game's sound engine knows a sound only from a resource pack, so this pack serves a
+ * sounds.json generated from the folder — every file there becomes a sound event — and the files themselves. It is always active (a
+ * required pack at the top) and is rebuilt on every resource reload; joining a world reloads the resources when the folder has
+ * changed since the last build ({@link #folderChanged()}), so a recording put there is read without any command.
  */
 public final class CompanionMusicPack implements PackResources {
     static final String ID = "aicompanion_music";
@@ -42,8 +43,11 @@ public final class CompanionMusicPack implements PackResources {
             Музыка Олега у костра.
             Положите сюда записи в Ogg Vorbis (.ogg, моно): каждую из них Олег сможет сыграть.
             Настроение записи: рядом файл <имя>.mood со словом sad, calm или happy — или [sad], [calm], [happy] в имени файла.
-            Добавили записи — введите в чат /companion music, чтобы игра их прочитала.
+            Папка читается при запуске игры и при входе в мир; добавили записи на ходу — нажмите F3+T.
             """;
+
+    /** The folder's recordings the last built pack declared, by file name; null until the first one is built. */
+    private static Set<String> built;
 
     private final PackLocationInfo location;
     /** The pack's resource paths of the folder's recordings, by the file they are served from. */
@@ -51,16 +55,20 @@ public final class CompanionMusicPack implements PackResources {
     private final byte[] sounds;
     private final byte[] meta;
 
-    public CompanionMusicPack(PackLocationInfo location) { this(location, CompanionMusicLibrary.folder()); }
+    public CompanionMusicPack(PackLocationInfo location) { this(location, CompanionMusicLibrary.folder(), true); }
 
-    /** The same pack over a given folder: the tests build it over a folder of their own. */
-    public CompanionMusicPack(PackLocationInfo location, Path folder) {
+    /** The same pack over a given folder: the tests build it over a folder of their own, and it does not remember it as the player's. */
+    public CompanionMusicPack(PackLocationInfo location, Path folder) { this(location, folder, false); }
+
+    private CompanionMusicPack(PackLocationInfo location, Path folder, boolean playerFolder) {
         this.location = location;
         ensureFolder(folder);
         JsonObject root = new JsonObject();
+        Set<String> declared = new LinkedHashSet<>();
         for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.scan(folder)) {
             String path = "sounds/" + track.soundId().substring(NAMESPACE.length() + 1) + ".ogg";
             files.put(path, folder.resolve(track.file()));
+            declared.add(track.file());
             JsonObject sound = new JsonObject();
             sound.addProperty("name", track.soundId());
             sound.addProperty("stream", true);
@@ -71,6 +79,7 @@ public final class CompanionMusicPack implements PackResources {
             entry.addProperty("subtitle", "subtitles.aicompanion.guitar");
             root.add(track.soundId().substring(NAMESPACE.length() + 1), entry);
         }
+        if (playerFolder) built = Set.copyOf(declared);
         this.sounds = root.toString().getBytes(StandardCharsets.UTF_8);
         int format = SharedConstants.getCurrentVersion().getPackVersion(PackType.CLIENT_RESOURCES);
         JsonObject pack = new JsonObject();
@@ -79,6 +88,16 @@ public final class CompanionMusicPack implements PackResources {
         JsonObject description = new JsonObject();
         description.add("pack", pack);
         this.meta = description.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Whether the player's folder holds recordings the last built pack did not declare, or has lost some: joining a world then
+     * reloads the resources, so what was put there is heard without a command. An empty folder changes nothing.
+     */
+    public static boolean folderChanged() {
+        Set<String> now = new LinkedHashSet<>();
+        for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.scan(CompanionMusicLibrary.folder())) now.add(track.file());
+        return !now.equals(built);
     }
 
     /** The folder is made on the first start, with a short note in it, so the player has where to put the recordings. */

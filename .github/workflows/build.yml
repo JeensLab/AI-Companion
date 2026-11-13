@@ -26,6 +26,16 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Build with Gradle
         run: ./gradlew build
+      # The guitar tracks are not in the JAR: they are packed from music/ into the ready config/aicompanion/music structure,
+      # and this artifact is what a release attaches. scripts/make-music-pack.sh is the only way the pack is built.
+      - name: Build the guitar tracks pack
+        run: ./scripts/make-music-pack.sh
+      - name: Upload the guitar tracks pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: oleg-guitar-tracks
+          path: oleg-guitar-tracks.zip
+          retention-days: 30
 
   # The suite is split across separate machines: one shard per runner, each with its own world and disk.
   # `build` does not run GameTests, and a failed start can still exit 0 (a stale world lock did that once), so the

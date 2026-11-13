@@ -96,7 +96,7 @@ public final class CompanionLocalCommands {
         // Before the work phrases: «поставь костёр и сыграй» is the evening by the fire, not a block to place.
         if (campfireSong(normalized, companionName)) return "companion campfire" + tuneMood(normalized);
         // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
-        // «Щё» right after a pickup takes the rest of that same thing, not whatever the model guesses.
+        // «Ещё» right after a pickup takes the rest of that same thing, not whatever the model guesses.
         PlannedAction more = CompanionPickUpCommands.more(text, companionName);
         if (more != null) {
             CompanionPickUpCommands.remember(more);

@@ -20,11 +20,11 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * What he plays by the fire (the owner's ruling, 13.11): the player's own folder of recordings, not a fixed set baked into the JAR.
- * Every .ogg in config/aicompanion/music can be played; the two standard recordings stay in the mod as the fallback while that folder
- * is empty ({@link CompanionTunes}). A recording may carry a mood — a sidecar file {@code <name>.mood} with sad, calm or happy, or a
- * {@code [sad]}, {@code [calm]} or {@code [happy]} marker in its file name — so «сыграй грустное» and «повеселее» can pick one of
- * that kind; with no such recording he honestly plays any.
+ * What he plays by the fire (the owner's ruling, 13.11): the player's own folder of recordings, not a fixed set baked into the JAR —
+ * no music ships in the mod at all. Every .ogg in config/aicompanion/music can be played; while that folder has none, he plays
+ * standard Minecraft music instead ({@link CompanionTunes}), and nothing is said about it. A recording may carry a mood — a sidecar
+ * file {@code <name>.mood} with sad, calm or happy, or a {@code [sad]}, {@code [calm]} or {@code [happy]} marker in its file name — so
+ * «сыграй грустное» and «повеселее» can pick one of that kind; with no such recording he honestly plays any.
  *
  * <p>No client classes here: the server scans the same folder to choose the tune, and the client's own resource pack
  * (client/CompanionMusicPack) serves these files to the game's sound engine by the sound ids made here. The length of a recording is
@@ -37,7 +37,8 @@ public final class CompanionMusicLibrary {
     /** How a recording may be tagged for «сыграй грустное» (calm and sad) or «повеселее» (cheerful). */
     public enum Mood { CALM, CHEERFUL }
 
-    /** One playable recording: its file, the sound event the client resolves for it, the title he gives it, its length and its mood. */
+    /** One playable recording: its file, the sound event the client resolves for it, the title he gives it, its length and its mood.
+     *  The file is empty for the vanilla fallback, which has no file of the player's. */
     public record Track(String file, String soundId, String title, int ticks, Mood mood) { }
 
     /** A tune chosen for the next play, and whether it actually fits the kind the player asked for. */
@@ -54,18 +55,20 @@ public final class CompanionMusicLibrary {
     /** Reads recordings from another folder from now on (the GameTests use an empty one, so their tunes are the mod's own). */
     public static void readFrom(Path dir) { override = dir; }
 
-    /** What can be played now: the player's folder when it has recordings, the two standard ones in the mod while it is empty. */
+    /** What can be played now: the player's folder when it has recordings, standard Minecraft music while it is empty. */
     public static List<Track> available() {
         List<Track> folder = scan(folder());
-        return folder.isEmpty() ? bundled() : folder;
+        return folder.isEmpty() ? fallback() : folder;
     }
 
-    /** The two recordings that ship in the mod (CompanionTunes), for the fallback while the folder is empty. */
-    public static List<Track> bundled() {
+    /**
+     * The standard Minecraft music for the fallback while the folder is empty (CompanionTunes): the same kind of track, with the
+     * vanilla sound id the client resolves and no file of the player's.
+     */
+    public static List<Track> fallback() {
         List<Track> tracks = new ArrayList<>();
         for (CompanionTunes.Tune tune : CompanionTunes.ALL)
-            tracks.add(new Track(tune.id() + ".ogg", "aicompanion:guitar." + tune.id(), tune.title(), tune.ticks(),
-                    tune.cheerful() ? Mood.CHEERFUL : Mood.CALM));
+            tracks.add(new Track("", tune.soundId(), tune.title(), tune.ticks(), tune.cheerful() ? Mood.CHEERFUL : Mood.CALM));
         return List.copyOf(tracks);
     }
 
@@ -193,7 +196,8 @@ public final class CompanionMusicLibrary {
             readFully(channel, head, 0);
             byte[] start = head.array();
             int header = indexOf(start, new byte[]{1, 'v', 'o', 'r', 'b', 'i', 's'}, 0);
-            if (header < 0) return -1;
+            // A file that ends right after the marker is no readable header: the sample rate would lie outside it.
+            if (header < 0 || header + 16 > start.length) return -1;
             long rate = ByteBuffer.wrap(start, header + 12, 4).order(ByteOrder.LITTLE_ENDIAN).getInt() & 0xFFFFFFFFL;
             if (rate <= 0) return -1;
             int tailLength = (int) Math.min(64 * 1024, size);

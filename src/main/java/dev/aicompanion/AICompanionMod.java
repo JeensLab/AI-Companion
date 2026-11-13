@@ -25,12 +25,6 @@ public final class AICompanionMod {
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES = DeferredRegister.create(Registries.ENTITY_TYPE, MOD_ID);
     public static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, MOD_ID);
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MOD_ID);
-    public static final DeferredRegister<net.minecraft.sounds.SoundEvent> SOUNDS = DeferredRegister.create(Registries.SOUND_EVENT, MOD_ID);
-    /** The two standard guitar recordings that stay in the mod (entity/CompanionTunes), by their id: aicompanion:guitar.{id}. */
-    public static final java.util.Map<String, DeferredHolder<net.minecraft.sounds.SoundEvent, net.minecraft.sounds.SoundEvent>> GUITAR_TUNES =
-            dev.aicompanion.entity.CompanionTunes.ALL.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(dev.aicompanion.entity.CompanionTunes.Tune::id,
-                    tune -> SOUNDS.register("guitar." + tune.id(), () -> net.minecraft.sounds.SoundEvent.createVariableRangeEvent(
-                            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(MOD_ID, "guitar." + tune.id())))));
     /**
      * Oleg's own guitar for the evenings by the fire (entity/CompanionCampfire). Only the renderer draws it in his hands: it is in no
      * creative tab, no recipe and no loot, and is never put into his bag or handed out.
@@ -56,7 +50,6 @@ public final class AICompanionMod {
         ENTITY_TYPES.register(modEventBus);
         MENUS.register(modEventBus);
         ITEMS.register(modEventBus);
-        SOUNDS.register(modEventBus);
         modEventBus.addListener(CompanionEntity::createAttributes);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onEntityJoin);
