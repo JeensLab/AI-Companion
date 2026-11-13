@@ -159,6 +159,7 @@ public final class CompanionDialogue {
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
             case "fill_bucket" -> "набрать воды в ведро (" + action.count() + " шт.)";
             case "mine_obsidian" -> "добыть обсидиан (" + action.count() + " шт.)";
+            case "gather_block" -> "собрать «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";

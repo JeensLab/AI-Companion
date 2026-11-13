@@ -26,7 +26,8 @@ import java.util.Set;
  *
  * Wood is one family (any logs, any planks: the recipes take them all), so is crafting stone; planks and sticks are made by the
  * craft that needs them. Sand, gravel and flint are dug (flint out of gravel), so glass and a flint and steel follow from their
- * recipes. What none of the skills can get (string, ender pearls…) is said before anything starts.
+ * recipes. What a block gives when it is simply broken (sugar cane, flowers, clay: CompanionPickable) is found and picked. What
+ * none of the skills can get (string, ender pearls…) is said before anything starts.
  */
 public final class CompanionObtain {
     /** One step of the chain: an allowlisted action, its item and count. */
@@ -50,17 +51,28 @@ public final class CompanionObtain {
     private final List<Step> steps = new ArrayList<>();
     private final Set<String> active = new HashSet<>();
     private String why;
+    /** Whether a block that gives the item stands where he can get to it; null when the world about him is not known: nothing is picked then. */
+    private final java.util.function.Predicate<Item> grows;
+    private final Map<Item, Boolean> grown = new HashMap<>();
+    /** What he would pick and does not see about him: named when the plan is refused. */
+    private final Set<String> absent = new java.util.LinkedHashSet<>();
+    private static final String ABSENT = "Рядом не вижу";
 
-    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench) {
-        this.level = level; this.carried = carried; this.bench = bench;
+    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows;
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
 
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count) {
+        return plan(level, carried, benchNearby, requested, count, null);
+    }
+
+    /** {@code grows}: whether a block that gives the item is within his reach now, so of the flowers a dye takes the one that grows here is picked. */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)));
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -78,7 +90,11 @@ public final class CompanionObtain {
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
                 ? planner.need(target, count, 1) && planner.add("craft_item", id.toString(), count)
                 : planner.need(target, count, 0);
-        if (!ok) return new Plan(List.of(), planner.why == null ? "Не знаю, как добыть «" + name(item) + "»." : planner.why);
+        if (!ok) {
+            String reason = planner.why == null ? "Не знаю, как добыть «" + name(item) + "»." : planner.why;
+            // «Красную краску» he looked for in every flower that gives it: all of them are named, not the first.
+            return new Plan(List.of(), planner.absent.isEmpty() || reason.startsWith(ABSENT) ? reason : reason + " " + ABSENT + ": " + String.join(", ", planner.absent) + ".");
+        }
         if (planner.steps.size() > MAX_STEPS) return new Plan(List.of(), "Для «" + name(item) + "» слишком длинная цепочка дел. Давай по частям.");
         return new Plan(List.copyOf(merged(planner.steps)), null);
     }
@@ -149,36 +165,58 @@ public final class CompanionObtain {
         if (smelted != null) return need(smelted, count, depth + 1) && add("smelt_items", BuiltInRegistries.ITEM.getKey(item).toString(), count);
         // A recipe makes it: its ingredients, then the craft.
         if (craft(item, count, depth)) return true;
+        // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
+        if (!CompanionPickable.sources(level, item).isEmpty()) {
+            if (!picked(item)) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
+            return addSplit("gather_block", key, count, 64);
+        }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
     }
 
+    /** Of the recipes that make it, the cheapest: blue dye of the lapis he carries or the cornflower at hand rather than of a mine. */
     private boolean craft(Item item, int count, int depth) {
         String before = why;
+        List<net.minecraft.world.item.crafting.CraftingRecipe> recipes = new ArrayList<>();
         for (var holder : level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
-            var recipe = holder.value();
-            ItemStack result = recipe.getResultItem(level.registryAccess());
-            if (result.isEmpty() || !result.is(item) || recipe.isSpecial()) continue;
-            int crafts = ceil(count, result.getCount());
-            Map<String, Integer> needed = new LinkedHashMap<>();
-            boolean known = true;
-            for (Ingredient ingredient : recipe.getIngredients()) {
-                if (ingredient.isEmpty()) continue;
-                String option = cheapest(ingredient, crafts, depth);
-                if (option == null) { known = false; break; }
-                needed.merge(option, crafts, Integer::sum);
-            }
-            if (!known) continue;
-            // A 3x3 recipe and no bench: one more log for it (craft_item sets one down).
-            boolean large = recipe instanceof net.minecraft.world.item.crafting.ShapedRecipe shaped ? shaped.getWidth() > 2 || shaped.getHeight() > 2
-                    : recipe.getIngredients().stream().filter(ingredient -> !ingredient.isEmpty()).count() > 4;
-            if (large && !bench) needed.merge(LOGS, 1, Integer::sum);
-            var saved = save();
-            boolean all = true;
-            for (var entry : needed.entrySet()) if (!need(entry.getKey(), entry.getValue(), depth + 1)) { all = false; break; }
-            if (all && add("craft_item", BuiltInRegistries.ITEM.getKey(item).toString(), count)) { why = before; if (large) bench = true; return true; }
-            restore(saved);
+            ItemStack result = holder.value().getResultItem(level.registryAccess());
+            if (!result.isEmpty() && result.is(item) && !holder.value().isSpecial()) recipes.add(holder.value());
         }
+        net.minecraft.world.item.crafting.CraftingRecipe best = recipes.size() == 1 ? recipes.getFirst() : null;
+        int bestCost = Integer.MAX_VALUE;
+        if (best == null) for (var recipe : recipes) {
+            var saved = save();
+            boolean hadBench = bench;
+            int start = cost();
+            if (craft(recipe, item, count, depth) && cost() - start < bestCost) { bestCost = cost() - start; best = recipe; }
+            restore(saved);
+            bench = hadBench;
+        }
+        if (best == null) return false;
+        var saved = save();
+        boolean hadBench = bench;
+        if (craft(best, item, count, depth)) { why = before; return true; }
+        restore(saved);
+        bench = hadBench;
         return false;
+    }
+
+    /** The steps of one recipe; on false the caller puts the plan back as it was. */
+    private boolean craft(net.minecraft.world.item.crafting.CraftingRecipe recipe, Item item, int count, int depth) {
+        int crafts = ceil(count, recipe.getResultItem(level.registryAccess()).getCount());
+        Map<String, Integer> needed = new LinkedHashMap<>();
+        for (Ingredient ingredient : recipe.getIngredients()) {
+            if (ingredient.isEmpty()) continue;
+            String option = cheapest(ingredient, crafts, depth);
+            if (option == null) return false;
+            needed.merge(option, crafts, Integer::sum);
+        }
+        // A 3x3 recipe and no bench: one more log for it (craft_item sets one down).
+        boolean large = recipe instanceof net.minecraft.world.item.crafting.ShapedRecipe shaped ? shaped.getWidth() > 2 || shaped.getHeight() > 2
+                : recipe.getIngredients().stream().filter(ingredient -> !ingredient.isEmpty()).count() > 4;
+        if (large && !bench) needed.merge(LOGS, 1, Integer::sum);
+        for (var entry : needed.entrySet()) if (!need(entry.getKey(), entry.getValue(), depth + 1)) return false;
+        if (large) bench = true;
+        return add("craft_item", BuiltInRegistries.ITEM.getKey(item).toString(), count);
     }
 
     /** Of the items an ingredient takes, the one already carried, else the one with the shortest chain; null if none can be got. */
@@ -216,12 +254,16 @@ public final class CompanionObtain {
         return options;
     }
 
-    /** A family, an ore's drop or an animal's: one of his skills gets it, whatever the bag holds. */
-    private static boolean direct(String key) {
+    private boolean picked(Item item) {
+        return grows != null && !CompanionPickable.sources(level, item).isEmpty() && grown.computeIfAbsent(item, grows::test);
+    }
+
+    /** A family, an ore's drop, an animal's or a block's that stands here: one of his skills gets it, whatever the bag holds. */
+    private boolean direct(String key) {
         if (key.startsWith("#")) return true;
         Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
         for (CompanionOre.Kind ore : CompanionOre.Kind.values()) if (ore.drop == item) return true;
-        return animalFor(item) != null;
+        return animalFor(item) != null || picked(item);
     }
 
     private static CompanionGame.Kind animalFor(Item item) {
