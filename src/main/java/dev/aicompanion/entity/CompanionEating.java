@@ -39,6 +39,8 @@ final class CompanionEating {
         for (ItemStack stack : c.companionInventory) if (ItemStack.isSameItemSameComponents(stack, c.eating)) {
             stack.shrink(1); c.setChanged();
             if (properties != null) { c.heal(properties.nutrition()); c.satiety = Math.min(40, c.satiety + Math.round(properties.saturation())); }
+            // Stew leaves its bowl: into the bag, else on the floor.
+            if (properties != null) properties.usingConvertsTo().ifPresent(left -> { ItemStack bowl = left.copy(); c.storeLoot(bowl); if (!bowl.isEmpty()) c.spawnAtLocation(bowl, .5F); });
             c.playSound(net.minecraft.sounds.SoundEvents.PLAYER_BURP, .4F, 1F);
             dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "companion_ate", "entity", c.getUUID(),
                     "item", BuiltInRegistries.ITEM.getKey(c.eating.getItem()), "health", c.getHealth());

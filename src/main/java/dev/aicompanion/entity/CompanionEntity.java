@@ -138,12 +138,16 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
+    private boolean boatRideOn = true;
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
+    private boolean replantOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
+    /** Whether named map markers work at all: recognition, remembering and walks (the player's setting, not saved). */
+    private boolean markersEnabled = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -151,8 +155,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private final CompanionShieldDefense shieldDefense = new CompanionShieldDefense(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
+    final CompanionBoatRide boatRide = new CompanionBoatRide(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
+    /** Saplings for the stumps of the trees he fells (RYVTB). */
+    final CompanionReplant replant = new CompanionReplant(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -164,6 +171,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private net.minecraft.world.phys.Vec3 previousActivityPosition;
     private boolean activityMoved;
     BlockPos lastPlacedPosition;
+    /** Game tick of that placement: the hint of «the chest I just set down» is good for a limited time only. */
+    long lastPlacedTick;
     BlockPos lastPlacedPosition() { return lastPlacedPosition; }
     final CompanionSocial social = new CompanionSocial(this);
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
@@ -588,6 +597,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Read only: his own drops still to pick up (after «стоп» too: nothing of his is left lying). */
     public boolean isCollectingDrops() { return loot.hasPending(); }
     public String workPhase() { return work.watchPhase(); }
+    /** Read only, for the GameTest observer: the hands a stack is held in while the bag has no cell for a craft. */
+    public java.util.List<String> heldStackHands() { return work.items.heldHands(); }
+    /** Read only, for the GameTest observer: the block a grid craft left in the 3×3 grid for lack of a bag cell. */
+    public ItemStack gridBlockInGrid() { return work.items.gridBlock(); }
+    /** The work's own step, for the GameTest observer: one stack into a free hand while the bag has no cell for a craft. */
+    public boolean holdOneStackInHand() { return work.items.holdOneStack(java.util.Set.of()); }
+    /** The work's own craft step, for the GameTest observer: a stack into a hand only after the bag said it has no cell. */
+    public CompanionActionResult craftHoldingIfTheBagIsFull(String itemId, int count) { return work.items.craftFromBagMakingRoom(itemId, count); }
     public String watchDetail() { return diagnosticState(); }
     public boolean isVisiblyBusy() { return isSwingingAtBlock() || isMiningAnimation() || actionAnimation() != 0 || eatTicks > 0 || temporaryPillar.isActive() || temporaryPillar.isRecovering(); }
     public void enableProtectionForWork() { protecting = true; entityData.set(DATA_PROTECTING, true); }
@@ -640,13 +657,22 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
     public boolean otherContainers() { return otherContainers; }
     public void setOtherContainers(boolean on) { otherContainers = on; }
+    /** Whether he gets into the player's boat and out of it with the player (the player can turn it off in the settings). */
+    public boolean boatRide() { return boatRideOn; }
+    public void setBoatRide(boolean on) { boatRideOn = on; }
     /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
     public boolean boatClutch() { return boatClutchOn; }
     public void setBoatClutch(boolean on) { boatClutchOn = on; }
+    /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag (the player can turn it off in the settings). */
+    public boolean replantSaplings() { return replantOn; }
+    public void setReplantSaplings(boolean on) { replantOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
     public void setPickUpNearby(boolean on, int radius) { pickUpNearby = on; pickUpRadius = Math.clamp(radius, CompanionPickUp.MIN_RADIUS, CompanionPickUp.MAX_RADIUS); }
+    /** Whether named map markers work at all (the player's setting): recognition, remembering and walks. */
+    public boolean markersEnabled() { return markersEnabled; }
+    public void setMarkersEnabled(boolean on) { markersEnabled = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
@@ -748,7 +774,63 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         String honest = "Рядом нет " + meaning.genitive() + ". " + CompanionPickUp.lying(level, blockPosition(), pickUpRadius, getOwnerId());
         if (!fallback) return CompanionActionResult.failed(honest);
         CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        return CompanionActionResult.failed(honest + (taken.success() ? " " + meaning.fallbackNote() : ""));
+        if (!taken.success()) return CompanionActionResult.failed(honest);
+        // The fallback is the rest of this order, not a refusal of it: the workId is kept so the plan waits for that work,
+        // the honest answer stays in the report, and the following steps of the plan still run.
+        long workId = activeWorkId();
+        if (workId <= 0) return CompanionActionResult.failed(honest);
+        return recordActionResult(CompanionActionResult.accepted(honest + " " + meaning.fallbackNote())
+                .withEvidence(new CompanionActionResult.Evidence(workId, meaning.fallbackAction(), meaning.fallbackItem(),
+                        wanted, null, null, null)));
+    }
+
+    /**
+     * «Запомни это место, дача»: saves the point he stands on as a named marker of the player. The same name again
+     * moves that marker; a full list loses its oldest one, and the answer names it. Off: the word is not taken.
+     */
+    public CompanionActionResult rememberPlace(String name) {
+        if (!markersEnabled) return CompanionActionResult.failed("Метки на карте выключены.");
+        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для метки нужен загруженный мир.");
+        if (getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, метку запоминать не для кого.");
+        String clean = CompanionMarkerNames.clean(name);
+        if (clean.isEmpty()) return CompanionActionResult.failed("Как назвать это место? Скажи «запомни это место, название».");
+        if (!CompanionMarkerNames.valid(clean)) {
+            if (clean.length() > CompanionMarkerNames.MAX)
+                return CompanionActionResult.failed("Название метки — до " + CompanionMarkerNames.MAX + " символов.");
+            return CompanionActionResult.failed("«" + clean + "» — это координаты, а не название. Скажи «запомни это место, название».");
+        }
+        // The phrase promises the place the player stands on: his feet while he is here, mine only when he is away.
+        ServerPlayer owner = getOwnerPlayer();
+        BlockPos at = owner != null ? owner.blockPosition() : blockPosition();
+        CompanionMarkers.Added added = CompanionMarkers.get(level.getServer())
+                .add(getOwnerId(), clean, level.dimension(), at, level.getGameTime());
+        if (added.refused()) return CompanionActionResult.failed(added.refusal());
+        refreshPlaces();
+        String where = added.marker().pos().toShortString() + " в " + CompanionMarkers.worldName(added.marker().dimension());
+        String line = added.moved() ? "Метка «" + added.marker().name() + "» теперь здесь: " + where + "."
+                : "Запомнил место «" + added.marker().name() + "»: " + where + ".";
+        if (owner == null) line += " Тебя нет рядом, поэтому это место, где стою я.";
+        if (added.evicted() != null)
+            line += " Меток было " + CompanionMarkers.MOST + ", самую старую «" + added.evicted().name() + "» забыл.";
+        return CompanionActionResult.ok(line);
+    }
+
+    /**
+     * «Иди к колодцу»: walks to the marker the name means by the normal path. No marker or more than one is answered
+     * honestly with the names he knows, without a walk; another dimension is said as it is.
+     */
+    public CompanionActionResult goToPlace(String name) {
+        if (!markersEnabled) return CompanionActionResult.failed("Метки на карте выключены.");
+        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для похода к метке нужен загруженный мир.");
+        if (getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, идти к метке не для кого.");
+        var found = CompanionMarkers.get(level.getServer()).matching(getOwnerId(), name);
+        if (found.isEmpty()) return CompanionActionResult.failed(CompanionMarkers.unknown(name, CompanionMarkers.get(level.getServer()).all(getOwnerId())));
+        if (found.size() > 1) return CompanionActionResult.failed(CompanionMarkers.questionFor(found));
+        CompanionMarkers.Marker marker = found.getFirst();
+        if (!marker.dimension().equals(level.dimension()))
+            return CompanionActionResult.failed("Метка «" + marker.name() + "» в другом измерении ("
+                    + CompanionMarkers.worldName(marker.dimension()) + "), пешком отсюда туда не дойти.");
+        return startWork("go_to_place", marker.name(), 1);
     }
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {
@@ -938,6 +1020,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         waterBucket.tick();
         boatClutch.tick();
+        boatRide.tick();
         waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
@@ -994,7 +1077,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
         // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.isHunting() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
+        var guardedOwner = protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && CompanionGuardWatch.strayed(this, guardedOwner, getTarget())) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
@@ -1071,6 +1154,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (id == net.minecraft.world.entity.EntityEvent.ATTACK_BLOCKED) damageNumbers.blocked(tickCount);
     }
 
+    /** Not back into a vehicle right after getting out, as a player; switched on, into a boat only with the player (CompanionBoatRide). */
+    @Override protected boolean canRide(Entity vehicle) { return super.canRide(vehicle) && boatRide.mayRide(vehicle); }
+    boolean justGotOut() { return boardingCooldown > 0; }
+
     /**
      * Falling fast, his client draws him where the server has him, not eased in over three ticks: three ticks behind he was blocks
      * over the boat or water he had already landed in (08.11). Walking is eased as before.
@@ -1094,8 +1181,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     public boolean benchWalkNeeded(String requestedItemId, int requestedCount) { return placement.benchWalkNeeded(requestedItemId, requestedCount); }
+    BlockPos cutterWalk(String requestedItemId, int requestedCount) { return placement.cutterWalk(requestedItemId, requestedCount); }
     public CompanionActionResult craftItemResult(String requestedItemId, int requestedCount) { return placement.craftItemResult(requestedItemId, requestedCount); }
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount); }
+    /** The same craft with the 3×3 grid as one more cell, for a bag with no free cell and no free hand. */
+    CompanionActionResult craftFromBagInGrid(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount, true); }
     public CompanionActionResult placeBlockResult(String requestedBlockId) { return placement.placeBlockResult(requestedBlockId); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin) { return placement.placeBlockNearResult(requestedBlockId, origin); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) { return placement.placeBlockNearResult(requestedBlockId, origin, allowed); }

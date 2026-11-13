@@ -24,10 +24,12 @@ final class CompanionPlacement {
     /** The recipe needs a bench and one is a few steps away: walk there first, like a player (any recipe, not only the known chains). */
     public boolean benchWalkNeeded(String requestedItemId, int requestedCount) {
         if (!(c.level() instanceof ServerLevel serverLevel) || hasCraftingTableNearby() || !c.hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK)) return false;
-        var atBench = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, true);
+        // At a stonecutter in reach its recipes count here and at the bench alike: stairs are cut here, not made from six at the bench.
+        boolean cutter = inReach(Blocks.STONECUTTER) != null;
+        var atBench = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, true, cutter);
         if (!atBench.success()) return false;
         // Possible at a bench, and here it either needs one set down or is impossible without one.
-        var here = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, false);
+        var here = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId, requestedCount, false, cutter);
         return here.placeTable() || !here.success();
     }
 
@@ -37,9 +39,22 @@ final class CompanionPlacement {
     }
 
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) {
+        return craftFromBag(requestedItemId, requestedCount, false);
+    }
+
+    /**
+     * The craft with the 3×3 grid as one more cell. A bag with no free cell and no free hand still leaves the planks of
+     * a chain in the grid — that is where a player's ingredients sit while he works — and the block made there has no
+     * cell of its own: it stays as the work's grid block and is set down from it. Nothing is made up: the grid is real
+     * space, and the block leaves it into the world instead of lying on the ground.
+     */
+    CompanionActionResult craftFromBag(String requestedItemId, int requestedCount, boolean gridCell) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return CompanionActionResult.failed("Крафт доступен только в загруженном мире.");
-        CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, c.companionInventory, requestedItemId,
-                requestedCount, hasCraftingTableNearby());
+        BlockPos cutter = inReach(Blocks.STONECUTTER);
+        java.util.List<ItemStack> bag = new java.util.ArrayList<>(c.companionInventory);
+        if (gridCell) bag.add(ItemStack.EMPTY);
+        CompanionCrafting.Plan plan = CompanionCrafting.plan(serverLevel, bag, requestedItemId,
+                requestedCount, hasCraftingTableNearby(), cutter != null);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "craft_decision", "entity", c.getUUID(),
                 "item", requestedItemId, "count", requestedCount, "success", plan.success(), "placeTable", plan.placeTable(), "message", plan.message());
         if (!plan.success()) return recordActionResult(plan.shortage() ? CompanionActionResult.shortage(plan.message()) : CompanionActionResult.failed(plan.message()));
@@ -56,10 +71,22 @@ final class CompanionPlacement {
         if (tablePosition != null) { c.rememberPlaced(tablePosition); benchSetDown = tablePosition.immutable(); }
         if (tablePosition != null && fieldBench) c.fieldBenches.add(tablePosition.immutable());
         for (int slot = 0; slot < c.companionInventory.size(); slot++) c.companionInventory.set(slot, plan.inventory().get(slot).copy());
+        if (gridCell) {
+            // The grid's own cell: whatever the chain left there has no place in the bag, so the work keeps it until the
+            // block it is is set down (a stack of another kind is stored on the next end of the work, or lies at his feet).
+            ItemStack spare = plan.inventory().get(c.companionInventory.size());
+            if (!spare.isEmpty()) {
+                ItemStack rest = spare.copy();
+                if (!c.storeInCompanionInventory(rest)) c.work.items.keepGridBlock(rest);
+            }
+        }
         if (tablePosition != null) dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed",
                 "entity", c.getUUID(), "block", "minecraft:crafting_table", "position", tablePosition, "reason", "craft_prerequisite");
         c.refreshInventorySummary();
-        c.animateAction(tablePosition == null ? 2 : 1, tablePosition == null ? c.blockPosition() : tablePosition,
+        if (plan.cutter() && tablePosition == null) {
+            c.animateAction(3, cutter, new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(requestedItemId))));
+            serverLevel.playSound(null, cutter, net.minecraft.sounds.SoundEvents.UI_STONECUTTER_TAKE_RESULT, net.minecraft.sounds.SoundSource.BLOCKS, .7F, 1F);
+        } else c.animateAction(tablePosition == null ? 2 : 1, tablePosition == null ? c.blockPosition() : tablePosition,
                 tablePosition == null ? new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(requestedItemId))) : new ItemStack(net.minecraft.world.item.Items.CRAFTING_TABLE));
         if (tablePosition != null) {
             var table = Blocks.CRAFTING_TABLE.defaultBlockState(); var sound = table.getSoundType();
@@ -92,6 +119,7 @@ final class CompanionPlacement {
         }
         c.animateAction(1, position, item);
         c.lastPlacedPosition = position.immutable();
+        c.lastPlacedTick = serverLevel.getGameTime();
         c.rememberPlaced(position);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed", "entity", c.getUUID(),
                 "block", blockId, "position", position, "reason", "place_block");
@@ -116,21 +144,50 @@ final class CompanionPlacement {
         return result;
     }
 
-    public boolean hasCraftingTableNearby() {
+    public boolean hasCraftingTableNearby() { return inReach(Blocks.CRAFTING_TABLE) != null; }
+
+    /**
+     * A stonecutter a few steps away (as far as a bench is walked to) pays for the walk when the item comes out of less there,
+     * or is not made at all without it: stairs, not slabs or walls, which the bench makes as cheaply.
+     */
+    BlockPos cutterWalk(String requestedItemId, int requestedCount) {
+        if (!(c.level() instanceof ServerLevel level) || inReach(Blocks.STONECUTTER) != null) return null;
+        BlockPos cutter = nearest(Blocks.STONECUTTER, CompanionToolSense.BENCH_WALK);
+        if (cutter == null) return null;
+        boolean bench = hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(CompanionToolSense.BENCH_WALK);
+        var cut = CompanionCrafting.plan(level, c.companionInventory, requestedItemId, requestedCount, bench, true);
+        if (!cut.success() || !cut.cutter()) return null;
+        var plain = CompanionCrafting.plan(level, c.companionInventory, requestedItemId, requestedCount, bench, false);
+        return !plain.success() || left(cut.inventory()) > left(plain.inventory()) ? cutter : null;
+    }
+
+    /** The nearest block of this kind within so many blocks across and four up or down, as a stonecutter or a grindstone is looked for. */
+    BlockPos nearest(Block block, int far) {
+        BlockPos origin = c.blockPosition(), found = null;
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-far, -4, -far), origin.offset(far, 4, far)))
+            if (c.level().hasChunkAt(pos) && c.level().getBlockState(pos).is(block) && (found == null || pos.distSqr(origin) < found.distSqr(origin))) found = pos.immutable();
+        return found;
+    }
+
+    private static int left(java.util.List<ItemStack> bag) { return bag.stream().mapToInt(ItemStack::getCount).sum(); }
+
+    /** The block of this kind he can work at from where he stands, as a player at a bench: in reach and in sight. */
+    BlockPos inReach(Block block) {
         BlockPos origin = c.blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, -2, -4), origin.offset(4, 2, 4))) {
-            if (c.level().hasChunkAt(pos) && c.level().getBlockState(pos).is(Blocks.CRAFTING_TABLE)
-                    && c.distanceToSqr(pos.getCenter()) <= 3.2 * 3.2) {
-                // Walking targets are chosen by the view from a cell's centre. Standing a few hundredths off it
-                // must not turn "I am at the bench" into "cannot reach the bench" (game log 22.10, a step beside the bench).
-                Vec3 centredEye = Vec3.atBottomCenterOf(c.blockPosition()).add(0, c.getEyeHeight(), 0);
-                if (seesBlock(c.getEyePosition(), pos) || c.onGround() && seesBlock(centredEye, pos)) {
-                    if (!c.level().isClientSide) c.rememberObserved(pos);
-                    return true;
-                }
-            }
-        }
-        return false;
+        for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-4, -2, -4), origin.offset(4, 2, 4)))
+            if (reaches(pos, block)) return pos.immutable();
+        return null;
+    }
+
+    /** This block, if it is of the kind, in reach and in sight: the one he chose, when others of its kind stand nearer. */
+    boolean reaches(BlockPos pos, Block block) {
+        if (!c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(block) || c.distanceToSqr(pos.getCenter()) > 3.2 * 3.2) return false;
+        // Walking targets are chosen by the view from a cell's centre. Standing a few hundredths off it
+        // must not turn "I am at the bench" into "cannot reach the bench" (game log 22.10, a step beside the bench).
+        Vec3 centredEye = Vec3.atBottomCenterOf(c.blockPosition()).add(0, c.getEyeHeight(), 0);
+        if (!seesBlock(c.getEyePosition(), pos) && !(c.onGround() && seesBlock(centredEye, pos))) return false;
+        if (!c.level().isClientSide) c.rememberObserved(pos);
+        return true;
     }
     private boolean seesBlock(Vec3 eye, BlockPos pos) { return seesBlock(c, eye, pos); }
 
@@ -154,7 +211,9 @@ final class CompanionPlacement {
             ItemStack stack = c.getItemBySlot(slot);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() == block) return stack;
         }
-        return null;
+        // A block made in the grid and left there for lack of a cell is set down from the grid itself.
+        ItemStack grid = c.work.items.gridBlock();
+        return !grid.isEmpty() && grid.getItem() instanceof BlockItem blockItem && blockItem.getBlock() == block ? grid : null;
     }
 
     BlockPos findPlacementPosition(ServerLevel serverLevel, Block block, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) {
@@ -171,6 +230,8 @@ final class CompanionPlacement {
                 // Not on the cell his own stairs begin from or on a step of them: a bench there shut his way back up (marathon, 15 s on the stairs).
                 // A step dug already has left quarrySoil, but the block it stands on is still in quarrySupports.
                 if (pos.equals(c.work.exitCell) || c.work.quarrySoil.contains(pos) || c.work.quarrySupports.contains(pos.below())) continue;
+                // Not on a stump of the tree he fells: a bench set there for his axe took the dark oak's square (in game 09.11).
+                if (c.replant.awaits(pos)) continue;
                 if (!serverLevel.hasChunkAt(pos) || !serverLevel.getBlockState(pos).canBeReplaced()) continue;
                 if (!serverLevel.getFluidState(pos).isEmpty() || !serverLevel.getWorldBorder().isWithinBounds(pos)) continue;
                 if (!serverLevel.getBlockState(pos.below()).isFaceSturdy(serverLevel, pos.below(), Direction.UP)) continue;

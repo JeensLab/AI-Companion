@@ -74,18 +74,8 @@ public final class CompanionDeathSpots extends SavedData {
     public void died(UUID owner, UUID id, ResourceKey<Level> dimension, BlockPos pos, double worth, long tick, List<Entry> manifest) {
         List<Spot> list = spots.computeIfAbsent(owner, key -> new ArrayList<>());
         list.add(new Spot(id, dimension, pos.immutable(), worth, tick, 0, 0, manifest));
-        while (list.size() > MOST) list.remove(0);
+        while (list.size() > MOST) list.remove(list.indexOf(list.subList(0, list.size() - 1).stream().min(Comparator.comparingDouble(Spot::worth)).get())); // the cheapest before this one, the older on a tie
         setDirty();
-    }
-
-    /** The dearest place in this dimension, or null when there is none worth a walk. */
-    public Spot dearest(UUID owner, ResourceKey<Level> dimension) {
-        Spot best = null;
-        for (Spot spot : spots.getOrDefault(owner, List.of())) {
-            if (!spot.dimension().equals(dimension) || spot.worth() < CompanionBelongings.WORTH_GOING) continue;
-            if (best == null || spot.worth() > best.worth()) best = spot;
-        }
-        return best;
     }
 
     /** The record of one fall, by its own id: two falls at the same coordinates are two places. */
@@ -183,30 +173,10 @@ public final class CompanionDeathSpots extends SavedData {
                 spot.attempts(), spot.deaths() + 1, spot.manifest()));
     }
 
-    public void attempted(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
-        replace(owner, dimension, pos, spot -> new Spot(spot.id(), spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
-                spot.attempts() + 1, spot.deaths(), spot.manifest()));
-    }
-
-    public void deathOnTheWay(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
-        replace(owner, dimension, pos, spot -> new Spot(spot.id(), spot.dimension(), spot.pos(), spot.worth(), spot.tick(),
-                spot.attempts(), spot.deaths() + 1, spot.manifest()));
-    }
-
     private void replaceById(UUID owner, UUID spotId, java.util.function.UnaryOperator<Spot> change) {
         List<Spot> list = spots.get(owner);
         if (list == null) return;
         for (int index = 0; index < list.size(); index++) if (list.get(index).id().equals(spotId)) {
-            list.set(index, change.apply(list.get(index)));
-            setDirty();
-            return;
-        }
-    }
-
-    private void replace(UUID owner, ResourceKey<Level> dimension, BlockPos pos, java.util.function.UnaryOperator<Spot> change) {
-        List<Spot> list = spots.get(owner);
-        if (list == null) return;
-        for (int index = 0; index < list.size(); index++) if (list.get(index).pos().equals(pos) && list.get(index).dimension().equals(dimension)) {
             list.set(index, change.apply(list.get(index)));
             setDirty();
             return;
@@ -230,17 +200,6 @@ public final class CompanionDeathSpots extends SavedData {
         List<Spot> list = spots.get(owner);
         if (list == null) return;
         boolean removed = list.removeIf(spot -> spot.id().equals(spotId));
-        if (removed) {
-            if (list.isEmpty()) spots.remove(owner);
-            setDirty();
-        }
-    }
-
-    /** Forgetting a place by its dimension and position, for a record read before it was charged. */
-    public void taken(UUID owner, ResourceKey<Level> dimension, BlockPos pos) {
-        List<Spot> list = spots.get(owner);
-        if (list == null) return;
-        boolean removed = list.removeIf(spot -> spot.pos().equals(pos) && spot.dimension().equals(dimension));
         if (removed) {
             if (list.isEmpty()) spots.remove(owner);
             setDirty();

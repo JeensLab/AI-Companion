@@ -44,6 +44,11 @@ public final class CompanionCrops {
                 default -> null;
             };
         }
+
+        /** The crop the item is reaped from: wheat, a carrot, a potato, a beetroot; null for a seed that is not the harvest itself. */
+        public static Kind yielding(Item item) {
+            return item == Items.WHEAT ? WHEAT : item == Items.CARROT ? CARROT : item == Items.POTATO ? POTATO : item == Items.BEETROOT ? BEETROOT : null;
+        }
     }
 
     /** «Any» crop: no kind named, or one of the words that mean all of them. */

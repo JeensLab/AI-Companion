@@ -1,5 +1,7 @@
 package dev.aicompanion.client;
 
+import dev.aicompanion.entity.CompanionMarkerNames;
+
 /**
  * The player's short orders that never wait for the model («стоп», «иди за мной», «стой», «иди ко мне», simple work requests).
  * No client classes, so the chat screen and the GameTests route a phrase the same way.
@@ -15,6 +17,36 @@ public final class CompanionLocalCommands {
 
     /** The local command for the phrase ("companion stop", "companion work gather_stone 8 resources"…), or null for the model. */
     public static String route(String text, String companionName) {
+        // One snapshot of the client's copy: the marker names and the switch come from the same publication.
+        CompanionMarkerView.Snapshot known = CompanionMarkerView.snapshot();
+        return route(text, companionName, dev.aicompanion.entity.CompanionItemLookup.GAME_NAMES, known.names(), known.enabled());
+    }
+
+    /**
+     * The same, by the names the game shows for its items. The client's are the player's language; a GameTest, whose
+     * server runs en_us, passes its own stand-in for the Russian names the player sees.
+     */
+    public static String route(String text, String companionName, java.util.function.Function<net.minecraft.world.item.Item, String> names) {
+        CompanionMarkerView.Snapshot known = CompanionMarkerView.snapshot();
+        return route(text, companionName, names, known.names(), known.enabled());
+    }
+
+    /** The same routing with the marker names the caller knows: the chat screen uses the client's copy, tests pass their own. */
+    public static String route(String text, String companionName, java.util.List<String> markers, boolean markersEnabled) {
+        return route(text, companionName, dev.aicompanion.entity.CompanionItemLookup.GAME_NAMES, markers, markersEnabled);
+    }
+
+    /** Both: the game's item names and the marker names the caller knows. */
+    public static String route(String text, String companionName, java.util.function.Function<net.minecraft.world.item.Item, String> names,
+                               java.util.List<String> markers, boolean markersEnabled) {
+        String command = routeInner(text, companionName, names, markers, markersEnabled);
+        // «Ещё» repeats only the pickup that was the last order; any other phrase ends that window.
+        if (command == null || !command.startsWith("companion work pick_up ")) CompanionPickUpCommands.forget();
+        return command;
+    }
+
+    private static String routeInner(String text, String companionName, java.util.function.Function<net.minecraft.world.item.Item, String> names,
+                                     java.util.List<String> markers, boolean markersEnabled) {
         String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
         String memory = memoryCommand(normalized, companionName);
         if (memory != null) return memory;
@@ -64,20 +96,58 @@ public final class CompanionLocalCommands {
         // Before the work phrases: «поставь костёр и сыграй» is the evening by the fire, not a block to place.
         if (campfireSong(normalized, companionName)) return "companion campfire" + tuneMood(normalized);
         // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
-        PlannedAction picked = CompanionPickUpCommands.parse(text, companionName);
-        if (picked != null) return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
+        // «Щё» right after a pickup takes the rest of that same thing, not whatever the model guesses.
+        PlannedAction more = CompanionPickUpCommands.more(text, companionName);
+        if (more != null) {
+            CompanionPickUpCommands.remember(more);
+            return "companion work " + more.type() + " " + more.count() + " " + more.item();
+        }
+        PlannedAction picked = CompanionPickUpCommands.parse(text, companionName, names);
+        if (picked != null) {
+            CompanionPickUpCommands.remember(picked);
+            return "companion work " + picked.type() + " " + picked.count() + " " + picked.item();
+        }
         PlannedAction workAction = CompanionWorkCommands.parse(text, companionName);
         if (workAction != null) return "companion work " + workAction.type() + " " + workAction.count() + " "
-                + (workAction.item().isEmpty() ? "resources" : workAction.item())
+                // The command is a line of words: a building's name of several («деревенский дом») goes as one, joined.
+                + (workAction.item().isEmpty() ? "resources" : "build_house".equals(workAction.type()) ? workAction.item().replace(' ', '_') : workAction.item())
                 + (NEAR_PLAYER.equals(workAction.location()) ? "" : " " + workAction.location());
         String water = CompanionWorkCommands.water(text, companionName);
         if (water != null) return water;
         String obsidian = CompanionWorkCommands.obsidian(text, companionName);
         if (obsidian != null) return obsidian;
-        if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")
-                || normalized.matches("(?s).*\\d.*")) return null;
+        // Before the equipment: «сними чары с меча» is the grindstone, not «сними меч».
+        String grind = CompanionWorkCommands.grind(text, companionName);
+        if (grind != null) return grind;
+        String compost = CompanionWorkCommands.compost(text, companionName);
+        if (compost != null) return compost;
+        // «Запомни это место, это дом» names a marker: after the work grammar, so «запомни это место как дом» stays the
+        // home it always was.
+        CompanionPlaceSpeech.Result remembered = CompanionPlaceSpeech.remember(text, companionName, markersEnabled);
+        if (remembered.kind() == CompanionPlaceSpeech.Kind.REMEMBER) return "companion place remember " + remembered.name();
+        // A named place he remembers: «иди к колодцу», «проведи меня до железного рудника», «отведи меня к даче»,
+        // «охраняй дачу», «отнеси ресы в дом». What is left after the name decides: a name that itself holds «и»
+        // («сад и огород», «дом и баня») leaves nothing, so it stays one local step; «иди к даче, потом домой» leaves
+        // «потом домой», and the model plans both legs, which one local walk would lose.
+        CompanionPlaceSpeech.Result place = CompanionPlaceSpeech.parse(text, companionName, markers, markersEnabled);
+        // «Забудь дачу», «удали метку дачу», «забудь всё»: the list is the player's, and the word takes markers off it.
+        // The chat answers it from the store, so no step is checked here and no plan is made.
+        if (place.kind() == CompanionPlaceSpeech.Kind.FORGET || place.kind() == CompanionPlaceSpeech.Kind.FORGET_ALL)
+            return "companion place forget" + (place.name().isEmpty() ? "" : " " + place.name());
+        if (place.kind() == CompanionPlaceSpeech.Kind.GO || place.kind() == CompanionPlaceSpeech.Kind.GUARD
+                || place.kind() == CompanionPlaceSpeech.Kind.CARRY) {
+            if (!oneStep(place.leftover())) return null;
+            String verb = place.kind() == CompanionPlaceSpeech.Kind.GO ? "go"
+                    : place.kind() == CompanionPlaceSpeech.Kind.GUARD ? "guard" : "carry";
+            return "companion place " + verb + " " + place.name();
+        }
+        // Only when the place parse had nothing to say: a request with steps («иди к озеру, потом домой») stays the model's,
+        // an unknown or ambiguous name is the chat screen's question, and a digit is no reason to leave the places.
+        if (normalized.contains(" и ") || normalized.contains("потом") || normalized.contains("затем")) return null;
         // Before «стой»: «зайди в портал, жди там» is an order to go in.
         if (normalized.matches("(?sU).*(?<!\\bне\\s{1,3})\\b(зайди|заходи|войди|входи|шагни|прыгни|пройди|проходи|иди)\\s+(в|через)\\s+(\\p{L}+\\s+)?(портал|незер)\\b.*")) return "companion enter_portal";
+        // «Не стой столбом» is no order; in «стой, не иди туда» only the negated verb is cut out, the rest is read below.
+        normalized = normalized.replaceAll("(?U)\\bне\\s+(стой|останься|жди|защищай|защити|прикрывай|помогай|(?:пре)?следуй(?:те)?|иди|пойдем|пошли|приди|подойди|вернись|появись|телепортируйся)\\b", " ");
         if (normalized.matches("(?sU).*\\b(стой|останься|жди)\\b.*")
                 || normalized.contains("стой здесь") || normalized.contains("жди тут")) {
             return "companion stay";
@@ -100,11 +170,29 @@ public final class CompanionLocalCommands {
             return "companion summon";
         }
         if (normalized.contains("погуляй") || normalized.contains("прогуляйся") || normalized.contains("осмотрись")) return "companion roam";
+        if (normalized.matches("(?s).*\\d.*")) return null;
         return CompanionEquipmentCommands.parse(normalized);
+    }
+
+    /** A building's name out of the command line: its words joined there are apart again, and the word that stands for «no item» is no name (the plank house). */
+    private static String buildingName(String word) { return "resources".equals(word) ? "" : word.replace('_', ' '); }
+
+    /** Words that only soften the order: «и всё», «пожалуйста» after the place ask no second step of him, and «и обратно» is the same one place walked to and back. */
+    private static final java.util.Set<String> SOFTENERS = java.util.Set.of("и", "все", "всё", "пожалуйста", "пожалуста",
+            "пожалуй", "спасибо", "ладно", "хорошо", "ок", "ok", "давай", "ну", "плиз", "обратно");
+
+    /**
+     * True when the words left after the place name are no second step: nothing, or only the words that soften the
+     * order. Anything else — «потом домой», «и домой», «возьми кирку» — is a plan with steps, and the model makes it.
+     */
+    private static boolean oneStep(String leftover) {
+        for (String word : CompanionMarkerNames.tokens(leftover)) if (!SOFTENERS.contains(word)) return false;
+        return true;
     }
 
     /** The plan step a local command runs. */
     public static PlannedAction action(String command) {
+        if (command.startsWith("companion place ")) return placeAction(command);
         String[] parts = command.split(" ");
         return switch (parts[1]) {
             case "goal" -> new PlannedAction("goal_" + parts[2], 0, 1);
@@ -117,7 +205,7 @@ public final class CompanionLocalCommands {
             case "roam" -> new PlannedAction("wander", 0, 1);
             case "campfire" -> new PlannedAction("campfire_song", 0, 1, parts.length > 2 ? parts[2] : "");
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
-            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), parts[WORK_ITEM], "auto",
+            case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), "build_house".equals(parts[2]) ? buildingName(parts[WORK_ITEM]) : parts[WORK_ITEM], "auto",
                     parts.length > WORK_LOCATION ? parts[WORK_LOCATION] : NEAR_PLAYER);
             default -> new PlannedAction(parts[1], 0, 1);
         };
@@ -125,6 +213,10 @@ public final class CompanionLocalCommands {
 
     /** The plan a local command runs: its step, and for «принеси воды» the hand-over of what it got after it. */
     public static java.util.List<PlannedAction> actions(String command) {
+        if (command.startsWith("companion place guard "))
+            return java.util.List.of(action(command), new PlannedAction("protect", 0, 1));
+        if (command.startsWith("companion place carry "))
+            return java.util.List.of(action(command), new PlannedAction("store_items", 0, 1, "resources"));
         // " give" is not a container: the step is parsed without it, or it would be read as the place to store into.
         boolean give = command.endsWith(" give");
         PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
@@ -155,6 +247,17 @@ public final class CompanionLocalCommands {
         return "";
     }
 
+    /** «companion place remember|go|guard|carry <name>»: the name is the rest of the command and may hold spaces.
+     * «companion place forget …» never comes here: the chat answers it from the player's own list. */
+    private static PlannedAction placeAction(String command) {
+        String rest = command.substring("companion place ".length());
+        int cut = rest.indexOf(' ');
+        String kind = cut < 0 ? rest : rest.substring(0, cut);
+        String name = cut < 0 ? "" : rest.substring(cut + 1);
+        return "remember".equals(kind) ? new PlannedAction("remember_place", 0, 1, name)
+                : new PlannedAction("go_to_place", 0, 1, name);
+    }
+
     /** «Забудь всё» and «что ты обо мне помнишь»: only the whole message counts, so «забудь всё и добудь дерево» stays an order. */
     private static String memoryCommand(String normalized, String companionName) {
         String rest = normalized.strip();
@@ -174,6 +277,10 @@ public final class CompanionLocalCommands {
         // The mode of his own deeds is no order to drop the plans the player gave.
         if (command.equals("companion goal status") || command.equals("companion goal cancel") || command.equals("companion goal defer")) return false;
         if (command.startsWith("companion memory ")) return false;
+        // Naming a place is a word, not an order: whatever he is busy with goes on, as with the home.
+        if (command.startsWith("companion place remember ")) return false;
+        // Forgetting a marker is a word about the player's list too: the walk he is on goes on.
+        if (command.startsWith("companion place forget")) return false;
         // «Построй новый портал» answers his offer to lead the player to one: it replaces that walk.
         return !command.startsWith("companion work ") && !command.startsWith("companion autonomy ") || command.startsWith("companion work hunt_mobs ")
                 || command.equals("companion work build_portal 1 new");

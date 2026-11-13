@@ -161,17 +161,7 @@ public final class CompanionHomeTests {
     @GameTest(template = "large_search", timeoutTicks = 2400)
     public static void noRoomWhereTheWalkFailedGoesBack(GameTestHelper h) {
         CompanionEntity c = setup(h);
-        int east = STAND + 4, end = east + 9;
-        for (int x = STAND - 4; x <= STAND + 4; x++) for (int z = Z - 4; z <= Z + 4; z++) for (int y = 1; y <= 6; y++)
-            if ((Math.abs(x - STAND) == 4 || Math.abs(z - Z) == 4) && !(x == east && z == Z && y <= 3)) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
-        for (int x = east; x <= end; x++) {
-            h.setBlock(new BlockPos(x, 1, Z), Blocks.OAK_SLAB);
-            for (int y = 1; y <= 4; y++) {
-                h.setBlock(new BlockPos(x, y, Z - 1), Blocks.BEDROCK); h.setBlock(new BlockPos(x, y, Z + 1), Blocks.BEDROCK);
-                if (x == end) h.setBlock(new BlockPos(x, y, Z), Blocks.BEDROCK);
-            }
-            h.setBlock(new BlockPos(x, 4, Z), Blocks.BEDROCK);
-        }
+        deadEndWithNoRoomForAChest(h);
         BlockPos home = cell(STAND + 50);
         owner(h, c).setPos(h.absoluteVec(home.getCenter()));
         h.assertTrue(CompanionEvents.executeAction(owner(h, c), "set_home", "", 1).success(), "Home not taken");
@@ -189,17 +179,7 @@ public final class CompanionHomeTests {
     @GameTest(template = "large_search", timeoutTicks = 3600)
     public static void noRoomAfterTwoFailedWalksStillGoesBack(GameTestHelper h) {
         CompanionEntity c = setup(h);
-        int east = STAND + 4, end = east + 9;
-        for (int x = STAND - 4; x <= STAND + 4; x++) for (int z = Z - 4; z <= Z + 4; z++) for (int y = 1; y <= 6; y++)
-            if ((Math.abs(x - STAND) == 4 || Math.abs(z - Z) == 4) && !(x == east && z == Z && y <= 3)) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
-        for (int x = east; x <= end; x++) {
-            h.setBlock(new BlockPos(x, 1, Z), Blocks.OAK_SLAB);
-            for (int y = 1; y <= 4; y++) {
-                h.setBlock(new BlockPos(x, y, Z - 1), Blocks.BEDROCK); h.setBlock(new BlockPos(x, y, Z + 1), Blocks.BEDROCK);
-                if (x == end) h.setBlock(new BlockPos(x, y, Z), Blocks.BEDROCK);
-            }
-            h.setBlock(new BlockPos(x, 4, Z), Blocks.BEDROCK);
-        }
+        deadEndWithNoRoomForAChest(h);
         BlockPos home = cell(STAND + 50), remembered = cell(STAND + 54);
         placedByPlayer(h, c, remembered, Blocks.CHEST);
         owner(h, c).setPos(h.absoluteVec(home.getCenter()));
@@ -212,6 +192,21 @@ public final class CompanionHomeTests {
             h.assertTrue(c.didLastTaskSucceed() && c.getLastTaskResult().contains("дойти не смог"), c.getLastTaskResult());
             h.assertTrue(blocks(h, Blocks.CHEST) == 2 && carried(c, Items.COBBLESTONE) == 0, "Stone not stored: " + c.getLastTaskResult());
         });
+    }
+
+    /** A walled-in dead end east of the stand, with no cell to put a chest on. */
+    private static void deadEndWithNoRoomForAChest(GameTestHelper h) {
+        int east = STAND + 4, end = east + 9;
+        for (int x = STAND - 4; x <= STAND + 4; x++) for (int z = Z - 4; z <= Z + 4; z++) for (int y = 1; y <= 6; y++)
+            if ((Math.abs(x - STAND) == 4 || Math.abs(z - Z) == 4) && !(x == east && z == Z && y <= 3)) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
+        for (int x = east; x <= end; x++) {
+            h.setBlock(new BlockPos(x, 1, Z), Blocks.OAK_SLAB);
+            for (int y = 1; y <= 4; y++) {
+                h.setBlock(new BlockPos(x, y, Z - 1), Blocks.BEDROCK); h.setBlock(new BlockPos(x, y, Z + 1), Blocks.BEDROCK);
+                if (x == end) h.setBlock(new BlockPos(x, y, Z), Blocks.BEDROCK);
+            }
+            h.setBlock(new BlockPos(x, 4, Z), Blocks.BEDROCK);
+        }
     }
 
     /** A chest the player set down himself is where he lives: a new furnace goes there, past the search round Oleg. */
@@ -265,19 +260,7 @@ public final class CompanionHomeTests {
         h.succeed();
     }
 
-    /** A chest left in a mine is a stash, not a home. */
-    @GameTest(template = "large_search", timeoutTicks = 100)
-    public static void chestInAMineIsNoHome(GameTestHelper h) {
-        CompanionEntity c = setup(h);
-        c.setNoAi(true);
-        BlockPos chest = cell(60);
-        under(h, chest, Blocks.STONE);
-        h.setBlock(chest, Blocks.CHEST); placedByPlayer(h, c, chest);
-        h.assertTrue(!c.getPlacesForAi().contains("дом на"), "A chest in a mine became a home: " + c.getPlacesForAi());
-        h.succeed();
-    }
-
-    /** A sorting room of chests deep in a mine is still no home. */
+    /** Chests left in a mine are a stash, not a home: a sorting room of five is still no home. */
     @GameTest(template = "large_search")
     public static void chestsInAMineAreNoHome(GameTestHelper h) {
         CompanionEntity c = setup(h);
@@ -459,7 +442,7 @@ public final class CompanionHomeTests {
     private static void placedByPlayer(GameTestHelper h, CompanionEntity c, BlockPos pos, Block block) { h.setBlock(pos, block); placedByPlayer(h, c, pos); }
 
     /** The house of a save from before homes: its blocks, and a blueprint with every step placed. */
-    private static void house(GameTestHelper h, CompanionEntity c, BlockPos base) {
+    static void house(GameTestHelper h, CompanionEntity c, BlockPos base) {
         for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
             h.setBlock(base.offset(x, 0, z), Blocks.OAK_PLANKS); h.setBlock(base.offset(x, 4, z), Blocks.OAK_SLAB);
             if (x == 0 || x == 4 || z == 0 || z == 4) for (int y = 1; y <= 3; y++) h.setBlock(base.offset(x, y, z), Blocks.OAK_PLANKS);

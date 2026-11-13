@@ -9,9 +9,7 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.pathfinder.Path;
 
-import java.util.ArrayDeque;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -60,6 +58,10 @@ final class CompanionGatherGoals {
         private BlockPos searchOrigin;
         /** The trees round the player were looked at too (once per request). */
         private boolean searchedByPlayer;
+        /** The species the order named (the work's item), or null: any log. Read when the goal starts, so a parked order that goes on keeps it. */
+        private CompanionWoodKind kind;
+        private net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> logBlocks() { return kind == null ? BlockTags.LOGS : kind.blocks; }
+        private int logs() { return CompanionTools.count(c, kind == null ? ItemTags.LOGS : kind.items); }
 
         GatherLogsGoal(CompanionEntity c) {
             this.c = c;
@@ -96,11 +98,13 @@ final class CompanionGatherGoals {
             elapsedTicks = 0;
             gathered = Math.max(0, c.requestedLogs - c.logsRemaining);
             // What is still missing: after a reload the logs already chopped are not asked for again (review 22.10, М1).
-            inventoryTarget = CompanionTools.count(c, ItemTags.LOGS) + c.logsRemaining;
+            kind = c.work.isActive() ? c.work.woodKind() : null;
+            inventoryTarget = logs() + c.logsRemaining;
             axeSense.reset(); soilAttempts = 0;
             pathFailTicks = 0;
             unreachableLogs.clear(); builtLogs.clear(); walkTried.clear();
             currentTreeLogs.clear();
+            c.replant.reset();
             searchOrigin = c.blockPosition();
             searchCandidates = null; searchedByPlayer = false;
         }
@@ -128,16 +132,16 @@ final class CompanionGatherGoals {
                 retryDelay--;
                 return;
             }
-            c.logsRemaining = Math.max(0, inventoryTarget - CompanionTools.count(c, ItemTags.LOGS));
+            c.logsRemaining = Math.max(0, inventoryTarget - logs());
             c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
             // On a pillar the hand alternates soil and axe per jump/swing by itself; forcing the axe every tick only flickered.
             // Game log 27.10: past the requested count he chopped the rest of a 32-log tree by hand. The axe for the rest
             // of the tree comes from logs beyond the request, so an unreachable crown or a lone tree never costs the order,
             // and only while the tree still holds as many logs as the axe costs. The tree repays wood, so the axe is a wooden one.
-            boolean spareWood = currentTreeLogs.size() >= AXE_WOOD && CompanionTools.count(c, ItemTags.LOGS) - inventoryTarget >= AXE_WOOD;
+            boolean spareWood = currentTreeLogs.size() >= AXE_WOOD && logs() - inventoryTarget >= AXE_WOOD;
             if (!c.temporaryPillar.isActive() && (c.logsRemaining > 0 ? axeSense.tick() : spareWood && axeSense.tickWooden())) { c.woodBreaking.reset(); return; }
             if (c.logsRemaining > 0 && !c.temporaryPillar.isActive()) CompanionTools.equip(c, ItemTags.AXES, Blocks.OAK_LOG.defaultBlockState());
-            if (target == null || !c.level().getBlockState(target).is(BlockTags.LOGS)) {
+            if (target == null || !c.level().getBlockState(target).is(logBlocks())) {
                 c.woodBreaking.reset();
                 if (target != null) currentTreeLogs.remove(target);
                 target = selectNextLog();
@@ -149,11 +153,16 @@ final class CompanionGatherGoals {
             if (target == null) {
                 if (c.temporaryPillar.isRecovering()) return;
                 if (c.loot.hasPending()) return;
+                // The tree is down and its drops are in the bag: its stumps get their saplings before the next tree or the report.
+                if (c.replant.tick()) return;
                 if (c.logsRemaining == 0 && currentTreeLogs.isEmpty()) {
                     String accessNote = unreachableLogs.isEmpty() ? "Текущее дерево закончил." : "До части брёвен не удалось добраться, поэтому оставил их.";
                     finish("Закончил сбор: срубил " + gathered + " брёвен (цель была " + c.requestedLogs + "). "
                             + accessNote + " У меня в сумке: " + c.getStoredItemsSummary() + ".");
-                } else if (++noLogsTicks >= 100) finish(gathered == 0
+                } else if (++noLogsTicks >= 100) finish(kind != null ? (gathered == 0 ? unreachableLogs.isEmpty() ? kind.none() : kind.outOfReach()
+                        : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен " + kind.genitive()
+                        + (unreachableLogs.isEmpty() ? ", больше рядом не нашёл. " : ", до остальных не добрался. ") + "У меня в сумке: " + c.getStoredItemsSummary() + ".")
+                        : gathered == 0
                         ? c.autonomy.running() ? "В " + CompanionAutonomy.LEASH + " блоках от рабочего места не нашёл доступных деревьев."
                         : "Сбор завершён: в пределах " + c.searchRadius + " блоков не нашёл доступных деревьев."
                         : "Сбор завершён раньше цели: срубил " + gathered + " из " + c.requestedLogs + " брёвен; "
@@ -195,7 +204,7 @@ final class CompanionGatherGoals {
                 if (!c.woodBreaking.tick((ServerLevel)c.level(), target)) return;
                 if (c.gathering.mineLog(target)) {
                     gathered++;
-                    c.logsRemaining = Math.max(0, inventoryTarget - CompanionTools.count(c, ItemTags.LOGS));
+                    c.logsRemaining = Math.max(0, inventoryTarget - logs());
                     c.getEntityData().set(CompanionEntity.DATA_LOGS_REMAINING, c.logsRemaining);
                     c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, gathered >= c.requestedLogs
                             ? "Цель по брёвнам выполнена; заканчиваю текущее дерево."
@@ -239,7 +248,7 @@ final class CompanionGatherGoals {
                     // To the foot of the trunk, as a player walks to a tree: a route to a log up in the crown is never found, and its parts
                     // led him off swimming round an island (marathon 23.10, «берег»).
                     BlockPos foot = target;
-                    while (foot.getY() > c.level().getMinBuildHeight() && c.level().getBlockState(foot.below()).is(BlockTags.LOGS)) foot = foot.below();
+                    while (foot.getY() > c.level().getMinBuildHeight() && c.level().getBlockState(foot.below()).is(logBlocks())) foot = foot.below();
                     var step = c.work.route.legs(foot, FAR_TREE - 4);
                     if (step == CompanionTravel.Step.WALKING) {
                         targetStartedTick = lastProgressTick = c.tickCount;
@@ -318,9 +327,9 @@ final class CompanionGatherGoals {
 
         private BlockPos findNearestLog() {
             if (!(c.level() instanceof ServerLevel serverLevel)) return null;
-            if (searchCandidates == null) searchCandidates = CompanionLogSearch.find(serverLevel, searchOrigin, c.searchRadius);
+            if (searchCandidates == null) searchCandidates = CompanionLogSearch.find(serverLevel, searchOrigin, c.searchRadius, logBlocks());
             List<BlockPos> nearest = searchCandidates.stream().filter(candidate -> !unreachableLogs.contains(candidate) && !builtLogs.contains(candidate)
-                    && c.leashAllows(candidate) && c.level().hasChunkAt(candidate) && c.level().getBlockState(candidate).is(BlockTags.LOGS))
+                    && c.leashAllows(candidate) && c.level().hasChunkAt(candidate) && c.level().getBlockState(candidate).is(logBlocks()))
                     .sorted(Comparator.comparingDouble(candidate -> candidate.distSqr(c.blockPosition()) + Math.max(0, candidate.getY() - c.getY()) * 4))
                     .limit(64).toList();
             // Marathon 23.10, «берег»: the trees were looked for once, from the mainland; on the island the two farther ones were beyond
@@ -329,7 +338,7 @@ final class CompanionGatherGoals {
                 // What was seen from the first place stays on the list; what is seen from here is added.
                 searchOrigin = c.blockPosition();
                 Set<BlockPos> merged = new java.util.LinkedHashSet<>(searchCandidates);
-                merged.addAll(CompanionLogSearch.find(serverLevel, searchOrigin, c.searchRadius));
+                merged.addAll(CompanionLogSearch.find(serverLevel, searchOrigin, c.searchRadius, logBlocks()));
                 searchCandidates = new java.util.ArrayList<>(merged);
                 return findNearestLog();
             }
@@ -339,7 +348,7 @@ final class CompanionGatherGoals {
             if (nearest.isEmpty() && !searchedByPlayer && !c.autonomy.running() && player != null && player.level() == c.level() && player.blockPosition().distSqr(c.blockPosition()) > 4 * 4) {
                 searchedByPlayer = true;
                 Set<BlockPos> merged = new java.util.LinkedHashSet<>(searchCandidates);
-                merged.addAll(CompanionLogSearch.find(serverLevel, player.blockPosition(), c.searchRadius));
+                merged.addAll(CompanionLogSearch.find(serverLevel, player.blockPosition(), c.searchRadius, logBlocks()));
                 searchCandidates = new java.util.ArrayList<>(merged);
                 return findNearestLog();
             }
@@ -357,13 +366,14 @@ final class CompanionGatherGoals {
         /** Keep working on the connected tree after the requested minimum is reached. */
         private BlockPos selectNextLog() {
             currentTreeLogs.removeIf(pos -> unreachableLogs.contains(pos) || !c.level().hasChunkAt(pos)
-                    || !c.level().getBlockState(pos).is(BlockTags.LOGS));
+                    || !c.level().getBlockState(pos).is(logBlocks()));
             if (currentTreeLogs.isEmpty()) {
                 if (c.temporaryPillar.hasSupports()) { c.temporaryPillar.requestCleanup(); return null; }
+                if (c.replant.pending()) return null;
                 // Do not start another tree and its climbing prerequisites while the last
                 // already harvested log is still waiting for its ground pickup delay.
                 if (c.logsRemaining > 0 && c.loot.incomingLogs() >= c.logsRemaining) return null;
-                if (CompanionTools.count(c, ItemTags.LOGS) >= inventoryTarget) return null;
+                if (logs() >= inventoryTarget) return null;
                 // Review 22.10, К2: a log cabin is not a tree. A few groups a tick, nearest first.
                 for (int tries = 0; tries < 8 && currentTreeLogs.isEmpty(); tries++) {
                     BlockPos seed = findNearestLog();
@@ -375,6 +385,7 @@ final class CompanionGatherGoals {
                     builtLogs.addAll(currentTreeLogs); currentTreeLogs.clear();
                 }
                 if (currentTreeLogs.isEmpty()) return null;
+                c.replant.felling(currentTreeLogs);
             }
             BlockPos best = null;
             double bestScore = Double.MAX_VALUE;
@@ -389,26 +400,7 @@ final class CompanionGatherGoals {
 
         private void collectConnectedLogs(BlockPos seed) {
             crownFailures = 0;
-            Deque<BlockPos> queue = new ArrayDeque<>();
-            Set<BlockPos> visited = new HashSet<>();
-            queue.add(seed.immutable());
-            visited.add(seed.immutable());
-            while (!queue.isEmpty() && currentTreeLogs.size() < 512) {
-                BlockPos pos = queue.removeFirst();
-                if (!c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(BlockTags.LOGS)) continue;
-                currentTreeLogs.add(pos.immutable());
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dy = -1; dy <= 1; dy++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            if (dx == 0 && dy == 0 && dz == 0) continue;
-                            BlockPos next = pos.offset(dx, dy, dz);
-                            if (Math.abs(next.getX() - seed.getX()) > 12 || Math.abs(next.getZ() - seed.getZ()) > 12
-                                    || Math.abs(next.getY() - seed.getY()) > 24 || !visited.add(next)) continue;
-                            if (c.level().hasChunkAt(next) && c.level().getBlockState(next).is(BlockTags.LOGS)) queue.addLast(next);
-                        }
-                    }
-                }
-            }
+            currentTreeLogs.addAll(CompanionLogSearch.connected((ServerLevel) c.level(), seed, logBlocks()));
         }
 
         /** Find a reachable standing spot next to the log; never path into the solid log itself. */
@@ -424,7 +416,11 @@ final class CompanionGatherGoals {
         private void finish(String message) {
             c.woodBreaking.reset();
             if (!accessIssue.isBlank()) message += " " + accessIssue + ".";
+            message += c.replant.report();
+            // The request is over, whatever ended it: no stump of it waits any more.
+            c.replant.reset();
             c.lastTaskSucceeded = CompanionTools.count(c, ItemTags.LOGS) >= inventoryTarget;
+            if (kind != null) c.lastTaskSucceeded = logs() >= inventoryTarget;
             c.gatheringLogs = false;
             c.logsRemaining = 0;
             c.getEntityData().set(CompanionEntity.DATA_GATHERING_LOGS, false);

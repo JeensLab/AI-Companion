@@ -11,7 +11,11 @@ final class CompanionBehaviorScreen extends Screen {
     private final Screen parent;
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
-        int left = width / 2 - 150, top = Math.max(30, height / 2 - 90); // six rows end above the note at height - 64, down to a GUI height of 240
+        int left = width / 2 - 150, top = CompanionSwitchLayout.top(height);
+        // The only row here that is not a gameplay switch: the model's own settings live on their own screen now.
+        addRenderableWidget(Button.builder(Component.literal(CompanionSwitchLayout.MODEL_ENTRY_LABEL), b -> minecraft.setScreen(new CompanionModelScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                        "Размышление модели, температура и top_p: что и как он отвечает."))).build());
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();
@@ -76,11 +80,22 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(urgentLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "«Иди ко мне», «стой», «защищай» посреди добычи: он откладывает остаток и докапывает его, когда освободится. Выключено: приказ просто прерывает работу."))).build());
+        addRenderableWidget(Button.builder(boatRideLabel(), b -> {
+            OpenRouterConfig.BOAT_RIDE.set(!OpenRouterConfig.BOAT_RIDE.get()); OpenRouterConfig.BOAT_RIDE.save();
+            b.setMessage(boatRideLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Ты сел в лодку или на плот, где есть место, — он подходит и садится вторым; ты вышел — выходит и он, на берег. В лодке без тебя не сидит. Выключено: плывёт следом."))).build());
         addRenderableWidget(Button.builder(boatClutchLabel(), b -> {
             OpenRouterConfig.BOAT_CLUTCH.set(!OpenRouterConfig.BOAT_CLUTCH.get()); OpenRouterConfig.BOAT_CLUTCH.save();
             b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Падение, которое ведро воды не ловит (Незер, нет ведра): он ставит под себя лодку из сумки, садится, потом ломает её и забирает. Выключено: падает как есть."))).build());
+
+        addRenderableWidget(Button.builder(replantLabel(), b -> {
+            OpenRouterConfig.REPLANT_SAPLINGS.set(!OpenRouterConfig.REPLANT_SAPLINGS.get()); OpenRouterConfig.REPLANT_SAPLINGS.save();
+            b.setMessage(replantLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Срубил дерево — сажает на его место саженец той же породы из своей сумки (тёмный дуб — только из четырёх). У построек не сажает. Выключено: на месте срубленных деревьев ничего не сажает."))).build());
         addRenderableWidget(Button.builder(pickUpLabel(), b -> {
             OpenRouterConfig.PICK_UP_NEARBY.set(!OpenRouterConfig.PICK_UP_NEARBY.get()); OpenRouterConfig.PICK_UP_NEARBY.save();
             b.setMessage(pickUpLabel()); CompanionPreferences.sync();
@@ -92,6 +107,11 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.PICK_UP_RADIUS.save(); b.setMessage(pickUpRadiusLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Насколько далеко он осматривает землю вокруг себя, блоков."))).build());
+        addRenderableWidget(Button.builder(markersLabel(), b -> {
+            OpenRouterConfig.MARKERS.set(!OpenRouterConfig.MARKERS.get()); OpenRouterConfig.MARKERS.save();
+            b.setMessage(markersLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "«Запомни это место, дача» — метка с названием; «иди к даче», «охраняй дачу» ведут к ней. Выключено: названия не распознаются и походов нет, список меток в настройках остаётся."))).build());
         addRenderableWidget(Button.builder(Component.literal("Назад"), b -> onClose()).bounds(width / 2 - 50, height - 35, 100, 20).build());
         addRenderableWidget(Button.builder(damageNumbersLabel(), b -> {
             OpenRouterConfig.DAMAGE_NUMBERS.set(!OpenRouterConfig.DAMAGE_NUMBERS.get()); OpenRouterConfig.DAMAGE_NUMBERS.save();
@@ -101,12 +121,14 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.JOKES.set(!OpenRouterConfig.JOKES.get()); OpenRouterConfig.JOKES.save();
             b.setMessage(jokesLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
-                "Короткие анекдоты без запроса к модели, только в спокойный момент. Один и тот же — не чаще раза в час."))).build());
+                "Байки до 150 слов без запроса к модели, только в спокойный момент. Один и тот же — не чаще раза в час."))).build());
         addRenderableWidget(Button.builder(jokeIntervalLabel(), b -> {
             int next = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get() + 5;
             OpenRouterConfig.JOKE_INTERVAL_MINUTES.set(next > 60 ? 5 : next); OpenRouterConfig.JOKE_INTERVAL_MINUTES.save();
             b.setMessage(jokeIntervalLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(Component.literal("Свои анекдоты: файл и перезагрузка"), b -> minecraft.setScreen(new CompanionJokeScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         fitRows(top);
     }
     private Component jokesLabel() { return Component.literal("Анекдоты: " + (OpenRouterConfig.JOKES.get() ? "вкл." : "выкл.")); }
@@ -118,14 +140,17 @@ final class CompanionBehaviorScreen extends Screen {
     private Component intervalLabel() { return Component.literal("Пауза между своими репликами: " + OpenRouterConfig.MURMUR_INTERVAL_PERCENT.get() + "%"); }
     private Component guardLabel() { return Component.literal("Охрана: цель ближе к игроку: " + (OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get() ? "вкл." : "выкл.")); }
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
+    private static Component replantLabel() { return Component.literal("Саженцы на месте срубленных деревьев: " + (OpenRouterConfig.REPLANT_SAPLINGS.get() ? "вкл." : "выкл.")); }
     private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
+    private static Component boatRideLabel() { return Component.literal("Лодка с игроком: " + (OpenRouterConfig.BOAT_RIDE.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
         return Component.literal("Самостоятельность (порядок и запас): " + (on ? "вкл." : "выкл."));
     }
     private Component damageNumbersLabel() { return Component.literal("Цифры урона над Олегом: " + (OpenRouterConfig.DAMAGE_NUMBERS.get() ? "вкл." : "выкл.")); }
     private Component pickUpLabel() { return Component.literal("Подбирать лежащее рядом: " + (OpenRouterConfig.PICK_UP_NEARBY.get() ? "вкл." : "выкл.")); }
     private Component pickUpRadiusLabel() { return Component.literal("Радиус подбора: " + OpenRouterConfig.PICK_UP_RADIUS.get() + " блоков"); }
+    private Component markersLabel() { return Component.literal("Метки на карте: " + (OpenRouterConfig.MARKERS.get() ? "вкл." : "выкл.")); }
     private Component speechLabel() { return Component.literal("Самостоятельные реплики: " + (OpenRouterConfig.AUTONOMOUS_SPEECH.get() ? "вкл." : "выкл.")); }
     private Component chunksLabel() { return Component.literal("Работа вдали от игрока: " + (OpenRouterConfig.CHUNK_LOADING.get() ? "вкл." : "выкл.")); }
     private Component markerLabel() { return Component.literal("Контур Олега и метка вдали (клавиша G): " + (OpenRouterConfig.COMPANION_MARKER.get() ? "вкл." : "выкл.")); }
@@ -141,31 +166,33 @@ final class CompanionBehaviorScreen extends Screen {
     }
     @Override public void onClose() { minecraft.setScreen(parent); }
 
-    private static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 30, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
+    private static final int ROW_WIDTH = CompanionSwitchLayout.ROW_WIDTH, ROW_HEIGHT = CompanionSwitchLayout.ROW_HEIGHT;
     /** The page of switches shown when they do not all fit above the note. */
     private int page;
     /**
      * The switches, every button as wide as a row, stand one under another in the order they were added: from the
      * usual top and 30 apart while there is room, higher up and closer (down to touching) when they would reach the
-     * note. So a switch added anywhere in init needs no place of its own, and seven rows fit at a GUI height of 240.
-     * More than fit 24 apart go on pages, turned by a button beside «Назад».
+     * note. So a switch added anywhere in init needs no place of its own, and the first row opens the model
+     * screen, leaving about four switch rows at a GUI height of 240.
+     * More than fit 24 apart go on pages, turned by a button beside «Назад»: a small GUI shows fewer rows at a time but
+     * every switch stays reachable, and the button names the page it opens.
      */
     private void fitRows(int top) {
         var all = children().stream().filter(child -> child instanceof Button button && button.getWidth() == ROW_WIDTH)
                 .map(Button.class::cast).toList();
-        int bottom = height - NOTE_FROM_BOTTOM - 4, perPage = Math.max(1, (bottom - HIGHEST_ROW - ROW_HEIGHT) / PAGED_STEP + 1);
+        int perPage = CompanionSwitchLayout.perPage(height), pages = CompanionSwitchLayout.pages(all.size(), height);
         var rows = all;
         if (all.size() > perPage) {
-            int pages = (all.size() + perPage - 1) / perPage, shown = page % pages, from = shown * perPage;
-            rows = all.subList(from, Math.min(all.size(), from + perPage));
+            int shown = page % pages, from = CompanionSwitchLayout.firstRow(all.size(), height, shown),
+                    onPage = CompanionSwitchLayout.rowsOnPage(all.size(), height, shown);
+            rows = all.subList(from, from + onPage);
             for (Button row : all) row.visible = rows.contains(row);
             addRenderableWidget(Button.builder(Component.literal("Ещё (" + (shown + 1) + "/" + pages + ")"), b -> {
                 page = shown + 1; rebuildWidgets();
             }).bounds(width / 2 + 54, height - 35, 100, 20).build());
         }
-        int gaps = Math.max(1, rows.size() - 1);
-        int step = Math.max(ROW_HEIGHT, Math.min(ROW_STEP, (bottom - HIGHEST_ROW - ROW_HEIGHT) / gaps));
-        int y = Math.max(HIGHEST_ROW, Math.min(top, bottom - ROW_HEIGHT - step * gaps));
+        int step = CompanionSwitchLayout.step(height, rows.size());
+        int y = CompanionSwitchLayout.firstY(top, height, rows.size());
         for (Button row : rows) { row.setY(y); y += step; }
     }
 }

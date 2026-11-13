@@ -41,9 +41,11 @@ final class CompanionEntityNbt {
         c.deeds.save(tag);
         c.autonomy.save(tag);
         tag.putBoolean("DeathRecovery", c.deathRecovery());
+        tag.putBoolean("BoatRide", c.boatRide());
         tag.putBoolean("GuardByPlayer", c.guardByPlayer());
         tag.putBoolean("OtherContainers", c.otherContainers());
         tag.putBoolean("BoatClutch", c.boatClutch());
+        tag.putBoolean("Replant", c.replantSaplings());
         tag.putInt("DeathRecoveryAttempts", c.deathRecoveryAttempts());
         tag.putInt("DeathRecoveryDeaths", c.deathRecoveryDeaths());
         c.goals.save(tag);
@@ -80,9 +82,11 @@ final class CompanionEntityNbt {
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.load(tag);
         c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.setDeathRecovery(!tag.contains("DeathRecovery") || tag.getBoolean("DeathRecovery"));
+        c.setBoatRide(!tag.contains("BoatRide") || tag.getBoolean("BoatRide"));
         c.setGuardByPlayer(!tag.contains("GuardByPlayer") || tag.getBoolean("GuardByPlayer"));
         c.setOtherContainers(!tag.contains("OtherContainers") || tag.getBoolean("OtherContainers"));
         c.setBoatClutch(!tag.contains("BoatClutch") || tag.getBoolean("BoatClutch"));
+        c.setReplantSaplings(!tag.contains("Replant") || tag.getBoolean("Replant"));
         c.setDeathRecoveryLimits(tag.contains("DeathRecoveryAttempts") ? tag.getInt("DeathRecoveryAttempts") : 5,
                 tag.contains("DeathRecoveryDeaths") ? tag.getInt("DeathRecoveryDeaths") : 10); c.refreshPlaces();
         c.social.load(tag);
@@ -129,7 +133,7 @@ final class CompanionEntityNbt {
         CompoundTag full = new CompoundTag(), memory = new CompoundTag();
         c.addAdditionalSaveData(full);
         for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "HomePlace", "Deeds",
-                "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
+                "SmallHouse", CompanionHouse.TEMPLATE_KEY, "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
         return memory;
     }
 

@@ -30,7 +30,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "walk_heading", "fill_bucket", "mine_obsidian", "build_portal", "pick_up");
+            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
@@ -82,6 +82,9 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
 
     /** The work this port started last; the goal stops it on an interrupt only while it is still the active one. */
     public long ownedWorkId() { return ownedWorkId; }
+
+    /** Whether a step of this kind is waited for by its own work id (the plan must not report it before the walk ends). */
+    public static boolean tracksWork(String action) { return TRACKED_WORK.contains(action); }
 
     @Override public void progress(java.util.List<PlannedAction> plan, int index) { this.plan = List.copyOf(plan); progress.accept(plan, index); }
 
@@ -213,8 +216,20 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
             else verified = CompletableFuture.completedFuture(result);
             // The bag note of a sorting this order ended came with the acceptance; the player hears the outcome (review round 3, finding 1).
             boolean note = result.message().contains(CompanionDialogue.BAG_NOTE);
-            return verified.thenApply(done -> new Attempt(!note || done.message().contains(CompanionDialogue.BAG_NOTE) ? done
-                    : new CompanionActionResult(done.success(), done.message() + " " + CompanionDialogue.BAG_NOTE, done.status(), done.evidence()), true));
+            // A «подбери» whose fallback work started is not a refusal: its work is waited for, and the honest answer about
+            // what lies around stays in the report while the plan goes on with the following steps (PR #133 remark).
+            boolean fallback = "pick_up".equals(action.type()) && result.status() == CompanionActionResult.Status.ACCEPTED
+                    && result.evidence() != null && result.evidence().workId() > 0;
+            return verified.thenApply(done -> {
+                String message = done.message();
+                if (fallback) {
+                    if (!result.message().isBlank() && !message.contains(result.message())) message = result.message() + " " + message;
+                    if (note && !message.contains(CompanionDialogue.BAG_NOTE)) message = message + " " + CompanionDialogue.BAG_NOTE;
+                    return new Attempt(new CompanionActionResult(true, message, CompanionActionResult.Status.ACCEPTED, done.evidence()), true);
+                }
+                return new Attempt(!note || message.contains(CompanionDialogue.BAG_NOTE) ? done
+                        : new CompanionActionResult(done.success(), message + " " + CompanionDialogue.BAG_NOTE, done.status(), done.evidence()), true);
+            });
         });
     }
 

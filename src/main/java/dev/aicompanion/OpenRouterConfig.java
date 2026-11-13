@@ -51,19 +51,37 @@ public final class OpenRouterConfig {
             .define("macosVoice", true);
 
     public static final ModConfigSpec.ConfigValue<String> API_KEY = BUILDER
-            .comment("Your API key: required for OpenRouter, usually not needed for a local server. Stored in the local Minecraft config folder.")
+            .comment("Your provider's API key: OpenRouter or direct OpenAI; usually not needed for a local server. Stored in the local Minecraft config folder.")
             .translation("config.aicompanion.api_key")
             .define("apiKey", "");
 
     public static final ModConfigSpec.ConfigValue<String> MODEL = BUILDER
-            .comment("Model ID. With OpenRouter, openrouter/auto lets OpenRouter choose; with your own server, the name of a model it has loaded.")
+            .comment("Model ID: openrouter/auto for OpenRouter; gpt-6-luna or gpt-6.1-terra for direct OpenAI; a loaded model name for a local server.")
             .translation("config.aicompanion.model")
             .define("model", "openrouter/auto");
 
     public static final ModConfigSpec.ConfigValue<String> API_URL = BUILDER
-            .comment("OpenAI-compatible chat server. Empty means OpenRouter; for example http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio. A local server needs no API key.")
+            .comment("Empty means OpenRouter. https://api.openai.com/v1 uses Responses API directly; compatible/local servers keep Chat Completions, e.g. http://localhost:11434/v1 for Ollama or http://localhost:1234/v1 for LM Studio.")
             .translation("config.aicompanion.api_url")
             .define("apiUrl", "");
+
+    /** Off by default: on a full prompt the model spent 2263 hidden reasoning tokens and 100 s before the plan. */
+    public static final ModConfigSpec.BooleanValue THINKING = BUILDER
+            .comment("Let the model reason before answering. Off: the same prompt is answered in seconds instead of minutes. On: the server's own default — slower, and sometimes a more careful choice of materials.")
+            .translation("config.aicompanion.model_thinking")
+            .define("thinking", false);
+
+    /** Empty means «не задавать»: the server's own sampling, unchanged. The mod imposes no range: models differ. */
+    public static final ModConfigSpec.ConfigValue<String> TEMPERATURE = BUILDER
+            .comment("Sampling temperature, sent as typed (dot or comma, negative too); the acceptable range depends on your model, and a value it rejects comes back as its own error. Empty keeps the model server's own default.")
+            .translation("config.aicompanion.temperature")
+            .define("temperature", "");
+
+    /** Empty means «не задавать»: the server's own sampling, unchanged. The mod imposes no range: models differ. */
+    public static final ModConfigSpec.ConfigValue<String> TOP_P = BUILDER
+            .comment("Nucleus sampling top_p, sent as typed (dot or comma, negative too); the acceptable range depends on your model, and a value it rejects comes back as its own error. Empty keeps the model server's own default.")
+            .translation("config.aicompanion.top_p")
+            .define("topP", "");
 
     public static final ModConfigSpec.ConfigValue<String> INWORLD_API_KEY = BUILDER
             .comment("Inworld Basic credential copied from the Inworld portal. Leave blank to use an installed local Russian voice on Windows (windowsVoice) or macOS (macosVoice).")
@@ -111,11 +129,21 @@ public final class OpenRouterConfig {
             .comment("An urgent order (come, stay, guard) interrupts the dig and puts the rest aside; he digs it once he is free. Off: the order ends the dig.")
             .translation("config.aicompanion.urgent_order")
             .define("urgentOrder", true);
+    /** Whether he gets into the player's boat with a seat free and out of it with the player. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue BOAT_RIDE = BUILDER
+            .comment("Get into the player's boat or raft when a seat is free, and out of it with the player, onto land beside it; never stay in a boat without the player. Off: he swims after the boat.")
+            .translation("config.aicompanion.boat_ride")
+            .define("boatRide", true);
     /** Whether a hurtful fall the water bucket does not catch is caught in a boat from his bag. On unless the player turns it off. */
     public static final ModConfigSpec.BooleanValue BOAT_CLUTCH = BUILDER
             .comment("Catch a hurtful fall the water bucket cannot (the Nether, no bucket) in a boat from his bag, then break it and take it back. Off: he takes the fall.")
             .translation("config.aicompanion.boat_clutch")
             .define("boatClutch", true);
+    /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue REPLANT_SAPLINGS = BUILDER
+            .comment("Put a sapling of the same wood from his bag on the stump of a tree he felled (a dark oak only from four). Off: the stumps stay bare.")
+            .translation("config.aicompanion.replant_saplings")
+            .define("replantSaplings", true);
 
     public static final ModConfigSpec.BooleanValue LONG_TERM_MEMORY = BUILDER
             .comment("Let the companion remember facts, promises and recent talk between sessions, adapt his character and raise topics of his own. Stored in the world save.")
@@ -131,6 +159,12 @@ public final class OpenRouterConfig {
             .comment("How far around the companion the ground is scanned for «подбери», in blocks.")
             .translation("config.aicompanion.pick_up_radius")
             .defineInRange("pickUpRadius", 16, 4, 32);
+
+    /** Named map markers: remembering places by name, walking to them and the settings list. On unless the player turns it off. */
+    public static final ModConfigSpec.BooleanValue MARKERS = BUILDER
+            .comment("Named map markers: «запомни это место, дача» saves a place, «иди к даче» walks to it. Off: no recognition, no walks, the settings list stays readable.")
+            .translation("config.aicompanion.markers")
+            .define("markers", true);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 

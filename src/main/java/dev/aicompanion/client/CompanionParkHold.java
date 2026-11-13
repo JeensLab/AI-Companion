@@ -60,7 +60,12 @@ public final class CompanionParkHold {
             case "gather_stone" -> touches("stone", batch);
             case "gather_loose" -> touches(item, batch);
             case "gather_dirt", "set_home", "follow", "wait", "come", "walk_heading", "protect", "stop_protect", "wander", "stop", "enter_portal", "collect_smelt", "campfire_song",
-                 "take_items", "sort_chests", "build_house", "build_portal", "give_wood", "equip_item", "unequip_item", "hunt_mobs" -> false;
+                 "take_items", "sort_chests", "build_house", "build_portal", "give_wood", "equip_item", "unequip_item", "hunt_mobs",
+                 // Actions that never need a furnace product, so they do not wait for a parked batch: a place to walk to or a word
+                 // to save, a crop taken by hand, a grindstone or a composter, the goal bookkeeping.
+                 "harvest_crops", "farm_crops", "pick_up", "build_pen", "breed_animals", "pursue_goal", "autonomy",
+                 "goal_status", "goal_cancel", "goal_defer", "goal_resume",
+                 "repair_item", "disenchant_item", "compost_items", "go_to_place", "remember_place" -> false;
             default -> true;
         };
     }

@@ -49,7 +49,9 @@ public final class CompanionPlanRequirements {
                 result.add(new PlannedAction("store_items", 0, 1, filter, "auto", location));
         }
         if (result.size() > CompanionPlanCodec.MAX_STEPS) throw new IllegalStateException("Просьба содержит слишком много шагов. Раздели ее на части.");
-        return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result), List.copyOf(result));
+        // A repeat the model asked for survives the rewritten wording: the same count, spoken with the new steps.
+        if (result.equals(decoded.actions())) return decoded;
+        return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result, decoded.repeat()), List.copyOf(result), decoded.repeat());
     }
     private static final String TOOL = ".*_(pickaxe|axe|shovel|sword|hoe|helmet|chestplate|leggings|boots)";
 
@@ -85,7 +87,7 @@ public final class CompanionPlanRequirements {
             result.add(new PlannedAction("give_items", 0, 1, item, "auto", "near_player"));
         if (result.equals(decoded.actions())) return decoded;
         if (result.size() > CompanionPlanCodec.MAX_STEPS) throw new IllegalStateException("Просьба содержит слишком много шагов. Раздели ее на части.");
-        return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result), List.copyOf(result));
+        return result.isEmpty() ? decoded : new CompanionReply(CompanionDialogue.acknowledge(result, decoded.repeat()), List.copyOf(result), decoded.repeat());
     }
 
     private static final String NUMBER = "(?sU).*(\\d|\\b(одну|один|одного|одна|пару|пара|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять"
@@ -100,7 +102,7 @@ public final class CompanionPlanRequirements {
         if (decoded.actions().stream().noneMatch(step -> step.type().equals("smelt_items")) || text.matches(NUMBER)) return decoded;
         List<PlannedAction> result = decoded.actions().stream().map(step -> step.type().equals("smelt_items") && step.count() != PlannedAction.ALL_CARRIED
                 ? new PlannedAction(step.type(), step.seconds(), PlannedAction.ALL_CARRIED, step.item(), step.slot(), step.location()) : step).toList();
-        return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result);
+        return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result, decoded.repeat());
     }
 
     /** «Собери урожай» names no number: everything ripe round him, not the single crop a model's default count=1 would take. */
@@ -109,7 +111,7 @@ public final class CompanionPlanRequirements {
         int all = dev.aicompanion.entity.CompanionCrops.MAX_HARVEST;
         List<PlannedAction> result = decoded.actions().stream().map(step -> step.type().equals("harvest_crops") && step.count() != all
                 ? new PlannedAction(step.type(), step.seconds(), all, step.item(), step.slot(), step.location()) : step).toList();
-        return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result);
+        return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result, decoded.repeat());
     }
 
     /**
@@ -132,7 +134,7 @@ public final class CompanionPlanRequirements {
         if (raw == null || decoded.actions().size() >= CompanionPlanCodec.MAX_STEPS) return decoded;
         List<PlannedAction> result = new ArrayList<>(decoded.actions());
         result.add(last + 1, new PlannedAction("smelt_items", 0, PlannedAction.ALL_CARRIED, raw));
-        return new CompanionReply(decoded.text(), List.copyOf(result));
+        return new CompanionReply(decoded.text(), List.copyOf(result), decoded.repeat());
     }
 
     /**
@@ -149,11 +151,11 @@ public final class CompanionPlanRequirements {
         String meat = kind == null ? dev.aicompanion.entity.CompanionGame.ANY_MEAT : net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(kind.meat).toString();
         List<PlannedAction> result = new ArrayList<>(decoded.actions());
         result.add(last + 1, new PlannedAction("smelt_items", 0, PlannedAction.ALL_CARRIED, meat));
-        return new CompanionReply(decoded.text(), List.copyOf(result));
+        return new CompanionReply(decoded.text(), List.copyOf(result), decoded.repeat());
     }
 
     /** Steps that carry no count of their own, so a number in the request can only mean the gathering. */
-    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("set_home", "follow", "come", "wait", "store_items", "sort_chests", "stop", "protect", "stop_protect", "campfire_song");
+    private static final java.util.Set<String> COUNTLESS = java.util.Set.of("set_home", "follow", "come", "wait", "store_items", "sort_chests", "stop", "protect", "stop_protect", "remember_place", "go_to_place", "campfire_song");
     static final int DEFAULT_ORE = 4;
     static final int DEFAULT_GAME = 3;
     /** Unnumbered food/hunting requests make a larger, bounded food run. */
@@ -199,7 +201,8 @@ public final class CompanionPlanRequirements {
                 result.add(new PlannedAction(type, step.seconds(), Math.min(chunk, left), huntItem(step.item(), game, foodRun, said.count()), step.slot(), step.location()));
         }
         if (result.size() > CompanionPlanCodec.MAX_STEPS) return decoded;
-        return new CompanionReply(decoded.text(), List.copyOf(result));
+        if (result.equals(decoded.actions())) return decoded;
+        return new CompanionReply(decoded.text(), List.copyOf(result), decoded.repeat());
     }
 
     private static String huntItem(String item, boolean hunt, boolean foodRun, int count) {

@@ -1,6 +1,7 @@
 package dev.aicompanion.client;
 
 import java.io.IOException;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -34,7 +35,9 @@ public final class OpenRouterRetry {
         return request.get().handle((response, error) -> {
             Throwable cause = error;
             while (cause instanceof CompletionException && cause.getCause() != null) cause = cause.getCause();
-            boolean transientFailure = cause instanceof IOException || (response != null && TEMPORARY.contains(status.applyAsInt(response)));
+            // A timeout is an IOException too, but the answer was already too slow: a second one is just as slow and paid twice.
+            boolean transientFailure = (cause instanceof IOException && !(cause instanceof HttpTimeoutException))
+                    || (response != null && TEMPORARY.contains(status.applyAsInt(response)));
             if (retry < 2 && transientFailure) {
                 Duration duration = retryDelay(response == null ? "" : retryAfter.apply(response), retry);
                 return delay.apply(duration).thenCompose(unused -> attempt(request, status, retryAfter, delay, retry + 1));

@@ -13,17 +13,21 @@ import java.util.regex.Pattern;
 /** Decodes model output without executing anything. Invalid plans fail as a whole. */
 public final class CompanionPlanCodec {
     public static final int MAX_STEPS = 12;
+    /** How many times one walking route may be walked: the written steps stay capped at {@link #MAX_STEPS}. */
+    public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up", "campfire_song");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items", "campfire_song");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
     static final int FLINT_DEFAULT = 2;
     /** The items a gather_loose order may name: the loose blocks the server digs with a shovel, and the flint in gravel. */
     private static final Set<String> LOOSE_ITEMS = Set.of("minecraft:sand", "minecraft:red_sand", "minecraft:gravel", FLINT);
-    private static final Pattern DSML = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>.*?"
-            + "<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>.*?</\\|DSML\\|invoke>");
+    /** One invoke of the plan tool: its parameters are read inside its own tags, so another invoke's repeat is not taken for this plan's. */
+    private static final Pattern DSML_INVOKE = Pattern.compile("(?s)<\\|DSML\\|invoke\\s+name=\"queue_companion_plan\"[^>]*>(.*?)</\\|DSML\\|invoke>");
+    private static final Pattern DSML_STEPS = Pattern.compile("(?s)<\\|DSML\\|parameter\\s+name=\"steps\"[^>]*>(.*?)</\\|DSML\\|parameter>");
+    private static final Pattern DSML_REPEAT = Pattern.compile("(?s)<\\|DSML\\|parameter\\s+name=\"repeat\"[^>]*>(.*?)</\\|DSML\\|parameter>");
 
     private CompanionPlanCodec() { }
 
@@ -38,19 +42,35 @@ public final class CompanionPlanCodec {
 
     private static CompanionReply decodeMessage(JsonObject message) {
         List<PlannedAction> actions = new ArrayList<>();
+        int repeat = 1;
         if (message.has("tool_calls") && message.get("tool_calls").isJsonArray()) {
             for (JsonElement element : message.getAsJsonArray("tool_calls")) {
                 JsonObject function = element.getAsJsonObject().getAsJsonObject("function");
                 if (!"queue_companion_plan".equals(function.get("name").getAsString())) throw invalid();
                 JsonElement args = function.get("arguments");
-                actions.addAll(parsePlan(args.isJsonPrimitive() ? JsonParser.parseString(args.getAsString()) : args));
+                DecodedPlan plan = parsePlanWithRepeat(args.isJsonPrimitive() ? JsonParser.parseString(args.getAsString()) : args);
+                actions.addAll(plan.actions());
+                repeat = mergedRepeat(repeat, plan.repeat());
             }
         }
         String raw = textContent(message.get("content"));
-        var matcher = DSML.matcher(raw);
+        var matcher = DSML_INVOKE.matcher(raw);
         List<PlannedAction> embedded = new ArrayList<>();
-        while (matcher.find()) embedded.addAll(parsePlan(JsonParser.parseString(matcher.group(1))));
-        if (actions.isEmpty()) actions.addAll(embedded);
+        int embeddedRepeat = 1;
+        while (matcher.find()) {
+            String invoke = matcher.group(1);
+            var steps = DSML_STEPS.matcher(invoke);
+            if (!steps.find()) continue;
+            DecodedPlan plan = parsePlanWithRepeat(JsonParser.parseString(steps.group(1)));
+            embedded.addAll(plan.actions());
+            // Two invokes of one answer may not ask for different counts, as two tool calls may not.
+            embeddedRepeat = mergedRepeat(embeddedRepeat, plan.repeat());
+            embeddedRepeat = mergedRepeat(embeddedRepeat, dsmlRepeat(invoke));
+        }
+        if (actions.isEmpty()) {
+            actions.addAll(embedded);
+            if (!embedded.isEmpty()) repeat = mergedRepeat(repeat, embeddedRepeat);
+        }
         String reply = raw.replaceAll("(?s)<\\|DSML\\|invoke\\b.*?</\\|DSML\\|invoke>", "")
                 .replaceAll("</?\\|DSML\\|[^>]*>", "").trim().replaceFirst("(?i)^assistant\\s*:\\s*", "").trim();
         String json = raw.trim().replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
@@ -58,21 +78,60 @@ public final class CompanionPlanCodec {
             try {
                 JsonObject envelope = JsonParser.parseString(json).getAsJsonObject();
                 if (envelope.has("steps")) {
-                    actions.addAll(parsePlan(envelope));
+                    DecodedPlan plan = parsePlanWithRepeat(envelope);
+                    actions.addAll(plan.actions());
+                    repeat = mergedRepeat(repeat, plan.repeat());
                     reply = envelope.has("reply") ? textContent(envelope.get("reply")) : "";
                 }
-            } catch (RuntimeException exception) { throw invalid(); }
+            } catch (RuntimeException exception) { throw refusedOrInvalid(exception); }
         }
         if (actions.size() > MAX_STEPS) throw invalid();
         requireGoalAlone(actions);
+        requireWalkOnly(actions, repeat);
         reply = CompanionDialogue.cleanReply(reply);
         if (reply.isBlank() || (!actions.isEmpty() && reply.matches("(?s).*(План принят|Понял, выполняю|Результат сообщу после действий).*"))) {
             if (actions.isEmpty()) throw new IllegalStateException("Модель вернула пустой ответ без команд. Попробуй повторить просьбу или выбрать другую модель в настройках.");
-            reply = CompanionDialogue.acknowledge(actions);
+            reply = CompanionDialogue.acknowledge(actions, repeat);
         }
         // A plan is an intention. Completion is spoken only after the server verifies the result.
-        if (!actions.isEmpty()) reply = CompanionDialogue.acknowledge(actions);
-        return new CompanionReply(reply, List.copyOf(actions));
+        if (!actions.isEmpty()) reply = CompanionDialogue.acknowledge(actions, repeat);
+        return new CompanionReply(reply, List.copyOf(actions), repeat);
+    }
+
+    /** A repeat covers the whole answer: two plans of one message may not ask for different counts. */
+    private static int mergedRepeat(int current, int declared) {
+        if (declared == 1) return current;
+        if (current != 1 && current != declared) throw invalid();
+        return declared;
+    }
+
+    /** The repeat named beside the steps inside one invoke, or 1 when it names none. */
+    private static int dsmlRepeat(String invoke) {
+        var matcher = DSML_REPEAT.matcher(invoke);
+        return matcher.find() ? repeatValue(JsonParser.parseString(matcher.group(1).trim())) : 1;
+    }
+
+    /** The repeat the model wrote: a whole number 1..MAX_REPEAT, or the plan is invalid. */
+    private static int repeatOf(JsonObject plan) {
+        return plan.has("repeat") ? repeatValue(plan.get("repeat")) : 1;
+    }
+
+    private static int repeatValue(JsonElement value) {
+        int repeat;
+        try { repeat = value.getAsBigDecimal().intValueExact(); }
+        catch (RuntimeException exception) { throw invalid(); }
+        if (repeat < 1 || repeat > MAX_REPEAT) throw invalid();
+        return repeat;
+    }
+
+    /**
+     * A repeat is a route over markers: every written step must be go_to_place, or a remember_place that runs once, and
+     * at least one leg must be walked, or the whole plan is invalid.
+     */
+    private static void requireWalkOnly(List<PlannedAction> steps, int repeat) {
+        if (repeat <= 1) return;
+        if (steps.stream().noneMatch(step -> "go_to_place".equals(step.type()))) throw invalid();
+        if (steps.stream().anyMatch(step -> !"go_to_place".equals(step.type()) && !"remember_place".equals(step.type()))) throw invalid();
     }
 
     /** The `location` values the model is offered: the two places and every container a store or take order may name. */
@@ -92,12 +151,19 @@ public final class CompanionPlanCodec {
     }
 
     public static List<PlannedAction> parsePlan(JsonElement input) {
+        return parsePlanWithRepeat(input).actions();
+    }
+
+    /** The written steps and how many times the walk is walked: only a route of go_to_place steps, with an optional remember_place once, may carry a repeat. */
+    public static DecodedPlan parsePlanWithRepeat(JsonElement input) {
         try {
             JsonArray steps = input.isJsonArray() ? input.getAsJsonArray() : input.getAsJsonObject().getAsJsonArray("steps");
             if (steps == null || steps.size() > MAX_STEPS) throw invalid();
+            int repeat = input.isJsonArray() ? 1 : repeatOf(input.getAsJsonObject());
             List<PlannedAction> result = new ArrayList<>();
             for (JsonElement element : steps) {
                 JsonObject step = element.getAsJsonObject();
+                step.entrySet().removeIf(field -> field.getValue().isJsonNull()); // "count": null is a missing count, not a broken plan
                 String type = step.get("action").getAsString();
                 if (!ACTIONS.contains(type)) throw invalid();
                 // No number from the model: what the prompt promises it (ore 4, stone 8), not a single block (game log 22.10).
@@ -117,10 +183,25 @@ public final class CompanionPlanCodec {
                 if ("walk_heading".equals(type) ? count < 0 || count > dev.aicompanion.entity.CompanionCourse.MAX_BLOCKS : count < 1 || count > 64) throw invalid();
                 // "Smelt the iron" names no number: all of it, not a single piece (game log 22.10).
                 if ("smelt_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
+                // «Закинь саженцы в компостер» names no number: all of them, not one (as the smelting above).
+                if ("compost_items".equals(type) && !step.has("count")) count = PlannedAction.ALL_CARRIED;
                 if (("build_house".equals(type) || "sort_chests".equals(type) || "set_home".equals(type) || "build_portal".equals(type) || "campfire_song".equals(type)) && count != 1) throw invalid();
                 if ("wait".equals(type) && (seconds < 1 || seconds > 30)) throw invalid();
                 String item = step.has("item") ? step.get("item").getAsString().trim() : "";
+                // «Подбери всё» may come with no item or with a word for the whole ground: the codec's own meaning for any drop.
+                if ("pick_up".equals(type) && (item.isEmpty() || "any".equals(item) || "all".equals(item) || "minecraft:all".equals(item)))
+                    item = dev.aicompanion.entity.CompanionPickUp.ANY_ITEM;
                 if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
+                // A building is named from the catalogue (or a kind of it) or not at all («resume» goes on with the one left unfinished); the name is kept as the catalogue spells it.
+                // «дом», «house», «маленький дом», «дом 5×5»: the plain house, as an empty item always was.
+                if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.plankHouse(item)) item = "";
+                if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.resume(item) != null) item = dev.aicompanion.entity.CompanionVillageBuildings.resume(item);
+                else if ("build_house".equals(type) && !item.isEmpty()) {
+                    String named = dev.aicompanion.entity.CompanionVillageBuildings.named(item, false);
+                    // Not invalid(): the player is told what the model named and what is like it (the message is kept by decode).
+                    if (named == null) throw new IllegalStateException("Модель назвала постройку «" + item.substring(0, Math.min(item.length(), 40)) + "», ничего не запущено. " + dev.aicompanion.entity.CompanionVillageBuildings.refusal(item));
+                    item = named;
+                }
                 // The kind of tune: none named, calm (sad too), cheerful, or simply another one.
                 if ("campfire_song".equals(type) && !dev.aicompanion.entity.CompanionCampfire.MOODS.contains(item)) throw invalid();
                 // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
@@ -128,17 +209,28 @@ public final class CompanionPlanCodec {
                 // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
                 if ("pursue_goal".equals(type) && (count > 2 || !dev.aicompanion.entity.CompanionPlaybooks.IDS.contains(item))) throw invalid();
                 if ("walk_heading".equals(type) && !dev.aicompanion.entity.CompanionCourse.valid(item)) throw invalid();
+                // A species of wood or nothing: whatever else the model wrote there («logs», a stone) names no species and is any log, as before.
+                if ("gather_wood".equals(type) && dev.aicompanion.entity.CompanionWoodKind.of(item) == null) item = "";
                 if ("gather_loose".equals(type) && (!LOOSE_ITEMS.contains(item) || FLINT.equals(item) && count > FLINT_STEP)) throw invalid();
                 if ("place_block".equals(type) && !"minecraft:chest".equals(item) && count != 1) throw invalid();
                 if (("store_items".equals(type) || "take_items".equals(type)) && !item.isEmpty() && !Set.of("resources", "all", "logs", "stone").contains(item)
                         && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if ("give_items".equals(type) && !"logs".equals(item) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                // «Почини кирку» / «сними чары с меча»: an item, or a kind with no material (any pickaxe of his).
+                if (("repair_item".equals(type) || "disenchant_item".equals(type)) && !dev.aicompanion.entity.CompanionGrinding.KINDS.contains(item)
+                        && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
+                // «Сделай костную муку в компостере»: plant scrap or one of its parts, or an item the player named.
+                if ("compost_items".equals(type) && !item.isEmpty() && !dev.aicompanion.entity.CompanionComposting.GROUPS.contains(item)
+                        && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 if (("craft_item".equals(type) || "place_block".equals(type) || "equip_item".equals(type) || "smelt_items".equals(type) || "obtain_item".equals(type)
                         || "pick_up".equals(type)) && !item.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) throw invalid();
                 String slot = step.has("slot") ? step.get("slot").getAsString() : "auto";
                 if (!Set.of("auto", "mainhand", "offhand", "head", "chest", "legs", "feet").contains(slot)) throw invalid();
                 String location = step.has("location") ? step.get("location").getAsString() : "near_player";
                 if (!validLocation(location, type)) throw invalid();
+                // A marker is named by the player's own word: 1..24 characters, never a coordinate triple.
+                if (("remember_place".equals(type) || "go_to_place".equals(type))
+                        && (!dev.aicompanion.entity.CompanionMarkerNames.valid(item) || count != 1 || !"near_player".equals(location))) throw invalid();
                 if ("mine_ore".equals(type)) {
                     var kind = dev.aicompanion.entity.CompanionOre.Kind.of(item);
                     if (kind == null) throw invalid();
@@ -177,8 +269,26 @@ public final class CompanionPlanCodec {
             }
             requireGoalAlone(result);
             requirePortalLast(result);
-            return List.copyOf(result);
-        } catch (RuntimeException exception) { throw invalid(); }
+            requireWalkOnly(result, repeat);
+            return new DecodedPlan(List.copyOf(result), repeat);
+        } catch (RuntimeException exception) { throw refusedOrInvalid(exception); }
+    }
+
+    /** A validated plan: the steps as the model wrote them and the repeat it asked for, 1 when it named none. */
+    public record DecodedPlan(List<PlannedAction> actions, int repeat) { }
+
+    /**
+     * The written steps as the queue runs them: the go_to_place steps {@code repeat} times in order, and every other step
+     * — a remembered place, a block the wording added — once before the walk; the same list when the repeat is one.
+     */
+    public static List<PlannedAction> repeated(List<PlannedAction> actions, int repeat) {
+        if (repeat <= 1) return actions;
+        List<PlannedAction> once = actions.stream().filter(step -> !"go_to_place".equals(step.type())).toList();
+        List<PlannedAction> walk = actions.stream().filter(step -> "go_to_place".equals(step.type())).toList();
+        List<PlannedAction> result = new ArrayList<>(once.size() + walk.size() * repeat);
+        result.addAll(once);
+        for (int copy = 0; copy < repeat; copy++) result.addAll(walk);
+        return List.copyOf(result);
     }
 
     /** A long goal runs on the server by itself: it is the only step of its plan, or the whole plan is invalid. */
@@ -201,7 +311,27 @@ public final class CompanionPlanCodec {
         return result.toString().trim();
     }
 
+    /** A building the model named that the catalogue lacks keeps its own message (what is like it); any other fault is an invalid plan. */
+    private static IllegalStateException refusedOrInvalid(RuntimeException exception) {
+        return exception instanceof IllegalStateException refused && refused.getMessage() != null && refused.getMessage().startsWith("Модель назвала постройку") ? refused : invalid();
+    }
+
     private static IllegalStateException invalid() {
         return new IllegalStateException("Модель передала некорректный план. Никакие его шаги не запущены; повтори просьбу.");
+    }
+
+    /** True when the answer was rejected as a plan (not a transport or provider failure): the local route may answer instead. */
+    public static boolean rejected(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (cause instanceof IllegalStateException && message != null
+                    && (message.startsWith("Модель передала некорректный план")
+                        || message.startsWith("Модель вернула пустой ответ")
+                        || message.startsWith("Модель ответила текстом")
+                        || message.startsWith("Ответ модели оборвался")
+                        || message.startsWith("Просьба содержит слишком много шагов"))) return true;
+            if (cause.getCause() == cause) break;
+        }
+        return false;
     }
 }

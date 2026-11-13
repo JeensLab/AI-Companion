@@ -8,7 +8,6 @@ import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
@@ -114,7 +113,7 @@ final class CompanionObsidian {
         if (mined >= wanted) { collect(level, got); return; }
         if (target != null && !minable(level, target)) { target = null; w.breaking.reset(); w.resetApproach(); }
         if (target == null && level.getGameTime() >= nextLook) {
-            target = nearest(level, Blocks.OBSIDIAN, pos -> minable(level, pos));
+            target = nearest(c, level, DEPTH, state -> state.is(Blocks.OBSIDIAN), pos -> minable(level, pos));
             if (target == null) nextLook = level.getGameTime() + LOOK;
         }
         if (target != null) { mine(level, got); return; }
@@ -239,7 +238,7 @@ final class CompanionObsidian {
     private void pour(ServerLevel level, int got) {
         if (aim == null) {
             BlockPos lava = pours >= POURS ? null
-                    : nearest(level, Blocks.LAVA, pos -> !passed.contains(pos) && level.getFluidState(pos).isSource() && level.getBlockState(pos.above()).isAir() && !site.test(pos));
+                    : nearest(c, level, DEPTH, state -> state.is(Blocks.LAVA), pos -> !passed.contains(pos) && level.getFluidState(pos).isSource() && level.getBlockState(pos.above()).isAir() && !site.test(pos));
             if (lava == null) {
                 // What he mined and has not picked up yet is picked up before he says how far he got.
                 if (mined > got) { collect(level, got); return; }
@@ -363,13 +362,13 @@ final class CompanionObsidian {
     }
 
     /**
-     * The nearest block of this kind within his search radius and {@link #DEPTH} above and below him that passes the test: the
+     * The nearest block of this kind within his search radius and {@code depth} above and below him that passes the test: the
      * sections nearest him first, those without it skipped by their palette (CompanionWaterFill looks for water the same way).
      */
-    private BlockPos nearest(ServerLevel level, Block block, Predicate<BlockPos> ok) {
+    static BlockPos nearest(CompanionEntity c, ServerLevel level, int depth, Predicate<BlockState> kind, Predicate<BlockPos> ok) {
         BlockPos center = c.blockPosition();
         int radius = c.getSearchRadius();
-        int minY = Math.max(level.getMinBuildHeight(), center.getY() - DEPTH), maxY = Math.min(level.getMaxBuildHeight() - 1, center.getY() + DEPTH);
+        int minY = Math.max(level.getMinBuildHeight(), center.getY() - depth), maxY = Math.min(level.getMaxBuildHeight() - 1, center.getY() + depth);
         double far = (double) radius * radius;
         List<int[]> sections = new ArrayList<>();
         for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++)
@@ -383,10 +382,10 @@ final class CompanionObsidian {
             var chunk = level.getChunkSource().getChunkNow(s[0], s[1]);
             if (chunk == null) continue;
             var section = chunk.getSection(s[2]);
-            if (section.hasOnlyAir() || !section.maybeHas(state -> state.is(block))) continue;
+            if (section.hasOnlyAir() || !section.maybeHas(kind)) continue;
             int bottom = level.getSectionYFromSectionIndex(s[2]) << 4;
             for (int y = Math.max(minY, bottom); y <= Math.min(maxY, bottom + 15); y++) for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
-                if (!section.getBlockState(x, y & 15, z).is(block)) continue;
+                if (!kind.test(section.getBlockState(x, y & 15, z))) continue;
                 BlockPos cell = new BlockPos((s[0] << 4) + x, y, (s[1] << 4) + z);
                 if (cell.distSqr(center) > far || best != null && cell.distSqr(center) >= best.distSqr(center) || !ok.test(cell)) continue;
                 best = cell;

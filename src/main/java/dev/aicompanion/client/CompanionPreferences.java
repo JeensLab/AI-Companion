@@ -23,7 +23,7 @@ public final class CompanionPreferences {
     public static void sync() {
         Minecraft client = Minecraft.getInstance();
         var server = client.getSingleplayerServer();
-        if (server == null || client.player == null) return;
+        if (server == null || client.player == null) { CompanionMarkerView.clear(); return; }
         var playerId = client.player.getUUID();
         var clientWorld = client.level;
         String name = CompanionIdentity.cleanName(OpenRouterConfig.COMPANION_NAME.get());
@@ -39,21 +39,30 @@ public final class CompanionPreferences {
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(playerId);
             if (player == null) return;
+            dev.aicompanion.entity.CompanionBuildPlacement.clientReady(player);
             CompanionMemoryView.pull(player, longTerm, digest -> client.execute(() -> {
                 if (client.level == clientWorld) CompanionMemoryView.deliver(session, forgetEpoch, digest, longTerm);
             }));
             var companion = CompanionEvents.getOwnedCompanion(player);
             player.getPersistentData().putBoolean("aicompanion:chunk_loading_enabled", chunks);
+            boolean markers = OpenRouterConfig.MARKERS.get();
+            // The names the client may recognise without a model request; the settings screen reads the list itself.
+            CompanionMarkerView.pull(player, markers, (names, on) -> client.execute(() -> {
+                if (client.level == clientWorld) CompanionMarkerView.deliver(names, on);
+            }));
             if (companion != null) {
                 companion.setCompanionName(name); companion.setSearchRadius(radius); companion.setLifestyle(chunks, speech);
                 companion.setMurmurIntervalPercent(murmurInterval);
                 companion.setConversationAvailable(conversationAvailable);
                 companion.setDeathRecovery(OpenRouterConfig.DEATH_RECOVERY.get());
+                companion.setBoatRide(OpenRouterConfig.BOAT_RIDE.get());
                 companion.setGuardByPlayer(OpenRouterConfig.GUARD_NEAREST_TO_PLAYER.get());
                 companion.setOtherContainers(OpenRouterConfig.OTHER_CONTAINERS.get());
                 companion.setPickUpNearby(OpenRouterConfig.PICK_UP_NEARBY.get(), OpenRouterConfig.PICK_UP_RADIUS.get());
+                companion.setMarkersEnabled(OpenRouterConfig.MARKERS.get());
                 companion.setUrgentOrder(OpenRouterConfig.URGENT_ORDER.get());
                 companion.setBoatClutch(OpenRouterConfig.BOAT_CLUTCH.get());
+                companion.setReplantSaplings(OpenRouterConfig.REPLANT_SAPLINGS.get());
                 companion.setDeathRecoveryLimits(OpenRouterConfig.DEATH_RECOVERY_ATTEMPTS.get(), OpenRouterConfig.DEATH_RECOVERY_DEATHS.get());
                 String remote = companion.getName().getString() + " находится на " + companion.blockPosition().toShortString()
                         + ", измерение=" + companion.level().dimension().location() + ", занят=" + companion.isGatheringTask()

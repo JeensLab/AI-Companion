@@ -34,7 +34,7 @@ public final class CompanionDragonBreathTests {
      * The breath falls on him where he stands by the player: he walks out of it and is not in it again while it lasts. Growing, it
      * may come into his margin by the player; then he steps out again before it reaches him.
      */
-    @GameTest(template = "tall_tree", batch = "breath_on_him", timeoutTicks = 400)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 400)
     public static void heStepsOutOfTheBreathThatFallsOnHim(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 15, 15, 9, 15);
@@ -55,7 +55,7 @@ public final class CompanionDragonBreathTests {
     }
 
     /** Told to stay, he still walks out of the breath, and stands where he got out to. */
-    @GameTest(template = "tall_tree", batch = "breath_staying", timeoutTicks = 400)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 400)
     public static void heStepsOutOfTheBreathWhenToldToStay(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 15, 15, 9, 15);
@@ -71,7 +71,7 @@ public final class CompanionDragonBreathTests {
     }
 
     /** The breath falls on him halfway through «come to me», with the player beyond it: he walks out, and the order goes on. */
-    @GameTest(template = "tall_tree", batch = "breath_order", timeoutTicks = 700)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 700)
     public static void anOrderWaitsWhileHeStepsOutOfTheBreath(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 3, 15, 3, 15);
@@ -103,7 +103,7 @@ public final class CompanionDragonBreathTests {
      * The player stands in the breath: following, he waits at its edge instead of going in, and says why, once in the fight. The
      * player out of it, he comes; in it again, he waits again without saying it again.
      */
-    @GameTest(template = "tall_tree", batch = "breath_player", timeoutTicks = 800)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 800)
     public static void heWaitsAtTheEdgeWhileThePlayerStandsInTheBreath(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 1, 15, 15, 15);
@@ -152,7 +152,7 @@ public final class CompanionDragonBreathTests {
      * The breath is a layer half a block high on the ground: standing on a block beside it he is over it and it does not reach him.
      * Told to stay, he stays there.
      */
-    @GameTest(template = "tall_tree", batch = "breath_below", timeoutTicks = 300)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 300)
     public static void theBreathBelowHisFeetIsLeftAlone(GameTestHelper h) {
         floor(h);
         box(h, 12, 2, 14, 18, 2, 18, Blocks.STONE);
@@ -174,7 +174,7 @@ public final class CompanionDragonBreathTests {
      * «Come to me» with the player standing in the breath, for longer than an order may stand still (12 s): he goes to its edge and
      * the order waits there; the player out of it, the order ends by the player.
      */
-    @GameTest(template = "tall_tree", batch = "breath_come_player", timeoutTicks = 700)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 700)
     public static void comeToThePlayerInTheBreathWaitsAtItsEdge(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 1, 15, 15, 15);
@@ -210,7 +210,7 @@ public final class CompanionDragonBreathTests {
     }
 
     /** A cloud that is not the dragon's breath (a lingering potion's: whether it hurts or heals does not show) is left alone. */
-    @GameTest(template = "tall_tree", batch = "breath_potion", timeoutTicks = 300)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 300)
     public static void aCloudThatIsNotTheDragonsBreathIsLeftAlone(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 15, 15, 9, 22);
@@ -230,7 +230,7 @@ public final class CompanionDragonBreathTests {
     }
 
     /** The breath lies on the straight way to the player: he goes round it, clear of it all the way, while it is still there. */
-    @GameTest(template = "tall_tree", batch = "breath_round", timeoutTicks = 700)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 700)
     public static void heGoesRoundTheBreathOnHisWay(GameTestHelper h) {
         floor(h);
         CompanionEntity c = companion(h, 3, 15, 3, 15);
@@ -241,7 +241,7 @@ public final class CompanionDragonBreathTests {
      * The breath fills the only way, a walled lane, for longer than an order may stand still (12 s): he waits for it to go,
      * without giving the order up, and then walks on.
      */
-    @GameTest(template = "tall_tree", batch = "breath_lane", timeoutTicks = 800)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 800)
     public static void heWaitsForTheBreathThatFillsTheOnlyWay(GameTestHelper h) {
         lane(h);
         CompanionEntity c = companion(h, 3, 15, 3, 15);
@@ -249,7 +249,7 @@ public final class CompanionDragonBreathTests {
     }
 
     /** Following, the same: no «no way to you» for the breath, and he comes once it is gone. */
-    @GameTest(template = "tall_tree", batch = "breath_lane_follow", timeoutTicks = 800)
+    @GameTest(template = "tall_tree", batch = "breath", timeoutTicks = 800)
     public static void heFollowsDownTheLaneOnceTheBreathIsGone(GameTestHelper h) {
         lane(h);
         CompanionEntity c = companion(h, 3, 15, 28, 15);

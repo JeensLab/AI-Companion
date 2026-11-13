@@ -31,7 +31,10 @@ public final class CompanionLavaPlugTests {
 
     private CompanionLavaPlugTests() { }
 
-    /** Iron with a lava source right behind it in the wall: mined, a cobblestone stands where the lava was, one cobblestone gone, no lava, no burn. */
+    /**
+     * Iron with a lava source right behind it in the wall: mined, a cobblestone stands where the lava was, one cobblestone gone, no lava, no burn.
+     * The plug stands within a few ticks of the cell being opened: far inside the 10 ticks after which lava of the Nether moves.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
     public static void lavaBesideTheOreIsPluggedAndTheOreMined(GameTestHelper h) {
         CompanionEntity c = wallArena(h);
@@ -45,6 +48,8 @@ public final class CompanionLavaPlugTests {
             h.assertTrue(h.getTick() > SETTLE && idle(c) && c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c));
             h.assertTrue(h.getBlockState(lava).is(Blocks.COBBLESTONE), "No plug where the lava was: " + h.getBlockState(lava));
             h.assertTrue(count(c, Items.COBBLESTONE) == 2, "Plugs left in the bag: " + count(c, Items.COBBLESTONE));
+            h.assertTrue(watch.opened > 0 && watch.plugged > 0, "Ore not opened or lava not plugged: " + report(c));
+            h.assertTrue(watch.plugged - watch.opened < NETHER_LAVA_TICKS / 2, "Plug came " + (watch.plugged - watch.opened) + " ticks after the opening");
             noLava(h, watch, c);
         });
     }
@@ -68,23 +73,6 @@ public final class CompanionLavaPlugTests {
             for (int x = 21; x <= 25; x++) for (int z = 11; z <= 21; z++) if (h.getBlockState(new BlockPos(x, 3, z)).is(Blocks.COBBLESTONE)) plugs++;
             h.assertTrue(plugs >= 1, "No plug in the lake over his tunnel: " + report(c));
             noLava(h, watch, c);
-        });
-    }
-
-    /** The plug stands within a few ticks of the cell being opened: far inside the 10 ticks after which lava of the Nether moves. */
-    @GameTest(template = "tall_tree", timeoutTicks = 900)
-    public static void thePlugLandsBeforeLavaOfTheNetherCouldMove(GameTestHelper h) {
-        CompanionEntity c = wallArena(h);
-        BlockPos ore = new BlockPos(20, 1, 16), lava = new BlockPos(21, 1, 16);
-        h.setBlock(ore, Blocks.IRON_ORE); h.setBlock(lava, Blocks.LAVA);
-        h.setBlock(ore.above(), Blocks.AIR); // open above: no stone is dug first, so the cobblestone count is the plugs' alone
-        c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
-        Watch watch = watch(h, c, ore, lava);
-        order(h, c);
-        h.succeedWhen(() -> {
-            h.assertTrue(h.getTick() > SETTLE && idle(c) && c.didLastTaskSucceed(), report(c));
-            h.assertTrue(watch.opened > 0 && watch.plugged > 0, "Ore not opened or lava not plugged: " + report(c));
-            h.assertTrue(watch.plugged - watch.opened < NETHER_LAVA_TICKS / 2, "Plug came " + (watch.plugged - watch.opened) + " ticks after the opening");
         });
     }
 
@@ -136,6 +124,7 @@ public final class CompanionLavaPlugTests {
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > SETTLE && idle(c), "Work still active: " + c.getLastTaskResult());
             h.assertTrue(h.getBlockState(stone).is(Blocks.STONE) && h.getBlockState(lava).is(Blocks.LAVA), "Stone dug or lava plugged");
+            h.assertTrue(count(c, Items.COBBLESTONE) == 0, "Stone brought from outside the arena: " + c.getStoredItemsSummary() + ", he at " + h.relativePos(c.blockPosition()).toShortString());
             h.assertTrue(count(c, Items.DIRT) == 3, "Plugs spent on stone: " + c.getStoredItemsSummary());
             h.assertTrue(c.isAlive() && c.getHealth() >= c.getMaxHealth(), "Hurt: " + c.getHealth());
         });
@@ -265,6 +254,9 @@ public final class CompanionLavaPlugTests {
     private static CompanionEntity wallArena(GameTestHelper h) {
         box(h, 0, 0, 0, 31, 0, 31, Blocks.BEDROCK);
         box(h, 0, 7, 0, 31, 7, 31, Blocks.BEDROCK);
+        // Walled in: with no stone to take here he would go for it to the stone other tests lay past their own arenas, and pick up what lies on the way.
+        box(h, 0, 1, 0, 31, 6, 0, Blocks.BEDROCK); box(h, 0, 1, 31, 31, 6, 31, Blocks.BEDROCK);
+        box(h, 0, 1, 0, 0, 6, 31, Blocks.BEDROCK); box(h, 31, 1, 0, 31, 6, 31, Blocks.BEDROCK);
         box(h, 20, 1, 10, 26, 6, 22, Blocks.STONE);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);
         ServerPlayer owner = h.makeMockServerPlayerInLevel();

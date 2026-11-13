@@ -57,7 +57,7 @@ final class CompanionToolSense {
     }
     /** Already collected order materials are not spent on optional tool improvements. */
     boolean tick(int reservedStone) {
-        this.reservedStone = Math.max(0, reservedStone);
+        this.reservedStone = Math.max(0, reservedStone) + owner.work.buildingStone();
         if (!(owner.level() instanceof ServerLevel level) || !owner.onGround()) return bench != null;
         if (bench != null) return walkToBench(level);
         int hash = carriedHash();

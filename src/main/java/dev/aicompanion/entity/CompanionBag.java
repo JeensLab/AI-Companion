@@ -19,6 +19,8 @@ final class CompanionBag {
     static final String BELONGINGS_SPOT = "aicompanion:belongings_spot";
     /** On junk he let go to make room for his own things: never counted as part of a death place again. */
     static final String JUNK = "aicompanion:junk";
+    /** How the AI summary names what a grid craft left in the 3×3 grid rather than in the bag. */
+    private static final String GRID_CELL = " (в сетке крафта)";
     final CompanionEntity c;
 
     CompanionBag(CompanionEntity c) { this.c = c; }
@@ -119,8 +121,14 @@ final class CompanionBag {
         c.getEntityData().set(CompanionEntity.DATA_INVENTORY_SUMMARY, buildInventorySummary());
         java.util.Map<String, Integer> items = new java.util.LinkedHashMap<>();
         for (ItemStack stack : c.companionInventory) {
-            if (!stack.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
+            // Enchantments and wear are named for the model: «почини» and «сними чары» (CompanionGrinding) are about them.
+            if (!stack.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()) + (net.minecraft.world.item.enchantment.EnchantmentHelper.hasAnyEnchantments(stack) ? " (с чарами)" : "")
+                    + (stack.isDamaged() ? " (с износом)" : ""), stack.getCount(), Integer::sum);
         }
+        // A block a grid craft left in the 3×3 grid is carried as much as the bag's stacks: without it the model sees
+        // neither the block it asked for nor the leftovers of a multi-output craft, which the bag has no cell for.
+        ItemStack inGrid = c.work.items.gridBlock();
+        if (!inGrid.isEmpty()) items.merge(BuiltInRegistries.ITEM.getKey(inGrid.getItem()) + GRID_CELL, inGrid.getCount(), Integer::sum);
         c.getEntityData().set(CompanionEntity.DATA_INVENTORY_AI, items.isEmpty() ? "пусто" : items.entrySet().stream()
                 .map(entry -> entry.getValue() + "x " + entry.getKey()).collect(java.util.stream.Collectors.joining(", ")));
     }
@@ -147,7 +155,10 @@ final class CompanionBag {
     /** obtain_item: the chain of his own skills that gets the item, planned from what he carries now (CompanionObtain). */
     public CompanionObtain.Plan obtainPlan(String item, int count) {
         if (!(c.level() instanceof ServerLevel serverLevel)) return new CompanionObtain.Plan(List.of(), "Для этого нужен загруженный мир.");
-        return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count);
+        return CompanionObtain.plan(serverLevel, carriedForPlan(), c.hasCraftingTableNearby() || c.hasKnownCraftingTableWithin(16), item, count,
+                wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? CompanionComposting.find(c, true) != null
+                        : CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.ripeNear(c, serverLevel, wanted)
+                        || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted));
     }
     /** The end of obtain_item: success only by the bag, never by the plan. */
     public CompanionActionResult carriedCheck(String item, int count) {

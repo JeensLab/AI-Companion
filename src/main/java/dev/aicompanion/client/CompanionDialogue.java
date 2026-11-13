@@ -16,7 +16,7 @@ public final class CompanionDialogue {
                 .replaceAll("\\{[^{}]*\"(?:action|steps)\"[^{}]*}", "")).replaceAll("[ \\t]+", " ").trim();
     }
 
-    private static final Pattern ID = Pattern.compile("\\b(?:minecraft|aicompanion):([a-z0-9_/.]+)");
+    private static final Pattern ID = Pattern.compile("\\b([a-z0-9_.-]+):([a-z0-9/._-]+)");
     /** «добыл 2 коровы», «Добыл 1 свинью из 3», «3 животных»: the hunt's own count, not the blocks of stone or ore in the same report. */
     private static final Pattern HUNTED = Pattern.compile("(?iu)добыл (\\d+ (?:" + java.util.Arrays.stream(dev.aicompanion.entity.CompanionGame.Kind.values())
             .flatMap(kind -> java.util.stream.Stream.of(kind.one, kind.few, kind.many)).collect(java.util.stream.Collectors.joining("|")) + "|животное|животных))(?![а-яё])");
@@ -26,8 +26,13 @@ public final class CompanionDialogue {
         var matcher = ID.matcher(text);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
-            String name = itemName(matcher.group());
-            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(name.equals(matcher.group()) ? matcher.group(1).replace('_', ' ') : name));
+            String id = matcher.group(), namespace = matcher.group(1);
+            var location = net.minecraft.resources.ResourceLocation.tryParse(id);
+            // Another namespace is left alone unless it really is an item: a URL or a dimension id is no thing of ours.
+            if (!"minecraft".equals(namespace) && !"aicompanion".equals(namespace)
+                    && (location == null || !net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(location))) continue;
+            String name = itemName(id);
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(name.equals(id) ? matcher.group(2).replace('_', ' ') : name));
         }
         return matcher.appendTail(result).toString();
     }
@@ -52,19 +57,24 @@ public final class CompanionDialogue {
     }
 
     public static String acknowledge(List<PlannedAction> actions) {
+        return acknowledge(actions, 1);
+    }
+
+    /** A walking route walked several times says so: the player hears the count he asked for before the walk starts. */
+    public static String acknowledge(List<PlannedAction> actions, int repeat) {
         boolean wood = actions.stream().anyMatch(action -> "gather_wood".equals(action.type()));
         boolean crafting = actions.stream().anyMatch(action -> "craft_item".equals(action.type()));
         if (wood && crafting) return "Окей, схожу за деревом и сделаю инструменты.";
         if (wood) return "Ладно, я за деревом. Лесопилка на выезде.";
         if (actions.isEmpty()) return "";
-        return switch (actions.getFirst().type()) {
+        String text = switch (actions.getFirst().type()) {
             case "gather_dirt" -> "Окей, накопаю земли.";
             case "gather_loose" -> "Ладно, возьму лопату и накопаю " + looseWord(actions.getFirst()) + ".";
             case "gather_stone" -> "Ладно, возьму кирку и пойду за камнем.";
             case "store_items" -> "Сейчас сложу " + CompanionContainers.into(actions.getFirst().location()) + ".";
             case "sort_chests" -> "Сейчас разложу по сундукам.";
             case "take_items" -> "Сейчас заберу " + CompanionContainers.from(actions.getFirst().location()) + ".";
-            case "build_house" -> "Окей, построю нам небольшой деревянный дом.";
+            case "build_house" -> actions.getFirst().item().isEmpty() ? "Окей, построю нам небольшой деревянный дом." : actions.getFirst().item().startsWith("resume") ? "Окей, дострою." : "Окей, построю: " + dev.aicompanion.entity.CompanionBuildPlacement.Site.nameOf(actions.getFirst().item()) + ".";
             case "build_portal" -> "Окей, займусь порталом в Незер.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";
@@ -78,6 +88,8 @@ public final class CompanionDialogue {
                 default -> "Сейчас сыграю.";
             };
             case "set_home" -> "Запомнил, наш дом здесь.";
+            case "remember_place" -> "Запомнил это место как «" + actions.getFirst().item() + "».";
+            case "go_to_place" -> "Ага, иду к метке «" + actions.getFirst().item() + "».";
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
             case "enter_portal" -> "Попробую зайти в портал.";
@@ -94,9 +106,31 @@ public final class CompanionDialogue {
             case "harvest_crops" -> "Ага, пойду соберу урожай.";
             case "obtain_item" -> "Ага, добуду.";
             case "pick_up" -> "Ага, подберу, что лежит рядом.";
+            case "repair_item" -> "Сейчас сложу две в одну.";
+            case "disenchant_item" -> "Ага, сниму чары на точиле.";
+            case "compost_items" -> "Ага, займусь компостером.";
             case "pursue_goal" -> "Дело долгое. Прикину, докуда смогу дойти.";
             default -> "Окей.";
         };
+        // The count belongs to the walk wherever the steps start: a remembered place or a placed block is said once, then the route.
+        return text + routeRepeat(actions, repeat);
+    }
+
+    /** «Маршрут «дом» → «дача» → «дом» — 2 раза.»: every written leg in order, and the count in the player's own word. */
+    private static String routeRepeat(List<PlannedAction> actions, int repeat) {
+        if (repeat <= 1) return "";
+        String route = actions.stream().filter(action -> "go_to_place".equals(action.type()))
+                .map(action -> "«" + action.item() + "»").collect(java.util.stream.Collectors.joining(" → "));
+        if (route.isBlank()) return "";
+        return " Маршрут " + route + " — " + repeat + " " + times(repeat) + ".";
+    }
+
+    /** «2 раза», «5 раз», «11 раз», «21 раз», «22 раза»: how a Russian player says the count. */
+    public static String times(int count) {
+        int lastTwo = count % 100;
+        int last = count % 10;
+        if (lastTwo >= 11 && lastTwo <= 14) return "раз";
+        return last >= 2 && last <= 4 ? "раза" : "раз";
     }
 
     /** The note of a sorting that an order ended while he carried things (CompanionSorting): said whatever step of the plan it came with. */
@@ -119,7 +153,10 @@ public final class CompanionDialogue {
 
     public static String describe(PlannedAction action) {
         return switch (action.type()) {
-            case "gather_wood" -> "нарубить брёвна (" + action.count() + " шт.)";
+            case "gather_wood" -> {
+                var wood = dev.aicompanion.entity.CompanionWoodKind.of(action.item());
+                yield "нарубить брёвна " + (wood == null ? "" : wood.genitive() + " ") + "(" + action.count() + " шт.)";
+            }
             case "gather_dirt" -> "накопать землю (" + action.count() + " шт.)";
             case "gather_loose" -> "накопать " + looseWord(action) + " (" + action.count() + " шт.)";
             case "gather_stone" -> "добыть камень (" + action.count() + " шт.)";
@@ -146,9 +183,22 @@ public final class CompanionDialogue {
             case "harvest_crops" -> "собрать урожай";
             case "obtain_item" -> "добыть «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "pick_up" -> "подобрать «" + itemName(action.item()) + "» (до " + action.count() + " шт.)";
+            case "repair_item" -> "починить «" + dev.aicompanion.entity.CompanionGrinding.label(action.item()) + "»";
+            case "disenchant_item" -> "снять чары: «" + dev.aicompanion.entity.CompanionGrinding.label(action.item()) + "», на точиле";
+            case "compost_items" -> "scrap".equals(action.item()) ? "сделать костную муку в компостере" + (action.count() > 0 ? " (" + action.count() + " шт.)" : "")
+                    : "положить в компостер: " + switch (action.item()) { case "saplings" -> "саженцы"; case "seeds" -> "семена"; case "leaves" -> "листву"; default -> "«" + itemName(action.item()) + "»"; }
+                    + (action.count() > 0 ? " (" + action.count() + " шт.)" : ", всё");
             case "verify_item" -> "проверить, что «" + itemName(action.item()) + "» у меня";
             case "fill_bucket" -> "набрать воды в ведро (" + action.count() + " шт.)";
             case "mine_obsidian" -> "добыть обсидиан (" + action.count() + " шт.)";
+            case "gather_block" -> "собрать «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "compost_meal" -> "сделать костную муку в компостере (" + action.count() + " шт.)";
+            case "hunt_drop" -> "добыть с монстров «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "shear_sheep" -> "настричь с овец «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "milk_animal" -> "надоить молока (" + action.count() + " шт.)";
+            case "collect_eggs" -> "подобрать яйца (" + action.count() + " шт.)";
+            case "harvest_hive" -> "собрать с улья «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "strip_log" -> "обтесать топором: «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";
             case "equip_item" -> "взять «" + itemName(action.item()) + "»";
@@ -165,6 +215,8 @@ public final class CompanionDialogue {
                     + (action.count() == PlannedAction.ALL_CARRIED ? "всё, что есть" : action.count() + " шт.") + ")";
             case "come" -> "подойти к тебе";
             case "set_home" -> "запомнить наш дом";
+            case "remember_place" -> "запомнить место «" + action.item() + "»";
+            case "go_to_place" -> "дойти до метки «" + action.item() + "»";
             case "enter_portal" -> "зайти в портал";
             case "walk_heading" -> "провести тебя " + dev.aicompanion.entity.CompanionCourse.where(action.item());
             case "follow" -> "идти за тобой";
@@ -211,6 +263,8 @@ public final class CompanionDialogue {
     }
 
     public static String itemName(String id) {
+        // «Всё, что лежит» has no item of its own in the registry: its name is the word, not the raw id.
+        if (dev.aicompanion.entity.CompanionPickUp.ANY_ITEM.equals(id)) return "вещи";
         var key = net.minecraft.resources.ResourceLocation.tryParse(id);
         if (key == null) return id;
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(key)
@@ -280,6 +334,12 @@ public final class CompanionDialogue {
         return "Не вышло: " + String.join(", ", names) + " — " + Character.toLowerCase(why.charAt(0)) + why.substring(1);
     }
 
+    /** The lines a pickup step wrote: what was taken, or what really lies around instead (its honest answer). */
+    private static boolean isPickUpLine(String line) {
+        return line.startsWith("Подобрал ") || line.startsWith("Не достал ") || line.startsWith("Не смог подобрать ")
+                || line.startsWith("Не успел подобрать ") || line.startsWith("Рядом нет ") || line.contains("Лежит рядом:");
+    }
+
     /** How the refusals of the sorting itself begin (CompanionSorting); any other stop of a plan with sorting in it goes the usual way. */
     private static final List<String> SORT_OWN = List.of("Рядом с тобой сундуков", "Не смог дойти до", "Не получилось разложить", "Сумка забита, сначала", "Пропустил",
             "Не успел закончить работу");
@@ -292,10 +352,20 @@ public final class CompanionDialogue {
     private static String summarizeSteps(List<PlannedAction> actions, String report) {
         if (report.isBlank()) return "";
         if (actions.stream().anyMatch(CompanionDialogue::isGoalAction)) return report.replace("План остановлен: ", "");
-        // «Подбери» says its own facts: what was taken, or what really lies around instead (the honest answer).
-        if (!actions.isEmpty() && actions.stream().allMatch(action -> "pick_up".equals(action.type()))) {
-            int stoppedAt = report.lastIndexOf("План остановлен:");
-            return speakable(stoppedAt >= 0 ? report.substring(stoppedAt + "План остановлен:".length()) : report);
+        // «Подбери» says its own facts: what was taken, or what really lies around instead (the honest answer). A plan
+        // that goes on after the pickup keeps them, said before the rest: the player hears both, not the last step alone.
+        if (actions.stream().anyMatch(action -> "pick_up".equals(action.type()))) {
+            List<String> picked = new java.util.ArrayList<>(), rest = new java.util.ArrayList<>();
+            for (String line : report.split("\n")) {
+                if (line.startsWith("План остановлен: ")) line = line.substring("План остановлен: ".length());
+                (isPickUpLine(line) ? picked : rest).add(line);
+            }
+            String said = speakable(String.join("\n", picked));
+            List<PlannedAction> later = actions.stream().filter(action -> !"pick_up".equals(action.type())).toList();
+            String tail = later.isEmpty() ? "" : summarizeSteps(later, String.join("\n", rest));
+            // A step that says nothing by itself («подождать») still has its own line in the report: it is said.
+            if (tail.isBlank() && !later.isEmpty()) tail = speakable(String.join("\n", rest));
+            return (said + " " + tail).strip();
         }
         String lower = report.toLowerCase(java.util.Locale.ROOT);
         if (lower.contains("такое поручение уже выполняется")) return "Я уже занимаюсь этим поручением.";

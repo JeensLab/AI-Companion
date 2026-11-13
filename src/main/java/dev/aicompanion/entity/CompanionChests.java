@@ -25,6 +25,8 @@ final class CompanionChests {
     /** The block id a store or take order named («в бочку»); null for an order that names none, which means the chests. */
     String kind;
     private static final int ORDER_MAX = 64;
+    /** How long «the chest I just set down» stays the target of a store order: a later request must go the old way. */
+    private static final int PLACED_HINT_TICKS = 20 * 60;
     static final CompanionActionResult COUNT_REFUSED = CompanionActionResult.failed("За раз можно добыть от 1 до 64 блоков.");
 
     CompanionChests(CompanionWork w) { this.w = w; }
@@ -44,7 +46,7 @@ final class CompanionChests {
 
     /** 1 to 64; smelt_items, and store_items into a named container, also take ALL_CARRIED: everything, no number said. */
     static boolean countOk(String action, int count, String location) {
-        boolean everything = "smelt_items".equals(action) || "store_items".equals(action) && kindFor(action, location) != null;
+        boolean everything = "smelt_items".equals(action) || "compost_items".equals(action) || "store_items".equals(action) && kindFor(action, location) != null;
         return count == CompanionWork.ALL_CARRIED && everything || count >= 1 && count <= ORDER_MAX;
     }
 
@@ -67,7 +69,9 @@ final class CompanionChests {
                 if (!hasChestItem()) {
                     if (w.crafting.approachCraftingTable()) return;
                     if (!w.items.moveHandMaterialsToBag()) return;
-                    CompanionActionResult crafted = w.owner.craftFromBag("minecraft:chest", 1);
+                    // A full bag has no cell for the planks the chest is made of: the craft itself says so, then a stack
+                    // is held in a free hand (nothing of the chain's own materials) and the craft is tried again.
+                    CompanionActionResult crafted = w.items.craftFromBagMakingRoom("minecraft:chest", 1);
                     if (!crafted.success()) {
                         if (crafted.message().contains("места") || crafted.message().contains("безопасное место")) w.finish(false, crafted.message());
                         else w.crafting.requestWood(CompanionWork.Phase.STORE);
@@ -77,9 +81,12 @@ final class CompanionChests {
                 }
                 if (w.trip.toHome() || w.trip.backToRoom("minecraft:chest")) return;
                 CompanionActionResult placed = w.trip.place("minecraft:chest");
-                if (!placed.success()) { w.finish(false, placed.message()); return; }
+                if (!placed.success()) { w.items.putHeldStackBack(); w.finish(false, placed.message()); return; }
+                w.items.putHeldStackBack();
                 w.newChests++;
-                w.target = findChest(level);
+                // The chest just set down is the one this order fills: searching again could pick another chest.
+                BlockPos setDown = w.owner.lastPlacedPosition();
+                w.target = setDown != null ? setDown : findChest(level);
                 w.resetApproach();
                 if (w.target == null) { w.finish(false, "Сундук поставил, но не могу его открыть. Вещи остались в сумке."); return; }
                 return; // Open on the next work stage, after the placement gesture.
@@ -112,12 +119,15 @@ final class CompanionChests {
     private void placeRequestedChests() {
         if (!w.owner.onGround()) return;
         if (w.newChests >= w.requestedCount) { finishPlacedChests(); return; }
-        boolean hasItem = w.items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem) && !stack.isEmpty());
+        boolean hasItem = w.items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem) && !stack.isEmpty())
+                || w.items.gridBlockIs(w.requestedItem);
         if (!hasItem) {
             if (!CompanionCraftCosts.supportsCraft(w.requestedItem, 1)) { w.finish(false, "Нет блока " + w.requestedItem + " в сумке, его подготовку пока не умею."); return; }
             if (w.crafting.needsWorkbench(w.requestedItem) && w.crafting.approachCraftingTable()) return;
             if (!w.items.moveHandMaterialsToBag()) return;
-            CompanionActionResult crafted = w.owner.craftFromBag(w.requestedItem, 1);
+            // A full bag has no cell for what the block is made of: the craft itself says so, then a stack is held in a
+            // free hand (nothing of the chain's own materials) and the craft is tried again.
+            CompanionActionResult crafted = w.items.craftFromBagMakingRoom(w.requestedItem, 1);
             if (!crafted.success()) {
                 if (crafted.message().contains("места") || crafted.message().contains("безопасное место"))
                     w.finish(false, "Поставил " + w.newChests + " из " + w.requestedCount + ". " + crafted.message());
@@ -151,6 +161,8 @@ final class CompanionChests {
         if (w.insideHouse && !w.house.interiorAvailable((ServerLevel)w.owner.level())) { w.finish(false, "Дом изменился, место внутри больше не подтверждено."); return; }
         CompanionActionResult placed = w.owner.placeBlockNearResult(w.requestedItem, w.placementAnchor, pos -> !w.insideHouse || w.house.inside(pos));
         if (!placed.success()) { w.finish(false, "Поставил " + w.newChests + " из " + w.requestedCount + ". " + placed.message()); return; }
+        // The block has left the bag: the stack held in a hand goes back into the cell it freed.
+        w.items.putHeldStackBack();
         if (w.owner.lastPlacedPosition() != null) w.placedChests.add(w.owner.lastPlacedPosition());
         w.newChests++;
         if (w.newChests >= w.requestedCount) finishPlacedChests();
@@ -237,7 +249,7 @@ final class CompanionChests {
 
     private BlockPos findChest(ServerLevel level) {
         LinkedHashMap<BlockPos, Container> usable = usableChests(level);
-        if (w.job == CompanionWork.Job.STORE) return storeTarget(usable);
+        if (w.job == CompanionWork.Job.STORE) return storeTarget(level, usable);
         for (var entry : usable.entrySet())
             if (w.job == CompanionWork.Job.TAKE ? containsRequested(entry.getValue()) : w.job == CompanionWork.Job.PLACE_CHEST || hasCapacity(entry.getValue())) return entry.getKey();
         return null;
@@ -263,8 +275,44 @@ final class CompanionChests {
     /** One point for the whole order, where the work began: the homes must not change as he walks between the chests. */
     private BlockPos storeCenter() { return w.workOrigin != null ? w.workOrigin : w.owner.blockPosition(); }
 
-    /** The chest to go to next: the nearest "own group" chest of anything he carries; with none, the first in the old order. */
-    private BlockPos storeTarget(LinkedHashMap<BlockPos, Container> usable) {
+    /**
+     * The chest he set down himself for this order: «поставь сундук и сложи в него вещи» fills it, not the old chest where the
+     * same things already lie. Null when it is gone, out of the search radius or has no room — then the old order decides.
+     */
+    private BlockPos placedChest(ServerLevel level) {
+        BlockPos pos = w.owner.lastPlacedPosition();
+        if (pos == null) return null;
+        // A chest whose walk already failed is not handed back: the old order moves on to the next one (main did).
+        if (w.triedChests.contains(pos)) return null;
+        // The hint is good for the request it was placed for only: an old placement must not hijack a later one.
+        if (level.getGameTime() - w.owner.lastPlacedTick > PLACED_HINT_TICKS) {
+            w.owner.lastPlacedPosition = null;
+            return null;
+        }
+        int radius = Math.min(32, w.owner.getSearchRadius());
+        if (pos.distSqr(w.owner.blockPosition()) > radius * radius) return null;
+        if (w.owner.ownPlacesOnly() && (!w.owner.placedByMe(pos) || !w.owner.leashAllows(pos))) return null;
+        // An order inside the house uses only its interior, as usableChests does.
+        if (w.insideHouse && !w.house.inside(pos)) return null;
+        Container chest = containerAt(level, pos);
+        if (chest == null) {
+            // What he set down is gone or is no container this order may use: the next order goes the old way.
+            if (level.hasChunkAt(pos) && CompanionContainers.storageAt(level, pos) == null) w.owner.lastPlacedPosition = null;
+            return null;
+        }
+        return takesSomething(chest) ? pos : null;
+    }
+
+    /** Whether a store order would put anything of his bag into this chest now (the reserves counted down). */
+    private boolean takesSomething(Container chest) {
+        for (int slot : movableSlots()) if (hasRoomFor(chest, w.owner.getItem(slot))) return true;
+        return false;
+    }
+
+    /** The chest to go to next: the one he set down last, else the nearest "own group" chest of anything he carries; with none, the first in the old order. */
+    private BlockPos storeTarget(ServerLevel level, LinkedHashMap<BlockPos, Container> usable) {
+        BlockPos placed = placedChest(level);
+        if (placed != null) return placed;
         BlockPos center = storeCenter(), nearest = null, first = null;
         int firstIndex = Integer.MAX_VALUE;
         List<BlockPos> order = new ArrayList<>(usable.keySet());
@@ -334,7 +382,9 @@ final class CompanionChests {
         int moved = 0;
         int[] reserves = reserves(w.requestedItem);
         // A store order takes to this chest only what belongs here: the homes are fixed before anything moves.
-        LinkedHashMap<BlockPos, Container> usable = w.job == CompanionWork.Job.STORE ? usableChests(level) : null;
+        // The chest he set down himself is the one the order named for filling, so it takes everything it can hold.
+        boolean filling = w.job == CompanionWork.Job.STORE && at.equals(placedChest(level));
+        LinkedHashMap<BlockPos, Container> usable = w.job == CompanionWork.Job.STORE && !filling ? usableChests(level) : null;
         Set<Integer> mine = new HashSet<>();
         if (usable != null) for (int slot : movableSlots()) if (at.equals(homeOf(w.owner.getItem(slot), usable, new boolean[1]))) mine.add(slot);
         for (int source = 0; source < w.owner.getContainerSize(); source++) {
@@ -448,5 +498,5 @@ final class CompanionChests {
         return resource(stack);
     }
 
-    private boolean hasChestItem() { return w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)); }
+    private boolean hasChestItem() { return w.items.carriedItems().stream().anyMatch(stack -> stack.is(Items.CHEST)) || w.items.gridBlockIs("minecraft:chest"); }
 }

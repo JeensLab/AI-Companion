@@ -237,8 +237,29 @@ final class CompanionFarming {
 
     /** Every crop within reach of the player: the ripe ones to reap, the rest only counted. */
     private void lookForCrops(ServerLevel level) {
-        BlockPos centre = w.placementAnchor;
         int radius = radius();
+        growing = crops(level, w.placementAnchor, radius, kind, todo);
+        found = todo.size();
+        if (todo.isEmpty()) {
+            w.finish(CompanionActionResult.blocked(growing > 0 ? "Пока нечего собирать: спелых нет, ещё растёт посадок: " + growing + "."
+                    : "Посадок в " + radius + " блоках от тебя не нашёл."));
+            return;
+        }
+        startWork();
+    }
+
+    /** «Добудь пшеницу»: whether a ripe crop of it stands where harvest_crops would look, round the player. */
+    static boolean ripeNear(CompanionEntity c, ServerLevel level, Item harvest) {
+        CompanionCrops.Kind kind = CompanionCrops.Kind.yielding(harvest);
+        if (kind == null) return false;
+        List<BlockPos> ripe = new ArrayList<>();
+        crops(level, c.getOwnerPlayer() == null ? c.blockPosition() : c.getOwnerPlayer().blockPosition(), Math.min(c.getSearchRadius(), SCAN_RADIUS), kind, ripe);
+        return !ripe.isEmpty();
+    }
+
+    /** The farmland of the ripe crops of the kind (of any, with none named) round the centre goes into {@code ripe}; the count of those still growing. */
+    private static int crops(ServerLevel level, BlockPos centre, int radius, CompanionCrops.Kind kind, List<BlockPos> ripe) {
+        int growing = 0;
         int low = Math.max(level.getMinBuildHeight(), centre.getY() - 8), high = Math.min(level.getMaxBuildHeight() - 1, centre.getY() + 6);
         for (int cx = (centre.getX() - radius) >> 4; cx <= (centre.getX() + radius) >> 4; cx++) for (int cz = (centre.getZ() - radius) >> 4; cz <= (centre.getZ() + radius) >> 4; cz++) {
             var chunk = level.getChunkSource().getChunkNow(cx, cz);
@@ -252,17 +273,11 @@ final class CompanionFarming {
                     if (!(state.getBlock() instanceof CropBlock crop) || kind != null && state.getBlock() != kind.crop) continue;
                     long ox = (cx << 4) + x - centre.getX(), oz = (cz << 4) + z - centre.getZ();
                     if (ox * ox + oz * oz > (long) radius * radius) continue;
-                    if (crop.isMaxAge(state)) todo.add(new BlockPos((cx << 4) + x, y - 1, (cz << 4) + z)); else growing++;
+                    if (crop.isMaxAge(state)) ripe.add(new BlockPos((cx << 4) + x, y - 1, (cz << 4) + z)); else growing++;
                 }
             }
         }
-        found = todo.size();
-        if (todo.isEmpty()) {
-            w.finish(CompanionActionResult.blocked(growing > 0 ? "Пока нечего собирать: спелых нет, ещё растёт посадок: " + growing + "."
-                    : "Посадок в " + radius + " блоках от тебя не нашёл."));
-            return;
-        }
-        startWork();
+        return growing;
     }
 
     // ---- wheat seeds from the grass -----------------------------------------------------------------------------------------

@@ -384,6 +384,7 @@ public final class CompanionAgenda {
         }
         if (run != null) { goal.workTicks += 20; return; }
         if (leased(server, owner)) return;
+        if (c.level() != player.level()) { waiting(data, owner, goal, c, "жду, пока окажемся в одном мире"); return; }
         if (!free(c)) { waiting(data, owner, goal, c, "занят другим делом"); return; }
         if (c.batches().readyForQueue()) { waiting(data, owner, goal, c, "жду готовую партию из печи по твоей просьбе"); return; }
         if (goal.state == State.INTERRUPTED) {
