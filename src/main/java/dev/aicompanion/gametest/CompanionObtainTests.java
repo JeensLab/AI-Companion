@@ -269,7 +269,7 @@ public final class CompanionObtainTests {
     public static void anUnobtainableItemIsRefusedAtOnce(GameTestHelper h) {
         ground(h);
         CompanionEntity companion = spawn(h);
-        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:ender_pearl\",\"count\":1}]");
+        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:blaze_rod\",\"count\":1}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone(), "Plan still running");
             var outcome = future.join();

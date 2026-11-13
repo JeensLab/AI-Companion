@@ -26,7 +26,7 @@ import java.util.Set;
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
     enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, GRIND, COMPOST, BLOCK }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, GRIND, COMPOST, BLOCK }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, GRIND, COMPOST, BLOCK, DROPS }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -51,6 +51,8 @@ public final class CompanionWork {
     final CompanionComposting composting = new CompanionComposting(this);
     /** gather_block: what a block gives when broken, found, walked to and picked. */
     final CompanionPicking picking = new CompanionPicking(this);
+    /** hunt_drop: what a monster drops, fought for and picked up. */
+    final CompanionMobDrops drops = new CompanionMobDrops(this);
     final CompanionBlockBreaking breaking;
     final CompanionToolSense pickaxeSense, shovelSense;
     CompanionStoneSearch stoneSearch;
@@ -257,10 +259,13 @@ public final class CompanionWork {
         Lot(BlockPos pos, boolean placed) { this.pos = pos.immutable(); this.placed = placed; }
         boolean open() { return loaded && !emptied && !gaveUp; }
     }
-    boolean isHunting() { return job == Job.HUNT; }
+    /** hunt_mobs. A hunt for a drop is no such fight: the player is still stood up for while it goes on. */
+    boolean isHunting() { return job == Job.HUNT && phase != Phase.DROPS; }
+    /** Either of them: the fight goes where the order's monsters are, not only by the player's side. */
+    boolean fightsByOrder() { return job == Job.HUNT; }
     boolean isHuntTarget(java.util.UUID id) { return huntTargets.contains(id); }
     void hitEnemy(LivingEntity enemy) {
-        if (isHunting() && huntTargets.contains(enemy.getUUID())) {
+        if (job == Job.HUNT && huntTargets.contains(enemy.getUUID())) {
             orderProgressTime = owner.level().getGameTime();
             if (!enemy.isAlive() && huntDead.add(enemy.getUUID())) huntKills++;
         }
@@ -317,7 +322,7 @@ public final class CompanionWork {
             case STORE, CLOSE, PACK, SORT -> "работа с вещами";
             case BUILD, PEN, PORTAL -> "строительство";
             case RETURN, EXIT -> "возвращение";
-            case FIGHT, CHASE -> "поиск и бой";
+            case FIGHT, CHASE, DROPS -> "поиск и бой";
             case HAND -> "передача вещей";
             case FURNACE -> "подготовка печи";
             case COOK -> "плавка / готовка";
@@ -458,6 +463,7 @@ public final class CompanionWork {
                 job = Job.GIVE; phase = Phase.HAND;
             }
             case "hunt_mobs" -> { job = Job.HUNT; phase = Phase.FIGHT; }
+            case "hunt_drop" -> { CompanionActionResult refusal = drops.begin(item, count); if (refusal != null) return refusal; job = Job.HUNT; phase = Phase.DROPS; }
             case "hunt_animals" -> {
                 game = CompanionGame.Kind.of(item);
                 if (game == null && !CompanionGame.anyKind(item)) return CompanionActionResult.failed("Не понял, на кого охотиться: корова, свинья, овца, курица или кролик.");
@@ -521,7 +527,7 @@ public final class CompanionWork {
         placementMoving = false;
         placedChests.clear();
         orderProgressPosition = owner.position(); orderProgressTime = level.getGameTime(); comeFailedAt = null; huntTargets.clear(); huntDead.clear(); huntKills = 0;
-        if (job == Job.HUNT) {
+        if (job == Job.HUNT && phase != Phase.DROPS) {
             for (var monster : level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
                     new AABB(placementAnchor).inflate(18), monster -> CompanionCombat.hostile(monster) && monster.isAlive() && monster.distanceToSqr(placementAnchor.getCenter()) <= 18 * 18
                             && owner.fairTarget(monster, owner.provokes(monster)))) huntTargets.add(monster.getUUID());
@@ -634,6 +640,7 @@ public final class CompanionWork {
             case RETURN -> returnToPlayer(level);
             case FIGHT -> hunting.fightNearby(level);
             case CHASE -> hunting.hunt(level);
+            case DROPS -> drops.tick(level);
             case WOOD_DONE -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
             case FURNACE -> furnaces.prepareFurnace(level);
             case COOK -> furnaces.cook(level);
@@ -727,7 +734,7 @@ public final class CompanionWork {
         }
     }
 
-    void watchChase() { hunting.watchChase(); }
+    void watchChase() { hunting.watchChase(); drops.watch(); }
     static final java.util.UUID NO_ID = new java.util.UUID(0, 0);
 
     /**
