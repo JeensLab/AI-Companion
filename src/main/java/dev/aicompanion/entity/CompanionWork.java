@@ -43,6 +43,9 @@ public final class CompanionWork {
     final CompanionPen pen = new CompanionPen(this); final CompanionBreeding breeding = new CompanionBreeding(this);
     final CompanionCourse course = new CompanionCourse(this);
     final CompanionHouse house;
+    /** A building of the catalogue, kept apart from the plank house so that neither forgets the other. */
+    private final CompanionHouse templateHouse;
+    private boolean templateJob;
     final CompanionObsidian obsidian;
     final CompanionPortalBuild portal;
     /** disenchant_item: the walk to a grindstone, or his own one, and the grinding. */
@@ -292,12 +295,13 @@ public final class CompanionWork {
     }
 
     public CompanionWork(CompanionEntity owner) {
-        this.owner = owner; house = new CompanionHouse(owner); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this);
+        this.owner = owner; house = new CompanionHouse(owner); templateHouse = new CompanionHouse(owner, true); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this);
         pickaxeSense = new CompanionToolSense(owner, "pickaxe", ItemTags.PICKAXES, Blocks.STONE.defaultBlockState());
         shovelSense = new CompanionToolSense(owner, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
     }
     public boolean isActive() { return job != null; }
-    boolean swinging() { return breaking.swinging(); }
+    /** Busy with a block, or on a scaffold column (climbing, standing, coming down): the pickup of drops from the ground does not start then (CompanionLoot.canChase). */
+    boolean swinging() { return breaking.swinging() || job == Job.HOUSE && templateJob && templateHouse.scaffolding(); }
     boolean allowsRouteRecovery() {
         // Inside our own stair descent, walls around and the next cell above are the plan, not a trap. The generic
         // escape used to fill those stairs with soil and break their steps. It acts only once the walk back is confirmed gone.
@@ -407,6 +411,22 @@ public final class CompanionWork {
         return need;
     }
 
+    /** The species of logs the work cuts: named by a wood order, chosen by a building; null for any. */
+    CompanionWoodKind woodKind() { return job == Job.WOOD ? CompanionWoodKind.of(requestedItem) : job == Job.HOUSE && templateJob ? templateHouse.logKind() : null; }
+    /** The building this order waits to have placed (CompanionBuildPlacement), or null. */
+    CompanionHouse awaitingHouse() { return job == Job.HOUSE && templateJob && templateHouse.awaiting() ? templateHouse : null; }
+    /** The template building this work builds right now (not one left unfinished, not one still waiting for its place): it alone sets things aside. */
+    private CompanionHouse building() { return job == Job.HOUSE && templateJob && !templateHouse.awaiting() ? templateHouse : null; }
+    /** The template building whose unbuilt cells are set aside: the one this order builds (also while it waits for its place), or one left unfinished. What they need is its material, not path lights or tools. */
+    private CompanionHouse holding() { return job == Job.HOUSE && templateJob || templateHouse.unfinished() ? templateHouse : null; }
+    /** Stone is held back for a building only while its own order runs or waits for its place: one left unfinished takes none from a stone order (torches are kept for it, buildingNeeds). */
+    int buildingStone() { return job == Job.HOUSE && templateJob ? templateHouse.stoneReserve() : 0; }
+    /** What the scaffolding left on the ground, said with the end of whatever order it is (once). */ private String houseNote() { return job == Job.HOUSE && templateJob ? templateHouse.takeLost() : ""; }
+    int buildingNeeds(net.minecraft.world.item.Item item) { var now = holding(); return now == null ? 0 : now.reserved(item); }
+    boolean buildingGround(BlockPos pos) { var now = building(); return now != null && now.holds(pos); }
+    /** A step of a building (a block set down or cleared, a scaffold block up or down) is progress: the time of the order starts again. */
+    void progressed() { deadline = Math.max(deadline, owner.level().getGameTime() + 20 * 600); }
+
     /** Wood in the bag is for the work (house, tools, chest, fuel) unless the work is only walking, fighting or handing over. */
     boolean woodSpareForSupports() {
         return job == null || job == Job.COME || job == Job.COURSE || job == Job.HUNT || job == Job.GIVE || job == Job.DIRT;
@@ -422,7 +442,7 @@ public final class CompanionWork {
         CompanionActionResult switchedOff = CompanionChests.switchedOff(owner, action, location);
         if (switchedOff != null) return switchedOff;
         if (!"walk_heading".equals(action) && !CompanionChests.countOk(action, count, location)) return CompanionChests.COUNT_REFUSED;
-        insideHouse = "inside_house".equals(location); chests.kind = CompanionChests.kindFor(action, location);
+        String startNote = ""; insideHouse = "inside_house".equals(location); chests.kind = CompanionChests.kindFor(action, location);
         if (!insideHouse && chests.kind == null && !"near_player".equals(location)) return CompanionActionResult.failed("Неизвестное место выполнения.");
         if (insideHouse && !house.interiorAvailable(level)) return CompanionActionResult.blocked("Не могу подтвердить, где сейчас наш дом. Снаружи вместо этого ставить не буду.");
         switch (action) {
@@ -504,7 +524,10 @@ public final class CompanionWork {
             }
             case "build_house" -> {
                 if (count != 1) return CompanionActionResult.failed("Пока строю один небольшой дом.");
-                job = Job.HOUSE; phase = Phase.BUILD; house.begin();
+                // A name or kind builds that building, no name the plank house; «дострой» goes on with what is unfinished and begins nothing (CompanionHouseOrders).
+                var order = CompanionHouseOrders.start(owner, house, templateHouse, item);
+                if (order.refusal() != null) return order.refusal();
+                templateJob = order.template(); startNote = order.note(); job = Job.HOUSE; phase = Phase.BUILD;
             }
             case "build_pen" -> { CompanionActionResult refusal = pen.begin(item, count); if (refusal != null) return refusal; job = Job.PEN; phase = Phase.PEN; }
             case "breed_animals" -> { CompanionActionResult refusal = breeding.begin(item, count); if (refusal != null) return refusal; job = Job.BREED; phase = Phase.BREED; }
@@ -539,7 +562,7 @@ public final class CompanionWork {
                             && owner.fairTarget(monster, owner.provokes(monster)))) huntTargets.add(monster.getUUID());
             owner.enableProtectionForWork();
         }
-        requestedItem = action.equals("place_chest") ? "minecraft:chest" : item == null ? "" : item;
+        requestedItem = action.equals("place_chest") ? "minecraft:chest" : item == null ? "" : action.equals("build_house") ? CompanionBuildPlacement.Site.nameOf(item) : item;
         requestedCount = count;
         if (job == Job.TAKE && "all".equals(item)) requestedCount = 27 * 64;
         gathered = woodAttempts = craftAttempts = transferred = newChests = 0;
@@ -575,7 +598,7 @@ public final class CompanionWork {
             afterWood = Phase.WOOD_DONE; woodBeforeRequest = owner.collectedLogs(); owner.startGatheringLogsForWork(count);
         }
         if ("collect_smelt".equals(action)) return CompanionActionResult.accepted(owner.batches().restore(item, this, level));
-        return CompanionActionResult.accepted(job == Job.COURSE ? "Веду " + CompanionCourse.where(item) + "." : job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : "Сейчас подготовлюсь.");
+        return CompanionActionResult.accepted(job == Job.COURSE ? "Веду " + CompanionCourse.where(item) + "." : job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : startNote + "Сейчас подготовлюсь.");
     }
 
     /** Handing the smelt to a batch is no finish: nothing credited, noted, packed or journalled as a failure. */
@@ -591,13 +614,13 @@ public final class CompanionWork {
         owner.allowNewBench(false); benchHere = false; packTarget = null;
         if (job != null && completedId != taskId) {
             completedId = taskId;
-            completedResult = CompanionActionResult.cancelled("Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote());
+            completedResult = CompanionActionResult.cancelled(job == Job.HOUSE && templateJob && templateHouse.takeReplaced() ? CompanionBuildPlacement.DROPPED : "Работа прервана. Уже полученные вещи сохранены." + sorting.stopNote(job == Job.SORT) + furnaces.furnaceNote() + houseNote());
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;
         clearCracks();
         closeChest();
-        house.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
+        house.cancel(); templateHouse.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null;
         cooldown = 0;
@@ -613,7 +636,7 @@ public final class CompanionWork {
         if (level.getGameTime() > deadline) { finish(CompanionActionResult.timeout("Не успел закончить работу. Остановился, вещи у меня.")); return; }
         if (stalled()) return;
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
-        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && owner.hasPendingLoot()) return;
+        if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) return;
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {
             finish(false, "Потерял связь с игроком, остановился."); return;
         }
@@ -643,7 +666,7 @@ public final class CompanionWork {
             case CLOSE -> chests.afterClose();
             case BUILD -> buildHouse(level);
             case SHOVEL -> crafting.prepareShovel();
-            case DIGGING -> finish(owner.didLastTaskSucceed(), owner.getLastTaskResult());
+            case DIGGING -> { if (job == Job.HOUSE) { phase = Phase.BUILD; resetTarget(); } else finish(owner.didLastTaskSucceed(), owner.getLastTaskResult()); }
             case RETURN -> returnToPlayer(level);
             case FIGHT -> hunting.fightNearby(level);
             case CHASE -> hunting.hunt(level);
@@ -675,7 +698,7 @@ public final class CompanionWork {
      * counters and no new status. Waiting at a loaded furnace is checked by its product instead.
      */
     private boolean stalled() {
-        if (phase == Phase.COOK) { stallTicks = 0; return false; }
+        if (phase == Phase.COOK || awaitingHouse() != null || building() != null && building().waitingForRoom()) { stallTicks = 0; return false; }
         long signature = progressSignature();
         boolean news = stallSeen.size() < 256 && stallSeen.add(phase + "|" + owner.getLastTaskResult());
         if (news || signature != stallSignature || stallAnchor == null || owner.position().distanceToSqr(stallAnchor) >= 2 * 2) {
@@ -789,11 +812,12 @@ public final class CompanionWork {
     }
 
     private void buildHouse(ServerLevel level) {
-        if (!owner.onGround()) return;
-        var site = house.ensureSite(level);
+        CompanionHouse active = templateJob ? templateHouse : house;
+        if (!owner.onGround() && !active.scaffolding()) return;
+        var site = active.ensureSite(level);
         if (site != null) { finish(false, site.message()); return; }
-        if (house.needsPreparation() && crafting.approachCraftingTable()) return;
-        CompanionHouse.Result result = house.tick(level);
+        if (active.needsPreparation() && crafting.approachCraftingTable()) return;
+        CompanionHouse.Result result = active.tick(level);
         switch (result.state()) {
             case NEED_WOOD -> crafting.requestWood(Phase.BUILD, result.logs());
             case DONE -> finish(true, result.message());
@@ -883,6 +907,8 @@ public final class CompanionWork {
         finish(new CompanionActionResult(success, message));
     }
     void finish(CompanionActionResult result) {
+        // A round of getting what a building lacks that came to nothing is told to the player at the end, with the rest: back to the building.
+        if (job == Job.HOUSE && templateJob && templateHouse.gathering() && CompanionHouseOrders.shortRound(phase, result)) { afterStone = null; phase = Phase.BUILD; resetTarget(); return; }
         owner.goals().skillCompleted(result.evidence());
         // A travelling bench is not left behind: pick it up first, then report the original result.
         if (phase != Phase.PACK && job != null && job != Job.COME && job != Job.COURSE && job != Job.HUNT) {
@@ -893,7 +919,7 @@ public final class CompanionWork {
         owner.allowNewBench(false);
         boolean returning = job == Job.COME || job == Job.COURSE;
         if (!success && job == Job.STORE && transferred > 0) message = "Сложил " + transferred + " предметов. " + message + " Остальное осталось в моей сумке.";
-        message += (job == Job.SORT ? sorting.endNote() : "") + furnaces.furnaceNote() + trip.note();
+        message += (job == Job.SORT ? sorting.endNote() : "") + furnaces.furnaceNote() + trip.note() + houseNote();
         completedId = taskId;
         completedResult = new CompanionActionResult(success, message, result.status(), result.evidence());
         cancel();
@@ -911,7 +937,7 @@ public final class CompanionWork {
         tag.putBoolean("WorkActive", isActive());
         tag.putLong("WorkSequence", taskId);
         if (completedResult != null) { tag.putLong("CompletedWorkId", completedId); tag.put("CompletedWorkResult", completedResult.save()); }
-        house.save(tag); pen.save(tag);
+        house.save(tag); templateHouse.save(tag); pen.save(tag);
         if (rememberedChest != null) {
             tag.putLong("StorageChest", rememberedChest.asLong());
             tag.putString("StorageDimension", owner.level().dimension().location().toString());
@@ -922,7 +948,7 @@ public final class CompanionWork {
         taskId = Math.max(taskId, tag.getLong("WorkSequence"));
         completedId = tag.contains("CompletedWorkResult") ? tag.getLong("CompletedWorkId") : -1;
         completedResult = tag.contains("CompletedWorkResult") ? CompanionActionResult.load(tag.getCompound("CompletedWorkResult")) : null;
-        house.load(tag); pen.load(tag);
+        house.load(tag); templateHouse.load(tag); pen.load(tag);
         if (tag.contains("StorageChest") && owner.level().dimension().location().toString().equals(tag.getString("StorageDimension"))) rememberedChest = BlockPos.of(tag.getLong("StorageChest"));
         else if (tag.contains("StorageChest")) { storageElsewhere = new CompoundTag(); storageElsewhere.putLong("StorageChest", tag.getLong("StorageChest")); storageElsewhere.putString("StorageDimension", tag.getString("StorageDimension")); }
         owner.storageStatus(storageForAi());

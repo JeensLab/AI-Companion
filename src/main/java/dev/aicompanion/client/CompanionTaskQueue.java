@@ -252,7 +252,8 @@ public final class CompanionTaskQueue {
             // A sorting cancelled from the tasks window leaves the player's things in his bag: its note stays (review round 4, finding 1).
             String note = task.cancelled && result != null && result.report().contains(CompanionDialogue.BAG_NOTE) ? " " + CompanionDialogue.BAG_NOTE : "";
             task.report = task.cancelled ? "План отменён игроком." + note : error != null ? "Не выполнено: " + error.getMessage() : result.report();
-            if (!task.hidden) remember(task);
+            // A building whose place was never set was not begun: it is not among the tasks done.
+            if (!task.hidden && !dev.aicompanion.entity.CompanionBuildPlacement.neverBegan(task.report)) remember(task);
             if (active == task) active = null;
             awaiting.remove(task);
             owned = List.copyOf(task.batches); task.batches.clear();

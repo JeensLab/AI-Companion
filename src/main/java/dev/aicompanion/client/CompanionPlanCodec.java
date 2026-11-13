@@ -61,7 +61,7 @@ public final class CompanionPlanCodec {
                     actions.addAll(parsePlan(envelope));
                     reply = envelope.has("reply") ? textContent(envelope.get("reply")) : "";
                 }
-            } catch (RuntimeException exception) { throw invalid(); }
+            } catch (RuntimeException exception) { throw refusedOrInvalid(exception); }
         }
         if (actions.size() > MAX_STEPS) throw invalid();
         requireGoalAlone(actions);
@@ -127,6 +127,16 @@ public final class CompanionPlanCodec {
                 if ("pick_up".equals(type) && (item.isEmpty() || "any".equals(item) || "all".equals(item) || "minecraft:all".equals(item)))
                     item = dev.aicompanion.entity.CompanionPickUp.ANY_ITEM;
                 if ("set_home".equals(type) && !item.isEmpty()) throw invalid();
+                // A building is named from the catalogue (or a kind of it) or not at all («resume» goes on with the one left unfinished); the name is kept as the catalogue spells it.
+                // «дом», «house», «маленький дом», «дом 5×5»: the plain house, as an empty item always was.
+                if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.plankHouse(item)) item = "";
+                if ("build_house".equals(type) && dev.aicompanion.entity.CompanionVillageBuildings.resume(item) != null) item = dev.aicompanion.entity.CompanionVillageBuildings.resume(item);
+                else if ("build_house".equals(type) && !item.isEmpty()) {
+                    String named = dev.aicompanion.entity.CompanionVillageBuildings.named(item, false);
+                    // Not invalid(): the player is told what the model named and what is like it (the message is kept by decode).
+                    if (named == null) throw new IllegalStateException("Модель назвала постройку «" + item.substring(0, Math.min(item.length(), 40)) + "», ничего не запущено. " + dev.aicompanion.entity.CompanionVillageBuildings.refusal(item));
+                    item = named;
+                }
                 // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
                 if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item) && !"here".equals(item)) throw invalid();
                 // A long goal is a catalog id with a level of 1 or 2 (iron, diamond); the model cannot make one up.
@@ -190,7 +200,7 @@ public final class CompanionPlanCodec {
             requireGoalAlone(result);
             requirePortalLast(result);
             return List.copyOf(result);
-        } catch (RuntimeException exception) { throw invalid(); }
+        } catch (RuntimeException exception) { throw refusedOrInvalid(exception); }
     }
 
     /** A long goal runs on the server by itself: it is the only step of its plan, or the whole plan is invalid. */
@@ -211,6 +221,11 @@ public final class CompanionPlanCodec {
             if (part.isJsonObject() && part.getAsJsonObject().has("text")) result.append(part.getAsJsonObject().get("text").getAsString()).append('\n');
         }
         return result.toString().trim();
+    }
+
+    /** A building the model named that the catalogue lacks keeps its own message (what is like it); any other fault is an invalid plan. */
+    private static IllegalStateException refusedOrInvalid(RuntimeException exception) {
+        return exception instanceof IllegalStateException refused && refused.getMessage() != null && refused.getMessage().startsWith("Модель назвала постройку") ? refused : invalid();
     }
 
     private static IllegalStateException invalid() {

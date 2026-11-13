@@ -114,21 +114,35 @@ public final class CompanionWorkCommands {
     }
 
     private static String plain(String text, String name) {
-        String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').trim();
+        String value = text.toLowerCase(Locale.ROOT).replace('ё', 'е').replace('\u00A0', ' ').trim();
         if (name != null && !name.isBlank()) value = value.replaceFirst("^" + Pattern.quote(name.toLowerCase(Locale.ROOT).replace('ё', 'е')) + "[,! ]+", "");
         return value.replaceAll("[.!]+$", "").trim();
     }
 
     public static PlannedAction parse(String text, String name) {
         String value = plain(text, name);
-        if (value.matches("^(?:построй|сделай|дострой)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1);
+        // «Дострой», «достраивай кузницу», «продолжи стройку»: what is left unfinished goes on where it stands. A name or kind said with it never starts another building.
+        var resume = java.util.regex.Pattern.compile("^(?:(дострой|достраивай)|продолжи|продолжай)(?: мне| нам| себе)?(?: (.+?))?(?: рядом)?$").matcher(value);
+        if (resume.matches()) {
+            String said = resume.group(2);
+            // «Дострой», «продолжи стройку»: what was worked on last. «Дострой дом»: the plain house first. A name or kind said goes with the word: only that building.
+            if (said == null ? resume.group(1) != null : said.matches("стройку|строительство(?: дома)?|строить(?: (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик))?"))
+                return new PlannedAction("build_house", 0, 1, "resume");
+            if (said != null && said.matches("(?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?")) return new PlannedAction("build_house", 0, 1, "resume дом");
+            String kind = said == null ? null : dev.aicompanion.entity.CompanionVillageBuildings.named(said, true);
+            if (kind != null) return new PlannedAction("build_house", 0, 1, "resume " + kind);
+        }
+        // «Построй деревенский дом», «построй кузницу»: a building of the catalogue by its name, or a kind of it (the server picks the one for the place); any other name stays the model's.
+        var named = java.util.regex.Pattern.compile("^(?:построй|сделай)(?: мне| нам| себе)? (.+?)(?: рядом)?$").matcher(value);
+        String building = named.matches() ? dev.aicompanion.entity.CompanionVillageBuildings.named(named.group(1), true) : null;
+        if (building != null) return new PlannedAction("build_house", 0, 1, building);
+        if (value.matches("^(?:построй|сделай)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:деревянный )?(?:дом|домик)(?: из дерева| из бревен| из досок)?(?: рядом)?$")) return new PlannedAction("build_house", 0, 1, "");
         // Said of the place the player stands on. A question («это наш дом?») keeps its mark and stays talk for the model.
         if (value.matches("^(?:(?:это|вот|здесь|тут)(?: и есть| теперь| будет)? (?:наш|мой) дом|наш дом (?:здесь|тут)|(?:здесь|тут) (?:будет|теперь)(?: наш)? дом|запомни(?:,)? (?:где наш дом|(?:здесь|тут) наш дом|(?:это|этот дом|это место) как (?:наш )?дом))$"))
             return new PlannedAction("set_home", 0, 1);
         // Sorting the chests by group: «разложи сундуки», not «сложи вещи в сундук» (that one is store_items).
         if (value.matches("^(?:разложи|отсортируй|рассортируй)(?: мне| нам)?(?: (?:все )?(?:вещи|предметы))?(?: (?:по|в) сундук(?:ам|ах)| сундуки)$|^наведи порядок в сундук(?:ах|е)$"))
             return new PlannedAction("sort_chests", 0, 1);
-        if (value.matches("^продолжи (?:строить (?:дом|домик)|стройку|строительство(?: дома)?)$")) return new PlannedAction("build_house", 0, 1);
         // «Построй портал (в Незер)» (decided 08.11): the frame without its corners near the player, lit; more said is the model's.
         // «Новый», «не хочу идти» (decided 09.11): built though a portal stands near; «здесь», «возле меня»: built here, not led to one.
         if (value.matches("^(?:(?:не хочу (?:идти|туда)|не пойду|не надо)[, ]+)?(?:построй|сделай|поставь)(?: мне| нам| себе)?(?: (?:новый|другой|еще один))? портал"

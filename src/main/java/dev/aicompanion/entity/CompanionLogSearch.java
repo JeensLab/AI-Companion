@@ -14,6 +14,25 @@ public final class CompanionLogSearch {
 
     public static List<BlockPos> find(ServerLevel level, BlockPos origin, int radius) { return find(level, origin, radius, BlockTags.LOGS); }
 
+    /** The logs of the tag joined to {@code seed} (diagonals too) within 12 blocks sideways and 24 up or down, at most 512, in the order they were reached: one tree, or one building's wall. */
+    static java.util.Set<BlockPos> connected(ServerLevel level, BlockPos seed, net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> tag) {
+        java.util.Set<BlockPos> found = new java.util.LinkedHashSet<>(), visited = new java.util.HashSet<>();
+        java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+        queue.add(seed.immutable()); visited.add(seed.immutable());
+        while (!queue.isEmpty() && found.size() < 512) {
+            BlockPos pos = queue.removeFirst();
+            if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(tag)) continue;
+            found.add(pos.immutable());
+            for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+                BlockPos next = pos.offset(dx, dy, dz);
+                if (Math.abs(next.getX() - seed.getX()) > 12 || Math.abs(next.getZ() - seed.getZ()) > 12 || Math.abs(next.getY() - seed.getY()) > 24 || !visited.add(next)) continue;
+                if (level.hasChunkAt(next) && level.getBlockState(next).is(tag)) queue.addLast(next);
+            }
+        }
+        return found;
+    }
+
     /** Only blocks of the tag: a named species, or all logs. */
     public static List<BlockPos> find(ServerLevel level, BlockPos origin, int radius, net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> tag) {
         List<BlockPos> found = new ArrayList<>();

@@ -9,9 +9,7 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.pathfinder.Path;
 
-import java.util.ArrayDeque;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -100,7 +98,7 @@ final class CompanionGatherGoals {
             elapsedTicks = 0;
             gathered = Math.max(0, c.requestedLogs - c.logsRemaining);
             // What is still missing: after a reload the logs already chopped are not asked for again (review 22.10, М1).
-            kind = c.work.isActive() && c.work.job == CompanionWork.Job.WOOD ? CompanionWoodKind.of(c.work.requestedItem) : null;
+            kind = c.work.isActive() ? c.work.woodKind() : null;
             inventoryTarget = logs() + c.logsRemaining;
             axeSense.reset(); soilAttempts = 0;
             pathFailTicks = 0;
@@ -402,26 +400,7 @@ final class CompanionGatherGoals {
 
         private void collectConnectedLogs(BlockPos seed) {
             crownFailures = 0;
-            Deque<BlockPos> queue = new ArrayDeque<>();
-            Set<BlockPos> visited = new HashSet<>();
-            queue.add(seed.immutable());
-            visited.add(seed.immutable());
-            while (!queue.isEmpty() && currentTreeLogs.size() < 512) {
-                BlockPos pos = queue.removeFirst();
-                if (!c.level().hasChunkAt(pos) || !c.level().getBlockState(pos).is(logBlocks())) continue;
-                currentTreeLogs.add(pos.immutable());
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dy = -1; dy <= 1; dy++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            if (dx == 0 && dy == 0 && dz == 0) continue;
-                            BlockPos next = pos.offset(dx, dy, dz);
-                            if (Math.abs(next.getX() - seed.getX()) > 12 || Math.abs(next.getZ() - seed.getZ()) > 12
-                                    || Math.abs(next.getY() - seed.getY()) > 24 || !visited.add(next)) continue;
-                            if (c.level().hasChunkAt(next) && c.level().getBlockState(next).is(logBlocks())) queue.addLast(next);
-                        }
-                    }
-                }
-            }
+            currentTreeLogs.addAll(CompanionLogSearch.connected((ServerLevel) c.level(), seed, logBlocks()));
         }
 
         /** Find a reachable standing spot next to the log; never path into the solid log itself. */

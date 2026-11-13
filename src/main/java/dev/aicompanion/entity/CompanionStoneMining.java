@@ -283,7 +283,7 @@ final class CompanionStoneMining {
     private boolean deepensOwnHole(BlockPos pos) { return w.dug.contains(pos.above()) && pos.getY() < w.owner.getBlockY(); }
 
     private void afterMining() {
-        if (w.job == CompanionWork.Job.CRAFT || w.job == CompanionWork.Job.PLACE_CHEST || w.job == CompanionWork.Job.SMELT || w.job == CompanionWork.Job.ORE) {
+        if (w.job == CompanionWork.Job.CRAFT || w.job == CompanionWork.Job.PLACE_CHEST || w.job == CompanionWork.Job.SMELT || w.job == CompanionWork.Job.ORE || w.job == CompanionWork.Job.HOUSE) {
             w.phase = w.afterStone != null ? w.afterStone : w.job == CompanionWork.Job.CRAFT || w.job == CompanionWork.Job.ORE ? CompanionWork.Phase.CRAFT : w.job == CompanionWork.Job.SMELT ? CompanionWork.Phase.FURNACE : CompanionWork.Phase.STORE;
             w.afterStone = null; w.resetTarget();
         }

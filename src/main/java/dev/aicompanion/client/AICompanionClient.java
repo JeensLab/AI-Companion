@@ -71,6 +71,7 @@ public final class AICompanionClient {
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
         NeoForge.EVENT_BUS.addListener(this::onLoggingOut);
+        NeoForge.EVENT_BUS.addListener(CompanionGhostPlacement::render);
     }
 
     private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
@@ -79,6 +80,7 @@ public final class AICompanionClient {
         CompanionAmbientClient.forgetWorld();
         GameContext.forgetWorld();
         CompanionMoodPanel.forgetWorld();
+        CompanionGhostPlacement.forgetWorld();
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -87,12 +89,14 @@ public final class AICompanionClient {
         event.register(PUSH_TO_TALK);
         event.register(TOGGLE_MARKER);
         event.register(TOGGLE_MOOD);
+        CompanionGhostPlacement.KEYS.forEach(event::register);
     }
 
     private void registerGuiLayers(RegisterGuiLayersEvent event) {
         event.registerAboveAll(CompanionMoodPanel.ID, CompanionMoodPanel::render);
         event.registerAboveAll(CompanionThinking.ID, CompanionThinking::render);
         event.registerBelow(VanillaGuiLayers.CHAT, CompanionMarker.ID, CompanionMarker::render);
+        event.registerBelow(VanillaGuiLayers.CHAT, CompanionGhostPanel.ID, CompanionGhostPanel::render);
     }
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -117,6 +121,7 @@ public final class AICompanionClient {
         CompanionAmbientClient.tick();
         CompanionAmbientClient.autonomyLines();
         CompanionMarker.tick();
+        CompanionGhostPlacement.tick();
         if (minecraft.level != null && preferenceSyncTicks-- <= 0) { preferenceSyncTicks = 40; CompanionPreferences.sync(); }
         boolean gameplay = minecraft.level != null && minecraft.screen == null;
         boolean pushToTalkDown = gameplay && PUSH_TO_TALK.isDown();
