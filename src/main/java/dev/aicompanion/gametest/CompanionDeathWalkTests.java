@@ -388,7 +388,7 @@ public final class CompanionDeathWalkTests {
     }
 
     /** A stack twenty blocks off is fetched on foot, in one walk. */
-    @GameTest(template = "empty")
+    @GameTest(template = "large_search")
     public static void aStackTwentyBlocksOffIsFetched(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
@@ -403,7 +403,7 @@ public final class CompanionDeathWalkTests {
     }
 
     /** A stack eighty blocks off is fetched on foot: a long way there is not a stuck walk. */
-    @GameTest(template = "empty")
+    @GameTest(template = "large_search")
     public static void aStackEightyBlocksOffIsFetched(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);
@@ -569,7 +569,7 @@ public final class CompanionDeathWalkTests {
     }
 
     /** A stack washed twenty blocks down a stream is fetched along it. */
-    @GameTest(template = "empty")
+    @GameTest(template = "large_search")
     public static void aStackWashedTwentyBlocksOffIsFetched(GameTestHelper h) {
         CompanionEntity c = spawn(h);
         settle(c);

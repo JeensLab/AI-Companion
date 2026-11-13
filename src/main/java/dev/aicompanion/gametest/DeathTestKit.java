@@ -89,10 +89,16 @@ final class DeathTestKit {
         for (int tick = 0; tick < 40 && !c.onGround(); tick++) c.tick();
     }
 
-    /** A flat stone yard round him, air above: the test's ground of its own, whatever another test left nearby. */
+    /**
+     * A flat stone yard round him, air above: the test's ground of its own, whatever another test left nearby. It ends at
+     * the edge of the test's own structure: past it lies the arena of another test, whose walls and floor are not this
+     * test's to cut. A test that needs more ground than "empty" has takes "large_search".
+     */
     static BlockPos yard(GameTestHelper h, CompanionEntity c, int radius) {
         BlockPos feet = c.blockPosition();
+        var own = h.getBounds();
         for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
+            if (feet.getX() + dx < own.minX || feet.getX() + dx >= own.maxX || feet.getZ() + dz < own.minZ || feet.getZ() + dz >= own.maxZ) continue;
             put(h, feet.offset(dx, -1, dz), Blocks.STONE);
             for (int dy = 0; dy <= 2; dy++) put(h, feet.offset(dx, dy, dz), Blocks.AIR);
         }
