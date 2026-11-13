@@ -49,8 +49,8 @@ public final class CompanionGatherBlockTests {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 2, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + ": " + plan);
         }
-        // Chance drops, the mine's stone, crops and saplings, what grows under water, someone's lamp, egg or trap: no block is broken for them.
-        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple", "minecraft:kelp",
+        // Chance drops, the mine's stone, crops and saplings, someone's lamp, egg or trap: no block is broken for them.
+        for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple",
                 "minecraft:glowstone_dust", "minecraft:prismarine_crystals", "minecraft:dragon_egg", "minecraft:sniffer_egg", "minecraft:ochre_froglight", "minecraft:stripped_bamboo_block", "minecraft:string")) {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 1, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
@@ -201,6 +201,84 @@ public final class CompanionGatherBlockTests {
             String report = future.join().report();
             h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.IRON_INGOT) == 2 && count(c, Items.SHEARS) == 0, "Leaves out of reach: " + report + ", ingots " + count(c, Items.IRON_INGOT));
         });
+    }
+
+    /**
+     * Plan only: what grows on the bed of the sea is picked too: kelp, a sea pickle, seagrass (with shears), and a coral block
+     * mined with a pickaxe for the dead block it gives. A coral itself and its fan give anything only to Silk Touch: no source.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void whatGrowsUnderWaterIsPlannedAsPicking(GameTestHelper h) {
+        var level = h.getLevel();
+        for (String item : List.of("minecraft:kelp", "minecraft:sea_pickle")) {
+            var plan = CompanionObtain.plan(level, List.of(), false, item, 2, thing -> true);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + ": " + plan);
+        }
+        var grass = CompanionObtain.plan(level, List.of(new ItemStack(Items.SHEARS)), false, "minecraft:seagrass", 2, thing -> true);
+        h.assertTrue(grass.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:seagrass", 2))), "Seagrass: " + grass);
+        var dried = CompanionObtain.plan(level, List.of(), false, "minecraft:dried_kelp", 2, thing -> true);
+        h.assertTrue(dried.steps().getFirst().equals(new CompanionObtain.Step("gather_block", "minecraft:kelp", 2)) && dried.steps().getLast().type().equals("smelt_items"), "Dried kelp: " + dried);
+        var dead = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, "minecraft:dead_tube_coral_block", 1, thing -> true);
+        h.assertTrue(dead.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:dead_tube_coral_block", 1))), "Dead coral block: " + dead);
+        var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:dead_tube_coral_block", 1, thing -> true);
+        h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:dead_tube_coral_block", 1))
+                && bare.steps().stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith("_pickaxe")), "Dead coral block with no pickaxe: " + bare);
+        for (String item : List.of("minecraft:tube_coral", "minecraft:tube_coral_fan", "minecraft:dead_tube_coral", "minecraft:tube_coral_block")) {
+            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 1, thing -> true);
+            h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
+        }
+        h.succeed();
+    }
+
+    /**
+     * «Добудь 3 ламинарии, траву, огурец и мёртвый коралл» from a pond five deep: he swims over, dives for what is out of his reach
+     * from the surface, cuts the kelp above its root (the root stays and grows), shears the seagrass and mines the coral block.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theBedOfAPondIsPickedUnderWater(GameTestHelper h) {
+        ground(h);
+        pond(h, 16, 14, 22, 20, GROUND);
+        BlockPos root = new BlockPos(18, 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(root.above(up), Blocks.KELP_PLANT);
+        h.setBlock(root.above(3), Blocks.KELP);
+        h.setBlock(new BlockPos(20, 1, 18), Blocks.SEAGRASS);
+        h.setBlock(new BlockPos(17, 1, 19), Blocks.SEA_PICKLE);
+        h.setBlock(new BlockPos(21, 1, 15), Blocks.TUBE_CORAL_BLOCK);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        c.setItem(1, new ItemStack(Items.WOODEN_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:kelp\",\"count\":3},{\"action\":\"obtain_item\",\"item\":\"minecraft:seagrass\",\"count\":1},"
+                + "{\"action\":\"obtain_item\",\"item\":\"minecraft:sea_pickle\",\"count\":1},{\"action\":\"obtain_item\",\"item\":\"minecraft:dead_tube_coral_block\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            for (Item item : List.of(Items.SEAGRASS, Items.SEA_PICKLE, Items.DEAD_TUBE_CORAL_BLOCK)) h.assertTrue(count(c, item) == 1, "Not one " + item + ": " + count(c, item) + ", " + report);
+            h.assertTrue(count(c, Items.KELP) == 3, "Not three kelp: " + count(c, Items.KELP) + ", " + report);
+            h.assertTrue(h.getBlockState(root).is(Blocks.KELP) || h.getBlockState(root).is(Blocks.KELP_PLANT), "The root of the kelp is gone");
+        });
+    }
+
+    /** Kelp under ice, with no air over the water to come up for: no dive under a roof, said at once. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void kelpUnderARoofIsNotPlanned(GameTestHelper h) {
+        ground(h);
+        pond(h, 16, 14, 22, 20, GROUND - 1);
+        for (int x = 16; x <= 22; x++) for (int z = 14; z <= 20; z++) h.setBlock(new BlockPos(x, GROUND, z), Blocks.ICE);
+        BlockPos root = new BlockPos(18, 1, 16);
+        h.setBlock(root, Blocks.KELP_PLANT);
+        h.setBlock(root.above(), Blocks.KELP);
+        CompanionEntity c = spawn(h, 12, 16);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:kelp\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.KELP) == 0, "Kelp under ice: " + report);
+        });
+    }
+
+    /** Water from the bedrock up to {@code top} over the given square of the ground. */
+    private static void pond(GameTestHelper h, int x0, int z0, int x1, int z1, int top) {
+        for (int x = x0; x <= x1; x++) for (int z = z0; z <= z1; z++) for (int y = 1; y <= top; y++) h.setBlock(new BlockPos(x, y, z), Blocks.WATER);
     }
 
     /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */

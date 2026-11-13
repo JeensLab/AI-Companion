@@ -52,8 +52,16 @@ public final class CompanionMobDropsTests {
         // None about: said before anything starts, with who he looked for.
         var none = CompanionObtain.plan(level, List.of(), true, "minecraft:bow", 1, thing -> false, thing -> false);
         h.assertTrue(none.refused() && none.steps().isEmpty() && none.refusal().contains("Рядом не вижу") && none.refusal().contains("Spider"), "Bow with no spider about: " + none);
-        // A player's kill only (spider eye, blaze rod), a witch's odds and ends, the water's, a piglin's: no monster is fought for them.
-        for (String item : List.of("minecraft:spider_eye", "minecraft:blaze_rod", "minecraft:glowstone_dust", "minecraft:glass_bottle", "minecraft:ink_sac",
+        // A fish and a squid are fought for what they drop, in the water.
+        for (String item : List.of("minecraft:cod", "minecraft:salmon", "minecraft:tropical_fish", "minecraft:pufferfish", "minecraft:ink_sac", "minecraft:glow_ink_sac")) {
+            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_SWORD)), false, item, 2, thing -> false, thing -> true);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("hunt_drop", item, 2))), item + ": " + plan);
+        }
+        // Cod is the fish's own: neither a dolphin, nor a polar bear, nor a guardian is named for it.
+        var nobody = CompanionObtain.plan(level, List.of(), false, "minecraft:cod", 1, thing -> false, thing -> false);
+        h.assertTrue(nobody.refused() && nobody.refusal().contains("Cod") && !nobody.refusal().contains("Dolphin") && !nobody.refusal().contains("Polar") && !nobody.refusal().contains("Guardian"), "Cod: " + nobody);
+        // A player's kill only (spider eye, blaze rod), a witch's odds and ends, a guardian's, a piglin's: no monster is fought for them.
+        for (String item : List.of("minecraft:spider_eye", "minecraft:blaze_rod", "minecraft:glowstone_dust", "minecraft:glass_bottle",
                 "minecraft:prismarine_shard", "minecraft:gold_nugget", "minecraft:nether_star")) {
             var plan = CompanionObtain.plan(level, List.of(), true, item, 1, thing -> true, thing -> true);
             h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("hunt_drop")), item + " is not hunted for: " + plan);
@@ -107,6 +115,25 @@ public final class CompanionMobDropsTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             h.assertTrue(count(c, Items.SLIME_BALL) >= 1, "No slime ball: " + future.join().report());
+        });
+    }
+
+    /** «Добудь 2 трески и чернила» in a pond: the fish and the squid are fought in the water, the dolphin with them is left alone. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void fishAndASquidAreFoughtInAPond(GameTestHelper h) {
+        ground(h);
+        for (int x = 16; x <= 24; x++) for (int z = 12; z <= 20; z++) for (int y = 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.WATER);
+        for (int i = 0; i < 3; i++) h.spawn(EntityType.COD, 18 + i * 2, 3, 14);
+        h.spawn(EntityType.SQUID, 21, 2, 18);
+        Mob dolphin = h.spawn(EntityType.DOLPHIN, 23, 3, 16);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_SWORD));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:cod\",\"count\":2},{\"action\":\"obtain_item\",\"item\":\"minecraft:ink_sac\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.COD) >= 2 && count(c, Items.INK_SAC) >= 1, "Cod " + count(c, Items.COD) + ", ink " + count(c, Items.INK_SAC) + ": " + report);
+            h.assertTrue(dolphin.isAlive() && dolphin.getHealth() == dolphin.getMaxHealth(), "The dolphin was struck");
         });
     }
 

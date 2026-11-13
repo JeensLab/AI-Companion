@@ -5,6 +5,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -27,10 +28,11 @@ import java.util.Set;
  * give themselves, clay gives clay balls, a melon its slices, snow snowballs. Only what a hand or a tool he makes takes, and only
  * a block that gives the one item every time, and an item no recipe makes: leaves (a sapling now and then), grass (seeds sometimes) and a potted flower (the
  * pot comes with it) are no source. What gives nothing sure to a hand but itself to shears (leaves, a vine, a cobweb, grass, a fern,
- * a dead bush) is a source for shears.
+ * a dead bush) is a source for shears. What grows on the bed of the sea holds its water (kelp, seagrass, a sea pickle), and a coral
+ * block gives the dead block to a pickaxe: those are sources too (CompanionPicking dives for them).
  *
  * Left to other skills and later work: what a pickaxe mines (stone of every kind: the mine), crops and saplings (the farm and the
- * replanting are his own; a young crop broken for its seed is a loss), blocks that hold things, anything under water.
+ * replanting are his own; a young crop broken for its seed is a loss), blocks that hold things.
  */
 final class CompanionPickable {
     /** A block and the least of the item one of it gives; {@code shears}: to shears only. */
@@ -94,7 +96,9 @@ final class CompanionPickable {
     }
 
     private static boolean taken(BlockState state) {
-        if (state.isAir() || state.hasBlockEntity() || !state.getFluidState().isEmpty() || state.getBlock().defaultDestroyTime() < 0) return false;
+        if (state.isAir() || state.hasBlockEntity() || state.getBlock().defaultDestroyTime() < 0) return false;
+        // Water is no source (it gives nothing), what grows in it is; lava and any other fluid are no place of his.
+        if (!state.getFluidState().isEmpty() && !state.getFluidState().is(FluidTags.WATER)) return false;
         if (state.is(BlockTags.CROPS) || state.is(BlockTags.SAPLINGS)) return false;
         // Outside those tags: a bamboo shoot is a sapling, a dripleaf's stem brings its head down unclaimed, a tripwire is someone's trap.
         if (state.is(Blocks.BAMBOO_SAPLING) || state.is(Blocks.BIG_DRIPLEAF_STEM) || state.is(Blocks.TRIPWIRE)) return false;
@@ -103,13 +107,20 @@ final class CompanionPickable {
         // a stripped block (stripping is not his skill, so one that stands was put there).
         if (state.getLightEmission() >= LAMP || state.getBlock() instanceof FallingBlock || state.is(Blocks.SNIFFER_EGG)
                 || BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().startsWith("stripped_")) return false;
-        return !state.is(BlockTags.MINEABLE_WITH_PICKAXE);
+        // The mine has no coral: the block is mined here for the dead block it gives.
+        return !state.is(BlockTags.MINEABLE_WITH_PICKAXE) || state.is(BlockTags.CORAL_BLOCKS);
+    }
+
+    /** Whether every block that gives the item wants a pickaxe (a coral block for the dead one). */
+    static boolean mined(ServerLevel level, Item item) {
+        List<Source> all = sources(level, item);
+        return !all.isEmpty() && all.stream().allMatch(source -> source.block().defaultBlockState().is(BlockTags.MINEABLE_WITH_PICKAXE));
     }
 
     /** The plainest tool that takes the block: none where a hand does. */
     private static ItemStack tool(BlockState state) {
         if (!state.requiresCorrectToolForDrops()) return ItemStack.EMPTY;
         return new ItemStack(state.is(BlockTags.MINEABLE_WITH_SHOVEL) ? Items.WOODEN_SHOVEL : state.is(BlockTags.MINEABLE_WITH_AXE) ? Items.WOODEN_AXE
-                : state.is(BlockTags.MINEABLE_WITH_HOE) ? Items.WOODEN_HOE : Items.AIR);
+                : state.is(BlockTags.MINEABLE_WITH_HOE) ? Items.WOODEN_HOE : state.is(BlockTags.MINEABLE_WITH_PICKAXE) ? Items.WOODEN_PICKAXE : Items.AIR);
     }
 }

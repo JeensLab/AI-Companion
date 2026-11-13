@@ -35,7 +35,9 @@ import java.util.UUID;
  * he does not wait for the night nor go down a cave for them.
  *
  * Only what falls without a player's hand in the kill and often enough to count on (a witch's odds and ends are not); only the
- * overworld, on land; never a named mob (somebody's), a piglin (the whole group rises) or the warden.
+ * overworld, on land; never a named mob (somebody's), a piglin (the whole group rises) or the warden. Of what lives in the water only
+ * a fish and a squid (cod, salmon, ink): fought in the water, as for a drowned (CompanionSwimming dives with a blade in hand); a
+ * dolphin, an axolotl, a turtle and a guardian never.
  */
 final class CompanionMobDrops {
     /** Kills tried with fixed seeds, so the list is the same every time; an item is counted on when a third of them give it. */
@@ -76,8 +78,10 @@ final class CompanionMobDrops {
     private static Map<Item, List<EntityType<?>>> build(ServerLevel level) {
         Map<Item, List<EntityType<?>>> found = new HashMap<>();
         for (EntityType<?> type : BuiltInRegistries.ENTITY_TYPE) {
-            if (type.getCategory() != MobCategory.MONSTER || !(type.create(level) instanceof Mob mob)) continue;
-            if (!(mob instanceof Enemy) || spared(mob)) continue;
+            var category = type.getCategory();
+            if (category != MobCategory.MONSTER && category != MobCategory.WATER_AMBIENT && category != MobCategory.WATER_CREATURE
+                    && category != MobCategory.UNDERGROUND_WATER_CREATURE || !(type.create(level) instanceof Mob mob)) continue;
+            if (!swims(mob) && (category != MobCategory.MONSTER || !(mob instanceof Enemy) || spared(mob))) continue;
             var table = level.getServer().reloadableRegistries().getLootTable(mob.getLootTable());
             // No player in the kill: what only a player's blow brings (a spider's eye, a blaze rod) does not fall for him.
             LootParams params = new LootParams.Builder(level).withParameter(LootContextParams.THIS_ENTITY, mob).withParameter(LootContextParams.ORIGIN, Vec3.ZERO)
@@ -99,6 +103,11 @@ final class CompanionMobDrops {
         return mob instanceof net.minecraft.world.entity.monster.warden.Warden || mob instanceof net.minecraft.world.entity.boss.wither.WitherBoss
                 || mob instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin || mob instanceof net.minecraft.world.entity.monster.ZombifiedPiglin
                 || mob instanceof net.minecraft.world.entity.monster.Guardian;
+    }
+
+    /** What is fished for its drop: a fish (a tadpole drops nothing) or a squid, glowing or not. */
+    private static boolean swims(Mob mob) {
+        return mob instanceof net.minecraft.world.entity.animal.AbstractFish || mob instanceof net.minecraft.world.entity.animal.Squid;
     }
 
     /** «Spider, Cave Spider»: who is looked for, said when none is about. */
@@ -123,9 +132,9 @@ final class CompanionMobDrops {
                 || mob.getBlockY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, mob.getBlockX(), mob.getBlockZ()) - 1));
     }
 
-    /** Of the kind, alive, nobody's (no name), on land, on its own feet, and one he may fight by this order. */
+    /** Of the kind, alive, nobody's (no name), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
     private static boolean fought(CompanionEntity c, List<EntityType<?>> kinds, Mob mob) {
-        return kinds.contains(mob.getType()) && mob.isAlive() && !mob.hasCustomName() && !mob.isInWater() && !mob.isPassenger() && !mob.isVehicle()
+        return kinds.contains(mob.getType()) && mob.isAlive() && !mob.hasCustomName() && (swims(mob) || !mob.isInWater()) && !mob.isPassenger() && !mob.isVehicle()
                 && c.leashAllows(mob.blockPosition()) && c.fairTarget(mob, true);
     }
 
