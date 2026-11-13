@@ -77,6 +77,8 @@ public final class CompanionDialogue {
             case "place_block" -> "Поставлю вот тут.";
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
             case "set_home" -> "Запомнил, наш дом здесь.";
+            case "remember_place" -> "Запомнил это место как «" + actions.getFirst().item() + "».";
+            case "go_to_place" -> "Ага, иду к метке «" + actions.getFirst().item() + "».";
             case "follow" -> "Буду держаться рядом.";
             case "come" -> "Попробую подойти.";
             case "enter_portal" -> "Попробую зайти в портал.";
@@ -183,6 +185,8 @@ public final class CompanionDialogue {
                     + (action.count() == PlannedAction.ALL_CARRIED ? "всё, что есть" : action.count() + " шт.") + ")";
             case "come" -> "подойти к тебе";
             case "set_home" -> "запомнить наш дом";
+            case "remember_place" -> "запомнить место «" + action.item() + "»";
+            case "go_to_place" -> "дойти до метки «" + action.item() + "»";
             case "enter_portal" -> "зайти в портал";
             case "walk_heading" -> "провести тебя " + dev.aicompanion.entity.CompanionCourse.where(action.item());
             case "follow" -> "идти за тобой";

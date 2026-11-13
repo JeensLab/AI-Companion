@@ -144,6 +144,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
+    /** Whether named map markers work at all: recognition, remembering and walks (the player's setting, not saved). */
+    private boolean markersEnabled = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -658,6 +660,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
     public void setPickUpNearby(boolean on, int radius) { pickUpNearby = on; pickUpRadius = Math.clamp(radius, CompanionPickUp.MIN_RADIUS, CompanionPickUp.MAX_RADIUS); }
+    /** Whether named map markers work at all (the player's setting): recognition, remembering and walks. */
+    public boolean markersEnabled() { return markersEnabled; }
+    public void setMarkersEnabled(boolean on) { markersEnabled = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
@@ -765,6 +770,55 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         return recordActionResult(CompanionActionResult.accepted(honest + " " + meaning.fallbackNote())
                 .withEvidence(new CompanionActionResult.Evidence(workId, meaning.fallbackAction(), meaning.fallbackItem(),
                         wanted, null, null, null)));
+    }
+
+    /**
+     * «Запомни это место, дача»: saves the point he stands on as a named marker of the player. The same name again
+     * moves that marker; a full list loses its oldest one, and the answer names it. Off: the word is not taken.
+     */
+    public CompanionActionResult rememberPlace(String name) {
+        if (!markersEnabled) return CompanionActionResult.failed("Метки на карте выключены.");
+        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для метки нужен загруженный мир.");
+        if (getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, метку запоминать не для кого.");
+        String clean = CompanionMarkerNames.clean(name);
+        if (clean.isEmpty()) return CompanionActionResult.failed("Как назвать это место? Скажи «запомни это место, название».");
+        if (!CompanionMarkerNames.valid(clean)) {
+            if (clean.length() > CompanionMarkerNames.MAX)
+                return CompanionActionResult.failed("Название метки — до " + CompanionMarkerNames.MAX + " символов.");
+            return CompanionActionResult.failed("«" + clean + "» — это координаты, а не название. Скажи «запомни это место, название».");
+        }
+        // The phrase promises the place the player stands on: his feet while he is here, mine only when he is away.
+        ServerPlayer owner = getOwnerPlayer();
+        BlockPos at = owner != null ? owner.blockPosition() : blockPosition();
+        CompanionMarkers.Added added = CompanionMarkers.get(level.getServer())
+                .add(getOwnerId(), clean, level.dimension(), at, level.getGameTime());
+        if (added.refused()) return CompanionActionResult.failed(added.refusal());
+        refreshPlaces();
+        String where = added.marker().pos().toShortString() + " в " + CompanionMarkers.worldName(added.marker().dimension());
+        String line = added.moved() ? "Метка «" + added.marker().name() + "» теперь здесь: " + where + "."
+                : "Запомнил место «" + added.marker().name() + "»: " + where + ".";
+        if (owner == null) line += " Тебя нет рядом, поэтому это место, где стою я.";
+        if (added.evicted() != null)
+            line += " Меток было " + CompanionMarkers.MOST + ", самую старую «" + added.evicted().name() + "» забыл.";
+        return CompanionActionResult.ok(line);
+    }
+
+    /**
+     * «Иди к колодцу»: walks to the marker the name means by the normal path. No marker or more than one is answered
+     * honestly with the names he knows, without a walk; another dimension is said as it is.
+     */
+    public CompanionActionResult goToPlace(String name) {
+        if (!markersEnabled) return CompanionActionResult.failed("Метки на карте выключены.");
+        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для похода к метке нужен загруженный мир.");
+        if (getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, идти к метке не для кого.");
+        var found = CompanionMarkers.get(level.getServer()).matching(getOwnerId(), name);
+        if (found.isEmpty()) return CompanionActionResult.failed(CompanionMarkers.unknown(name, CompanionMarkers.get(level.getServer()).all(getOwnerId())));
+        if (found.size() > 1) return CompanionActionResult.failed(CompanionMarkers.questionFor(found));
+        CompanionMarkers.Marker marker = found.getFirst();
+        if (!marker.dimension().equals(level.dimension()))
+            return CompanionActionResult.failed("Метка «" + marker.name() + "» в другом измерении ("
+                    + CompanionMarkers.worldName(marker.dimension()) + "), пешком отсюда туда не дойти.");
+        return startWork("go_to_place", marker.name(), 1);
     }
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {

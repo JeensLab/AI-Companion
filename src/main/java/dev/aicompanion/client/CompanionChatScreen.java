@@ -5,6 +5,7 @@ import dev.aicompanion.CompanionDiagnostics;
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionPickUp;
+import dev.aicompanion.entity.CompanionMarkerBoard;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -62,6 +63,8 @@ public final class CompanionChatScreen extends Screen {
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
+        if (clarifyPlace(text, trace)) return;
+        if (answerPlaceForget(action, text, trace)) return;
         if (action != null && Minecraft.getInstance().getConnection() != null) {
             if (CompanionGhostPlacement.offer(action)) return;
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
@@ -253,6 +256,8 @@ public final class CompanionChatScreen extends Screen {
         if (clarifyResources(text, trace)) return;
         if (CompanionIdentity.isNameQuestion(text)) { replyWithName(text, trace); return; }
         if (answerMemoryCommand(action, trace)) return;
+        if (clarifyPlace(text, trace)) return;
+        if (answerPlaceForget(action, text, trace)) return;
         if (action != null && minecraft.getConnection() != null) {
             if (CompanionGhostPlacement.offer(action)) return;
             if (CompanionLocalCommands.cancelsPlans(action)) CompanionActionExecutor.cancelPendingPlans(trace, CompanionLocalCommands.cancelReason(text, action));
@@ -319,6 +324,18 @@ public final class CompanionChatScreen extends Screen {
             return CompanionActionExecutor.currentPlanGeneration();
         }
         return captured;
+    }
+
+    /** «Иди к озеру» with no such marker, or a name two markers fit: one honest question, no model request and no walk. */
+    private static boolean clarifyPlace(String text, String trace) {
+        // One snapshot: the names and the switch are read together, never a new list with the old switch.
+        var known = CompanionMarkerView.snapshot();
+        var place = CompanionPlaceSpeech.parse(text, companionName(), known.names(), known.enabled());
+        if (place.question() == null) return false;
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_clarification", "reason", "place_" + place.kind().name().toLowerCase(java.util.Locale.ROOT));
+        OpenRouterClient.recordLocalExchange(text, place.question());
+        addVoiceReply(place.question(), trace, "clarification");
+        return true;
     }
 
     private static boolean clarifyResources(String text, String trace) {
@@ -403,9 +420,62 @@ public final class CompanionChatScreen extends Screen {
             CompanionMemoryFlow.forget();
             answer = remembers ? "Всё, что ты мне рассказывал, я забыл. Наши общие дела и отношения остаются."
                     : "Всё, что ты мне рассказывал, я забыл. Долговременная память выключена, так что нового я не запоминаю.";
-        } else if (remembers) answer = CompanionMemoryView.recall(CompanionMemoryView.current());
+            // «Забудь всё» is everything: the markers of the map go too, and the same line says how many there were.
+            forgetMarkers(answer, trace);
+            return true;
+        }
+        if (remembers) answer = CompanionMemoryView.recall(CompanionMemoryView.current());
         else answer = "Долговременная память выключена в настройках: нового я не запоминаю и прежнее не вспоминаю.";
         addVoiceReply(answer, trace, "local_memory");
+        return true;
+    }
+
+    /** «Забудь всё» takes every marker of the map too: the count comes from the server's list, not from the client's copy. */
+    private static void forgetMarkers(String answer, String trace) {
+        Minecraft minecraft = Minecraft.getInstance();
+        var server = minecraft.getSingleplayerServer();
+        var player = minecraft.player;
+        if (server == null || player == null) { addVoiceReply(answer, trace, "local_memory"); return; }
+        var playerId = player.getUUID();
+        server.execute(() -> {
+            var online = server.getPlayerList().getPlayer(playerId);
+            CompanionMarkerBoard.Forgotten forgotten = online == null ? new CompanionMarkerBoard.Forgotten(0, "")
+                    : CompanionMarkerBoard.forgetAll(online);
+            String line = forgotten.count() == 0 ? answer : answer + " " + forgotten.message();
+            minecraft.execute(() -> addVoiceReply(line, trace, "local_memory"));
+        });
+    }
+
+    /**
+     * «Забудь дачу», «удали метку дачу», «забудь все метки»: the player's own list, not an order to him — one honest
+     * line from the server, and whatever he is doing goes on.
+     */
+    private static boolean answerPlaceForget(String action, String text, String trace) {
+        String prefix = "companion place forget";
+        if (action == null || (!action.equals(prefix) && !action.startsWith(prefix + " "))) return false;
+        String said = action.length() > prefix.length() ? action.substring(prefix.length() + 1) : "";
+        CompanionDiagnostics.event(trace, "message_route", "route", "local_place_forget", "name", said);
+        Minecraft minecraft = Minecraft.getInstance();
+        var server = minecraft.getSingleplayerServer();
+        var player = minecraft.player;
+        if (server == null || player == null) {
+            String answer = "Список меток доступен в одиночном мире.";
+            OpenRouterClient.recordLocalExchange(text, answer);
+            addVoiceReply(answer, trace, "local_place_forget");
+            return true;
+        }
+        var playerId = player.getUUID();
+        server.execute(() -> {
+            var online = server.getPlayerList().getPlayer(playerId);
+            String answer;
+            if (online == null) answer = "Тебя нет на сервере — метку забыть не удалось.";
+            else if (said.isEmpty()) answer = CompanionMarkerBoard.forgetAll(online).message();
+            else answer = CompanionMarkerBoard.forgetSpoken(online, said).message();
+            minecraft.execute(() -> {
+                OpenRouterClient.recordLocalExchange(text, answer);
+                addVoiceReply(answer, trace, "local_place_forget");
+            });
+        });
         return true;
     }
 

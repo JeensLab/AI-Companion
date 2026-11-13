@@ -64,7 +64,7 @@ public final class CompanionSettingsScreen extends Screen {
         page = Math.clamp(page, 0, CompanionSettingsLayout.pages(this.width, this.height) - 1);
 
         // The header entries share the top band: below 418 px they take two rows, so no entry sits inside another and none
-        // runs past the right edge. The fourth place is the «Метки» page, whose own change adds its button there.
+        // runs past the right edge. The fourth place is the «Метки» page.
         addRenderableWidget(Button.builder(Component.literal("Поведение"), b -> {
             saveAndClose(); minecraft.setScreen(new CompanionBehaviorScreen(this));
         }).bounds(header.behavior().x(), header.behavior().y(), header.behavior().width(), header.behavior().height()).build());
@@ -72,6 +72,10 @@ public final class CompanionSettingsScreen extends Screen {
             saveAndClose(); minecraft.setScreen(new CompanionDeathRecoveryScreen(this));
         }).bounds(header.death().x(), header.death().y(), header.death().width(), header.death().height()).tooltip(Tooltip.create(Component.literal(
                 "Возвращаться за своими вещами после смерти: выключатель и сколько попыток он делает."))).build());
+        addRenderableWidget(Button.builder(Component.literal("Метки"), b -> {
+            saveAndClose(); minecraft.setScreen(new CompanionMarkersScreen(this));
+        }).bounds(header.markers().x(), header.markers().y(), header.markers().width(), header.markers().height()).tooltip(Tooltip.create(Component.literal(
+                "Запомненные места с названиями: переименовать, удалить, изменить координаты, добавить текущее место и выключатель."))).build());
         addRenderableWidget(Button.builder(memoryLabel(), b -> {
             OpenRouterConfig.LONG_TERM_MEMORY.set(!OpenRouterConfig.LONG_TERM_MEMORY.get()); OpenRouterConfig.LONG_TERM_MEMORY.save();
             b.setMessage(memoryLabel()); CompanionPreferences.sync();
