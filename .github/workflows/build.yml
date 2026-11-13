@@ -24,6 +24,10 @@ jobs:
           distribution: 'temurin'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+      # AGENTS.md requires a switch over a project enum to list every constant and to carry no default; the check
+      # needs only the JDK and takes about a second, so it runs in this job instead of being remembered by hand.
+      - name: Check enum switches
+        run: bash scripts/switch-check.sh
       - name: Build with Gradle
         run: ./gradlew build
 
