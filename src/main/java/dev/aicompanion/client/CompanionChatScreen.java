@@ -52,7 +52,7 @@ public final class CompanionChatScreen extends Screen {
         if (text.isEmpty()) return;
         String trace = CompanionDiagnostics.newTrace();
         CompanionDiagnostics.event(trace, "player_message", "source", "text", "text", text);
-        CompanionAmbientClient.playerMessage();
+        CompanionAmbientClient.playerMessage(text);
         // A message typed while the last answer is still coming used to vanish silently (review 22.10, М8). It is queued,
         // and «ещё отвечает на прошлую просьбу… сделает следом» says so, as for voice.
         input.setValue("");
@@ -247,7 +247,7 @@ public final class CompanionChatScreen extends Screen {
 
     private static void sendVoiceMessage(String text, String trace) {
         Minecraft minecraft = Minecraft.getInstance();
-        CompanionAmbientClient.playerMessage();
+        CompanionAmbientClient.playerMessage(text);
         String action = companionAction(text);
         CompanionMemoryFlow.playerSaid(text, action);
         if (clarifyResources(text, trace)) return;
@@ -342,17 +342,23 @@ public final class CompanionChatScreen extends Screen {
     private static void addVoiceReply(String text, String trace, String source, boolean voiced) {
         CompanionMemoryFlow.companionSaid(source, text);
         CompanionDiagnostics.event(trace, "companion_reply", "source", source, "text", text);
-        if ("autonomous".equals(source) || "topic".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
+        if ("autonomous".equals(source) || "topic".equals(source) || "joke".equals(source)) CompanionAmbientClient.initiativeDelivered(text);
         else CompanionAmbientClient.replyDelivered(text);
         Minecraft minecraft = Minecraft.getInstance();
         Component reply = Component.literal(companionName() + ": " + text).withStyle(ChatFormatting.AQUA);
         appendHistory(reply);
         minecraft.gui.getChat().addMessage(reply);
         if (!voiced) return;
-        InworldTtsClient.speak(text, trace).exceptionally(speechError -> {
+        ("joke".equals(source) ? InworldTtsClient.speakJoke(text, trace) : InworldTtsClient.speak(text, trace)).exceptionally(speechError -> {
             dev.aicompanion.AICompanionMod.LOGGER.warn("Speech could not be played: {}", speechError.getMessage());
             return null;
         });
+    }
+
+    static void jokeReply(String story, String trace, boolean voiced) {
+        String text = "Внимание, анекдот. " + story;
+        OpenRouterClient.recordSpokenLine(text);
+        addVoiceReply(text, trace, "joke", voiced);
     }
 
     public static void autonomousReply(String text) {

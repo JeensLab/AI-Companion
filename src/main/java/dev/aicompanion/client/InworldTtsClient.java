@@ -39,6 +39,14 @@ public final class InworldTtsClient {
     }
 
     public static synchronized CompletableFuture<Void> speak(String text, String trace) {
+        return speak(text, trace, false);
+    }
+
+    static synchronized CompletableFuture<Void> speakJoke(String text, String trace) {
+        return speak(text, trace, true);
+    }
+
+    private static CompletableFuture<Void> speak(String text, String trace, boolean joke) {
         String credential = OpenRouterConfig.INWORLD_API_KEY.get().trim();
         boolean macos = MacOsVoice.macos();
         boolean localVoiceOn = macos ? OpenRouterConfig.MACOS_VOICE.get() : OpenRouterConfig.WINDOWS_VOICE.get();
@@ -57,12 +65,16 @@ public final class InworldTtsClient {
         CompanionDiagnostics.event(trace, "speech_requested", "characters", text.length(), "speaker", speakerId,
                 "engine", engine.name().toLowerCase(Locale.ROOT));
         // A local voice that hangs must not hold the queue: the same 60 s as an Inworld request.
-        CompletableFuture<byte[]> synthesis = switch (engine) {
-            case WINDOWS -> WindowsVoice.synthesize(line).orTimeout(60, TimeUnit.SECONDS);
-            case MACOS -> MacOsVoice.synthesize(line).orTimeout(60, TimeUnit.SECONDS);
-            case INWORLD -> inworld(line, credential, trace);
-            case NONE -> throw new IllegalStateException("Speech is disabled");
-        };
+        CompletableFuture<byte[]> synthesis;
+        if (joke) {
+            String intro = "Внимание, анекдот. ";
+            var announcement = synthesize(engine, intro.strip(), credential, trace);
+            var story = synthesize(engine, line.substring(intro.length()), credential, trace);
+            synthesis = announcement.thenCombine(story, (first, second) -> {
+                try { return VoicePcm.joinWithPause(first, second); }
+                catch (Exception error) { throw new CompletionException(error); }
+            });
+        } else synthesis = synthesize(engine, line, credential, trace);
         // Reserve the playback position now, so a faster later synthesis cannot overtake this reply.
         playbackQueue = playbackQueue.handle((ignored, error) -> null)
                 .thenCompose(ignored -> synthesis.thenCompose(wav -> {
@@ -88,6 +100,15 @@ public final class InworldTtsClient {
                     return null;
                 });
         return playbackQueue;
+    }
+
+    private static CompletableFuture<byte[]> synthesize(SpeechEngine engine, String line, String credential, String trace) {
+        return switch (engine) {
+            case WINDOWS -> WindowsVoice.synthesize(line).orTimeout(60, TimeUnit.SECONDS);
+            case MACOS -> MacOsVoice.synthesize(line).orTimeout(60, TimeUnit.SECONDS);
+            case INWORLD -> inworld(line, credential, trace);
+            case NONE -> throw new IllegalStateException("Speech is disabled");
+        };
     }
 
     private static CompletableFuture<byte[]> inworld(String line, String credential, String trace) {

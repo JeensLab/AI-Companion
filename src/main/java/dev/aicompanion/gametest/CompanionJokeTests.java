@@ -15,12 +15,13 @@ import java.util.HashSet;
 @PrefixGameTestTemplate(false)
 public final class CompanionJokeTests {
     @GameTest(template = "empty")
-    public static void jokesAreShortBankLinesWithoutNumbers(GameTestHelper h) {
-        h.assertTrue(new HashSet<>(CompanionJokes.ALL).size() == CompanionJokes.ALL.size(), "Duplicate bank lines");
-        for (String joke : CompanionJokes.ALL) {
-            h.assertTrue(CompanionConversation.fitsMurmur(joke), "Not a short murmur: " + joke);
-            h.assertTrue(joke.chars().filter(c -> c == '.' || c == '!' || c == '?').count() <= 3, "Too many sentences");
-        }
+    public static void fortyStoriesHaveFiveOfEachThemeAndUseTheirOwnLimits(GameTestHelper h) {
+        h.assertTrue(CompanionJokes.ALL.size() == 40 && new HashSet<>(CompanionJokes.ALL).size() == 40, "Expected 40 unique stories");
+        for (var theme : dev.aicompanion.CompanionJokeBank.Theme.values())
+            h.assertTrue(CompanionJokes.BUNDLED.stream().filter(j -> j.themes().contains(theme)).count() == 5, "Expected five stories per theme");
+        for (String joke : CompanionJokes.ALL)
+            h.assertTrue(dev.aicompanion.CompanionJokeBank.valid(joke), "Invalid story");
+        h.assertTrue(!CompanionConversation.fitsMurmur("Число 123"), "Ordinary murmur digit guard changed");
         h.succeed();
     }
 

@@ -111,12 +111,14 @@ final class CompanionBehaviorScreen extends Screen {
             OpenRouterConfig.JOKES.set(!OpenRouterConfig.JOKES.get()); OpenRouterConfig.JOKES.save();
             b.setMessage(jokesLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
-                "Короткие анекдоты без запроса к модели, только в спокойный момент. Один и тот же — не чаще раза в час."))).build());
+                "Байки до 150 слов без запроса к модели, только в спокойный момент. Один и тот же — не чаще раза в час."))).build());
         addRenderableWidget(Button.builder(jokeIntervalLabel(), b -> {
             int next = OpenRouterConfig.JOKE_INTERVAL_MINUTES.get() + 5;
             OpenRouterConfig.JOKE_INTERVAL_MINUTES.set(next > 60 ? 5 : next); OpenRouterConfig.JOKE_INTERVAL_MINUTES.save();
             b.setMessage(jokeIntervalLabel());
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
+        addRenderableWidget(Button.builder(Component.literal("Свои анекдоты: файл и перезагрузка"), b -> minecraft.setScreen(new CompanionJokeScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).build());
         fitRows(top);
     }
     private Component jokesLabel() { return Component.literal("Анекдоты: " + (OpenRouterConfig.JOKES.get() ? "вкл." : "выкл.")); }
