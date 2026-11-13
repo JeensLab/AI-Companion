@@ -30,5 +30,8 @@
   "config.aicompanion.guard_nearest_to_player": "Охрана: монстр ближе к игроку",
   "config.aicompanion.other_containers": "Контейнеры, кроме сундуков",
   "config.aicompanion.boat_clutch": "Лодка при падении",
+  "config.aicompanion.model_thinking": "Размышление модели",
+  "config.aicompanion.temperature": "Температура",
+  "config.aicompanion.top_p": "top_p",
   "config.aicompanion.replant_saplings": "Саженцы на месте срубленных деревьев"
 }

@@ -11,7 +11,11 @@ final class CompanionBehaviorScreen extends Screen {
     private final Screen parent;
     CompanionBehaviorScreen(Screen parent) { super(Component.literal("Поведение компаньона")); this.parent = parent; }
     @Override protected void init() {
-        int left = width / 2 - 150, top = Math.max(30, height / 2 - 90); // six rows end above the note at height - 64, down to a GUI height of 240
+        int left = width / 2 - 150, top = CompanionSwitchLayout.top(height);
+        // The only row here that is not a gameplay switch: the model's own settings live on their own screen now.
+        addRenderableWidget(Button.builder(Component.literal(CompanionSwitchLayout.MODEL_ENTRY_LABEL), b -> minecraft.setScreen(new CompanionModelScreen(this)))
+                .bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                        "Размышление модели, температура и top_p: что и как он отвечает."))).build());
         addRenderableWidget(Button.builder(speechLabel(), b -> {
             OpenRouterConfig.AUTONOMOUS_SPEECH.set(!OpenRouterConfig.AUTONOMOUS_SPEECH.get()); OpenRouterConfig.AUTONOMOUS_SPEECH.save();
             b.setMessage(speechLabel()); CompanionPreferences.sync();
@@ -86,6 +90,7 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Падение, которое ведро воды не ловит (Незер, нет ведра): он ставит под себя лодку из сумки, садится, потом ломает её и забирает. Выключено: падает как есть."))).build());
+
         addRenderableWidget(Button.builder(replantLabel(), b -> {
             OpenRouterConfig.REPLANT_SAPLINGS.set(!OpenRouterConfig.REPLANT_SAPLINGS.get()); OpenRouterConfig.REPLANT_SAPLINGS.save();
             b.setMessage(replantLabel()); CompanionPreferences.sync();
@@ -155,31 +160,33 @@ final class CompanionBehaviorScreen extends Screen {
     }
     @Override public void onClose() { minecraft.setScreen(parent); }
 
-    private static final int ROW_WIDTH = 300, ROW_HEIGHT = 20, ROW_STEP = 30, HIGHEST_ROW = 30, NOTE_FROM_BOTTOM = 64, PAGED_STEP = 24;
+    private static final int ROW_WIDTH = CompanionSwitchLayout.ROW_WIDTH, ROW_HEIGHT = CompanionSwitchLayout.ROW_HEIGHT;
     /** The page of switches shown when they do not all fit above the note. */
     private int page;
     /**
      * The switches, every button as wide as a row, stand one under another in the order they were added: from the
      * usual top and 30 apart while there is room, higher up and closer (down to touching) when they would reach the
-     * note. So a switch added anywhere in init needs no place of its own, and seven rows fit at a GUI height of 240.
-     * More than fit 24 apart go on pages, turned by a button beside «Назад».
+     * note. So a switch added anywhere in init needs no place of its own, and the first row opens the model
+     * screen, leaving about four switch rows at a GUI height of 240.
+     * More than fit 24 apart go on pages, turned by a button beside «Назад»: a small GUI shows fewer rows at a time but
+     * every switch stays reachable, and the button names the page it opens.
      */
     private void fitRows(int top) {
         var all = children().stream().filter(child -> child instanceof Button button && button.getWidth() == ROW_WIDTH)
                 .map(Button.class::cast).toList();
-        int bottom = height - NOTE_FROM_BOTTOM - 4, perPage = Math.max(1, (bottom - HIGHEST_ROW - ROW_HEIGHT) / PAGED_STEP + 1);
+        int perPage = CompanionSwitchLayout.perPage(height), pages = CompanionSwitchLayout.pages(all.size(), height);
         var rows = all;
         if (all.size() > perPage) {
-            int pages = (all.size() + perPage - 1) / perPage, shown = page % pages, from = shown * perPage;
-            rows = all.subList(from, Math.min(all.size(), from + perPage));
+            int shown = page % pages, from = CompanionSwitchLayout.firstRow(all.size(), height, shown),
+                    onPage = CompanionSwitchLayout.rowsOnPage(all.size(), height, shown);
+            rows = all.subList(from, from + onPage);
             for (Button row : all) row.visible = rows.contains(row);
             addRenderableWidget(Button.builder(Component.literal("Ещё (" + (shown + 1) + "/" + pages + ")"), b -> {
                 page = shown + 1; rebuildWidgets();
             }).bounds(width / 2 + 54, height - 35, 100, 20).build());
         }
-        int gaps = Math.max(1, rows.size() - 1);
-        int step = Math.max(ROW_HEIGHT, Math.min(ROW_STEP, (bottom - HIGHEST_ROW - ROW_HEIGHT) / gaps));
-        int y = Math.max(HIGHEST_ROW, Math.min(top, bottom - ROW_HEIGHT - step * gaps));
+        int step = CompanionSwitchLayout.step(height, rows.size());
+        int y = CompanionSwitchLayout.firstY(top, height, rows.size());
         for (Button row : rows) { row.setY(y); y += step; }
     }
 }

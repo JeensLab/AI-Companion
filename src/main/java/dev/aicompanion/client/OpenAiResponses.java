@@ -8,6 +8,14 @@ import com.google.gson.JsonObject;
 public final class OpenAiResponses {
     private OpenAiResponses() { }
 
+    /**
+     * The Responses body of a chat request. Responses has no chat_template_kwargs: the thinking switch of the chat body
+     * becomes reasoning.effort — «none» when thinking is off (the chat body's default, and what kept the measured answers
+     * at 4–12 s instead of 180 s), and no reasoning field when the owner turned thinking on, so the provider's own effort
+     * stands instead of one the mod invents. The field is only sent to the models that take it; another model keeps its
+     * own behaviour. Sampling is sent only when the owner set it, exactly as typed, as on the chat transport: a model that
+     * does not take one answers with its own error, which is the honest word on a range the mod does not impose.
+     */
     public static JsonObject request(JsonObject chat) {
         JsonObject body = new JsonObject();
         String model = chat.get("model").getAsString();
@@ -15,11 +23,13 @@ public final class OpenAiResponses {
         body.add("input", chat.getAsJsonArray("messages").deepCopy());
         body.add("max_output_tokens", chat.get("max_tokens").deepCopy());
         body.addProperty("store", false);
-        if (model.equals("gpt-6-luna") || model.equals("gpt-6.1-terra")) {
+        if (takesReasoningEffort(model) && !thinking(chat)) {
             JsonObject reasoning = new JsonObject();
             reasoning.addProperty("effort", "none");
             body.add("reasoning", reasoning);
         }
+        if (chat.has("temperature")) body.add("temperature", chat.get("temperature").deepCopy());
+        if (chat.has("top_p")) body.add("top_p", chat.get("top_p").deepCopy());
         if (chat.has("tools")) {
             JsonArray tools = new JsonArray();
             for (JsonElement element : chat.getAsJsonArray("tools")) {
@@ -37,6 +47,25 @@ public final class OpenAiResponses {
         // validated calls become a game plan, and later game facts enter the next fresh turn as text.
         // No previous_response_id, unanswered calls or opaque reasoning is retained or replayed.
         return body;
+    }
+
+    /** The two models this provider documents as taking reasoning.effort; another model is never sent the field. */
+    private static boolean takesReasoningEffort(String model) {
+        return model.equals("gpt-6-luna") || model.equals("gpt-6.1-terra");
+    }
+
+    /** Whether the chat body asked for thinking. Absent means off: that is the chat body's own default and the owner's. */
+    private static boolean thinking(JsonObject chat) {
+        JsonElement kwargs = chat.get("chat_template_kwargs");
+        return kwargs != null && kwargs.isJsonObject() && kwargs.getAsJsonObject().has("enable_thinking")
+                && kwargs.getAsJsonObject().get("enable_thinking").getAsBoolean();
+    }
+
+    /** The same Responses body without its reasoning switch, for a provider that refused the field by name. */
+    public static JsonObject withoutReasoning(JsonObject body) {
+        JsonObject plain = body.deepCopy();
+        plain.remove("reasoning");
+        return plain;
     }
 
     /** Normalize complete answers or an empty token-limit result, before the existing plan checks. */
