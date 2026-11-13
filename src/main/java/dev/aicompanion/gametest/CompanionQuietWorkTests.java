@@ -143,6 +143,25 @@ public final class CompanionQuietWorkTests {
         h.assertTrue(reason.invoke(null,"План остановлен: В сумке: 4 Палка.").equals("не получилось."),"An empty reason is said");
         h.succeed();
     }
+    /**
+     * Game 13.11: «иди домой» with the marker in another world was heard as «С этим пока не справился», and the companion
+     * not loaded spoke of himself in the third person. Both are said in his own short words, no world id and no coordinates.
+     */
+    @GameTest(template="empty")
+    public static void placeRefusalsAreSaidInHisOwnShortWords(GameTestHelper h) {
+        var walk=List.of(new PlannedAction("go_to_place",0,1,"дом"));
+        String elsewhere=CompanionDialogue.summarize(walk,"План остановлен: Метка «дом» в другом измерении (world), пешком отсюда туда не дойти.");
+        h.assertTrue(elsewhere.equals("Метка «дом» в другом измерении — туда пешком не дойти."),"The world id or the excuse was spoken: "+elsewhere);
+        String home=CompanionDialogue.summarize(walk,"План остановлен: Дом в другом измерении (nether), пешком отсюда туда не дойти.");
+        h.assertTrue(home.equals("Дом в другом измерении — туда пешком не дойти."),"The home was not said as the home: "+home);
+        String unloaded=CompanionDialogue.summarize(walk,"План остановлен: Компаньон не загружен рядом с тобой.");
+        h.assertTrue(unloaded.equals("Я ещё не загрузился рядом с тобой — подожди чуть-чуть."),"An engine line was spoken: "+unloaded);
+        String noPath=CompanionDialogue.summarize(walk,"План остановлен: До метки «дача» дойти не смог: нет пути.");
+        h.assertTrue(noPath.equals("К метке «дача» пути нет."),"No way was not said as no way: "+noPath);
+        for(String said:List.of(elsewhere,home,unloaded,noPath))
+            h.assertTrue(said.length()<=80&&!said.contains("world")&&!said.contains("nether")&&!said.contains("Компаньон"),said);
+        h.succeed();
+    }
     private static CompanionEntity companion(GameTestHelper h) {
         var c=h.spawn(AICompanionMod.COMPANION.get(),2,1,2);c.setNoAi(true);return c;
     }

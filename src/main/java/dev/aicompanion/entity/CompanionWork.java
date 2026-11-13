@@ -271,9 +271,10 @@ public final class CompanionWork {
     CompanionPickUp.Meaning pickUp;
     int pickUpBefore;
     long pickUpSince;
-    /** go_to_place: the marker's point and name he walks to. */
+    /** go_to_place: the marker's point and name he walks to; «home» when the walk is home, with no marker of that name. */
     BlockPos placeGoal;
     String placeName = "";
+    boolean placeHome;
     long taskId;
     long completedId = -1;
     CompanionActionResult completedResult;
@@ -304,7 +305,7 @@ public final class CompanionWork {
     }
     String currentDescription() {
         return job == Job.COME ? "пытается добраться до игрока" : job == Job.HUNT ? "поручение: ближайшие монстры" : job == Job.PICK_UP ? "подбирает лежащее рядом"
-                : job == Job.PLACE ? "идёт к метке «" + placeName + "»" : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
+                : job == Job.PLACE ? (placeHome ? "идёт домой" : "идёт к метке «" + placeName + "»") : job == Job.GAME ? "охотится, добыл " + gameKills + " из " + gameWanted
                 : job == Job.SORT ? "раскладывает по сундукам" : job == Job.FARM ? farming.describe() : job == Job.PLACE_CHEST ? "устанавливает " + requestedItem + " (" + newChests + "/" + requestedCount + ")"
                 : job == Job.SMELT ? (lots.stream().anyMatch(lot -> lot.loaded) ? "плавит в печах (" + lots.size() + "), готово " + furnaces.smeltReady() + " из " + smeltCount : "готовит печь для плавки")
                 : "выполняет работу " + job + ", стадия " + phase;
@@ -329,7 +330,7 @@ public final class CompanionWork {
             case COURSE -> "в пути";
             case WATER -> "за водой";
             case PICKUP -> "подбор";
-            case PLACE -> "в пути к метке";
+            case PLACE -> placeHome ? "в пути домой" : "в пути к метке";
             case GRIND -> "у точила";
             case COMPOST -> "у компостера";
         };
@@ -362,7 +363,7 @@ public final class CompanionWork {
             case OBSIDIAN -> obsidian.jobName();
             case PORTAL -> portal.jobName();
             case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
-            case PLACE -> "поход к метке «" + placeName + "»";
+            case PLACE -> placeHome ? "поход домой" : "поход к метке «" + placeName + "»";
             case GRIND -> grinding.jobName();
             case COMPOST -> composting.jobName();
         };
@@ -509,17 +510,12 @@ public final class CompanionWork {
                 if (pickUp == null) return CompanionActionResult.failed("Не понял, что подобрать: «" + item + "».");
                 job = Job.PICK_UP; phase = Phase.PICKUP;
             }
-            // «Иди к колодцу»: the marker is found again here, so a stale name in a plan is answered honestly.
+            // «Иди к колодцу»: the marker is found again here, so a stale name in a plan is answered honestly. «Дом» with
+            // no marker of that name is the home he knows, as the trip of a store order walks to it.
             case "go_to_place" -> {
-                if (owner.getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, идти к метке не для кого.");
-                var found = CompanionMarkers.get(level.getServer()).matching(owner.getOwnerId(), item);
-                if (found.isEmpty()) return CompanionActionResult.failed(CompanionMarkers.unknown(item, CompanionMarkers.get(level.getServer()).all(owner.getOwnerId())));
-                if (found.size() > 1) return CompanionActionResult.failed(CompanionMarkers.questionFor(found));
-                CompanionMarkers.Marker marker = found.getFirst();
-                if (!marker.dimension().equals(level.dimension()))
-                    return CompanionActionResult.failed("Метка «" + marker.name() + "» в другом измерении ("
-                            + CompanionMarkers.worldName(marker.dimension()) + "), пешком отсюда туда не дойти.");
-                placeGoal = marker.pos(); placeName = marker.name();
+                CompanionEntity.PlaceTarget target = owner.placeTarget(item);
+                if (!target.refusal().isEmpty()) return CompanionActionResult.failed(target.refusal());
+                placeGoal = target.pos(); placeName = target.name(); placeHome = target.home();
                 job = Job.PLACE; phase = Phase.PLACE;
             }
             default -> { return CompanionActionResult.failed("Неизвестная работа."); }
@@ -602,7 +598,7 @@ public final class CompanionWork {
         closeChest();
         house.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
         job = null; phase = null; afterWood = null;
-        target = null; path = null; stoneCandidates = null; placeGoal = null; placeName = "";
+        target = null; path = null; stoneCandidates = null; placeGoal = null; placeName = ""; placeHome = false;
         cooldown = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
         oreTunnel.clear(); oreSearch = null; oreCandidates = null;
@@ -751,17 +747,18 @@ public final class CompanionWork {
      */
     private void walkToPlace(ServerLevel level) {
         if (placeGoal == null) { finish(false, "Не знаю, куда идти."); return; }
+        String arrived = placeHome ? "Пришёл домой." : "Пришёл к метке «" + placeName + "»: " + placeGoal.toShortString() + ".";
         if (owner.blockPosition().distSqr(placeGoal) <= 4) {
-            finish(true, "Пришёл к метке «" + placeName + "»: " + placeGoal.toShortString() + ".");
+            finish(true, arrived);
             return;
         }
-        owner.workStatus("Иду к метке «" + placeName + "» на " + placeGoal.toShortString() + ".");
+        owner.workStatus(placeHome ? "Иду домой." : "Иду к метке «" + placeName + "» на " + placeGoal.toShortString() + ".");
         var step = owner.travel().toward(placeGoal, 2);
         if (step == CompanionTravel.Step.WALKING) return;
         owner.travel().reset();
         if (step == CompanionTravel.Step.NEAR || owner.blockPosition().distSqr(placeGoal) <= 4)
-            finish(true, "Пришёл к метке «" + placeName + "»: " + placeGoal.toShortString() + ".");
-        else finish(false, "До метки «" + placeName + "» дойти не смог: нет пути.");
+            finish(true, arrived);
+        else finish(false, placeHome ? "Домой дойти не смог: нет пути." : "До метки «" + placeName + "» дойти не смог: нет пути.");
     }
 
     /**

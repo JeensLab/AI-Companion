@@ -10,7 +10,8 @@ import java.util.regex.Pattern;
 
 /**
  * What the player says about a named place: «запомни это место, это дом» saves a marker, «иди к колодцу», «проведи меня
- * до железного рудника», «отведи меня к даче», «охраняй дачу» and «отнеси ресы в дом» walk to one, and «забудь дачу»,
+ * до железного рудника», «отведи меня к даче», «охраняй дачу» and «отнеси ресы в дом» walk to one, «домой» and «иди
+ * домой» walk home (a marker named «дом» first, the home he knows otherwise), and «забудь дачу»,
  * «забудь метку дачу», «удали точку дачу» or «забудь всё» take one or every marker off his list. A forget word about a
  * thing, not a place — «забудь, что я говорил», «забудь, где дача», «забудь про молоко», «забудь всё про метку» — names
  * no marker and stays the model's. A name that fits no marker, or one place that more than one marker fits, is answered
@@ -43,6 +44,11 @@ public final class CompanionPlaceSpeech {
             + "\\s*[,:;—-]?\\s*(?:(?:эту|ту|мою|нашу|это)\\s+)?(?:метк[ауие]|точк[ауие]|мест[оа])\\b\\s*[,:;—-]?\\s*(.*)$");
     /** «Забудь всё», «забудь все метки»: every marker of the list goes. The tail is what follows «всё». */
     private static final Pattern FORGET_ALL = Pattern.compile("(?U)^(?:забудь|забудьте|удали|удалите)\\b\\s*[,:;—-]?\\s*вс[её]\\b\\s*(.*)$");
+    /** «домой», «иди домой», «давай домой», «вернись домой»: the walk home takes no preposition and needs no marker. */
+    private static final Pattern HOME_GO = Pattern.compile("(?U)^(?:давай\\b[\\s,]+)?(?:(?:иди|идите|пойди|пойдите|сходи|сходите|сбегай|беги|бегите|шагай|шагайте"
+            + "|ступай|ступайте|веди|ведите|проводи|проводите|дойди|дойдите|вернись|вернитесь|возвращайся|возвращайтесь|пошли|пойдем|идем)\\b[\\s,!]+)?домой\\b(.*)$");
+    /** The name the walk home is ordered by: a marker of that name comes first, and the home he knows otherwise. */
+    private static final String HOME_NAME = "дом";
     private static final Pattern GO = Pattern.compile("(?U)^(?:иди|идите|пойди|пойдите|сходи|сходите|сбегай|беги|бегите|шагай|шагайте"
             + "|ступай|ступайте|веди|ведите|проведи|проведите|проводи|проводите|отведи|отведите|доведи|доведите|подведи|подведите"
             + "|дойди|дойдите|доберись|доберитесь|подойди|подойдите|вернись|вернитесь|возвращайся|пошли|пойдем|идем)\\b"
@@ -82,6 +88,10 @@ public final class CompanionPlaceSpeech {
         // «Забудь дачу» is a word about the list, not about walking: it works with the feature switched off.
         Result forgotten = forget(said, knownNames);
         if (forgotten != null) return forgotten;
+        // «Иди домой» is the walk home, not a named place: it works with the markers switched off, and a marker named
+        // «дом» is taken first where there is one.
+        var home = HOME_GO.matcher(said);
+        if (home.matches()) return new Result(Kind.GO, HOME_NAME, null, CompanionMarkerNames.clean(home.group(1)));
         if (!enabled) return Result.none();
         var remembered = REMEMBER.matcher(said);
         if (remembered.matches()) return remember(remembered.group(1));

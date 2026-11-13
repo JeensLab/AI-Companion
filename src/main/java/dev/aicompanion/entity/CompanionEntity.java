@@ -788,20 +788,43 @@ public final class CompanionEntity extends PathfinderMob implements Container {
 
     /**
      * «Иди к колодцу»: walks to the marker the name means by the normal path. No marker or more than one is answered
-     * honestly with the names he knows, without a walk; another dimension is said as it is.
+     * honestly with the names he knows, without a walk; another dimension is said as it is. «Дом» with no marker of that
+     * name is the home he knows — the point the player named, where the player builds, or his finished house.
      */
     public CompanionActionResult goToPlace(String name) {
-        if (!markersEnabled) return CompanionActionResult.failed("Метки на карте выключены.");
-        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для похода к метке нужен загруженный мир.");
-        if (getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, идти к метке не для кого.");
-        var found = CompanionMarkers.get(level.getServer()).matching(getOwnerId(), name);
-        if (found.isEmpty()) return CompanionActionResult.failed(CompanionMarkers.unknown(name, CompanionMarkers.get(level.getServer()).all(getOwnerId())));
-        if (found.size() > 1) return CompanionActionResult.failed(CompanionMarkers.questionFor(found));
-        CompanionMarkers.Marker marker = found.getFirst();
-        if (!marker.dimension().equals(level.dimension()))
-            return CompanionActionResult.failed("Метка «" + marker.name() + "» в другом измерении ("
-                    + CompanionMarkers.worldName(marker.dimension()) + "), пешком отсюда туда не дойти.");
-        return startWork("go_to_place", marker.name(), 1);
+        PlaceTarget target = placeTarget(name);
+        if (!target.refusal().isEmpty()) return CompanionActionResult.failed(target.refusal());
+        return startWork("go_to_place", target.name(), 1);
+    }
+
+    /** Where a place order walks: the marker the name means, or the home for «дом», or the honest reason there is no walk. */
+    record PlaceTarget(BlockPos pos, String name, boolean home, String refusal) {
+        static PlaceTarget refused(String line) { return new PlaceTarget(null, "", false, line); }
+    }
+
+    PlaceTarget placeTarget(String name) {
+        if (!(level() instanceof ServerLevel level)) return PlaceTarget.refused("Для похода к метке нужен загруженный мир.");
+        if (getOwnerId() == null) return PlaceTarget.refused("У меня нет хозяина, идти к метке не для кого.");
+        boolean homeWord = CompanionMarkerNames.isHome(name);
+        if (markersEnabled) {
+            var store = CompanionMarkers.get(level.getServer());
+            var found = store.matching(getOwnerId(), name);
+            if (found.size() > 1) return PlaceTarget.refused(CompanionMarkers.questionFor(found));
+            if (found.size() == 1) {
+                CompanionMarkers.Marker marker = found.getFirst();
+                if (!marker.dimension().equals(level.dimension()))
+                    return PlaceTarget.refused("Метка «" + marker.name() + "» в другом измерении ("
+                            + CompanionMarkers.worldName(marker.dimension()) + "), пешком отсюда туда не дойти.");
+                return new PlaceTarget(marker.pos(), marker.name(), false, "");
+            }
+        } else if (!homeWord) return PlaceTarget.refused("Метки на карте выключены.");
+        if (!homeWord) return PlaceTarget.refused(CompanionMarkers.unknown(name, CompanionMarkers.get(level.getServer()).all(getOwnerId())));
+        CompanionPlaces.Home home = places.home();
+        if (home != null) return new PlaceTarget(home.pos(), "дом", true, "");
+        String elsewhere = places.homeElsewhere();
+        if (!elsewhere.isEmpty())
+            return PlaceTarget.refused("Дом в другом измерении (" + elsewhere + "), пешком отсюда туда не дойти.");
+        return PlaceTarget.refused("Я ещё не знаю, где наш дом. Скажи «это наш дом», и я запомню.");
     }
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {
