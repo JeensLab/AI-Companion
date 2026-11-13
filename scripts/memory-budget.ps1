@@ -38,3 +38,4 @@ foreach($name in @($budget.Keys)){
 }
 if($failed){ exit 1 }
 Write-Output "PASS entity/*.java: nothing grew past its budget, no new file is over $limit lines"
+exit 0
