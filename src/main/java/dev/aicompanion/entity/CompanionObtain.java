@@ -31,7 +31,7 @@ import java.util.Set;
  * (wheat, carrots, potatoes, beetroot; none ripe is said, nothing is sown and waited for), and bone meal comes out of a composter,
  * of the scrap in his bag and the plants he picks for it, before any skeleton is fought. What a tool in hand gets (CompanionChores)
  * is got so: wool shorn off a sheep with shears he has, milk of a cow into his bucket, the eggs that lie about the hens, a log
- * of his stripped with an axe. What none of the skills can get
+ * of his stripped with an axe, the combs and the honey of a full hive over a campfire. What none of the skills can get
  * (an ink sac, a blaze rod…) is said before anything starts.
  */
 public final class CompanionObtain {
@@ -207,6 +207,15 @@ public final class CompanionObtain {
             case "minecraft:milk_bucket" -> {
                 if (!about(Items.MILK_BUCKET)) { absent.add("коровы, чтобы надоить молока"); return refuse(ABSENT + " коровы, чтобы надоить молока."); }
                 return need("minecraft:bucket", count, depth + 1) && add("milk_animal", key, count);
+            }
+            // A full hive about him: three combs to his shears, honey into his bottle (CompanionChores), a campfire of his under it
+            // unless one burns there. Shears are made by the whole chain: there is no other way to a comb, as a blow is to wool.
+            case "minecraft:honeycomb", "minecraft:honey_bottle" -> {
+                Item wanted = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
+                // ponytail: honey bottles are not poured back out of a honey block he carries; the recipe is there when someone asks.
+                if (!about(wanted)) { absent.add("полного улья с костром или местом для него"); return refuse(ABSENT + " полного улья, под которым горит костёр или есть место для него."); }
+                if (key.equals("minecraft:honeycomb") ? !hasShears() && !need("minecraft:shears", 1, depth + 1) : !need("minecraft:glass_bottle", count, depth + 1)) return false;
+                return (about(Items.CAMPFIRE) || need("minecraft:campfire", 1, depth + 1)) && addSplit("harvest_hive", key, count, 64);
             }
             // Bones he carries are ground as the recipe says; else a composter, the safe way; a skeleton only with nothing here to compost.
             case BONE_MEAL -> {
@@ -395,8 +404,11 @@ public final class CompanionObtain {
 
     /** Shears for the sheep are his: carried, made earlier in this plan, or made now of two ingots he carries; no mine is dug for them. */
     private boolean shears(int depth) {
-        if (bag.getOrDefault("minecraft:shears", 0) > 0 || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:shears"))) return true;
-        return bag.getOrDefault("minecraft:iron_ingot", 0) >= 2 && need("minecraft:shears", 1, depth + 1);
+        return hasShears() || bag.getOrDefault("minecraft:iron_ingot", 0) >= 2 && need("minecraft:shears", 1, depth + 1);
+    }
+
+    private boolean hasShears() {
+        return bag.getOrDefault("minecraft:shears", 0) > 0 || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:shears"));
     }
 
     private boolean hunted(Item item) {
