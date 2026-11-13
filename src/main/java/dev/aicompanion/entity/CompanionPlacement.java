@@ -98,6 +98,7 @@ final class CompanionPlacement {
         }
         c.animateAction(1, position, item);
         c.lastPlacedPosition = position.immutable();
+        c.lastPlacedTick = serverLevel.getGameTime();
         c.rememberPlaced(position);
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "block_placed", "entity", c.getUUID(),
                 "block", blockId, "position", position, "reason", "place_block");

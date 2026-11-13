@@ -621,6 +621,8 @@ public final class CompanionWork {
         clearCracks();
         closeChest();
         house.cancel(); templateHouse.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
+        // The chest he set down served this order only: a later store order goes the old way again.
+        if (job == Job.STORE) owner.lastPlacedPosition = null;
         job = null; phase = null; afterWood = null;
         target = null; path = null; stoneCandidates = null;
         cooldown = 0;
