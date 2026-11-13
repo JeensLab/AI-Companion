@@ -18,30 +18,60 @@ fail() { echo "make-music-pack: $*" >&2; exit 1; }
 mapfile -t tracks < <(find "$music" -maxdepth 1 -type f -name '*.ogg' | sort)
 [ "${#tracks[@]}" -gt 0 ] || fail "no .ogg recordings in $music"
 
-command -v ffprobe >/dev/null 2>&1 || fail "ffprobe is needed to check the recordings (install ffmpeg)"
+command -v python3 >/dev/null 2>&1 || fail "python3 is needed to check the recordings"
 command -v zip >/dev/null 2>&1 || fail "zip is needed to build the pack"
 
 # Every recording must be what the game can play from where he sits: mono, 32 kHz, and small (about 34 kbps, as the pair the mod
-# used to carry). A file that is not is refused, so the pack never ships something the evening would have to skip.
-total=0
-for file in "${tracks[@]}"; do
-  name="$(basename "$file")"
-  probe="$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,channels,sample_rate \
-           -show_entries format=duration -of default=nw=1:nk=0 "$file")" || fail "$name: ffprobe failed"
-  codec="$(printf '%s\n' "$probe" | sed -n 's/^codec_name=//p')"
-  channels="$(printf '%s\n' "$probe" | sed -n 's/^channels=//p')"
-  rate="$(printf '%s\n' "$probe" | sed -n 's/^sample_rate=//p')"
-  duration="$(printf '%s\n' "$probe" | sed -n 's/^duration=//p')"
-  [ "$codec" = "vorbis" ] || fail "$name: $codec, not Ogg Vorbis"
-  [ "$channels" = "1" ] || fail "$name: $channels channels, mono is needed to sound from a place"
-  [ "$rate" = "32000" ] || fail "$name: $rate Hz, 32000 is the pack's sample rate"
-  size="$(stat -c%s "$file")"
-  bps="$(awk -v s="$size" -v d="$duration" 'BEGIN { printf "%d", s * 8 / d }')"
-  [ "$bps" -le 45000 ] || fail "$name: $bps bps, over the 45 kbps the pack keeps to"
-  printf '%s: %s s, %s bytes, %s bps, mono 32 kHz\n' "$name" "$duration" "$size" "$bps"
-  total=$((total + size))
-done
-printf 'total: %s bytes in %s recordings\n' "$total" "${#tracks[@]}"
+# used to carry). The check reads the file exactly as the game does — the Vorbis identification header and the last page's granule
+# position (entity/CompanionMusicLibrary) — so a file the evening would have to skip is refused here instead of shipping.
+python3 - "$music" <<'PY'
+import sys, pathlib
+
+folder = pathlib.Path(sys.argv[1])
+marker = b"\x01vorbis"
+total = 0
+count = 0
+failed = False
+for file in sorted(folder.glob("*.ogg")):
+    data = file.read_bytes()
+    size = len(data)
+    head = data[:65536]
+    at = head.find(marker)
+    if at < 0 or at + 16 > len(head):
+        print(f"{file.name}: not Ogg Vorbis", file=sys.stderr)
+        failed = True
+        continue
+    channels = data[at + 11]
+    rate = int.from_bytes(data[at + 12:at + 16], "little")
+    granule = -1
+    tail = data[-65536:]
+    page = tail.find(b"OggS")
+    while page >= 0 and page + 14 <= len(tail):
+        samples = int.from_bytes(tail[page + 6:page + 14], "little")
+        if samples >= 0:
+            granule = samples
+        page = tail.find(b"OggS", page + 4)
+    if rate <= 0 or granule <= 0:
+        print(f"{file.name}: no sample rate or granule position", file=sys.stderr)
+        failed = True
+        continue
+    seconds = granule / rate
+    bps = size * 8 / seconds
+    problems = []
+    if channels != 1:
+        problems.append(f"{channels} channels, mono is needed to sound from a place")
+    if rate != 32000:
+        problems.append(f"{rate} Hz, 32000 is the pack's sample rate")
+    if bps > 45000:
+        problems.append(f"{bps:.0f} bps, over the 45 kbps the pack keeps to")
+    print(f"{file.name}: {seconds:.1f} s, {size} bytes, {bps:.0f} bps, mono 32 kHz" if not problems
+          else f"{file.name}: " + "; ".join(problems), file=sys.stderr if problems else sys.stdout)
+    failed = failed or bool(problems)
+    total += size
+    count += 1
+print(f"total: {total} bytes in {count} recordings")
+sys.exit(1 if failed else 0)
+PY
 
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
