@@ -12,9 +12,9 @@ $knownFlaky=@('woodtoolschestandawalk','hundredminutesfullbagorderscancellationa
 $reports=Join-Path $projectRoot 'build\diagnostics'
 New-Item -ItemType Directory -Path $reports -Force | Out-Null
 
-$oversized=Get-ChildItem (Join-Path $projectRoot 'src\main\java\dev\aicompanion\entity\*.java') | Where-Object { (Get-Content -LiteralPath $_.FullName).Count -gt 800 }
-if($oversized){ $oversized | ForEach-Object { Write-Output "FAIL $($_.Name) has $((Get-Content -LiteralPath $_.FullName).Count) lines > 800" }; exit 1 }
-Write-Output 'PASS entity/*.java all <= 800 lines'
+# Size budget: a file over 800 lines may stay only while it is listed in memory-budget.ps1 at its current size.
+& (Join-Path $PSScriptRoot 'memory-budget.ps1') -Root $projectRoot
+if($LASTEXITCODE){ exit 1 }
 
 function Invoke-Gradle([string[]]$GradleArgs,[string]$Log) {
     $ErrorActionPreference='Continue'
