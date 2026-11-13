@@ -8,6 +8,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -29,7 +30,8 @@ import java.util.function.Predicate;
  * gather_block: an item a block gives when broken (CompanionPickable), gathered like a player does it. The nearest such block
  * within his search radius is walked to, broken with the tool it wants and its drop picked up, until the bag holds as many as
  * ordered. Sugar cane, cactus and bamboo are cut at the block above the root: all that stands over the cut comes down with it and
- * the root is left to grow; cocoa is taken ripe; nothing is taken where the player builds (his flower bed, his cane by the house), under water, or outside
+ * the root is left to grow; cocoa is taken ripe; what only shears take (leaves, a vine, a cobweb) is cut with his shears, and a leaf
+ * block someone set down (it does not fade) is left; nothing is taken where the player builds (his flower bed, his cane by the house), under water, or outside
  * the overworld (the Nether and the End are later work).
  */
 final class CompanionPicking {
@@ -42,6 +44,8 @@ final class CompanionPicking {
     private static final int LEGS = 8;
     /** Ticks a search for the way may not come about (he is in the air, in running water) before the block is passed over. */
     private static final int WAIT = 100;
+    /** Ticks the last step into the cell is given: he is less than a block from its middle. */
+    private static final int LAST_STEP = 20;
 
     private final CompanionWork w;
     /** The work is made before it knows its owner: taken at the order. */
@@ -94,12 +98,17 @@ final class CompanionPicking {
     }
 
     private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site, Set<BlockPos> passed) {
-        return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> !passed.contains(pos) && takes(level, pos, site));
+        return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> !passed.contains(pos) && takes(level, pos, site) && low(c, level, pos));
     }
 
     private static int gives(List<CompanionPickable.Source> sources, BlockState state) {
         for (CompanionPickable.Source source : sources) if (state.is(source.block())) return source.yield();
         return 0;
+    }
+
+    private static boolean shorn(List<CompanionPickable.Source> sources, BlockState state) {
+        for (CompanionPickable.Source source : sources) if (state.is(source.block())) return source.shears();
+        return false;
     }
 
     /** A block of the kind he may take now: dry, not on a site of the player's, ripe, and not the root of a growing column. */
@@ -110,9 +119,26 @@ final class CompanionPicking {
         // A rose bush is taken by its foot: the top half gives nothing, and the foot it brings down would lie there unclaimed.
         if (state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF) && state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.UPPER) return false;
         if (state.getBlock() instanceof CocoaBlock && state.getValue(CocoaBlock.AGE) < CocoaBlock.MAX_AGE) return false;
+        // Leaves that do not fade were set down by someone: a hedge, a roof of leaves, wherever it stands.
+        if (state.hasProperty(BlockStateProperties.PERSISTENT) && state.getValue(BlockStateProperties.PERSISTENT)) return false;
+        // A hanging vine from its lower end: the ones under a cut fall with nothing to pick up.
+        if (state.is(Blocks.VINE) && level.getBlockState(pos.below()).is(Blocks.VINE)) return false;
         // The block above the root, within his reach from the ground: the root grows again.
         if (column(state)) return level.getBlockState(pos.below()).is(state.getBlock()) && !level.getBlockState(pos.below(2)).is(state.getBlock());
         return true;
+    }
+
+    /**
+     * Leaves he reaches from the ground: a crown high over it is no source (a spruce, a tall oak), or iron would be mined for
+     * shears he then stands under the tree with. He builds no stair to a leaf and does not walk the crowns.
+     */
+    private static boolean low(CompanionEntity c, ServerLevel level, BlockPos pos) {
+        if (!level.getBlockState(pos).is(BlockTags.LEAVES)) return true;
+        for (int dy = -3; dy <= 0; dy++) for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) {
+            BlockPos cell = pos.offset(dx, dy, dz);
+            if (!level.getBlockState(cell.below()).is(BlockTags.LEAVES) && CompanionMiningNavigation.standable(c, cell)) return true;
+        }
+        return false;
     }
 
     private static boolean column(BlockState state) { return state.is(Blocks.SUGAR_CANE) || state.is(Blocks.CACTUS) || state.is(Blocks.BAMBOO); }
@@ -130,7 +156,8 @@ final class CompanionPicking {
         }
         for (int dy = -2; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
             BlockPos cell = block.offset(dx, dy, dz);
-            if (!CompanionMiningNavigation.standable(c, cell)) continue;
+            // Not from inside a cobweb: it holds him.
+            if (!CompanionMiningNavigation.standable(c, cell) || level.getBlockState(cell).is(Blocks.COBWEB)) continue;
             // Nothing between his eyes and it: not through a fence, nor from the cave under the flower.
             Vec3 eye = Vec3.atBottomCenterOf(cell).add(0, c.getEyeHeight(), 0);
             if (level.clip(new ClipContext(eye, block.getCenter(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, c)).getType() == HitResult.Type.MISS) cells.add(cell);
@@ -142,6 +169,12 @@ final class CompanionPicking {
     private boolean walk() {
         CompanionRoute route = w.route;
         if (path != null && !route.legOver()) return true;
+        // The game counts the last node reached from half a block off: at a trunk he stood a step short of the cell, and the walks
+        // ran out in eight ticks (the vine on the trunk in the test). That last step is his own.
+        if (path != null && route.done() && path.getEndNode() != null && stands.contains(path.getEndNode().asBlockPos())) {
+            Vec3 end = Vec3.atBottomCenterOf(path.getEndNode().asBlockPos());
+            if (c.distanceToSqr(end) < 1 && ++waited < LAST_STEP) { c.getMoveControl().setWantedPosition(end.x, end.y, end.z, .7); return true; }
+        }
         if (stands.isEmpty() || ++legs > LEGS) return false;
         CompanionRoute.Reach reach = route.cells(stands, 0);
         // He is in the air or the search goes on: asked again at the next tick.
@@ -171,6 +204,14 @@ final class CompanionPicking {
             return;
         }
         BlockState state = level.getBlockState(target);
+        boolean shorn = shorn(sources, state);
+        if (shorn && w.items.countCarried(Items.SHEARS) == 0) {
+            if (due > got) { collect(level, got); return; }
+            // His shears wore out on the way: obtain_item plans the rest again, new shears first.
+            if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", ножницы сломались.")); return; }
+            end(false, "Ножниц нет: срезать «" + name() + "» нечем.");
+            return;
+        }
         if (stands.isEmpty()) stands = standsFor(level, target);
         if (!stands.contains(c.blockPosition())) {
             c.workStatus("Иду за: " + name() + ".");
@@ -178,8 +219,11 @@ final class CompanionPicking {
             return;
         }
         c.getNavigation().stop();
-        if (w.items.prepareMiningTool(state)) return;
-        if (state.is(BlockTags.MINEABLE_WITH_AXE)) CompanionTools.equip(c, ItemTags.AXES, state);
+        if (shorn) {
+            // From the bag or from the other hand.
+            if (!c.getMainHandItem().is(Items.SHEARS) && !CompanionTools.equip(c, net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR, state)) { end(false, "Не могу взять ножницы в руку: в сумке нет места."); return; }
+        } else if (w.items.prepareMiningTool(state)) return;
+        else if (state.is(BlockTags.MINEABLE_WITH_AXE)) CompanionTools.equip(c, ItemTags.AXES, state);
         else if (state.is(BlockTags.MINEABLE_WITH_HOE)) CompanionTools.equip(c, ItemTags.HOES, state);
         ItemStack tool = c.getMainHandItem();
         if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) { end(false, "Нечем взять «" + name() + "»: нужен инструмент."); return; }
