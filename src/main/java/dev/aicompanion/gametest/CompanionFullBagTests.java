@@ -298,10 +298,13 @@ public final class CompanionFullBagTests {
                     "The logs or the chest are still in the bag: " + report);
             var chest = (Container) h.getLevel().getBlockEntity(placed);
             // Every filler stack is in the bag or in the chest: the grid left nothing behind and dropped nothing.
+            // A torch he set down in the dark (the shared clock may have made it night) is in the world, not lost.
+            int[] lit = {0};
+            h.forEveryBlockInStructure(pos -> { if (h.getBlockState(pos).is(Blocks.TORCH) || h.getBlockState(pos).is(Blocks.WALL_TORCH)) lit[0]++; });
             for (int index = 0; index < 26; index++) {
                 Item filler = FILLER[index];
-                int kept = countIn(bag(c), filler) + countIn(contents(chest), filler);
-                h.assertTrue(kept == 2, "The bag lost or gained " + filler + ": " + kept + " of 2: " + report);
+                int kept = countIn(bag(c), filler) + countIn(contents(chest), filler) + (filler == Items.TORCH ? lit[0] : 0);
+                h.assertTrue(kept == 2, "The bag lost or gained " + filler + ": " + kept + " of 2 (torches set down " + lit[0] + "): " + report);
             }
             h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE) && c.getOffhandItem().is(Items.TORCH) && c.getOffhandItem().getCount() == 8,
                     "The held things moved: " + c.getMainHandItem() + " " + c.getOffhandItem());

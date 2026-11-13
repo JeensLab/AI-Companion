@@ -40,7 +40,10 @@ final class DeathTestKit {
      */
     static void handOut(GameTestHelper h, Entity entity) {
         var level = h.getLevel();
-        for (int round = 0; round < 8 && level.getEntity(entity.getUUID()) == null; round++) {
+        // Bounded by time, not by rounds: on a slow machine (CI) the chunk work of a chunk nobody had loaded before takes
+        // more rounds than on a fast one, and eight were not enough there (13.11, a stack 64 blocks off).
+        long until = System.nanoTime() + 5_000_000_000L;
+        while (level.getEntity(entity.getUUID()) == null && System.nanoTime() < until) {
             if (!level.hasChunkAt(entity.blockPosition())) return;
             settleWorld(h);
             // The load blocks until the chunk is full and runs the queued work while it waits, as the server does.
