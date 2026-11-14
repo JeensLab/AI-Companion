@@ -1,6 +1,7 @@
 package dev.aicompanion.gametest;
 
 import dev.aicompanion.AICompanionMod;
+import dev.aicompanion.client.CompanionCampfirePlayback;
 import dev.aicompanion.client.CompanionLocalCommands;
 import dev.aicompanion.client.CompanionMusicPack;
 import dev.aicompanion.client.CompanionPlanCodec;
@@ -10,8 +11,11 @@ import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionMusicLibrary;
 import dev.aicompanion.entity.CompanionTunes;
 import net.minecraft.core.BlockPos;
+import net.minecraft.gametest.framework.AfterBatch;
+import net.minecraft.gametest.framework.BeforeBatch;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
@@ -27,6 +31,10 @@ import java.util.HashSet;
  * The evening by the fire: he sits down by a lit campfire and plays his own tunes, by request or on his own, and stops for any order.
  * Every test that lays its ground has a batch of its own: the evening watches for monsters twelve blocks round, which reaches into
  * the next arenas of a shared batch, where other tests keep zombies.
+ *
+ * <p>The folder these tests read is an empty one, so whatever the player left in the run's config folder does not change what an
+ * evening plays. Every batch that reads it points the library at it before its tests and gives the player's own folder back after
+ * them: no batch leaves the library pointed elsewhere, and a batch that forgot says so in {@link #ground}.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -34,11 +42,8 @@ public final class CompanionCampfireTests {
     private static final int GROUND = 5;
     private static final BlockPos FIRE = new BlockPos(16, GROUND + 1, 16);
 
-    /**
-     * The folder these tests read: an empty one, so whatever the player left in the run's config folder does not change what an
-     * evening by the fire plays. Set by the test that means it, and given back after its batch: the game itself always reads the
-     * player's folder, so merely loading this class never changes what it plays.
-     */
+    /** The empty folder the batches below read, made once: an empty one, so whatever the player left in the run's config folder
+     *  does not change what an evening by the fire plays. */
     private static java.nio.file.Path emptyFolder() {
         if (empty == null) {
             try {
@@ -47,23 +52,43 @@ public final class CompanionCampfireTests {
                 throw new IllegalStateException(error);
             }
         }
-        CompanionMusicLibrary.readFrom(empty);
         return empty;
     }
 
     private static java.nio.file.Path empty;
 
-    /** After a batch the player's own folder is read again, so a live client that ran these tests plays it. */
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_request") public static void afterRequest(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_seat") public static void afterSeat(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_again") public static void afterAgain(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_sit") public static void afterSit(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_bag") public static void afterBag(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_none") public static void afterNone(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_linger") public static void afterLinger(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_monster") public static void afterMonster(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_off") public static void afterOff(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
-    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_folder") public static void afterFolder(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    /** Before a batch: the library reads the empty folder. */
+    private static void readTheEmptyFolder() { CompanionMusicLibrary.readFrom(emptyFolder()); }
+
+    /** After a batch: the player's own folder again, so a live client that ran these tests plays it. */
+    private static void readThePlayersFolder() { CompanionMusicLibrary.readFrom(null); }
+
+    // A set and a give-back per batch, one method each: the game itself always reads the player's folder, and a batch must not
+    // leave the library pointed at the tests' empty one. A batch missing its pair fails at once in ground(), not silently later.
+    @BeforeBatch(batch = "campfire_request") public static void requestReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_request") public static void requestReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_seat") public static void seatReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_seat") public static void seatReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_again") public static void againReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_again") public static void againReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_sit") public static void sitReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_sit") public static void sitReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_bag") public static void bagReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_bag") public static void bagReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_none") public static void noneReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_none") public static void noneReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_linger") public static void lingerReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_linger") public static void lingerReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_monster") public static void monsterReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_monster") public static void monsterReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_off") public static void offReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_off") public static void offReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_folder") public static void folderReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_folder") public static void folderReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_alone") public static void aloneReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_alone") public static void aloneReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_library") public static void libraryReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_library") public static void libraryReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
 
     /**
      * «Сыграй» by a lit fire: he sits down across the fire from the player and the guitar sounds; his eyes stay on the fire though the
@@ -302,9 +327,8 @@ public final class CompanionCampfireTests {
      * all any more. Every disc is a registered vanilla sound (so the client resolves it from the game's own sounds.json) and is timed
      * like a tune, so the evening goes on to the next one.
      */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", batch = "campfire_library")
     public static void theFallbackIsVanillaMusicAndNoMusicShipsInTheJar(GameTestHelper h) {
-        emptyFolder();
         var titles = new HashSet<String>();
         var ids = new HashSet<String>();
         h.assertTrue(CompanionTunes.ALL.size() >= 3, "Too few standard tunes: " + CompanionTunes.ALL.size());
@@ -330,6 +354,29 @@ public final class CompanionCampfireTests {
                 "A recording still ships in the JAR");
         h.assertTrue(CompanionCampfireTests.class.getResource("/assets/aicompanion/sounds.json") == null,
                 "The JAR still declares guitar sounds");
+        h.succeed();
+    }
+
+    /**
+     * The client's restart, driven without a client: the start counter the server syncs decides what this client does with the
+     * tune it names — asked for again, the recording is started over rather than left sounding; one that has played out by its
+     * length is not started again while the server still names it; another tune starts, and no tune stops the sound.
+     */
+    @GameTest(template = "empty", batch = "campfire_defaults")
+    public static void theClientStartsTheRecordingOverWhenTheStartCounterMoves(GameTestHelper h) {
+        String tune = "aicompanion:guitar_folder/quiet";
+        var over = CompanionCampfirePlayback.decide(tune, 4, 3, true, true, 40, 2000, "");
+        h.assertTrue(over == CompanionCampfirePlayback.Action.START_OVER, "Asked for again it was not started over: " + over);
+        var on = CompanionCampfirePlayback.decide(tune, 3, 3, true, true, 40, 2000, "");
+        h.assertTrue(on == CompanionCampfirePlayback.Action.KEEP_SOUNDING, "The same start did not let it sound on: " + on);
+        var out = CompanionCampfirePlayback.decide(tune, 3, 3, true, false, 2000, 2000, "");
+        h.assertTrue(out == CompanionCampfirePlayback.Action.PLAYED_OUT, "A played-out recording was started again: " + out);
+        var gone = CompanionCampfirePlayback.decide(tune, 3, 3, false, false, 0, -1, tune);
+        h.assertTrue(gone == CompanionCampfirePlayback.Action.FINISHED, "A played-out recording came back: " + gone);
+        var other = CompanionCampfirePlayback.decide("minecraft:music_disc.cat", 3, 3, false, false, 0, 2000, "");
+        h.assertTrue(other == CompanionCampfirePlayback.Action.START, "Another tune did not start: " + other);
+        var none = CompanionCampfirePlayback.decide("", -1, 3, false, false, 0, -1, "");
+        h.assertTrue(none == CompanionCampfirePlayback.Action.STOP, "The sound stayed after the tune was gone: " + none);
         h.succeed();
     }
 
@@ -384,13 +431,15 @@ public final class CompanionCampfireTests {
     }
 
     /**
-     * The player's folder is the game's own config folder unless a test points the library elsewhere: merely loading this class used
-     * to point it at an empty temporary folder, and an evening by the fire then played vanilla music while the folder was full.
+     * The player's folder is the game's own config folder unless a test points the library elsewhere: merely loading this class
+     * used to point it at an empty temporary folder, and an evening by the fire then played vanilla music while the folder was
+     * full. Nothing is reset here first — a reset would produce the very answer it checks — and the folder is compared with the
+     * one the library read when this class was loaded, before any test body or batch hook could have pointed it elsewhere.
      */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", batch = "campfire_defaults")
     public static void thePlayerFolderIsTheConfigFolderUntilATestPointsElsewhere(GameTestHelper h) {
-        CompanionMusicLibrary.readFrom(null);
         var expected = net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve(CompanionMusicLibrary.FOLDER);
+        h.assertTrue(FOLDER_WHEN_LOADED.equals(expected), "Loading this test class pointed the library at " + FOLDER_WHEN_LOADED);
         h.assertTrue(expected.equals(CompanionMusicLibrary.folder()), "The folder is not the player's: " + CompanionMusicLibrary.folder());
         h.succeed();
     }
@@ -429,9 +478,8 @@ public final class CompanionCampfireTests {
      * The kind of tune asked for: a calm-tagged recording for «сыграй грустное», a cheerful one for «повеселее», and the honest answer
      * — no such recording, play any — when nothing is tagged so; «другую» never plays the same one twice running.
      */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", batch = "campfire_library")
     public static void aTaggedRecordingIsPickedForTheMoodOrHeSaysThereIsNone(GameTestHelper h) {
-        emptyFolder();
         var random = net.minecraft.util.RandomSource.create(7);
         var calm = new CompanionMusicLibrary.Track("a.ogg", "aicompanion:guitar_folder/a", "A", 400, CompanionMusicLibrary.Mood.CALM);
         var cheerful = new CompanionMusicLibrary.Track("b.ogg", "aicompanion:guitar_folder/b", "B", 400, CompanionMusicLibrary.Mood.CHEERFUL);
@@ -541,9 +589,8 @@ public final class CompanionCampfireTests {
      * «погрустнее», always a different one than the disc playing — and the one disc of that kind that is playing now is started over
      * rather than replaced by a disc of the wrong kind. With no disc of the kind asked for the pick says so, and the answer is honest.
      */
-    @GameTest(template = "empty")
+    @GameTest(template = "empty", batch = "campfire_library")
     public static void theVanillaFallbackChangesItsDiscWithTheMood(GameTestHelper h) {
-        emptyFolder();
         var random = net.minecraft.util.RandomSource.create(11);
         var discs = CompanionMusicLibrary.available();
         var playing = "minecraft:music_disc.cat";
@@ -622,6 +669,54 @@ public final class CompanionCampfireTests {
     }
 
     /**
+     * One recording in the folder, cheerful, and he plays it: asked for the same kind, for the other kind, or simply for another
+     * one, the only recording starts over — and each answer says that instead of promising a different one.
+     */
+    @GameTest(template = "empty", batch = "campfire_alone", timeoutTicks = 1200)
+    public static void theOnlyRecordingIsStartedOverAndTheAnswerSaysSo(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-alone");
+            writeOgg(dir, "8_lively.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] title = {null};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                title[0] = c.campfire().tuneTitle();
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
+                h.assertTrue(again.success() && "Другой весёлой нет — сыграю эту же снова.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
+                        "The only cheerful recording was not started over: «" + c.campfire().tuneTitle() + "», start " + c.campfireTuneStart());
+                stage[0] = 1;
+            } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
+                h.assertTrue(again.success() && "Спокойных и грустных записей нет — сыграю эту же снова.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == starts + 1,
+                        "Not the only recording again: «" + c.campfire().tuneTitle() + "»");
+                stage[0] = 2;
+            } else if (stage[0] == 2 && c.campfire().playedTicks() > 20) {
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
+                h.assertTrue(again.success() && "Другой нет — сыграю эту же снова.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == starts + 1,
+                        "Not the only recording again: «" + c.campfire().tuneTitle() + "»");
+                stage[0] = 3;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 3,
+                "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
      * «Олег играет у костра» off (the player's switch in «Поведение»): «сыграй» says so and no guitar comes out; the player lingers by
      * a lit fire and no evening begins by itself.
      */
@@ -689,7 +784,10 @@ public final class CompanionCampfireTests {
     }
 
     private static void ground(GameTestHelper h) {
-        emptyFolder();
+        // Every batch that lays a ground points the library at the empty folder before its tests: a batch that forgot says so
+        // here, instead of playing whatever the player left in the run's config folder.
+        h.assertTrue(emptyFolder().equals(CompanionMusicLibrary.folder()),
+                "This batch did not point the guitar library at the empty folder: " + CompanionMusicLibrary.folder());
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
             h.setBlock(new BlockPos(x, y, z), y <= GROUND || border ? Blocks.BEDROCK : Blocks.AIR);
@@ -778,4 +876,12 @@ public final class CompanionCampfireTests {
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();
         return count;
     }
+
+    /**
+     * The folder the library read when this class was loaded, taken in the last static initializer of the class so that every
+     * static field above it has already run: a test class must not change what the game plays merely by being loaded. The guard
+     * test compares this instead of resetting first, because a reset would produce the very answer it checks.
+     */
+    private static final java.nio.file.Path FOLDER_WHEN_LOADED;
+    static { FOLDER_WHEN_LOADED = CompanionMusicLibrary.folder(); }
 }

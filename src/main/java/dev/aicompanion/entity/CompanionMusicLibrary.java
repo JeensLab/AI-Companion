@@ -91,10 +91,14 @@ public final class CompanionMusicLibrary {
 
     /**
      * Every .ogg recording in a folder, by its file name, with the sound id its file gets, its title, its length in ticks and its
-     * mood. Files that are not readable Ogg Vorbis are skipped with a log line; a missing folder is simply empty.
+     * mood. A missing folder is simply empty, and says so once; files that are not readable Ogg Vorbis are skipped with a line
+     * each. A scan is asked on every tune and on every resource-pack rebuild, so a line is said once per change, not every call.
      */
     public static List<Track> scan(Path dir) {
-        if (!Files.isDirectory(dir)) return List.of();
+        if (!Files.isDirectory(dir)) {
+            say(dir, "the guitar folder " + dir + " is not there — the standard music sounds instead");
+            return List.of();
+        }
         List<Path> files;
         try (var listing = Files.list(dir)) {
             files = listing.filter(Files::isRegularFile)
@@ -102,7 +106,7 @@ public final class CompanionMusicLibrary {
                     .sorted(Comparator.comparing(path -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
                     .toList();
         } catch (IOException error) {
-            LOGGER.warn("AI Companion: cannot read the guitar folder {}: {}", dir, error.toString());
+            warn(dir.toAbsolutePath() + "|unreadable", "cannot read the guitar folder " + dir + ": " + error);
             return List.of();
         }
         List<Track> tracks = new ArrayList<>();
@@ -112,14 +116,30 @@ public final class CompanionMusicLibrary {
             String base = name.substring(0, name.length() - 4);
             int ticks = ticks(file);
             if (ticks < 20) {
-                LOGGER.warn("AI Companion: {} is not a readable Ogg Vorbis recording, skipped", name);
+                warn(file.toAbsolutePath().toString(), name + " is not a readable Ogg Vorbis recording, skipped");
                 continue;
             }
             tracks.add(new Track(name, "aicompanion:guitar_folder/" + unique(clean(base), keys), title(base), ticks, mood(base)));
         }
         // What was found, in one line: the folder is the player's own, and a scan that comes back empty is why the vanilla music plays.
-        LOGGER.info("AI Companion: the guitar folder {} holds {} playable recording(s)", dir, tracks.size());
+        say(dir, "the guitar folder " + dir + " holds " + tracks.size() + " playable recording(s)");
         return List.copyOf(tracks);
+    }
+
+    /** The last line said about each folder, so a repeated scan does not repeat it. */
+    private static final java.util.Map<String, String> SAID = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Folders and files already warned about, said once each. */
+    private static final Set<String> WARNED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Says a line about a folder once per change: the folder is read on every tune and every pack rebuild. */
+    private static void say(Path dir, String line) {
+        if (line.equals(SAID.put(dir.toAbsolutePath().toString(), line))) return;
+        LOGGER.info("AI Companion: {}", line);
+    }
+
+    /** Warns once about a folder or a file that could not be read. */
+    private static void warn(String key, String line) {
+        if (WARNED.add(key)) LOGGER.warn("AI Companion: {}", line);
     }
 
     /**

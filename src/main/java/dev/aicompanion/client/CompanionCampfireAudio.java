@@ -24,8 +24,6 @@ import net.minecraft.sounds.SoundSource;
 final class CompanionCampfireAudio {
     /** He is looked for only this close: the sound itself fades out at sixteen blocks. */
     private static final double LOOK_RANGE = 48;
-    /** A recording is taken as played out this close to its length: the sound engine ends it within a tick or two of it. */
-    private static final int END_SLACK = 2;
     private static SoundInstance playing;
     private static String tune = "";
     /** The tune start the client has begun (-1 for none), so the same recording asked for again is started over. */
@@ -57,20 +55,23 @@ final class CompanionCampfireAudio {
         boolean byTheFire = companion.campfirePose() == CompanionCampfire.PLAYING;
         String wanted = byTheFire ? companion.campfireTune() : "";
         int start = byTheFire ? companion.campfireTuneStart() : -1;
-        if (wanted.isEmpty()) {
-            if (playing != null || !tune.isEmpty()) stop();
-            started = -1;
-            return;
+        boolean sameTune = playing != null && wanted.equals(tune);
+        switch (CompanionCampfirePlayback.decide(wanted, start, started, sameTune,
+                sameTune && client.getSoundManager().isActive(playing), sounded, length, finished)) {
+            case STOP -> {
+                if (playing != null || !tune.isEmpty()) stop();
+                started = -1;
+                return;
+            }
+            // The tune that is wanted sounds on: nothing to do while it does.
+            case KEEP_SOUNDING -> { sounded++; return; }
+            // The counter moved: the same recording asked for again starts over, it is not left sounding.
+            case START_OVER -> { stop(); started = start; finished = ""; }
+            // It has played out by its length, not stopped by a reload: not started again while it is still named.
+            case PLAYED_OUT -> { stop(); finished = wanted; return; }
+            case FINISHED -> { return; }
+            case START -> stop();
         }
-        boolean restarted = start != started;
-        // The tune that is wanted sounds on: nothing to do while it does.
-        if (!restarted && playing != null && wanted.equals(tune) && client.getSoundManager().isActive(playing)) { sounded++; return; }
-        // It is gone: it has played out, or a reload stopped it. The length tells the two apart.
-        boolean playedOut = !restarted && playing != null && wanted.equals(tune) && length > 0 && sounded + END_SLACK >= length;
-        if (restarted) { stop(); started = start; finished = ""; }
-        else if (playedOut) { stop(); finished = wanted; return; }
-        else if (wanted.equals(finished)) return;
-        else stop();
         ResourceLocation id = ResourceLocation.tryParse(wanted);
         if (id == null) return;
         if (client.getSoundManager().getSoundEvent(id) == null) {

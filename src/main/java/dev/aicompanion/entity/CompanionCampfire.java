@@ -95,9 +95,10 @@ public final class CompanionCampfire {
         if (!c.playsByTheFire()) return CompanionActionResult.failed("Играть у костра выключено в настройках поведения.");
         if (active()) {
             wanted = mood;
+            CompanionMusicLibrary.Track previous = tune;
             // Asked again while he plays: the next tune is picked now, so the answer says what actually starts.
             CompanionMusicLibrary.Pick started = phase == Phase.PLAY || phase == Phase.REST ? startTune() : null;
-            return c.placement.recordActionResult(CompanionActionResult.ok(tuneAnswer(mood, started)));
+            return c.placement.recordActionResult(CompanionActionResult.ok(tuneAnswer(mood, started, previous)));
         }
         if (c.getTarget() != null || danger(level, player.blockPosition()))
             return c.placement.recordActionResult(CompanionActionResult.blocked("Тут неспокойно, монстры рядом. Сыграю, когда отобьёмся."));
@@ -120,19 +121,29 @@ public final class CompanionCampfire {
     }
 
     /**
-     * The answer to «сыграй грустное» or «повеселее» while he plays: honest when no recording of that kind is there — the tune picked
-     * now says whether it is, and while he is still sitting down the folder is asked about the tune that will start.
+     * The answer to «сыграй грустное» or «повеселее» while he plays: honest when no recording of that kind is there — the tune
+     * picked now says whether it is — and honest about a restart too. The only recording of the kind asked for, or the only one at
+     * all, is started over rather than replaced, so the answer says that instead of promising another one. While he is still
+     * sitting down the folder is asked about the tune that will start.
      */
-    private String tuneAnswer(String mood, CompanionMusicLibrary.Pick started) {
-        if (!"calm".equals(mood) && !"cheerful".equals(mood)) return "Сыграю другую.";
+    private String tuneAnswer(String mood, CompanionMusicLibrary.Pick started, CompanionMusicLibrary.Track previous) {
+        boolean restart = started != null && previous != null && started.track().soundId().equals(previous.soundId());
+        if (!"calm".equals(mood) && !"cheerful".equals(mood))
+            return restart ? "Другой нет — сыграю эту же снова." : "Сыграю другую.";
         boolean fits = started != null ? started.moodMatched() : CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood);
-        if (!fits) return missingMood(mood);
+        if (!fits) return restart ? missingMoodAgain(mood) : missingMood(mood);
+        if (restart) return "calm".equals(mood) ? "Другой спокойной нет — сыграю эту же снова." : "Другой весёлой нет — сыграю эту же снова.";
         return "calm".equals(mood) ? "Сыграю спокойную." : "Сыграю повеселее.";
     }
 
     /** Said plainly when no recording of the kind asked for is there. */
     private static String missingMood(String mood) {
         return "calm".equals(mood) ? "Спокойных и грустных записей нет — сыграю любую." : "Весёлых записей нет — сыграю другую.";
+    }
+
+    /** The same, when the pick starts the one playing now over again rather than changing it. */
+    private static String missingMoodAgain(String mood) {
+        return "calm".equals(mood) ? "Спокойных и грустных записей нет — сыграю эту же снова." : "Весёлых записей нет — сыграю эту же снова.";
     }
 
     /** The player gave an order: the guitar goes away at once. True if he was playing. */
