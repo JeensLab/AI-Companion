@@ -35,16 +35,35 @@ public final class CompanionCampfireTests {
     private static final BlockPos FIRE = new BlockPos(16, GROUND + 1, 16);
 
     /**
-     * These tests play the fallback (standard Minecraft music, CompanionTunes): the folder is pointed at an empty one, so whatever
-     * the player left in the run's config folder does not change what an evening by the fire plays.
+     * The folder these tests read: an empty one, so whatever the player left in the run's config folder does not change what an
+     * evening by the fire plays. Set by the test that means it, and given back after its batch: the game itself always reads the
+     * player's folder, so merely loading this class never changes what it plays.
      */
-    static {
-        try {
-            CompanionMusicLibrary.readFrom(java.nio.file.Files.createTempDirectory("aicompanion-empty"));
-        } catch (java.io.IOException error) {
-            throw new IllegalStateException(error);
+    private static java.nio.file.Path emptyFolder() {
+        if (empty == null) {
+            try {
+                empty = java.nio.file.Files.createTempDirectory("aicompanion-empty");
+            } catch (java.io.IOException error) {
+                throw new IllegalStateException(error);
+            }
         }
+        CompanionMusicLibrary.readFrom(empty);
+        return empty;
     }
+
+    private static java.nio.file.Path empty;
+
+    /** After a batch the player's own folder is read again, so a live client that ran these tests plays it. */
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_request") public static void afterRequest(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_seat") public static void afterSeat(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_again") public static void afterAgain(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_sit") public static void afterSit(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_bag") public static void afterBag(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_none") public static void afterNone(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_linger") public static void afterLinger(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_monster") public static void afterMonster(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_off") public static void afterOff(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
+    @net.minecraft.gametest.framework.AfterBatch(batch = "campfire_folder") public static void afterFolder(net.minecraft.server.level.ServerLevel level) { CompanionMusicLibrary.readFrom(null); }
 
     /**
      * «Сыграй» by a lit fire: he sits down across the fire from the player and the guitar sounds; his eyes stay on the fire though the
@@ -121,7 +140,10 @@ public final class CompanionCampfireTests {
         });
     }
 
-    /** Asked again while he plays («сыграй грустное», «повеселее»): the tune changes to that kind at once, and he stays on his seat. */
+    /**
+     * Asked again while he plays («сыграй грустное», «повеселее»): the tune changes to that kind at once, starts over, and he stays on
+     * his seat. The vanilla fallback changes its disc for both kinds, and each answer names the kind that starts.
+     */
     @GameTest(template = "empty", batch = "campfire_again", timeoutTicks = 900)
     public static void askingAgainChangesTheTuneNotTheSeat(GameTestHelper h) {
         ground(h);
@@ -132,22 +154,38 @@ public final class CompanionCampfireTests {
         net.minecraft.world.phys.Vec3[] seat = {null};
         int[] stage = {0};
         long[] askedAt = {0};
+        String[] calmTitle = {null};
         h.onEachTick(() -> {
             if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING) {
                 h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CHEERFUL, "Asked for a cheerful one, got «" + c.campfire().tuneTitle() + "»");
                 seat[0] = c.position();
                 String before = c.campfire().tuneTitle();
+                int starts = c.campfireTuneStart();
                 var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
                 h.assertTrue(again.success() && c.campfire().active(), "Asking again: " + again.message());
+                h.assertTrue("Сыграю спокойную.".equals(again.message()), "Not the kind asked for: " + again.message());
                 h.assertTrue(!c.campfire().tuneTitle().equals(before) && tune(c).mood() != CompanionMusicLibrary.Mood.CHEERFUL,
                         "Not a calm tune at once: «" + c.campfire().tuneTitle() + "»");
+                h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
+                        "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
+                calmTitle[0] = c.campfire().tuneTitle();
                 askedAt[0] = h.getTick();
                 stage[0] = 1;
+            } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
+                h.assertTrue(again.success() && "Сыграю повеселее.".equals(again.message()), "Not the kind asked for: " + again.message());
+                h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CHEERFUL && !c.campfire().tuneTitle().equals(calmTitle[0]),
+                        "Not a cheerful tune at once: «" + c.campfire().tuneTitle() + "»");
+                h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
+                        "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
+                askedAt[0] = h.getTick();
+                stage[0] = 2;
             }
-            if (stage[0] == 1) h.assertTrue(c.position().distanceTo(seat[0]) < .15 && c.campfirePose() == CompanionCampfire.PLAYING,
+            if (stage[0] >= 1) h.assertTrue(c.position().distanceTo(seat[0]) < .15 && c.campfirePose() == CompanionCampfire.PLAYING,
                     "Left his seat or stopped after being asked again: " + c.position() + " pose " + c.campfirePose());
         });
-        h.succeedWhen(() -> h.assertTrue(stage[0] == 1 && h.getTick() - askedAt[0] > 60, "Not played on after being asked again"));
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 2 && h.getTick() - askedAt[0] > 60, "Not played on after being asked again"));
     }
 
     /** /sit: the player sits on the block he stands on; /sit again stands him up, and the seat is gone. Nothing of it is saved. */
@@ -266,6 +304,7 @@ public final class CompanionCampfireTests {
      */
     @GameTest(template = "empty")
     public static void theFallbackIsVanillaMusicAndNoMusicShipsInTheJar(GameTestHelper h) {
+        emptyFolder();
         var titles = new HashSet<String>();
         var ids = new HashSet<String>();
         h.assertTrue(CompanionTunes.ALL.size() >= 3, "Too few standard tunes: " + CompanionTunes.ALL.size());
@@ -345,6 +384,18 @@ public final class CompanionCampfireTests {
     }
 
     /**
+     * The player's folder is the game's own config folder unless a test points the library elsewhere: merely loading this class used
+     * to point it at an empty temporary folder, and an evening by the fire then played vanilla music while the folder was full.
+     */
+    @GameTest(template = "empty")
+    public static void thePlayerFolderIsTheConfigFolderUntilATestPointsElsewhere(GameTestHelper h) {
+        CompanionMusicLibrary.readFrom(null);
+        var expected = net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve(CompanionMusicLibrary.FOLDER);
+        h.assertTrue(expected.equals(CompanionMusicLibrary.folder()), "The folder is not the player's: " + CompanionMusicLibrary.folder());
+        h.succeed();
+    }
+
+    /**
      * A tiny file is skipped, not thrown on: a recording cut short after the identification header (191 bytes here, the marker at its
      * very end) has no sample rate inside the file, and the scan used to fail on it with an IndexOutOfBoundsException, which broke the
      * whole folder and the resource pack built from it. The good recording next to it is still found.
@@ -380,6 +431,7 @@ public final class CompanionCampfireTests {
      */
     @GameTest(template = "empty")
     public static void aTaggedRecordingIsPickedForTheMoodOrHeSaysThereIsNone(GameTestHelper h) {
+        emptyFolder();
         var random = net.minecraft.util.RandomSource.create(7);
         var calm = new CompanionMusicLibrary.Track("a.ogg", "aicompanion:guitar_folder/a", "A", 400, CompanionMusicLibrary.Mood.CALM);
         var cheerful = new CompanionMusicLibrary.Track("b.ogg", "aicompanion:guitar_folder/b", "B", 400, CompanionMusicLibrary.Mood.CHEERFUL);
@@ -414,17 +466,19 @@ public final class CompanionCampfireTests {
 
     /**
      * The dynamic resource pack the client builds from the folder: the game's sound engine knows a sound only from a pack, so the pack
-     * has to declare every recording and serve its file. This checks what the game reads from it — the metadata of a required pack, the
-     * generated sounds.json with the recording's sound id, and the file behind that id — and that the game accepts the pack at all.
+     * has to declare every recording the server can name and serve its file at the path that id resolves to. Two recordings are built
+     * and every id the server would send is checked in the generated sounds.json, in what the pack lists and in the file it serves, so
+     * a pack that drops one, or serves it under another path, cannot pass. The game accepts the pack as a required one.
      */
     @GameTest(template = "empty")
-    public static void theFolderPackDeclaresAndServesItsRecordings(GameTestHelper h) {
+    public static void theFolderPackDeclaresAndServesEveryRecording(GameTestHelper h) {
         java.nio.file.Path dir;
         try {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-pack");
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         try {
             writeOgg(dir, "3_evening.ogg", 40);
+            writeOgg(dir, "8_morning.ogg", 30);
             // An upgraded player keeps the folder made by an older build, with its older note in it.
             write(dir, "README.txt", "Музыка: положите сюда записи.\n");
             var location = new net.minecraft.server.packs.PackLocationInfo("aicompanion_music_test",
@@ -441,20 +495,31 @@ public final class CompanionCampfireTests {
             try (var in = sounds.get()) { json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8); }
             catch (java.io.IOException e) { throw new IllegalStateException(e); }
             var root = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
-            var track = CompanionMusicLibrary.scan(dir).getFirst();
-            var key = track.soundId().substring("aicompanion:".length());
-            var entry = root.getAsJsonObject(key);
-            h.assertTrue(root.size() == 1 && entry != null, "sounds.json does not declare the recording: " + json);
-            var sound = entry.getAsJsonArray("sounds").get(0).getAsJsonObject();
-            h.assertTrue(track.soundId().equals(sound.get("name").getAsString()) && sound.get("stream").getAsBoolean(),
-                    "The declaration does not point at the recording: " + entry);
+            // Every id the server names for this folder, as CompanionMusicLibrary.scan makes it.
+            var tracks = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(tracks.size() == 2 && root.size() == tracks.size(),
+                    "sounds.json declares " + root.size() + " of " + tracks.size() + " recordings: " + json);
             var listed = new java.util.ArrayList<net.minecraft.resources.ResourceLocation>();
             pack.listResources(net.minecraft.server.packs.PackType.CLIENT_RESOURCES, "aicompanion", "sounds", (id, supplier) -> listed.add(id));
-            var fileId = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("aicompanion", "sounds/" + key + ".ogg");
-            h.assertTrue(listed.contains(fileId), "The recording is not listed: " + listed);
-            var file = pack.getResource(net.minecraft.server.packs.PackType.CLIENT_RESOURCES, fileId);
-            h.assertTrue(file != null, "The recording is not served");
-            h.assertTrue(file.get().readAllBytes().length == java.nio.file.Files.size(dir.resolve("3_evening.ogg")), "The served file is not the recording");
+            for (var track : tracks) {
+                var key = track.soundId().substring("aicompanion:".length());
+                var entry = root.getAsJsonObject(key);
+                h.assertTrue(entry != null, "sounds.json does not declare " + track.soundId() + ": " + json);
+                var sound = entry.getAsJsonArray("sounds").get(0).getAsJsonObject();
+                h.assertTrue(track.soundId().equals(sound.get("name").getAsString()) && sound.get("stream").getAsBoolean(),
+                        "The declaration does not point at " + track.soundId() + ": " + entry);
+                // The path the sound engine reads for that id: sounds/<id path>.ogg, listed and served as the recording itself.
+                var id = net.minecraft.resources.ResourceLocation.parse(track.soundId());
+                var fileId = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(id.getNamespace(), "sounds/" + id.getPath() + ".ogg");
+                h.assertTrue(listed.contains(fileId), fileId + " is not listed: " + listed);
+                var file = pack.getResource(net.minecraft.server.packs.PackType.CLIENT_RESOURCES, fileId);
+                h.assertTrue(file != null, fileId + " is not served");
+                try (var in = file.get()) {
+                    h.assertTrue(java.util.Arrays.equals(in.readAllBytes(), java.nio.file.Files.readAllBytes(dir.resolve(track.file()))),
+                            "The served file is not " + track.file());
+                }
+            }
+            h.assertTrue(listed.size() == tracks.size(), "The pack lists more than its recordings: " + listed);
             var built = net.minecraft.server.packs.repository.Pack.readMetaAndCreate(location, new net.minecraft.server.packs.repository.Pack.ResourcesSupplier() {
                 @Override public net.minecraft.server.packs.PackResources openPrimary(net.minecraft.server.packs.PackLocationInfo info) { return new CompanionMusicPack(info, dir); }
                 @Override public net.minecraft.server.packs.PackResources openFull(net.minecraft.server.packs.PackLocationInfo info,
@@ -469,6 +534,91 @@ public final class CompanionCampfireTests {
             deleteTree(dir);
         }
         h.succeed();
+    }
+
+    /**
+     * The vanilla fallback while the folder is empty answers the mood too: a cheerful disc for «повеселее», a calm one for
+     * «погрустнее», always a different one than the disc playing — and the one disc of that kind that is playing now is started over
+     * rather than replaced by a disc of the wrong kind. With no disc of the kind asked for the pick says so, and the answer is honest.
+     */
+    @GameTest(template = "empty")
+    public static void theVanillaFallbackChangesItsDiscWithTheMood(GameTestHelper h) {
+        emptyFolder();
+        var random = net.minecraft.util.RandomSource.create(11);
+        var discs = CompanionMusicLibrary.available();
+        var playing = "minecraft:music_disc.cat";
+        for (int i = 0; i < 20; i++) {
+            var cheerful = CompanionMusicLibrary.pick(discs, "cheerful", playing, random);
+            h.assertTrue(cheerful.moodMatched() && cheerful.track().mood() == CompanionMusicLibrary.Mood.CHEERFUL
+                            && !cheerful.track().soundId().equals(playing),
+                    "«Повеселее» did not change the disc: " + cheerful.track());
+            var calm = CompanionMusicLibrary.pick(discs, "calm", cheerful.track().soundId(), random);
+            h.assertTrue(calm.moodMatched() && calm.track().mood() == CompanionMusicLibrary.Mood.CALM
+                            && !calm.track().soundId().equals(cheerful.track().soundId()),
+                    "«Погрустнее» did not change the disc: " + calm.track());
+        }
+        var onlyCheerful = java.util.List.of(discs.stream().filter(t -> t.mood() == CompanionMusicLibrary.Mood.CHEERFUL).findFirst().orElseThrow());
+        var again = CompanionMusicLibrary.pick(onlyCheerful, "cheerful", onlyCheerful.getFirst().soundId(), random);
+        h.assertTrue(again.moodMatched() && again.track().soundId().equals(onlyCheerful.getFirst().soundId()),
+                "The only cheerful disc was not started over: " + again.track());
+        var onlyCalm = java.util.List.of(discs.stream().filter(t -> t.mood() == CompanionMusicLibrary.Mood.CALM).findFirst().orElseThrow());
+        var honest = CompanionMusicLibrary.pick(onlyCalm, "cheerful", "", random);
+        h.assertTrue(!honest.moodMatched() && honest.track().mood() == CompanionMusicLibrary.Mood.CALM,
+                "A cheerful request was not answered honestly: " + honest.track());
+        h.succeed();
+    }
+
+    /**
+     * The player's folder is what the evening plays: two recordings there and «сыграй» plays one of them, not a vanilla disc; asked
+     * «повеселее» and then «погрустнее» while he plays, the tune switches to a recording of that kind and starts over, and the answer
+     * names that kind. The recording asked for again is the one the client restarts (the start counter moves).
+     */
+    @GameTest(template = "empty", batch = "campfire_folder", timeoutTicks = 900)
+    public static void aMoodRequestPlaysAFolderRecordingOfThatKind(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-folder-evening");
+            writeOgg(dir, "1_quiet.ogg", 100);
+            writeOgg(dir, "8_lively.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "calm", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] quietTitle = {null};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                var quiet = tune(c);
+                h.assertTrue(quiet.soundId().startsWith("aicompanion:guitar_folder/"), "Not the folder's recording: " + quiet);
+                h.assertTrue(quiet.mood() == CompanionMusicLibrary.Mood.CALM, "Asked for a calm one, got «" + quiet.title() + "»");
+                quietTitle[0] = quiet.title();
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
+                h.assertTrue(again.success() && "Сыграю повеселее.".equals(again.message()), "Answer: " + again.message());
+                var lively = tune(c);
+                h.assertTrue(lively.mood() == CompanionMusicLibrary.Mood.CHEERFUL && !lively.title().equals(quietTitle[0]),
+                        "Not a cheerful recording at once: «" + lively.title() + "»");
+                h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
+                        "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
+                stage[0] = 1;
+            } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
+                h.assertTrue(again.success() && "Сыграю спокойную.".equals(again.message()), "Answer: " + again.message());
+                var quiet = tune(c);
+                h.assertTrue(quiet.mood() == CompanionMusicLibrary.Mood.CALM && quiet.title().equals(quietTitle[0]),
+                        "Not back to the calm recording at once: «" + quiet.title() + "»");
+                h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
+                        "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
+                h.assertTrue(c.campfirePose() == CompanionCampfire.PLAYING, "Stopped instead of playing on");
+                stage[0] = 2;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 2,
+                "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
     }
 
     /**
@@ -539,6 +689,7 @@ public final class CompanionCampfireTests {
     }
 
     private static void ground(GameTestHelper h) {
+        emptyFolder();
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
             h.setBlock(new BlockPos(x, y, z), y <= GROUND || border ? Blocks.BEDROCK : Blocks.AIR);

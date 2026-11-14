@@ -16,9 +16,10 @@ import net.minecraft.sounds.SoundSource;
  * The tune by the fire on this client (the owner's ruling, 13.11): the recordings come from the player's folder, which the game's
  * sound engine knows only through the dynamic resource pack ({@link CompanionMusicPack}), not as registered sound events; while the
  * folder is empty the evening plays standard Minecraft music ({@link dev.aicompanion.entity.CompanionTunes}). So the server sends no
- * sound packet: it syncs the sound id with his pose (CompanionEntity.campfireTune) and this plays that id from him while he sits and
- * plays, stopping when the tune changes, he stands up or the world goes. The «Jukebox/Note Blocks» volume and the distance work as for
- * any entity-bound sound.
+ * sound packet: it syncs the sound id and a start counter with his pose (CompanionEntity.campfireTune, campfireTuneStart) and this
+ * plays that id from him while he sits and plays, starting it over when the counter moves — a recording asked for again is restarted,
+ * not left sounding — and stopping when the tune changes, he stands up or the world goes. The «Jukebox/Note Blocks» volume and the
+ * distance work as for any entity-bound sound. An id this client cannot resolve is reported in the chat, never replaced by a disc.
  */
 final class CompanionCampfireAudio {
     /** He is looked for only this close: the sound itself fades out at sixteen blocks. */
@@ -27,6 +28,8 @@ final class CompanionCampfireAudio {
     private static final int END_SLACK = 2;
     private static SoundInstance playing;
     private static String tune = "";
+    /** The tune start the client has begun (-1 for none), so the same recording asked for again is started over. */
+    private static int started = -1;
     /** Ticks the recording has sounded, and its length in ticks (-1 when it cannot be told). */
     private static int sounded, length;
     /** An id whose recording has just played out: not started again while the server still names it. */
@@ -38,7 +41,7 @@ final class CompanionCampfireAudio {
 
     private CompanionCampfireAudio() { }
 
-    /** Every client tick: the sound follows the pose and the tune the server synced. */
+    /** Every client tick: the sound follows the pose, the tune and the start counter the server synced. */
     static void tick() {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null || client.player == null) { forget(); return; }
@@ -51,17 +54,23 @@ final class CompanionCampfireAudio {
                     entity -> client.player.getUUID().equals(entity.getOwnerId())).stream().findFirst().orElse(null);
             if (companion == null) return;
         }
-        String wanted = companion.campfirePose() == CompanionCampfire.PLAYING ? companion.campfireTune() : "";
-        if (!wanted.equals(finished)) finished = "";
-        // A resource reload (F3+T) stops every sound: the tune that is still the one wanted is started again.
-        if (playing != null && wanted.equals(tune) && client.getSoundManager().isActive(playing)) { sounded++; return; }
+        boolean byTheFire = companion.campfirePose() == CompanionCampfire.PLAYING;
+        String wanted = byTheFire ? companion.campfireTune() : "";
+        int start = byTheFire ? companion.campfireTuneStart() : -1;
+        if (wanted.isEmpty()) {
+            if (playing != null || !tune.isEmpty()) stop();
+            started = -1;
+            return;
+        }
+        boolean restarted = start != started;
+        // The tune that is wanted sounds on: nothing to do while it does.
+        if (!restarted && playing != null && wanted.equals(tune) && client.getSoundManager().isActive(playing)) { sounded++; return; }
         // It is gone: it has played out, or a reload stopped it. The length tells the two apart.
-        boolean playedOut = playing != null && wanted.equals(tune) && length > 0 && sounded + END_SLACK >= length;
-        stop();
-        if (wanted.isEmpty()) return;
-        // A recording that has just played out is not started over: the server ends the tune now, and it would sound for a tick more.
-        if (playedOut) finished = wanted;
-        if (wanted.equals(finished)) return;
+        boolean playedOut = !restarted && playing != null && wanted.equals(tune) && length > 0 && sounded + END_SLACK >= length;
+        if (restarted) { stop(); started = start; finished = ""; }
+        else if (playedOut) { stop(); finished = wanted; return; }
+        else if (wanted.equals(finished)) return;
+        else stop();
         ResourceLocation id = ResourceLocation.tryParse(wanted);
         if (id == null) return;
         if (client.getSoundManager().getSoundEvent(id) == null) {
@@ -91,9 +100,11 @@ final class CompanionCampfireAudio {
         return false;
     }
 
-    /** The length of a recording in ticks, as the evening reads it; -1 when it cannot be told. */
+    /** The length of a recording in ticks, as the evening reads it — a folder's recording or the standard music; -1 when it cannot be told. */
     private static int lengthOf(String soundId) {
         for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.available())
+            if (track.soundId().equals(soundId)) return track.ticks();
+        for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.fallback())
             if (track.soundId().equals(soundId)) return track.ticks();
         return -1;
     }
@@ -108,5 +119,5 @@ final class CompanionCampfireAudio {
     }
 
     /** Leaving the world: nothing of the old one is left sounding. */
-    static void forget() { stop(); companion = null; lookAgain = 0; reported = ""; finished = ""; }
+    static void forget() { stop(); companion = null; lookAgain = 0; reported = ""; finished = ""; started = -1; }
 }

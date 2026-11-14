@@ -65,7 +65,11 @@ public final class CompanionMusicLibrary {
     /** The folder the player fills, or the one the tests read. */
     public static Path folder() { return override != null ? override : FMLPaths.CONFIGDIR.get().resolve(FOLDER); }
 
-    /** Reads recordings from another folder from now on (the GameTests use an empty one, so their tunes are the mod's own). */
+    /**
+     * Reads recordings from another folder from now on, or from the player's folder again with null. Only a test that means it calls
+     * this, and only for the time of its batch: the player's folder is the default everywhere, so loading a test class never changes
+     * what the game plays.
+     */
     public static void readFrom(Path dir) { override = dir; }
 
     /** What can be played now: the player's folder when it has recordings, standard Minecraft music while it is empty. */
@@ -113,26 +117,34 @@ public final class CompanionMusicLibrary {
             }
             tracks.add(new Track(name, "aicompanion:guitar_folder/" + unique(clean(base), keys), title(base), ticks, mood(base)));
         }
+        // What was found, in one line: the folder is the player's own, and a scan that comes back empty is why the vanilla music plays.
+        LOGGER.info("AI Companion: the guitar folder {} holds {} playable recording(s)", dir, tracks.size());
         return List.copyOf(tracks);
     }
 
     /**
      * The tune for the next play: one of the kind asked for («calm» — sad or calm, «cheerful») when the recordings carry that mood,
      * otherwise any of them with {@code moodMatched} false so he can say so; «next» and no request take any, never the one playing.
+     * A recording of the asked kind that is playing now is played again when it is the only one of that kind: asking for the mood
+     * restarts it rather than switching to a tune of the wrong kind.
      */
     public static Pick pick(List<Track> tracks, String wanted, String avoidSoundId, RandomSource random) {
         if (tracks.isEmpty()) return null;
-        List<Track> fresh = new ArrayList<>();
-        for (Track track : tracks) if (!track.soundId().equals(avoidSoundId)) fresh.add(track);
-        List<Track> pool = fresh.isEmpty() ? tracks : fresh;
         Mood mood = moodWanted(wanted);
         if (mood != null) {
             List<Track> tagged = new ArrayList<>();
-            for (Track track : pool) if (track.mood() == mood) tagged.add(track);
-            if (!tagged.isEmpty()) return new Pick(tagged.get(random.nextInt(tagged.size())), true);
-            return new Pick(pool.get(random.nextInt(pool.size())), false);
+            for (Track track : tracks) if (track.mood() == mood) tagged.add(track);
+            if (!tagged.isEmpty()) {
+                List<Track> fresh = new ArrayList<>();
+                for (Track track : tagged) if (!track.soundId().equals(avoidSoundId)) fresh.add(track);
+                List<Track> pool = fresh.isEmpty() ? tagged : fresh;
+                return new Pick(pool.get(random.nextInt(pool.size())), true);
+            }
         }
-        return new Pick(pool.get(random.nextInt(pool.size())), true);
+        List<Track> fresh = new ArrayList<>();
+        for (Track track : tracks) if (!track.soundId().equals(avoidSoundId)) fresh.add(track);
+        List<Track> pool = fresh.isEmpty() ? tracks : fresh;
+        return new Pick(pool.get(random.nextInt(pool.size())), mood == null);
     }
 
     /** Whether any recording fits the kind asked for, so the answer to «сыграй грустное» can be honest before a tune starts. */

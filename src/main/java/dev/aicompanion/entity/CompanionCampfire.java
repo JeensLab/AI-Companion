@@ -95,8 +95,9 @@ public final class CompanionCampfire {
         if (!c.playsByTheFire()) return CompanionActionResult.failed("Играть у костра выключено в настройках поведения.");
         if (active()) {
             wanted = mood;
-            if (phase == Phase.PLAY || phase == Phase.REST) startTune();
-            return c.placement.recordActionResult(CompanionActionResult.ok(tuneAnswer(mood)));
+            // Asked again while he plays: the next tune is picked now, so the answer says what actually starts.
+            CompanionMusicLibrary.Pick started = phase == Phase.PLAY || phase == Phase.REST ? startTune() : null;
+            return c.placement.recordActionResult(CompanionActionResult.ok(tuneAnswer(mood, started)));
         }
         if (c.getTarget() != null || danger(level, player.blockPosition()))
             return c.placement.recordActionResult(CompanionActionResult.blocked("Тут неспокойно, монстры рядом. Сыграю, когда отобьёмся."));
@@ -118,11 +119,15 @@ public final class CompanionCampfire {
                 : lit != null ? "Сяду у костра и сыграю." : "Сяду рядом и сыграю.")));
     }
 
-    /** The answer to «сыграй грустное» or «повеселее» while he plays: honest when the folder has no recording of that kind. */
-    private String tuneAnswer(String mood) {
-        if ("calm".equals(mood)) return CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood) ? "Сыграю спокойную." : missingMood(mood);
-        if ("cheerful".equals(mood)) return CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood) ? "Сыграю повеселее." : missingMood(mood);
-        return "Сыграю другую.";
+    /**
+     * The answer to «сыграй грустное» or «повеселее» while he plays: honest when no recording of that kind is there — the tune picked
+     * now says whether it is, and while he is still sitting down the folder is asked about the tune that will start.
+     */
+    private String tuneAnswer(String mood, CompanionMusicLibrary.Pick started) {
+        if (!"calm".equals(mood) && !"cheerful".equals(mood)) return "Сыграю другую.";
+        boolean fits = started != null ? started.moodMatched() : CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood);
+        if (!fits) return missingMood(mood);
+        return "calm".equals(mood) ? "Сыграю спокойную." : "Сыграю повеселее.";
     }
 
     /** Said plainly when no recording of the kind asked for is there. */
@@ -276,20 +281,25 @@ public final class CompanionCampfire {
         CompanionDiagnostics.event(c.diagnosticTrace(), "campfire_sat_down", "entity", c.getUUID(), "at", c.blockPosition(), "spot", spot, "byFire", byFire);
     }
 
-    /** The next tune: of the kind asked for if the recordings carry it, and never the same one twice running. */
-    private void startTune() {
+    /**
+     * The next tune: of the kind asked for if the recordings carry it, and never the same one twice running — a tune of the asked
+     * kind that is playing now starts over when it is the only one of that kind. Null when there is nothing to play at all.
+     */
+    private CompanionMusicLibrary.Pick startTune() {
         if (phase == Phase.PLAY) silence();
         var pick = CompanionMusicLibrary.pick(CompanionMusicLibrary.available(), wanted, tune == null ? "" : tune.soundId(), c.getRandom());
         wanted = "";
-        if (pick == null) { rest(); return; } // nothing to play at all: he rests and looks again later
+        if (pick == null) { rest(); return null; } // nothing to play at all: he rests and looks again later
         tune = pick.track();
         timer = 0;
         phase = Phase.PLAY;
         pose(PLAYING);
-        // The client plays it from this id (client/CompanionCampfireAudio): a folder's file is no registered sound event.
+        // The client plays it from this id (client/CompanionCampfireAudio): a folder's file is no registered sound event. The start
+        // counter makes it start the recording over even when the same one is asked for again.
         c.setCampfireTune(tune.soundId());
         tunesStarted++;
         CompanionDiagnostics.event(c.diagnosticTrace(), "campfire_tune", "entity", c.getUUID(), "tune", tuneTitle(), "sound", tune.soundId());
+        return pick;
     }
 
     private void rest() {

@@ -89,6 +89,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final EntityDataAccessor<Integer> DATA_CAMPFIRE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     /** The sound id of the tune he plays now, empty between tunes: the client plays it from this (client/CompanionCampfireAudio). */
     static final EntityDataAccessor<String> DATA_CAMPFIRE_TUNE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
+    /** Counts tune starts, so the client restarts the recording even when the same one is asked for again. */
+    static final EntityDataAccessor<Integer> DATA_CAMPFIRE_TUNE_START = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
@@ -199,7 +201,13 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public int campfirePose() { return entityData.get(DATA_CAMPFIRE); }
     /** Client and server: the sound id of the tune playing now (aicompanion:guitar_folder/… or a vanilla minecraft:music…), or empty. */
     public String campfireTune() { return entityData.get(DATA_CAMPFIRE_TUNE); }
-    void setCampfireTune(String soundId) { if (!level().isClientSide) entityData.set(DATA_CAMPFIRE_TUNE, soundId); }
+    /** Client and server: counts the tunes started, so a recording asked for again is started over, not left sounding. */
+    public int campfireTuneStart() { return entityData.get(DATA_CAMPFIRE_TUNE_START); }
+    void setCampfireTune(String soundId) {
+        if (level().isClientSide) return;
+        if (!soundId.isEmpty()) entityData.set(DATA_CAMPFIRE_TUNE_START, entityData.get(DATA_CAMPFIRE_TUNE_START) + 1);
+        entityData.set(DATA_CAMPFIRE_TUNE, soundId);
+    }
     /** Whether he plays by the fire at all — by himself or on «сыграй» (the player's switch in «Поведение», on in old saves). */
     public boolean playsByTheFire() { return playsByTheFire; }
     public void setPlaysByTheFire(boolean on) {
@@ -484,6 +492,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
         builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
         builder.define(DATA_CAMPFIRE, CompanionCampfire.STANDING); builder.define(DATA_CAMPFIRE_TUNE, "");
+        builder.define(DATA_CAMPFIRE_TUNE_START, 0);
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
