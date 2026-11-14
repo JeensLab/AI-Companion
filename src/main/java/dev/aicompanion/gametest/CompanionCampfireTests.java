@@ -95,6 +95,8 @@ public final class CompanionCampfireTests {
     @AfterBatch(batch = "campfire_mp3") public static void mp3ReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
     @BeforeBatch(batch = "campfire_library") public static void libraryReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
     @AfterBatch(batch = "campfire_library") public static void libraryReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_nokind") public static void noKindReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_nokind") public static void noKindReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
 
     /**
      * «Сыграй» by a lit fire: he sits down across the fire from the player and the guitar sounds; his eyes stay on the fire though the
@@ -364,6 +366,27 @@ public final class CompanionCampfireTests {
     }
 
     /**
+     * The vendored libraries' licence texts ship with the mod and the notice names them: LGPL-2.1 asks for the text to travel with
+     * the library it covers, and the Xiph BSD-style licence for its notice and conditions to be reproduced. Both are read here from
+     * the JAR, the way a distribution carries them, and the notice no longer calls the changed decoder unmodified.
+     */
+    @GameTest(template = "empty")
+    public static void theVendoredLicenceTextsShipAndTheNoticeNamesThem(GameTestHelper h) {
+        String notice = resource("/META-INF/THIRD_PARTY_NOTICES.md");
+        h.assertTrue(notice.contains("LICENSES/JLayer-LGPL-2.1.txt") && notice.contains("LICENSES/jVorbisEnc-BSD.txt"),
+                "The notice does not name the licence texts");
+        h.assertTrue(!notice.contains("unmodified"), "The notice still calls a changed library unmodified");
+        String lgpl = resource("/META-INF/licenses/JLayer-LGPL-2.1.txt");
+        h.assertTrue(lgpl.contains("GNU LESSER GENERAL PUBLIC LICENSE") && lgpl.contains("Version 2.1, February 1999"),
+                "The LGPL-2.1 text is not there");
+        h.assertTrue(lgpl.contains("6. As an exception to the Sections above"), "The LGPL-2.1 text has no section 6");
+        String bsd = resource("/META-INF/licenses/jVorbisEnc-BSD.txt");
+        h.assertTrue(bsd.contains("Redistribution and use in source and binary forms") && bsd.contains("Xiph.org Foundation"),
+                "The Xiph BSD-style text is not there");
+        h.succeed();
+    }
+
+    /**
      * The client's restart, driven without a client: the start counter the server syncs decides what this client does with the
      * tune it names — asked for again, the recording is started over rather than left sounding; one that has played out by its
      * length is not started again while the server still names it; another tune starts, and no tune stops the sound.
@@ -383,6 +406,17 @@ public final class CompanionCampfireTests {
         h.assertTrue(other == CompanionCampfirePlayback.Action.START, "Another tune did not start: " + other);
         var none = CompanionCampfirePlayback.decide("", -1, 3, false, false, 0, -1, "");
         h.assertTrue(none == CompanionCampfirePlayback.Action.STOP, "The sound stayed after the tune was gone: " + none);
+        // A tune this client's sound engine does not know — on a server, a recording in the server's folder and not in this
+        // player's — cannot start: the tune sounding goes on and nothing is claimed changed, while a known one does start.
+        var unknown = CompanionCampfirePlayback.decide("aicompanion:guitar_folder/server_only", 4, 3, false, false, 0, 2000, "", false);
+        h.assertTrue(unknown == CompanionCampfirePlayback.Action.KEEP_OLD, "An unknown tune stopped the old sound: " + unknown);
+        var unknownFirst = CompanionCampfirePlayback.decide("aicompanion:guitar_folder/server_only", -1, -1, false, false, 0, -1, "", false);
+        h.assertTrue(unknownFirst == CompanionCampfirePlayback.Action.KEEP_OLD, "An unknown tune was claimed to start: " + unknownFirst);
+        var known = CompanionCampfirePlayback.decide("aicompanion:guitar_folder/server_only", 4, 3, false, false, 0, 2000, "", true);
+        h.assertTrue(known == CompanionCampfirePlayback.Action.START_OVER, "A tune the engine knows was not started: " + known);
+        // An id unknown here never stops the recording that is sounding on its own tune.
+        var sounding = CompanionCampfirePlayback.decide(tune, 3, 3, true, true, 40, 2000, "", false);
+        h.assertTrue(sounding == CompanionCampfirePlayback.Action.KEEP_SOUNDING, "The sounding recording was stopped: " + sounding);
         h.succeed();
     }
 
@@ -743,6 +777,51 @@ public final class CompanionCampfireTests {
     }
 
     /**
+     * The answer to a request that cannot change the tune: other recordings are there, none of the kind asked for — «Таких песен
+     * нет.» — while «Других песен не знаю.» is kept for a folder with no other recording at all. The recording playing goes on
+     * either way, and «другую» still finds the other recording.
+     */
+    @GameTest(template = "empty", batch = "campfire_nokind", timeoutTicks = 900)
+    public static void theAnswerTellsNoSuchKindFromNoOtherSong(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-nokind");
+            writeOgg(dir, "7_happy.ogg", 100);
+            writeOgg(dir, "8_lively.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] playing = {null};
+        int[] start = {0};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                playing[0] = c.campfire().tuneTitle();
+                start[0] = c.campfireTuneStart();
+                // Both recordings are cheerful: a calm one is asked for, and none is there though the folder holds another.
+                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
+                h.assertTrue(again.success() && "Таких песен нет.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(playing[0]) && c.campfireTuneStart() == start[0],
+                        "The tune changed or started over: «" + c.campfire().tuneTitle() + "», start " + c.campfireTuneStart());
+                stage[0] = 1;
+            } else if (stage[0] == 1 && c.campfire().playedTicks() > 30) {
+                // «Другую» does have one to change to.
+                var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
+                h.assertTrue(again.success() && "Другую.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(!c.campfire().tuneTitle().equals(playing[0]) && c.campfireTuneStart() == start[0] + 1,
+                        "«Другую» did not change the recording: «" + c.campfire().tuneTitle() + "»");
+                stage[0] = 2;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 2,
+                "Never asked twice: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
      * Asked for another tune while he plays, with another recording in the folder, he really switches: the sound id the server
      * syncs changes (not only the start counter), the new recording starts from its beginning, and the answer says so. A mood
      * request takes a recording of that kind; «из майнкрафта» plays standard Minecraft music even while the folder is full.
@@ -899,6 +978,115 @@ public final class CompanionCampfireTests {
     }
 
     /**
+     * The note beside a converted copy says what the copy was made from: an MP3 replaced by other audio that kept an older time
+     * (cp -p, unzip, rsync -t) is other audio, and the copy is remade for it — the old, shorter copy is not served for a longer
+     * file.
+     */
+    @GameTest(template = "empty", batch = "campfire_mp3", timeoutTicks = 1200)
+    public static void anMp3ReplacedWithAnOlderCopyIsConvertedAgain(GameTestHelper h) {
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-mp3-replaced");
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        try {
+            writeMp3(dir, "7_tone.mp3");
+            var first = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(first.size() == 1, "The MP3 was not read as one recording: " + first);
+            int shortTicks = first.getFirst().ticks();
+            var copy = dir.resolve(first.getFirst().file());
+            long copyTime = java.nio.file.Files.getLastModifiedTime(copy).toMillis();
+            // The same name, eight times the audio, and a time older than the copy beside it.
+            writeLongMp3(dir, "7_tone.mp3", 8);
+            java.nio.file.Files.setLastModifiedTime(dir.resolve("7_tone.mp3"),
+                    java.nio.file.attribute.FileTime.fromMillis(copyTime - 60_000L));
+            var again = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(again.size() == 1, "The replaced MP3 was not read: " + again);
+            h.assertTrue(again.getFirst().ticks() >= shortTicks * 7,
+                    "The old copy was served for a longer file: " + again.getFirst().ticks() + " ticks, the old one was " + shortTicks);
+            h.assertTrue(java.nio.file.Files.getLastModifiedTime(copy).toMillis() != copyTime, "The copy was not remade");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        } finally {
+            deleteTree(dir);
+        }
+        h.succeed();
+    }
+
+    /**
+     * A future-dated MP3 is converted once, not on every scan: the note beside the copy records the MP3's own size and time, so the
+     * copy's time is never compared with a time ahead of the clock — the copy is even left untouched while the note still fits.
+     */
+    @GameTest(template = "empty", batch = "campfire_mp3", timeoutTicks = 1200)
+    public static void aFutureDatedMp3IsConvertedOnlyOnce(GameTestHelper h) {
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-mp3-future");
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        try {
+            writeMp3(dir, "7_tone.mp3");
+            java.nio.file.Files.setLastModifiedTime(dir.resolve("7_tone.mp3"),
+                    java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 86_400_000L));
+            var tracks = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(tracks.size() == 1, "The future-dated MP3 was not read: " + tracks);
+            var copy = dir.resolve(tracks.getFirst().file());
+            // The copy's own time is made plainly older than the MP3's: only the note can say the copy still fits.
+            long touched = System.currentTimeMillis() - 3_600_000L;
+            java.nio.file.Files.setLastModifiedTime(copy, java.nio.file.attribute.FileTime.fromMillis(touched));
+            CompanionMusicLibrary.scan(dir);
+            CompanionMusicLibrary.scan(dir);
+            long after = java.nio.file.Files.getLastModifiedTime(copy).toMillis();
+            h.assertTrue(after == touched, "The future-dated MP3 was converted again: the copy's time moved to " + after + " from " + touched);
+            h.assertTrue(java.nio.file.Files.isRegularFile(dir.resolve(tracks.getFirst().file() + ".stamp")),
+                    "No note beside the copy, so nothing can say it fits");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        } finally {
+            deleteTree(dir);
+        }
+        h.succeed();
+    }
+
+    /**
+     * A copy left beside the MP3 by an older build, or made by hand, is not trusted: it carries no note saying what it was made
+     * from, so it is remade (its hundred seconds give way to the MP3's own length), and a note from another version of the
+     * converter is no better — the copy is remade again.
+     */
+    @GameTest(template = "empty", batch = "campfire_mp3", timeoutTicks = 1200)
+    public static void aCopyLeftByAnOlderBuildIsRemade(GameTestHelper h) {
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-mp3-old-copy");
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        try {
+            writeMp3(dir, "7_tone.mp3");
+            // What an older build (or a hand) leaves: an Ogg Vorbis file under the copy's name, with no note beside it.
+            writeOgg(dir, "7_tone.mp3.ogg", 100);
+            var tracks = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(tracks.size() == 1, "The MP3 was not read: " + tracks);
+            h.assertTrue(tracks.getFirst().ticks() >= 20 && tracks.getFirst().ticks() <= 30,
+                    "The copy left by an older build was served: " + tracks.getFirst().ticks() + " ticks");
+            var copy = dir.resolve(tracks.getFirst().file());
+            long touched = System.currentTimeMillis() - 3_600_000L;
+            java.nio.file.Files.setLastModifiedTime(copy, java.nio.file.attribute.FileTime.fromMillis(touched));
+            // A note from another version of the converter, describing this very MP3: the version alone makes the copy stale.
+            long size = java.nio.file.Files.size(dir.resolve("7_tone.mp3"));
+            long modified = java.nio.file.Files.getLastModifiedTime(dir.resolve("7_tone.mp3"))
+                    .to(java.util.concurrent.TimeUnit.NANOSECONDS);
+            write(dir, "7_tone.mp3.ogg.stamp", "converter=0\nsize=" + size + "\nmtime=" + modified + "\n");
+            var again = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(again.size() == 1 && java.nio.file.Files.getLastModifiedTime(copy).toMillis() != touched,
+                    "A copy whose note carries another version was kept: " + again);
+            h.assertTrue(java.nio.file.Files.readString(dir.resolve("7_tone.mp3.ogg.stamp")).contains("converter=1"),
+                    "The note was not rewritten by this build");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        } finally {
+            deleteTree(dir);
+        }
+        h.succeed();
+    }
+
+    /**
      * «Олег играет у костра» off (the player's switch in «Поведение»): «сыграй» says so and no guitar comes out; the player lingers by
      * a lit fire and no evening begins by itself.
      */
@@ -1032,9 +1220,36 @@ public final class CompanionCampfireTests {
 
     /** The tiny MP3 fixture of the repository, as the folder would hold it: a real MP3 the converter has to decode. */
     private static void writeMp3(java.nio.file.Path dir, String name) throws java.io.IOException {
+        java.nio.file.Files.write(dir.resolve(name), tone());
+    }
+
+    /**
+     * The same fixture with its frames repeated: a longer recording of the same tone, for an MP3 replaced by other audio. Its ID3
+     * tag is kept once and the frames after it are written over and over — MPEG frames follow each other in a stream.
+     */
+    private static void writeLongMp3(java.nio.file.Path dir, String name, int times) throws java.io.IOException {
+        byte[] tone = tone();
+        int tag = 10 + (((tone[6] & 0x7f) << 21) | ((tone[7] & 0x7f) << 14) | ((tone[8] & 0x7f) << 7) | (tone[9] & 0x7f));
+        var out = new java.io.ByteArrayOutputStream();
+        out.write(tone, 0, tag);
+        for (int i = 0; i < times; i++) out.write(tone, tag, tone.length - tag);
+        java.nio.file.Files.write(dir.resolve(name), out.toByteArray());
+    }
+
+    private static byte[] tone() throws java.io.IOException {
         try (var in = CompanionCampfireTests.class.getResourceAsStream("/assets/aicompanion/test/tone.mp3")) {
             if (in == null) throw new IllegalStateException("the MP3 fixture is not in the JAR");
-            java.nio.file.Files.copy(in, dir.resolve(name));
+            return in.readAllBytes();
+        }
+    }
+
+    /** A text the JAR carries, read the way a player's distribution has it. */
+    private static String resource(String path) {
+        try (var in = CompanionCampfireTests.class.getResourceAsStream(path)) {
+            if (in == null) throw new IllegalStateException("not in the JAR: " + path);
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
         }
     }
 

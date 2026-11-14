@@ -4,7 +4,9 @@ package dev.aicompanion.client;
  * What this client does with the tune the server names for the evening ({@link CompanionCampfireAudio}): the server syncs the
  * sound id and a start counter with his pose, and a counter that moved means the recording is started over — the same one asked
  * for again is restarted, not left sounding — while one that has played out is not started again while the server still names it.
- * The decision is pure and lives apart from the client's sound engine, so a GameTest can drive it without a client.
+ * An id this client's sound engine does not know (on a server, a recording that is in the server's folder and not in this
+ * player's) cannot start: the tune sounding goes on, and nothing is claimed to have changed. The decision is pure and lives apart
+ * from the client's sound engine, so a GameTest can drive it without a client.
  */
 public final class CompanionCampfirePlayback {
     /** A recording is taken as played out this close to its length: the sound engine ends it within a tick or two of it. */
@@ -22,6 +24,8 @@ public final class CompanionCampfirePlayback {
         FINISHED,
         /** Another tune is named: the one sounding stops and the new one starts. */
         START,
+        /** The tune named is not one this client's sound engine knows: the one sounding goes on, and a change is not claimed. */
+        KEEP_OLD,
         /** No tune is named — he stopped, stood up or the world went: the sound stops. */
         STOP
     }
@@ -40,13 +44,24 @@ public final class CompanionCampfirePlayback {
      */
     public static Action decide(String wanted, int start, int started, boolean sameTune, boolean active,
                                 int sounded, int length, String finished) {
+        return decide(wanted, start, started, sameTune, active, sounded, length, finished, true);
+    }
+
+    /**
+     * The same decision, with whether this client's sound engine knows the tune named at all: a sound id is known only from a
+     * resource pack, so a recording the server has and this client does not cannot start here.
+     *
+     * @param known whether the sound engine has the wanted tune; only {@link Action#START} and {@link Action#START_OVER} care
+     */
+    public static Action decide(String wanted, int start, int started, boolean sameTune, boolean active,
+                                int sounded, int length, String finished, boolean known) {
         if (wanted.isEmpty()) return Action.STOP;
         boolean restarted = start != started;
         if (!restarted && sameTune && active) return Action.KEEP_SOUNDING;
         boolean playedOut = !restarted && sameTune && length > 0 && sounded + END_SLACK >= length;
-        if (restarted) return Action.START_OVER;
+        if (restarted) return known ? Action.START_OVER : Action.KEEP_OLD;
         if (playedOut) return Action.PLAYED_OUT;
         if (wanted.equals(finished)) return Action.FINISHED;
-        return Action.START;
+        return known ? Action.START : Action.KEEP_OLD;
     }
 }

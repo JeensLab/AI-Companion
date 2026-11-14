@@ -42,7 +42,8 @@ public final class CompanionMusicLibrary {
     public static final String FOLDER_README = """
             Музыка Олега у костра.
             Положите сюда записи в Ogg Vorbis (.ogg, моно) или в MP3 (.mp3): каждую из них Олег сможет сыграть.
-            MP3 переводится в Ogg Vorbis рядом с ним (файл name.mp3.ogg) один раз — его и играет клиент.
+            MP3 переводится в Ogg Vorbis рядом с ним (файл name.mp3.ogg) один раз — его и играет клиент;
+            рядом лежит служебная запись name.mp3.ogg.stamp, её не нужно трогать.
             Настроение записи — число в начале имени файла, от 1 (самая грустная) до 9 (самая весёлая):
             1–4 — спокойная или грустная, 5 — середина, 6–9 — весёлая. Например, 2_romance.ogg.
             Папка читается при запуске игры, при входе в мир и заново на каждую просьбу сыграть другую или повеселее:
@@ -211,6 +212,12 @@ public final class CompanionMusicLibrary {
         List<Track> fresh = new ArrayList<>();
         for (Track track : tracks) if (!track.soundId().equals(soundId)) fresh.add(track);
         return fresh.isEmpty() ? tracks : fresh;
+    }
+
+    /** Whether the folder holds a recording other than the one playing: what tells «Таких песен нет.» from «Других песен не знаю.». */
+    public static boolean hasOther(List<Track> tracks, String soundId) {
+        for (Track track : tracks) if (!track.soundId().equals(soundId)) return true;
+        return false;
     }
 
     private static Track randomOf(List<Track> tracks, RandomSource random) {

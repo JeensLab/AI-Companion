@@ -31,7 +31,8 @@ import java.util.Map;
  * distance work as for any entity-bound sound, and the game's own background music is silenced for as long as the guitar sounds
  * (every music selection is refused while the tune does, not only the track sounding at its start), so the guitar is what is heard;
  * when the guitar stops, the game's music gets its normal countdown back instead of the twenty-minute cap a stop leaves behind.
- * An id this client cannot resolve is reported in the chat, never replaced by a disc.
+ * An id this client cannot resolve is never started in place of the tune sounding: the tune that plays goes on and the chat says
+ * why, so a change is not claimed when none can be heard.
  *
  * <p>Every step is said once in the log, never on every tick: what the client sees synced, what it decides, which id it hands the
  * sound engine, whether that engine knows the id and its volume, whether it began streaming the recording, and why a tune is skipped.
@@ -84,8 +85,13 @@ final class CompanionCampfireAudio {
         int start = byTheFire ? companion.campfireTuneStart() : -1;
         seen(pose, wanted, start);
         boolean sameTune = playing != null && wanted.equals(tune);
+        // The sound engine knows an id only from a resource pack: on a server the recording the server picked may not be in this
+        // client's folder at all. That is decided before anything is stopped, so a tune that cannot start does not silence the one
+        // that is sounding.
+        ResourceLocation id = wanted.isEmpty() ? null : ResourceLocation.tryParse(wanted);
+        boolean known = id != null && client.getSoundManager().getSoundEvent(id) != null;
         switch (CompanionCampfirePlayback.decide(wanted, start, started, sameTune,
-                sameTune && client.getSoundManager().isActive(playing), sounded, length, finished)) {
+                sameTune && client.getSoundManager().isActive(playing), sounded, length, finished, known)) {
             case STOP -> {
                 if (playing != null || !tune.isEmpty()) {
                     note("stop:" + tune, "the tune «" + tune + "» stops: pose " + poseName(pose) + ", no tune is named");
@@ -104,6 +110,8 @@ final class CompanionCampfireAudio {
                 sounded++;
                 return;
             }
+            // The tune the server names is not here: the one sounding goes on, and the line says so rather than claiming a change.
+            case KEEP_OLD -> { keepOld(wanted); return; }
             // The counter moved: the same recording asked for again starts over, it is not left sounding.
             case START_OVER -> {
                 note("over:" + wanted + ":" + start, "the tune «" + wanted + "» is started over: the start counter moved to "
@@ -121,27 +129,6 @@ final class CompanionCampfireAudio {
                 stop();
             }
         }
-        ResourceLocation id = ResourceLocation.tryParse(wanted);
-        if (id == null) {
-            note("bad:" + wanted, "«" + wanted + "» is not a sound id: nothing is played");
-            return;
-        }
-        if (client.getSoundManager().getSoundEvent(id) == null) {
-            // Not read yet — a recording added after the last resource reload, or one this client does not have at all. Said once, and
-            // not while a reload is queued or running: the sound engine is about to read the folder, so the line would be premature.
-            boolean loading = client.getOverlay() instanceof LoadingOverlay;
-            if (!wanted.equals(reported) && !loading) {
-                reported = wanted;
-                client.gui.getChat().addMessage(Component.literal(inClientFolder(wanted)
-                        ? "Запись ещё не загружена: перечитайте ресурсы (F3+T)."
-                        : "Этой записи нет на клиенте: положите её в папку config/aicompanion/music — на сервере она нужна и серверу, и клиенту."));
-            }
-            note("unknown:" + wanted, "the sound engine does not know «" + wanted + "» (" + client.getSoundManager().getAvailableSounds().size()
-                    + " ids known): " + (inClientFolder(wanted) ? "the recording is in this client's folder, the resources need a reload"
-                    : "the recording is not in this client's folder either")
-                    + (loading ? " (a resource reload is running)" : ""));
-            return;
-        }
         reported = "";
         length = lengthOf(wanted);
         sounded = 0;
@@ -158,6 +145,29 @@ final class CompanionCampfireAudio {
                 + " ticks, the sound engine knows the id, «Jukebox/Note Blocks» volume "
                 + client.options.getSoundSourceVolume(SoundSource.RECORDS)
                 + ", the game's own music stopped and kept stopped while the guitar sounds");
+    }
+
+    /**
+     * The tune the server names is not one this client's sound engine knows — on a server, a recording that is in the server's
+     * folder and not in this player's. The tune that is sounding goes on rather than stop into silence, and the line says so: the
+     * answer already named the tune it picked, and this is the part of it this client can keep.
+     */
+    private static void keepOld(String wanted) {
+        Minecraft client = Minecraft.getInstance();
+        boolean loading = client.getOverlay() instanceof LoadingOverlay;
+        // Not while a reload is queued or running: the sound engine is about to read the folder, so the line would be premature.
+        if (!wanted.equals(reported) && !loading) {
+            reported = wanted;
+            boolean here = inClientFolder(wanted);
+            String said = here ? "Запись ещё не загружена: перечитайте ресурсы (F3+T)."
+                    : "Этой песни нет на клиенте: на сервере она есть, в вашей папке config/aicompanion/music — нет.";
+            client.gui.getChat().addMessage(Component.literal(said + (tune.isEmpty() ? "" : " Пока звучит прежняя песня.")));
+        }
+        note("unknown:" + wanted, "the sound engine does not know «" + wanted + "» (" + client.getSoundManager().getAvailableSounds().size()
+                + " ids known): " + (inClientFolder(wanted) ? "the recording is in this client's folder, the resources need a reload"
+                : "the recording is not in this client's folder either")
+                + " — the tune «" + tune + "» goes on, nothing is claimed changed"
+                + (loading ? " (a resource reload is running)" : ""));
     }
 
     /**

@@ -24,16 +24,22 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * MP3 recordings made playable for the game's sound engine, which reads Ogg Vorbis only. An .mp3 in the player's folder is
  * converted once into an Ogg Vorbis file beside it ({@code name.mp3.ogg}) and that copy is what the evening plays and the client's
- * resource pack serves; the copy is the marker, and it is made again only when the .mp3 is newer than it.
+ * resource pack serves. Beside the copy a small note ({@code name.mp3.ogg.stamp}) records what it was made from — the MP3's size and
+ * modification time — and the converter's version, and the copy is used only while that note still matches the MP3: an MP3 replaced
+ * with other audio under an older time (a copy that kept it, an unzipped or rsynced folder) is converted again, a future-dated one is
+ * converted once, and a copy left by an older build or made by hand is remade. The copy's own time is not consulted.
  *
  * <p>No build dependency is added: the MP3 is decoded by a vendored copy of JLayer's decoder ({@code javazoom.jl.decoder}, LGPL)
  * and the Ogg Vorbis is written by a vendored copy of the pure-Java Vorbis encoder jVorbisEnc ({@code biniu.vorbis}, the Xiph
@@ -49,6 +55,10 @@ public final class Mp3Ogg {
     private static final Logger LOGGER = LogUtils.getLogger();
     /** What an .mp3 is converted into, beside it: {@code name.mp3} becomes {@code name.mp3.ogg}. */
     public static final String CONVERTED = ".mp3.ogg";
+    /** The version of the conversion: a copy whose note carries another version is remade, as one with no note is. */
+    static final int VERSION = 1;
+    /** The note beside a copy that records the MP3's size and time and the converter's version, appended to the copy's name. */
+    static final String NOTE = ".stamp";
     /** The quality the encoder is asked for: a VBR mode near 128 kbps stereo, the music the player put there. */
     private static final float QUALITY = 0.4f;
     /** Samples handed to the encoder at once: the encoder's own block size. */
@@ -85,19 +95,69 @@ public final class Mp3Ogg {
     /** A request asks for the folder afresh: a file that failed before may work now (it was half copied, say). */
     static void forgetFailures() { FAILED.clear(); }
 
-    /** Whether the copy is there, newer than the MP3 and readable Ogg Vorbis: the marker that the conversion is done. */
+    /**
+     * Whether the copy is there, made from this very MP3 by this version of the converter, and readable Ogg Vorbis: the note beside
+     * it carries the MP3's size and modification time, so a replaced file is converted again whatever the copy's own time, and a copy
+     * left by an older build (or made by hand, with no note) is remade. The copy's time alone decides nothing.
+     */
     private static boolean fresh(Path mp3, Path target) {
+        Note note = Files.isRegularFile(target) ? readNote(target) : null;
+        return note != null && note.version() == VERSION && note.matches(mp3) && CompanionMusicLibrary.ticks(target) >= 20;
+    }
+
+    /** What a copy was made from: the converter's version and the source's size and modification time in nanoseconds. */
+    private record Note(int version, long size, long modified) {
+        /** Whether this note still describes the MP3: another size or time is other audio, whatever the copy's time. */
+        boolean matches(Path mp3) {
+            try {
+                return size == Files.size(mp3) && modified == Files.getLastModifiedTime(mp3).to(TimeUnit.NANOSECONDS);
+            } catch (IOException error) {
+                return false;
+            }
+        }
+    }
+
+    /** The note beside a copy, or null when it is missing or unreadable (either way the copy is remade). */
+    private static Note readNote(Path target) {
+        Path file = noteFile(target);
+        if (!Files.isRegularFile(file)) return null;
+        int version = -1;
+        long size = -1, modified = -1;
         try {
-            return Files.isRegularFile(target) && Files.getLastModifiedTime(target).compareTo(Files.getLastModifiedTime(mp3)) >= 0
-                    && CompanionMusicLibrary.ticks(target) >= 20;
-        } catch (IOException error) {
-            return false;
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                int equals = line.indexOf('=');
+                if (equals <= 0) continue;
+                String key = line.substring(0, equals).strip(), value = line.substring(equals + 1).strip();
+                switch (key) {
+                    case "converter" -> version = Integer.parseInt(value);
+                    case "size" -> size = Long.parseLong(value);
+                    case "mtime" -> modified = Long.parseLong(value);
+                    default -> { }
+                }
+            }
+        } catch (IOException | NumberFormatException error) {
+            return null;
+        }
+        return version < 0 || size < 0 || modified < 0 ? null : new Note(version, size, modified);
+    }
+
+    private static Path noteFile(Path target) { return target.resolveSibling(target.getFileName() + NOTE); }
+
+    /** Records what the copy was made from, after it is in place: a copy is trusted only while this note matches its MP3. */
+    private static void writeNote(Path target, long size, long modified) throws IOException {
+        Path file = noteFile(target);
+        Path temporary = file.resolveSibling("." + file.getFileName() + ".tmp");
+        Files.writeString(temporary, "converter=" + VERSION + "\nsize=" + size + "\nmtime=" + modified + "\n", StandardCharsets.UTF_8);
+        try {
+            Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException fallback) {
+            Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
     private static String stamp(Path file) {
         try {
-            return Files.size(file) + "@" + Files.getLastModifiedTime(file).toMillis();
+            return Files.size(file) + "@" + Files.getLastModifiedTime(file).to(TimeUnit.NANOSECONDS);
         } catch (IOException error) {
             return "?";
         }
@@ -105,9 +165,13 @@ public final class Mp3Ogg {
 
     /**
      * Writes the Ogg Vorbis copy of an MP3: every frame is decoded to PCM and handed to the encoder, and the pages are written as
-     * they come. A half-written copy is never left behind: the file is written under a temporary name and moved into place.
+     * they come. A half-written copy is never left behind: the file is written under a temporary name and moved into place, and the
+     * note saying what it was made from is written after it. The source's size and time are taken before it is read, so a file
+     * changed while it is converted does not get a note that claims it was not.
      */
     static void convert(Path mp3, Path target) throws IOException {
+        long size = Files.size(mp3);
+        long modified = Files.getLastModifiedTime(mp3).to(TimeUnit.NANOSECONDS);
         Path temporary = target.resolveSibling("." + target.getFileName() + ".tmp");
         try (InputStream input = new BufferedInputStream(Files.newInputStream(mp3));
              OutputStream output = new BufferedOutputStream(Files.newOutputStream(temporary))) {
@@ -138,8 +202,14 @@ public final class Mp3Ogg {
         }
         try {
             Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (java.nio.file.AtomicMoveNotSupportedException fallback) {
+        } catch (AtomicMoveNotSupportedException fallback) {
             Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+        try {
+            writeNote(target, size, modified);
+        } catch (IOException error) {
+            // The copy itself is fine; without its note it is simply made again on the next scan.
+            LOGGER.warn("AI Companion: the note beside {} could not be written: {}", target.getFileName(), error.toString());
         }
     }
 
@@ -197,7 +267,7 @@ public final class Mp3Ogg {
             int setup = new VorbisEnc().initVBR(info, channels, rate, QUALITY);
             if (setup != 0) throw new IOException("the Vorbis encoder does not support " + channels + " channel(s) at " + rate + " Hz");
             comment.init();
-            comment.addTag("ENCODER", "AI Companion (jVorbisEnc)");
+            comment.addTag("ENCODER", "AI Companion (jVorbisEnc) v" + VERSION);
             dsp.analysisInit(info);
             block.blockInit(dsp);
             stream.init(("aicompanion-" + rate + "-" + channels).hashCode());

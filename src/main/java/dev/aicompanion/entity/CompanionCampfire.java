@@ -92,8 +92,9 @@ public final class CompanionCampfire {
      * <p>Such a request reads the folder afresh first, so a recording put there while the game runs is picked up without a reload,
      * and it changes the tune only to a recording that is really another one — of the kind asked for when a mood was asked, any
      * other for «другую», standard Minecraft music for «из майнкрафта». When the folder has nothing else of that kind the one
-     * playing simply goes on and the answer says there are no other songs; the same recording is never restarted and called a
-     * change. The answer is built from the pick that actually started, never from an intention.
+     * playing simply goes on, and the answer says so plainly: «Таких песен нет.» when the folder holds other recordings but none of
+     * the kind asked for, «Других песен не знаю.» only when there is no other recording at all. The same recording is never
+     * restarted and called a change. The answer is built from the pick that actually started, never from an intention.
      */
     public CompanionActionResult request(ServerPlayer player, String mood) {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для музыки нужен загруженный мир.");
@@ -104,8 +105,9 @@ public final class CompanionCampfire {
             java.util.List<CompanionMusicLibrary.Track> tracks = CompanionMusicLibrary.rescan();
             if (phase == Phase.PLAY) {
                 CompanionMusicLibrary.Pick next = CompanionMusicLibrary.change(tracks, mood, tune.soundId(), c.getRandom());
-                // Nothing else of the asked kind (or nothing else at all): he plays the one he is playing on, and says so.
-                if (next == null) return c.placement.recordActionResult(CompanionActionResult.ok(NO_OTHER));
+                // Nothing else of the asked kind (or nothing else at all): he plays the one he is playing on, and says which of the
+                // two it is — no recording of that kind while there are others, or nothing else at all.
+                if (next == null) return c.placement.recordActionResult(CompanionActionResult.ok(noChange(mood, tracks)));
                 silence();
                 start(next);
                 return c.placement.recordActionResult(CompanionActionResult.ok(whatStarts(mood)));
@@ -140,6 +142,17 @@ public final class CompanionCampfire {
 
     /** Said plainly when the folder has nothing other than the recording playing now: he plays on rather than start it over. */
     private static final String NO_OTHER = "Других песен не знаю.";
+    /** Said plainly when the folder has other recordings but none of the kind asked for: the one playing goes on. */
+    private static final String NO_SUCH_KIND = "Таких песен нет.";
+
+    /**
+     * The honest answer to a request that could not change the tune: «Таких песен нет.» when the folder holds other recordings but
+     * none of the kind asked for, «Других песен не знаю.» only when there is no other recording at all.
+     */
+    private String noChange(String mood, List<CompanionMusicLibrary.Track> tracks) {
+        boolean moodAsked = "calm".equals(mood) || "cheerful".equals(mood);
+        return moodAsked && CompanionMusicLibrary.hasOther(tracks, tune.soundId()) ? NO_SUCH_KIND : NO_OTHER;
+    }
 
     /** What he says of a tune that really starts: short and plain, from the kind that was asked for. */
     private static String whatStarts(String mood) {
