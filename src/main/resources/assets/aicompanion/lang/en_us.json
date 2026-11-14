@@ -1,6 +1,9 @@
 {
   "mod.aicompanion.title": "AI Companion",
   "entity.aicompanion.companion": "Companion",
+  "entity.aicompanion.seat": "Seat",
+  "item.aicompanion.guitar": "Oleg's guitar",
+  "subtitles.aicompanion.guitar": "Oleg plays the guitar",
   "key.aicompanion.open_chat": "Open companion chat and history (C)",
   "key.aicompanion.open_interface": "Open companion interface and tasks",
   "key.aicompanion.push_to_talk": "Talk without opening chat (V)",

@@ -85,6 +85,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     static final EntityDataAccessor<Boolean> DATA_SOCIAL_SAFE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     static final EntityDataAccessor<Boolean> DATA_FIGHTING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    /** By the fire: standing, sitting with the guitar, or playing it (CompanionCampfire); drawn by CompanionRenderer. */
+    static final EntityDataAccessor<Integer> DATA_CAMPFIRE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+    /** The sound id of the tune he plays now, empty between tunes: the client plays it from this (client/CompanionCampfireAudio). */
+    static final EntityDataAccessor<String> DATA_CAMPFIRE_TUNE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
+    /** Counts tune starts, so the client restarts the recording even when the same one is asked for again. */
+    static final EntityDataAccessor<Integer> DATA_CAMPFIRE_TUNE_START = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
@@ -140,6 +146,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
+    /** Whether he plays by the fire at all (the player's switch, on in old saves: CompanionEntityNbt). */
+    private boolean playsByTheFire = true;
     private boolean replantOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
@@ -186,6 +194,27 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean urgentOrder() { return parked.enabled(); }
     public void setUrgentOrder(boolean on) { parked.enable(on); }
     private final CompanionLighting lighting = new CompanionLighting(this);
+    final CompanionCampfire campfire = new CompanionCampfire(this);
+    /** An evening by the fire with the guitar (CompanionCampfire). */
+    public CompanionCampfire campfire() { return campfire; }
+    /** Client and server: CompanionCampfire.STANDING, SITTING or PLAYING. */
+    public int campfirePose() { return entityData.get(DATA_CAMPFIRE); }
+    /** Client and server: the sound id of the tune playing now (aicompanion:guitar_folder/… or a vanilla minecraft:music…), or empty. */
+    public String campfireTune() { return entityData.get(DATA_CAMPFIRE_TUNE); }
+    /** Client and server: counts the tunes started, so a recording asked for again is started over, not left sounding. */
+    public int campfireTuneStart() { return entityData.get(DATA_CAMPFIRE_TUNE_START); }
+    void setCampfireTune(String soundId) {
+        if (level().isClientSide) return;
+        if (!soundId.isEmpty()) entityData.set(DATA_CAMPFIRE_TUNE_START, entityData.get(DATA_CAMPFIRE_TUNE_START) + 1);
+        entityData.set(DATA_CAMPFIRE_TUNE, soundId);
+    }
+    /** Whether he plays by the fire at all — by himself or on «сыграй» (the player's switch in «Поведение», on in old saves). */
+    public boolean playsByTheFire() { return playsByTheFire; }
+    public void setPlaysByTheFire(boolean on) {
+        playsByTheFire = on;
+        // Turned off in the middle of an evening: the guitar goes away at once.
+        if (!on) campfire.end("switch_off");
+    }
     public CompanionLighting lighting() { return lighting; }
     /** «Порядок и запас»: deeds of his own while the player asks for nothing (CompanionAutonomy). */
     public CompanionAutonomy autonomy() { return autonomy; }
@@ -259,6 +288,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 + "; маршрут=" + (getNavigation().isDone() ? "сейчас не выполняется" : "выполняется")
                 + "; добыча=" + (isMiningAnimation() ? "есть анимация" : "нет анимации")
                 + "; здоровье=" + Math.round(getHealth()) + "/" + Math.round(getMaxHealth())
+                + (campfire.active() ? "; музыка=" + campfire.forAi() : "")
                 + (inventoryViewers > 0 ? "; открыт инвентарь, действия приостановлены" : "")
                 + "; самостоятельность=" + (!autonomy.enabled() ? "выкл." : autonomy.running() ? "вкл., сейчас своё дело без просьбы: " + autonomy.deedName()
                         : autonomy.held() ? "вкл., на паузе по приказу игрока" : "вкл., работает на месте")
@@ -370,6 +400,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(3, new CompanionDigGoal(this));
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
         this.goalSelector.addGoal(3, new CompanionWaterFill.RefillGoal(this));
+        this.goalSelector.addGoal(3, new CompanionCampfire.SitGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
         this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F) {
@@ -460,6 +491,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_SOCIAL, ""); builder.define(DATA_SOCIAL_SERIAL, 0); builder.define(DATA_SOCIAL_TIME, 0L);
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
         builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
+        builder.define(DATA_CAMPFIRE, CompanionCampfire.STANDING); builder.define(DATA_CAMPFIRE_TUNE, "");
+        builder.define(DATA_CAMPFIRE_TUNE_START, 0);
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
@@ -712,6 +745,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
+        // Sitting with the guitar he is where he means to be, however far the player stands (owner 09.11: he got up between tunes).
+        if (campfirePose() != CompanionCampfire.STANDING) return null;
         var player = getOwnerPlayer();
         // The player in the dragon's breath: its edge, not the player, or the breath's walls would look like a trap.
         if (!autonomy.staysAtWork() && (following || protecting) && player != null && (distanceToSqr(player) > 16 || player.getY() - getY() > 1.25)) return dragonBreath.meetingPoint(player, false);
@@ -972,6 +1007,20 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         super.travel(input);
     }
 
+    /**
+     * Sitting by the fire he faces it: the body keeps the direction he sat down in (CompanionCampfire sets it as his yaw, which the
+     * client receives too), and the head turns from it no further than a person's would, even to look at the player behind him.
+     */
+    @Override protected net.minecraft.world.entity.ai.control.BodyRotationControl createBodyControl() {
+        return new net.minecraft.world.entity.ai.control.BodyRotationControl(this) {
+            @Override public void clientTick() {
+                if (campfirePose() == CompanionCampfire.STANDING) { super.clientTick(); return; }
+                setYBodyRot(getYRot());
+                setYHeadRot(net.minecraft.util.Mth.rotateIfNecessary(getYHeadRot(), getYRot(), 75));
+            }
+        };
+    }
+
     /** The game advances the stroke the renderer draws only for players and monsters; a pathfinder mob is neither,
      * so without this his arm stayed still through every hit (Monster.aiStep does the same for the same reason). */
     @Override public void aiStep() {
@@ -1007,11 +1056,15 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         social.updateExpression();
         social.tick();
         lighting.tick();
+        campfire.tick();
         if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
         goals.tick();
         parked.tick();
         // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
         // (CompanionGaze, owner 29.10). Work and hunting keep the eyes entirely: he does not turn even to talk (owner 31.10).
+        // Sitting by the fire his eyes are on the fire only, even when the player speaks to him or looks at him (owner 09.11).
+        boolean seated = campfirePose() != CompanionCampfire.STANDING;
+        if (seated) gazeTalkTicks = 0;
         if (gazeTalkTicks > 0) {
             gazeTalkTicks--;
             var spokenTo = getOwnerPlayer();
@@ -1028,7 +1081,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // The player looks at him or touches him: he looks back while those eyes are on him, but never while he works
         // (CompanionGaze, owner 29.10).
         var lookingAtMe = getOwnerPlayer();
-        if (lookingAtMe != null && !level().isClientSide && gazeMeetsEyes()) {
+        if (lookingAtMe != null && !level().isClientSide && !seated && gazeMeetsEyes()) {
             // A body that touches his own counts as being addressed even in the middle of work (the owner asked for this, 31.10).
             if (distanceToSqr(lookingAtMe) < GAZE_TOUCH_RANGE_SQR) gazeTalk();
             // The gaze of the player only counts while his own work does not hold his eyes.

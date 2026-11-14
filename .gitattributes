@@ -8,3 +8,8 @@ src/generated/**/*.json text eol=lf
 gradlew text eol=lf
 *.sh text eol=lf
 *.bat text eol=crlf
+
+# Vendored third-party sources keep the upstream style, including its trailing whitespace and tabs:
+# a whitespace-only rewrite would make every future update of the library a whole-file diff.
+src/main/java/javazoom/** -whitespace
+src/main/java/biniu/** -whitespace

@@ -1,6 +1,9 @@
 {
   "mod.aicompanion.title": "ИИ-компаньон",
   "entity.aicompanion.companion": "Компаньон",
+  "entity.aicompanion.seat": "Сиденье",
+  "item.aicompanion.guitar": "Гитара Олега",
+  "subtitles.aicompanion.guitar": "Олег играет на гитаре",
   "key.aicompanion.open_chat": "Открыть историю и чат компаньона (C)",
   "key.aicompanion.open_interface": "Открыть интерфейс и задачи компаньона",
   "key.aicompanion.push_to_talk": "Говорить с компаньоном, не открывая чат (V)",

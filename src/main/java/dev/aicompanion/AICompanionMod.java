@@ -24,6 +24,13 @@ public final class AICompanionMod {
     public static final Logger LOGGER = LogUtils.getLogger();
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES = DeferredRegister.create(Registries.ENTITY_TYPE, MOD_ID);
     public static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, MOD_ID);
+    public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MOD_ID);
+    /**
+     * Oleg's own guitar for the evenings by the fire (entity/CompanionCampfire). Only the renderer draws it in his hands: it is in no
+     * creative tab, no recipe and no loot, and is never put into his bag or handed out.
+     */
+    public static final net.neoforged.neoforge.registries.DeferredItem<net.minecraft.world.item.Item> GUITAR = ITEMS.registerSimpleItem(
+            "guitar", new net.minecraft.world.item.Item.Properties().stacksTo(1));
     public static final DeferredHolder<MenuType<?>, MenuType<CompanionMenu>> COMPANION_MENU = MENUS.register(
             "companion_inventory", () -> IMenuTypeExtension.create(CompanionMenu::fromNetwork));
     public static final DeferredHolder<EntityType<?>, EntityType<CompanionEntity>> COMPANION = ENTITY_TYPES.register(
@@ -33,11 +40,16 @@ public final class AICompanionMod {
                     .vehicleAttachment(net.minecraft.world.entity.player.Player.DEFAULT_VEHICLE_ATTACHMENT)
                     // His place goes to the client every tick, not every third: a fast fall is drawn where it is (CompanionEntity.lerpTo).
                     .updateInterval(1).build("aicompanion:companion"));
+    /** The invisible point a player sits on after /sit (entity/CompanionSeat): low enough that he sits on the block itself. */
+    public static final DeferredHolder<EntityType<?>, EntityType<dev.aicompanion.entity.CompanionSeat>> SEAT = ENTITY_TYPES.register(
+            "seat", () -> EntityType.Builder.<dev.aicompanion.entity.CompanionSeat>of(dev.aicompanion.entity.CompanionSeat::new, MobCategory.MISC)
+                    .sized(0.2F, 0.1F).noSummon().fireImmune().clientTrackingRange(10).build("aicompanion:seat"));
 
     public AICompanionMod(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT, OpenRouterConfig.SPEC);
         ENTITY_TYPES.register(modEventBus);
         MENUS.register(modEventBus);
+        ITEMS.register(modEventBus);
         modEventBus.addListener(CompanionEntity::createAttributes);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::onEntityJoin);
@@ -48,6 +60,7 @@ public final class AICompanionMod {
         // A player took a stack of a fall: the place's manifest loses it before any walk sets out for it.
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionDeathSpots::onPlayerPickup);
         NeoForge.EVENT_BUS.addListener(CompanionEvents::registerCommands);
+        NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionSeat::registerCommand);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionChunks::tick);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.client.CompanionServerPlanPort::tick);
         NeoForge.EVENT_BUS.addListener(dev.aicompanion.entity.CompanionAgenda::tick);

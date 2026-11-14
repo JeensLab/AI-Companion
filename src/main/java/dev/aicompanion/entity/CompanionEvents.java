@@ -306,6 +306,9 @@ public final class CompanionEvents {
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
         }
+        // The guitar goes away for an order of the player; naming the home, asking about a goal or the bag, or asking for the music again leave it.
+        boolean wasPlaying = !autonomousDispatch && !goalDispatch && !java.util.Set.of("set_home", "goal_status", "verify_item", "campfire_song").contains(action)
+                && companion.campfire().playerOrder(action);
         String previousTrace = companion.diagnosticTrace();
         boolean wasWorking = companion.isGatheringTask();
         companion.diagnosticBind(trace);
@@ -364,7 +367,9 @@ public final class CompanionEvents {
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
             case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
-            case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok("Ладно, остановился."); }
+            case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok(wasPlaying ? "Ладно, убираю гитару." : "Ладно, остановился."); }
+            // By a lit fire near the player, or by his own one set down from the bag: he sits down and plays (CompanionCampfire).
+            case "campfire_song" -> companion.campfire().request(player, item);
             case "come" -> {
                 companion.setFollowing(false);
                 yield companion.startWork("come", "", 1);

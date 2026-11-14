@@ -47,6 +47,8 @@ public final class InworldTtsClient {
     }
 
     private static CompletableFuture<Void> speak(String text, String trace, boolean joke) {
+        // A step that has nothing to promise (a tune, which the server picks) leaves no line to say aloud.
+        if (text == null || text.isBlank()) return CompletableFuture.completedFuture(null);
         String credential = OpenRouterConfig.INWORLD_API_KEY.get().trim();
         boolean macos = MacOsVoice.macos();
         boolean localVoiceOn = macos ? OpenRouterConfig.MACOS_VOICE.get() : OpenRouterConfig.WINDOWS_VOICE.get();

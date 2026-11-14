@@ -81,6 +81,12 @@ public final class CompanionDialogue {
             case "unequip_item" -> "Ага, уберу.";
             case "place_block" -> "Поставлю вот тут.";
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
+            case "campfire_song" -> switch (actions.getFirst().item()) {
+                // The tune itself is picked on the server, and what really started is said when the step returns: a line
+                // promised here would be the very lie this used to tell («сыграю другую» over the same recording).
+                case "calm", "cheerful", "next", "vanilla" -> "";
+                default -> "Сейчас сыграю.";
+            };
             case "set_home" -> "Запомнил, наш дом здесь.";
             case "remember_place" -> "Запомнил это место как «" + actions.getFirst().item() + "».";
             case "go_to_place" -> "Ага, иду к метке «" + actions.getFirst().item() + "».";
@@ -218,6 +224,7 @@ public final class CompanionDialogue {
             case "protect" -> "прикрывать тебя";
             case "stop_protect" -> "закончить охрану";
             case "wander" -> "осмотреться";
+            case "campfire_song" -> "сыграть на гитаре";
             case "pursue_goal" -> {
                 var book = dev.aicompanion.entity.CompanionPlaybooks.of(action.item(), action.count());
                 yield "взяться за долгую цель" + (book == null ? "" : ": " + book.title());
@@ -453,7 +460,7 @@ public final class CompanionDialogue {
         }
         if (actions.stream().anyMatch(action -> "come".equals(action.type()))) return speakable(last);
         if (actions.stream().anyMatch(action -> "hunt_mobs".equals(action.type()))) return speakable(last);
-        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander").contains(action.type()))) return "";
+        if (actions.stream().allMatch(action -> List.of("follow", "wait", "protect", "stop_protect", "wander", "campfire_song").contains(action.type()))) return "";
         return speakable(last);
     }
 
