@@ -44,8 +44,8 @@ public final class CompanionCampfire {
     static final int SETTLE_TICKS = 30, REST_TICKS = 60, REST_SPREAD = 80;
     /** What the client draws: standing, sitting with the guitar on his knee, playing it. */
     public static final int STANDING = 0, SITTING = 1, PLAYING = 2;
-    /** What «сыграй» may ask for: anything, a calm or sad tune, a cheerful one, or simply another one. */
-    public static final java.util.Set<String> MOODS = java.util.Set.of("", "calm", "cheerful", "next");
+    /** What «сыграй» may ask for: anything, a calm or sad tune, a cheerful one, simply another one, or standard Minecraft music. */
+    public static final java.util.Set<String> MOODS = java.util.Set.of("", "calm", "cheerful", "next", "vanilla");
 
     enum Phase { APPROACH, SETTLE, PLAY, REST }
 
@@ -86,19 +86,36 @@ public final class CompanionCampfire {
 
     /**
      * «Сыграй», «поставь костёр и сыграй»: by a lit fire near the player, by his own one set down from the bag, or beside the player.
-     * Asked while he plays («сыграй грустное», «давай другую»), only the tune changes: he stays on his seat (owner 09.11: every new
-     * request sent him walking to another seat, still drawn sitting).
+     * Asked while he plays («сыграй грустное», «давай другую», «сыграй из майнкрафта»), only the tune changes: he stays on his seat
+     * (owner 09.11: every new request sent him walking to another seat, still drawn sitting).
+     *
+     * <p>Such a request reads the folder afresh first, so a recording put there while the game runs is picked up without a reload,
+     * and it changes the tune only to a recording that is really another one — of the kind asked for when a mood was asked, any
+     * other for «другую», standard Minecraft music for «из майнкрафта». When the folder has nothing else of that kind the one
+     * playing simply goes on and the answer says there are no other songs; the same recording is never restarted and called a
+     * change. The answer is built from the pick that actually started, never from an intention.
      */
     public CompanionActionResult request(ServerPlayer player, String mood) {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для музыки нужен загруженный мир.");
         if (!MOODS.contains(mood)) return CompanionActionResult.failed("Не понял, какую мелодию сыграть.");
         if (!c.playsByTheFire()) return CompanionActionResult.failed("Играть у костра выключено в настройках поведения.");
         if (active()) {
+            // The folder is read again for the request: what was put there since the last scan is heard without a reload.
+            java.util.List<CompanionMusicLibrary.Track> tracks = CompanionMusicLibrary.rescan();
+            if (phase == Phase.PLAY) {
+                CompanionMusicLibrary.Pick next = CompanionMusicLibrary.change(tracks, mood, tune.soundId(), c.getRandom());
+                // Nothing else of the asked kind (or nothing else at all): he plays the one he is playing on, and says so.
+                if (next == null) return c.placement.recordActionResult(CompanionActionResult.ok(NO_OTHER));
+                silence();
+                start(next);
+                return c.placement.recordActionResult(CompanionActionResult.ok(whatStarts(mood)));
+            }
+            // Still sitting down or resting: the kind asked for is taken by the tune that starts next (now, while resting).
             wanted = mood;
-            CompanionMusicLibrary.Track previous = tune;
-            // Asked again while he plays: the next tune is picked now, so the answer says what actually starts.
-            CompanionMusicLibrary.Pick started = phase == Phase.PLAY || phase == Phase.REST ? startTune() : null;
-            return c.placement.recordActionResult(CompanionActionResult.ok(tuneAnswer(mood, started, previous)));
+            if (phase == Phase.REST) startTune();
+            boolean missing = !mood.isEmpty() && !"vanilla".equals(mood) && !CompanionMusicLibrary.hasMood(tracks, mood);
+            // No recording of that kind: the tune that starts is any, and the answer says so instead of promising the kind.
+            return c.placement.recordActionResult(CompanionActionResult.ok(missing ? missingMood(mood) : whatStarts(mood)));
         }
         if (c.getTarget() != null || danger(level, player.blockPosition()))
             return c.placement.recordActionResult(CompanionActionResult.blocked("Тут неспокойно, монстры рядом. Сыграю, когда отобьёмся."));
@@ -115,35 +132,28 @@ public final class CompanionCampfire {
         // No fire at all: none is needed for the music, he sits down beside the player.
         begin(level, lit != null ? lit : player.blockPosition(), lit != null, player, "request");
         wanted = mood;
-        String missing = mood.isEmpty() || CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood) ? "" : missingMood(mood) + " ";
+        String missing = mood.isEmpty() || "vanilla".equals(mood) || CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood)
+                ? "" : missingMood(mood) + " ";
         return c.placement.recordActionResult(CompanionActionResult.ok(missing + (own ? "Поставил костёр. Сейчас сяду и сыграю."
                 : lit != null ? "Сяду у костра и сыграю." : "Сяду рядом и сыграю.")));
     }
 
-    /**
-     * The answer to «сыграй грустное» or «повеселее» while he plays: honest when no recording of that kind is there — the tune
-     * picked now says whether it is — and honest about a restart too. The only recording of the kind asked for, or the only one at
-     * all, is started over rather than replaced, so the answer says that instead of promising another one. While he is still
-     * sitting down the folder is asked about the tune that will start.
-     */
-    private String tuneAnswer(String mood, CompanionMusicLibrary.Pick started, CompanionMusicLibrary.Track previous) {
-        boolean restart = started != null && previous != null && started.track().soundId().equals(previous.soundId());
-        if (!"calm".equals(mood) && !"cheerful".equals(mood))
-            return restart ? "Другой нет — сыграю эту же снова." : "Сыграю другую.";
-        boolean fits = started != null ? started.moodMatched() : CompanionMusicLibrary.hasMood(CompanionMusicLibrary.available(), mood);
-        if (!fits) return restart ? missingMoodAgain(mood) : missingMood(mood);
-        if (restart) return "calm".equals(mood) ? "Другой спокойной нет — сыграю эту же снова." : "Другой весёлой нет — сыграю эту же снова.";
-        return "calm".equals(mood) ? "Сыграю спокойную." : "Сыграю повеселее.";
+    /** Said plainly when the folder has nothing other than the recording playing now: he plays on rather than start it over. */
+    private static final String NO_OTHER = "Других песен не знаю.";
+
+    /** What he says of a tune that really starts: short and plain, from the kind that was asked for. */
+    private static String whatStarts(String mood) {
+        return switch (mood) {
+            case "calm" -> "Сыграю спокойную.";
+            case "cheerful" -> "Сыграю повеселее.";
+            case "vanilla" -> "Сыграю из майнкрафта.";
+            default -> "Другую.";
+        };
     }
 
-    /** Said plainly when no recording of the kind asked for is there. */
+    /** Said plainly when no recording of the kind asked for is there, before a tune starts: he will play any. */
     private static String missingMood(String mood) {
         return "calm".equals(mood) ? "Спокойных и грустных записей нет — сыграю любую." : "Весёлых записей нет — сыграю другую.";
-    }
-
-    /** The same, when the pick starts the one playing now over again rather than changing it. */
-    private static String missingMoodAgain(String mood) {
-        return "calm".equals(mood) ? "Спокойных и грустных записей нет — сыграю эту же снова." : "Весёлых записей нет — сыграю эту же снова.";
     }
 
     /** The player gave an order: the guitar goes away at once. True if he was playing. */
@@ -294,13 +304,20 @@ public final class CompanionCampfire {
 
     /**
      * The next tune: of the kind asked for if the recordings carry it, and never the same one twice running — a tune of the asked
-     * kind that is playing now starts over when it is the only one of that kind. Null when there is nothing to play at all.
+     * kind that is playing now starts over when it is the only one of that kind; «из майнкрафта» is standard Minecraft music.
+     * Null when there is nothing to play at all.
      */
     private CompanionMusicLibrary.Pick startTune() {
         if (phase == Phase.PLAY) silence();
         var pick = CompanionMusicLibrary.pick(CompanionMusicLibrary.available(), wanted, tune == null ? "" : tune.soundId(), c.getRandom());
         wanted = "";
         if (pick == null) { rest(); return null; } // nothing to play at all: he rests and looks again later
+        start(pick);
+        return pick;
+    }
+
+    /** Starts a tune that was picked: the client plays it from this id, and the start counter makes it begin from its beginning. */
+    private void start(CompanionMusicLibrary.Pick pick) {
         tune = pick.track();
         timer = 0;
         phase = Phase.PLAY;
@@ -310,7 +327,6 @@ public final class CompanionCampfire {
         c.setCampfireTune(tune.soundId());
         tunesStarted++;
         CompanionDiagnostics.event(c.diagnosticTrace(), "campfire_tune", "entity", c.getUUID(), "tune", tuneTitle(), "sound", tune.soundId());
-        return pick;
     }
 
     private void rest() {

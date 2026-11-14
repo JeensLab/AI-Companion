@@ -236,11 +236,16 @@ public final class CompanionLocalCommands {
         boolean evening = normalized.matches("(?sU).*\\b(посидим|посиди|сядь|садись|присядь|присядем)\\b.{0,20}\\bу\\s+костр.*");
         // «Давай другую мелодию», «следующую песню»: another tune, the verb left out.
         boolean another = normalized.matches("(?sU).*\\b(другую|следующую|еще\\s+одну|смени)\\b.{0,12}(мелоди|песн|музык).*");
-        return play && (music || !tuneMood(normalized).isEmpty()) || bare || evening || another;
+        // «Сыграй из майнкрафта», «включи майнкрафт»: standard Minecraft music, whatever the folder holds.
+        boolean vanilla = normalized.contains("майнкрафт") || normalized.contains("minecraft");
+        boolean vanillaAsk = vanilla && normalized.matches("(?sU).*\\b(включи|включай|вруби|поставь|сыграй|поиграй|сбацай)\\b.*");
+        return play && (music || vanilla || !tuneMood(normalized).isEmpty()) || bare || evening || another || vanillaAsk;
     }
 
     /** The kind of tune asked for, as the step's item after a space: calm (sad too), cheerful, another, or nothing named. */
     static String tuneMood(String normalized) {
+        // «Из майнкрафта» names the source, not a mood: it wins over a mood word beside it.
+        if (normalized.contains("майнкрафт") || normalized.contains("minecraft")) return " vanilla";
         if (normalized.matches("(?sU).*(грустн|печальн|спокойн|тих|медленн|лиричн|нежн|задумчив).*")) return " calm";
         if (normalized.matches("(?sU).*(весел|бодр|задорн|быстр|танцевальн|зажигательн|радостн).*")) return " cheerful";
         if (normalized.matches("(?sU).*\\b(другую|следующую|еще\\s+одну|смени)\\b.*")) return " next";

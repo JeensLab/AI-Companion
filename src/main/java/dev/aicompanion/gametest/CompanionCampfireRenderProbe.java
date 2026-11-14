@@ -29,7 +29,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
  * Opt-in offline render QA of the evening by the fire (-Daicompanion.campfireProbe=true on runClient; the gametest package is
  * excluded from the release JAR): a fresh flat world, a lit campfire, «сыграй», then screenshots of him sitting with the guitar from
  * the front, the side and at night into the client's screenshots folder, then «повеселее» and «спокойнее» — each must make the client
- * stream a different recording, unless that mood holds a single recording, which is then restarted — and a check that the client
+ * stream a different recording, unless that mood holds no other one, which then keeps playing — and a check that the client
  * streamed his guitar recordings at all and that the game's own music does not sound over them (keep the master volume above zero,
  * the game skips silent sounds). No provider key is needed.
  */
@@ -146,17 +146,17 @@ public final class CompanionCampfireRenderProbe {
             mc.stop();
             return;
         }
-        // Asking for a mood whose pool holds one recording restarts the recording that is playing instead of switching: the same
-        // id streams again, so the restart is accepted when the server's own counter moved and that recording is the only one the
-        // mood can offer. Without this, a folder with a single cheerful or calm recording would fail as if nothing had happened.
-        if (ticks - changeAt > 20 && oleg.campfireTuneStart() != askedStart && before.equals(oleg.campfireTune())
-                && noOtherRecordingFor(mood)) {
-            AICompanionMod.LOGGER.info("Campfire probe: «{}» restarted the only recording of that mood: {} (start {} → {})",
+        // Asking for a mood whose pool holds no other recording keeps the recording that is playing going, and says so: the
+        // same id streams on, so that is accepted when it is the only recording the mood can offer. Without this, a folder
+        // with a single cheerful or calm recording would fail as if nothing had happened.
+        if (ticks - changeAt > 20 && before.equals(oleg.campfireTune()) && noOtherRecordingFor(mood)
+                && oleg.campfirePose() == CompanionCampfire.PLAYING) {
+            AICompanionMod.LOGGER.info("Campfire probe: «{}» has no other recording of that mood: {} keeps playing (start {} → {})",
                     mood, streamed, askedStart, oleg.campfireTuneStart());
             second = streamed;
             if (stage == 1) { stage = 2; stageAt = ticks; changeAt = 0; return; }
             passed = true;
-            AICompanionMod.LOGGER.info("CAMPFIRE_RENDER_PROBE_PASSED: {} screenshots, recordings streamed {} → {} (a mood with one recording restarted it), the game's own music silent over the guitar: {}",
+            AICompanionMod.LOGGER.info("CAMPFIRE_RENDER_PROBE_PASSED: {} screenshots, recordings streamed {} → {} (a mood with no other recording kept it playing), the game's own music silent over the guitar: {}",
                     SHOTS.length, first, second, musicChecked);
             mc.stop();
             return;
@@ -166,8 +166,8 @@ public final class CompanionCampfireRenderProbe {
     }
 
     /**
-     * Whether the mood asked for leaves no other recording to switch to: its pool holds a single recording, or the whole folder
-     * holds one — then the tune that is playing is restarted, and the streamed id legitimately stays the same.
+     * Whether the mood asked for leaves no other recording to switch to: the folder has no recording of that kind, or only the one
+     * playing — then the tune keeps playing, and the streamed id legitimately stays the same.
      */
     private static boolean noOtherRecordingFor(String mood) {
         var tracks = CompanionMusicLibrary.available();
@@ -176,7 +176,7 @@ public final class CompanionCampfireRenderProbe {
                 : CompanionMusicLibrary.Mood.CALM;
         int tagged = 0;
         for (CompanionMusicLibrary.Track track : tracks) if (track.mood() == wanted) tagged++;
-        return tagged == 1;
+        return tagged <= 1;
     }
 
     /** The four views of him playing, one every two seconds, into the client's screenshots folder. */

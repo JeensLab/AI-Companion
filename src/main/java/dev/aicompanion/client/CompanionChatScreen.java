@@ -92,7 +92,8 @@ public final class CompanionChatScreen extends Screen {
                     dropThinkingLine();
                     return;
                 }
-                replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
+                if (reply.text().isBlank()) dropThinkingLine();
+                else replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
                 CompanionMemoryFlow.companionSaid("model", reply.text());
                 CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", reply.text());
                 CompanionAmbientClient.replyDelivered(reply.text());

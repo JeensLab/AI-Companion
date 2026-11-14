@@ -27,16 +27,26 @@ public final class CompanionActionExecutor {
     public static synchronized CompletableFuture<String> execute(List<PlannedAction> actions, int repeat, long generation, String trace) {
         actions = CompanionPlanCodec.repeated(actions, repeat);
         if (actions.isEmpty()) return CompletableFuture.completedFuture("");
-        if (generation != planGeneration.get()) return CompletableFuture.completedFuture("План отменён игроком.");
-        if (link.contains(actions)) {
-            CompanionDiagnostics.event(trace, "duplicate_plan_rejected", "actions", actions, "generation", generation);
-            return CompletableFuture.completedFuture("Такое поручение уже выполняется или стоит в очереди. Повторно не запускаю.");
-        }
         Minecraft client = Minecraft.getInstance();
         var server = client.getSingleplayerServer();
         var playerId = client.player == null ? null : client.player.getUUID();
         CompanionDiagnostics.event(trace, "plan_queued", "generation", generation, "repeat", repeat, "actions", actions);
         link.bind(server, playerId);
+        List<PlannedAction> planned = actions;
+        // A request for the guitar reads the folder afresh on this client first: a recording put there since the last resource
+        // reload must be known to the sound engine before the tune starts, so the switch is heard without pressing F3+T.
+        CompletableFuture<Void> ready = planned.stream().anyMatch(action -> "campfire_song".equals(action.type()))
+                ? CompanionMusicPack.refreshForRequest() : CompletableFuture.completedFuture(null);
+        return ready.thenCompose(unused -> submitWhenCurrent(planned, generation, trace));
+    }
+
+    /** Queues the plan unless it was invalidated meanwhile or the same plan is already queued. */
+    private static CompletableFuture<String> submitWhenCurrent(List<PlannedAction> actions, long generation, String trace) {
+        if (generation != planGeneration.get()) return CompletableFuture.completedFuture("План отменён игроком.");
+        if (link.contains(actions)) {
+            CompanionDiagnostics.event(trace, "duplicate_plan_rejected", "actions", actions, "generation", generation);
+            return CompletableFuture.completedFuture("Такое поручение уже выполняется или стоит в очереди. Повторно не запускаю.");
+        }
         return link.submit(actions, trace, () -> generation != planGeneration.get());
     }
     public static CompletableFuture<String> execute(List<PlannedAction> actions) { return execute(actions, currentPlanGeneration()); }

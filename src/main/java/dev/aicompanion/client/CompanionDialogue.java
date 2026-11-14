@@ -82,9 +82,9 @@ public final class CompanionDialogue {
             case "place_block" -> "Поставлю вот тут.";
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
             case "campfire_song" -> switch (actions.getFirst().item()) {
-                case "calm" -> "Сыграю что-нибудь спокойное.";
-                case "cheerful" -> "Сыграю повеселее.";
-                case "next" -> "Давай другую.";
+                // The tune itself is picked on the server, and what really started is said when the step returns: a line
+                // promised here would be the very lie this used to tell («сыграю другую» over the same recording).
+                case "calm", "cheerful", "next", "vanilla" -> "";
                 default -> "Сейчас сыграю.";
             };
             case "set_home" -> "Запомнил, наш дом здесь.";

@@ -21,10 +21,11 @@ import java.util.Set;
 
 /**
  * What he plays by the fire (the owner's ruling, 13.11): the player's own folder of recordings, not a fixed set baked into the JAR —
- * no music ships in the mod at all. Every .ogg in config/aicompanion/music can be played; while that folder has none, he plays
- * standard Minecraft music instead ({@link CompanionTunes}), and nothing is said about it. A recording's mood is the digit its file
- * name starts with, 1 (sad) to 9 (happy): 1–4 is the calm kind («сыграй грустное»), 6–9 the cheerful one («повеселее»), and 5 is
- * neither; so both requests can pick a recording of that kind. With no such recording he honestly plays any.
+ * no music ships in the mod at all. Every recording in config/aicompanion/music can be played: an .ogg as it is, an .mp3 through the
+ * Ogg Vorbis copy made beside it once ({@link Mp3Ogg}), because the game's sound engine reads Ogg Vorbis only; while that folder has
+ * none, he plays standard Minecraft music instead ({@link CompanionTunes}), and nothing is said about it. A recording's mood is the
+ * digit its file name starts with, 1 (sad) to 9 (happy): 1–4 is the calm kind («сыграй грустное»), 6–9 the cheerful one
+ * («повеселее»), and 5 is neither; so both requests can pick a recording of that kind. With no such recording he honestly plays any.
  *
  * <p>No client classes here: the server scans the same folder to choose the tune, and the client's own resource pack
  * (client/CompanionMusicPack) serves these files to the game's sound engine by the sound ids made here. The length of a recording is
@@ -40,10 +41,12 @@ public final class CompanionMusicLibrary {
      */
     public static final String FOLDER_README = """
             Музыка Олега у костра.
-            Положите сюда записи в Ogg Vorbis (.ogg, моно): каждую из них Олег сможет сыграть.
+            Положите сюда записи в Ogg Vorbis (.ogg, моно) или в MP3 (.mp3): каждую из них Олег сможет сыграть.
+            MP3 переводится в Ogg Vorbis рядом с ним (файл name.mp3.ogg) один раз — его и играет клиент.
             Настроение записи — число в начале имени файла, от 1 (самая грустная) до 9 (самая весёлая):
             1–4 — спокойная или грустная, 5 — середина, 6–9 — весёлая. Например, 2_romance.ogg.
-            Папка читается при запуске игры и при входе в мир; добавили записи на ходу — нажмите F3+T.
+            Папка читается при запуске игры, при входе в мир и заново на каждую просьбу сыграть другую или повеселее:
+            добавили записи на ходу — просто попросите другую, перезапуск не нужен.
             На сервере записи нужны и серверу, и клиенту: сервер по своей папке выбирает мелодию, клиент по своей её играет,
             поэтому одинаковый набор должен лежать в config/aicompanion/music и на сервере, и у каждого игрока.
             """;
@@ -79,6 +82,16 @@ public final class CompanionMusicLibrary {
     }
 
     /**
+     * The folder read afresh for a request («другую», «повеселее», «погрустнее»): a recording put there while the game runs is
+     * picked up without a reload, and an .mp3 that failed to convert before is tried again. The client's pack is rebuilt by the
+     * request too (client/CompanionMusicPack), so the new recording is also one the sound engine knows.
+     */
+    public static List<Track> rescan() {
+        Mp3Ogg.forgetFailures();
+        return available();
+    }
+
+    /**
      * The standard Minecraft music for the fallback while the folder is empty (CompanionTunes): the same kind of track, with the
      * vanilla sound id the client resolves and no file of the player's.
      */
@@ -90,9 +103,11 @@ public final class CompanionMusicLibrary {
     }
 
     /**
-     * Every .ogg recording in a folder, by its file name, with the sound id its file gets, its title, its length in ticks and its
-     * mood. A missing folder is simply empty, and says so once; files that are not readable Ogg Vorbis are skipped with a line
-     * each. A scan is asked on every tune and on every resource-pack rebuild, so a line is said once per change, not every call.
+     * Every recording in a folder, by its file name, with the sound id its file gets, its title, its length in ticks and its mood:
+     * Ogg Vorbis files as they are, and MP3 files through the Ogg Vorbis copy made beside them once ({@link Mp3Ogg}), because the
+     * game's sound engine reads Ogg Vorbis only. A missing folder is simply empty, and says so once; files that are not readable
+     * are skipped with a line each. A scan is asked on every tune, on every request and on every resource-pack rebuild, so a line
+     * is said once per change, not every call.
      */
     public static List<Track> scan(Path dir) {
         if (!Files.isDirectory(dir)) {
@@ -102,7 +117,11 @@ public final class CompanionMusicLibrary {
         List<Path> files;
         try (var listing = Files.list(dir)) {
             files = listing.filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".ogg"))
+                    .filter(path -> {
+                        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+                        // The Ogg copy of an MP3 is served through the MP3 itself, not as a recording of its own.
+                        return name.endsWith(".ogg") && !name.endsWith(Mp3Ogg.CONVERTED) || name.endsWith(".mp3");
+                    })
                     .sorted(Comparator.comparing(path -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
                     .toList();
         } catch (IOException error) {
@@ -113,13 +132,20 @@ public final class CompanionMusicLibrary {
         Set<String> keys = new HashSet<>();
         for (Path file : files) {
             String name = file.getFileName().toString();
+            boolean mp3 = name.toLowerCase(Locale.ROOT).endsWith(".mp3");
             String base = name.substring(0, name.length() - 4);
-            int ticks = ticks(file);
+            Path playable = file;
+            if (mp3) {
+                playable = Mp3Ogg.converted(file);
+                if (playable == null) continue; // said once by the converter
+            }
+            int ticks = ticks(playable);
             if (ticks < 20) {
                 warn(file.toAbsolutePath().toString(), name + " is not a readable Ogg Vorbis recording, skipped");
                 continue;
             }
-            tracks.add(new Track(name, "aicompanion:guitar_folder/" + unique(clean(base), keys), title(base), ticks, mood(base)));
+            tracks.add(new Track(playable.getFileName().toString(), "aicompanion:guitar_folder/" + unique(clean(base), keys),
+                    title(base), ticks, mood(base)));
         }
         // What was found, in one line: the folder is the player's own, and a scan that comes back empty is why the vanilla music plays.
         say(dir, "the guitar folder " + dir + " holds " + tracks.size() + " playable recording(s)");
@@ -144,31 +170,56 @@ public final class CompanionMusicLibrary {
 
     /**
      * The tune for the next play: one of the kind asked for («calm» — sad or calm, «cheerful») when the recordings carry that mood,
-     * otherwise any of them with {@code moodMatched} false so he can say so; «next» and no request take any, never the one playing.
-     * A recording of the asked kind that is playing now is played again when it is the only one of that kind: asking for the mood
-     * restarts it rather than switching to a tune of the wrong kind.
+     * otherwise any of them with {@code moodMatched} false so he can say so; «vanilla» is standard Minecraft music whatever the
+     * folder holds; «next» and no request take any, never the one playing. A recording of the asked kind that is playing now is
+     * played again when it is the only one of that kind: an evening that goes on after a rest starts it over rather than switching
+     * to the wrong kind.
      */
     public static Pick pick(List<Track> tracks, String wanted, String avoidSoundId, RandomSource random) {
+        if ("vanilla".equals(wanted)) return new Pick(randomOf(without(fallback(), avoidSoundId), random), true);
         if (tracks.isEmpty()) return null;
         Mood mood = moodWanted(wanted);
         if (mood != null) {
             List<Track> tagged = new ArrayList<>();
             for (Track track : tracks) if (track.mood() == mood) tagged.add(track);
             if (!tagged.isEmpty()) {
-                List<Track> fresh = new ArrayList<>();
-                for (Track track : tagged) if (!track.soundId().equals(avoidSoundId)) fresh.add(track);
-                List<Track> pool = fresh.isEmpty() ? tagged : fresh;
-                return new Pick(pool.get(random.nextInt(pool.size())), true);
+                List<Track> fresh = without(tagged, avoidSoundId);
+                return new Pick(randomOf(fresh.isEmpty() ? tagged : fresh, random), true);
             }
         }
+        List<Track> fresh = without(tracks, avoidSoundId);
+        return new Pick(randomOf(fresh.isEmpty() ? tracks : fresh, random), mood == null);
+    }
+
+    /**
+     * The tune for a request made while he plays: a DIFFERENT recording — of the kind asked for when a mood was asked, any other
+     * for «другую», standard Minecraft music for «из майнкрафта» — so the answer never promises a change that is the same
+     * recording started over. Null when the folder holds nothing else of that kind (or nothing else at all): the one playing then
+     * simply goes on, and the answer says there are no other songs.
+     */
+    public static Pick change(List<Track> tracks, String wanted, String playingSoundId, RandomSource random) {
+        if ("vanilla".equals(wanted)) return new Pick(randomOf(without(fallback(), playingSoundId), random), true);
+        Mood mood = moodWanted(wanted);
+        List<Track> pool = new ArrayList<>();
+        for (Track track : tracks)
+            if (!track.soundId().equals(playingSoundId) && (mood == null || track.mood() == mood)) pool.add(track);
+        return pool.isEmpty() ? null : new Pick(randomOf(pool, random), true);
+    }
+
+    /** The tracks other than the one playing; the whole list when that is the only one. */
+    private static List<Track> without(List<Track> tracks, String soundId) {
         List<Track> fresh = new ArrayList<>();
-        for (Track track : tracks) if (!track.soundId().equals(avoidSoundId)) fresh.add(track);
-        List<Track> pool = fresh.isEmpty() ? tracks : fresh;
-        return new Pick(pool.get(random.nextInt(pool.size())), mood == null);
+        for (Track track : tracks) if (!track.soundId().equals(soundId)) fresh.add(track);
+        return fresh.isEmpty() ? tracks : fresh;
+    }
+
+    private static Track randomOf(List<Track> tracks, RandomSource random) {
+        return tracks.get(random.nextInt(tracks.size()));
     }
 
     /** Whether any recording fits the kind asked for, so the answer to «сыграй грустное» can be honest before a tune starts. */
     public static boolean hasMood(List<Track> tracks, String wanted) {
+        if ("vanilla".equals(wanted)) return true;
         Mood mood = moodWanted(wanted);
         if (mood == null) return true;
         for (Track track : tracks) if (track.mood() == mood) return true;
@@ -224,7 +275,7 @@ public final class CompanionMusicLibrary {
      * The length of an Ogg Vorbis recording in ticks, read from its identification header (sample rate) and its last page (granule
      * position, the samples played); -1 when the file is not readable Ogg Vorbis.
      */
-    static int ticks(Path file) {
+    public static int ticks(Path file) {
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
             long size = channel.size();
             if (size < 64) return -1;

@@ -87,6 +87,12 @@ public final class CompanionCampfireTests {
     @AfterBatch(batch = "campfire_folder") public static void folderReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
     @BeforeBatch(batch = "campfire_alone") public static void aloneReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
     @AfterBatch(batch = "campfire_alone") public static void aloneReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_switch") public static void switchReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_switch") public static void switchReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_added") public static void addedReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_added") public static void addedReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_mp3") public static void mp3ReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_mp3") public static void mp3ReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
     @BeforeBatch(batch = "campfire_library") public static void libraryReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
     @AfterBatch(batch = "campfire_library") public static void libraryReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
 
@@ -612,6 +618,21 @@ public final class CompanionCampfireTests {
         var honest = CompanionMusicLibrary.pick(onlyCalm, "cheerful", "", random);
         h.assertTrue(!honest.moodMatched() && honest.track().mood() == CompanionMusicLibrary.Mood.CALM,
                 "A cheerful request was not answered honestly: " + honest.track());
+        // A request while he plays changes the disc only to a really different one; with nothing else it says so instead.
+        for (int i = 0; i < 20; i++) {
+            var changed = CompanionMusicLibrary.change(discs, "calm", playing, random);
+            h.assertTrue(changed != null && changed.track().mood() == CompanionMusicLibrary.Mood.CALM
+                            && !changed.track().soundId().equals(playing),
+                    "«Погрустнее» did not change the disc: " + changed);
+            var vanilla = CompanionMusicLibrary.change(discs, "vanilla", "minecraft:music_disc.cat", random);
+            h.assertTrue(vanilla != null && vanilla.track().soundId().startsWith("minecraft:music_disc.")
+                            && !vanilla.track().soundId().equals("minecraft:music_disc.cat"),
+                    "«Из майнкрафта» did not change the disc: " + vanilla);
+        }
+        h.assertTrue(CompanionMusicLibrary.change(onlyCheerful, "cheerful", onlyCheerful.getFirst().soundId(), random) == null,
+                "The only cheerful disc was promised as another one");
+        h.assertTrue(CompanionMusicLibrary.change(onlyCalm, "cheerful", onlyCalm.getFirst().soundId(), random) == null,
+                "A cheerful change was promised with no cheerful disc");
         h.succeed();
     }
 
@@ -670,10 +691,11 @@ public final class CompanionCampfireTests {
 
     /**
      * One recording in the folder, cheerful, and he plays it: asked for the same kind, for the other kind, or simply for another
-     * one, the only recording starts over — and each answer says that instead of promising a different one.
+     * one, there is nothing else to change to — the recording goes on playing (it is not started over), and each answer says
+     * plainly that there are no other songs.
      */
     @GameTest(template = "empty", batch = "campfire_alone", timeoutTicks = 1200)
-    public static void theOnlyRecordingIsStartedOverAndTheAnswerSaysSo(GameTestHelper h) {
+    public static void theOnlyRecordingGoesOnAndTheAnswerSaysThereAreNoOthers(GameTestHelper h) {
         ground(h);
         java.nio.file.Path dir;
         try {
@@ -687,33 +709,193 @@ public final class CompanionCampfireTests {
         h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1).success(), "Not taken");
         int[] stage = {0};
         String[] title = {null};
+        int[] start = {0};
         h.onEachTick(() -> {
             if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
                 title[0] = c.campfire().tuneTitle();
-                int starts = c.campfireTuneStart();
+                start[0] = c.campfireTuneStart();
+                int played = c.campfire().playedTicks();
                 var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
-                h.assertTrue(again.success() && "Другой весёлой нет — сыграю эту же снова.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
-                        "The only cheerful recording was not started over: «" + c.campfire().tuneTitle() + "», start " + c.campfireTuneStart());
+                h.assertTrue(again.success() && "Других песен не знаю.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0]
+                                && c.campfire().playedTicks() >= played && c.campfirePose() == CompanionCampfire.PLAYING,
+                        "The only recording was restarted or stopped: «" + c.campfire().tuneTitle() + "», start "
+                                + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
                 stage[0] = 1;
-            } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
-                int starts = c.campfireTuneStart();
+            } else if (stage[0] == 1 && c.campfire().playedTicks() > 40) {
+                int played = c.campfire().playedTicks();
                 var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
-                h.assertTrue(again.success() && "Спокойных и грустных записей нет — сыграю эту же снова.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == starts + 1,
-                        "Not the only recording again: «" + c.campfire().tuneTitle() + "»");
+                h.assertTrue(again.success() && "Других песен не знаю.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0]
+                                && c.campfire().playedTicks() >= played,
+                        "Not the only recording still playing: «" + c.campfire().tuneTitle() + "»");
                 stage[0] = 2;
-            } else if (stage[0] == 2 && c.campfire().playedTicks() > 20) {
-                int starts = c.campfireTuneStart();
+            } else if (stage[0] == 2 && c.campfire().playedTicks() > 60) {
                 var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
-                h.assertTrue(again.success() && "Другой нет — сыграю эту же снова.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == starts + 1,
-                        "Not the only recording again: «" + c.campfire().tuneTitle() + "»");
+                h.assertTrue(again.success() && "Других песен не знаю.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0],
+                        "Not the only recording still playing: «" + c.campfire().tuneTitle() + "»");
                 stage[0] = 3;
             }
         });
         h.succeedWhen(() -> h.assertTrue(stage[0] == 3,
                 "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * Asked for another tune while he plays, with another recording in the folder, he really switches: the sound id the server
+     * syncs changes (not only the start counter), the new recording starts from its beginning, and the answer says so. A mood
+     * request takes a recording of that kind; «из майнкрафта» plays standard Minecraft music even while the folder is full.
+     */
+    @GameTest(template = "empty", batch = "campfire_switch", timeoutTicks = 1200)
+    public static void aRequestReallyChangesTheRecordingAndVanillaIgnoresTheFolder(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-switch");
+            writeOgg(dir, "1_quiet.ogg", 100);
+            writeOgg(dir, "3_sad.ogg", 100);
+            writeOgg(dir, "8_lively.ogg", 100);
+            writeOgg(dir, "7_happy.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "calm", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] playing = {null};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                playing[0] = tune(c).soundId();
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
+                h.assertTrue(again.success() && "Другую.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(!tune(c).soundId().equals(playing[0]), "The recording did not change: " + tune(c).soundId());
+                h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
+                        "The new recording was not started from its beginning: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
+                stage[0] = 1;
+            } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
+                playing[0] = tune(c).soundId();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
+                h.assertTrue(again.success() && "Сыграю повеселее.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CHEERFUL && !tune(c).soundId().equals(playing[0]),
+                        "Not a cheerful recording at once: «" + c.campfire().tuneTitle() + "»");
+                stage[0] = 2;
+            } else if (stage[0] == 2 && c.campfire().playedTicks() > 20) {
+                playing[0] = tune(c).soundId();
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "vanilla", 1);
+                h.assertTrue(again.success() && "Сыграю из майнкрафта.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(tune(c).soundId().startsWith("minecraft:music_disc.") && !tune(c).soundId().equals(playing[0])
+                                && c.campfireTuneStart() == starts + 1,
+                        "«Из майнкрафта» did not play vanilla music: " + tune(c).soundId());
+                stage[0] = 3;
+            } else if (stage[0] == 3 && c.campfire().playedTicks() > 20) {
+                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
+                h.assertTrue(again.success() && "Сыграю спокойную.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CALM && tune(c).soundId().startsWith("aicompanion:guitar_folder/"),
+                        "Not back to the folder's calm recording: «" + c.campfire().tuneTitle() + "»");
+                stage[0] = 4;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 4,
+                "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * A recording put into the folder while the evening goes on is picked up by the next request: the folder is read afresh, so
+     * «другую» switches to the file just added, without a reload and without the player pressing F3+T.
+     */
+    @GameTest(template = "empty", batch = "campfire_added", timeoutTicks = 1200)
+    public static void aRequestPicksUpARecordingAddedToTheFolder(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-added");
+            writeOgg(dir, "1_quiet.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "calm", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] playing = {null};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                playing[0] = tune(c).soundId();
+                try {
+                    writeOgg(dir, "8_added.ogg", 100);
+                } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
+                h.assertTrue(again.success() && "Другую.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue("Added".equals(c.campfire().tuneTitle()) && !tune(c).soundId().equals(playing[0])
+                                && c.campfireTuneStart() == starts + 1,
+                        "The recording added to the folder was not picked up: «" + c.campfire().tuneTitle() + "», start " + c.campfireTuneStart());
+                stage[0] = 1;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 1,
+                "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * An MP3 in the folder is made playable: it is converted once into Ogg Vorbis beside it ({@code name.mp3.ogg}, the copy is the
+     * marker), the copy keeps the recording's length and the mood digit of its name, the pack serves that copy under the sound id
+     * of the MP3, and the evening plays it. A second scan does not convert it again.
+     */
+    @GameTest(template = "empty", batch = "campfire_mp3", timeoutTicks = 1200)
+    public static void anMp3RecordingIsConvertedServedAndPlayed(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-mp3");
+            writeMp3(dir, "7_tone.mp3");
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        var tracks = CompanionMusicLibrary.scan(dir);
+        h.assertTrue(tracks.size() == 1, "The MP3 was not read as one recording: " + tracks);
+        var track = tracks.getFirst();
+        h.assertTrue("Tone".equals(track.title()) && track.mood() == CompanionMusicLibrary.Mood.CHEERFUL,
+                "The MP3 lost its name or mood: " + track);
+        h.assertTrue("7_tone.mp3.ogg".equals(track.file()), "The converted copy is not beside the MP3: " + track.file());
+        var copy = dir.resolve(track.file());
+        h.assertTrue(java.nio.file.Files.isRegularFile(copy), "No converted copy: " + copy);
+        h.assertTrue(track.ticks() >= 20 && track.ticks() <= 30, "The converted copy lost its length: " + track.ticks() + " ticks");
+        h.assertTrue(track.soundId().equals("aicompanion:guitar_folder/7_tone"), "Sound id: " + track.soundId());
+        // The copy is real Ogg Vorbis with the MP3's length, not a renamed MP3.
+        h.assertTrue(CompanionMusicLibrary.ticks(copy) == track.ticks(), "The copy is not readable Ogg Vorbis");
+        long size = -1;
+        try {
+            size = java.nio.file.Files.size(copy);
+            var again = CompanionMusicLibrary.scan(dir);
+            h.assertTrue(again.size() == 1 && again.getFirst().file().equals(track.file()) && java.nio.file.Files.size(copy) == size,
+                    "A second scan converted the MP3 again: " + again);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        // The pack serves the converted copy under the id of the MP3, so the client can play it.
+        var location = new net.minecraft.server.packs.PackLocationInfo("aicompanion_music_mp3",
+                net.minecraft.network.chat.Component.literal("test"), net.minecraft.server.packs.repository.PackSource.BUILT_IN, java.util.Optional.empty());
+        var pack = new CompanionMusicPack(location, dir);
+        var id = net.minecraft.resources.ResourceLocation.parse(track.soundId());
+        var fileId = net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(id.getNamespace(), "sounds/" + id.getPath() + ".ogg");
+        var served = pack.getResource(net.minecraft.server.packs.PackType.CLIENT_RESOURCES, fileId);
+        h.assertTrue(served != null, fileId + " is not served");
+        try (var in = served.get()) {
+            h.assertTrue(java.util.Arrays.equals(in.readAllBytes(), java.nio.file.Files.readAllBytes(copy)),
+                    "The pack does not serve the converted copy");
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        // And the evening plays it.
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1).success(), "Not taken");
+        h.succeedWhen(() -> {
+            h.assertTrue(c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20,
+                    "Not playing the MP3: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»");
+            h.assertTrue(track.soundId().equals(tune(c).soundId()), "The evening plays " + tune(c).soundId() + ", not the MP3");
+        });
     }
 
     /**
@@ -765,11 +947,15 @@ public final class CompanionCampfireTests {
         h.assertTrue("companion campfire calm".equals(CompanionLocalCommands.route("сыграй что нибудь грустное", "Олег")), "Sad tune");
         h.assertTrue("companion campfire cheerful".equals(CompanionLocalCommands.route("Олег, сыграй повеселее", "Олег")), "Cheerful tune");
         h.assertTrue("companion campfire next".equals(CompanionLocalCommands.route("давай другую мелодию", "Олег")), "Another tune: " + CompanionLocalCommands.route("давай другую мелодию", "Олег"));
+        for (String phrase : new String[]{"сыграй из майнкрафта", "сыграй что-нибудь из майнкрафта", "включи майнкрафт", "Олег, вруби майнкрафт"})
+            h.assertTrue("companion campfire vanilla".equals(CompanionLocalCommands.route(phrase, "Олег")), "Not vanilla music: " + phrase + " -> " + CompanionLocalCommands.route(phrase, "Олег"));
+        h.assertTrue("vanilla".equals(CompanionLocalCommands.actions("companion campfire vanilla").getFirst().item()), "Vanilla lost on the way to the step");
+        h.assertTrue(CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString("[{\"action\":\"campfire_song\",\"item\":\"vanilla\"}]")).getFirst().item().equals("vanilla"), "Codec vanilla");
         h.assertTrue("calm".equals(CompanionLocalCommands.actions("companion campfire calm").getFirst().item()), "Mood lost on the way to the step");
         h.assertTrue(CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString("[{\"action\":\"campfire_song\",\"item\":\"calm\"}]")).getFirst().item().equals("calm"), "Codec mood");
         for (String phrase : new String[]{"хватит играть", "Олег, перестань играть", "убери гитару"})
             h.assertTrue("companion stop".equals(CompanionLocalCommands.route(phrase, "Олег")), "Not a stop: " + phrase);
-        for (String phrase : new String[]{"давай сыграем в прятки", "не играй сейчас на гитаре", "поставь костёр"})
+        for (String phrase : new String[]{"давай сыграем в прятки", "не играй сейчас на гитаре", "поставь костёр", "расскажи про майнкрафт"})
             h.assertTrue(!"companion campfire".equals(CompanionLocalCommands.route(phrase, "Олег")), "Taken for music: " + phrase);
         var step = CompanionLocalCommands.actions("companion campfire").getFirst();
         h.assertTrue("campfire_song".equals(step.type()) && step.count() == 1 && step.item().isEmpty(), "Local step: " + step);
@@ -842,6 +1028,14 @@ public final class CompanionCampfireTests {
     /** A mono 32 kHz recording of the given length, as the folder would hold it. */
     private static void writeOgg(java.nio.file.Path dir, String name, int seconds) throws java.io.IOException {
         writeBytes(dir, name, ogg(1, 32000, seconds));
+    }
+
+    /** The tiny MP3 fixture of the repository, as the folder would hold it: a real MP3 the converter has to decode. */
+    private static void writeMp3(java.nio.file.Path dir, String name) throws java.io.IOException {
+        try (var in = CompanionCampfireTests.class.getResourceAsStream("/assets/aicompanion/test/tone.mp3")) {
+            if (in == null) throw new IllegalStateException("the MP3 fixture is not in the JAR");
+            java.nio.file.Files.copy(in, dir.resolve(name));
+        }
     }
 
     private static void writeBytes(java.nio.file.Path dir, String name, byte[] bytes) throws java.io.IOException {

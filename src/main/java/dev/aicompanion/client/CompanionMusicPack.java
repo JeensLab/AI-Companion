@@ -6,6 +6,7 @@ import com.mojang.logging.LogUtils;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionMusicLibrary;
 import net.minecraft.SharedConstants;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackLocationInfo;
@@ -27,6 +28,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * The client's dynamic resource pack for the player's guitar folder (the owner's ruling, 13.11: the recordings are the player's own
@@ -92,6 +94,16 @@ public final class CompanionMusicPack implements PackResources {
         Set<String> now = new LinkedHashSet<>();
         for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.scan(CompanionMusicLibrary.folder())) now.add(track.file());
         return !now.equals(built);
+    }
+
+    /**
+     * A request for another tune reads the folder afresh on this client too: when it has changed since the last built pack, the
+     * resources are reloaded before the request is sent, so a recording put there while the game runs is one the sound engine
+     * knows and is heard without pressing F3+T. Nothing is done when the folder is as the pack last read it.
+     */
+    public static CompletableFuture<Void> refreshForRequest() {
+        if (!folderChanged()) return CompletableFuture.completedFuture(null);
+        return Minecraft.getInstance().reloadResourcePacks();
     }
 
     /**
