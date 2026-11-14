@@ -83,6 +83,8 @@ public final class AICompanionClient {
         NeoForge.EVENT_BUS.addListener(this::onLoggingOut);
         // What the sound engine really streams for the evening: the ground truth behind the tune's log lines.
         NeoForge.EVENT_BUS.addListener(CompanionCampfireAudio::streamed);
+        // The game's own music is refused while the guitar sounds, not only the track it started with.
+        NeoForge.EVENT_BUS.addListener(CompanionCampfireAudio::selectMusic);
         NeoForge.EVENT_BUS.addListener(CompanionGhostPlacement::render);
     }
 

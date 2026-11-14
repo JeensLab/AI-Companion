@@ -10,9 +10,16 @@ import net.minecraft.client.resources.sounds.EntityBoundSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.Music;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
+import net.neoforged.neoforge.client.event.SelectMusicEvent;
 import org.slf4j.Logger;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * The tune by the fire on this client (the owner's ruling, 13.11): the recordings come from the player's folder, which the game's
@@ -21,8 +28,10 @@ import org.slf4j.Logger;
  * sound packet: it syncs the sound id and a start counter with his pose (CompanionEntity.campfireTune, campfireTuneStart) and this
  * plays that id from him while he sits and plays, starting it over when the counter moves — a recording asked for again is restarted,
  * not left sounding — and stopping when the tune changes, he stands up or the world goes. The «Jukebox/Note Blocks» volume and the
- * distance work as for any entity-bound sound, and the game's own background music is stopped while a tune plays, so the guitar is
- * what is heard. An id this client cannot resolve is reported in the chat, never replaced by a disc.
+ * distance work as for any entity-bound sound, and the game's own background music is silenced for as long as the guitar sounds
+ * (every music selection is refused while the tune does, not only the track sounding at its start), so the guitar is what is heard;
+ * when the guitar stops, the game's music gets its normal countdown back instead of the twenty-minute cap a stop leaves behind.
+ * An id this client cannot resolve is reported in the chat, never replaced by a disc.
  *
  * <p>Every step is said once in the log, never on every tick: what the client sees synced, what it decides, which id it hands the
  * sound engine, whether that engine knows the id and its volume, whether it began streaming the recording, and why a tune is skipped.
@@ -44,12 +53,14 @@ final class CompanionCampfireAudio {
     private static int lookAgain;
     /** The sound id already reported as not loaded, so one line is said once and not on every tick. */
     private static String reported = "";
-    /** The last line said about a decision, so the same situation is not said on every tick. */
-    private static String noted = "";
+    /** The last line said for each reason (the part of a key before ':'): a decision that repeats every tick is said once, and a
+     *  situation that alternates between two reasons — an unknown id: START, then unknown — is said once for each, not every tick. */
+    private static final Map<String, String> noted = new HashMap<>();
     /** What the client last saw synced (pose, tune, start counter), so a change is said once. */
     private static int seenPose = -1, seenStart = -2;
     private static String seenTune = "";
-    /** The last id the sound engine began streaming, so a start that never streamed is told apart from one that did. */
+    /** The last folder recording the sound engine began streaming, so a start that never streamed is told apart from one that did.
+     *  Only the folder's recordings are kept: the game streams its own music too, and that would hide a recording never opened. */
     private static volatile String streaming = "";
 
     private CompanionCampfireAudio() { }
@@ -87,7 +98,7 @@ final class CompanionCampfireAudio {
             case KEEP_SOUNDING -> {
                 // The engine said the sound is active; that alone does not prove it opened the recording, so the stream is checked
                 // once: a recording the engine could not open sounds nothing at all.
-                if (sounded == 20 && !tune.equals(streaming))
+                if (sounded == 20 && isFolderTune(tune) && !tune.equals(streaming))
                     note("nostream:" + tune, "the sound engine reports «" + tune + "» active but never began streaming it — "
                             + "the recording could not be opened");
                 sounded++;
@@ -135,27 +146,38 @@ final class CompanionCampfireAudio {
         length = lengthOf(wanted);
         sounded = 0;
         // The guitar is the music of the evening: the game's own background music does not sound over it, or a tune that changed
-        // would be heard under an unchanged track of the game and seem not to have changed at all.
+        // would be heard under an unchanged track of the game and seem not to have changed at all. The track sounding now is
+        // stopped here, and selectMusic() refuses every new one while the tune sounds: one stop is not enough, the game's own
+        // countdown goes on and would start a track minutes into the guitar.
         client.getMusicManager().stopPlaying();
         playing = new EntityBoundSoundInstance(SoundEvent.createVariableRangeEvent(id), SoundSource.RECORDS, 1F, 1F, companion,
                 companion.getRandom().nextLong());
         client.getSoundManager().play(playing);
         tune = wanted;
         note("play:" + wanted + ":" + start, "playing «" + wanted + "» from him: start counter " + start + ", length " + length
-                + " ticks, the sound engine knows the id, active " + client.getSoundManager().isActive(playing)
-                + ", «Jukebox/Note Blocks» volume " + client.options.getSoundSourceVolume(SoundSource.RECORDS)
-                + ", the game's own music stopped");
+                + " ticks, the sound engine knows the id, «Jukebox/Note Blocks» volume "
+                + client.options.getSoundSourceVolume(SoundSource.RECORDS)
+                + ", the game's own music stopped and kept stopped while the guitar sounds");
+    }
+
+    /**
+     * The game's own music is silenced while the guitar sounds: the music manager asks what to play every tick, and while a tune
+     * is held, nothing is chosen — so a track the game would have started minutes into the evening never sounds over the guitar.
+     * When the guitar stops, the selection is let through again and {@link #stop()} gives the music its normal countdown back.
+     */
+    static void selectMusic(SelectMusicEvent event) {
+        if (playing != null) event.setMusic(null);
     }
 
     /**
      * The sound engine began streaming a sound: for a folder recording this is the ground truth that this client plays the file
-     * itself, not a disc and not silence. Every streamed id is remembered, so a tune whose stream never began is told apart; a line is
-     * said for the folder's recordings only.
+     * itself, not a disc and not silence. Only the folder's recordings are remembered — the game streams its own music too, and a
+     * track of the game streaming would hide a recording that never opened — and a line is said for them alone.
      */
     static void streamed(net.neoforged.neoforge.client.event.sound.PlayStreamingSourceEvent event) {
         ResourceLocation id = event.getSound().getLocation();
+        if (!isFolderId(id)) return;
         streaming = id.toString();
-        if (!dev.aicompanion.AICompanionMod.MOD_ID.equals(id.getNamespace()) || !id.getPath().startsWith("guitar_folder/")) return;
         LOGGER.info("AI Companion: the sound engine is streaming {} for the evening by the fire", id);
     }
 
@@ -171,11 +193,24 @@ final class CompanionCampfireAudio {
         return pose == CompanionCampfire.PLAYING ? "playing" : pose == CompanionCampfire.SITTING ? "sitting" : "standing";
     }
 
-    /** Says a line once per change: a decision that repeats every tick is said once. */
+    /** Says a line once per reason and key: a decision that repeats every tick is said once, and each reason keeps its own last
+     *  key, so a tune that alternates START and unknown does not say either line on every tick. */
     private static void note(String key, String line) {
-        if (key.equals(noted)) return;
-        noted = key;
+        int colon = key.indexOf(':');
+        String reason = colon < 0 ? key : key.substring(0, colon);
+        if (key.equals(noted.put(reason, key))) return;
         LOGGER.info("AI Companion: {}", line);
+    }
+
+    /** Whether a sound id is one of the player's folder recordings (aicompanion:guitar_folder/…), not the game's own music. */
+    private static boolean isFolderId(ResourceLocation id) {
+        return dev.aicompanion.AICompanionMod.MOD_ID.equals(id.getNamespace()) && id.getPath().startsWith("guitar_folder/");
+    }
+
+    /** Whether a tune's sound id is one of the player's folder recordings, whose stream proves the file was opened. */
+    private static boolean isFolderTune(String soundId) {
+        ResourceLocation id = ResourceLocation.tryParse(soundId);
+        return id != null && isFolderId(id);
     }
 
     /** Whether this client's own folder holds the recording: then only a resource reload is missing, not the file itself. */
@@ -194,19 +229,35 @@ final class CompanionCampfireAudio {
         return -1;
     }
 
-    /** The evening is over, the tune changed or the world went: the sound stops here. */
+    /** The evening is over, the tune changed or the world went: the sound stops here and the game's own music gets its countdown
+     *  back, so a tune that ends does not leave the player without background music for the twenty-minute cap. */
     static void stop() {
         if (playing != null) Minecraft.getInstance().getSoundManager().stop(playing);
         playing = null;
         tune = "";
         sounded = 0;
         length = -1;
+        resumeGameMusic();
+    }
+
+    /**
+     * Gives the game's music manager a normal countdown again: stopPlaying() only adds a hundred ticks to the countdown it keeps,
+     * and after a track it sits at the twenty-minute cap — left there, the player would lose background music for up to twenty
+     * minutes after every evening and again on every tune change. The delay is the one the game itself uses after a track ends:
+     * a random wait within the situational music's own range.
+     */
+    private static void resumeGameMusic() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) return;
+        Music music = client.getSituationalMusic();
+        if (music == null) return;
+        client.getMusicManager().nextSongDelay = Mth.nextInt(RandomSource.create(), music.getMinDelay(), music.getMaxDelay());
     }
 
     /** Leaving the world: nothing of the old one is left sounding. */
     static void forget() {
         stop();
         companion = null; lookAgain = 0; reported = ""; finished = ""; started = -1;
-        noted = ""; seenPose = -1; seenStart = -2; seenTune = ""; streaming = "";
+        noted.clear(); seenPose = -1; seenStart = -2; seenTune = ""; streaming = "";
     }
 }
