@@ -21,9 +21,9 @@ import java.util.Set;
 
 /**
  * What he plays by the fire (the owner's ruling, 13.11): the player's own folder of recordings, not a fixed set baked into the JAR —
- * no music ships in the mod at all. Every recording in config/aicompanion/music can be played: an .ogg as it is, an .mp3 through the
- * Ogg Vorbis copy made beside it once ({@link Mp3Ogg}), because the game's sound engine reads Ogg Vorbis only; while that folder has
- * none, he plays standard Minecraft music instead ({@link CompanionTunes}), and nothing is said about it. A recording's mood is the
+ * no music ships in the mod at all. Every Ogg Vorbis recording in config/aicompanion/music can be played, because the game's sound
+ * engine reads Ogg Vorbis only; while that folder has none, he plays standard Minecraft music instead ({@link CompanionTunes}), and
+ * nothing is said about it. A recording's mood is the
  * digit its file name starts with, 1 (sad) to 9 (happy): 1–4 is the calm kind («сыграй грустное»), 6–9 the cheerful one
  * («повеселее»), and 5 is neither; so both requests can pick a recording of that kind. With no such recording he honestly plays any.
  *
@@ -41,9 +41,7 @@ public final class CompanionMusicLibrary {
      */
     public static final String FOLDER_README = """
             Музыка Олега у костра.
-            Положите сюда записи в Ogg Vorbis (.ogg, моно) или в MP3 (.mp3): каждую из них Олег сможет сыграть.
-            MP3 переводится в Ogg Vorbis рядом с ним (файл name.mp3.ogg) один раз — его и играет клиент;
-            рядом лежит служебная запись name.mp3.ogg.stamp, её не нужно трогать.
+            Положите сюда записи в Ogg Vorbis (.ogg, моно): каждую из них Олег сможет сыграть.
             Настроение записи — число в начале имени файла, от 1 (самая грустная) до 9 (самая весёлая):
             1–4 — спокойная или грустная, 5 — середина, 6–9 — весёлая. Например, 2_romance.ogg.
             Папка читается при запуске игры, при входе в мир и заново на каждую просьбу сыграть другую или повеселее:
@@ -84,11 +82,10 @@ public final class CompanionMusicLibrary {
 
     /**
      * The folder read afresh for a request («другую», «повеселее», «погрустнее»): a recording put there while the game runs is
-     * picked up without a reload, and an .mp3 that failed to convert before is tried again. The client's pack is rebuilt by the
-     * request too (client/CompanionMusicPack), so the new recording is also one the sound engine knows.
+     * picked up without a reload. The client's pack is rebuilt by the request too (client/CompanionMusicPack), so the new
+     * recording is also one the sound engine knows.
      */
     public static List<Track> rescan() {
-        Mp3Ogg.forgetFailures();
         return available();
     }
 
@@ -105,10 +102,9 @@ public final class CompanionMusicLibrary {
 
     /**
      * Every recording in a folder, by its file name, with the sound id its file gets, its title, its length in ticks and its mood:
-     * Ogg Vorbis files as they are, and MP3 files through the Ogg Vorbis copy made beside them once ({@link Mp3Ogg}), because the
-     * game's sound engine reads Ogg Vorbis only. A missing folder is simply empty, and says so once; files that are not readable
-     * are skipped with a line each. A scan is asked on every tune, on every request and on every resource-pack rebuild, so a line
-     * is said once per change, not every call.
+     * Ogg Vorbis files only, because the game's sound engine reads Ogg Vorbis only; other files are ignored. A missing folder is
+     * simply empty, and says so once; files that are not readable are skipped with a line each. A scan is asked on every tune, on
+     * every request and on every resource-pack rebuild, so a line is said once per change, not every call.
      */
     public static List<Track> scan(Path dir) {
         if (!Files.isDirectory(dir)) {
@@ -118,11 +114,7 @@ public final class CompanionMusicLibrary {
         List<Path> files;
         try (var listing = Files.list(dir)) {
             files = listing.filter(Files::isRegularFile)
-                    .filter(path -> {
-                        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-                        // The Ogg copy of an MP3 is served through the MP3 itself, not as a recording of its own.
-                        return name.endsWith(".ogg") && !name.endsWith(Mp3Ogg.CONVERTED) || name.endsWith(".mp3");
-                    })
+                    .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".ogg"))
                     .sorted(Comparator.comparing(path -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
                     .toList();
         } catch (IOException error) {
@@ -133,19 +125,13 @@ public final class CompanionMusicLibrary {
         Set<String> keys = new HashSet<>();
         for (Path file : files) {
             String name = file.getFileName().toString();
-            boolean mp3 = name.toLowerCase(Locale.ROOT).endsWith(".mp3");
             String base = name.substring(0, name.length() - 4);
-            Path playable = file;
-            if (mp3) {
-                playable = Mp3Ogg.converted(file);
-                if (playable == null) continue; // said once by the converter
-            }
-            int ticks = ticks(playable);
+            int ticks = ticks(file);
             if (ticks < 20) {
                 warn(file.toAbsolutePath().toString(), name + " is not a readable Ogg Vorbis recording, skipped");
                 continue;
             }
-            tracks.add(new Track(playable.getFileName().toString(), "aicompanion:guitar_folder/" + unique(clean(base), keys),
+            tracks.add(new Track(name, "aicompanion:guitar_folder/" + unique(clean(base), keys),
                     title(base), ticks, mood(base)));
         }
         // What was found, in one line: the folder is the player's own, and a scan that comes back empty is why the vanilla music plays.
