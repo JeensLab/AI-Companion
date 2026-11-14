@@ -65,6 +65,8 @@ neoForge {
             // Optional: `./gradlew runClient -PquickPlay=<world>` opens that world straight away, so a test run needs no clicks.
             def quickPlay = providers.gradleProperty('quickPlay').getOrNull()
             if (quickPlay != null) programArguments.addAll('--quickPlaySingleplayer', quickPlay)
+            // Optional: `./gradlew runClient -PcampfireProbe` runs the offline campfire QA (screenshots and tune changes) and quits.
+            if (providers.gradleProperty('campfireProbe').isPresent()) systemProperty 'aicompanion.campfireProbe', 'true'
         }
 
         responsesClientProbe {

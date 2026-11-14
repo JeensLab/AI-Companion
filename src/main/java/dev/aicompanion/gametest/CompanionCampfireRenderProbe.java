@@ -27,15 +27,21 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 /**
  * Opt-in offline render QA of the evening by the fire (-Daicompanion.campfireProbe=true on runClient; the gametest package is
  * excluded from the release JAR): a fresh flat world, a lit campfire, «сыграй», then screenshots of him sitting with the guitar from
- * the front, the side and at night into the client's screenshots folder, and a check that the client streamed his guitar recording
- * (keep the master volume above zero, the game skips silent sounds). No provider key is needed.
+ * the front, the side and at night into the client's screenshots folder, then «повеселее» and «спокойнее» — each must make the client
+ * stream a different recording — and a check that the client streamed his guitar recordings at all (keep the master volume above zero,
+ * the game skips silent sounds). No provider key is needed.
  */
 @EventBusSubscriber(modid = AICompanionMod.MOD_ID, value = Dist.CLIENT)
 public final class CompanionCampfireRenderProbe {
-    private static boolean started, asked, placed;
+    private static boolean started, asked, placed, passed;
     // The client began streaming one of his guitar recordings (the sound itself, not only the server's word for it).
     private static volatile String streamed;
+    /** The recording the client streamed first, and the one it streams after the mood requests. */
+    private static String first, second;
     private static int ticks, shot;
+    /** 0: the screenshots; 1: «повеселее» asked; 2: «спокойнее» asked; 3: passed. */
+    private static int stage, stageAt, changeAt;
+    private static String before;
     private static final String[] SHOTS = {"campfire-front", "campfire-side", "campfire-three-quarter", "campfire-night"};
     private static final double[][] VIEWS = {{0, 4.2}, {3.2, 0}, {2.4, 2.4}, {-1.8, 3.6}};
 
@@ -44,7 +50,10 @@ public final class CompanionCampfireRenderProbe {
     @SubscribeEvent
     public static void streamed(net.neoforged.neoforge.client.event.sound.PlayStreamingSourceEvent event) {
         var id = event.getSound().getLocation();
-        if (Boolean.getBoolean("aicompanion.campfireProbe") && id.getNamespace().equals(AICompanionMod.MOD_ID) && id.getPath().startsWith("guitar.")) streamed = id.toString();
+        if (!Boolean.getBoolean("aicompanion.campfireProbe") || !id.getNamespace().equals(AICompanionMod.MOD_ID)
+                || !id.getPath().startsWith("guitar_folder/")) return;
+        streamed = id.toString();
+        if (first == null) first = streamed;
     }
 
     @SubscribeEvent
@@ -63,7 +72,8 @@ public final class CompanionCampfireRenderProbe {
         var server = mc.getSingleplayerServer();
         if (mc.level == null || mc.player == null || oleg == null || server == null) return;
         ticks++;
-        if (ticks > 20 * 120) throw new IllegalStateException("Campfire probe timed out at shot " + shot + ", pose " + oleg.campfirePose());
+        if (ticks > 20 * 180) throw new IllegalStateException("Campfire probe timed out at stage " + stage + ", pose " + oleg.campfirePose()
+                + ", streamed " + streamed + ", tune " + oleg.campfireTune() + " (start " + oleg.campfireTuneStart() + ")");
         if (!asked && ticks > 40) {
             asked = true;
             mc.options.hideGui = true;
@@ -79,15 +89,49 @@ public final class CompanionCampfireRenderProbe {
             });
             return;
         }
-        if (!asked || oleg.campfirePose() != CompanionCampfire.PLAYING) return;
-        // One view every two seconds once he plays: the camera moves, the frame after settles, then the picture.
+        if (!asked) return;
+        if (stage == 0) { shots(mc, server, oleg); return; }
+        // The mood requests: each must make the client stream a different recording of the folder.
+        if (streamed == null) throw new IllegalStateException("No guitar recording was streamed by the client");
+        String mood = stage == 1 ? "cheerful" : "calm";
+        if (changeAt == 0) {
+            if (ticks - stageAt < 20) return;
+            before = streamed;
+            changeAt = ticks;
+            server.execute(() -> {
+                var player = server.getPlayerList().getPlayer(mc.player.getUUID());
+                var result = CompanionEvents.executeAction(player, "campfire_song", mood, 1);
+                AICompanionMod.LOGGER.info("Campfire probe: «{}» — {} (tune {} now, start {})", mood, result.message(),
+                        oleg.campfireTune(), oleg.campfireTuneStart());
+            });
+            return;
+        }
+        if (!streamed.equals(before)) {
+            if (passed) return;
+            AICompanionMod.LOGGER.info("Campfire probe: after «{}» the client streams {} (was {})", mood, streamed, before);
+            second = streamed;
+            if (stage == 1) { stage = 2; stageAt = ticks; changeAt = 0; return; }
+            passed = true;
+            AICompanionMod.LOGGER.info("CAMPFIRE_RENDER_PROBE_PASSED: {} screenshots, recordings streamed {} → {}", SHOTS.length, first, second);
+            mc.stop();
+            return;
+        }
+        if (ticks - changeAt > 20 * 10) throw new IllegalStateException("The tune did not change after «" + mood + "»: still " + streamed
+                + ", tune " + oleg.campfireTune() + " (start " + oleg.campfireTuneStart() + "), pose " + oleg.campfirePose());
+    }
+
+    /** The four views of him playing, one every two seconds, into the client's screenshots folder. */
+    private static void shots(Minecraft mc, net.minecraft.server.MinecraftServer server, CompanionEntity oleg) {
+        if (oleg.campfirePose() != CompanionCampfire.PLAYING) return;
         int phase = ticks % 40;
         if (phase == 0) {
             placed = true;
             if (shot >= SHOTS.length) {
                 if (streamed == null) throw new IllegalStateException("No guitar recording was streamed by the client");
-                AICompanionMod.LOGGER.info("CAMPFIRE_RENDER_PROBE_PASSED: {} screenshots, streamed {}", SHOTS.length, streamed);
-                mc.stop();
+                stage = 1;
+                stageAt = ticks;
+                changeAt = 0;
+                AICompanionMod.LOGGER.info("Campfire probe: the client streamed {} for the evening", streamed);
                 return;
             }
             double[] view = VIEWS[shot];
