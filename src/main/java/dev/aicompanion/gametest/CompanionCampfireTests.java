@@ -101,6 +101,10 @@ public final class CompanionCampfireTests {
     @AfterBatch(batch = "campfire_restored") public static void restoredReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
     @BeforeBatch(batch = "campfire_names") public static void namesReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
     @AfterBatch(batch = "campfire_names") public static void namesReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_bottom") public static void bottomReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_bottom") public static void bottomReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_top") public static void topReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_top") public static void topReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
 
     /**
      * «Сыграй» by a lit fire: he sits down across the fire from the player and the guitar sounds; his eyes stay on the fire though the
@@ -505,8 +509,9 @@ public final class CompanionCampfireTests {
     /**
      * The mood scale the owner set (0 the saddest, 999 the happiest) and the requests along it: «самую грустную» takes the lowest,
      * «самую весёлую» the highest, «повеселее» the nearest strictly higher, «погрустнее» the nearest strictly lower, two «повеселее»
-     * requests move strictly up, and a change request never returns the recording that is playing. One recording in the folder means
-     * no change at all; an untagged folder is answered honestly, still with another recording when there is one.
+     * requests move strictly up, and a change request never returns the recording that is playing. At the ends of the scale a
+     * direction request has no step left: it keeps the recording playing (no wrap to the other end) and says so. One recording in the
+     * folder means no change at all; an untagged folder is answered honestly, still with another recording when there is one.
      */
     @GameTest(template = "empty", batch = "campfire_library")
     public static void aTaggedRecordingIsPickedForTheMoodOrHeSaysThereIsNone(GameTestHelper h) {
@@ -543,12 +548,28 @@ public final class CompanionCampfireTests {
             h.assertTrue(changed != null && changed.track() == low, "«Погрустнее» did not take 150: " + changed);
             changed = CompanionMusicLibrary.change(all, "next", middle.soundId(), random);
             h.assertTrue(changed != null && changed.track() != middle, "«Другую» played the same tune: " + changed);
-            // At the end of the scale the request still changes the recording: the highest (or lowest) other one.
-            changed = CompanionMusicLibrary.change(all, "happier", top.soundId(), random);
-            h.assertTrue(changed != null && changed.track() == high, "«Повеселее» at the top did not change: " + changed);
-            changed = CompanionMusicLibrary.change(all, "sadder", zero.soundId(), random);
-            h.assertTrue(changed != null && changed.track() == low, "«Погрустнее» at the bottom did not change: " + changed);
         }
+        // At the end of the scale nothing is strictly beyond the recording playing: it keeps playing, and the request says so
+        // instead of wrapping to the opposite end («погрустнее» on the 0 one used to jump to the 999 one).
+        for (int i = 0; i < 20; i++) {
+            h.assertTrue(CompanionMusicLibrary.change(all, "happier", top.soundId(), random) == null,
+                    "«Повеселее» on the happiest recording still changed it");
+            h.assertTrue(CompanionMusicLibrary.change(all, "sadder", zero.soundId(), random) == null,
+                    "«Погрустнее» on the saddest recording still changed it");
+        }
+        h.assertTrue(CompanionMusicLibrary.atEndOfScale(all, "happier", top.soundId())
+                        && CompanionMusicLibrary.atEndOfScale(all, "sadder", zero.soundId()),
+                "The end of the scale was not seen where it is");
+        h.assertTrue(!CompanionMusicLibrary.atEndOfScale(all, "happier", middle.soundId())
+                        && !CompanionMusicLibrary.atEndOfScale(all, "sadder", middle.soundId())
+                        && !CompanionMusicLibrary.atEndOfScale(all, "next", top.soundId())
+                        && !CompanionMusicLibrary.atEndOfScale(all, "happier", "aicompanion:guitar_folder/nothing"),
+                "A step that the scale can make was called its end");
+        // «Самую грустную» and «самую весёлую» still pick the extreme itself, even from the other end of the scale.
+        h.assertTrue(CompanionMusicLibrary.change(all, "saddest", top.soundId(), random).track() == zero,
+                "«Самую грустную» from the top did not take the 0 one");
+        h.assertTrue(CompanionMusicLibrary.change(all, "happiest", zero.soundId(), random).track() == top,
+                "«Самую весёлую» from the bottom did not take the 999 one");
         // Two consecutive «повеселее» requests move strictly up each time.
         var first = CompanionMusicLibrary.change(all, "happier", middle.soundId(), random);
         h.assertTrue(first != null && first.track() == high, "The first «повеселее» did not move up: " + first);
@@ -803,6 +824,90 @@ public final class CompanionCampfireTests {
         });
         h.succeedWhen(() -> h.assertTrue(stage[0] == 3,
                 "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * «Погрустнее» while the saddest recording (mood 0) plays: the scale has no step below it, so the recording goes on — not
+     * restarted, not swapped for the happiest one — and the answer is short and plain: «Грустнее некуда.». The evening goes on.
+     */
+    @GameTest(template = "empty", batch = "campfire_bottom", timeoutTicks = 900)
+    public static void sadderOnTheSaddestRecordingKeepsItAndSaysSo(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-bottom");
+            writeOgg(dir, "0_quiet.ogg", 100);
+            writeOgg(dir, "800_lively.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "saddest", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] title = {null};
+        int[] start = {0};
+        h.onEachTick(() -> {
+            if (stage[0] != 0 || c.campfirePose() != CompanionCampfire.PLAYING || c.campfire().playedTicks() <= 20) return;
+            var quiet = tune(c);
+            h.assertTrue(quiet.mood() == 0, "Asked for the saddest one, got «" + quiet.title() + "» (" + quiet.mood() + ")");
+            title[0] = c.campfire().tuneTitle();
+            start[0] = c.campfireTuneStart();
+            int played = c.campfire().playedTicks();
+            var again = CompanionEvents.executeAction(player, "campfire_song", "sadder", 1);
+            h.assertTrue(again.success() && "Грустнее некуда.".equals(again.message()), "Answer: " + again.message());
+            h.assertTrue(c.campfire().active() && c.campfirePose() == CompanionCampfire.PLAYING,
+                    "The evening ended at the bottom of the scale: pose " + c.campfirePose() + ", ended " + c.campfire().ended());
+            h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0]
+                            && c.campfire().playedTicks() >= played && tune(c).mood() == 0,
+                    "The saddest recording was restarted or swapped: «" + c.campfire().tuneTitle() + "», start "
+                            + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
+            stage[0] = 1;
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 1,
+                "Never asked «погрустнее»: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * «Повеселее» while the happiest recording (mood 800, the highest in this folder) plays: nothing is strictly higher, so it goes
+     * on — not restarted, not swapped for the saddest one — and the answer is «Веселее некуда.». The evening goes on.
+     */
+    @GameTest(template = "empty", batch = "campfire_top", timeoutTicks = 900)
+    public static void happierOnTheHappiestRecordingKeepsItAndSaysSo(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-top");
+            writeOgg(dir, "0_quiet.ogg", 100);
+            writeOgg(dir, "800_lively.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "happiest", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] title = {null};
+        int[] start = {0};
+        h.onEachTick(() -> {
+            if (stage[0] != 0 || c.campfirePose() != CompanionCampfire.PLAYING || c.campfire().playedTicks() <= 20) return;
+            var lively = tune(c);
+            h.assertTrue(lively.mood() == 800, "Asked for the happiest one, got «" + lively.title() + "» (" + lively.mood() + ")");
+            title[0] = c.campfire().tuneTitle();
+            start[0] = c.campfireTuneStart();
+            int played = c.campfire().playedTicks();
+            var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+            h.assertTrue(again.success() && "Веселее некуда.".equals(again.message()), "Answer: " + again.message());
+            h.assertTrue(c.campfire().active() && c.campfirePose() == CompanionCampfire.PLAYING,
+                    "The evening ended at the top of the scale: pose " + c.campfirePose() + ", ended " + c.campfire().ended());
+            h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0]
+                            && c.campfire().playedTicks() >= played && tune(c).mood() == 800,
+                    "The happiest recording was restarted or swapped: «" + c.campfire().tuneTitle() + "», start "
+                            + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
+            stage[0] = 1;
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 1,
+                "Never asked «повеселее»: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
     }
 
     /**
@@ -1209,6 +1314,14 @@ public final class CompanionCampfireTests {
         // wait for the model, which used to answer some of them with a sentence and no step at all.
         h.assertTrue("companion campfire next".equals(CompanionLocalCommands.route("давай другую мелодию", "Олег")), "Another tune: " + CompanionLocalCommands.route("давай другую мелодию", "Олег"));
         h.assertTrue("companion campfire next".equals(CompanionLocalCommands.route("другую", "Олег")), "A bare «другую»: " + CompanionLocalCommands.route("другую", "Олег"));
+        // Up to two words that only soften the order before it («ну», «давай», «а», «и») and «ещё» with the song named: these used
+        // to reach the model, which answered with a sentence and no step, and the tune did not change.
+        for (String phrase : new String[]{"ну давай другую", "ну, давай другую", "ещё одну", "давай ещё одну", "ещё песню",
+                "Олег, ну давай другую", "а ну другую", "и ещё одну", "ну давай ещё песню"})
+            h.assertTrue("companion campfire next".equals(CompanionLocalCommands.route(phrase, "Олег")),
+                    "Not another tune: " + phrase + " -> " + CompanionLocalCommands.route(phrase, "Олег"));
+        // Two fillers at most: a third word of the kind leaves the phrase to the model, as before.
+        h.assertTrue(!"companion campfire next".equals(CompanionLocalCommands.route("ну а и другую", "Олег")), "Three fillers were taken");
         h.assertTrue("companion campfire sadder".equals(CompanionLocalCommands.route("погрустнее", "Олег")), "«Погрустнее»: " + CompanionLocalCommands.route("погрустнее", "Олег"));
         h.assertTrue("companion campfire sadder".equals(CompanionLocalCommands.route("нет есть грустнее", "Олег")), "«Грустнее»: " + CompanionLocalCommands.route("нет есть грустнее", "Олег"));
         h.assertTrue("companion campfire saddest".equals(CompanionLocalCommands.route("самую грустную", "Олег")), "«Самую грустную»: " + CompanionLocalCommands.route("самую грустную", "Олег"));

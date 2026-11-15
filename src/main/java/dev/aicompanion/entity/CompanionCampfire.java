@@ -96,7 +96,9 @@ public final class CompanionCampfire {
      * really another one — the nearest lower for «погрустнее», the nearest higher for «повеселее», the lowest for «самую грустную»,
      * the highest for «самую весёлую», any other for «другую», standard Minecraft music for «из майнкрафта». The answer names the
      * recording that really started, by its mood number and its file name, so no name is invented. When the folder has no other
-     * recording at all the one playing simply goes on, and the answer says so plainly: «Других песен не знаю.». The same recording
+     * recording at all the one playing simply goes on, and the answer says so plainly: «Других песен не знаю.». «Погрустнее» on the
+     * saddest recording and «повеселее» on the happiest have no step left on the scale: that recording goes on too, and the answer is
+     * «Грустнее некуда.» or «Веселее некуда.» — the tune is not wrapped to the opposite end. The same recording
      * is never restarted and called a change, and the automatic rotation does not replace the picked tune until it has played out.
      */
     public CompanionActionResult request(ServerPlayer player, String mood) {
@@ -154,10 +156,22 @@ public final class CompanionCampfire {
 
     /**
      * The honest answer to a request that could not change the tune: «Таких песен нет.» when the folder holds other recordings but
-     * none of the kind asked for, «Других песен не знаю.» only when there is no other recording at all.
+     * none of the kind asked for, «Других песен не знаю.» only when there is no other recording at all, and «Грустнее некуда.» /
+     * «Веселее некуда.» when the scale cannot go further from the recording playing — that one keeps playing, and the evening goes on.
      */
     private String noChange(String mood, List<CompanionMusicLibrary.Track> tracks) {
-        return CompanionMusicLibrary.hasOther(tracks, tune.soundId()) ? NO_SUCH_KIND : NO_OTHER;
+        if (!CompanionMusicLibrary.hasOther(tracks, tune.soundId())) return NO_OTHER;
+        if (CompanionMusicLibrary.atEndOfScale(tracks, mood, tune.soundId())) return scaleEnd(mood);
+        return NO_SUCH_KIND;
+    }
+
+    /** «Грустнее некуда.» / «Веселее некуда.»: short and plain, for a request the mood scale has no step left for. */
+    private static String scaleEnd(String mood) {
+        return switch (CompanionMusicLibrary.normalize(mood)) {
+            case "sadder" -> "Грустнее некуда.";
+            case "happier" -> "Веселее некуда.";
+            default -> NO_SUCH_KIND;
+        };
     }
 
     /** What he says of a tune that really starts, built from the recording the pick actually took: its mood number and its title. */

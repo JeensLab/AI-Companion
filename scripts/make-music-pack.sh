@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Builds the release pack of Oleg's guitar tracks: oleg-guitar-tracks.zip with the ready structure
-# config/aicompanion/music/*.ogg. The recordings live in music/ at the repository root, outside src/main/resources: nothing of
+# config/aicompanion/music/<recording>. The recordings live in music/ at the repository root, outside src/main/resources: nothing of
 # them ships in the JAR, so this script is the only way the pack is made. CI runs it in the build job and uploads the zip as an
 # artifact; the release attaches that artifact.
+#
+# The game reads the whole folder, subfolders included (entity/CompanionMusicLibrary), so this script packs every .ogg in music/ and
+# its subfolders at the same path inside config/aicompanion/music/: a recording in music/lute/ goes to
+# config/aicompanion/music/lute/, where the scan looks for it. The shipped set stays top-level.
 #
 # Every recording's mood is the integer its name starts with (entity/CompanionMusicLibrary): 0 (the saddest) to 999 (the
 # happiest). The number travels with the file into the pack, so «самую грустную», «погрустнее», «повеселее» and «самую весёлую»
@@ -22,7 +26,9 @@ folder="config/aicompanion/music"
 fail() { echo "make-music-pack: $*" >&2; exit 1; }
 
 [ -d "$music" ] || fail "no $music folder in $root"
-mapfile -t tracks < <(find "$music" -maxdepth 1 -type f -name '*.ogg' | sort)
+# Every .ogg in the folder and in its subfolders, by its path inside music/: the game reads the folder that way, so the pack keeps
+# the subfolder a recording sits in.
+mapfile -t tracks < <(find "$music" -type f -name '*.ogg' | LC_ALL=C sort)
 [ "${#tracks[@]}" -gt 0 ] || fail "no .ogg recordings in $music"
 
 command -v python3 >/dev/null 2>&1 || fail "python3 is needed to check the recordings"
@@ -51,13 +57,16 @@ def mood(name):
     number = int(name[:digits])
     return number if 0 <= number <= 999 else None
 
-for file in sorted(folder.glob("*.ogg")):
+# The whole folder, subfolders too, as the game reads it: every file is named by its path inside music/, and the mood comes from its
+# file name wherever it sits.
+for file in sorted(folder.rglob("*.ogg"), key=lambda path: path.relative_to(folder).as_posix()):
+    rel = file.relative_to(folder).as_posix()
     data = file.read_bytes()
     size = len(data)
     head = data[:65536]
     at = head.find(marker)
     if at < 0 or at + 16 > len(head):
-        print(f"{file.name}: not Ogg Vorbis", file=sys.stderr)
+        print(f"{rel}: not Ogg Vorbis", file=sys.stderr)
         failed = True
         continue
     channels = data[at + 11]
@@ -71,7 +80,7 @@ for file in sorted(folder.glob("*.ogg")):
             granule = samples
         page = tail.find(b"OggS", page + 4)
     if rate <= 0 or granule <= 0:
-        print(f"{file.name}: no sample rate or granule position", file=sys.stderr)
+        print(f"{rel}: no sample rate or granule position", file=sys.stderr)
         failed = True
         continue
     seconds = granule / rate
@@ -86,8 +95,8 @@ for file in sorted(folder.glob("*.ogg")):
         problems.append(f"{bps:.0f} bps, over the 45 kbps the pack keeps to")
     if kind is None:
         problems.append("no mood: the name must start with 0–999 (the number is the mood)")
-    print(f"{file.name}: {seconds:.1f} s, {size} bytes, {bps:.0f} bps, mono 32 kHz, {str(kind) if kind is not None else 'no mood'}" if not problems
-          else f"{file.name}: " + "; ".join(problems), file=sys.stderr if problems else sys.stdout)
+    print(f"{rel}: {seconds:.1f} s, {size} bytes, {bps:.0f} bps, mono 32 kHz, {str(kind) if kind is not None else 'no mood'}" if not problems
+          else f"{rel}: " + "; ".join(problems), file=sys.stderr if problems else sys.stdout)
     failed = failed or bool(problems)
     total += size
     count += 1
@@ -98,12 +107,17 @@ PY
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$folder"
-cp "${tracks[@]}" "$stage/$folder/"
+# Each recording keeps its path inside the folder: a subfolder of music/ becomes the same subfolder of config/aicompanion/music/.
+for track in "${tracks[@]}"; do
+    rel="${track#"$music"/}"
+    mkdir -p "$stage/$folder/$(dirname "$rel")"
+    cp "$track" "$stage/$folder/$rel"
+done
 # One fixed mode and one fixed time on every entry (1980-01-01 00:00 UTC, the earliest a zip can carry), then the entries in a
 # sorted order with no extra fields: two runs of this script give one archive, byte for byte.
-chmod 644 "$stage/$folder"/*.ogg
-chmod 755 "$stage" "$stage/config" "$stage/config/aicompanion" "$stage/$folder"
-TZ=UTC touch -t 198001010000 "$stage" "$stage/config" "$stage/config/aicompanion" "$stage/$folder" "$stage/$folder"/*.ogg
+find "$stage" -mindepth 1 -type d -exec chmod 755 {} +
+find "$stage" -mindepth 1 -type f -exec chmod 644 {} +
+TZ=UTC find "$stage" -mindepth 1 -exec touch -h -t 198001010000 {} +
 rm -f "$out"
 (cd "$stage" && find . -mindepth 1 | LC_ALL=C sort | sed 's|^\./||' | TZ=UTC zip -X -q "$root/$out" -@)
 

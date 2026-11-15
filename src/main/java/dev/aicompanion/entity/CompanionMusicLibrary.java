@@ -225,8 +225,10 @@ public final class CompanionMusicLibrary {
      * for «повеселее», the lowest for «самую грустную», the highest for «самую весёлую», any other for «другую», standard
      * Minecraft music for «из майнкрафта» — so the answer never promises a change that is the same recording started over. Null
      * when the folder holds no other recording at all: the one playing then simply goes on, and the answer says there are no other
-     * songs. When the nearest step in the asked direction is already the end of the scale, another recording is still taken, so a
-     * change request changes the sound whenever there is anything else to play.
+     * songs. Null too when «погрустнее» or «повеселее» asks for a step the scale cannot make from the recording playing — nothing
+     * strictly lower, nothing strictly higher ({@link #atEndOfScale}) — so he keeps it playing instead of jumping to the other end,
+     * and the answer says plainly «Грустнее некуда.» or «Веселее некуда.». «Самую грустную» and «самую весёлую» still pick the
+     * extreme itself, from wherever he is.
      */
     public static Pick change(List<Track> tracks, String wanted, String playingSoundId, RandomSource random) {
         String kind = normalize(wanted);
@@ -249,7 +251,9 @@ public final class CompanionMusicLibrary {
             case "sadder" -> {
                 if (playing != null && playing.mood() != UNTAGGED) {
                     List<Track> lower = below(others, playing.mood());
-                    if (!lower.isEmpty()) return new Pick(randomOf(highestMood(lower), random), true);
+                    // The saddest is playing: nothing is strictly lower, and he keeps it on rather than wrap to the top.
+                    if (lower.isEmpty()) return null;
+                    return new Pick(randomOf(highestMood(lower), random), true);
                 }
                 List<Track> tagged = tagged(others);
                 return tagged.isEmpty() ? new Pick(randomOf(others, random), false)
@@ -258,7 +262,9 @@ public final class CompanionMusicLibrary {
             case "happier" -> {
                 if (playing != null && playing.mood() != UNTAGGED) {
                     List<Track> higher = above(others, playing.mood());
-                    if (!higher.isEmpty()) return new Pick(randomOf(lowestMood(higher), random), true);
+                    // The happiest is playing: nothing is strictly higher, and he keeps it on rather than wrap to the bottom.
+                    if (higher.isEmpty()) return null;
+                    return new Pick(randomOf(lowestMood(higher), random), true);
                 }
                 List<Track> tagged = tagged(others);
                 return tagged.isEmpty() ? new Pick(randomOf(others, random), false)
@@ -266,6 +272,20 @@ public final class CompanionMusicLibrary {
             }
             default -> { return new Pick(randomOf(others, random), true); }
         }
+    }
+
+    /**
+     * Whether the request is a step along the scale the folder cannot make from the recording playing: nothing strictly lower for
+     * «погрустнее», nothing strictly higher for «повеселее». He keeps that recording playing then and says so plainly, instead of
+     * wrapping to the opposite extreme, which was confusing: «погрустнее» on the saddest tune used to jump to the happiest.
+     * A recording with no mood has no place on the scale, so the direction request is not at its end: any other recording is taken.
+     */
+    public static boolean atEndOfScale(List<Track> tracks, String wanted, String playingSoundId) {
+        String kind = normalize(wanted);
+        Track playing = bySoundId(tracks, playingSoundId);
+        if (playing == null || playing.mood() == UNTAGGED) return false;
+        if ("sadder".equals(kind)) return below(tracks, playing.mood()).isEmpty();
+        return "happier".equals(kind) && above(tracks, playing.mood()).isEmpty();
     }
 
     /** The tracks other than the one playing; the whole list when that is the only one. */

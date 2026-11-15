@@ -238,7 +238,10 @@ public final class CompanionLocalCommands {
         boolean evening = normalized.matches("(?sU).*\\b(посидим|посиди|сядь|садись|присядь|присядем)\\b.{0,20}\\bу\\s+костр.*");
         // «Давай другую мелодию», «следующую песню»: another tune, the verb left out; and a bare «другую» while he plays.
         boolean another = normalized.matches("(?sU).*\\b(другую|другой|следующую|еще\\s+одну|смени)\\b.{0,12}(мелоди|песн|музык).*");
-        boolean anotherBare = normalized.matches("(?sU)\\s*(?:" + name + "[\\s,!]+)?(?:а\\s+|ну\\s+|давай\\s+|ещё\\s+|еще\\s+)?(?:другую|другой|следующую)(?:\\s+(?:мелодию|песню|музыку|пожалуйста|нам|мне))*[\\s.!]*");
+        // A bare change request: «другую», «ещё одну», «ещё песню», with up to two words before it that only soften the order
+        // («ну», «давай», «а», «и») — «ну давай другую», «ну, давай другую», «давай ещё одну» reach the guitar the same way.
+        boolean anotherBare = normalized.matches("(?sU)\\s*(?:" + name + "[\\s,!]+)?(?:(?:а|и|ну|давай|ещё|еще)[\\s,]+){0,2}"
+                + "(?:другую|другой|следующую|(?:ещё|еще)\\s+(?:одну|песню|мелодию|музыку))(?:\\s+(?:мелодию|песню|музыку|пожалуйста|нам|мне))*[\\s.!]*");
         // A comparative or the extreme asked for on its own: «повеселее», «погрустнее», «самую грустную».
         boolean moodBare = normalized.matches("(?sU).*\\b(повеселее|веселее|погрустнее|грустнее|печальнее|тоскливее|пободрее|бодрее|самую\\s+грустную|самую\\s+вес[её]лую)\\b.*");
         // «давай ещё сыграй»: the verb with a word of repetition, not the bare form.
@@ -263,7 +266,8 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU).*\\b(повеселее|веселее|порадостнее|радостнее|пободрее|бодрее)\\b.*")) return " happier";
         if (normalized.matches("(?sU).*(грустн|печальн|тосклив|спокойн|тих|медленн|лиричн|нежн|задумчив).*")) return " saddest";
         if (normalized.matches("(?sU).*(весел|бодр|задорн|быстр|танцевальн|зажигательн|радостн).*")) return " happiest";
-        if (normalized.matches("(?sU).*\\b(другую|другой|следующую|еще\\s+одну|смени)\\b.*")) return " next";
+        if (normalized.matches("(?sU).*\\b(другую|другой|следующую|смени)\\b.*")
+                || normalized.matches("(?sU).*\\b(ещё|еще)\\s+(одну|песню|мелодию|музыку)\\b.*")) return " next";
         return "";
     }
 
