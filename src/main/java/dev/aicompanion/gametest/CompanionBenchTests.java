@@ -62,10 +62,17 @@ public final class CompanionBenchTests {
      * «Сейчас подготовлюсь» and stood 90 s until the stall stop, the bench never set down nor the pickaxe made.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
-    public static void afloatHeStillMakesThePickaxe(GameTestHelper h) {
+    public static void afloatHeStillMakesThePickaxe(GameTestHelper h) { afloatPickaxe(h, false); }
+
+    /** A bench known at the base makes his new one a travelling bench: afloat, he takes it back too, not stands waiting for ground. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void afloatHeTakesHisTravellingBenchBack(GameTestHelper h) { afloatPickaxe(h, true); }
+
+    private static void afloatPickaxe(GameTestHelper h, boolean baseBench) {
         CompanionEntity companion = setup(h);
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= 2; y++)
             h.setBlock(new BlockPos(x, y, z), x >= 14 && x <= 18 && z >= 14 && z <= 18 ? Blocks.WATER : Blocks.STONE);
+        if (baseBench) { h.setBlock(new BlockPos(1, 3, 1), Blocks.CRAFTING_TABLE); companion.rememberPlaced(h.absolutePos(new BlockPos(1, 3, 1))); }
         companion.teleportTo(h.absolutePos(new BlockPos(16, 2, 16)).getX() + .5, h.absolutePos(new BlockPos(16, 2, 16)).getY(), h.absolutePos(new BlockPos(16, 2, 16)).getZ() + .5);
         owner(h, companion).teleportTo(h.absolutePos(new BlockPos(16, 3, 11)).getX() + .5, h.absolutePos(new BlockPos(16, 3, 11)).getY(), h.absolutePos(new BlockPos(16, 3, 11)).getZ() + .5);
         companion.setItem(0, new ItemStack(Items.SPRUCE_PLANKS, 4));
@@ -75,6 +82,7 @@ public final class CompanionBenchTests {
         h.succeedWhen(() -> {
             h.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
             h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.WOODEN_PICKAXE) == 1, companion.getLastTaskResult());
+            if (baseBench) h.assertTrue(companion.getLastTaskResult().contains("забрал"), companion.getLastTaskResult());
         });
     }
 

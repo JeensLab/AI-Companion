@@ -151,7 +151,7 @@ final class CompanionHandOver {
             w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + note, w.packResult.status(), w.packResult.evidence())); return;
         }
         if (!level.hasChunkAt(w.packTarget) || !level.getBlockState(w.packTarget).is(Blocks.CRAFTING_TABLE)) { w.packTarget = null; w.finish(w.packResult); return; }
-        if (!w.owner.onGround()) return;
+        if (!w.owner.onGround() && !w.owner.isInWater()) return;
         String left = " Походный верстак оставил на " + w.packTarget.toShortString() + ".";
         if (w.orderHasStalled(level, 300)) { BlockPos at = w.packTarget; w.packTarget = null;
             w.finish(new CompanionActionResult(w.packResult.success(), w.packResult.message() + " Походный верстак оставил на " + at.toShortString() + ".", w.packResult.status(), w.packResult.evidence())); return; }
