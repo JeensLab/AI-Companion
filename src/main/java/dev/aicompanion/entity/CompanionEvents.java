@@ -279,7 +279,8 @@ public final class CompanionEvents {
     public static CompanionActionResult executeAction(ServerPlayer player, String action, String item, int count, String slot, String trace, String location) {
         dev.aicompanion.CompanionDiagnostics.event(trace, "server_dispatch", "action", action, "item", item, "count", count, "slot", slot);
         CompanionEntity companion = resolveCanonical(player, true);
-        // On the errand in the Nether the plan's own steps reach him there with the player in the overworld (CompanionErrand).
+        // On the errand in the Nether the plan's own steps reach him there with the player in the overworld (CompanionErrand); any other order is answered there.
+        if (companion != null && companion.level() != player.level() && companion.errand.away() && !companion.errand.runs(action)) return companion.errand.orderAway(action);
         if (companion == null || companion.level() != player.level() && !companion.errand.runs(action)) {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");

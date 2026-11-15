@@ -109,9 +109,9 @@ final class CompanionPicking {
         return !here.isEmpty() && find(c, level, here, sites(c, level), Set.of(), new HashSet<>()) != null;
     }
 
-    /** What is taken in this dimension: all of it in the overworld, the Nether's own stone in the Nether, nothing elsewhere. */
+    /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
     private static List<CompanionPickable.Source> allowed(ServerLevel level, List<CompanionPickable.Source> all) {
-        if (level.dimension() == Level.OVERWORLD) return all;
+        if (level.dimension() == Level.OVERWORLD) return all.stream().filter(source -> !CompanionPickable.nether(source.block())).toList();
         return level.dimension() == Level.NETHER ? all.stream().filter(source -> CompanionPickable.nether(source.block())).toList() : List.of();
     }
 

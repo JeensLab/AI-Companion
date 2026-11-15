@@ -296,18 +296,42 @@ public final class CompanionGatherBlockTests {
         });
     }
 
-    /** Plan only: the Nether's own stone is picked with any pickaxe; blackstone is no new source, and with no stone near the overworld plan is refused. */
+    /**
+     * Plan only: the Nether's own stone is picked with any pickaxe, but only in the Nether: in the overworld (where it is almost always the
+     * player's) the plan is the portal's, and with no lit portal it is the portal's refusal. Blackstone is no new source.
+     */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void netherStoneIsPlannedAsPicking(GameTestHelper h) {
         var level = h.getLevel();
+        var nether = level.getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        var pick = List.of(new ItemStack(Items.WOODEN_PICKAXE));
         for (String item : List.of("minecraft:netherrack", "minecraft:basalt")) {
-            var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 8, thing -> true);
-            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 8))), item + ": " + plan);
-            var none = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 8, thing -> false);
-            h.assertTrue(none.refused(), item + " with none near: " + none);
+            var plan = CompanionObtain.plan(nether, pick, false, item, 8, thing -> true, null, new CompanionObtain.Trip(null, true));
+            h.assertTrue(plan.steps().contains(new CompanionObtain.Step("gather_block", item, 8)), item + " in the Nether: " + plan);
+            var home = CompanionObtain.plan(level, pick, false, item, 8, thing -> true);
+            h.assertTrue(home.refused() && home.refusal().contains("портал") && home.steps().isEmpty(), item + " in the overworld with no portal: " + home);
         }
         var blackstone = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, "minecraft:blackstone", 8, thing -> true);
         h.assertTrue(blackstone.steps().stream().noneMatch(step -> step.type().equals("gather_block")), "Blackstone is no source: " + blackstone);
+        h.succeed();
+    }
+
+    /** In the overworld the Nether's stone is no source: a netherrack block in reach is not taken (a player's portal surround stays whole). */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void netherrackInTheOverworldIsNotGathered(GameTestHelper h) {
+        h.setBlock(new BlockPos(3, 2, 3), Blocks.NETHERRACK);
+        h.setBlock(new BlockPos(4, 2, 3), Blocks.BASALT);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 2, 2, 2);
+        var owner = h.makeMockServerPlayerInLevel();
+        c.setOwnerId(owner.getUUID());
+        c.setSearchRadius(16);
+        c.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        for (String item : List.of("minecraft:netherrack", "minecraft:basalt")) {
+            var started = c.startWork("gather_block", item, 1);
+            h.assertTrue(!started.success() && !c.hasActiveWorkOrder(), item + " was taken up as a source: " + started.message());
+        }
+        h.assertBlockPresent(Blocks.NETHERRACK, new BlockPos(3, 2, 3));
         h.succeed();
     }
 

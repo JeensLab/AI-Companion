@@ -69,6 +69,18 @@ public final class CompanionNetherErrandTests {
     @AfterBatch(batch = "errand7")
     public static void afterErrand7(ServerLevel level) { afterErrand(level); }
 
+    @AfterBatch(batch = "errand8")
+    public static void afterErrand8(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand9")
+    public static void afterErrand9(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand10")
+    public static void afterErrand10(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand11")
+    public static void afterErrand11(ServerLevel level) { afterErrand(level); }
+
     private static void afterErrand(ServerLevel level) {
         CompanionFixtureCleanup.afterAtomicTests(level);
         var nether = level.getServer().getLevel(Level.NETHER);
@@ -146,14 +158,22 @@ public final class CompanionNetherErrandTests {
         h.succeed();
     }
 
-    /** Netherrack that lies about him in the overworld is picked as any block, no trip; enough in the bag is no trip either. */
+    /**
+     * Netherrack that lies about him in the overworld is not a source (it is almost always the player's: a portal's surround, a fireplace):
+     * it goes through the portal like quartz, whatever lies near; enough in the bag is no trip.
+     */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void whatIsAtHandNeedsNoTrip(GameTestHelper h) {
         var level = h.getLevel();
-        var trip = new CompanionObtain.Trip(h.absolutePos(new BlockPos(3, 2, 3)), false);
+        BlockPos portal = h.absolutePos(new BlockPos(3, 2, 3));
+        var trip = new CompanionObtain.Trip(portal, false);
         var pick = List.of(new ItemStack(Items.WOODEN_PICKAXE));
-        var near = CompanionObtain.plan(level, pick, false, "minecraft:netherrack", 8, thing -> true, null, trip);
-        h.assertTrue(steps(near).equals(List.of(new Step("gather_block", "minecraft:netherrack", 8))), "Netherrack at hand: " + near);
+        for (String stone : List.of("minecraft:netherrack", "minecraft:basalt")) {
+            var near = CompanionObtain.plan(level, pick, false, stone, 8, thing -> true, null, trip);
+            h.assertTrue(steps(near).equals(List.of(new Step("nether_go", portal.toShortString(), 1), new Step("gather_block", stone, 8), new Step("nether_back", "", 1))), stone + " at hand: " + near);
+            var nowhere = CompanionObtain.plan(level, pick, false, stone, 8, thing -> true, null, null);
+            h.assertTrue(nowhere.refused() && NO_PORTAL.equals(nowhere.refusal()), stone + " with no portal: " + nowhere);
+        }
         var have = plan(level, false, List.of(new ItemStack(Items.QUARTZ, 5)), "minecraft:quartz", 3, trip);
         h.assertTrue(!have.refused() && have.steps().isEmpty(), "Quartz in the bag: " + have);
         h.succeed();
@@ -181,6 +201,40 @@ public final class CompanionNetherErrandTests {
         // The player is in the Nether with him and no errand is on: it is any gathering there, with no way back planned.
         var together = plan(nether, false, pick, "minecraft:quartz", 3, new CompanionObtain.Trip(null, false));
         h.assertTrue(steps(together).equals(List.of(new Step("mine_ore", "minecraft:quartz_ore", 3))), "With the player: " + together);
+        h.succeed();
+    }
+
+    /** Chunk loading off (his own switch or the player's): the Nether's chunks would unload around him, so no trip is planned. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void withChunkLoadingOffTheTripIsNotPlanned(GameTestHelper h) {
+        var level = h.getLevel();
+        var trip = new CompanionObtain.Trip(h.absolutePos(new BlockPos(3, 2, 3)), false, false);
+        var ready = List.of(new ItemStack(Items.WOODEN_PICKAXE), new ItemStack(Items.REDSTONE_TORCH, 3), new ItemStack(Items.STONE, 3));
+        for (String item : List.of("minecraft:quartz", "minecraft:netherrack", "minecraft:basalt", "minecraft:comparator")) {
+            var plan = plan(level, true, ready, item, 3, trip);
+            h.assertTrue(plan.refused() && plan.steps().isEmpty() && plan.refusal().contains("подгрузка чанков") && plan.refusal().contains("Работа вдали от игрока"), item + ": " + plan);
+        }
+        h.succeed();
+    }
+
+    /** The same with a real companion: both switches on plan the trip; either one off refuses it, and nether_go started anyway refuses too. */
+    @GameTest(template = "tall_tree", timeoutTicks = 100)
+    public static void neitherSwitchOffLetsHimGoToTheNetherAlone(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        CompanionEntity companion = spawn(h, 6, 16);
+        companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        var owner = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
+        var on = companion.obtainPlan("minecraft:quartz", 3);
+        h.assertTrue(!on.refused() && on.steps().stream().anyMatch(step -> step.type().equals("nether_go")), "Both switches on: " + on);
+        for (int off = 0; off < 2; off++) {
+            companion.setLifestyle(off != 0, true);
+            owner.getPersistentData().putBoolean("aicompanion:chunk_loading_enabled", off == 0);
+            var plan = companion.obtainPlan("minecraft:quartz", 3);
+            h.assertTrue(plan.refused() && plan.steps().isEmpty() && plan.refusal().contains("подгрузка чанков"), (off == 0 ? "His own" : "The player's") + " switch off: " + plan);
+            var go = companion.startWork("nether_go", "", 1);
+            h.assertTrue(!go.success() && go.message().contains("подгрузка чанков") && !companion.hasActiveWorkOrder(), "nether_go went on: " + go.message());
+        }
         h.succeed();
     }
 
@@ -224,7 +278,7 @@ public final class CompanionNetherErrandTests {
         reloaded.readAdditionalSaveData(tag);
         h.assertTrue(reloaded.getLastTaskResult().contains("прервалась выходом из мира"), "No interruption said: " + reloaded.getLastTaskResult());
         var result = reloaded.workResult(5);
-        h.assertTrue(result != null && !result.success(), "The flag left on load is a success: " + result);
+        h.assertTrue(result != null && !result.success() && result.message().contains("прервалась выходом из мира"), "The flag left on load is no world-load failure: " + result);
         CompoundTag again = new CompoundTag();
         reloaded.addAdditionalSaveData(again);
         h.assertTrue(again.contains("Errand") && again.getCompound("Errand").getLong("Home") == errand.getLong("Home"), "The errand was lost: " + again.get("Errand"));
@@ -310,9 +364,10 @@ public final class CompanionNetherErrandTests {
         UUID id = companion.getUUID();
         List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
         boolean[] hurt = {false};
+        long[] dig = {0};
         h.onEachTick(() -> {
             if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) started.add(run(h, companion, QUARTZ_6));
-            if (!hurt[0] && nether.getEntity(id) instanceof CompanionEntity there && count(there, Items.QUARTZ) >= 1) { there.setHealth(8); hurt[0] = true; }
+            if (!hurt[0] && nether.getEntity(id) instanceof CompanionEntity there && count(there, Items.QUARTZ) >= 1) { dig[0] = there.activeWorkId(); there.setHealth(8); hurt[0] = true; }
         });
         h.succeedWhen(() -> {
             h.assertTrue(hurt[0], "He has not dug a quartz yet");
@@ -321,6 +376,9 @@ public final class CompanionNetherErrandTests {
             CompanionEntity home = (CompanionEntity) h.getLevel().getEntity(id);
             String report = started.getFirst().join().report();
             h.assertTrue(report.contains("Опасно, возвращаюсь с тем, что есть"), "The report: " + report);
+            // What the plan polls (workResult by the dig's id), not only what he says.
+            var polled = dig[0] == 0 ? null : home.workResult(dig[0]);
+            h.assertTrue(polled != null && polled.message().contains("Опасно, возвращаюсь с тем, что есть"), "The dig's own result: " + polled);
             var said = java.util.regex.Pattern.compile("прибавилось (\\d+) «").matcher(report);
             h.assertTrue(said.find(), "No count in the report: " + report);
             int told = Integer.parseInt(said.group(1)), have = count(home, Items.QUARTZ);
@@ -432,11 +490,13 @@ public final class CompanionNetherErrandTests {
         CompanionEntity there = restored(h, nether, cell, new BlockPos(cell[0], 151, cell[1]).asLong(), 60);
         UUID id = there.getUUID();
         List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
+        long[] dig = {0};
         h.onEachTick(() -> {
             if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) {
                 nether.addFreshEntity(there);
                 started.add(run(h, there, QUARTZ_6));
             }
+            if (dig[0] == 0 && !started.isEmpty()) dig[0] = there.activeWorkId();
         });
         h.succeedWhen(() -> {
             h.assertTrue(!started.isEmpty() && started.getFirst().isDone(), "Plan still running: " + describe(h, nether, id));
@@ -445,6 +505,8 @@ public final class CompanionNetherErrandTests {
             String report = started.getFirst().join().report();
             var said = java.util.regex.Pattern.compile("прибавилось (\\d+) «").matcher(report);
             h.assertTrue(report.contains("Время вышло, возвращаюсь с тем, что есть") && said.find(), "The report: " + report);
+            var polled = dig[0] == 0 ? null : home.workResult(dig[0]);
+            h.assertTrue(polled != null && polled.message().contains("Время вышло, возвращаюсь с тем, что есть"), "The dig's own result: " + polled);
             int told = Integer.parseInt(said.group(1)), have = count(home, Items.QUARTZ);
             h.assertTrue(told <= have && have == broken(nether, ores) && have < ores.length, "Said " + told + ", bag " + have + ", ores broken " + broken(nether, ores));
         });
@@ -475,6 +537,141 @@ public final class CompanionNetherErrandTests {
         });
     }
 
+    /**
+     * «Стой» while he digs in the Nether on the errand: the dig is not put aside (a dig of another world is dropped anyway) but ended, the
+     * order is answered by what he does (comes back), not by «not loaded near you», and he walks out.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand11")
+    public static void aStopInTheNetherEndsTheDigAndIsAnsweredHonestly(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var server = h.getLevel().getServer();
+        var nether = server.getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        BlockPos[] ores = arena(nether, cell[0], cell[1]);
+        CompanionEntity there = restored(h, nether, cell, new BlockPos(cell[0], 151, cell[1]).asLong(), MOST);
+        var owner = server.getPlayerList().getPlayer(there.getOwnerId());
+        UUID id = there.getUUID();
+        boolean[] stopped = {false};
+        long[] dig = {0};
+        h.onEachTick(() -> {
+            if (stopped[0] || !FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+            if (dig[0] == 0) {
+                nether.addFreshEntity(there);
+                var started = there.startWork("mine_ore", "minecraft:quartz_ore", 6);
+                h.assertTrue(started.success() && there.activeWorkId() != 0, "No dig: " + started.message());
+                dig[0] = there.activeWorkId();
+                return;
+            }
+            if (broken(nether, ores) < 1) return;
+            h.assertTrue(!there.parkWork() && there.activeWorkId() == dig[0], "The dig was put aside in the Nether");
+            var said = CompanionEvents.executeAction(owner, "wait", "", 1);
+            h.assertTrue(said.success() && !said.message().contains("не загружен") && said.message().contains("Незер"), "The stop's answer: " + said.message());
+            var polled = there.workResult(dig[0]);
+            h.assertTrue(there.activeWorkId() == 0 && polled != null && !polled.message().contains("Отложил"), "The dig was not ended by the stop: " + polled);
+            stopped[0] = true;
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(stopped[0] && h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + describe(h, nether, id));
+            h.assertTrue(nether.getEntity(id) == null, "He is in two worlds");
+        });
+    }
+
+    /** The player is in the Nether but far from him (past 32 blocks): the errand and its watch go on; near him, it is lifted. */
+    @GameTest(template = "tall_tree", timeoutTicks = 600, batch = "errand8")
+    public static void onlyAPlayerNearHimInTheNetherEndsTheErrand(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var server = h.getLevel().getServer();
+        var nether = server.getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        arena(nether, cell[0], cell[1]);
+        CompanionEntity there = restored(h, nether, cell, new BlockPos(cell[0], 151, cell[1]).asLong(), MOST);
+        var owner = server.getPlayerList().getPlayer(there.getOwnerId());
+        owner.setInvulnerable(true);
+        BlockPos back = h.absolutePos(new BlockPos(2, GROUND + 1, 2));
+        UUID id = there.getUUID();
+        long[] since = {-1};
+        h.onEachTick(() -> {
+            if (since[0] < 0) {
+                if (!FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+                nether.addFreshEntity(there);
+                owner.teleportTo(nether, cell[0] + 60.5, 160, cell[1] + 0.5, 0, 0);
+                since[0] = h.getTick();
+                return;
+            }
+            long passed = h.getTick() - since[0];
+            CompoundTag tag = new CompoundTag();
+            there.addAdditionalSaveData(tag);
+            if (passed == 25) {
+                h.assertTrue(tag.contains("Errand") && owner.level() == nether, "A player far off in the Nether ended the errand: " + tag.get("Errand"));
+                owner.teleportTo(nether, cell[0] + 1.5, 150, cell[1] + 5.5, 0, 0);
+            }
+            if (passed > 25 && !tag.contains("Errand")) {
+                h.assertTrue(nether.getEntity(id) == there && there.isFollowing(), "Not lifted by the player's coming: " + describe(h, nether, id));
+                owner.teleportTo(h.getLevel(), back.getX() + .5, back.getY(), back.getZ() + .5, 0, 0);
+                h.succeed();
+            }
+        });
+    }
+
+    /** In the Nether with no errand record at all: nether_back is no «already home»; he walks out by the nearest lit portal. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand9")
+    public static void netherBackWithNoRecordWalksOutByTheNearestPortal(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        arena(nether, cell[0], cell[1]);
+        CompanionEntity there = restored(h, nether, cell, null, -1);
+        UUID id = there.getUUID();
+        boolean[] added = {false};
+        h.onEachTick(() -> {
+            if (added[0] || !FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+            nether.addFreshEntity(there);
+            var back = there.startWork("nether_back", "", 1);
+            h.assertTrue(back.success() && !back.message().contains("уже в верхнем") && there.hasActiveWorkOrder(), "No walk out: " + back.message());
+            added[0] = true;
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(added[0] && h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + describe(h, nether, id));
+            h.assertTrue(nether.getEntity(id) == null, "He is in two worlds");
+        });
+    }
+
+    /** «Already in the overworld» is true only in the overworld; in the Nether with no portal to go out by it is an honest failure. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1000, batch = "errand10")
+    public static void netherBackIsAlreadyHomeOnlyInTheOverworld(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var home = spawn(h, 6, 16).startWork("nether_back", "", 1);
+        h.assertTrue(home.success() && home.message().contains("верхнем мире"), "In the overworld: " + home.message());
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        arena(nether, cell[0], cell[1]);
+        noPortalsNear(nether, cell);
+        CompanionEntity there = restored(h, nether, cell, null, -1);
+        boolean[] added = {false};
+        h.onEachTick(() -> {
+            if (added[0] || !FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) return;
+            nether.addFreshEntity(there);
+            var back = there.startWork("nether_back", "", 1);
+            h.assertTrue(!back.success() && !back.message().contains("уже в верхнем") && !there.hasActiveWorkOrder(), "In the Nether with no portal: " + back.success() + " " + back.message());
+            added[0] = true;
+            h.succeed();
+        });
+    }
+
+    /** No lit portal within his reach, the leftovers of other tests' arenas (they overlap in the Nether) included. */
+    private static void noPortalsNear(ServerLevel nether, int[] cell) {
+        for (BlockPos pos : BlockPos.betweenClosed(cell[0] - 70, 150, cell[1] - 70, cell[0] + 70, 154, cell[1] + 70))
+            if (nether.hasChunkAt(pos) && nether.getBlockState(pos).is(Blocks.NETHER_PORTAL)) nether.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+    }
+
     private static int[] arenaCell(GameTestHelper h) {
         BlockPos at = h.absolutePos(new BlockPos(15, GROUND + 2, 16));
         return new int[] {Math.floorDiv(at.getX(), 8), Math.floorDiv(at.getZ(), 8)};
@@ -488,7 +685,8 @@ public final class CompanionNetherErrandTests {
 
     /**
      * The companion as a loaded world gives him back: an entity of the Nether made out of saved data that carries the errand (the portal at
-     * home, the exit portal if any, a deadline {@code lasts} ticks away), not yet added to the world. Born in the overworld first, as the others.
+     * home, the exit portal if any, a deadline {@code lasts} ticks away; a negative {@code lasts}: no record at all), not yet added to the world.
+     * Born in the overworld first, as the others.
      */
     private static CompanionEntity restored(GameTestHelper h, ServerLevel nether, int[] cell, Long exit, long lasts) {
         CompanionEntity old = spawn(h, 6, 16);
@@ -500,7 +698,7 @@ public final class CompanionNetherErrandTests {
         if (exit != null) errand.putLong("Exit", exit);
         errand.putLong("Since", nether.getGameTime());
         errand.putLong("Deadline", nether.getGameTime() + lasts);
-        tag.put("Errand", errand);
+        if (lasts >= 0) tag.put("Errand", errand);
         UUID id = old.getUUID();
         old.discard();
         CompanionEntity there = AICompanionMod.COMPANION.get().create(nether);

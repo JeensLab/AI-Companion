@@ -44,9 +44,12 @@ public final class CompanionObtain {
     public record Step(String type, String item, int count) { }
     /**
      * What the world gives the plan about the Nether: the lit portal he can walk to from here (null: none within reach), and whether he is
-     * in the Nether on the errand now. A null trip is a plan that knows nothing of it: no portal, no errand.
+     * in the Nether on the errand now, and whether chunk loading would hold him there (CompanionChunks: his own switch and the player's).
+     * A null trip is a plan that knows nothing of it: no portal, no errand.
      */
-    public record Trip(BlockPos portal, boolean away) { }
+    public record Trip(BlockPos portal, boolean away, boolean chunks) {
+        public Trip(BlockPos portal, boolean away) { this(portal, away, true); }
+    }
     /** The chain, or why there is none. */
     public record Plan(List<Step> steps, String refusal) {
         public boolean refused() { return refusal != null; }
@@ -76,8 +79,9 @@ public final class CompanionObtain {
     private final java.util.function.Predicate<Item> roams;
     private final Map<Item, Boolean> roamed = new HashMap<>();
     private final Trip trip;
-    /** A step of the chain is Nether-only and is fetched through the portal; and no portal was there for one (said instead of any other refusal). */
-    private boolean viaNether, portalMissing;
+    /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
+    private boolean viaNether;
+    private String errandRefusal;
     /** He carries a sword or an axe for a fight. */
     private final boolean blade;
     /** What he would pick and does not see about him: named when the plan is refused. */
@@ -143,7 +147,7 @@ public final class CompanionObtain {
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
                 ? planner.need(target, count, 1) && planner.add("craft_item", id.toString(), count)
                 : planner.need(target, count, 0);
-        if (!ok && planner.portalMissing) return new Plan(List.of(), CompanionErrand.NO_PORTAL);
+        if (!ok && planner.errandRefusal != null) return new Plan(List.of(), planner.errandRefusal);
         if (!ok) {
             String reason = planner.why == null ? "Не знаю, как добыть «" + name(item) + "»." : planner.why;
             // «Красную краску» he looked for in every flower that gives it: all of them are named, not the first.
@@ -347,19 +351,21 @@ public final class CompanionObtain {
     }
 
     /**
-     * Quartz, netherrack and basalt come from the Nether only, so from the overworld by the portal; in the Nether on the errand they are dug
-     * there. Netherrack or basalt that lies about him in the overworld is picked like any block, and with the player in the Nether it is any gathering.
+     * Quartz, netherrack and basalt come from the Nether only, so from the overworld by the portal (what lies about him there is the player's:
+     * a portal's surround, a fireplace, never a source, CompanionPicking); in the Nether on the errand they are dug there, and with the player
+     * in the Nether it is any gathering.
      */
     private boolean viaPortal(Item item) {
         if (item != Items.QUARTZ && item != Items.NETHERRACK && item != Items.BASALT) return false;
         if (level.dimension() == Level.NETHER) return trip != null && trip.away();
-        return level.dimension() == Level.OVERWORLD && (item == Items.QUARTZ || !about(item));
+        return level.dimension() == Level.OVERWORLD;
     }
 
     /** The steps of the Nether trip for the item: a pickaxe made at home first (none can be made there), then the digging itself. */
     private boolean nether(Item item, int count, int depth) {
         boolean away = level.dimension() == Level.NETHER;
-        if (!away && (trip == null || trip.portal() == null)) { portalMissing = true; return refuse(CompanionErrand.NO_PORTAL); }
+        if (!away && (trip == null || trip.portal() == null)) { errandRefusal = CompanionErrand.NO_PORTAL; return refuse(CompanionErrand.NO_PORTAL); }
+        if (!away && !trip.chunks()) { errandRefusal = CompanionErrand.CHUNKS_OFF; return refuse(CompanionErrand.CHUNKS_OFF); }
         if (!hasPickaxe()) {
             if (away) return refuse("Кирки нет, а в Незере её не сделать.");
             if (!need("minecraft:wooden_pickaxe", 1, depth + 1)) return false;

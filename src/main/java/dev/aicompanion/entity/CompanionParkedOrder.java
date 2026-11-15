@@ -31,7 +31,8 @@ final class CompanionParkedOrder {
     /** Puts the active job aside; false when there is none or it cannot be put aside (the caller then stops it as before). */
     boolean park() {
         CompanionWork work = owner.work;
-        if (!enabled || !work.isActive() || owner.goals.ownsWork(owner.activeWorkId()) || owner.autonomy.running()) return false;
+        // A dig of the errand's world is not put aside: what is left of it belongs to a world he is about to leave (a stop ends it).
+        if (!enabled || !work.isActive() || owner.errand.away() || owner.goals.ownsWork(owner.activeWorkId()) || owner.autonomy.running()) return false;
         Parked rest = restOf(work);
         if (rest == null) return false;
         String line = "Отложил " + work.jobName() + " — вернусь после.";

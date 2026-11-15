@@ -23,9 +23,12 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class CompanionErrand {
     static final String NO_PORTAL = "Рядом нет портала в Незер — построй его или скажи «построй портал».";
+    static final String CHUNKS_OFF = "В Незер один не пойду: у меня выключена подгрузка чанков. Включи «Работа вдали от игрока» в «Поведении».";
     /** In the Nether for this long at most, looking for what he digs no farther than this from the exit portal, and leaving at half his health. */
     static final long MOST_TICKS = 20 * 60 * 5;
     private static final int SEARCH_WITHIN = 48;
+    /** The player in the same world this close is with him: as close as chunk loading itself counts it (CompanionChunks). */
+    private static final int NEAR = 32;
     /** Ticks with no work in the Nether before he walks out by himself (the plan's next step may be on its way), and the walks he tries. */
     private static final int IDLE_BEFORE_WALK = 60, MOST_WALKS = 3;
     private static final String KEY = "Errand", TRANSIT = "ErrandTransit";
@@ -52,6 +55,14 @@ final class CompanionErrand {
 
     CompanionErrand(CompanionEntity c) { this.c = c; }
 
+    /** Whether chunk loading would hold him in the Nether (CompanionChunks): his own switch and the player's both on, the player online. */
+    static boolean holdsChunks(CompanionEntity c, ServerLevel level) {
+        ServerPlayer owner = c.getOwnerId() == null ? null : level.getServer().getPlayerList().getPlayer(c.getOwnerId());
+        if (owner == null || !c.loadsChunks()) return false;
+        var data = owner.getPersistentData();
+        return !data.contains("aicompanion:chunk_loading_enabled") || data.getBoolean("aicompanion:chunk_loading_enabled");
+    }
+
     /** The errand is on: he went in and is not back. */
     boolean active() { return home != null; }
     /** On the errand and in the Nether now: the plan steps of the errand run there with the player in the overworld. */
@@ -65,6 +76,17 @@ final class CompanionErrand {
         if (!away() || exit == null) return true;
         long dx = pos.getX() - exit.getX(), dz = pos.getZ() - exit.getZ();
         return dx * dx + dz * dz <= (long) SEARCH_WITHIN * SEARCH_WITHIN;
+    }
+
+    /**
+     * An order of the player that is not the errand's own, said while he is in the Nether and the player is not: «стой» ends the digging and
+     * is answered by what he does (he walks out at once); any other order waits until he is home.
+     */
+    CompanionActionResult orderAway(String action) {
+        if (!action.equals("wait") && !action.equals("stop")) return CompanionActionResult.failed("Я в Незере по твоему поручению: сначала вернусь оттуда.");
+        if (c.work.isActive() && c.work.job != CompanionWork.Job.ERRAND) c.work.finish(CompanionActionResult.cancelled("Бросил добычу, возвращаюсь из Незера: " + gathered()));
+        idle = IDLE_BEFORE_WALK;
+        return CompanionActionResult.ok("Бросил добычу, возвращаюсь из Незера.");
     }
 
     /** The steps a plan may run on him while he is in the Nether and the player is not: the digging there and the way back. */
@@ -87,8 +109,11 @@ final class CompanionErrand {
             if (level.dimension() != Level.OVERWORLD) return CompanionActionResult.failed("В Незер хожу из верхнего мира.");
             gate = CompanionPortals.litNear(level, c.blockPosition());
             if (gate == null) return CompanionActionResult.failed(NO_PORTAL);
+            // Without the lease his chunks in the Nether unload a few seconds after he comes, and he stands there frozen.
+            if (!holdsChunks(c, level)) return CompanionActionResult.failed(CHUNKS_OFF);
         } else {
-            if (!active() || level.dimension() != Level.NETHER) return CompanionActionResult.ok("Я уже в верхнем мире.");
+            if (level.dimension() == Level.OVERWORLD) return CompanionActionResult.ok("Я уже в верхнем мире.");
+            if (level.dimension() != Level.NETHER) return CompanionActionResult.failed("Отсюда порталом в верхний мир я не вернусь.");
             gate = exit != null && level.getBlockState(exit).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL) ? exit : CompanionPortals.litNear(level, c.blockPosition());
             if (gate == null) return CompanionActionResult.failed("Не вижу портала, чтобы вернуться в верхний мир.");
         }
@@ -172,10 +197,10 @@ final class CompanionErrand {
         if (away()) { level.resetEmptyTime(); watch(level); }
     }
 
-    /** On the errand in the Nether: the player's coming ends it; danger or the time cuts the digging short; with no work he walks out. */
+    /** On the errand in the Nether: a player coming near him ends it; danger or the time cuts the digging short; with no work he walks out. */
     private void watch(ServerLevel level) {
         ServerPlayer owner = c.getOwnerId() == null ? null : level.getServer().getPlayerList().getPlayer(c.getOwnerId());
-        if (owner != null && owner.level() == level) { join(); return; }
+        if (owner != null && owner.level() == level && c.distanceToSqr(owner) < NEAR * NEAR) { join(); return; }
         // A record that has no exit portal (a save, a portal not seen at the arrival) finds the nearest one as soon as there is one.
         if (exit == null && level.getGameTime() % 20 == 0) exit = CompanionPortals.litNear(level, c.blockPosition());
         String why = c.getHealth() <= c.getMaxHealth() / 2 ? "Опасно, возвращаюсь с тем, что есть"
@@ -219,7 +244,7 @@ final class CompanionErrand {
         if (owner != null) owner.sendSystemMessage(Component.literal(c.getName().getString() + ": " + text));
     }
 
-    /** The player came to the Nether: no errand any more, he is with the player; what he digs there goes on as any gathering. */
+    /** The player came near him in the Nether: no errand any more, he is with the player; what he digs there goes on as any gathering. */
     private void join() {
         if (c.work.isActive() && c.work.job != CompanionWork.Job.ERRAND) { home = exit = null; since = deadline = 0; }
         else lift();

@@ -159,7 +159,7 @@ final class CompanionBag {
                 wanted -> wanted == net.minecraft.world.item.Items.COMPOSTER ? CompanionComposting.find(c, true) != null
                         : CompanionPicking.near(c, serverLevel, CompanionPickable.sources(serverLevel, wanted)) || CompanionFarming.ripeNear(c, serverLevel, wanted)
                         || CompanionChores.about(c, serverLevel, wanted), wanted -> CompanionMobDrops.near(c, serverLevel, wanted),
-                new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away()));
+                new CompanionObtain.Trip(serverLevel.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionPortals.litNear(serverLevel, c.blockPosition()) : null, c.errand.away(), CompanionErrand.holdsChunks(c, serverLevel)));
     }
     /** The end of obtain_item: success only by the bag, never by the plan. */
     public CompanionActionResult carriedCheck(String item, int count) {
