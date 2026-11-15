@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -67,6 +68,7 @@ final class CompanionStoneMining {
             return;
         }
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
+        if (generatorStep(level)) return;
         if (w.stoneCandidates == null) {
             if (!w.stoneSearch.scan(level)) { w.owner.workStatus("Ищу выходы камня в пределах " + w.owner.getSearchRadius() + " блоков."); return; }
             w.stoneCandidates = new ArrayList<>(w.stoneSearch.results());
@@ -271,6 +273,109 @@ final class CompanionStoneMining {
         w.rejected.add(w.target);
         w.resetTarget();
         w.cooldown = 3;
+    }
+
+    /** A generator that has not grown its stone back in this long is broken. */
+    private static final int GENERATOR_REGROW_TICKS = 100;
+    /** A walk to the dry cell by the generator that takes longer than this is no way to it. */
+    private static final int GENERATOR_WALK_TICKS = 200;
+    private CompanionStoneSearch generatorOrder; // the search of the order the state below belongs to
+    private BlockPos generator;
+    private long generatorEmptySince = -1;
+    private int generatorWalking;
+
+    /**
+     * A cobblestone generator beside him, like a player works one: the stone is mined from a cell that touches no lava and no
+     * water, then he waits there until the stone has grown back in the same place and mines it again. {@link #safeToMine} refuses
+     * such a stone (lava and water beside it), so this runs before the ordinary search and mines it on its own terms. True while
+     * it holds the tick; false when there is no generator, or it is broken (no stone back in time, no dry cell to work it from).
+     */
+    private boolean generatorStep(ServerLevel level) {
+        if (generatorOrder != w.stoneSearch) {
+            generatorOrder = w.stoneSearch; generatorEmptySince = -1; generatorWalking = 0;
+            generator = nearestGenerator(level);
+        }
+        if (generator == null) return false;
+        if (!isGeneratorStone(level, generator)) {
+            long now = level.getGameTime();
+            if (generatorEmptySince < 0) generatorEmptySince = now;
+            if (!level.getBlockState(generator).isAir() || now - generatorEmptySince > GENERATOR_REGROW_TICKS) { generator = null; return false; }
+            w.owner.workStatus("Жду, пока в генераторе вырастет камень: " + w.gathered + " из " + w.wantedStone + ".");
+            return true;
+        }
+        generatorEmptySince = -1;
+        BlockPos here = w.owner.blockPosition();
+        if (!workableFrom(level, here)) {
+            if (++generatorWalking > GENERATOR_WALK_TICKS) { generator = null; return false; }
+            if (generatorWalking == 1) w.path = null; // a path left from other work is no way here
+            if (w.path == null || w.route.legOver()) {
+                Set<BlockPos> stands = new java.util.HashSet<>();
+                for (BlockPos cell : CompanionMiningNavigation.standCells(w.owner, generator, 3.5, false, false)) if (workableFrom(level, cell)) stands.add(cell);
+                w.path = stands.isEmpty() ? null : w.route.toCells(stands);
+            }
+            if (w.path == null || !w.path.canReach()) { w.path = null; generator = null; return false; }
+            w.owner.workStatus("Иду к сухому месту у генератора камня.");
+            w.route.walk(w.path);
+            return true;
+        }
+        generatorWalking = 0;
+        w.route.stop();
+        BlockState state = level.getBlockState(generator);
+        w.target = generator;
+        if (w.items.prepareMiningTool(state)) return true;
+        if (!w.items.usablePickaxe(w.owner.getMainHandItem())) {
+            w.owner.selectToolForBlock(state);
+            if (!w.items.usablePickaxe(w.owner.getMainHandItem())) { w.resetTarget(); w.phase = CompanionWork.Phase.PICKAXE; return true; }
+        }
+        ItemStack pickaxe = w.owner.getMainHandItem();
+        if (!pickaxe.isCorrectToolForDrops(state)) { w.resetTarget(); w.phase = CompanionWork.Phase.PICKAXE; return true; }
+        w.owner.movementIntent(generator);
+        w.owner.getLookControl().setLookAt(generator.getX() + 0.5D, generator.getY() + 0.5D, generator.getZ() + 0.5D);
+        w.owner.workStatus("Копаю генератор булыжника: " + w.gathered + " из " + w.wantedStone + ".");
+        if (!w.breaking.tick(level, generator)) return true;
+        var drops = CompanionTools.drops(state, level, generator, null, w.owner, pickaxe);
+        if (drops.isEmpty() || !w.items.canStore(drops)) { w.finish(false, "В сумке нет места для добычи. Освободи место или попроси сложить ресурсы в сундук."); return true; }
+        if (!level.destroyBlock(generator, false, w.owner, 512)) { w.resetTarget(); generator = null; return false; }
+        pickaxe.getItem().mineBlock(pickaxe, level, state, generator, w.owner);
+        w.owner.dropHarvest(generator, drops);
+        w.owner.observeEvent("stone", "Сломал камень генератора и вижу выпавший материал. Работа ещё может продолжаться.");
+        generatorEmptySince = level.getGameTime();
+        w.resetTarget();
+        w.cooldown = 3;
+        return true;
+    }
+
+    /** Cobblestone or stone with both lava and water beside it, the nearest within a few blocks of him. */
+    private BlockPos nearestGenerator(ServerLevel level) {
+        BlockPos here = w.owner.blockPosition();
+        BlockPos best = null;
+        for (BlockPos pos : BlockPos.betweenClosed(here.offset(-6, -3, -6), here.offset(6, 3, 6)))
+            if (level.hasChunkAt(pos) && isGeneratorStone(level, pos) && w.owner.leashAllows(pos) && (best == null || pos.distSqr(here) < best.distSqr(here))) best = pos.immutable();
+        return best;
+    }
+
+    private static boolean isGeneratorStone(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (!state.is(Blocks.COBBLESTONE) && !state.is(Blocks.STONE)) return false;
+        boolean lava = false, water = false;
+        for (Direction side : Direction.values()) {
+            BlockPos next = pos.relative(side);
+            if (!level.hasChunkAt(next)) return false;
+            lava |= level.getFluidState(next).is(FluidTags.LAVA);
+            water |= level.getFluidState(next).is(FluidTags.WATER);
+        }
+        return lava && water;
+    }
+
+    /** A cell to work the generator from: his feet and head touch neither lava nor water, the stone is in reach and sight, its drop lands where he can take it. */
+    private boolean workableFrom(ServerLevel level, BlockPos feet) {
+        if (!CompanionMiningNavigation.standable(w.owner, feet) || Vec3.atBottomCenterOf(feet).distanceToSqr(generator.getCenter()) > 3.5 * 3.5) return false;
+        for (BlockPos cell : new BlockPos[]{feet, feet.above()}) {
+            if (!level.getFluidState(cell).isEmpty()) return false;
+            for (Direction side : Direction.values()) if (!level.getFluidState(cell.relative(side)).isEmpty()) return false;
+        }
+        Vec3 eye = Vec3.atBottomCenterOf(feet).add(0, w.owner.getEyeHeight(), 0);
+        return CompanionMiningNavigation.visible(w.owner, eye, generator) && CompanionMiningNavigation.dropCollectable(level, generator, feet);
     }
 
     /**
