@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE_GEN, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, COBBLE, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -47,6 +47,7 @@ public final class CompanionWork {
     private final CompanionHouse templateHouse;
     private boolean templateJob;
     final CompanionObsidian obsidian;
+    final CompanionCobbleGen cobbleGen;
     final CompanionPortalBuild portal;
     /** disenchant_item: the walk to a grindstone, or his own one, and the grinding. */
     final CompanionGrinding grinding = new CompanionGrinding(this);
@@ -300,7 +301,7 @@ public final class CompanionWork {
     }
 
     public CompanionWork(CompanionEntity owner) {
-        this.owner = owner; house = new CompanionHouse(owner); templateHouse = new CompanionHouse(owner, true); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this);
+        this.owner = owner; house = new CompanionHouse(owner); templateHouse = new CompanionHouse(owner, true); breaking = new CompanionBlockBreaking(owner); obsidian = new CompanionObsidian(this); portal = new CompanionPortalBuild(this); cobbleGen = new CompanionCobbleGen(this);
         pickaxeSense = new CompanionToolSense(owner, "pickaxe", ItemTags.PICKAXES, Blocks.STONE.defaultBlockState());
         shovelSense = new CompanionToolSense(owner, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
     }
@@ -334,7 +335,7 @@ public final class CompanionWork {
             case WOOD, WOOD_DONE -> "заготовка дерева";
             case MINE, DIGGING, ORE, OBSIDIAN, BLOCK -> "добыча";
             case STORE, CLOSE, PACK, SORT -> "работа с вещами";
-            case BUILD, PEN, PORTAL -> "строительство";
+            case BUILD, PEN, PORTAL, COBBLE -> "строительство";
             case RETURN, EXIT -> "возвращение";
             case FIGHT, CHASE, DROPS -> "поиск и бой";
             case HAND -> "передача вещей";
@@ -381,6 +382,7 @@ public final class CompanionWork {
             case OBSIDIAN -> obsidian.jobName();
             case BLOCK -> picking.jobName();
             case PORTAL -> portal.jobName();
+            case COBBLE_GEN -> cobbleGen.jobName();
             case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
             case PLACE -> "поход к метке «" + placeName + "»";
             case GRIND -> grinding.jobName();
@@ -490,6 +492,7 @@ public final class CompanionWork {
             case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "gather_block" -> { CompanionActionResult refusal = picking.begin(item, count); if (refusal != null) return refusal; job = Job.BLOCK; phase = Phase.BLOCK; }
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
+            case "build_cobble_gen" -> { CompanionActionResult refusal = cobbleGen.begin(); if (refusal != null) return refusal; job = Job.COBBLE_GEN; phase = Phase.COBBLE; }
             case "build_portal" -> { CompanionActionResult answer = portal.begin(item); if (answer != null) return answer; job = Job.PORTAL; phase = Phase.PORTAL; }
             case "compost_items" -> { CompanionActionResult refusal = composting.begin(item, count); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
             case "compost_meal" -> { CompanionActionResult refusal = composting.begin(item, count, true); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
@@ -648,7 +651,7 @@ public final class CompanionWork {
         clearCracks();
         closeChest();
         if (job == Job.ERRAND) owner.errand.cancelled();
-        house.cancel(); templateHouse.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
+        house.cancel(); templateHouse.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel(); cobbleGen.cancel();
         // The chest he set down served this order only: a later store order goes the old way again.
         if (job == Job.STORE) owner.lastPlacedPosition = null;
         job = null; phase = null; afterWood = null;
@@ -716,6 +719,7 @@ public final class CompanionWork {
             case OBSIDIAN -> obsidian.tick(level);
             case BLOCK -> picking.tick(level);
             case PORTAL -> portal.tick(level);
+            case COBBLE -> cobbleGen.tick(level);
             case PICKUP -> pickUp(level);
             case PLACE -> walkToPlace(level);
             case GRIND -> grinding.tick(level);
