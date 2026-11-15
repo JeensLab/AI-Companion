@@ -51,15 +51,28 @@ final class CompanionPortals {
 
     /** The player's order: the nearest Nether portal, whoever lit it. What he works on ends here, as on «иди за мной». */
     CompanionActionResult enter(ServerLevel level) {
-        var found = level.getPoiManager().findClosest(type -> type.is(PoiTypes.NETHER_PORTAL),
-                pos -> level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.NETHER_PORTAL), c.blockPosition(), WALKS_FROM, PoiManager.Occupancy.ANY);
-        if (found.isEmpty()) return CompanionActionResult.failed("Рядом нет портала в Незер.");
+        BlockPos found = litNear(level, c.blockPosition(), WALKS_FROM);
+        if (found == null) return CompanionActionResult.failed("Рядом нет портала в Незер.");
         c.setFollowing(true);
+        goTo(level, found);
+        return CompanionActionResult.ok("Иду к порталу.");
+    }
+
+    /** The foot of the nearest lit Nether portal within the radius of the place, or null: the portal he can walk to and be taken by. */
+    static BlockPos litNear(ServerLevel level, BlockPos from, int radius) {
+        var found = level.getPoiManager().findClosest(type -> type.is(PoiTypes.NETHER_PORTAL),
+                pos -> level.hasChunkAt(pos) && level.getBlockState(pos).is(Blocks.NETHER_PORTAL), from, radius, PoiManager.Occupancy.ANY);
+        return found.isEmpty() ? null : foot(level, found.get());
+    }
+
+    static BlockPos litNear(ServerLevel level, BlockPos from) { return litNear(level, from, WALKS_FROM); }
+
+    /** The walk to this portal on an order, with the player staying where he is; the errand's work drives it (CompanionErrand). */
+    void goTo(ServerLevel level, BlockPos foot) {
         // Fresh from a crossing the game keeps him from the portal for as long as he stands in it; an order is no bounce.
         c.setPortalCooldown(0);
-        walkTo(level, foot(level, found.get()));
+        walkTo(level, foot);
         ordered = true;
-        return CompanionActionResult.ok("Иду к порталу.");
     }
 
     private void walkTo(ServerLevel level, BlockPos taken) {
@@ -134,7 +147,7 @@ final class CompanionPortals {
         return c.blockPosition().distSqr(one) <= c.blockPosition().distSqr(other) ? one : other;
     }
 
-    private void walk() {
+    void walk() {
         // The selector checks canContinueToUse every other tick only: on the tick between, a stopped walk still comes here.
         if (portal == null) return;
         Vec3 inside = Vec3.atBottomCenterOf(portal), before = Vec3.atBottomCenterOf(entry), here = c.position();
@@ -156,7 +169,7 @@ final class CompanionPortals {
     static final class FollowThroughPortalGoal extends Goal {
         final CompanionEntity c;
         FollowThroughPortalGoal(CompanionEntity c) { this.c = c; setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK, Flag.JUMP)); }
-        @Override public boolean canUse() { return c.portals.walking() && c.inventoryViewers == 0; }
+        @Override public boolean canUse() { return c.portals.walking() && c.inventoryViewers == 0 && !c.work.leadsPortalWalk(); }
         @Override public boolean canContinueToUse() { return canUse(); }
         @Override public boolean requiresUpdateEveryTick() { return true; }
         @Override public void tick() { c.portals.walk(); }

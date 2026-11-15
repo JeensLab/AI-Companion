@@ -25,8 +25,8 @@ import java.util.Set;
 
 /** Bounded server-side work. Prerequisites use real recipes, tools, blocks and inventories. */
 public final class CompanionWork {
-    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE }
-    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE }
+    enum Job { STONE, CRAFT, STORE, TAKE, PLACE_CHEST, HOUSE, DIRT, COME, HUNT, WOOD, GIVE, SMELT, ORE, GAME, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICK_UP, PLACE, GRIND, COMPOST, BLOCK, CHORE, ERRAND }
+    enum Phase { CRAFT, PICKAXE, WOOD, MINE, STORE, CLOSE, BUILD, SHOVEL, DIGGING, RETURN, FIGHT, WOOD_DONE, EXIT, PACK, HAND, FURNACE, COOK, ORE_PICK, ORE, IRON, CHASE, SORT, PEN, BREED, FARM, COURSE, WATER, OBSIDIAN, PORTAL, PICKUP, PLACE, GRIND, COMPOST, BLOCK, DROPS, CHORE, ERRAND }
     final CompanionEntity owner;
     final CompanionWorkItems items = new CompanionWorkItems(this);
     final CompanionHunting hunting = new CompanionHunting(this);
@@ -293,6 +293,8 @@ public final class CompanionWork {
     public long activeTaskId() { return isActive() ? taskId : 0; }
     public CompanionActionResult taskResult(long id) {
         if (completedId == id) return completedResult;
+        // The work that walked into a Nether portal is finished by his arrival on the other side, a tick later: not lost meanwhile.
+        if (owner.errand.arriving(id)) return null;
         CompanionActionResult parked = owner.batches().parkedResult(id);
         return parked != null ? parked : isActive() && taskId == id ? null : CompanionActionResult.cancelled("Работа была прервана другой командой.");
     }
@@ -303,6 +305,8 @@ public final class CompanionWork {
         shovelSense = new CompanionToolSense(owner, "shovel", ItemTags.SHOVELS, Blocks.DIRT.defaultBlockState());
     }
     public boolean isActive() { return job != null; }
+    /** The errand's work walks to its portal itself: the goal that leads a walk to a portal on an order stays out of it. */
+    boolean leadsPortalWalk() { return job == Job.ERRAND; }
     /** Busy with a block, or on a scaffold column (climbing, standing, coming down): the pickup of drops from the ground does not start then (CompanionLoot.canChase). */
     boolean swinging() { return breaking.swinging() || job == Job.HOUSE && templateJob && templateHouse.scaffolding(); }
     boolean allowsRouteRecovery() {
@@ -346,6 +350,7 @@ public final class CompanionWork {
             case GRIND -> "у точила";
             case COMPOST -> "у компостера";
             case CHORE -> "по хозяйству";
+            case ERRAND -> "поход в Незер";
         };
         return "Выполняет " + jobName() + " · " + stage;
     }
@@ -381,6 +386,7 @@ public final class CompanionWork {
             case GRIND -> grinding.jobName();
             case COMPOST -> composting.jobName();
             case CHORE -> chores.jobName();
+            case ERRAND -> owner.errand.jobName();
         };
     }
     /** Job and phase in short, for the GameTest observer. */
@@ -494,6 +500,7 @@ public final class CompanionWork {
                 job = Job.GIVE; phase = Phase.HAND;
             }
             case "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block" -> { CompanionActionResult refusal = chores.begin(action, item, count); if (refusal != null) return refusal; job = Job.CHORE; phase = Phase.CHORE; }
+            case "nether_go", "nether_back" -> { CompanionActionResult answer = owner.errand.begin(action, level); if (answer != null) return answer; job = Job.ERRAND; phase = Phase.ERRAND; }
             case "hunt_mobs" -> { job = Job.HUNT; phase = Phase.FIGHT; }
             case "hunt_drop" -> { CompanionActionResult refusal = drops.begin(item, count); if (refusal != null) return refusal; job = Job.HUNT; phase = Phase.DROPS; }
             case "hunt_animals" -> {
@@ -617,7 +624,7 @@ public final class CompanionWork {
             afterWood = Phase.WOOD_DONE; woodBeforeRequest = owner.collectedLogs(); owner.startGatheringLogsForWork(count);
         }
         if ("collect_smelt".equals(action)) return CompanionActionResult.accepted(owner.batches().restore(item, this, level));
-        return CompanionActionResult.accepted(job == Job.COURSE ? "Веду " + CompanionCourse.where(item) + "." : job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : startNote + "Сейчас подготовлюсь.");
+        return CompanionActionResult.accepted(job == Job.ERRAND ? owner.errand.announce() : job == Job.COURSE ? "Веду " + CompanionCourse.where(item) + "." : job == Job.STORE ? "Сейчас сложу вещи." : job == Job.PLACE_CHEST ? "Поставлю блок." : startNote + "Сейчас подготовлюсь.");
     }
 
     /** Handing the smelt to a batch is no finish: nothing credited, noted, packed or journalled as a failure. */
@@ -640,6 +647,7 @@ public final class CompanionWork {
         items.putHeldStackBack();
         clearCracks();
         closeChest();
+        if (job == Job.ERRAND) owner.errand.cancelled();
         house.cancel(); templateHouse.cancel(); route.abandon(); pen.cancel(); breeding.cancel(); course.cancel(); trip.reset(); obsidian.cancel(); portal.cancel();
         // The chest he set down served this order only: a later store order goes the old way again.
         if (job == Job.STORE) owner.lastPlacedPosition = null;
@@ -713,6 +721,7 @@ public final class CompanionWork {
             case GRIND -> grinding.tick(level);
             case COMPOST -> composting.tick(level);
             case CHORE -> chores.tick(level);
+            case ERRAND -> owner.errand.step(level);
             case WOOD -> { }
         }
     }

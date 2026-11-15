@@ -50,6 +50,7 @@ final class CompanionEntityNbt {
         tag.putInt("DeathRecoveryDeaths", c.deathRecoveryDeaths());
         c.goals.save(tag);
         c.social.save(tag);
+        c.errand.save(tag);
     }
 
     void load(CompoundTag tag) {
@@ -105,7 +106,9 @@ final class CompanionEntityNbt {
         c.parked.load(tag);
         c.batches().load(tag);
         c.setCanPickUpLoot(false);
-        if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {
+        // The work that walked into a portal is not lost: the new entity finishes it (CompanionErrand); a world loaded is another thing.
+        boolean crossed = c.errand.load(tag);
+        if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") && !crossed || tag.getBoolean("SupportSoilTask")) {
             c.setFollowing(true);
             c.lastTaskSucceeded = false;
             c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, c.temporaryPillar.isRecovering()

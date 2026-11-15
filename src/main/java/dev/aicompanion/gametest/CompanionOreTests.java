@@ -241,7 +241,9 @@ public final class CompanionOreTests {
     public static void quartzIsAnOreKindAndPlannedAsMining(GameTestHelper h) {
         for (String name : new String[]{"quartz", "minecraft:quartz", "minecraft:nether_quartz_ore"})
             h.assertTrue(dev.aicompanion.entity.CompanionOre.Kind.of(name) == dev.aicompanion.entity.CompanionOre.Kind.QUARTZ, "Kind of " + name);
-        var plan = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), java.util.List.of(), false, "minecraft:quartz", 5);
+        // From the overworld the quartz is mined in the Nether, through a lit portal (CompanionErrand); in the Nether on the errand, there.
+        var portal = new dev.aicompanion.entity.CompanionObtain.Trip(h.absolutePos(new BlockPos(3, 2, 3)), false);
+        var plan = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), java.util.List.of(), false, "minecraft:quartz", 5, null, null, portal);
         h.assertTrue(!plan.refused() && plan.steps().stream().anyMatch(step -> step.type().equals("mine_ore") && step.item().equals("minecraft:quartz_ore") && step.count() == 5),
                 "Quartz plan: " + plan);
         h.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"mine_ore\",\"item\":\"minecraft:quartz\"}]"))
