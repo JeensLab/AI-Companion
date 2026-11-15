@@ -10,6 +10,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BucketItem;
@@ -49,6 +50,7 @@ final class CompanionCobbleGen {
     static final String FULL_BAG = "Сумка забита — некуда сложить выкопанное.";
     static final String NETHER = "В Незере генератор не сделать: вода здесь испаряется.";
     static final String NOT_POURED = "Не получилось вылить ведро — ведро осталось при мне.";
+    static final String BLOCKED = "В канале кто-то стоит или лежит выкопанное — не могу лить.";
     static final String NO_STONE = "Лава и вода стоят, а булыжник не появился.";
     /** A player's reach for a block, as his bucket has it (CompanionObsidian). */
     private static final double REACH = 4.5;
@@ -100,7 +102,7 @@ final class CompanionCobbleGen {
     private Set<BlockPos> stands = Set.of();
     private Path path;
     private int legs;
-    private long pickingSince, grownFrom;
+    private long pickingSince, grownFrom, blockedSince;
     private boolean retried;
 
     CompanionCobbleGen(CompanionWork w) { this.w = w; this.c = w.owner; }
@@ -125,7 +127,7 @@ final class CompanionCobbleGen {
 
     void cancel() { reset(); }
 
-    private void reset() { plan = null; aimed = null; stands = Set.of(); path = null; legs = 0; pickingSince = grownFrom = 0; retried = false; }
+    private void reset() { plan = null; aimed = null; stands = Set.of(); path = null; legs = 0; pickingSince = grownFrom = blockedSince = 0; retried = false; }
 
     /** One tick: the first thing the generator lacks, read from the world, done from where he reaches it. */
     void tick(ServerLevel level) {
@@ -147,6 +149,8 @@ final class CompanionCobbleGen {
             return;
         }
         w.route.stop();
+        if (pouring && !clear(level, step.kind())) return;
+        blockedSince = 0;
         w.progressed();
         switch (step.kind()) {
             case DIG -> dig(level, step.cell());
@@ -178,7 +182,15 @@ final class CompanionCobbleGen {
             }
         }
         if (!water(level)) return new Step(Kind.WATER, plan.water());
-        if (!lava(level)) return new Step(Kind.LAVA, plan.lava());
+        if (!lava(level)) {
+            // What lies where the lava goes would burn: picked up first (a short while, then the work ends).
+            if (!lyingIn(level, plan.lava(), plan.stone()).isEmpty()) {
+                if (pickingSince == 0) pickingSince = level.getGameTime();
+                if (level.getGameTime() - pickingSince > PICK_TICKS) { w.finish(false, BLOCKED); return null; }
+                return new Step(Kind.PICK, plan.stone());
+            }
+            return new Step(Kind.LAVA, plan.lava());
+        }
         // Both stand: the lava runs into the stone's cell, meets the water that fell into the hole next to it, and sets.
         if (grownFrom == 0) grownFrom = level.getGameTime();
         if (level.getGameTime() - grownFrom > GROW_TICKS) { event("cobble_gen_no_stone", "stone", level.getBlockState(plan.stone())); w.finish(false, NO_STONE); return null; }
@@ -199,6 +211,27 @@ final class CompanionCobbleGen {
 
     /** What he dug lies in the row or in its hole: picked up before the fluids burn it (the pickup runs between his ticks). */
     private List<ItemEntity> lying(ServerLevel level) { return level.getEntitiesOfClass(ItemEntity.class, plan.box().inflate(1), ItemEntity::isAlive); }
+
+    private List<ItemEntity> lyingIn(ServerLevel level, BlockPos... cells) {
+        List<ItemEntity> items = new java.util.ArrayList<>();
+        for (BlockPos cell : cells) items.addAll(level.getEntitiesOfClass(ItemEntity.class, new AABB(cell), ItemEntity::isAlive));
+        return items;
+    }
+
+    /**
+     * No one stands where the fluid goes (lava: its cell and the stone's; water: the pit, its own cell and the hole): a player or a mob
+     * in the channel would be burnt or drowned. Waits a while, then the work ends.
+     */
+    private boolean clear(ServerLevel level, Kind kind) {
+        BlockPos[] cells = kind == Kind.LAVA ? new BlockPos[]{plan.lava(), plan.stone()} : new BlockPos[]{plan.pit(), plan.water(), plan.hole()};
+        boolean occupied = false;
+        for (BlockPos cell : cells) occupied |= !level.getEntitiesOfClass(LivingEntity.class, new AABB(cell), LivingEntity::isAlive).isEmpty();
+        if (!occupied) return true;
+        if (blockedSince == 0) blockedSince = level.getGameTime();
+        if (level.getGameTime() - blockedSince > PICK_TICKS * 3) { w.finish(false, BLOCKED); return false; }
+        c.workStatus("Жду, пока освободится канал.");
+        return false;
+    }
 
     private void pick(ServerLevel level, BlockPos cell) {
         if (pickingSince == 0) pickingSince = level.getGameTime();
@@ -296,25 +329,46 @@ final class CompanionCobbleGen {
         for (BlockPos cell : p.dig()) {
             if (!level.hasChunkAt(cell)) return -1;
             BlockState state = level.getBlockState(cell);
-            if (!CompanionPortalBuild.natural(state, site.test(cell)) || !diggable(state, level, cell)) return -1;
+            if (site.test(cell) || !CompanionPortalBuild.natural(state, false) || !diggable(state, level, cell)) return -1;
         }
+        if (ignites(level, p.lava()) || ignites(level, p.stone())) return -1;
         for (BlockPos cell : p.row()) if (!CompanionPortalBuild.free(level, cell.above()) || !level.getFluidState(cell.above()).isEmpty()) return -1;
         for (BlockPos floor : p.floors()) {
             if (!level.hasChunkAt(floor)) return -1;
             BlockState state = level.getBlockState(floor);
-            if (!state.isFaceSturdy(level, floor, Direction.UP) || !state.getFluidState().isEmpty()) return -1;
+            if (!state.isFaceSturdy(level, floor, Direction.UP) || !state.getFluidState().isEmpty() || site.test(floor) || !holds(state)) return -1;
         }
         int walls = 0;
         for (BlockPos wall : p.walls()) {
             if (!level.hasChunkAt(wall)) return -1;
             BlockState state = level.getBlockState(wall);
             if (!state.getFluidState().isEmpty()) return -1;
-            if (state.isCollisionShapeFullBlock(level, wall)) continue;
+            if (state.isCollisionShapeFullBlock(level, wall)) {
+                if (site.test(wall) || !holds(state)) return -1;
+                continue;
+            }
             // A gap in the ground's edge: walled if something firm lies under it, else it is a cliff or a hole.
             if (!CompanionPortalBuild.free(level, wall) || site.test(wall) || !level.getBlockState(wall.below()).isFaceSturdy(level, wall.below(), Direction.UP)) return -1;
             walls++;
         }
         return walls;
+    }
+
+    /**
+     * Lava's random tick sets fire in air up to three above it and its neighbours that touches something flammable, and on a flammable
+     * block beside it (vanilla LavaFluid.randomTick): anything flammable within two blocks around and two above is too near. Grass and
+     * flowers count, so a meadow with plants there is passed over (he does not clear plants).
+     */
+    private static boolean ignites(ServerLevel level, BlockPos lava) {
+        for (BlockPos at : BlockPos.betweenClosed(lava.offset(-2, 0, -2), lava.offset(2, 2, 2))) {
+            if (!level.hasChunkAt(at) || level.getBlockState(at).ignitedByLava()) return true;
+        }
+        return false;
+    }
+
+    /** A block that stays whole next to lava and water: it does not burn, fall or melt (ice, packed ice, frosted ice). */
+    private static boolean holds(BlockState state) {
+        return !(state.getBlock() instanceof FallingBlock) && !state.ignitedByLava() && !state.is(BlockTags.ICE) && !state.is(BlockTags.LEAVES);
     }
 
     private int needed(ServerLevel level, Plan p) {
@@ -330,12 +384,12 @@ final class CompanionCobbleGen {
         return count;
     }
 
-    /** A plain solid block that neither falls nor burns in lava and has no inside: cobblestone, dirt, stone and the like (not sand, planks, a chest). */
+    /** A plain solid block that neither falls, burns nor melts and has no inside: cobblestone, dirt, stone and the like (not sand, planks, ice, ores, a chest). */
     private static boolean wallBlock(ItemStack stack) {
         if (!(stack.getItem() instanceof BlockItem item)) return false;
         BlockState state = item.getBlock().defaultBlockState();
-        return !(item.getBlock() instanceof FallingBlock) && !state.hasBlockEntity() && !state.ignitedByLava() && !state.is(BlockTags.LEAVES)
-                && state.getFluidState().isEmpty() && state.isCollisionShapeFullBlock(EMPTY, BlockPos.ZERO) && state.getDestroySpeed(EMPTY, BlockPos.ZERO) >= 0;
+        return holds(state) && !state.hasBlockEntity() && !state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES)
+                && !state.is(net.neoforged.neoforge.common.Tags.Blocks.STORAGE_BLOCKS) && state.getFluidState().isEmpty() && state.isCollisionShapeFullBlock(EMPTY, BlockPos.ZERO) && state.getDestroySpeed(EMPTY, BlockPos.ZERO) >= 0;
     }
 
     private static float hardness(ItemStack stack) { return ((BlockItem) stack.getItem()).getBlock().defaultDestroyTime(); }

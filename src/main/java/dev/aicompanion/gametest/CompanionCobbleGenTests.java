@@ -144,6 +144,76 @@ public final class CompanionCobbleGenTests {
         });
     }
 
+    /** A player or a mob in the channel: no fluid is poured into his cell; when he leaves, the generator is finished. */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void noLavaIsPouredOntoAMobStandingInTheChannel(GameTestHelper h) {
+        CompanionEntity c = strip(h, null, TOP);
+        List<net.minecraft.world.entity.animal.Pig> pigs = new ArrayList<>();
+        for (int x = 12; x <= 13; x++) {
+            var pig = h.spawn(net.minecraft.world.entity.EntityType.PIG, x, TOP, 13);
+            pig.setNoAi(true);
+            pig.setInvulnerable(true);
+            pigs.add(pig);
+        }
+        var future = run(h, c, "сделай генератор булыжника");
+        int[] dug = {0};
+        h.onEachTick(() -> {
+            if (pigs.getFirst().isAlive()) {
+                for (var pig : pigs) h.assertTrue(h.getLevel().getFluidState(pig.blockPosition()).isEmpty(), "Fluid poured onto the mob at " + pig.blockPosition());
+                if (h.getBlockState(new BlockPos(11, TOP, 13)).isAir() && h.getBlockState(new BlockPos(14, TOP, 13)).isAir() && ++dug[0] > 400) pigs.forEach(pig -> pig.discard());
+            }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("Готово, генератор у"), "Not built: " + future.join().report());
+        });
+    }
+
+    /** A wall of planks, ice or sand burns, melts or falls beside the lava: with only such a place he refuses. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void aWallOfPlanksIsNotAReadyWall(GameTestHelper h) { refuses(h, Blocks.OAK_PLANKS, TOP); }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void aWallOfIceIsNotAReadyWall(GameTestHelper h) { refuses(h, Blocks.ICE, TOP); }
+
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void aWallOfSandIsNotAReadyWall(GameTestHelper h) { refuses(h, Blocks.SAND, TOP); }
+
+    /** Wool two blocks above the ground beside the channel is within the lava's fire range. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void flammableBlocksNearTheLavaRuleThePlaceOut(GameTestHelper h) { refuses(h, Blocks.WHITE_WOOL, TOP + 2); }
+
+    private static void refuses(GameTestHelper h, net.minecraft.world.level.block.Block block, int y) {
+        CompanionEntity c = strip(h, block, y);
+        var future = run(h, c, "сделай генератор булыжника");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("Не нашёл ровного твёрдого места"), "Not refused: " + future.join().report());
+            h.assertTrue(find(h, Blocks.LAVA).isEmpty(), "Lava was poured");
+        });
+    }
+
+    /** A strip of earth three wide and six long, the player beyond it; {@code line} (if any) is set along its south edge at height y. */
+    private static CompanionEntity strip(GameTestHelper h, net.minecraft.world.level.block.Block line, int y) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int yy = 0; yy <= 12; yy++) h.setBlock(new BlockPos(x, yy, z), Blocks.AIR);
+        for (int x = 10; x <= 15; x++) for (int z = 12; z <= 14; z++) for (int yy = TOP - 2; yy <= TOP; yy++) h.setBlock(new BlockPos(x, yy, z), yy == TOP ? Blocks.GRASS_BLOCK : Blocks.DIRT);
+        if (line != null) for (int x = 10; x <= 15; x++) h.setBlock(new BlockPos(x, y, 12), line);
+        h.setBlock(new BlockPos(19, TOP, 13), Blocks.DIRT);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 10, TOP + 1, 13);
+        var owner = h.makeMockServerPlayerInLevel();
+        BlockPos stand = h.absolutePos(new BlockPos(19, TOP + 1, 13));
+        owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        owner.setInvulnerable(true);
+        c.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        c.setSearchRadius(16);
+        c.setLifestyle(false, false);
+        c.setItem(0, new ItemStack(Items.LAVA_BUCKET));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        return c;
+    }
+
     /** The platform: 16 by 16, three layers over air, earth with grass on top. */
     private static void platform(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 12; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
