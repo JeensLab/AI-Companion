@@ -17,7 +17,7 @@ public final class CompanionPlanCodec {
     public static final int MAX_REPEAT = 100;
     public static final int WOOD_STEP = 16;
     public static final Set<String> ACTIONS = Set.of("follow", "wait", "come", "protect", "stop_protect", "wander", "stop", "enter_portal",
-            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items");
+            "gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests", "build_house", "craft_item", "place_block", "give_wood", "give_items", "equip_item", "unequip_item", "hunt_mobs", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "use_bone_meal", "obtain_item", "pursue_goal", "walk_heading", "set_home", "build_portal", "build_cobble_gen", "pick_up", "remember_place", "go_to_place", "repair_item", "disenchant_item", "compost_items");
     /** Flint is dug out of gravel, which drops it rarely: one step asks for at most this much. */
     static final String FLINT = "minecraft:flint";
     static final int FLINT_STEP = 8;
@@ -173,7 +173,7 @@ public final class CompanionPlanCodec {
                         : ("gather_stone".equals(type) || "gather_loose".equals(type)) ? 8
                         : "hunt_animals".equals(type) ? CompanionPlanRequirements.DEFAULT_GAME
                         : "farm_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES
-                        : "harvest_crops".equals(type) ? dev.aicompanion.entity.CompanionCrops.MAX_HARVEST
+                        : "harvest_crops".equals(type) || "use_bone_meal".equals(type) ? dev.aicompanion.entity.CompanionCrops.MAX_HARVEST
                         : "build_pen".equals(type) ? 4
                         // «Подбери» without a number takes everything of that kind lying around.
                         : "pick_up".equals(type) ? 64
@@ -240,7 +240,9 @@ public final class CompanionPlanCodec {
                     item = game == null ? item.equals("food") ? "food" : "any"
                             : (dev.aicompanion.entity.CompanionGame.foodRun(item) ? "food:" : "minecraft:") + game.key;
                 }
-                if ("farm_crops".equals(type) || "harvest_crops".equals(type)) {
+                // Bone meal goes on the sapling nearest the player (one), or on young crops as harvest_crops names them.
+                if ("use_bone_meal".equals(type) && List.of("sapling", "tree", "minecraft:sapling").contains(item)) { item = "sapling"; count = 1; }
+                else if ("farm_crops".equals(type) || "harvest_crops".equals(type) || "use_bone_meal".equals(type)) {
                     // One of the four crops (wheat is named by its seeds), or for a harvest any of them; anything else spoils the plan.
                     var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(item);
                     if (crop == null && !dev.aicompanion.entity.CompanionCrops.anyKind(item)) throw invalid();

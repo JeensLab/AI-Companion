@@ -105,13 +105,17 @@ public final class CompanionPlanRequirements {
         return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result, decoded.repeat());
     }
 
-    /** «Собери урожай» names no number: everything ripe round him, not the single crop a model's default count=1 would take. */
+    /** «Собери урожай», «удобри огород» name no number: everything round him, not the single crop a model's default count=1 would take. */
     static CompanionReply harvestEverything(String text, CompanionReply decoded) {
-        if (decoded.actions().stream().noneMatch(step -> step.type().equals("harvest_crops")) || text.matches(NUMBER)) return decoded;
+        if (decoded.actions().stream().noneMatch(CompanionPlanRequirements::wholeField) || text.matches(NUMBER)) return decoded;
         int all = dev.aicompanion.entity.CompanionCrops.MAX_HARVEST;
-        List<PlannedAction> result = decoded.actions().stream().map(step -> step.type().equals("harvest_crops") && step.count() != all
+        List<PlannedAction> result = decoded.actions().stream().map(step -> wholeField(step) && step.count() != all
                 ? new PlannedAction(step.type(), step.seconds(), all, step.item(), step.slot(), step.location()) : step).toList();
         return result.equals(decoded.actions()) ? decoded : new CompanionReply(decoded.text(), result, decoded.repeat());
+    }
+
+    private static boolean wholeField(PlannedAction step) {
+        return step.type().equals("harvest_crops") || step.type().equals("use_bone_meal") && !"sapling".equals(step.item());
     }
 
     /**

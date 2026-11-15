@@ -533,7 +533,7 @@ public final class CompanionWork {
                 if (refused != null) return CompanionActionResult.failed(refused);
                 job = Job.SMELT; phase = Phase.COOK;
             }
-            case "farm_crops", "harvest_crops" -> {
+            case "farm_crops", "harvest_crops", "use_bone_meal" -> {
                 String problem = farming.begin(action, item, count);
                 if (problem != null) return CompanionActionResult.failed(problem);
                 job = Job.FARM; phase = Phase.FARM;

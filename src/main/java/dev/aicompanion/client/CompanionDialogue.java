@@ -99,6 +99,7 @@ public final class CompanionDialogue {
             case "breed_animals" -> "Ага, займусь разведением.";
             case "farm_crops" -> "Ага, сделаю грядки у воды.";
             case "harvest_crops" -> "Ага, пойду соберу урожай.";
+            case "use_bone_meal" -> "sapling".equals(actions.getFirst().item()) ? "Ага, посыплю саженец костной мукой." : "Ага, посыплю грядки костной мукой.";
             case "obtain_item" -> "Ага, добуду.";
             case "pick_up" -> "Ага, подберу, что лежит рядом.";
             case "repair_item" -> "Сейчас сложу две в одну.";
@@ -176,6 +177,7 @@ public final class CompanionDialogue {
                 yield "посадить " + (crop == null ? "культуру" : crop.plant) + " (грядок: " + action.count() + ")";
             }
             case "harvest_crops" -> "собрать урожай";
+            case "use_bone_meal" -> "sapling".equals(action.item()) ? "вырастить дерево костной мукой" : "удобрить грядки костной мукой";
             case "obtain_item" -> "добыть «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "pick_up" -> "подобрать «" + itemName(action.item()) + "» (до " + action.count() + " шт.)";
             case "repair_item" -> "починить «" + dev.aicompanion.entity.CompanionGrinding.label(action.item()) + "»";
@@ -391,7 +393,7 @@ public final class CompanionDialogue {
             if (failure.contains("дерев") || failure.contains("брёвен")) return "Доступного дерева больше не нашёл. Давай поищем в другом месте.";
             if (failure.contains("безопасное место")) return "Здесь не получается поставить. Нужно место посвободнее.";
             // The farm's own words carry what is missing and why: no water, no seeds, no ripe crops.
-            if (actions.stream().anyMatch(action -> "farm_crops".equals(action.type()) || "harvest_crops".equals(action.type()))) return speakable(failure);
+            if (actions.stream().anyMatch(action -> "farm_crops".equals(action.type()) || "harvest_crops".equals(action.type()) || "use_bone_meal".equals(action.type()))) return speakable(failure);
             // The engine's own words for a reason that has no kind, if short, as in failedParts (game 29.10: «Не нашёл ровную свободную
             // площадку 7×7 рядом…» for a house was heard as «С этим пока не справился»): its first line, spoken without IDs or
             // coordinates; a receipt with Latin letters besides known item IDs («предмета «sword»», an unknown ID) is not said.

@@ -235,6 +235,13 @@ public final class CompanionWorkCommands {
         // The field and the harvest need no model either: «собери урожай», «сделай огород», «посади морковь».
         if (bare.matches("^(?:собери|сними|убери)(?: мне| нам)?(?: весь| созревший)? урожай(?: рядом| вокруг| с огорода| с грядок| с фермы)?$"))
             return new PlannedAction("harvest_crops", 0, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, "any");
+        // Bone meal of his bag: «удобри огород», «посыпь грядки мукой» on the young crops; «вырасти дерево» on the nearest sapling.
+        if (bare.matches("^(?:удобри|подкорми)(?: мне| нам)?(?: весь)? (?:огород|грядки|грядку|урожай|посадки|ферму)(?: (?:костной )?мукой)?(?: рядом| вокруг)?$")
+                || bare.matches("^(?:посыпь|посыпай)(?: мне| нам)? (?:огород|грядки|грядку|посадки|урожай) (?:костной )?мукой$"))
+            return new PlannedAction("use_bone_meal", 0, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, "any");
+        if (bare.matches("^(?:вырасти|выращи|удобри|подкорми)(?: мне| нам)? (?:дерево|деревце|саженец)(?: (?:костной )?мукой)?(?: рядом)?$")
+                || bare.matches("^посыпь(?: мне| нам)? саженец (?:костной )?мукой$"))
+            return new PlannedAction("use_bone_meal", 0, 1, "sapling");
         if (bare.matches("^(?:сделай|разбей|вскопай|создай)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:огород|огородик|грядки|грядку|ферму(?: пшеницы)?)(?: у воды| рядом)?$"))
             return new PlannedAction("farm_crops", 0, dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, "minecraft:wheat_seeds");
         var sow = Pattern.compile("^(?:посади|засади|посей|высади)(?: мне| нам)?\\s+(пшениц\\p{L}*|морков\\p{L}*|картош\\p{L}*|картофел\\p{L}*|свекл\\p{L}*)(?: у воды| рядом)?$").matcher(bare);
