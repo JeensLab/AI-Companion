@@ -349,15 +349,7 @@ final class CompanionChests {
 
     /** The same around another centre and within another radius (sorting looks around the player, wherever Oleg stands). */
     List<BlockPos> blockEntitiesNear(ServerLevel level, BlockPos center, int radius) {
-        List<BlockPos> found = new ArrayList<>();
-        for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++) {
-            for (int cz = (center.getZ() - radius) >> 4; cz <= (center.getZ() + radius) >> 4; cz++) {
-                var chunk = level.getChunkSource().getChunkNow(cx, cz);
-                if (chunk == null) continue;
-                for (BlockPos pos : chunk.getBlockEntities().keySet()) if (pos.distSqr(center) <= radius * radius) found.add(pos);
-            }
-        }
-        return found;
+        return CompanionContainers.blockEntitiesNear(level, center, radius);
     }
 
     /** What this order may use at pos: a chest for an order that names no container, else the block of the kind it names, unless a smelting batch awaits it. */

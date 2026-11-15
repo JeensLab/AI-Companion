@@ -13,9 +13,11 @@ import dev.aicompanion.client.CompanionReply;
 import dev.aicompanion.client.OpenRouterClient;
 import dev.aicompanion.client.CompanionWorkCommands;
 import dev.aicompanion.client.PlannedAction;
+import dev.aicompanion.entity.CompanionContainers;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -26,6 +28,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -363,6 +368,24 @@ public final class CompanionContainerTests {
             if (found != null) return found;
         }
         return null;
+    }
+
+    /** Game 15.11: «сундука у нас нет» with a chest 4 blocks away. The snapshot names chests and barrels nearby, a double chest once. */
+    @GameTest(template = "tall_tree", timeoutTicks = 100, batch = "containers_nearby_line")
+    public static void theSnapshotNamesTheChestsAndBarrelsNearby(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper);
+        container(helper, NEAR, Blocks.CHEST);
+        container(helper, new BlockPos(10, 1, 10), Blocks.BARREL);
+        container(helper, new BlockPos(16, 1, 22), Blocks.FURNACE);
+        BlockState left = Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH);
+        helper.setBlock(new BlockPos(20, 1, 24), left.setValue(ChestBlock.TYPE, ChestType.LEFT));
+        helper.setBlock(new BlockPos(21, 1, 24), left.setValue(ChestBlock.TYPE, ChestType.RIGHT));
+        String line = CompanionContainers.nearbyLine(helper.getLevel(), companion.blockPosition(), companion.getSearchRadius());
+        BlockPos chest = helper.absolutePos(NEAR), barrel = helper.absolutePos(new BlockPos(10, 1, 10));
+        helper.assertTrue(line.contains("сундук " + chest.getX() + "," + chest.getY() + "," + chest.getZ() + " (6 блоков)"), "No chest: " + line);
+        helper.assertTrue(line.contains("бочка (minecraft:barrel) " + barrel.getX() + "," + barrel.getY() + "," + barrel.getZ()), "No barrel: " + line);
+        helper.assertTrue(line.split(" блоков\\)", -1).length - 1 == 3, "Not three (furnace out, double chest once): " + line);
+        helper.succeed();
     }
 
     private static Container container(GameTestHelper helper, BlockPos pos, Block block) {
