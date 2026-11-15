@@ -188,12 +188,20 @@ final class CompanionChores {
                 && !mob.isLeashed() && c.leashAllows(mob.blockPosition()) && CompanionMobDrops.open(level, mob);
     }
 
-    /** The nearest lava source (a flow fills no bucket) or powder snow, nowhere the player builds; a cauldron is a block of its own. */
+    /**
+     * The nearest lava source (a flow fills no bucket) or powder snow, nowhere the player builds; a cauldron is a block of its own.
+     * Only one with air over it or beside it: a pocket shut in the rock is no player's to fill from either.
+     */
     private static BlockPos pool(CompanionEntity c, ServerLevel level, Item bucket, Set<BlockPos> skipped) {
         Block block = poured(bucket);
         Predicate<BlockPos> site = CompanionPicking.sites(c, level);
         return CompanionObsidian.nearest(c, level, DEPTH, state -> state.is(block), pos -> !skipped.contains(pos) && c.leashAllows(pos)
-                && (block != Blocks.LAVA || level.getFluidState(pos).isSource()) && !site.test(pos));
+                && (block != Blocks.LAVA || level.getFluidState(pos).isSource()) && !site.test(pos) && open(level, pos));
+    }
+
+    private static boolean open(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (side != Direction.DOWN && level.getBlockState(pos.relative(side)).isAir()) return true;
+        return false;
     }
 
     /** Where it is filled from: firm ground within his reach and sight of it, never in powder snow nor with his head in it (he sinks and freezes). */

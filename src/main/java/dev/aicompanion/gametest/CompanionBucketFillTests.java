@@ -46,7 +46,11 @@ public final class CompanionBucketFillTests {
         h.succeed();
     }
 
-    /** «Добудь 2 ведра лавы» by a pool of lava in the ground: two of its sources in his buckets, and he did not burn. */
+    /**
+     * «Добудь 2 ведра лавы» by a pool of lava in the ground: two of its sources in his buckets, and he did not burn. A layer of lava
+     * shut in the ground under him is nearer and none of his (in the Nether 15.11 such pockets in the rock were all he found first,
+     * and he gave up: «Вижу лаву, но подойти не смог»).
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void lavaIsScoopedFromTheBank(GameTestHelper h) {
         ground(h);
@@ -54,6 +58,7 @@ public final class CompanionBucketFillTests {
             h.setBlock(new BlockPos(x, GROUND - 1, z), Blocks.STONE);
             h.setBlock(new BlockPos(x, GROUND, z), Blocks.LAVA);
         }
+        for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++) h.setBlock(new BlockPos(x, GROUND - 2, z), Blocks.LAVA);
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, new ItemStack(Items.BUCKET, 2));
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:lava_bucket\",\"count\":2}]");
