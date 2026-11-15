@@ -70,17 +70,17 @@ public final class CompanionBenchTests {
 
     private static void afloatPickaxe(GameTestHelper h, boolean baseBench) {
         CompanionEntity companion = setup(h);
-        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= 2; y++)
-            h.setBlock(new BlockPos(x, y, z), x >= 14 && x <= 18 && z >= 14 && z <= 18 ? Blocks.WATER : Blocks.STONE);
-        if (baseBench) { h.setBlock(new BlockPos(1, 3, 1), Blocks.CRAFTING_TABLE); companion.rememberPlaced(h.absolutePos(new BlockPos(1, 3, 1))); }
-        companion.teleportTo(h.absolutePos(new BlockPos(16, 2, 16)).getX() + .5, h.absolutePos(new BlockPos(16, 2, 16)).getY(), h.absolutePos(new BlockPos(16, 2, 16)).getZ() + .5);
-        owner(h, companion).teleportTo(h.absolutePos(new BlockPos(16, 3, 11)).getX() + .5, h.absolutePos(new BlockPos(16, 3, 11)).getY(), h.absolutePos(new BlockPos(16, 3, 11)).getZ() + .5);
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= 4; y++)
+            h.setBlock(new BlockPos(x, y, z), x >= 24 && x <= 28 && z >= 24 && z <= 28 ? Blocks.WATER : Blocks.STONE);
+        if (baseBench) { h.setBlock(new BlockPos(8, 5, 8), Blocks.CRAFTING_TABLE); companion.rememberPlaced(h.absolutePos(new BlockPos(8, 5, 8))); }
+        companion.teleportTo(h.absolutePos(new BlockPos(26, 4, 26)).getX() + .5, h.absolutePos(new BlockPos(26, 4, 26)).getY(), h.absolutePos(new BlockPos(26, 4, 26)).getZ() + .5);
+        owner(h, companion).teleportTo(h.absolutePos(new BlockPos(26, 5, 21)).getX() + .5, h.absolutePos(new BlockPos(26, 5, 21)).getY(), h.absolutePos(new BlockPos(26, 5, 21)).getZ() + .5);
         companion.setItem(0, new ItemStack(Items.SPRUCE_PLANKS, 4));
         companion.setItem(1, new ItemStack(Items.SPRUCE_LOG, 5));
-        var result = CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:wooden_pickaxe", 1);
-        h.assertTrue(result.success(), "Craft order refused: " + result.message());
+        // Settled afloat first, bobbing a little under the surface as in the game: the bank is then two blocks over his feet.
+        h.runAfterDelay(40, () -> h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:wooden_pickaxe", 1).success(), "Craft order refused"));
         h.succeedWhen(() -> {
-            h.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
+            h.assertTrue(h.getTick() > 40 && !companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
             h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.WOODEN_PICKAXE) == 1, companion.getLastTaskResult());
             if (baseBench) h.assertTrue(companion.getLastTaskResult().contains("забрал"), companion.getLastTaskResult());
         });

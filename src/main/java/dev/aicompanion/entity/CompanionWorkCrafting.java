@@ -164,7 +164,8 @@ final class CompanionWorkCrafting {
     boolean approachCraftingTable() {
         // Afloat he goes on, as to the stonecutter (game 15.11, a pit under dark oak crowns: 90 s of «Сейчас подготовлюсь»).
         if (!w.owner.onGround() && !w.owner.isInWater()) return true;
-        if (!(w.owner.level() instanceof ServerLevel level) || w.owner.hasCraftingTableNearby() || w.benchHere) return false;
+        if (!(w.owner.level() instanceof ServerLevel level) || w.owner.hasCraftingTableNearby()) return false;
+        if (w.benchHere) return ashore(level);
         if (w.craftingStation == null || !level.hasChunkAt(w.craftingStation) || !level.getBlockState(w.craftingStation).is(Blocks.CRAFTING_TABLE)) {
             w.craftingStation = null;
             for (BlockPos pos : w.owner.knownCraftingTables()) {
@@ -183,7 +184,7 @@ final class CompanionWorkCrafting {
                 if (canMakeBench()) return useOwnBench("к известному верстаку сейчас нет пути");
                 w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый у меня нет."); return true;
             }
-            return false;
+            return ashore(level);
         }
         w.owner.movementIntent(w.craftingStation);
         if (!w.approach(level, w.craftingStation, 2.8D)) {
@@ -214,6 +215,27 @@ final class CompanionWorkCrafting {
         w.benchHere = true; w.craftingStation = null; w.resetApproach();
         w.owner.allowNewBench(true);
         w.owner.workStatus("Ладно, " + why + " — поставлю новый верстак здесь.");
-        return false;
+        return w.owner.level() instanceof ServerLevel level && ashore(level);
+    }
+
+    /**
+     * A bench of his own is set down on land: afloat (game 15.11, a pit of water), he first climbs out onto the nearest dry cell
+     * a few blocks off, as a player would. With none, or no way up onto it, the craft is tried where he is and says so honestly.
+     */
+    private boolean ashore(ServerLevel level) {
+        if (!w.owner.isInWater()) { if (w.shore != null) { w.shore = null; w.owner.travel().reset(); } return false; }
+        if (w.shore == null) {
+            BlockPos here = w.owner.blockPosition();
+            double best = Double.MAX_VALUE;
+            for (BlockPos pos : BlockPos.betweenClosed(here.offset(-4, -1, -4), here.offset(4, 2, 4))) {
+                if (!level.getFluidState(pos).isEmpty() || !CompanionMiningNavigation.standable(w.owner, pos)) continue;
+                double distance = pos.distSqr(here);
+                if (distance < best) { best = distance; w.shore = pos.immutable(); }
+            }
+            if (w.shore == null) return false;
+        }
+        if (w.owner.travel().toward(w.shore, .8D) != CompanionTravel.Step.WALKING) return false;
+        w.owner.workStatus("Выбираюсь из воды: верстак ставят на суше.");
+        return true;
     }
 }
