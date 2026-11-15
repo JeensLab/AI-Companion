@@ -52,7 +52,7 @@ final class CompanionSwimming {
             boolean picks = bed != null && c.isInWater() && !c.isInLava()
                     && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
             boolean down = picks && c.getEyePosition().distanceTo(bed.getCenter()) > 2.5;
-            // scoop_mob: down to the fish, the axolotl under him, as for a foe, though with a bucket and not a blade in hand.
+            // scoop_mob: down to the fish under him, as for a foe, though with a bucket and not a blade in hand.
             var caught = c.work.job == CompanionWork.Job.CHORE ? c.work.chores.dive() : null;
             boolean scoops = caught != null && caught.isAlive() && caught.isInWater() && c.isInWater() && !c.isInLava() && caught.getY() < c.getY() - .5
                     && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);

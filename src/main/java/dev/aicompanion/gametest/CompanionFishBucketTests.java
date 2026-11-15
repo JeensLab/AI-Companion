@@ -87,8 +87,11 @@ public final class CompanionFishBucketTests {
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:cod_bucket\",\"count\":1}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
             h.assertTrue(cod.isAlive() && !cod.isRemoved() && count(c, Items.COD_BUCKET) == 0 && count(c, Items.WATER_BUCKET) == 1,
-                    "The cod was scooped through the glass: " + future.join().report());
+                    "The cod was scooped through the glass: " + report);
+            // He went for it and gave it up, not «none about» before he tried.
+            h.assertTrue(report.contains("добраться не смог") && !report.contains("Рядом не вижу"), "Not tried: " + report);
         });
     }
 
