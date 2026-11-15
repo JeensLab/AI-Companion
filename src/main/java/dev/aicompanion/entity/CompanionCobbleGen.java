@@ -60,6 +60,8 @@ final class CompanionCobbleGen {
     /** The hardest ground he digs (deepslate); walks to one place before it is passed over; ticks the dug blocks' drops are waited for and the stone is. */
     private static final float HARDEST = 3;
     private static final int LEGS = 8, PICK_TICKS = 200, GROW_TICKS = 200;
+    /** How far lava sets fire, around and above (vanilla LavaFluid.randomTick). */
+    private static final int FIRE = 3;
 
     private static final net.minecraft.world.level.BlockGetter EMPTY = net.minecraft.world.level.EmptyBlockGetter.INSTANCE;
 
@@ -156,7 +158,9 @@ final class CompanionCobbleGen {
         if (step.kind() == Kind.PICK) { pick(level, step.cell()); return; }
         // Pouring from a cell over the row would be standing over the lava: out of its columns, with the cell in his reach and sight.
         boolean pouring = step.kind() == Kind.WATER || step.kind() == Kind.ICE || step.kind() == Kind.MELT || step.kind() == Kind.LAVA;
-        if (pouring && plan.over(c.blockPosition()) || !inReach(level, step.cell())) {
+        // A wall is not set in the cell he stands in: he steps out of it first.
+        boolean inWall = step.kind() == Kind.WALL && c.getBoundingBox().intersects(new AABB(step.cell()));
+        if (pouring && plan.over(c.blockPosition()) || inWall || !inReach(level, step.cell())) {
             c.workStatus("Иду строить генератор.");
             if (!step.cell().equals(aimed)) { aimed = step.cell(); stands = standsFor(level, step.cell(), pouring); legs = 0; path = null; }
             // Come to a place it is still not seen from (a block set since hides it): that place is no good any more.
@@ -222,6 +226,14 @@ final class CompanionCobbleGen {
                 if (level.getGameTime() - pickingSince > PICK_TICKS) { w.finish(false, BLOCKED); return null; }
                 return new Step(Kind.PICK, plan.stone());
             }
+            // What holds the lava in, again: a wall or a floor broken since the water went in (a creeper, the player) would let it out.
+            for (BlockPos wall : plan.walls()) {
+                if (wall.distManhattan(plan.lava()) != 1 && wall.distManhattan(plan.stone()) != 1 || level.getBlockState(wall).isCollisionShapeFullBlock(level, wall)) continue;
+                if (!CompanionPortalBuild.free(level, wall)) { w.finish(false, TAKEN); return null; }
+                return new Step(Kind.WALL, wall);
+            }
+            for (BlockPos floor : List.of(plan.lava().below(), plan.stone().below()))
+                if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) { w.finish(false, TAKEN); return null; }
             return new Step(Kind.LAVA, plan.lava());
         }
         // Both stand: the lava runs into the stone's cell, meets the water that fell into the hole next to it, and sets.
@@ -298,7 +310,8 @@ final class CompanionCobbleGen {
     /** A block of his own set where fluid would run out, as a player sets one. */
     private void wall(ServerLevel level, BlockPos cell) {
         ItemStack best = ItemStack.EMPTY;
-        for (ItemStack stack : w.items.carriedItems()) if (wallBlock(stack) && (best.isEmpty() || hardness(stack) < hardness(best))) best = stack;
+        // Earth and cobblestone first (what he digs out), then the softest: not glass or a lamp before them.
+        for (ItemStack stack : w.items.carriedItems()) if (wallBlock(stack) && (best.isEmpty() || plain(stack) && !plain(best) || plain(stack) == plain(best) && hardness(stack) < hardness(best))) best = stack;
         if (best.isEmpty()) { w.finish(false, NO_WALL); return; }
         place(level, cell, best, NO_WALL);
     }
@@ -418,11 +431,12 @@ final class CompanionCobbleGen {
 
     /**
      * Lava's random tick sets fire in air up to three above it and its neighbours that touches something flammable, and on a flammable
-     * block beside it (vanilla LavaFluid.randomTick): anything flammable within two blocks around and two above is too near. Wild plants
+     * block beside it (vanilla LavaFluid.randomTick: fire up to two steps up and out, then a flammable neighbour of that cell): anything
+     * flammable within three blocks around and three above is too near. Wild plants
      * there are cut before the lava is poured ({@link #clearable}); anything else flammable, or a plant of the player's, rules the place out.
      */
     private static boolean ignites(ServerLevel level, Predicate<BlockPos> site, BlockPos lava) {
-        for (BlockPos at : BlockPos.betweenClosed(lava.offset(-2, 0, -2), lava.offset(2, 2, 2))) {
+        for (BlockPos at : BlockPos.betweenClosed(lava.offset(-FIRE, 0, -FIRE), lava.offset(FIRE, FIRE, FIRE))) {
             if (!level.hasChunkAt(at)) return true;
             BlockState state = level.getBlockState(at);
             if (state.ignitedByLava() && !(clearable(state) && !site.test(at))) return true;
@@ -440,7 +454,7 @@ final class CompanionCobbleGen {
     private static List<BlockPos> flammable(ServerLevel level, BlockPos... lava) {
         Set<BlockPos> cells = new java.util.LinkedHashSet<>();
         for (BlockPos cell : lava)
-            for (BlockPos at : BlockPos.betweenClosed(cell.offset(-2, 0, -2), cell.offset(2, 2, 2))) if (clearable(level.getBlockState(at))) cells.add(at.immutable());
+            for (BlockPos at : BlockPos.betweenClosed(cell.offset(-FIRE, 0, -FIRE), cell.offset(FIRE, FIRE, FIRE))) if (clearable(level.getBlockState(at))) cells.add(at.immutable());
         return List.copyOf(cells);
     }
 
@@ -466,9 +480,12 @@ final class CompanionCobbleGen {
     private static boolean wallBlock(ItemStack stack) {
         if (!(stack.getItem() instanceof BlockItem item)) return false;
         BlockState state = item.getBlock().defaultBlockState();
-        return holds(state) && !state.hasBlockEntity() && !state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES)
+        // Not magma: it burns whoever walks on the wall, level with the ground.
+        return holds(state) && !state.hasBlockEntity() && !state.is(Blocks.MAGMA_BLOCK) && !state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES)
                 && !state.is(net.neoforged.neoforge.common.Tags.Blocks.STORAGE_BLOCKS) && state.getFluidState().isEmpty() && state.isCollisionShapeFullBlock(EMPTY, BlockPos.ZERO) && state.getDestroySpeed(EMPTY, BlockPos.ZERO) >= 0;
     }
+
+    private static boolean plain(ItemStack stack) { return CompanionTools.soilItem(stack) || stack.is(Items.COBBLESTONE); }
 
     private static float hardness(ItemStack stack) { return ((BlockItem) stack.getItem()).getBlock().defaultDestroyTime(); }
 
@@ -486,7 +503,9 @@ final class CompanionCobbleGen {
     /** Cells he can reach this one from; to pour, not over the row (he would stand over the lava). */
     private Set<BlockPos> standsFor(ServerLevel level, BlockPos cell, boolean outside) {
         Set<BlockPos> cells = new HashSet<>(CompanionWaterFill.standsFor(c, level, List.of(cell)));
-        cells.removeIf(stand -> outside && plan.over(stand) || stand.equals(cell));
+        // Nor in a wall's cell: he would stand where his own block is to go (review: he waited there 90 s for himself to move).
+        Set<BlockPos> walls = Set.copyOf(plan.walls());
+        cells.removeIf(stand -> outside && plan.over(stand) || stand.equals(cell) || walls.contains(stand));
         return cells;
     }
 

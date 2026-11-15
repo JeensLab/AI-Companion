@@ -286,6 +286,10 @@ public final class CompanionCobbleGenTests {
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void flammableBlocksNearTheLavaRuleThePlaceOut(GameTestHelper h) { refuses(h, Blocks.WHITE_WOOL, TOP + 2); }
 
+    /** Review: lava sets fire up to two steps up and out, so wool three above the ground beside the channel still burns (LavaFluid.randomTick). */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void flammableBlocksThreeAboveTheLavaRuleThePlaceOut(GameTestHelper h) { refuses(h, Blocks.WHITE_WOOL, TOP + 3); }
+
     private static void refuses(GameTestHelper h, net.minecraft.world.level.block.Block block, int y) {
         CompanionEntity c = strip(h, block, y);
         var future = run(h, c, "сделай генератор булыжника");
