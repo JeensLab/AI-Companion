@@ -210,10 +210,10 @@ public final class CompanionObtain {
                 if (!about(Items.MILK_BUCKET)) { absent.add("коровы, чтобы надоить молока"); return refuse(ABSENT + " коровы, чтобы надоить молока."); }
                 return need("minecraft:bucket", count, depth + 1) && add("milk_animal", key, count);
             }
-            // A fish, an axolotl, a tadpole about him under open water, scooped alive into a bucket of water of his (or one filled now),
-            // one bucket each (CompanionChores).
-            case "minecraft:cod_bucket", "minecraft:salmon_bucket", "minecraft:tropical_fish_bucket", "minecraft:pufferfish_bucket",
-                 "minecraft:axolotl_bucket", "minecraft:tadpole_bucket" -> {
+            // A fish about him under open water, scooped alive into a bucket of water of his (or one filled now), one bucket each
+            // (CompanionChores). An axolotl or a tadpole under the sky is somebody's: said before anything starts.
+            case "minecraft:axolotl_bucket", "minecraft:tadpole_bucket" -> { return refuse("Аксолотлей и головастиков в ведро не черпаю: под открытым небом они чьи-то, а дикие аксолотли живут в пещерах."); }
+            case "minecraft:cod_bucket", "minecraft:salmon_bucket", "minecraft:tropical_fish_bucket", "minecraft:pufferfish_bucket" -> {
                 Item bucket = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
                 String whom = CompanionChores.whom(bucket) + " под открытой водой";
                 if (!about(bucket)) { absent.add(whom); return refuse(ABSENT + " " + whom + "."); }

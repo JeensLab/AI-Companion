@@ -49,17 +49,20 @@ import java.util.function.Predicate;
  * axe, broken and picked up: what stands in the world is never stripped, and his log is not left standing when the work ends) and
  * harvest_hive (a full hive or nest: three combs to his shears or honey into his bottle, only with a campfire burning under it, so
  * the bees stay calm; none burns there: his own is set under the hive first and left, a broken one gives but charcoal) and
- * scoop_mob (a fish, an axolotl, a tadpole under open water scooped alive into his bucket of water, as a player does; one let
- * out of somebody's bucket or named is not his, a pufferfish only while he is well enough for its sting).
+ * scoop_mob (a fish under open water scooped alive into his bucket of water, as a player does; one let out of somebody's
+ * bucket or named is not his, a pufferfish only while he is well enough for its sting).
  */
 final class CompanionChores {
     private enum Mode { SHEAR, MILK, EGGS, STRIP, HIVE, SCOOP }
-    /** scoop_mob: what swims into the bucket of each kind, and who is not seen about (as «Рядом нет …» says it). */
+    /**
+     * scoop_mob: what swims into the bucket of each kind, and who is not seen about (as «Рядом нет …» says it). Fish only (the
+     * player 15.11): a tadpole is always a bucket's to the game (it hatches of frogs a player bred), and an axolotl under the sky
+     * is somebody's pet or its young, the wild ones keep to the caves.
+     */
     private record Catch(EntityType<?> kind, String whom) { }
     private static final Map<Item, Catch> CATCHES = Map.of(Items.COD_BUCKET, new Catch(EntityType.COD, "трески"),
             Items.SALMON_BUCKET, new Catch(EntityType.SALMON, "лосося"), Items.TROPICAL_FISH_BUCKET, new Catch(EntityType.TROPICAL_FISH, "тропической рыбы"),
-            Items.PUFFERFISH_BUCKET, new Catch(EntityType.PUFFERFISH, "иглобрюха"), Items.AXOLOTL_BUCKET, new Catch(EntityType.AXOLOTL, "аксолотля"),
-            Items.TADPOLE_BUCKET, new Catch(EntityType.TADPOLE, "головастика"));
+            Items.PUFFERFISH_BUCKET, new Catch(EntityType.PUFFERFISH, "иглобрюха"));
     /** Blocks above and below him the animals are looked for: the meadow he stands on. */
     private static final int DEPTH = 12;
     /** From his eye to the animal: a hand's reach, over a fence too. */
@@ -165,10 +168,10 @@ final class CompanionChores {
         return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID()) && scoopable(c, level, kind, mob));
     }
 
-    /** Alive, nobody's (no name, not let out of a bucket), under open water (not a lake in a cave); a pufferfish stings, so only while he is well. */
+    /** Alive, nobody's (no name, not let out of a bucket, not on a lead), under open water (not a lake in a cave). */
     private static boolean scoopable(CompanionEntity c, ServerLevel level, EntityType<?> kind, Mob mob) {
         return mob.getType() == kind && mob.isAlive() && !mob.hasCustomName() && mob instanceof Bucketable kept && !kept.fromBucket() && !mob.isPassenger()
-                && c.leashAllows(mob.blockPosition()) && CompanionMobDrops.open(level, mob) && (kind != EntityType.PUFFERFISH || c.getHealth() > CompanionCreeperGuard.FIGHT_HEALTH);
+                && !mob.isLeashed() && c.leashAllows(mob.blockPosition()) && CompanionMobDrops.open(level, mob);
     }
 
     private static boolean full(BlockState state) {
@@ -355,16 +358,19 @@ final class CompanionChores {
     private void scoop(ServerLevel level, int got) {
         if (w.items.countCarried(Items.WATER_BUCKET) == 0) { end(CompanionActionResult.blocked("Ведра воды нет: черпать нечем." + part(got))); return; }
         Catch caught = CATCHES.get(item);
+        // A pufferfish stings whoever comes near: hurt, he does not go (as he does not go striking first, CompanionMobDrops).
+        if (caught.kind() == EntityType.PUFFERFISH && c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) { end(CompanionActionResult.blocked("Я ранен: к иглобрюху сейчас не полезу, он жалит. Поем — тогда." + part(got))); return; }
         long now = level.getGameTime();
         Mob mob = target != null && level.getEntity(target) instanceof Mob found && scoopable(c, level, caught.kind(), found) ? found : null;
         if (mob == null) {
             release();
             mob = swimmers(c, level, caught.kind(), passed).stream().min(Comparator.comparingDouble(c::distanceToSqr)).orElse(null);
-            if (mob == null) { out(got, passed.isEmpty() ? "Рядом нет " + caught.whom() + " под открытой водой." : "Вижу " + caught.whom() + ", но добраться не смог."); return; }
+            if (mob == null) { out(got, passed.isEmpty() ? "Рядом нет " + caught.whom() + " под открытой водой." : "Вижу, кого черпать, но добраться не смог."); return; }
             target = mob.getUUID(); since = now; best = Double.MAX_VALUE;
         }
         double distance = mob.getBoundingBox().distanceToSqr(c.getEyePosition());
-        if (distance > REACH * REACH) {
+        // A player's bucket reaches what his eye sees, not a fish behind the glass of a pond or a block of the bank.
+        if (distance > REACH * REACH || !c.hasLineOfSight(mob)) {
             if (distance + .05 < best) { best = distance; since = now; }
             if (now - since > STALL) { passed.add(target); c.getNavigation().stop(); release(); return; }
             c.workStatus("Ловлю в ведро.");
