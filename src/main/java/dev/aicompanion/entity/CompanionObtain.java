@@ -31,7 +31,8 @@ import java.util.Set;
  * (wheat, carrots, potatoes, beetroot; none ripe is said, nothing is sown and waited for), and bone meal comes out of a composter,
  * of the scrap in his bag and the plants he picks for it, before any skeleton is fought. What a tool in hand gets (CompanionChores)
  * is got so: wool shorn off a sheep with shears he has, milk of a cow into his bucket, the eggs that lie about the hens, a log
- * of his stripped with an axe, the combs and the honey of a full hive over a campfire, a fish scooped into his bucket of water.
+ * of his stripped with an axe, the combs and the honey of a full hive over a campfire, a fish scooped into his bucket of water,
+ * lava and powder snow into an empty one.
  * What none of the skills can get
  * (an ink sac, a blaze rod…) is said before anything starts.
  */
@@ -212,6 +213,13 @@ public final class CompanionObtain {
             }
             // A fish about him under open water, scooped alive into a bucket of water of his (or one filled now), one bucket each
             // (CompanionChores). An axolotl or a tadpole under the sky is somebody's: said before anything starts.
+            // Lava's own source or powder snow about him into an empty bucket of his (or one made now), filled from the bank (CompanionChores).
+            case "minecraft:lava_bucket", "minecraft:powder_snow_bucket" -> {
+                Item bucket = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
+                String what = CompanionChores.pouredName(bucket);
+                if (!about(bucket)) { absent.add(what); return refuse(ABSENT + " " + what + "."); }
+                return need("minecraft:bucket", count, depth + 1) && add("scoop_block", key, count);
+            }
             case "minecraft:axolotl_bucket", "minecraft:tadpole_bucket" -> { return refuse("Аксолотлей и головастиков в ведро не черпаю: под открытым небом они чьи-то, а дикие аксолотли живут в пещерах."); }
             case "minecraft:cod_bucket", "minecraft:salmon_bucket", "minecraft:tropical_fish_bucket", "minecraft:pufferfish_bucket" -> {
                 Item bucket = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
