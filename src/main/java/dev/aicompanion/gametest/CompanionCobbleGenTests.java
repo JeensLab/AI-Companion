@@ -169,6 +169,32 @@ public final class CompanionCobbleGenTests {
         });
     }
 
+    /**
+     * Short grass on the whole strip, a poppy and a dead bush among it: wild plants are cut, not a reason to pass the place over. The
+     * generator is built and no plant is left within the lava's fire range.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void plantsNearTheLavaAreCutAndTheGeneratorIsBuilt(GameTestHelper h) {
+        CompanionEntity c = strip(h, null, TOP);
+        for (int x = 10; x <= 15; x++) for (int z = 12; z <= 14; z++) h.setBlock(new BlockPos(x, TOP + 1, z), Blocks.SHORT_GRASS);
+        h.setBlock(new BlockPos(13, TOP + 1, 13), Blocks.POPPY);
+        h.setBlock(new BlockPos(11, TOP + 1, 12), Blocks.DEAD_BUSH);
+        var future = run(h, c, "сделай генератор булыжника");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("Готово, генератор у"), "Not built: " + future.join().report());
+            BlockPos stone = find(h, Blocks.COBBLESTONE).getFirst();
+            for (var side : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                if (!h.getBlockState(stone.relative(side)).is(Blocks.LAVA)) continue;
+                for (BlockPos center : new BlockPos[]{stone, stone.relative(side)})
+                    for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 0; dy <= 2; dy++) {
+                        var state = h.getBlockState(center.offset(dx, dy, dz));
+                        h.assertTrue(!state.is(Blocks.SHORT_GRASS) && !state.is(Blocks.POPPY) && !state.is(Blocks.DEAD_BUSH), "A plant is left at " + center.offset(dx, dy, dz));
+                    }
+            }
+        });
+    }
+
     /** A wall of planks, ice or sand burns, melts or falls beside the lava: with only such a place he refuses. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void aWallOfPlanksIsNotAReadyWall(GameTestHelper h) { refuses(h, Blocks.OAK_PLANKS, TOP); }

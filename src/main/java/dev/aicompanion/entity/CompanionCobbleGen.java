@@ -62,7 +62,7 @@ final class CompanionCobbleGen {
 
     private static final net.minecraft.world.level.BlockGetter EMPTY = net.minecraft.world.level.EmptyBlockGetter.INSTANCE;
 
-    private enum Kind { DIG, PICK, WALL, WATER, LAVA }
+    private enum Kind { DIG, CLEAR, PICK, WALL, WATER, LAVA }
     private record Step(Kind kind, BlockPos cell) { }
 
     /**
@@ -136,7 +136,7 @@ final class CompanionCobbleGen {
         if (level.getBlockState(plan.stone()).is(Blocks.COBBLESTONE) && lava(level) && water(level)) { done(level); return; }
         Step step = next(level);
         if (step == null) return;
-        if (step.kind() == Kind.DIG) { pickingSince = 0; retried = false; }
+        if (step.kind() == Kind.DIG || step.kind() == Kind.CLEAR) { pickingSince = 0; retried = false; }
         if (step.kind() == Kind.PICK) { pick(level, step.cell()); return; }
         // Pouring from a cell over the row would be standing over the lava: out of its columns, with the cell in his reach and sight.
         boolean pouring = step.kind() == Kind.WATER || step.kind() == Kind.LAVA;
@@ -153,7 +153,8 @@ final class CompanionCobbleGen {
         blockedSince = 0;
         w.progressed();
         switch (step.kind()) {
-            case DIG -> dig(level, step.cell());
+            case DIG -> dig(level, step.cell(), "Копаю канал для генератора.");
+            case CLEAR -> dig(level, step.cell(), "Срезаю траву у генератора.");
             case WALL -> wall(level, step.cell());
             case WATER -> pour(level, Items.WATER_BUCKET, plan.water());
             case LAVA -> pour(level, Items.LAVA_BUCKET, plan.lava());
@@ -183,6 +184,11 @@ final class CompanionCobbleGen {
         }
         if (!water(level)) return new Step(Kind.WATER, plan.water());
         if (!lava(level)) {
+            // Wild plants within the lava's fire range are cut, as a player clears the grass before he sets lava.
+            for (BlockPos cell : flammable(level, plan.lava(), plan.stone())) {
+                if (!level.getFluidState(cell).isEmpty()) continue;
+                return new Step(Kind.CLEAR, cell);
+            }
             // What lies where the lava goes would burn: picked up first (a short while, then the work ends).
             if (!lyingIn(level, plan.lava(), plan.stone()).isEmpty()) {
                 if (pickingSince == 0) pickingSince = level.getGameTime();
@@ -241,12 +247,12 @@ final class CompanionCobbleGen {
     }
 
     /** A block of the row or the hole, broken as he breaks blocks, what it drops picked up. */
-    private void dig(ServerLevel level, BlockPos cell) {
+    private void dig(ServerLevel level, BlockPos cell, String status) {
         BlockState state = level.getBlockState(cell);
         // Taken once: a tool put in his hand again every tick would start the swing over.
         if (state.is(BlockTags.MINEABLE_WITH_SHOVEL) && !c.getMainHandItem().is(ItemTags.SHOVELS)) CompanionTools.equip(c, ItemTags.SHOVELS, state);
         else if (state.is(BlockTags.MINEABLE_WITH_PICKAXE) && !c.getMainHandItem().is(ItemTags.PICKAXES)) CompanionTools.equip(c, ItemTags.PICKAXES, state);
-        c.workStatus("Копаю канал для генератора.");
+        c.workStatus(status);
         if (!w.breaking.tick(level, cell)) return;
         ItemStack tool = c.getMainHandItem();
         var drops = CompanionTools.drops(state, level, cell, null, c, tool);
@@ -331,8 +337,8 @@ final class CompanionCobbleGen {
             BlockState state = level.getBlockState(cell);
             if (site.test(cell) || !CompanionPortalBuild.natural(state, false) || !diggable(state, level, cell)) return -1;
         }
-        if (ignites(level, p.lava()) || ignites(level, p.stone())) return -1;
-        for (BlockPos cell : p.row()) if (!CompanionPortalBuild.free(level, cell.above()) || !level.getFluidState(cell.above()).isEmpty()) return -1;
+        if (ignites(level, site, p.lava()) || ignites(level, site, p.stone())) return -1;
+        for (BlockPos cell : p.row()) if (!(CompanionPortalBuild.free(level, cell.above()) || clearable(level.getBlockState(cell.above()))) || !level.getFluidState(cell.above()).isEmpty()) return -1;
         for (BlockPos floor : p.floors()) {
             if (!level.hasChunkAt(floor)) return -1;
             BlockState state = level.getBlockState(floor);
@@ -356,14 +362,30 @@ final class CompanionCobbleGen {
 
     /**
      * Lava's random tick sets fire in air up to three above it and its neighbours that touches something flammable, and on a flammable
-     * block beside it (vanilla LavaFluid.randomTick): anything flammable within two blocks around and two above is too near. Grass and
-     * flowers count, so a meadow with plants there is passed over (he does not clear plants).
+     * block beside it (vanilla LavaFluid.randomTick): anything flammable within two blocks around and two above is too near. Wild plants
+     * there are cut before the lava is poured ({@link #clearable}); anything else flammable, or a plant of the player's, rules the place out.
      */
-    private static boolean ignites(ServerLevel level, BlockPos lava) {
+    private static boolean ignites(ServerLevel level, Predicate<BlockPos> site, BlockPos lava) {
         for (BlockPos at : BlockPos.betweenClosed(lava.offset(-2, 0, -2), lava.offset(2, 2, 2))) {
-            if (!level.hasChunkAt(at) || level.getBlockState(at).ignitedByLava()) return true;
+            if (!level.hasChunkAt(at)) return true;
+            BlockState state = level.getBlockState(at);
+            if (state.ignitedByLava() && !(clearable(state) && !site.test(at))) return true;
         }
         return false;
+    }
+
+    /** A wild plant he cuts with one blow: flammable or a flower (a poppy does not burn, but stands where the lava goes), nothing to stand on or bump into, breaks at once (grass, ferns, flowers, dead bush); not a sapling or a crop. */
+    private static boolean clearable(BlockState state) {
+        return (state.ignitedByLava() || state.is(BlockTags.FLOWERS)) && state.getCollisionShape(EMPTY, BlockPos.ZERO).isEmpty() && state.getDestroySpeed(EMPTY, BlockPos.ZERO) == 0
+                && !state.hasBlockEntity() && state.getFluidState().isEmpty() && !state.is(BlockTags.SAPLINGS) && !state.is(BlockTags.CROPS);
+    }
+
+    /** The plants within the fire range of the given lava cells that are left (what he cuts). */
+    private static List<BlockPos> flammable(ServerLevel level, BlockPos... lava) {
+        Set<BlockPos> cells = new java.util.LinkedHashSet<>();
+        for (BlockPos cell : lava)
+            for (BlockPos at : BlockPos.betweenClosed(cell.offset(-2, 0, -2), cell.offset(2, 2, 2))) if (clearable(level.getBlockState(at))) cells.add(at.immutable());
+        return List.copyOf(cells);
     }
 
     /** A block that stays whole next to lava and water: it does not burn, fall or melt (ice, packed ice, frosted ice). */
