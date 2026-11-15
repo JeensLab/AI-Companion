@@ -8,6 +8,7 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
@@ -283,6 +284,8 @@ final class CompanionStoneMining {
     private BlockPos generator;
     private long generatorEmptySince = -1;
     private int generatorWalking;
+    private int generatorTaken = -1; // the stone he had picked up when the last generator block was mined
+    private int generatorLost; // the generator blocks in a row after which no stone was picked up
 
     /**
      * A cobblestone generator beside him, like a player works one: the stone is mined from a cell that touches no lava and no
@@ -291,15 +294,20 @@ final class CompanionStoneMining {
      * it holds the tick; false when there is no generator, or it is broken (no stone back in time, no dry cell to work it from).
      */
     private boolean generatorStep(ServerLevel level) {
+        // His own deeds leave a wall of cobblestone between lava and water alone: it is the player's lava trap, not a generator.
+        if (w.owner.ownPlacesOnly()) return false;
         if (generatorOrder != w.stoneSearch) {
-            generatorOrder = w.stoneSearch; generatorEmptySince = -1; generatorWalking = 0;
+            generatorOrder = w.stoneSearch; generatorEmptySince = -1; generatorWalking = 0; generatorTaken = -1; generatorLost = 0;
             generator = nearestGenerator(level);
         }
         if (generator == null) return false;
-        if (!isGeneratorStone(level, generator)) {
+        BlockState inCell = level.getBlockState(generator);
+        if (!(inCell.is(Blocks.COBBLESTONE) || inCell.is(Blocks.STONE)) || !isGeneratorStone(level, generator)) {
             long now = level.getGameTime();
             if (generatorEmptySince < 0) generatorEmptySince = now;
-            if (!level.getBlockState(generator).isAir() || now - generatorEmptySince > GENERATOR_REGROW_TICKS) { generator = null; return false; }
+            // Air or a fluid in the cell is the stone still growing (a stone generator fills it with water first); anything else is not.
+            boolean growing = inCell.isAir() || inCell.getBlock() instanceof LiquidBlock;
+            if (!growing || now - generatorEmptySince > GENERATOR_REGROW_TICKS) { generator = null; return false; }
             w.owner.workStatus("Жду, пока в генераторе вырастет камень: " + w.gathered + " из " + w.wantedStone + ".");
             return true;
         }
@@ -311,7 +319,10 @@ final class CompanionStoneMining {
             if (w.path == null || w.route.legOver()) {
                 Set<BlockPos> stands = new java.util.HashSet<>();
                 for (BlockPos cell : CompanionMiningNavigation.standCells(w.owner, generator, 3.5, false, false)) if (workableFrom(level, cell)) stands.add(cell);
+                int busy = w.route.busyAnswers();
                 w.path = stands.isEmpty() ? null : w.route.toCells(stands);
+                // This tick's cells went elsewhere: not "no way" yet, asked again next tick.
+                if (w.path == null && !stands.isEmpty() && w.route.busyAnswers() != busy) return true;
             }
             if (w.path == null || !w.path.canReach()) { w.path = null; generator = null; return false; }
             w.owner.workStatus("Иду к сухому месту у генератора камня.");
@@ -340,12 +351,17 @@ final class CompanionStoneMining {
         w.owner.dropHarvest(generator, drops);
         w.owner.observeEvent("stone", "Сломал камень генератора и вижу выпавший материал. Работа ещё может продолжаться.");
         generatorEmptySince = level.getGameTime();
+        // The drop of the block before this one was not taken: lost in the pit or the lava. Twice in a row, and he stops feeding it.
+        int taken = w.owner.collectedStone();
+        if (generatorTaken >= 0) generatorLost = taken > generatorTaken ? 0 : generatorLost + 1;
+        generatorTaken = taken;
+        if (generatorLost >= 2) generator = null;
         w.resetTarget();
         w.cooldown = 3;
         return true;
     }
 
-    /** Cobblestone or stone with both lava and water beside it, the nearest within a few blocks of him. */
+    /** Cobblestone or stone with both lava and water beside or over it, the nearest within a few blocks of him. */
     private BlockPos nearestGenerator(ServerLevel level) {
         BlockPos here = w.owner.blockPosition();
         BlockPos best = null;
@@ -361,6 +377,9 @@ final class CompanionStoneMining {
         for (Direction side : Direction.values()) {
             BlockPos next = pos.relative(side);
             if (!level.hasChunkAt(next)) return false;
+            // Vanilla (LiquidBlock.shouldSpreadLiquid, 1.21.1) hardens lava only by water over it or beside it, and lava comes into
+            // the cell from over it or from beside it: a fluid below the stone is neither, the cell would stay lava.
+            if (side == Direction.DOWN) continue;
             lava |= level.getFluidState(next).is(FluidTags.LAVA);
             water |= level.getFluidState(next).is(FluidTags.WATER);
         }
@@ -370,6 +389,10 @@ final class CompanionStoneMining {
     /** A cell to work the generator from: his feet and head touch neither lava nor water, the stone is in reach and sight, its drop lands where he can take it. */
     private boolean workableFrom(ServerLevel level, BlockPos feet) {
         if (!CompanionMiningNavigation.standable(w.owner, feet) || Vec3.atBottomCenterOf(feet).distanceToSqr(generator.getCenter()) > 3.5 * 3.5) return false;
+        // Not on the generator itself (the stone mined from under his feet) and not on a floor that lava touches.
+        BlockPos floor = feet.below();
+        if (floor.equals(generator)) return false;
+        for (Direction side : Direction.values()) if (level.getFluidState(floor.relative(side)).is(FluidTags.LAVA)) return false;
         for (BlockPos cell : new BlockPos[]{feet, feet.above()}) {
             if (!level.getFluidState(cell).isEmpty()) return false;
             for (Direction side : Direction.values()) if (!level.getFluidState(cell.relative(side)).isEmpty()) return false;
