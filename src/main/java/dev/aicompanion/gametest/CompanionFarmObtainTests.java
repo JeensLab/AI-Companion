@@ -153,7 +153,9 @@ public final class CompanionFarmObtainTests {
         var future = run(h, c, "[{\"action\":\"use_bone_meal\",\"item\":\"sapling\"}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            h.assertTrue(h.getBlockState(sapling).is(Blocks.OAK_LOG), "No tree: " + h.getBlockState(sapling) + "; " + future.join().report());
+            String report = future.join().report();
+            // In game 16.11 the grown trunk stood in his way to the cell, and the tree that grew was reported as not reached.
+            h.assertTrue(h.getBlockState(sapling).is(Blocks.OAK_LOG) && report.contains("дерево выросло"), "No tree: " + h.getBlockState(sapling) + "; " + report);
             h.assertTrue(count(c, Items.BONE_MEAL) < 32, "No meal spent");
         });
     }

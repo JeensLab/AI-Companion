@@ -382,6 +382,8 @@ final class CompanionFarming {
             if (current == null) { finishWork(); return; }
         }
         BlockPos soil = current;
+        // A grown tree stands in the cell of the sapling: done, before the trunk is taken for a way that is blocked (in game 16.11).
+        if (tree && !level.getBlockState(soil.above()).is(BlockTags.SAPLINGS)) { feedStep(level, soil); return; }
         if (++spent > TARGET_TICKS) { unreachable++; letGo(); return; }
         if (w.owner.distanceToSqr(soil.getCenter()) > FAR * FAR) {
             var step = w.owner.travel().toward(soil, 8);
