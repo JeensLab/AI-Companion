@@ -225,30 +225,45 @@ public final class CompanionLocalCommands {
 
     /**
      * «Сыграй на гитаре», «сыграй что-нибудь», «поставь костёр и сыграй», «посидим у костра», or a bare «сыграй» (after his name too):
-     * the evening by the fire. «Не играй» and «сыграем в прятки» are not it.
+     * the evening by the fire. «Не играй» and «сыграем в прятки» are not it. The change requests are local too, so a bare «другую»,
+     * «повеселее», «погрустнее», «самую грустную» or «самую весёлую» reaches the guitar without the model: the model used to answer
+     * some of them with a sentence and no step at all, and the sound did not change.
      */
     static boolean campfireSong(String normalized, String companionName) {
         if (normalized.matches("(?sU).*\\bне\\s+(играй|сыграй|поиграй|надо|нужно)\\b.*")) return false;
         String name = java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е'));
-        boolean play = normalized.matches("(?sU).*\\b(сыграй|поиграй|сыграешь|поиграешь|сыграть|поиграть|сбацай|забацай|слабай)\\b.*");
+        boolean play = normalized.matches("(?sU).*\\b(сыграй|сгырай|згырай|поиграй|сыграешь|поиграешь|сыграть|поиграть|сбацай|забацай|слабай)\\b.*");
         boolean music = normalized.matches("(?sU).*(гитар|песн|песен|мелоди|музык|кост[её]?р|что[- ]?(нибудь|то)).*");
         boolean bare = normalized.matches("(?sU)\\s*(?:" + name + "[\\s,!]+)?(?:давай\\s+|ну\\s+|а\\s+)?(?:сыграй|поиграй)(?:\\s+(?:нам|мне|пожалуйста))*[\\s.!]*");
         boolean evening = normalized.matches("(?sU).*\\b(посидим|посиди|сядь|садись|присядь|присядем)\\b.{0,20}\\bу\\s+костр.*");
-        // «Давай другую мелодию», «следующую песню»: another tune, the verb left out.
-        boolean another = normalized.matches("(?sU).*\\b(другую|следующую|еще\\s+одну|смени)\\b.{0,12}(мелоди|песн|музык).*");
+        // «Давай другую мелодию», «следующую песню»: another tune, the verb left out; and a bare «другую» while he plays.
+        boolean another = normalized.matches("(?sU).*\\b(другую|другой|следующую|еще\\s+одну|смени)\\b.{0,12}(мелоди|песн|музык).*");
+        boolean anotherBare = normalized.matches("(?sU)\\s*(?:" + name + "[\\s,!]+)?(?:а\\s+|ну\\s+|давай\\s+|ещё\\s+|еще\\s+)?(?:другую|другой|следующую)(?:\\s+(?:мелодию|песню|музыку|пожалуйста|нам|мне))*[\\s.!]*");
+        // A comparative or the extreme asked for on its own: «повеселее», «погрустнее», «самую грустную».
+        boolean moodBare = normalized.matches("(?sU).*\\b(повеселее|веселее|погрустнее|грустнее|печальнее|тоскливее|пободрее|бодрее|самую\\s+грустную|самую\\s+вес[её]лую)\\b.*");
+        // «давай ещё сыграй»: the verb with a word of repetition, not the bare form.
+        boolean more = normalized.matches("(?sU).*\\b(ещё|еще)\\s+(сыграй|сгырай|поиграй|сбацай)\\b.*");
         // «Сыграй из майнкрафта», «включи майнкрафт»: standard Minecraft music, whatever the folder holds.
         boolean vanilla = normalized.contains("майнкрафт") || normalized.contains("minecraft");
         boolean vanillaAsk = vanilla && normalized.matches("(?sU).*\\b(включи|включай|вруби|поставь|сыграй|поиграй|сбацай)\\b.*");
-        return play && (music || vanilla || !tuneMood(normalized).isEmpty()) || bare || evening || another || vanillaAsk;
+        return play && (music || vanilla || !tuneMood(normalized).isEmpty()) || bare || evening || another || anotherBare || moodBare || more || vanillaAsk;
     }
 
-    /** The kind of tune asked for, as the step's item after a space: calm (sad too), cheerful, another, or nothing named. */
+    /**
+     * The kind of tune asked for, as the step's item after a space: the lowest («самую грустную»), the nearest lower («погрустнее»),
+     * the nearest higher («повеселее»), the highest («самую весёлую»), simply another, standard Minecraft music, or nothing named.
+     * The comparative and extreme words are read before the plain mood words, so «самую грустную» is not just a sad tune.
+     */
     static String tuneMood(String normalized) {
         // «Из майнкрафта» names the source, not a mood: it wins over a mood word beside it.
         if (normalized.contains("майнкрафт") || normalized.contains("minecraft")) return " vanilla";
-        if (normalized.matches("(?sU).*(грустн|печальн|спокойн|тих|медленн|лиричн|нежн|задумчив).*")) return " calm";
-        if (normalized.matches("(?sU).*(весел|бодр|задорн|быстр|танцевальн|зажигательн|радостн).*")) return " cheerful";
-        if (normalized.matches("(?sU).*\\b(другую|следующую|еще\\s+одну|смени)\\b.*")) return " next";
+        if (normalized.matches("(?sU).*(самую\\s+(грустную|печальную|тоскливую)|\\bсамая\\s+грустная\\b|\\bсамой\\s+грустной\\b).*")) return " saddest";
+        if (normalized.matches("(?sU).*(самую\\s+(вес[её]лую|радостную|зажигательную)|\\bсамая\\s+вес[её]лая\\b|\\bсамой\\s+вес[её]лой\\b).*")) return " happiest";
+        if (normalized.matches("(?sU).*\\b(погрустнее|грустнее|печальнее|тоскливее)\\b.*")) return " sadder";
+        if (normalized.matches("(?sU).*\\b(повеселее|веселее|порадостнее|радостнее|пободрее|бодрее)\\b.*")) return " happier";
+        if (normalized.matches("(?sU).*(грустн|печальн|тосклив|спокойн|тих|медленн|лиричн|нежн|задумчив).*")) return " saddest";
+        if (normalized.matches("(?sU).*(весел|бодр|задорн|быстр|танцевальн|зажигательн|радостн).*")) return " happiest";
+        if (normalized.matches("(?sU).*\\b(другую|другой|следующую|еще\\s+одну|смени)\\b.*")) return " next";
         return "";
     }
 

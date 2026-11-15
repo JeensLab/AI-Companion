@@ -166,17 +166,12 @@ public final class CompanionCampfireRenderProbe {
     }
 
     /**
-     * Whether the mood asked for leaves no other recording to switch to: the folder has no recording of that kind, or only the one
-     * playing — then the tune keeps playing, and the streamed id legitimately stays the same.
+     * Whether the mood asked for leaves no other recording to switch to: the folder holds only the one playing — then the tune
+     * keeps playing, and the streamed id legitimately stays the same. With another recording there is always a change, whichever
+     * way along the mood scale the request points.
      */
     private static boolean noOtherRecordingFor(String mood) {
-        var tracks = CompanionMusicLibrary.available();
-        if (tracks.size() == 1) return true;
-        CompanionMusicLibrary.Mood wanted = "cheerful".equals(mood) ? CompanionMusicLibrary.Mood.CHEERFUL
-                : CompanionMusicLibrary.Mood.CALM;
-        int tagged = 0;
-        for (CompanionMusicLibrary.Track track : tracks) if (track.mood() == wanted) tagged++;
-        return tagged <= 1;
+        return CompanionMusicLibrary.available().size() == 1;
     }
 
     /** The four views of him playing, one every two seconds, into the client's screenshots folder. */

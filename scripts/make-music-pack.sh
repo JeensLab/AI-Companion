@@ -4,8 +4,9 @@
 # them ships in the JAR, so this script is the only way the pack is made. CI runs it in the build job and uploads the zip as an
 # artifact; the release attaches that artifact.
 #
-# Every recording's mood is the digit its name starts with (entity/CompanionMusicLibrary): 1 (sad) to 9 (happy), 1–4 calm, 6–9
-# cheerful, 5 neither. The digit travels with the file into the pack, so «сыграй грустное» and «повеселее» find their kind there.
+# Every recording's mood is the integer its name starts with (entity/CompanionMusicLibrary): 0 (the saddest) to 999 (the
+# happiest). The number travels with the file into the pack, so «самую грустную», «погрустнее», «повеселее» and «самую весёлую»
+# find their place on that scale there.
 #
 # The archive is reproducible: every entry gets one fixed time and mode, and the entries are written in a sorted order without
 # extra fields, so two builds of the same music/ give the same bytes and the same sha256.
@@ -30,8 +31,8 @@ command -v zip >/dev/null 2>&1 || fail "zip is needed to build the pack"
 # Every recording must be what the game can play from where he sits: mono, 32 kHz, and small (about 34 kbps, as the pair the mod
 # used to carry). The check reads the file exactly as the game does — the Vorbis identification header and the last page's granule
 # position (entity/CompanionMusicLibrary) — so a file the evening would have to skip is refused here instead of shipping. The
-# shipped set must also carry a mood: a name that starts with no digit, or with a longer number such as a year, is refused, so the
-# pack never loses the calm and cheerful tunes «сыграй грустное» and «повеселее» need.
+# shipped set must also carry a mood: a name that starts with no number, or with a number outside 0–999 (a year, say), is refused,
+# so the pack never loses the recordings «самую грустную», «погрустнее», «повеселее» and «самую весёлую» need.
 python3 - "$music" <<'PY'
 import sys, pathlib
 
@@ -42,12 +43,13 @@ count = 0
 failed = False
 
 def mood(name):
-    if not name or name[0] not in "123456789":
+    digits = 0
+    while digits < len(name) and name[digits].isdigit():
+        digits += 1
+    if digits == 0:
         return None
-    if len(name) > 1 and name[1].isdigit():
-        return None
-    number = int(name[0])
-    return "calm" if number <= 4 else "happy" if number >= 6 else "neutral"
+    number = int(name[:digits])
+    return number if 0 <= number <= 999 else None
 
 for file in sorted(folder.glob("*.ogg")):
     data = file.read_bytes()
@@ -83,8 +85,8 @@ for file in sorted(folder.glob("*.ogg")):
     if bps > 45000:
         problems.append(f"{bps:.0f} bps, over the 45 kbps the pack keeps to")
     if kind is None:
-        problems.append("no mood: the name must start with 1–9 (1–4 calm, 6–9 happy)")
-    print(f"{file.name}: {seconds:.1f} s, {size} bytes, {bps:.0f} bps, mono 32 kHz, {kind or 'no mood'}" if not problems
+        problems.append("no mood: the name must start with 0–999 (the number is the mood)")
+    print(f"{file.name}: {seconds:.1f} s, {size} bytes, {bps:.0f} bps, mono 32 kHz, {str(kind) if kind is not None else 'no mood'}" if not problems
           else f"{file.name}: " + "; ".join(problems), file=sys.stderr if problems else sys.stdout)
     failed = failed or bool(problems)
     total += size

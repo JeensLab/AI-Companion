@@ -202,7 +202,7 @@ public final class CompanionPlanCodec {
                     if (named == null) throw new IllegalStateException("Модель назвала постройку «" + item.substring(0, Math.min(item.length(), 40)) + "», ничего не запущено. " + dev.aicompanion.entity.CompanionVillageBuildings.refusal(item));
                     item = named;
                 }
-                // The kind of tune: none named, calm (sad too), cheerful, or simply another one.
+                // The kind of tune: none named, the saddest or a sadder one, the happiest or a happier one, or simply another one.
                 if ("campfire_song".equals(type) && !dev.aicompanion.entity.CompanionCampfire.MOODS.contains(item)) throw invalid();
                 // A new portal («построй новый»), one here («построй здесь»), or none named: then a portal near or known is enough or led to.
                 if ("build_portal".equals(type) && !item.isEmpty() && !"new".equals(item) && !"here".equals(item)) throw invalid();

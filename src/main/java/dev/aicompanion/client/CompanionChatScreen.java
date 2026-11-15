@@ -4,6 +4,7 @@ import dev.aicompanion.CompanionIdentity;
 import dev.aicompanion.CompanionDiagnostics;
 import dev.aicompanion.OpenRouterConfig;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionMusicLibrary;
 import dev.aicompanion.entity.CompanionPickUp;
 import dev.aicompanion.entity.CompanionMarkerBoard;
 
@@ -92,11 +93,12 @@ public final class CompanionChatScreen extends Screen {
                     dropThinkingLine();
                     return;
                 }
-                if (reply.text().isBlank()) dropThinkingLine();
-                else replaceThinkingLine(Component.literal(companionName() + ": " + reply.text()).withStyle(ChatFormatting.AQUA));
-                CompanionMemoryFlow.companionSaid("model", reply.text());
-                CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", reply.text());
-                CompanionAmbientClient.replyDelivered(reply.text());
+                String replyText = modelText(reply);
+                if (replyText.isBlank()) dropThinkingLine();
+                else replaceThinkingLine(Component.literal(companionName() + ": " + replyText).withStyle(ChatFormatting.AQUA));
+                CompanionMemoryFlow.companionSaid("model", replyText);
+                CompanionDiagnostics.event(trace, "companion_reply", "source", "model", "text", replyText);
+                CompanionAmbientClient.replyDelivered(replyText);
                 if (!reply.actions().isEmpty()) {
                     long executionGeneration = actionGeneration(reply.actions(), planGeneration, trace);
                     CompanionActionExecutor.execute(reply.actions(), reply.repeat(), executionGeneration, trace).whenComplete((actionReport, actionError) ->
@@ -104,7 +106,7 @@ public final class CompanionChatScreen extends Screen {
                                 if (executionGeneration == CompanionActionExecutor.currentPlanGeneration()) finishActions(reply.actions(), actionReport, actionError, false, trace);
                             }));
                 }
-                InworldTtsClient.speak(reply.text(), trace).exceptionally(speechError -> {
+                if (!replyText.isBlank()) InworldTtsClient.speak(replyText, trace).exceptionally(speechError -> {
                     dev.aicompanion.AICompanionMod.LOGGER.warn("Speech could not be played: {}", speechError.getMessage());
                     return null;
                 });
@@ -296,7 +298,8 @@ public final class CompanionChatScreen extends Screen {
                 CompanionDiagnostics.event(trace, "reply_discarded", "reason", "generation_changed");
                 return;
             }
-            addVoiceReply(reply.text(), trace, "model");
+            String replyText = modelText(reply);
+            if (!replyText.isBlank()) addVoiceReply(replyText, trace, "model");
             if (!reply.actions().isEmpty()) {
                 long executionGeneration = actionGeneration(reply.actions(), planGeneration, trace);
                 CompanionActionExecutor.execute(reply.actions(), reply.repeat(), executionGeneration, trace).whenComplete((report, actionError) -> minecraft.execute(() -> {
@@ -485,6 +488,17 @@ public final class CompanionChatScreen extends Screen {
         String answer = "Я " + companionName() + ".";
         OpenRouterClient.recordLocalExchange(userText, answer);
         addVoiceReply(answer, trace, "local_identity");
+    }
+
+    /**
+     * The model's own words for a guitar request. The code names the recording that really started (the server's answer, built from
+     * the pick), so the model's sentence is dropped when it names a recording the folder does not hold — a «Lullaby» or a «Sunrise»
+     * the model made up must not reach the chat. A sentence that names nothing, or names a real recording, is kept.
+     */
+    private static String modelText(CompanionReply reply) {
+        if (reply.actions().stream().anyMatch(action -> "campfire_song".equals(action.type()))
+                && CompanionMusicLibrary.namesUnknownRecording(reply.text())) return "";
+        return reply.text();
     }
 
     private static void finishActions(List<PlannedAction> actions, String report, Throwable error, boolean local, String trace) {

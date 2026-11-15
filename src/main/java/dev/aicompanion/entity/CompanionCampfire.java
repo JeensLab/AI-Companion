@@ -44,8 +44,10 @@ public final class CompanionCampfire {
     static final int SETTLE_TICKS = 30, REST_TICKS = 60, REST_SPREAD = 80;
     /** What the client draws: standing, sitting with the guitar on his knee, playing it. */
     public static final int STANDING = 0, SITTING = 1, PLAYING = 2;
-    /** What «сыграй» may ask for: anything, a calm or sad tune, a cheerful one, simply another one, or standard Minecraft music. */
-    public static final java.util.Set<String> MOODS = java.util.Set.of("", "calm", "cheerful", "next", "vanilla");
+    /** What «сыграй» may ask for: anything, the saddest or a sadder tune, the happiest or a happier one, simply another one, or
+     *  standard Minecraft music. «calm» and «cheerful» are the old names of the ends of the scale and still accepted. */
+    public static final java.util.Set<String> MOODS = java.util.Set.of("", "saddest", "sadder", "happier", "happiest", "next", "vanilla",
+            "calm", "cheerful");
 
     enum Phase { APPROACH, SETTLE, PLAY, REST }
 
@@ -90,33 +92,38 @@ public final class CompanionCampfire {
      * (owner 09.11: every new request sent him walking to another seat, still drawn sitting).
      *
      * <p>Such a request reads the folder afresh first, so a recording put there while the game runs is picked up without a reload,
-     * and it changes the tune only to a recording that is really another one — of the kind asked for when a mood was asked, any
-     * other for «другую», standard Minecraft music for «из майнкрафта». When the folder has nothing else of that kind the one
-     * playing simply goes on, and the answer says so plainly: «Таких песен нет.» when the folder holds other recordings but none of
-     * the kind asked for, «Других песен не знаю.» only when there is no other recording at all. The same recording is never
-     * restarted and called a change. The answer is built from the pick that actually started, never from an intention.
+     * and a folder whose files were taken away and put back is read as it is now. It changes the tune only to a recording that is
+     * really another one — the nearest lower for «погрустнее», the nearest higher for «повеселее», the lowest for «самую грустную»,
+     * the highest for «самую весёлую», any other for «другую», standard Minecraft music for «из майнкрафта». The answer names the
+     * recording that really started, by its mood number and its file name, so no name is invented. When the folder has no other
+     * recording at all the one playing simply goes on, and the answer says so plainly: «Других песен не знаю.». The same recording
+     * is never restarted and called a change, and the automatic rotation does not replace the picked tune until it has played out.
      */
     public CompanionActionResult request(ServerPlayer player, String mood) {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для музыки нужен загруженный мир.");
         if (!MOODS.contains(mood)) return CompanionActionResult.failed("Не понял, какую мелодию сыграть.");
         if (!c.playsByTheFire()) return CompanionActionResult.failed("Играть у костра выключено в настройках поведения.");
         if (active()) {
-            // The folder is read again for the request: what was put there since the last scan is heard without a reload.
+            // The folder is read again for the request: what was put there since the last scan is heard without a reload, and a
+            // folder whose files were taken away and put back is read as it is now.
             java.util.List<CompanionMusicLibrary.Track> tracks = CompanionMusicLibrary.rescan();
             if (phase == Phase.PLAY) {
                 CompanionMusicLibrary.Pick next = CompanionMusicLibrary.change(tracks, mood, tune.soundId(), c.getRandom());
-                // Nothing else of the asked kind (or nothing else at all): he plays the one he is playing on, and says which of the
-                // two it is — no recording of that kind while there are others, or nothing else at all.
+                // Nothing else at all: he plays the one he is playing on, and says plainly that there are no other songs.
                 if (next == null) return c.placement.recordActionResult(CompanionActionResult.ok(noChange(mood, tracks)));
+                // The request is the evening's tune from here on: the id and the start counter are set at once, and the automatic
+                // rotation only takes over when this tune has played out by its length.
                 silence();
                 start(next);
-                return c.placement.recordActionResult(CompanionActionResult.ok(whatStarts(mood)));
+                return c.placement.recordActionResult(CompanionActionResult.ok(whatStarts(mood, next, tracks)));
             }
             // Still sitting down or resting: the kind asked for is taken by the tune that starts next (now, while resting).
             wanted = mood;
-            if (phase == Phase.REST) startTune();
+            CompanionMusicLibrary.Pick started = phase == Phase.REST ? startTune() : null;
             boolean missing = !mood.isEmpty() && !"vanilla".equals(mood) && !CompanionMusicLibrary.hasMood(tracks, mood);
             // No recording of that kind: the tune that starts is any, and the answer says so instead of promising the kind.
+            if (started != null) return c.placement.recordActionResult(CompanionActionResult.ok(
+                    missing ? missingMood(mood) : whatStarts(mood, started, tracks)));
             return c.placement.recordActionResult(CompanionActionResult.ok(missing ? missingMood(mood) : whatStarts(mood)));
         }
         if (c.getTarget() != null || danger(level, player.blockPosition()))
@@ -150,15 +157,29 @@ public final class CompanionCampfire {
      * none of the kind asked for, «Других песен не знаю.» only when there is no other recording at all.
      */
     private String noChange(String mood, List<CompanionMusicLibrary.Track> tracks) {
-        boolean moodAsked = "calm".equals(mood) || "cheerful".equals(mood);
-        return moodAsked && CompanionMusicLibrary.hasOther(tracks, tune.soundId()) ? NO_SUCH_KIND : NO_OTHER;
+        return CompanionMusicLibrary.hasOther(tracks, tune.soundId()) ? NO_SUCH_KIND : NO_OTHER;
     }
 
-    /** What he says of a tune that really starts: short and plain, from the kind that was asked for. */
+    /** What he says of a tune that really starts, built from the recording the pick actually took: its mood number and its title. */
+    private static String whatStarts(String mood, CompanionMusicLibrary.Pick pick, List<CompanionMusicLibrary.Track> tracks) {
+        String kind = CompanionMusicLibrary.normalize(mood);
+        if ("vanilla".equals(kind)) return "Сыграю из майнкрафта.";
+        CompanionMusicLibrary.Track track = pick.track();
+        // A standard Minecraft disc while the folder is empty: the kind is named, the disc's own title is not a folder recording.
+        if (track.file().isEmpty()) return whatStarts(mood);
+        String label = CompanionMusicLibrary.label(track);
+        if ("saddest".equals(kind))
+            return (CompanionMusicLibrary.isSaddest(tracks, track) ? "Самая грустная — " : "Играю ") + label + ".";
+        if ("happiest".equals(kind))
+            return (CompanionMusicLibrary.isHappiest(tracks, track) ? "Самая весёлая — " : "Играю ") + label + ".";
+        return "Играю " + label + ".";
+    }
+
+    /** What he says of a tune that starts before it has been picked (he is still sitting down): short and plain, no name. */
     private static String whatStarts(String mood) {
-        return switch (mood) {
-            case "calm" -> "Сыграю спокойную.";
-            case "cheerful" -> "Сыграю повеселее.";
+        return switch (CompanionMusicLibrary.normalize(mood)) {
+            case "saddest", "sadder" -> "Сыграю грустную.";
+            case "happiest", "happier" -> "Сыграю повеселее.";
             case "vanilla" -> "Сыграю из майнкрафта.";
             default -> "Другую.";
         };
@@ -166,7 +187,11 @@ public final class CompanionCampfire {
 
     /** Said plainly when no recording of the kind asked for is there, before a tune starts: he will play any. */
     private static String missingMood(String mood) {
-        return "calm".equals(mood) ? "Спокойных и грустных записей нет — сыграю любую." : "Весёлых записей нет — сыграю другую.";
+        return switch (CompanionMusicLibrary.normalize(mood)) {
+            case "saddest", "sadder" -> "Грустных записей нет — сыграю любую.";
+            case "happiest", "happier" -> "Весёлых записей нет — сыграю другую.";
+            default -> "";
+        };
     }
 
     /** The player gave an order: the guitar goes away at once. True if he was playing. */
@@ -364,8 +389,8 @@ public final class CompanionCampfire {
     /** For the model's picture of the moment: what he plays and where, said as the background it is. */
     public String forAi() {
         String where = byFire ? "у костра" : "рядом с игроком";
-        String kind = tune == null ? "" : tune.mood() == CompanionMusicLibrary.Mood.CHEERFUL ? "весёлая"
-                : tune.mood() == CompanionMusicLibrary.Mood.CALM ? "спокойная" : "";
+        String kind = tune == null || tune.mood() == CompanionMusicLibrary.UNTAGGED ? ""
+                : tune.mood() >= 500 ? "весёлая" : "спокойная";
         String what = phase == Phase.PLAY && tune != null ? " «" + tuneTitle() + "»" + (kind.isEmpty() ? "" : " (" + kind + ")") : "";
         return (phase == Phase.APPROACH ? "идёт сесть " + where + ", чтобы сыграть на гитаре" : "сидит " + where + " и играет на гитаре" + what)
                 + " — это фон, разговору он не мешает";
@@ -373,7 +398,7 @@ public final class CompanionCampfire {
 
     /** The face while a tune sounds (the owner asked, 09.11): a smile for a cheerful one, a plain face for a calm, sad or untagged one. */
     public dev.aicompanion.CompanionExpression mood() {
-        return tune != null && tune.mood() == CompanionMusicLibrary.Mood.CHEERFUL ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.CALM;
+        return tune != null && tune.mood() >= 500 ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.CALM;
     }
 
     /** Sitting: he stays where he sat, his eyes on the fire (or the ground before him) and nowhere else (owner 09.11: not on the player). */

@@ -24,7 +24,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -36,14 +35,17 @@ import java.util.concurrent.CompletableFuture;
  * sounds.json generated from the folder — every file there becomes a sound event — and the files themselves. It is always active (a
  * required pack at the top) and is rebuilt on every resource reload; joining a world reloads the resources when the folder has
  * changed since the last build ({@link #folderChanged()}), so a recording put there is read without any command.
+ *
+ * <p>The folder is read afresh for every request too: the fingerprint of its recordings (their paths, sizes and times) is compared
+ * with the one the last built pack declared, so files removed and then put back are seen on the first request, not after a restart.
  */
 public final class CompanionMusicPack implements PackResources {
     static final String ID = "aicompanion_music";
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final String NAMESPACE = AICompanionMod.MOD_ID;
 
-    /** The folder's recordings the last built pack declared, by file name; null until the first one is built. */
-    private static Set<String> built;
+    /** The fingerprint of the folder's recordings the last built pack declared; null until the first one is built. */
+    private static String builtFingerprint;
 
     private final PackLocationInfo location;
     /** The pack's resource paths of the folder's recordings, by the file they are served from. */
@@ -60,11 +62,12 @@ public final class CompanionMusicPack implements PackResources {
         this.location = location;
         ensureFolder(folder);
         JsonObject root = new JsonObject();
-        Set<String> declared = new LinkedHashSet<>();
+        StringBuilder fingerprint = new StringBuilder();
         for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.scan(folder)) {
             String path = "sounds/" + track.soundId().substring(NAMESPACE.length() + 1) + ".ogg";
-            files.put(path, folder.resolve(track.file()));
-            declared.add(track.file());
+            Path file = folder.resolve(track.file());
+            files.put(path, file);
+            fingerprint.append(track.file()).append(':').append(sizeAndTime(file)).append(';');
             JsonObject sound = new JsonObject();
             sound.addProperty("name", track.soundId());
             sound.addProperty("stream", true);
@@ -75,7 +78,7 @@ public final class CompanionMusicPack implements PackResources {
             entry.addProperty("subtitle", "subtitles.aicompanion.guitar");
             root.add(track.soundId().substring(NAMESPACE.length() + 1), entry);
         }
-        if (playerFolder) built = Set.copyOf(declared);
+        if (playerFolder) builtFingerprint = fingerprint.toString();
         this.sounds = root.toString().getBytes(StandardCharsets.UTF_8);
         int format = SharedConstants.getCurrentVersion().getPackVersion(PackType.CLIENT_RESOURCES);
         JsonObject pack = new JsonObject();
@@ -86,20 +89,36 @@ public final class CompanionMusicPack implements PackResources {
         this.meta = description.toString().getBytes(StandardCharsets.UTF_8);
     }
 
+    /** The size and modification time of a recording, so a file replaced in place is not taken for the one the pack declared. */
+    private static String sizeAndTime(Path file) {
+        try {
+            return Files.size(file) + "@" + Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException unreadable) {
+            return "?";
+        }
+    }
+
+    /** The fingerprint of every recording the folder holds now, read afresh. */
+    private static String fingerprint(Path folder) {
+        StringBuilder fingerprint = new StringBuilder();
+        for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.scan(folder))
+            fingerprint.append(track.file()).append(':').append(sizeAndTime(folder.resolve(track.file()))).append(';');
+        return fingerprint.toString();
+    }
+
     /**
-     * Whether the player's folder holds recordings the last built pack did not declare, or has lost some: joining a world then
-     * reloads the resources, so what was put there is heard without a command. An empty folder changes nothing.
+     * Whether the player's folder holds recordings the last built pack did not declare, has lost some, or has one replaced: joining
+     * a world then reloads the resources, so what was put there is heard without a command.
      */
     public static boolean folderChanged() {
-        Set<String> now = new LinkedHashSet<>();
-        for (CompanionMusicLibrary.Track track : CompanionMusicLibrary.scan(CompanionMusicLibrary.folder())) now.add(track.file());
-        return !now.equals(built);
+        return !fingerprint(CompanionMusicLibrary.folder()).equals(builtFingerprint);
     }
 
     /**
      * A request for another tune reads the folder afresh on this client too: when it has changed since the last built pack, the
-     * resources are reloaded before the request is sent, so a recording put there while the game runs is one the sound engine
-     * knows and is heard without pressing F3+T. Nothing is done when the folder is as the pack last read it.
+     * resources are reloaded before the request is sent, so a recording put there while the game runs — or put back after the folder
+     * was emptied — is one the sound engine knows and is heard without pressing F3+T. Nothing is done when the folder is as the pack
+     * last read it.
      */
     public static CompletableFuture<Void> refreshForRequest() {
         if (!folderChanged()) return CompletableFuture.completedFuture(null);

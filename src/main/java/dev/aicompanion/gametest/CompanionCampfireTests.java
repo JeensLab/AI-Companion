@@ -95,6 +95,12 @@ public final class CompanionCampfireTests {
     @AfterBatch(batch = "campfire_library") public static void libraryReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
     @BeforeBatch(batch = "campfire_nokind") public static void noKindReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
     @AfterBatch(batch = "campfire_nokind") public static void noKindReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_mood") public static void moodReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_mood") public static void moodReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_restored") public static void restoredReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_restored") public static void restoredReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
+    @BeforeBatch(batch = "campfire_names") public static void namesReadsTheEmptyFolder(ServerLevel level) { readTheEmptyFolder(); }
+    @AfterBatch(batch = "campfire_names") public static void namesReadsThePlayersFolder(ServerLevel level) { readThePlayersFolder(); }
 
     /**
      * «Сыграй» by a lit fire: he sits down across the fire from the player and the guitar sounds; his eyes stay on the fire though the
@@ -118,7 +124,7 @@ public final class CompanionCampfireTests {
             h.assertTrue(Math.abs(net.minecraft.util.Mth.wrapDegrees(c.getYHeadRot() - toFire)) < 25 && Math.abs(net.minecraft.util.Mth.wrapDegrees(c.yBodyRot - toFire)) < 10,
                     "Not facing the fire: head " + c.getYHeadRot() + ", body " + c.yBodyRot + ", fire at " + toFire);
             var tune = tune(c);
-            h.assertTrue(c.expression() == (tune.mood() == CompanionMusicLibrary.Mood.CHEERFUL ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.CALM),
+            h.assertTrue(c.expression() == (tune.mood() >= 500 ? dev.aicompanion.CompanionExpression.PLEASED : dev.aicompanion.CompanionExpression.CALM),
                     "Face " + c.expression() + " for «" + tune.title() + "»");
             h.assertTrue(c.distanceToSqr(fire) <= 3.2 * 3.2, "He plays away from the fire: " + c.position());
             // Round the fire to the seat and the first bars: seconds, not the walk's twenty-second limit.
@@ -181,32 +187,32 @@ public final class CompanionCampfireTests {
         h.setBlock(FIRE, Blocks.CAMPFIRE);
         CompanionEntity c = spawn(h, 9, 16, 14, 16);
         ServerPlayer player = owner(h, c);
-        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1).success(), "Not taken");
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "happiest", 1).success(), "Not taken");
         net.minecraft.world.phys.Vec3[] seat = {null};
         int[] stage = {0};
         long[] askedAt = {0};
-        String[] calmTitle = {null};
+        String[] sadTitle = {null};
         h.onEachTick(() -> {
             if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING) {
-                h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CHEERFUL, "Asked for a cheerful one, got «" + c.campfire().tuneTitle() + "»");
+                h.assertTrue(tune(c).mood() >= 500, "Asked for the happiest one, got «" + c.campfire().tuneTitle() + "»");
                 seat[0] = c.position();
                 String before = c.campfire().tuneTitle();
                 int starts = c.campfireTuneStart();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
+                var again = CompanionEvents.executeAction(player, "campfire_song", "saddest", 1);
                 h.assertTrue(again.success() && c.campfire().active(), "Asking again: " + again.message());
-                h.assertTrue("Сыграю спокойную.".equals(again.message()), "Not the kind asked for: " + again.message());
-                h.assertTrue(!c.campfire().tuneTitle().equals(before) && tune(c).mood() != CompanionMusicLibrary.Mood.CHEERFUL,
-                        "Not a calm tune at once: «" + c.campfire().tuneTitle() + "»");
+                h.assertTrue("Сыграю грустную.".equals(again.message()), "Not the kind asked for: " + again.message());
+                h.assertTrue(!c.campfire().tuneTitle().equals(before) && tune(c).mood() < 500,
+                        "Not a sad tune at once: «" + c.campfire().tuneTitle() + "»");
                 h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
                         "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
-                calmTitle[0] = c.campfire().tuneTitle();
+                sadTitle[0] = c.campfire().tuneTitle();
                 askedAt[0] = h.getTick();
                 stage[0] = 1;
             } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
                 int starts = c.campfireTuneStart();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happiest", 1);
                 h.assertTrue(again.success() && "Сыграю повеселее.".equals(again.message()), "Not the kind asked for: " + again.message());
-                h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CHEERFUL && !c.campfire().tuneTitle().equals(calmTitle[0]),
+                h.assertTrue(tune(c).mood() >= 500 && !c.campfire().tuneTitle().equals(sadTitle[0]),
                         "Not a cheerful tune at once: «" + c.campfire().tuneTitle() + "»");
                 h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
                         "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
@@ -353,7 +359,7 @@ public final class CompanionCampfireTests {
         for (var track : fallback) {
             h.assertTrue(track.file().isEmpty() && track.soundId().startsWith("minecraft:"), "Not the vanilla fallback: " + track);
             h.assertTrue(CompanionTunes.ALL.stream().anyMatch(t -> t.soundId().equals(track.soundId()) && t.ticks() == track.ticks()
-                            && track.mood() == (t.cheerful() ? CompanionMusicLibrary.Mood.CHEERFUL : CompanionMusicLibrary.Mood.CALM)),
+                            && track.mood() == (t.cheerful() ? 900 : 100)),
                     "The fallback disagrees with the catalog: " + track);
         }
         h.assertTrue(CompanionCampfireTests.class.getResource("/assets/aicompanion/sounds/guitar/romance.ogg") == null,
@@ -398,9 +404,9 @@ public final class CompanionCampfireTests {
     }
 
     /**
-     * The player's folder is read as it is: every .ogg in it is a playable recording with its own sound id, its length and its title;
-     * a mood comes from the digit the name starts with, 1 (sad) to 9 (happy), while a plain name or a longer number (a year) carries
-     * none; a broken file is skipped, and a missing folder is simply empty.
+     * The player's folder is read as it is: every .ogg in it and in its subfolders is a playable recording with its own sound id, its
+     * length and its title; a mood is the integer the name starts with, 0 (the saddest) to 999 (the happiest), while a plain name or a
+     * longer number (a year) carries none; a broken file is skipped, and a missing folder is simply empty.
      */
     @GameTest(template = "empty")
     public static void theFolderIsReadForEveryRecordingInIt(GameTestHelper h) {
@@ -409,27 +415,32 @@ public final class CompanionCampfireTests {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-guitar");
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         try {
-            writeOgg(dir, "1_first.ogg", 100);
-            writeOgg(dir, "8_second.ogg", 30);
+            writeOgg(dir, "0_first.ogg", 100);
+            writeOgg(dir, "150_second.ogg", 30);
             writeOgg(dir, "quiet_one.ogg", 50);
             writeOgg(dir, "1999_live.ogg", 20);
+            java.nio.file.Files.createDirectories(dir.resolve("1"));
+            writeOgg(dir.resolve("1"), "999_last.ogg", 40);
             write(dir, "broken.ogg", "not an ogg file at all");
             var tracks = CompanionMusicLibrary.scan(dir);
-            h.assertTrue(tracks.size() == 4, "Found " + tracks.size() + " of four recordings: " + tracks);
+            h.assertTrue(tracks.size() == 5, "Found " + tracks.size() + " of five recordings: " + tracks);
             var byTitle = new java.util.HashMap<String, CompanionMusicLibrary.Track>();
             for (var track : tracks) byTitle.put(track.title(), track);
             h.assertTrue(byTitle.containsKey("First") && byTitle.containsKey("Second") && byTitle.containsKey("Quiet one")
-                            && byTitle.containsKey("1999 live"),
+                            && byTitle.containsKey("1999 live") && byTitle.containsKey("Last"),
                     "Titles: " + byTitle.keySet());
             var first = byTitle.get("First");
             var second = byTitle.get("Second");
             var quiet = byTitle.get("Quiet one");
             var year = byTitle.get("1999 live");
-            h.assertTrue(first.mood() == CompanionMusicLibrary.Mood.CALM && second.mood() == CompanionMusicLibrary.Mood.CHEERFUL
-                            && quiet.mood() == null && year.mood() == null,
-                    "Moods: " + first.mood() + ", " + second.mood() + ", " + quiet.mood() + ", " + year.mood());
-            h.assertTrue(first.ticks() == 2000 && second.ticks() == 600 && quiet.ticks() == 1000 && year.ticks() == 400,
-                    "Lengths: " + first.ticks() + ", " + second.ticks() + ", " + quiet.ticks() + ", " + year.ticks());
+            var last = byTitle.get("Last");
+            h.assertTrue(first.mood() == 0 && second.mood() == 150 && quiet.mood() == CompanionMusicLibrary.UNTAGGED
+                            && year.mood() == CompanionMusicLibrary.UNTAGGED && last.mood() == 999,
+                    "Moods: " + first.mood() + ", " + second.mood() + ", " + quiet.mood() + ", " + year.mood() + ", " + last.mood());
+            h.assertTrue(first.ticks() == 2000 && second.ticks() == 600 && quiet.ticks() == 1000 && year.ticks() == 400 && last.ticks() == 800,
+                    "Lengths: " + first.ticks() + ", " + second.ticks() + ", " + quiet.ticks() + ", " + year.ticks() + ", " + last.ticks());
+            // A recording in a subfolder is still read: the file keeps its path inside the folder, so the pack can serve it.
+            h.assertTrue("1/999_last.ogg".equals(last.file()), "The subfolder recording lost its path: " + last.file());
             var ids = new HashSet<String>();
             for (var track : tracks) {
                 h.assertTrue(track.soundId().startsWith("aicompanion:guitar_folder/") && ids.add(track.soundId()),
@@ -492,39 +503,80 @@ public final class CompanionCampfireTests {
     }
 
     /**
-     * The kind of tune asked for: a calm-tagged recording for «сыграй грустное», a cheerful one for «повеселее», and the honest answer
-     * — no such recording, play any — when nothing is tagged so; «другую» never plays the same one twice running.
+     * The mood scale the owner set (0 the saddest, 999 the happiest) and the requests along it: «самую грустную» takes the lowest,
+     * «самую весёлую» the highest, «повеселее» the nearest strictly higher, «погрустнее» the nearest strictly lower, two «повеселее»
+     * requests move strictly up, and a change request never returns the recording that is playing. One recording in the folder means
+     * no change at all; an untagged folder is answered honestly, still with another recording when there is one.
      */
     @GameTest(template = "empty", batch = "campfire_library")
     public static void aTaggedRecordingIsPickedForTheMoodOrHeSaysThereIsNone(GameTestHelper h) {
         var random = net.minecraft.util.RandomSource.create(7);
-        var calm = new CompanionMusicLibrary.Track("a.ogg", "aicompanion:guitar_folder/a", "A", 400, CompanionMusicLibrary.Mood.CALM);
-        var cheerful = new CompanionMusicLibrary.Track("b.ogg", "aicompanion:guitar_folder/b", "B", 400, CompanionMusicLibrary.Mood.CHEERFUL);
-        var plain = new CompanionMusicLibrary.Track("c.ogg", "aicompanion:guitar_folder/c", "C", 400, null);
-        var all = java.util.List.of(calm, cheerful, plain);
+        var zero = new CompanionMusicLibrary.Track("0_aerie.ogg", "aicompanion:guitar_folder/0_aerie", "Aerie", 400, 0);
+        var low = new CompanionMusicLibrary.Track("150_blue-blood.ogg", "aicompanion:guitar_folder/150_blue-blood", "Blue blood", 400, 150);
+        var middle = new CompanionMusicLibrary.Track("400_dolphin.ogg", "aicompanion:guitar_folder/400_dolphin", "Dolphin", 400, 400);
+        var high = new CompanionMusicLibrary.Track("850_gavotte.ogg", "aicompanion:guitar_folder/850_gavotte", "Gavotte", 400, 850);
+        var top = new CompanionMusicLibrary.Track("999_water-dripping.ogg", "aicompanion:guitar_folder/999_water-dripping", "Water dripping", 400, 999);
+        var all = java.util.List.of(zero, low, middle, high, top);
         for (int i = 0; i < 20; i++) {
-            var pick = CompanionMusicLibrary.pick(all, "calm", "", random);
-            h.assertTrue(pick.track() == calm && pick.moodMatched(), "A calm tune was asked for, got " + pick.track().title());
-            pick = CompanionMusicLibrary.pick(all, "cheerful", "", random);
-            h.assertTrue(pick.track() == cheerful && pick.moodMatched(), "A cheerful tune was asked for, got " + pick.track().title());
-            pick = CompanionMusicLibrary.pick(all, "next", cheerful.soundId(), random);
-            h.assertTrue(pick.track() != cheerful && pick.moodMatched(), "«Другую» played the same tune: " + pick.track().title());
-            pick = CompanionMusicLibrary.pick(all, "", plain.soundId(), random);
-            h.assertTrue(pick.track() != plain && pick.moodMatched(), "No request repeated the tune: " + pick.track().title());
+            var pick = CompanionMusicLibrary.pick(all, "saddest", "", random);
+            h.assertTrue(pick.track() == zero && pick.moodMatched(), "«Самую грустную» was not the 0 one: " + pick.track().title());
+            pick = CompanionMusicLibrary.pick(all, "happiest", "", random);
+            h.assertTrue(pick.track() == top && pick.moodMatched(), "«Самую весёлую» was not the 999 one: " + pick.track().title());
+            pick = CompanionMusicLibrary.pick(all, "happier", middle.soundId(), random);
+            h.assertTrue(pick.track() == high, "«Повеселее» from 400 was not 850: " + pick.track().title());
+            pick = CompanionMusicLibrary.pick(all, "sadder", middle.soundId(), random);
+            h.assertTrue(pick.track() == low, "«Погрустнее» from 400 was not 150: " + pick.track().title());
+            pick = CompanionMusicLibrary.pick(all, "next", middle.soundId(), random);
+            h.assertTrue(pick.track() != middle, "«Другую» played the same tune: " + pick.track().title());
+            pick = CompanionMusicLibrary.pick(all, "", low.soundId(), random);
+            h.assertTrue(pick.track() != low, "No request repeated the tune: " + pick.track().title());
         }
-        var untagged = java.util.List.of(plain);
-        var honest = CompanionMusicLibrary.pick(untagged, "calm", "", random);
-        h.assertTrue(honest.track() == plain && !honest.moodMatched(), "An untagged calm pick was not honest");
-        h.assertTrue(!CompanionMusicLibrary.hasMood(untagged, "calm") && !CompanionMusicLibrary.hasMood(untagged, "cheerful"),
+        // A request while he plays moves along the scale and never returns the recording playing.
+        for (int i = 0; i < 20; i++) {
+            var changed = CompanionMusicLibrary.change(all, "saddest", middle.soundId(), random);
+            h.assertTrue(changed != null && changed.track() == zero, "«Самую грустную» did not take the 0 one: " + changed);
+            changed = CompanionMusicLibrary.change(all, "happiest", middle.soundId(), random);
+            h.assertTrue(changed != null && changed.track() == top, "«Самую весёлую» did not take the 999 one: " + changed);
+            changed = CompanionMusicLibrary.change(all, "happier", middle.soundId(), random);
+            h.assertTrue(changed != null && changed.track() == high, "«Повеселее» did not take 850: " + changed);
+            changed = CompanionMusicLibrary.change(all, "sadder", middle.soundId(), random);
+            h.assertTrue(changed != null && changed.track() == low, "«Погрустнее» did not take 150: " + changed);
+            changed = CompanionMusicLibrary.change(all, "next", middle.soundId(), random);
+            h.assertTrue(changed != null && changed.track() != middle, "«Другую» played the same tune: " + changed);
+            // At the end of the scale the request still changes the recording: the highest (or lowest) other one.
+            changed = CompanionMusicLibrary.change(all, "happier", top.soundId(), random);
+            h.assertTrue(changed != null && changed.track() == high, "«Повеселее» at the top did not change: " + changed);
+            changed = CompanionMusicLibrary.change(all, "sadder", zero.soundId(), random);
+            h.assertTrue(changed != null && changed.track() == low, "«Погрустнее» at the bottom did not change: " + changed);
+        }
+        // Two consecutive «повеселее» requests move strictly up each time.
+        var first = CompanionMusicLibrary.change(all, "happier", middle.soundId(), random);
+        h.assertTrue(first != null && first.track() == high, "The first «повеселее» did not move up: " + first);
+        var second = CompanionMusicLibrary.change(all, "happier", first.track().soundId(), random);
+        h.assertTrue(second != null && second.track() == top && second.track().mood() > first.track().mood(),
+                "The second «повеселее» did not move strictly up: " + second);
+        // One recording in the folder: no change request has anything else to play.
+        var one = java.util.List.of(middle);
+        h.assertTrue(CompanionMusicLibrary.change(one, "next", middle.soundId(), random) == null, "One recording was promised as another");
+        h.assertTrue(CompanionMusicLibrary.change(one, "saddest", middle.soundId(), random) == null, "One recording was promised the saddest");
+        h.assertTrue(CompanionMusicLibrary.change(one, "happier", middle.soundId(), random) == null, "One recording was promised as happier");
+        var plain = new CompanionMusicLibrary.Track("plain.ogg", "aicompanion:guitar_folder/plain", "Plain", 400, CompanionMusicLibrary.UNTAGGED);
+        var other = new CompanionMusicLibrary.Track("other.ogg", "aicompanion:guitar_folder/other", "Other", 400, CompanionMusicLibrary.UNTAGGED);
+        var untagged = java.util.List.of(plain, other);
+        var honest = CompanionMusicLibrary.pick(untagged, "saddest", "", random);
+        h.assertTrue(!honest.moodMatched(), "An untagged saddest pick was not honest");
+        h.assertTrue(!CompanionMusicLibrary.hasMood(untagged, "saddest") && !CompanionMusicLibrary.hasMood(untagged, "happiest"),
                 "An untagged set claims a mood");
-        h.assertTrue(CompanionMusicLibrary.hasMood(all, "calm") && CompanionMusicLibrary.hasMood(all, "cheerful"), "Tagged moods not seen");
-        // The fallback while the folder is empty: standard Minecraft music, one calm and one cheerful.
+        h.assertTrue(CompanionMusicLibrary.hasMood(all, "saddest") && CompanionMusicLibrary.hasMood(all, "happiest")
+                        && CompanionMusicLibrary.hasMood(all, "sadder") && CompanionMusicLibrary.hasMood(all, "happier"),
+                "Tagged moods not seen");
+        // The fallback while the folder is empty: standard Minecraft music at the ends of the same scale.
         var bundled = CompanionMusicLibrary.fallback();
-        var calmFallback = CompanionMusicLibrary.pick(bundled, "calm", "", random);
-        var cheerfulFallback = CompanionMusicLibrary.pick(bundled, "cheerful", "", random);
-        h.assertTrue(calmFallback.track().mood() == CompanionMusicLibrary.Mood.CALM && calmFallback.moodMatched()
-                        && cheerfulFallback.track().mood() == CompanionMusicLibrary.Mood.CHEERFUL && cheerfulFallback.moodMatched(),
-                "The standard fallback has no tune of a kind: " + calmFallback + ", " + cheerfulFallback);
+        var saddestFallback = CompanionMusicLibrary.pick(bundled, "saddest", "", random);
+        var happiestFallback = CompanionMusicLibrary.pick(bundled, "happiest", "", random);
+        h.assertTrue(saddestFallback.track().mood() == 100 && saddestFallback.moodMatched()
+                        && happiestFallback.track().mood() == 900 && happiestFallback.moodMatched(),
+                "The standard fallback has no tune of a kind: " + saddestFallback + ", " + happiestFallback);
         h.assertTrue(CompanionMusicLibrary.available().size() >= 2, "Nothing to play at all");
         h.succeed();
     }
@@ -602,9 +654,9 @@ public final class CompanionCampfireTests {
     }
 
     /**
-     * The vanilla fallback while the folder is empty answers the mood too: a cheerful disc for «повеселее», a calm one for
-     * «погрустнее», always a different one than the disc playing — and the one disc of that kind that is playing now is started over
-     * rather than replaced by a disc of the wrong kind. With no disc of the kind asked for the pick says so, and the answer is honest.
+     * The vanilla fallback while the folder is empty answers the mood scale too: a disc at the cheerful end for «повеселее», one at
+     * the sad end for «погрустнее», always a different one than the disc playing — and the one disc of that end that is playing now is
+     * started over rather than replaced by a disc of the wrong end. With nothing else to play the change says so instead.
      */
     @GameTest(template = "empty", batch = "campfire_library")
     public static void theVanillaFallbackChangesItsDiscWithTheMood(GameTestHelper h) {
@@ -612,27 +664,27 @@ public final class CompanionCampfireTests {
         var discs = CompanionMusicLibrary.available();
         var playing = "minecraft:music_disc.cat";
         for (int i = 0; i < 20; i++) {
-            var cheerful = CompanionMusicLibrary.pick(discs, "cheerful", playing, random);
-            h.assertTrue(cheerful.moodMatched() && cheerful.track().mood() == CompanionMusicLibrary.Mood.CHEERFUL
+            var cheerful = CompanionMusicLibrary.pick(discs, "happier", playing, random);
+            h.assertTrue(cheerful.moodMatched() && cheerful.track().mood() >= 500
                             && !cheerful.track().soundId().equals(playing),
                     "«Повеселее» did not change the disc: " + cheerful.track());
-            var calm = CompanionMusicLibrary.pick(discs, "calm", cheerful.track().soundId(), random);
-            h.assertTrue(calm.moodMatched() && calm.track().mood() == CompanionMusicLibrary.Mood.CALM
+            var calm = CompanionMusicLibrary.pick(discs, "sadder", cheerful.track().soundId(), random);
+            h.assertTrue(calm.moodMatched() && calm.track().mood() < 500
                             && !calm.track().soundId().equals(cheerful.track().soundId()),
                     "«Погрустнее» did not change the disc: " + calm.track());
         }
-        var onlyCheerful = java.util.List.of(discs.stream().filter(t -> t.mood() == CompanionMusicLibrary.Mood.CHEERFUL).findFirst().orElseThrow());
-        var again = CompanionMusicLibrary.pick(onlyCheerful, "cheerful", onlyCheerful.getFirst().soundId(), random);
+        var onlyCheerful = java.util.List.of(discs.stream().filter(t -> t.mood() >= 500).findFirst().orElseThrow());
+        var again = CompanionMusicLibrary.pick(onlyCheerful, "happiest", onlyCheerful.getFirst().soundId(), random);
         h.assertTrue(again.moodMatched() && again.track().soundId().equals(onlyCheerful.getFirst().soundId()),
                 "The only cheerful disc was not started over: " + again.track());
-        var onlyCalm = java.util.List.of(discs.stream().filter(t -> t.mood() == CompanionMusicLibrary.Mood.CALM).findFirst().orElseThrow());
-        var honest = CompanionMusicLibrary.pick(onlyCalm, "cheerful", "", random);
-        h.assertTrue(!honest.moodMatched() && honest.track().mood() == CompanionMusicLibrary.Mood.CALM,
-                "A cheerful request was not answered honestly: " + honest.track());
+        var onlyCalm = java.util.List.of(discs.stream().filter(t -> t.mood() < 500).findFirst().orElseThrow());
+        var honest = CompanionMusicLibrary.pick(onlyCalm, "happiest", "", random);
+        h.assertTrue(honest.moodMatched() && honest.track().mood() == onlyCalm.getFirst().mood(),
+                "The only disc was not the happiest of its folder: " + honest.track());
         // A request while he plays changes the disc only to a really different one; with nothing else it says so instead.
         for (int i = 0; i < 20; i++) {
-            var changed = CompanionMusicLibrary.change(discs, "calm", playing, random);
-            h.assertTrue(changed != null && changed.track().mood() == CompanionMusicLibrary.Mood.CALM
+            var changed = CompanionMusicLibrary.change(discs, "saddest", playing, random);
+            h.assertTrue(changed != null && changed.track().mood() < 500
                             && !changed.track().soundId().equals(playing),
                     "«Погрустнее» did not change the disc: " + changed);
             var vanilla = CompanionMusicLibrary.change(discs, "vanilla", "minecraft:music_disc.cat", random);
@@ -640,17 +692,18 @@ public final class CompanionCampfireTests {
                             && !vanilla.track().soundId().equals("minecraft:music_disc.cat"),
                     "«Из майнкрафта» did not change the disc: " + vanilla);
         }
-        h.assertTrue(CompanionMusicLibrary.change(onlyCheerful, "cheerful", onlyCheerful.getFirst().soundId(), random) == null,
+        h.assertTrue(CompanionMusicLibrary.change(onlyCheerful, "happiest", onlyCheerful.getFirst().soundId(), random) == null,
                 "The only cheerful disc was promised as another one");
-        h.assertTrue(CompanionMusicLibrary.change(onlyCalm, "cheerful", onlyCalm.getFirst().soundId(), random) == null,
-                "A cheerful change was promised with no cheerful disc");
+        h.assertTrue(CompanionMusicLibrary.change(onlyCalm, "happiest", onlyCalm.getFirst().soundId(), random) == null,
+                "The only calm disc was promised as another one");
         h.succeed();
     }
 
     /**
      * The player's folder is what the evening plays: two recordings there and «сыграй» plays one of them, not a vanilla disc; asked
-     * «повеселее» and then «погрустнее» while he plays, the tune switches to a recording of that kind and starts over, and the answer
-     * names that kind. The recording asked for again is the one the client restarts (the start counter moves).
+     * «повеселее» and then «погрустнее» while he plays, the tune moves along the mood scale to the nearest recording that way and
+     * starts over, and the answer names the recording that really started, by its number and its file name. The recording asked for
+     * again is the one the client restarts (the start counter moves).
      */
     @GameTest(template = "empty", batch = "campfire_folder", timeoutTicks = 900)
     public static void aMoodRequestPlaysAFolderRecordingOfThatKind(GameTestHelper h) {
@@ -658,38 +711,38 @@ public final class CompanionCampfireTests {
         java.nio.file.Path dir;
         try {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-folder-evening");
-            writeOgg(dir, "1_quiet.ogg", 100);
-            writeOgg(dir, "8_lively.ogg", 100);
+            writeOgg(dir, "0_quiet.ogg", 100);
+            writeOgg(dir, "800_lively.ogg", 100);
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         CompanionMusicLibrary.readFrom(dir);
         h.setBlock(FIRE, Blocks.CAMPFIRE);
         CompanionEntity c = spawn(h, 9, 16, 14, 16);
         ServerPlayer player = owner(h, c);
-        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "calm", 1).success(), "Not taken");
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "saddest", 1).success(), "Not taken");
         int[] stage = {0};
         String[] quietTitle = {null};
         h.onEachTick(() -> {
             if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
                 var quiet = tune(c);
                 h.assertTrue(quiet.soundId().startsWith("aicompanion:guitar_folder/"), "Not the folder's recording: " + quiet);
-                h.assertTrue(quiet.mood() == CompanionMusicLibrary.Mood.CALM, "Asked for a calm one, got «" + quiet.title() + "»");
+                h.assertTrue(quiet.mood() == 0, "Asked for the saddest one, got «" + quiet.title() + "» (" + quiet.mood() + ")");
                 quietTitle[0] = quiet.title();
                 int starts = c.campfireTuneStart();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
-                h.assertTrue(again.success() && "Сыграю повеселее.".equals(again.message()), "Answer: " + again.message());
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+                h.assertTrue(again.success() && "Играю 800 Lively.".equals(again.message()), "Answer: " + again.message());
                 var lively = tune(c);
-                h.assertTrue(lively.mood() == CompanionMusicLibrary.Mood.CHEERFUL && !lively.title().equals(quietTitle[0]),
-                        "Not a cheerful recording at once: «" + lively.title() + "»");
+                h.assertTrue(lively.mood() == 800 && !lively.title().equals(quietTitle[0]),
+                        "Not the nearest higher recording at once: «" + lively.title() + "» (" + lively.mood() + ")");
                 h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
                         "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
                 stage[0] = 1;
             } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
                 int starts = c.campfireTuneStart();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
-                h.assertTrue(again.success() && "Сыграю спокойную.".equals(again.message()), "Answer: " + again.message());
+                var again = CompanionEvents.executeAction(player, "campfire_song", "sadder", 1);
+                h.assertTrue(again.success() && "Играю 0 Quiet.".equals(again.message()), "Answer: " + again.message());
                 var quiet = tune(c);
-                h.assertTrue(quiet.mood() == CompanionMusicLibrary.Mood.CALM && quiet.title().equals(quietTitle[0]),
-                        "Not back to the calm recording at once: «" + quiet.title() + "»");
+                h.assertTrue(quiet.mood() == 0 && quiet.title().equals(quietTitle[0]),
+                        "Not back to the saddest recording at once: «" + quiet.title() + "»");
                 h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
                         "Not started over: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
                 h.assertTrue(c.campfirePose() == CompanionCampfire.PLAYING, "Stopped instead of playing on");
@@ -701,9 +754,8 @@ public final class CompanionCampfireTests {
     }
 
     /**
-     * One recording in the folder, cheerful, and he plays it: asked for the same kind, for the other kind, or simply for another
-     * one, there is nothing else to change to — the recording goes on playing (it is not started over), and each answer says
-     * plainly that there are no other songs.
+     * One recording in the folder, and he plays it: asked to move up, down, or simply for another one, there is nothing else to
+     * change to — the recording goes on playing (it is not started over), and each answer says plainly that there are no other songs.
      */
     @GameTest(template = "empty", batch = "campfire_alone", timeoutTicks = 1200)
     public static void theOnlyRecordingGoesOnAndTheAnswerSaysThereAreNoOthers(GameTestHelper h) {
@@ -711,13 +763,13 @@ public final class CompanionCampfireTests {
         java.nio.file.Path dir;
         try {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-alone");
-            writeOgg(dir, "8_lively.ogg", 100);
+            writeOgg(dir, "800_lively.ogg", 100);
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         CompanionMusicLibrary.readFrom(dir);
         h.setBlock(FIRE, Blocks.CAMPFIRE);
         CompanionEntity c = spawn(h, 9, 16, 14, 16);
         ServerPlayer player = owner(h, c);
-        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1).success(), "Not taken");
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "happiest", 1).success(), "Not taken");
         int[] stage = {0};
         String[] title = {null};
         int[] start = {0};
@@ -726,7 +778,7 @@ public final class CompanionCampfireTests {
                 title[0] = c.campfire().tuneTitle();
                 start[0] = c.campfireTuneStart();
                 int played = c.campfire().playedTicks();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
                 h.assertTrue(again.success() && "Других песен не знаю.".equals(again.message()), "Answer: " + again.message());
                 h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0]
                                 && c.campfire().playedTicks() >= played && c.campfirePose() == CompanionCampfire.PLAYING,
@@ -735,7 +787,7 @@ public final class CompanionCampfireTests {
                 stage[0] = 1;
             } else if (stage[0] == 1 && c.campfire().playedTicks() > 40) {
                 int played = c.campfire().playedTicks();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
+                var again = CompanionEvents.executeAction(player, "campfire_song", "sadder", 1);
                 h.assertTrue(again.success() && "Других песен не знаю.".equals(again.message()), "Answer: " + again.message());
                 h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0]
                                 && c.campfire().playedTicks() >= played,
@@ -754,9 +806,9 @@ public final class CompanionCampfireTests {
     }
 
     /**
-     * The answer to a request that cannot change the tune: other recordings are there, none of the kind asked for — «Таких песен
-     * нет.» — while «Других песен не знаю.» is kept for a folder with no other recording at all. The recording playing goes on
-     * either way, and «другую» still finds the other recording.
+     * A request while he plays takes the nearest recording in the asked direction, never the one playing, and the answer names it:
+     * «погрустнее» from the 800 one takes the 700 one, and «другую» then takes the 800 one back. Nothing is restarted and called a
+     * change; the id and the start counter move on the first request.
      */
     @GameTest(template = "empty", batch = "campfire_nokind", timeoutTicks = 900)
     public static void theAnswerTellsNoSuchKindFromNoOtherSong(GameTestHelper h) {
@@ -764,14 +816,14 @@ public final class CompanionCampfireTests {
         java.nio.file.Path dir;
         try {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-nokind");
-            writeOgg(dir, "7_happy.ogg", 100);
-            writeOgg(dir, "8_lively.ogg", 100);
+            writeOgg(dir, "700_happy.ogg", 100);
+            writeOgg(dir, "800_lively.ogg", 100);
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         CompanionMusicLibrary.readFrom(dir);
         h.setBlock(FIRE, Blocks.CAMPFIRE);
         CompanionEntity c = spawn(h, 9, 16, 14, 16);
         ServerPlayer player = owner(h, c);
-        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1).success(), "Not taken");
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "happiest", 1).success(), "Not taken");
         int[] stage = {0};
         String[] playing = {null};
         int[] start = {0};
@@ -779,17 +831,21 @@ public final class CompanionCampfireTests {
             if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
                 playing[0] = c.campfire().tuneTitle();
                 start[0] = c.campfireTuneStart();
-                // Both recordings are cheerful: a calm one is asked for, and none is there though the folder holds another.
-                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
-                h.assertTrue(again.success() && "Таких песен нет.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(c.campfire().tuneTitle().equals(playing[0]) && c.campfireTuneStart() == start[0],
-                        "The tune changed or started over: «" + c.campfire().tuneTitle() + "», start " + c.campfireTuneStart());
+                // The 700 recording is the nearest one lower than the 800 playing: «погрустнее» takes it, and says so by name.
+                var again = CompanionEvents.executeAction(player, "campfire_song", "sadder", 1);
+                h.assertTrue(again.success() && "Играю 700 Happy.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(!c.campfire().tuneTitle().equals(playing[0]) && tune(c).mood() == 700
+                                && c.campfireTuneStart() == start[0] + 1,
+                        "«Погрустнее» did not change to 700: «" + c.campfire().tuneTitle() + "», start " + c.campfireTuneStart());
+                playing[0] = c.campfire().tuneTitle();
+                start[0] = c.campfireTuneStart();
                 stage[0] = 1;
             } else if (stage[0] == 1 && c.campfire().playedTicks() > 30) {
-                // «Другую» does have one to change to.
+                // «Другую» takes the other recording back.
                 var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
-                h.assertTrue(again.success() && "Другую.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(!c.campfire().tuneTitle().equals(playing[0]) && c.campfireTuneStart() == start[0] + 1,
+                h.assertTrue(again.success() && "Играю 800 Lively.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(!c.campfire().tuneTitle().equals(playing[0]) && tune(c).mood() == 800
+                                && c.campfireTuneStart() == start[0] + 1,
                         "«Другую» did not change the recording: «" + c.campfire().tuneTitle() + "»");
                 stage[0] = 2;
             }
@@ -800,8 +856,8 @@ public final class CompanionCampfireTests {
 
     /**
      * Asked for another tune while he plays, with another recording in the folder, he really switches: the sound id the server
-     * syncs changes (not only the start counter), the new recording starts from its beginning, and the answer says so. A mood
-     * request takes a recording of that kind; «из майнкрафта» plays standard Minecraft music even while the folder is full.
+     * syncs changes (not only the start counter), the new recording starts from its beginning, and the answer names the recording
+     * that started. A mood request moves along the scale; «из майнкрафта» plays standard Minecraft music even while the folder is full.
      */
     @GameTest(template = "empty", batch = "campfire_switch", timeoutTicks = 1200)
     public static void aRequestReallyChangesTheRecordingAndVanillaIgnoresTheFolder(GameTestHelper h) {
@@ -809,34 +865,39 @@ public final class CompanionCampfireTests {
         java.nio.file.Path dir;
         try {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-switch");
-            writeOgg(dir, "1_quiet.ogg", 100);
-            writeOgg(dir, "3_sad.ogg", 100);
-            writeOgg(dir, "8_lively.ogg", 100);
-            writeOgg(dir, "7_happy.ogg", 100);
+            writeOgg(dir, "0_quiet.ogg", 100);
+            writeOgg(dir, "150_sad.ogg", 100);
+            writeOgg(dir, "800_lively.ogg", 100);
+            writeOgg(dir, "700_happy.ogg", 100);
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         CompanionMusicLibrary.readFrom(dir);
         h.setBlock(FIRE, Blocks.CAMPFIRE);
         CompanionEntity c = spawn(h, 9, 16, 14, 16);
         ServerPlayer player = owner(h, c);
-        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "calm", 1).success(), "Not taken");
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "saddest", 1).success(), "Not taken");
         int[] stage = {0};
         String[] playing = {null};
         h.onEachTick(() -> {
             if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
                 playing[0] = tune(c).soundId();
+                int mood = tune(c).mood();
                 int starts = c.campfireTuneStart();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
-                h.assertTrue(again.success() && "Другую.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(!tune(c).soundId().equals(playing[0]), "The recording did not change: " + tune(c).soundId());
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+                h.assertTrue(again.success() && again.message().startsWith("Играю "), "Answer: " + again.message());
+                h.assertTrue(tune(c).mood() > mood && !tune(c).soundId().equals(playing[0]),
+                        "Not a recording strictly higher at once: «" + c.campfire().tuneTitle() + "» (" + tune(c).mood() + ")");
+                h.assertTrue(again.message().contains(CompanionMusicLibrary.label(tune(c))),
+                        "The answer does not name the recording that started: " + again.message());
                 h.assertTrue(c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
                         "The new recording was not started from its beginning: start " + c.campfireTuneStart() + ", played " + c.campfire().playedTicks());
                 stage[0] = 1;
             } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
                 playing[0] = tune(c).soundId();
-                var again = CompanionEvents.executeAction(player, "campfire_song", "cheerful", 1);
-                h.assertTrue(again.success() && "Сыграю повеселее.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CHEERFUL && !tune(c).soundId().equals(playing[0]),
-                        "Not a cheerful recording at once: «" + c.campfire().tuneTitle() + "»");
+                var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
+                h.assertTrue(again.success() && again.message().startsWith("Играю "), "Answer: " + again.message());
+                h.assertTrue(!tune(c).soundId().equals(playing[0]), "The recording did not change: " + tune(c).soundId());
+                h.assertTrue(again.message().contains(CompanionMusicLibrary.label(tune(c))),
+                        "The answer does not name the recording that started: " + again.message());
                 stage[0] = 2;
             } else if (stage[0] == 2 && c.campfire().playedTicks() > 20) {
                 playing[0] = tune(c).soundId();
@@ -848,10 +909,10 @@ public final class CompanionCampfireTests {
                         "«Из майнкрафта» did not play vanilla music: " + tune(c).soundId());
                 stage[0] = 3;
             } else if (stage[0] == 3 && c.campfire().playedTicks() > 20) {
-                var again = CompanionEvents.executeAction(player, "campfire_song", "calm", 1);
-                h.assertTrue(again.success() && "Сыграю спокойную.".equals(again.message()), "Answer: " + again.message());
-                h.assertTrue(tune(c).mood() == CompanionMusicLibrary.Mood.CALM && tune(c).soundId().startsWith("aicompanion:guitar_folder/"),
-                        "Not back to the folder's calm recording: «" + c.campfire().tuneTitle() + "»");
+                var again = CompanionEvents.executeAction(player, "campfire_song", "saddest", 1);
+                h.assertTrue(again.success() && "Самая грустная — 0 Quiet.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(tune(c).mood() == 0 && tune(c).soundId().startsWith("aicompanion:guitar_folder/"),
+                        "Not back to the folder's saddest recording: «" + c.campfire().tuneTitle() + "»");
                 stage[0] = 4;
             }
         });
@@ -869,24 +930,24 @@ public final class CompanionCampfireTests {
         java.nio.file.Path dir;
         try {
             dir = java.nio.file.Files.createTempDirectory("aicompanion-added");
-            writeOgg(dir, "1_quiet.ogg", 100);
+            writeOgg(dir, "0_quiet.ogg", 100);
         } catch (java.io.IOException e) { throw new IllegalStateException(e); }
         CompanionMusicLibrary.readFrom(dir);
         h.setBlock(FIRE, Blocks.CAMPFIRE);
         CompanionEntity c = spawn(h, 9, 16, 14, 16);
         ServerPlayer player = owner(h, c);
-        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "calm", 1).success(), "Not taken");
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "saddest", 1).success(), "Not taken");
         int[] stage = {0};
         String[] playing = {null};
         h.onEachTick(() -> {
             if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
                 playing[0] = tune(c).soundId();
                 try {
-                    writeOgg(dir, "8_added.ogg", 100);
+                    writeOgg(dir, "800_added.ogg", 100);
                 } catch (java.io.IOException e) { throw new IllegalStateException(e); }
                 int starts = c.campfireTuneStart();
                 var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
-                h.assertTrue(again.success() && "Другую.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(again.success() && "Играю 800 Added.".equals(again.message()), "Answer: " + again.message());
                 h.assertTrue("Added".equals(c.campfire().tuneTitle()) && !tune(c).soundId().equals(playing[0])
                                 && c.campfireTuneStart() == starts + 1,
                         "The recording added to the folder was not picked up: «" + c.campfire().tuneTitle() + "», start " + c.campfireTuneStart());
@@ -894,6 +955,205 @@ public final class CompanionCampfireTests {
             }
         });
         h.succeedWhen(() -> h.assertTrue(stage[0] == 1,
+                "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * The first «повеселее» request is authoritative: the synced tune and its start counter move to the picked recording at once, and
+     * the automatic rotation does not replace that pick on the following ticks — it only takes over when the recording has played
+     * out. The client decision for the new id is START_OVER, so the sound restarts with the picked file. Further requests move
+     * strictly up the scale each time.
+     */
+    @GameTest(template = "empty", batch = "campfire_mood", timeoutTicks = 1200)
+    public static void aRequestMovesTheTuneAtOnceAndTheRotationDoesNotReplaceIt(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-mood");
+            writeOgg(dir, "0_quiet.ogg", 100);
+            writeOgg(dir, "150_low.ogg", 100);
+            writeOgg(dir, "400_mid.ogg", 100);
+            writeOgg(dir, "850_high.ogg", 100);
+            writeOgg(dir, "999_top.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "saddest", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] picked = {null};
+        int[] pickedStart = {0};
+        long[] guardUntil = {0};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                var zero = tune(c);
+                h.assertTrue(zero.mood() == 0, "The evening did not start at 0: " + zero);
+                int starts = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+                h.assertTrue(again.success() && "Играю 150 Low.".equals(again.message()), "Answer: " + again.message());
+                var low = tune(c);
+                h.assertTrue(low.mood() == 150 && !low.soundId().equals(zero.soundId()) && c.campfireTuneStart() == starts + 1
+                                && c.campfire().playedTicks() <= 2,
+                        "The first «повеселее» did not switch at once: «" + low.title() + "», start " + c.campfireTuneStart());
+                // The client sees the new id and a moved counter: it starts the picked recording over.
+                h.assertTrue(CompanionCampfirePlayback.decide(low.soundId(), c.campfireTuneStart(), starts, false, false, 0,
+                                low.ticks(), "", true) == CompanionCampfirePlayback.Action.START_OVER,
+                        "The client did not start the picked id over");
+                h.assertTrue(CompanionCampfirePlayback.decide(low.soundId(), c.campfireTuneStart(), c.campfireTuneStart(), true, true, 0,
+                                low.ticks(), "", true) == CompanionCampfirePlayback.Action.KEEP_SOUNDING,
+                        "The client did not keep the picked id sounding");
+                picked[0] = low.soundId();
+                pickedStart[0] = c.campfireTuneStart();
+                guardUntil[0] = h.getTick() + 2;
+                stage[0] = 1;
+            } else if (stage[0] == 1) {
+                // The automatic rotation must not replace the request's pick on the next ticks.
+                h.assertTrue(c.campfireTune().equals(picked[0]) && c.campfireTuneStart() == pickedStart[0],
+                        "The rotation replaced the request's pick: «" + c.campfireTune() + "», start " + c.campfireTuneStart());
+                if (h.getTick() < guardUntil[0]) return;
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+                h.assertTrue(again.success() && "Играю 400 Mid.".equals(again.message()), "Answer: " + again.message());
+                var mid = tune(c);
+                h.assertTrue(mid.mood() == 400 && !mid.soundId().equals(picked[0]) && c.campfireTuneStart() == pickedStart[0] + 1,
+                        "The second «повеселее» did not move up: «" + mid.title() + "»");
+                picked[0] = mid.soundId();
+                pickedStart[0] = c.campfireTuneStart();
+                stage[0] = 2;
+            } else if (stage[0] == 2 && c.campfire().playedTicks() > 20) {
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+                h.assertTrue(again.success() && "Играю 850 High.".equals(again.message()), "Answer: " + again.message());
+                var high = tune(c);
+                h.assertTrue(high.mood() == 850 && high.mood() > 400 && c.campfireTuneStart() == pickedStart[0] + 1,
+                        "The third «повеселее» did not move strictly up: «" + high.title() + "»");
+                pickedStart[0] = c.campfireTuneStart();
+                stage[0] = 3;
+            } else if (stage[0] == 3 && c.campfire().playedTicks() > 20) {
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+                h.assertTrue(again.success() && "Играю 999 Top.".equals(again.message()), "Answer: " + again.message());
+                var top = tune(c);
+                h.assertTrue(top.mood() == 999 && top.mood() > 850 && c.campfireTuneStart() == pickedStart[0] + 1,
+                        "The fourth «повеселее» did not move strictly up: «" + top.title() + "»");
+                stage[0] = 4;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 4,
+                "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * A folder whose files were taken away and then put back is read as it is on the FIRST request: with one recording «другую»
+     * answers that there are no others, and after three recordings are added the very next «другую» takes one of them at once, not
+     * after a restart. The server scan is fresh, and the client's pack is rebuilt for the request by its folder fingerprint.
+     */
+    @GameTest(template = "empty", batch = "campfire_restored", timeoutTicks = 1200)
+    public static void aRestoredFolderIsSeenOnTheFirstRequest(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-restored");
+            writeOgg(dir, "0_quiet.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "saddest", 1).success(), "Not taken");
+        int[] stage = {0};
+        String[] title = {null};
+        int[] start = {0};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                title[0] = c.campfire().tuneTitle();
+                start[0] = c.campfireTuneStart();
+                var again = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
+                h.assertTrue(again.success() && "Других песен не знаю.".equals(again.message()), "Answer: " + again.message());
+                h.assertTrue(c.campfire().tuneTitle().equals(title[0]) && c.campfireTuneStart() == start[0],
+                        "The only recording was restarted or stopped: «" + c.campfire().tuneTitle() + "»");
+                // The files come back while the evening goes on: three new recordings, no reload and no restart of the game.
+                try {
+                    writeOgg(dir, "150_blue.ogg", 100);
+                    writeOgg(dir, "400_dolphin.ogg", 100);
+                    writeOgg(dir, "850_gavotte.ogg", 100);
+                } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+                h.assertTrue(CompanionMusicLibrary.rescan().size() == 4, "The server scan did not see the restored files");
+                int starts = c.campfireTuneStart();
+                var next = CompanionEvents.executeAction(player, "campfire_song", "next", 1);
+                h.assertTrue(next.success() && next.message().startsWith("Играю ") && !next.message().contains("Других песен"),
+                        "The first request after the restore did not see the files: " + next.message());
+                var picked = tune(c);
+                h.assertTrue(!"0 Quiet".equals(c.campfire().tuneTitle()) && picked.mood() > 0
+                                && c.campfireTuneStart() == starts + 1 && c.campfire().playedTicks() <= 2,
+                        "The restored recording was not picked on the first request: «" + c.campfire().tuneTitle() + "», start "
+                                + c.campfireTuneStart());
+                h.assertTrue(next.message().contains(CompanionMusicLibrary.label(picked)),
+                        "The answer does not name the restored recording: " + next.message());
+                stage[0] = 1;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 1,
+                "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
+    }
+
+    /**
+     * Every name he says for a guitar request comes from the recording that really started, never from the model's imagination:
+     * «самую грустную» answers with the folder's 0 recording, «повеселее» with the picked file, and each name is one the scan made
+     * from the file. A reply that names a recording the folder does not hold («Lullaby», «Sunrise») is not kept.
+     */
+    @GameTest(template = "empty", batch = "campfire_names", timeoutTicks = 1200)
+    public static void theGuitarAnswerNamesTheRealRecordingAndNeverAnInventedOne(GameTestHelper h) {
+        ground(h);
+        java.nio.file.Path dir;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("aicompanion-names");
+            writeOgg(dir, "0_Aerie.ogg", 100);
+            writeOgg(dir, "150_blue-blood.ogg", 100);
+            writeOgg(dir, "400_dolphin.ogg", 100);
+            writeOgg(dir, "550_guitar-improvisation.ogg", 100);
+            writeOgg(dir, "800_hypnotic-heartbeat-atmosphere.ogg", 100);
+            writeOgg(dir, "999_water-dripping.ogg", 100);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        CompanionMusicLibrary.readFrom(dir);
+        h.setBlock(FIRE, Blocks.CAMPFIRE);
+        CompanionEntity c = spawn(h, 9, 16, 14, 16);
+        ServerPlayer player = owner(h, c);
+        h.assertTrue(CompanionEvents.executeAction(player, "campfire_song", "happiest", 1).success(), "Not taken");
+        int[] stage = {0};
+        h.onEachTick(() -> {
+            if (stage[0] == 0 && c.campfirePose() == CompanionCampfire.PLAYING && c.campfire().playedTicks() > 20) {
+                var top = tune(c);
+                h.assertTrue(top.mood() == 999, "The evening did not start at 999: " + top);
+                var again = CompanionEvents.executeAction(player, "campfire_song", "saddest", 1);
+                h.assertTrue(again.success() && "Самая грустная — 0 Aerie.".equals(again.message()), "Answer: " + again.message());
+                var zero = tune(c);
+                h.assertTrue(zero.mood() == 0 && zero.title().equals("Aerie"), "Not the folder's 0 recording: " + zero);
+                h.assertTrue(again.message().contains(CompanionMusicLibrary.label(zero)),
+                        "The answer does not name the scanned recording: " + again.message());
+                h.assertTrue(!CompanionMusicLibrary.namesUnknownRecording(again.message()),
+                        "The answer names something the folder does not hold: " + again.message());
+                stage[0] = 1;
+            } else if (stage[0] == 1 && c.campfire().playedTicks() > 20) {
+                var again = CompanionEvents.executeAction(player, "campfire_song", "happier", 1);
+                h.assertTrue(again.success() && again.message().startsWith("Играю "), "Answer: " + again.message());
+                var low = tune(c);
+                h.assertTrue(low.mood() == 150, "Not the nearest higher recording: " + low);
+                h.assertTrue(again.message().contains(CompanionMusicLibrary.label(low)),
+                        "The answer does not name the picked file: " + again.message());
+                h.assertTrue(!CompanionMusicLibrary.namesUnknownRecording(again.message()),
+                        "The answer names something the folder does not hold: " + again.message());
+                // A model reply that invents a name is recognised, and a real name is not.
+                h.assertTrue(CompanionMusicLibrary.namesUnknownRecording("Играю «Lullaby» — вот тебе другая."),
+                        "An invented name was taken for a recording");
+                h.assertTrue(CompanionMusicLibrary.namesUnknownRecording("Играю «Sunrise», слушай."),
+                        "An invented name was taken for a recording");
+                h.assertTrue(!CompanionMusicLibrary.namesUnknownRecording("Играю 800 Hypnotic heartbeat atmosphere."),
+                        "A real recording was taken for an invented name");
+                h.assertTrue(!CompanionMusicLibrary.namesUnknownRecording("Сыграю повеселее, без названий."),
+                        "A reply without a recording name was taken for an invented one");
+                stage[0] = 2;
+            }
+        });
+        h.succeedWhen(() -> h.assertTrue(stage[0] == 2,
                 "Never asked again: pose " + c.campfirePose() + ", tune «" + c.campfire().tuneTitle() + "»"));
     }
 
@@ -943,15 +1203,25 @@ public final class CompanionCampfireTests {
         for (String phrase : new String[]{"Олег, сыграй на гитаре", "поставь костёр и сыграй", "Сыграй что-нибудь", "сыграй", "Олег, сыграй нам!",
                 "давай посидим у костра", "можешь сыграть песню?"})
             h.assertTrue("companion campfire".equals(CompanionLocalCommands.route(phrase, "Олег")), "Not the music: " + phrase + " -> " + CompanionLocalCommands.route(phrase, "Олег"));
-        h.assertTrue("companion campfire calm".equals(CompanionLocalCommands.route("сыграй что нибудь грустное", "Олег")), "Sad tune");
-        h.assertTrue("companion campfire cheerful".equals(CompanionLocalCommands.route("Олег, сыграй повеселее", "Олег")), "Cheerful tune");
+        h.assertTrue("companion campfire saddest".equals(CompanionLocalCommands.route("сыграй что нибудь грустное", "Олег")), "Sad tune");
+        h.assertTrue("companion campfire happier".equals(CompanionLocalCommands.route("Олег, сыграй повеселее", "Олег")), "Cheerful tune");
+        // The change requests are local too: a bare «другую», «повеселее», «погрустнее», «самую грустную» or «самую весёлую» must not
+        // wait for the model, which used to answer some of them with a sentence and no step at all.
         h.assertTrue("companion campfire next".equals(CompanionLocalCommands.route("давай другую мелодию", "Олег")), "Another tune: " + CompanionLocalCommands.route("давай другую мелодию", "Олег"));
+        h.assertTrue("companion campfire next".equals(CompanionLocalCommands.route("другую", "Олег")), "A bare «другую»: " + CompanionLocalCommands.route("другую", "Олег"));
+        h.assertTrue("companion campfire sadder".equals(CompanionLocalCommands.route("погрустнее", "Олег")), "«Погрустнее»: " + CompanionLocalCommands.route("погрустнее", "Олег"));
+        h.assertTrue("companion campfire sadder".equals(CompanionLocalCommands.route("нет есть грустнее", "Олег")), "«Грустнее»: " + CompanionLocalCommands.route("нет есть грустнее", "Олег"));
+        h.assertTrue("companion campfire saddest".equals(CompanionLocalCommands.route("самую грустную", "Олег")), "«Самую грустную»: " + CompanionLocalCommands.route("самую грустную", "Олег"));
+        h.assertTrue("companion campfire saddest".equals(CompanionLocalCommands.route("самую грустную сгырай", "Олег")), "«Самую грустную сгырай»: " + CompanionLocalCommands.route("самую грустную сгырай", "Олег"));
+        h.assertTrue("companion campfire happiest".equals(CompanionLocalCommands.route("самую весёлую", "Олег")), "«Самую весёлую»: " + CompanionLocalCommands.route("самую весёлую", "Олег"));
+        h.assertTrue("companion campfire".equals(CompanionLocalCommands.route("давай ещё сыграй", "Олег")), "«Давай ещё сыграй»: " + CompanionLocalCommands.route("давай ещё сыграй", "Олег"));
         for (String phrase : new String[]{"сыграй из майнкрафта", "сыграй что-нибудь из майнкрафта", "включи майнкрафт", "Олег, вруби майнкрафт"})
             h.assertTrue("companion campfire vanilla".equals(CompanionLocalCommands.route(phrase, "Олег")), "Not vanilla music: " + phrase + " -> " + CompanionLocalCommands.route(phrase, "Олег"));
         h.assertTrue("vanilla".equals(CompanionLocalCommands.actions("companion campfire vanilla").getFirst().item()), "Vanilla lost on the way to the step");
         h.assertTrue(CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString("[{\"action\":\"campfire_song\",\"item\":\"vanilla\"}]")).getFirst().item().equals("vanilla"), "Codec vanilla");
-        h.assertTrue("calm".equals(CompanionLocalCommands.actions("companion campfire calm").getFirst().item()), "Mood lost on the way to the step");
-        h.assertTrue(CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString("[{\"action\":\"campfire_song\",\"item\":\"calm\"}]")).getFirst().item().equals("calm"), "Codec mood");
+        h.assertTrue("saddest".equals(CompanionLocalCommands.actions("companion campfire saddest").getFirst().item()), "Mood lost on the way to the step");
+        h.assertTrue(CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString("[{\"action\":\"campfire_song\",\"item\":\"saddest\"}]")).getFirst().item().equals("saddest"), "Codec mood");
+        h.assertTrue(CompanionPlanCodec.parsePlan(com.google.gson.JsonParser.parseString("[{\"action\":\"campfire_song\",\"item\":\"happier\"}]")).getFirst().item().equals("happier"), "Codec relative mood");
         for (String phrase : new String[]{"хватит играть", "Олег, перестань играть", "убери гитару"})
             h.assertTrue("companion stop".equals(CompanionLocalCommands.route(phrase, "Олег")), "Not a stop: " + phrase);
         for (String phrase : new String[]{"давай сыграем в прятки", "не играй сейчас на гитаре", "поставь костёр", "расскажи про майнкрафт"})

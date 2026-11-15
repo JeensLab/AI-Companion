@@ -82,9 +82,9 @@ public final class CompanionDialogue {
             case "place_block" -> "Поставлю вот тут.";
             case "wander" -> "Ладно, осмотрюсь. Я недалеко.";
             case "campfire_song" -> switch (actions.getFirst().item()) {
-                // The tune itself is picked on the server, and what really started is said when the step returns: a line
-                // promised here would be the very lie this used to tell («сыграю другую» over the same recording).
-                case "calm", "cheerful", "next", "vanilla" -> "";
+                // The tune itself is picked on the server, and what really started is said when the step returns, by the recording's
+                // own name: a line promised here would be the very lie this used to tell («сыграю другую» over the same recording).
+                case "saddest", "sadder", "happier", "happiest", "next", "vanilla", "calm", "cheerful" -> "";
                 default -> "Сейчас сыграю.";
             };
             case "set_home" -> "Запомнил, наш дом здесь.";
@@ -279,6 +279,9 @@ public final class CompanionDialogue {
 
     private static String summarizeReport(List<PlannedAction> actions, String report) {
         if (report == null || report.isBlank()) return "";
+        // The guitar's answer is the server's own line, built from the recording that really started: it names that recording by
+        // its mood number and its file name, and nothing else. Said as it is, not through the generic step summary.
+        if (actions.stream().allMatch(action -> "campfire_song".equals(action.type()))) return speakable(report);
         String skipped = "";
         int marker = report.lastIndexOf(SKIPPED_PREFIX);
         if (marker >= 0 && (marker == 0 || report.charAt(marker - 1) == '\n')) {
