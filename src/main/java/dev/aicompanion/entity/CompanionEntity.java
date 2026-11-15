@@ -716,6 +716,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
+        // On a portal walk the way that may be blocked is the one to the portal (a pit his own tunnels dug), whoever he follows.
+        if (portals.walking()) return portals.entryCell();
         var player = getOwnerPlayer();
         // The player in the dragon's breath: its edge, not the player, or the breath's walls would look like a trap.
         if (!autonomy.staysAtWork() && (following || protecting) && player != null && (distanceToSqr(player) > 16 || player.getY() - getY() > 1.25)) return dragonBreath.meetingPoint(player, false);

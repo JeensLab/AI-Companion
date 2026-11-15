@@ -43,7 +43,7 @@ public final class CompanionNetherErrandTests {
     private static final int GROUND = 5;
     private static final String NO_PORTAL = "Рядом нет портала в Незер — построй его или скажи «построй портал».";
     /** The chunks of the Nether arena a test forced: let go after the batch, whatever the test did. The tests are one batch each: eight overworld blocks are one in the Nether, so arenas of tests side by side overlap. */
-    private static final List<ChunkPos> FORCED = new ArrayList<>();
+    static final List<ChunkPos> FORCED = new ArrayList<>();
 
     @AfterBatch(batch = "errand0")
     public static void afterErrand0(ServerLevel level) { afterErrand(level); }
@@ -81,7 +81,7 @@ public final class CompanionNetherErrandTests {
     @AfterBatch(batch = "errand11")
     public static void afterErrand11(ServerLevel level) { afterErrand(level); }
 
-    private static void afterErrand(ServerLevel level) {
+    static void afterErrand(ServerLevel level) {
         CompanionFixtureCleanup.afterAtomicTests(level);
         var nether = level.getServer().getLevel(Level.NETHER);
         if (nether != null) for (ChunkPos chunk : FORCED) nether.setChunkForced(chunk.x, chunk.z, false);
@@ -672,7 +672,7 @@ public final class CompanionNetherErrandTests {
             if (nether.hasChunkAt(pos) && nether.getBlockState(pos).is(Blocks.NETHER_PORTAL)) nether.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
     }
 
-    private static int[] arenaCell(GameTestHelper h) {
+    static int[] arenaCell(GameTestHelper h) {
         BlockPos at = h.absolutePos(new BlockPos(15, GROUND + 2, 16));
         return new int[] {Math.floorDiv(at.getX(), 8), Math.floorDiv(at.getZ(), 8)};
     }
@@ -688,7 +688,7 @@ public final class CompanionNetherErrandTests {
      * home, the exit portal if any, a deadline {@code lasts} ticks away; a negative {@code lasts}: no record at all), not yet added to the world.
      * Born in the overworld first, as the others.
      */
-    private static CompanionEntity restored(GameTestHelper h, ServerLevel nether, int[] cell, Long exit, long lasts) {
+    static CompanionEntity restored(GameTestHelper h, ServerLevel nether, int[] cell, Long exit, long lasts) {
         CompanionEntity old = spawn(h, 6, 16);
         old.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
         CompoundTag tag = new CompoundTag();
@@ -708,7 +708,7 @@ public final class CompanionNetherErrandTests {
         return there;
     }
 
-    private static String describe(GameTestHelper h, ServerLevel nether, UUID id) {
+    static String describe(GameTestHelper h, ServerLevel nether, UUID id) {
         var over = h.getLevel().getEntity(id);
         var there = nether.getEntity(id);
         return "overworld " + (over == null ? "none" : over.blockPosition()) + ", nether " + (there == null ? "none" : there.blockPosition()
@@ -724,7 +724,7 @@ public final class CompanionNetherErrandTests {
      * A shut box above the Nether's roof where the game will look for the portal he comes out of (the scaled place, up to sixteen blocks
      * away it takes an existing one): a bedrock shell, a lit portal in the middle of it, six quartz ores in the open on both sides.
      */
-    private static BlockPos[] arena(ServerLevel nether, int cx, int cz) {
+    static BlockPos[] arena(ServerLevel nether, int cx, int cz) {
         int floor = 149;
         for (int x = cx - 8; x <= cx + 8; x += 8) for (int z = cz - 8; z <= cz + 8; z += 8) {
             var chunk = new ChunkPos(new BlockPos(x, floor, z));
@@ -746,7 +746,7 @@ public final class CompanionNetherErrandTests {
         return ores.toArray(new BlockPos[0]);
     }
 
-    private static void ground(GameTestHelper h) {
+    static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 8; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
             h.setBlock(new BlockPos(x, y, z), y <= GROUND ? Blocks.BEDROCK : border ? Blocks.BEDROCK : Blocks.AIR);
@@ -754,7 +754,7 @@ public final class CompanionNetherErrandTests {
     }
 
     /** The frame as a player leaves it, lit with fire: the portal blocks and the game's record of them (the one he looks for). */
-    private static void lightPortal(GameTestHelper h) {
+    static void lightPortal(GameTestHelper h) {
         for (int x = 14; x <= 17; x++) for (int y = GROUND + 1; y <= GROUND + 5; y++)
             if (x == 14 || x == 17 || y == GROUND + 1 || y == GROUND + 5) h.setBlock(new BlockPos(x, y, 16), Blocks.OBSIDIAN);
         h.setBlock(new BlockPos(15, GROUND + 2, 16), Blocks.FIRE);

@@ -40,6 +40,9 @@ final class CompanionPortals {
 
     boolean walking() { return portal != null; }
 
+    /** The cell before the portal, where the walk goes: route recovery digs out of a pit towards it. */
+    BlockPos entryCell() { return entry; }
+
     /** Any later order of the player ends the walk. */
     void stop() { portal = null; ordered = false; }
 
@@ -93,6 +96,8 @@ final class CompanionPortals {
         if (portal != null) {
             // An empty world stops ticking its entities after fifteen seconds; his leased chunks do not count as a player there.
             level.resetEmptyTime();
+            // Digging out of a pit (CompanionRecovery) is no failed walk: the clock waits for it, which is bounded itself.
+            if (c.recovery.active()) giveUpAt++;
             if (level.getGameTime() >= giveUpAt || !isPortal(level.getBlockState(portal))) giveUp(owner);
             return;
         }
