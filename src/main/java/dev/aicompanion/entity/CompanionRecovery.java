@@ -65,8 +65,9 @@ final class CompanionRecovery {
         // within arm's reach is work, not a destination; and standing still is a failed route only if no route is found.
         boolean inHand = withinHand(intent);
         boolean trappedBelow = !inHand && walls >= 3 && intent.getY() - owner.getY() > 1.25 && intent.distSqr(owner.blockPosition()) < 32 * 32;
+        // A portal's entry is walked into from a cell before it, not stood near: a wall within four blocks of it is no «near enough».
         boolean failedRoute = !inHand && owner.getNavigation().isDone() && (intent.getY() - owner.getY() > .75
-                || intent.distSqr(owner.blockPosition()) > 16) && routeMissing(intent);
+                || intent.distSqr(owner.blockPosition()) > 16 || owner.portals.walking()) && routeMissing(intent);
         if (trying || trappedBelow || failedRoute) stalled++; else stalled = 0;
     }
     private boolean withinHand(BlockPos intent) {
@@ -152,6 +153,9 @@ final class CompanionRecovery {
             owner.getNavigation().stop(); owner.getJumpControl().jump();
             owner.workStatus("Выбираюсь: подпрыгну и поставлю блок под ноги."); return;
         }
+        // Straight on through a wall at his own height (the Nether's rock between a pit's top and the portal): the passage is dug cell by cell
+        // and stepped into; the cells round him below would be opened without ever getting him through more than one block of it.
+        if (Math.abs(destination.getY() - owner.getY()) <= 1.5 && tunnelStep(level)) return;
         digTarget = findDigTarget(level);
         if (digTarget != null) { dig(level); return; }
         // An item just dislodged above the mob may still be falling toward pickup range.
@@ -262,6 +266,34 @@ final class CompanionRecovery {
         }
         return false;
     }
+    /**
+     * A passage two cells high towards the destination: the cell in front and the one over it are dug if closed, then stepped into.
+     * Only a cell nearer to the destination, on a floor that holds, with no fire, fluid or portal in it (a lit portal is no way for his
+     * own feet: called to the player behind a wall with a portal in it, he stays); none, and nothing is done here.
+     */
+    private boolean tunnelStep(ServerLevel level) {
+        BlockPos feet = owner.blockPosition();
+        java.util.List<Direction> directions = new java.util.ArrayList<>(Direction.Plane.HORIZONTAL.stream().toList());
+        directions.sort(java.util.Comparator.comparingDouble((Direction direction) -> direction == stairDirection ? -1 : feet.relative(direction).distSqr(destination)));
+        for (Direction direction : directions) {
+            BlockPos step = feet.relative(direction), head = step.above(), floor = step.below();
+            if (blockedStairs.contains(feet.asLong() * 4 + direction.get2DDataValue()) || step.distSqr(destination) >= feet.distSqr(destination)) continue;
+            if (!level.hasChunkAt(step) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP) || hot(level.getBlockState(floor))
+                    || !level.getFluidState(step).isEmpty() || !level.getFluidState(head).isEmpty() || nearFire(level, step) || nearFire(level, head)
+                    || gate(level.getBlockState(step)) || gate(level.getBlockState(head))) continue;
+            BlockPos closed = null;
+            for (BlockPos cell : new BlockPos[]{step, head})
+                if (!level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) { closed = cell; break; }
+            if (closed != null && !safeToDig(level, closed)) continue;
+            stairDirection = direction;
+            owner.workStatus("Выбираюсь: прокапываю проход к цели.");
+            if (closed != null) { digTarget = closed.immutable(); dig(level); return true; }
+            stepUp = step.immutable(); stepFrom = feet; stepTicks = 0;
+            owner.getNavigation().stop();
+            return true;
+        }
+        return false;
+    }
     /** Onto the step just cut; a step that cannot be taken is not tried again from the same cell. */
     private void stepUp() {
         owner.getMoveControl().setWantedPosition(stepUp.getX() + .5, stepUp.getY(), stepUp.getZ() + .5, .6);
@@ -324,6 +356,9 @@ final class CompanionRecovery {
      */
     private static boolean rock(BlockState state) {
         return CompanionWork.isStone(state) || state.is(Blocks.NETHERRACK) || state.is(Blocks.END_STONE);
+    }
+    private static boolean gate(BlockState state) {
+        return state.is(Blocks.NETHER_PORTAL) || state.is(Blocks.END_PORTAL) || state.is(Blocks.END_GATEWAY);
     }
     /** Burns or scorches where he would stand or drop: in the Nether fire lies on netherrack and magma in it (review 05.11). */
     private static boolean hot(BlockState state) {

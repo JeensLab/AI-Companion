@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,8 +30,15 @@ final class CompanionErrand {
     private static final int SEARCH_WITHIN = 48;
     /** The player in the same world this close is with him: as close as chunk loading itself counts it (CompanionChunks). */
     private static final int NEAR = 32;
-    /** Ticks with no work in the Nether before he walks out by himself (the plan's next step may be on its way), and the walks he tries. */
-    private static final int IDLE_BEFORE_WALK = 60, MOST_WALKS = 3;
+    /** Nothing lower than this below the floor of the exit portal is taken: what is dug deeper is a pit to climb out of (live game 15.11). */
+    private static final int DEEPEST = 2;
+    /**
+     * Ticks with no work in the Nether before he walks out by himself (the plan's next step may be on its way), the walks that got him no
+     * closer to the portal that he tries, and all the walks, closer or not (a climb or a passage dug counts for the walk, never for ever).
+     */
+    private static final int IDLE_BEFORE_WALK = 60, MOST_WALKS = 3, MOST_STARTS = 12;
+    /** A walk that ended this much closer to the portal than it began was not in vain. */
+    private static final double PROGRESS = 1;
     private static final String KEY = "Errand", TRANSIT = "ErrandTransit";
     /** Crossings in the making: the entity the game is about to recreate is saved once more, and the new one takes its mark here. */
     private static final Set<Long> CROSSING = ConcurrentHashMap.newKeySet();
@@ -50,8 +58,11 @@ final class CompanionErrand {
     private long arrivedWork;
     private boolean arrivedToNether;
     /** The watch, not saved: ticks with no work, walks out tried, what he has said (the walk's reason, that he cannot get out). */
-    private int idle, walks;
+    private int idle, walks, started;
     private boolean told, stuck;
+    /** The portal the last walk out went to and how far from it he was when it began (not saved). */
+    private BlockPos walkedTo;
+    private double walkedFrom;
 
     CompanionErrand(CompanionEntity c) { this.c = c; }
 
@@ -71,9 +82,13 @@ final class CompanionErrand {
     BlockPos exit() { return exit; }
     long deadline() { return deadline; }
 
-    /** In the Nether on the errand he takes nothing farther from the exit portal than this; a record with no exit portal in it has no limit. */
+    /**
+     * In the Nether on the errand he takes nothing farther from the exit portal than this, nor deeper than two blocks below its floor
+     * (the walk out is the walk back up); a record with no exit portal in it has no limit.
+     */
     boolean within(BlockPos pos) {
         if (!away() || exit == null) return true;
+        if (pos.getY() < exit.getY() - DEEPEST) return false;
         long dx = pos.getX() - exit.getX(), dz = pos.getZ() - exit.getZ();
         return dx * dx + dz * dz <= (long) SEARCH_WITHIN * SEARCH_WITHIN;
     }
@@ -225,19 +240,27 @@ final class CompanionErrand {
         return "ничего не добыто.";
     }
 
-    /** No work: by the exit portal, or the nearest lit one, on foot as he went in; none, or no way to it, and he stays and says so once. */
+    /**
+     * No work: by the exit portal, or the nearest lit one, on foot as he went in; none, or no way to it, and he stays and says so once.
+     * A walk that ended no closer to its portal than it began is a failed one; a climb out of a pit is not, and the next walk starts
+     * the digging (CompanionRecovery) towards the portal again for what is left of the wall.
+     */
     private void walkOut(ServerLevel level, ServerPlayer owner, String why) {
         BlockPos gate = exit != null && level.hasChunkAt(exit) && level.getBlockState(exit).is(Blocks.NETHER_PORTAL) ? exit : CompanionPortals.litNear(level, c.blockPosition());
-        if (gate == null || walks >= MOST_WALKS) {
+        if (gate != null && gate.equals(walkedTo) && distanceTo(gate) > walkedFrom - PROGRESS) walks++;
+        if (gate == null || walks >= MOST_WALKS || started >= MOST_STARTS) {
             if (!stuck) say(owner, gate == null ? "Не вижу портала, чтобы вернуться в верхний мир. Стою здесь." : "Не могу дойти до портала. Стою здесь.");
             stuck = true;
             return;
         }
-        walks++;
+        started++;
+        walkedTo = gate; walkedFrom = distanceTo(gate);
         if (!told) say(owner, why == null ? "Возвращаюсь из Незера." : why + ".");
         told = true;
         c.portals.goTo(level, gate);
     }
+
+    private double distanceTo(BlockPos pos) { return c.position().distanceTo(Vec3.atBottomCenterOf(pos)); }
 
     /** What he says is sent to the player, who is not near enough to hear him (as CompanionPortals does). */
     private void say(ServerPlayer owner, String text) {
