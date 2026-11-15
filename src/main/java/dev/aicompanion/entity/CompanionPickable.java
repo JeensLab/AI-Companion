@@ -117,6 +117,15 @@ final class CompanionPickable {
         return !all.isEmpty() && all.stream().allMatch(source -> source.block().defaultBlockState().is(BlockTags.MINEABLE_WITH_PICKAXE));
     }
 
+    /** Whether every block that gives the item gives it to a shovel only (snow its snowballs). */
+    static boolean shoveled(ServerLevel level, Item item) {
+        List<Source> all = sources(level, item);
+        return !all.isEmpty() && all.stream().allMatch(source -> {
+            BlockState state = source.block().defaultBlockState();
+            return state.requiresCorrectToolForDrops() && state.is(BlockTags.MINEABLE_WITH_SHOVEL);
+        });
+    }
+
     /** The plainest tool that takes the block: none where a hand does. */
     private static ItemStack tool(BlockState state) {
         if (!state.requiresCorrectToolForDrops()) return ItemStack.EMPTY;
