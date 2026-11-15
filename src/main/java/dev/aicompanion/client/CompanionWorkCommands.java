@@ -246,12 +246,14 @@ public final class CompanionWorkCommands {
             return new PlannedAction("use_bone_meal", 0, 1, "sapling");
         if (bare.matches("^(?:сделай|разбей|вскопай|создай)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:огород|огородик|грядки|грядку|ферму(?: пшеницы)?)(?: у воды| рядом)?$"))
             return new PlannedAction("farm_crops", 0, dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, "minecraft:wheat_seeds");
-        var sow = Pattern.compile("^(?:посади|засади|посей|высади)(?: мне| нам)?\\s+(пшениц\\p{L}*|морков\\p{L}*|картош\\p{L}*|картофел\\p{L}*|свекл\\p{L}*)(?: у воды| рядом)?$").matcher(bare);
+        var sow = Pattern.compile("^(?:посади|засади|посей|высади)(?: мне| нам)?\\s+(пшениц\\p{L}*|морков\\p{L}*|картош\\p{L}*|картофел\\p{L}*|свекл\\p{L}*|тыкв\\p{L}*|арбуз\\p{L}*)(?: у воды| рядом)?$").matcher(bare);
         if (sow.matches()) {
             var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(switch (sow.group(1).substring(0, 4)) {
                 case "морк" -> "carrot";
                 case "карт" -> "potato";
                 case "свек" -> "beetroot";
+                case "тыкв" -> "pumpkin";
+                case "арбу" -> "melon";
                 default -> "wheat";
             });
             int count = amount(said.count(), dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, dev.aicompanion.entity.CompanionCrops.MAX_TILES, dev.aicompanion.entity.CompanionCrops.MAX_TILES);
