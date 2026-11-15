@@ -59,29 +59,39 @@ public final class CompanionBucketFillTests {
             h.setBlock(new BlockPos(x, GROUND, z), Blocks.LAVA);
         }
         for (int x = 4; x <= 16; x++) for (int z = 10; z <= 22; z++) h.setBlock(new BlockPos(x, GROUND - 2, z), Blocks.LAVA);
+        // Magma on the near bank, as by the lava sea of the Nether: he does not stand on it.
+        for (int x = 16; x <= 17; x++) for (int z = 13; z <= 19; z++) h.setBlock(new BlockPos(x, GROUND, z), Blocks.MAGMA_BLOCK);
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, new ItemStack(Items.BUCKET, 2));
-        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:lava_bucket\",\"count\":2}]");
+        // Lava set down has its flow tick due for a while; lava of the world lies still, so the order waits for it to settle.
+        List<CompletableFuture<CompanionPlanRunner.Outcome>> order = new java.util.ArrayList<>();
+        h.runAfterDelay(40, () -> order.add(run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:lava_bucket\",\"count\":2}]")));
         h.succeedWhen(() -> {
+            h.assertTrue(!order.isEmpty(), "Not ordered yet");
+            var future = order.getFirst();
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             h.assertTrue(count(c, Items.LAVA_BUCKET) == 2 && count(c, Items.BUCKET) == 0, "Lava " + count(c, Items.LAVA_BUCKET) + ": " + future.join().report());
             h.assertTrue(c.getHealth() == c.getMaxHealth() && !c.isOnFire(), "He burned: " + c.getHealth());
         });
     }
 
-    /** «Добудь ведро рыхлого снега» by a patch of it: filled from the edge, he never stood in it (no frost on him). */
+    /**
+     * «Добудь 2 ведра рыхлого снега» by a patch of it: filled from the edge, he never stood in it (no frost on him). A strip of it
+     * lies flush with the ground across his way: the game takes the cell over it for floor, he goes round it.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void powderSnowIsScoopedFromTheEdge(GameTestHelper h) {
         ground(h);
-        for (int x = 18; x <= 21; x++) for (int z = 14; z <= 18; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.POWDER_SNOW);
+        for (int x = 19; x <= 22; x++) for (int z = 14; z <= 18; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.POWDER_SNOW);
+        for (int z = 8; z <= 24; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(15, y, z), Blocks.POWDER_SNOW);
         CompanionEntity c = spawn(h, 12, 16);
-        c.setItem(0, new ItemStack(Items.BUCKET));
+        c.setItem(0, new ItemStack(Items.BUCKET, 2));
         int[] frozen = {0};
         h.onEachTick(() -> frozen[0] = Math.max(frozen[0], c.getTicksFrozen()));
-        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:powder_snow_bucket\",\"count\":1}]");
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:powder_snow_bucket\",\"count\":2}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            h.assertTrue(count(c, Items.POWDER_SNOW_BUCKET) == 1 && count(c, Items.BUCKET) == 0, "Snow " + count(c, Items.POWDER_SNOW_BUCKET) + ": " + future.join().report());
+            h.assertTrue(count(c, Items.POWDER_SNOW_BUCKET) == 2 && count(c, Items.BUCKET) == 0, "Snow " + count(c, Items.POWDER_SNOW_BUCKET) + ": " + future.join().report());
             h.assertTrue(frozen[0] == 0, "He stood in the powder snow: frozen " + frozen[0]);
         });
     }

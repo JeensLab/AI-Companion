@@ -204,10 +204,14 @@ final class CompanionChores {
         return false;
     }
 
-    /** Where it is filled from: firm ground within his reach and sight of it, never in powder snow nor with his head in it (he sinks and freezes). */
+    /**
+     * Where it is filled from: firm ground within his reach and sight of it; never in powder snow nor with his head in it (he sinks
+     * and freezes), on magma (it burns, the shore of the Nether's lava has much of it) or by lava still running.
+     */
     private static Set<BlockPos> banks(CompanionEntity c, ServerLevel level, BlockPos pool) {
         Set<BlockPos> cells = CompanionWaterFill.standsFor(c, level, List.of(pool));
-        cells.removeIf(cell -> level.getBlockState(cell).is(Blocks.POWDER_SNOW) || level.getBlockState(cell.above()).is(Blocks.POWDER_SNOW));
+        cells.removeIf(cell -> level.getBlockState(cell).is(Blocks.POWDER_SNOW) || level.getBlockState(cell.above()).is(Blocks.POWDER_SNOW)
+                || level.getBlockState(cell.below()).is(Blocks.MAGMA_BLOCK) || !CompanionLava.safeToFetch(level, cell));
         return cells;
     }
 
@@ -440,7 +444,14 @@ final class CompanionChores {
 
     /** scoop_block: one source at a time, walked to the bank of and filled into an empty bucket of his by the game's own bucket. */
     private void fill(ServerLevel level, int got) {
-        if (w.items.countCarried(Items.BUCKET) == 0) { end(CompanionActionResult.blocked("Пустого ведра нет: набрать не во что." + part(got))); return; }
+        // The game's bucket fills one of his bag (CompanionWaterBucket.scoopInto): one in his hand is said, not walked round the lava with.
+        if (!CompanionWaterBucket.roomToScoop(c)) {
+            boolean bagged = false;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) bagged |= c.getItem(slot).is(Items.BUCKET);
+            String why = w.items.countCarried(Items.BUCKET) == 0 ? "Пустого ведра нет: набрать не во что." : bagged ? CompanionPicking.FULL_BAG : "Пустое ведро у меня в руке, а набираю я из сумки.";
+            end(CompanionActionResult.blocked(why + part(got)));
+            return;
+        }
         boolean lava = item == Items.LAVA_BUCKET;
         if (pool != null && !level.getBlockState(pool).is(poured(item))) release();
         if (pool == null) {
