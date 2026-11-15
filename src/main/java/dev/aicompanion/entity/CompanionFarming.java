@@ -275,7 +275,7 @@ final class CompanionFarming {
         // use_bone_meal: as many as were named (all, unnamed); a chain's harvest: as many as the ripe ones fall short, ripened on the spot (harvestStep).
         int fed = feed ? Math.min(wanted, young.size()) : meal && w.items.countCarried(Items.BONE_MEAL) > 0 ? Math.max(0, Math.min(wanted - ripe.size(), young.size())) : 0;
         todo.addAll(young.subList(0, fed));
-        if (feed || meal && w.items.countCarried(Items.BONE_MEAL) > 0) spare.addAll(young.subList(fed, young.size()));
+        if (feed || meal && w.items.countCarried(Items.BONE_MEAL) > 0) spare.addAll(young.subList(fed, Math.min(young.size(), fed + CompanionCrops.MAX_TILES)));
         found = todo.size();
         if (todo.isEmpty()) {
             w.finish(CompanionActionResult.blocked(feed && !ripe.isEmpty() ? "Удобрять нечего: всё, что растёт рядом, уже созрело."
@@ -290,15 +290,18 @@ final class CompanionFarming {
     private void lookForSapling(ServerLevel level) {
         BlockPos centre = w.placementAnchor, best = null;
         int radius = radius();
+        boolean lone = false;
         for (BlockPos pos : BlockPos.betweenClosed(centre.offset(-radius, -8, -radius), centre.offset(radius, 6, radius))) {
             if (!level.isLoaded(pos) || pos.distSqr(centre) > (long) radius * radius || best != null && pos.distSqr(centre) >= best.distSqr(centre)) continue;
             BlockState state = level.getBlockState(pos);
-            // A propagule hanging under the leaves only ripens to fall: no tree of it.
-            if (state.is(BlockTags.SAPLINGS) && !(state.hasProperty(MangrovePropaguleBlock.HANGING) && state.getValue(MangrovePropaguleBlock.HANGING))) best = pos.immutable();
+            // A propagule hanging under the leaves only ripens to fall, a dark oak grows of four in a square: no tree of either.
+            if (!state.is(BlockTags.SAPLINGS) || state.hasProperty(MangrovePropaguleBlock.HANGING) && state.getValue(MangrovePropaguleBlock.HANGING)) continue;
+            if (state.is(Blocks.DARK_OAK_SAPLING) && !square(level, pos, Blocks.DARK_OAK_SAPLING)) { lone = true; continue; }
+            best = pos.immutable();
         }
-        if (best == null) { w.finish(CompanionActionResult.blocked("Саженцев в " + radius + " блоках от тебя не вижу.")); return; }
-        if (level.getBlockState(best).is(Blocks.DARK_OAK_SAPLING) && !square(level, best, Blocks.DARK_OAK_SAPLING)) {
-            w.finish(CompanionActionResult.blocked("Тёмный дуб растёт только из четырёх саженцев квадратом 2×2, а этот стоит один."));
+        if (best == null) {
+            w.finish(CompanionActionResult.blocked(lone ? "Тёмный дуб растёт только из четырёх саженцев квадратом 2×2, а тут он один."
+                    : "Саженцев в " + radius + " блоках от тебя не вижу."));
             return;
         }
         todo.add(best.below());
@@ -467,8 +470,9 @@ final class CompanionFarming {
     /** A tile that cannot be worked is let go, and the next nearest one stands in for it. */
     private void letGo() {
         next();
-        // Only the field, use_bone_meal and a harvest with bone meal keep spares (lookForField, lookForCrops).
-        if (!spare.isEmpty()) todo.add(spare.removeFirst());
+        // Only the field, use_bone_meal and a harvest with bone meal keep spares (lookForField, lookForCrops); a harvest takes one
+        // only if the ripe left fall short, so no meal goes on a young one while ripe ones will do.
+        if (!spare.isEmpty() && (!harvest || harvested + todo.size() < wanted)) todo.add(spare.removeFirst());
     }
 
     /** One bone meal of the bag on the plant, as a player clicks it: the vanilla growth (a sapling's own chance), the green sparks, the meal gone. */
@@ -603,8 +607,7 @@ final class CompanionFarming {
                     : mealShort ? "Костная мука кончилась, а саженец так и не вырос." : unreachable > 0 ? "До саженца не смог дойти." : "Саженца на месте больше нет.";
         } else {
             ok = ripened > 0;
-            text = ripened == 0 ? "Ничего не дозрело." : (ripened >= found ? "Готово: дозрело " : "Дозрело ") + plots(ripened, "посадка", "посадок")
-                    + (ripened >= found ? "" : " из " + found) + ".";
+            text = ripened == 0 ? "Ничего не дозрело." : (ripened >= found ? "Готово, дозрело посадок: " + ripened : "Дозрело посадок: " + ripened + " из " + found) + ".";
             if (mealShort) text += " Костная мука кончилась.";
             if (unreachable > 0) text += " До " + unreachable + " не смог дойти.";
         }
