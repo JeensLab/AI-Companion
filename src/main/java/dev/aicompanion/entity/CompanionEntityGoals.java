@@ -239,8 +239,10 @@ final class CompanionEntityGoals {
                 // Not known yet (the search goes by the shares of the ticks): asked again next tick.
                 if (none == null) { waitingFor = null; retryAt = companion.level().getGameTime() + 1; }
                 else if (none) {
-                    if (toldAbout == null || toldAbout.distSqr(owner.blockPosition()) >= 9) {
-                        toldAbout = owner.blockPosition();
+                    // Said again only for a player standing at a new place, ten seconds after the last time: a falling one moves every tick.
+                    long now = companion.level().getGameTime();
+                    if (toldAbout == null || (owner.onGround() && toldAbout.distSqr(owner.blockPosition()) >= 9 && now - toldAt >= 200)) {
+                        toldAbout = owner.blockPosition(); toldAt = now;
                         companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься.", companion.hasActiveWorkOrder());
                     }
                 } else { waitingFor = null; retryAt = companion.level().getGameTime() + 100; }
@@ -256,6 +258,7 @@ final class CompanionEntityGoals {
         private boolean travelling;
         // Where the player stood when he was told there is no way: kept while the goal is interrupted (self-rescue, pickup, fight, inventory).
         private BlockPos toldAbout;
+        private long toldAt;
         private long retryAt;
         // Where the player was when there was no way to him; he waits until the player is elsewhere.
         private BlockPos waitingFor;
