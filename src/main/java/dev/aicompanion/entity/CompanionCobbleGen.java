@@ -60,7 +60,7 @@ final class CompanionCobbleGen {
     /** The hardest ground he digs (deepslate); walks to one place before it is passed over; ticks the dug blocks' drops are waited for and the stone is. */
     private static final float HARDEST = 3;
     private static final int LEGS = 8, PICK_TICKS = 200, GROW_TICKS = 200;
-    /** How far lava sets fire, around and above (vanilla LavaFluid.randomTick). */
+    /** How far lava sets fire, around and above (vanilla LavaFluid.randomTick); the shape is {@link #fireReaches}. */
     private static final int FIRE = 3;
 
     private static final net.minecraft.world.level.BlockGetter EMPTY = net.minecraft.world.level.EmptyBlockGetter.INSTANCE;
@@ -437,11 +437,22 @@ final class CompanionCobbleGen {
      */
     private static boolean ignites(ServerLevel level, Predicate<BlockPos> site, BlockPos lava) {
         for (BlockPos at : BlockPos.betweenClosed(lava.offset(-FIRE, 0, -FIRE), lava.offset(FIRE, FIRE, FIRE))) {
+            if (!fireReaches(lava, at)) continue;
             if (!level.hasChunkAt(at)) return true;
             BlockState state = level.getBlockState(at);
             if (state.ignitedByLava() && !(clearable(state) && !site.test(at))) return true;
         }
         return false;
+    }
+
+    /**
+     * A block lava may set fire to: fire is lit up to two steps of (±1, +1, ±1) above it, then on the flammable neighbours of that
+     * cell. So two blocks around up to one above, three around only at two above, two around at three above (a tree's lowest leaves
+     * three above and three aside are safe: game 16.11, an island with an oak was ruled out by a plain box).
+     */
+    private static boolean fireReaches(BlockPos lava, BlockPos at) {
+        int dy = at.getY() - lava.getY(), far = Math.max(Math.abs(at.getX() - lava.getX()), Math.abs(at.getZ() - lava.getZ()));
+        return dy >= 0 && dy <= FIRE && far <= (dy == 2 ? FIRE : FIRE - 1);
     }
 
     /** A wild plant he cuts with one blow: flammable or a flower (a poppy does not burn, but stands where the lava goes), nothing to stand on or bump into, breaks at once (grass, ferns, flowers, dead bush); not a sapling or a crop. */
@@ -454,7 +465,7 @@ final class CompanionCobbleGen {
     private static List<BlockPos> flammable(ServerLevel level, BlockPos... lava) {
         Set<BlockPos> cells = new java.util.LinkedHashSet<>();
         for (BlockPos cell : lava)
-            for (BlockPos at : BlockPos.betweenClosed(cell.offset(-FIRE, 0, -FIRE), cell.offset(FIRE, FIRE, FIRE))) if (clearable(level.getBlockState(at))) cells.add(at.immutable());
+            for (BlockPos at : BlockPos.betweenClosed(cell.offset(-FIRE, 0, -FIRE), cell.offset(FIRE, FIRE, FIRE))) if (fireReaches(cell, at) && clearable(level.getBlockState(at))) cells.add(at.immutable());
         return List.copyOf(cells);
     }
 
