@@ -281,7 +281,8 @@ final class CompanionCobbleGen {
                 Plan p = new Plan(lava, along);
                 double far = Vec3.atCenterOf(p.stone()).distanceToSqr(Vec3.atBottomCenterOf(center));
                 if (far > SITE * SITE) continue;
-                if (player != null && p.box().intersects(player.inflate(1.5, 0, 1.5))) continue;
+                // Down to the hole too: the row lies in the ground he stands on (game 15.11: the lava cell was the block under him).
+                if (player != null && p.box().intersects(player.inflate(1.5, 0, 1.5).expandTowards(0, -3, 0))) continue;
                 int walls = fits(level, p, site);
                 if (walls < 0) continue;
                 if (best == null || walls < bestWalls || walls == bestWalls && far < bestFar) { best = p; bestWalls = walls; bestFar = far; }

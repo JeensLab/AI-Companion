@@ -115,6 +115,35 @@ public final class CompanionCobbleGenTests {
         });
     }
 
+    /**
+     * Game 15.11: on an island six by six the lava cell was the block the player stood on; he dug it, the player fell in the channel and
+     * the lava was poured into him. Nothing within a block and a half of the player's feet is dug, the ground under him included.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void theGroundUnderThePlayerIsNotDug(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 12; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int x = 10; x <= 15; x++) for (int z = 10; z <= 15; z++) for (int y = TOP - 2; y <= TOP; y++) h.setBlock(new BlockPos(x, y, z), y == TOP ? Blocks.GRASS_BLOCK : Blocks.DIRT);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 14, TOP + 1, 11);
+        var owner = h.makeMockServerPlayerInLevel();
+        BlockPos stand = h.absolutePos(new BlockPos(11, TOP + 1, 11));
+        owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        owner.setInvulnerable(true);
+        c.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        c.setSearchRadius(16);
+        c.setLifestyle(false, false);
+        c.setItem(0, new ItemStack(Items.LAVA_BUCKET));
+        c.setItem(1, new ItemStack(Items.WATER_BUCKET));
+        var future = run(h, c, "сделай генератор булыжника");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            for (int x = 10; x <= 12; x++) for (int z = 10; z <= 12; z++)
+                h.assertTrue(h.getBlockState(new BlockPos(x, TOP, z)).is(Blocks.GRASS_BLOCK), "Dug beside the player at " + x + ", " + z + ": " + future.join().report());
+            h.assertTrue(future.join().report().contains("Готово, генератор у"), "Not built: " + future.join().report());
+        });
+    }
+
     /** The platform: 16 by 16, three layers over air, earth with grass on top. */
     private static void platform(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 12; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
