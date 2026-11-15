@@ -57,6 +57,27 @@ public final class CompanionBenchTests {
         });
     }
 
+    /**
+     * Game 15.11 (AgentTest, a pit under dark oak crowns): afloat in water with planks and logs, the pickaxe order said
+     * «Сейчас подготовлюсь» and stood 90 s until the stall stop, the bench never set down nor the pickaxe made.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void afloatHeStillMakesThePickaxe(GameTestHelper h) {
+        CompanionEntity companion = setup(h);
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= 2; y++)
+            h.setBlock(new BlockPos(x, y, z), x >= 14 && x <= 18 && z >= 14 && z <= 18 ? Blocks.WATER : Blocks.STONE);
+        companion.teleportTo(h.absolutePos(new BlockPos(16, 2, 16)).getX() + .5, h.absolutePos(new BlockPos(16, 2, 16)).getY(), h.absolutePos(new BlockPos(16, 2, 16)).getZ() + .5);
+        owner(h, companion).teleportTo(h.absolutePos(new BlockPos(16, 3, 11)).getX() + .5, h.absolutePos(new BlockPos(16, 3, 11)).getY(), h.absolutePos(new BlockPos(16, 3, 11)).getZ() + .5);
+        companion.setItem(0, new ItemStack(Items.SPRUCE_PLANKS, 4));
+        companion.setItem(1, new ItemStack(Items.SPRUCE_LOG, 5));
+        var result = CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:wooden_pickaxe", 1);
+        h.assertTrue(result.success(), "Craft order refused: " + result.message());
+        h.succeedWhen(() -> {
+            h.assertTrue(!companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.WOODEN_PICKAXE) == 1, companion.getLastTaskResult());
+        });
+    }
+
     private static CompanionEntity setup(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);

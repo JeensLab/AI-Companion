@@ -162,7 +162,8 @@ final class CompanionWorkCrafting {
     }
 
     boolean approachCraftingTable() {
-        if (!w.owner.onGround()) return true;
+        // Afloat he goes on, as to the stonecutter (game 15.11, a pit under dark oak crowns: 90 s of «Сейчас подготовлюсь»).
+        if (!w.owner.onGround() && !w.owner.isInWater()) return true;
         if (!(w.owner.level() instanceof ServerLevel level) || w.owner.hasCraftingTableNearby() || w.benchHere) return false;
         if (w.craftingStation == null || !level.hasChunkAt(w.craftingStation) || !level.getBlockState(w.craftingStation).is(Blocks.CRAFTING_TABLE)) {
             w.craftingStation = null;
