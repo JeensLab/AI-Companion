@@ -124,7 +124,7 @@ final class CompanionOreMining {
                 lackedPlugs.clear(); lackedSpringPlugs.clear(); wayWater.clear(); overLava.clear(); lavaFalls.clear();
             }
             if (!w.oreSearch.scan(level)) { w.owner.workStatus("Ищу «" + w.ore.oreName + "» в пределах " + w.oreSearch.radius() + " блоков."); return; }
-            w.oreCandidates = new ArrayList<>(w.oreSearch.results(level)); w.oreFound = w.oreCandidates.size();
+            w.oreCandidates = new ArrayList<>(w.oreSearch.results(level)); w.oreCandidates.removeIf(pos -> !w.owner.errand.within(pos)); w.oreFound = w.oreCandidates.size();
         }
         if (!w.oreTunnel.isEmpty()) { digOreTunnel(level); return; }
         if (w.target == null) {

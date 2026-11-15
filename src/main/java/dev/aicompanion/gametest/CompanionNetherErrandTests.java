@@ -42,11 +42,34 @@ import java.util.concurrent.CompletableFuture;
 public final class CompanionNetherErrandTests {
     private static final int GROUND = 5;
     private static final String NO_PORTAL = "Рядом нет портала в Незер — построй его или скажи «построй портал».";
-    /** The chunks of the Nether arena a test forced: let go after the batch, whatever the test did. */
+    /** The chunks of the Nether arena a test forced: let go after the batch, whatever the test did. The tests are one batch each: eight overworld blocks are one in the Nether, so arenas of tests side by side overlap. */
     private static final List<ChunkPos> FORCED = new ArrayList<>();
 
-    @AfterBatch(batch = "errand")
-    public static void afterErrand(ServerLevel level) {
+    @AfterBatch(batch = "errand0")
+    public static void afterErrand0(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand1")
+    public static void afterErrand1(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand2")
+    public static void afterErrand2(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand3")
+    public static void afterErrand3(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand4")
+    public static void afterErrand4(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand5")
+    public static void afterErrand5(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand6")
+    public static void afterErrand6(ServerLevel level) { afterErrand(level); }
+
+    @AfterBatch(batch = "errand7")
+    public static void afterErrand7(ServerLevel level) { afterErrand(level); }
+
+    private static void afterErrand(ServerLevel level) {
         CompanionFixtureCleanup.afterAtomicTests(level);
         var nether = level.getServer().getLevel(Level.NETHER);
         if (nether != null) for (ChunkPos chunk : FORCED) nether.setChunkForced(chunk.x, chunk.z, false);
@@ -221,7 +244,7 @@ public final class CompanionNetherErrandTests {
      * digs three quartz there, goes back by the exit portal, and stands in the overworld with three, following, the errand lifted.
      * The Nether is a shut arena above its roof with a portal of its own at the place the game sends him to, and ores on both sides of it.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand")
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand0")
     public static void quartzIsFetchedThroughThePortalAndBack(GameTestHelper h) {
         ground(h);
         lightPortal(h);
@@ -264,6 +287,227 @@ public final class CompanionNetherErrandTests {
             for (BlockPos ore : ores) if (nether.getBlockState(ore).is(Blocks.NETHER_QUARTZ_ORE)) left++;
             h.assertTrue(left == ores.length - 3, "Ores left " + left + " of " + ores.length);
         });
+    }
+
+    /** Whole errand length, as the game records it at the arrival. */
+    private static final long MOST = 20 * 60 * 5;
+    private static final String QUARTZ_6 = "[{\"action\":\"obtain_item\",\"item\":\"minecraft:quartz\",\"count\":6}]";
+
+    /**
+     * Health below half in the Nether, in the middle of the digging: the digging is cut short with an honest count of what was gained,
+     * the plan stops with it, and he walks out by the exit portal; nothing he broke is lost.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand1")
+    public static void lowHealthInTheNetherCutsTheDiggingShortAndHeGoesBack(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        BlockPos[] ores = arena(nether, cell[0], cell[1]);
+        CompanionEntity companion = spawn(h, 6, 16);
+        companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        UUID id = companion.getUUID();
+        List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
+        boolean[] hurt = {false};
+        h.onEachTick(() -> {
+            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) started.add(run(h, companion, QUARTZ_6));
+            if (!hurt[0] && nether.getEntity(id) instanceof CompanionEntity there && count(there, Items.QUARTZ) >= 1) { there.setHealth(8); hurt[0] = true; }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(hurt[0], "He has not dug a quartz yet");
+            h.assertTrue(started.getFirst().isDone(), "Plan still running: " + describe(h, nether, id));
+            h.assertTrue(h.getLevel().getEntity(id) instanceof CompanionEntity, "Not back in the overworld: " + describe(h, nether, id));
+            CompanionEntity home = (CompanionEntity) h.getLevel().getEntity(id);
+            String report = started.getFirst().join().report();
+            h.assertTrue(report.contains("Опасно, возвращаюсь с тем, что есть"), "The report: " + report);
+            var said = java.util.regex.Pattern.compile("прибавилось (\\d+) «").matcher(report);
+            h.assertTrue(said.find(), "No count in the report: " + report);
+            int told = Integer.parseInt(said.group(1)), have = count(home, Items.QUARTZ);
+            h.assertTrue(told >= 1 && told <= have && have < 6 && have == broken(nether, ores), "Said " + told + ", bag " + have + ", ores broken " + broken(nether, ores) + ": " + report);
+            CompoundTag tag = new CompoundTag();
+            home.addAdditionalSaveData(tag);
+            h.assertTrue(!tag.contains("Errand") && home.isFollowing(), "The errand is not over: " + tag.get("Errand"));
+        });
+    }
+
+    /** «Стой» while he digs in the Nether (the plan is stopped, no work left): he walks to the exit portal by himself and is home. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand2")
+    public static void aStoppedPlanInTheNetherSendsHimBackByHimself(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        arena(nether, cell[0], cell[1]);
+        CompanionEntity companion = spawn(h, 6, 16);
+        companion.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        UUID id = companion.getUUID();
+        List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
+        boolean[] stopped = {false};
+        h.onEachTick(() -> {
+            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) started.add(run(h, companion, QUARTZ_6));
+            if (!stopped[0] && nether.getEntity(id) instanceof CompanionEntity there && count(there, Items.QUARTZ) >= 1) { there.stopGatheringForPlayer(); stopped[0] = true; }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(stopped[0], "He has not dug a quartz yet");
+            h.assertTrue(h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + describe(h, nether, id));
+            CompanionEntity home = (CompanionEntity) h.getLevel().getEntity(id);
+            CompoundTag tag = new CompoundTag();
+            home.addAdditionalSaveData(tag);
+            h.assertTrue(!tag.contains("Errand") && home.isFollowing() && count(home, Items.QUARTZ) >= 1, "Not home with what he dug: " + tag.get("Errand"));
+        });
+    }
+
+    /** The world was loaded with him in the Nether (an errand in his data, no work, no exit portal in it): he walks out by the nearest portal. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand3")
+    public static void anErrandFoundOnLoadWithNoExitSendsHimBackByTheNearestPortal(GameTestHelper h) {
+        walksOutOfTheNether(h, null);
+    }
+
+    /** The exit portal in his record is gone (a stale one): the same, by the nearest lit portal. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand4")
+    public static void anErrandWithAGoneExitPortalSendsHimBackByTheNearestPortal(GameTestHelper h) {
+        int[] cell = arenaCell(h);
+        walksOutOfTheNether(h, new BlockPos(cell[0] + 5, 151, cell[1] + 40).asLong());
+    }
+
+    private static void walksOutOfTheNether(GameTestHelper h, Long exit) {
+        ground(h);
+        lightPortal(h);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        arena(nether, cell[0], cell[1]);
+        CompanionEntity there = restored(h, nether, cell, exit, MOST);
+        UUID id = there.getUUID();
+        boolean[] added = {false};
+        h.onEachTick(() -> {
+            if (!added[0] && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { nether.addFreshEntity(there); added[0] = true; }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(added[0] && h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + describe(h, nether, id));
+            CompanionEntity home = (CompanionEntity) h.getLevel().getEntity(id);
+            CompoundTag tag = new CompoundTag();
+            home.addAdditionalSaveData(tag);
+            h.assertTrue(!tag.contains("Errand") && home.isFollowing() && nether.getEntity(id) == null, "The errand is not over: " + tag.get("Errand"));
+        });
+    }
+
+    /** The exit portal in his record is 70 blocks from the quartz: it is not taken, whatever lies in his search radius; then he goes back. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand5")
+    public static void nothingFartherThanFortyEightBlocksFromTheExitPortalIsTaken(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        BlockPos[] ores = arena(nether, cell[0], cell[1]);
+        CompanionEntity there = restored(h, nether, cell, new BlockPos(cell[0] + 70, 151, cell[1]).asLong(), MOST);
+        UUID id = there.getUUID();
+        List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
+        h.onEachTick(() -> {
+            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) {
+                nether.addFreshEntity(there);
+                started.add(run(h, there, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:quartz\",\"count\":3}]"));
+            }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!started.isEmpty() && started.getFirst().isDone(), "Plan still running: " + describe(h, nether, id));
+            h.assertTrue(h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + describe(h, nether, id));
+            CompanionEntity home = (CompanionEntity) h.getLevel().getEntity(id);
+            h.assertTrue(broken(nether, ores) == 0 && count(home, Items.QUARTZ) == 0, "He took ore beyond the radius: broken " + broken(nether, ores) + ", bag " + count(home, Items.QUARTZ) + ": " + started.getFirst().join().report());
+        });
+    }
+
+    /** Five minutes are up (here: three seconds): the digging stops with «Время вышло» and an honest count, and he is back. */
+    @GameTest(template = "tall_tree", timeoutTicks = 6000, batch = "errand6")
+    public static void whenTheTimeIsUpHeLeavesTheDiggingAndGoesBack(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        BlockPos[] ores = arena(nether, cell[0], cell[1]);
+        CompanionEntity there = restored(h, nether, cell, new BlockPos(cell[0], 151, cell[1]).asLong(), 60);
+        UUID id = there.getUUID();
+        List<CompletableFuture<CompanionPlanRunner.Outcome>> started = new ArrayList<>();
+        h.onEachTick(() -> {
+            if (started.isEmpty() && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) {
+                nether.addFreshEntity(there);
+                started.add(run(h, there, QUARTZ_6));
+            }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(!started.isEmpty() && started.getFirst().isDone(), "Plan still running: " + describe(h, nether, id));
+            h.assertTrue(h.getLevel().getEntity(id) instanceof CompanionEntity, "Still in the Nether: " + describe(h, nether, id));
+            CompanionEntity home = (CompanionEntity) h.getLevel().getEntity(id);
+            String report = started.getFirst().join().report();
+            var said = java.util.regex.Pattern.compile("прибавилось (\\d+) «").matcher(report);
+            h.assertTrue(report.contains("Время вышло, возвращаюсь с тем, что есть") && said.find(), "The report: " + report);
+            int told = Integer.parseInt(said.group(1)), have = count(home, Items.QUARTZ);
+            h.assertTrue(told <= have && have == broken(nether, ores) && have < ores.length, "Said " + told + ", bag " + have + ", ores broken " + broken(nether, ores));
+        });
+    }
+
+    /** With no portal at all to go out by he stays, and the Nether with only him in it goes on ticking past the empty-world limit (300 ticks). */
+    @GameTest(template = "tall_tree", timeoutTicks = 1000, batch = "errand7")
+    public static void aloneInTheNetherWithNoPortalHeStaysAndKeepsTicking(GameTestHelper h) {
+        ground(h);
+        lightPortal(h);
+        var nether = h.getLevel().getServer().getLevel(Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        int[] cell = arenaCell(h);
+        arena(nether, cell[0], cell[1]);
+        for (int x = cell[0]; x <= cell[0] + 1; x++) for (int y = 151; y <= 153; y++) nether.setBlockAndUpdate(new BlockPos(x, y, cell[1]), Blocks.AIR.defaultBlockState());
+        CompanionEntity there = restored(h, nether, cell, null, MOST);
+        UUID id = there.getUUID();
+        boolean[] added = {false};
+        h.onEachTick(() -> {
+            if (!added[0] && FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { nether.addFreshEntity(there); added[0] = true; }
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(added[0] && there.tickCount >= 450, "Ticked " + there.tickCount + " times only");
+            h.assertTrue(nether.getEntity(id) == there && h.getLevel().getEntity(id) == null, "He left the Nether without a portal");
+            CompoundTag tag = new CompoundTag();
+            there.addAdditionalSaveData(tag);
+            h.assertTrue(tag.contains("Errand"), "The errand was dropped");
+        });
+    }
+
+    private static int[] arenaCell(GameTestHelper h) {
+        BlockPos at = h.absolutePos(new BlockPos(15, GROUND + 2, 16));
+        return new int[] {Math.floorDiv(at.getX(), 8), Math.floorDiv(at.getZ(), 8)};
+    }
+
+    private static int broken(ServerLevel nether, BlockPos[] ores) {
+        int left = 0;
+        for (BlockPos ore : ores) if (nether.getBlockState(ore).is(Blocks.NETHER_QUARTZ_ORE)) left++;
+        return ores.length - left;
+    }
+
+    /**
+     * The companion as a loaded world gives him back: an entity of the Nether made out of saved data that carries the errand (the portal at
+     * home, the exit portal if any, a deadline {@code lasts} ticks away), not yet added to the world. Born in the overworld first, as the others.
+     */
+    private static CompanionEntity restored(GameTestHelper h, ServerLevel nether, int[] cell, Long exit, long lasts) {
+        CompanionEntity old = spawn(h, 6, 16);
+        old.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        CompoundTag tag = new CompoundTag();
+        old.addAdditionalSaveData(tag);
+        CompoundTag errand = new CompoundTag();
+        errand.putLong("Home", h.absolutePos(new BlockPos(15, GROUND + 2, 16)).asLong());
+        if (exit != null) errand.putLong("Exit", exit);
+        errand.putLong("Since", nether.getGameTime());
+        errand.putLong("Deadline", nether.getGameTime() + lasts);
+        tag.put("Errand", errand);
+        UUID id = old.getUUID();
+        old.discard();
+        CompanionEntity there = AICompanionMod.COMPANION.get().create(nether);
+        there.setUUID(id);
+        there.moveTo(cell[0] + 1.5, 151, cell[1] + 4.5, 0, 0);
+        there.readAdditionalSaveData(tag);
+        return there;
     }
 
     private static String describe(GameTestHelper h, ServerLevel nether, UUID id) {

@@ -100,6 +100,9 @@ final class CompanionPicking {
 
     private int got() { return Math.max(0, w.items.countCarried(item) - before); }
 
+    /** What the order has brought so far: said when it is cut short (the errand's watch in the Nether). */
+    String progress() { return "в сумке прибавилось " + got() + " «" + CompanionWork.itemName(item) + "»."; }
+
     /** Whether one of these blocks stands within his search radius where he may take it. */
     static boolean near(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources) {
         List<CompanionPickable.Source> here = allowed(level, sources);
@@ -129,7 +132,7 @@ final class CompanionPicking {
 
     private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site, Set<BlockPos> passed, Set<BlockPos> lava) {
         return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> {
-            if (passed.contains(pos) || !takes(level, pos, site) || !low(c, level, pos) || !grounded(c, level, pos)) return false;
+            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !low(c, level, pos) || !grounded(c, level, pos)) return false;
             if (!lavaBeside(level, pos)) return true;
             lava.add(pos.immutable());
             return false;
