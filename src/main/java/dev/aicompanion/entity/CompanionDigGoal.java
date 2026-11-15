@@ -202,7 +202,9 @@ final class CompanionDigGoal extends Goal {
     static boolean thickBelow(net.minecraft.world.level.Level level, BlockPos pos) {
         for (int i = 1; i <= THICK_GROUND; i++) {
             BlockPos below = pos.below(i);
-            if (level.isOutsideBuildHeight(below) || !level.hasChunkAt(below)) return false;
+            // Solid down to the bottom of the world is ground, however thin (a superflat world: grass, two dirt, bedrock).
+            if (level.isOutsideBuildHeight(below)) return true;
+            if (!level.hasChunkAt(below)) return false;
             var state = level.getBlockState(below);
             if (state.getCollisionShape(level, below).isEmpty() || !state.getFluidState().isEmpty()) return false;
         }
