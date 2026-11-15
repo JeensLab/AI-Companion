@@ -34,6 +34,7 @@ final class CompanionEntityNbt {
         ContainerHelper.saveAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.save(tag);
         c.temporaryPillar.save(tag);
+        c.recovery.save(tag);
         c.work.save(tag);
         c.parked.save(tag);
         c.batches().save(tag);
@@ -81,6 +82,7 @@ final class CompanionEntityNbt {
         c.satiety = Math.max(0, Math.min(40, tag.getInt("Satiety"))); // absent in older saves: 0
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.load(tag);
+        c.recovery.load(tag);
         c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.setDeathRecovery(!tag.contains("DeathRecovery") || tag.getBoolean("DeathRecovery"));
         c.setBoatRide(!tag.contains("BoatRide") || tag.getBoolean("BoatRide"));
         c.setGuardByPlayer(!tag.contains("GuardByPlayer") || tag.getBoolean("GuardByPlayer"));

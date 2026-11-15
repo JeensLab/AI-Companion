@@ -247,6 +247,31 @@ public final class CompanionPillarTests {
         });
     }
 
+    /**
+     * Review of the skyblock fix: six stones taken back with a wooden pickaxe (~58 ticks each for deepslate) take longer than the
+     * one 10 s budget of a short cleanup; the rest used to be abandoned in the world. Every stone comes back.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void sixDeepslateSupportsAreAllTakenBackWithAWoodenPickaxe(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper, false);
+        for (int y = 10; y <= 18; y++) helper.setBlock(new BlockPos(16, y, 16), Blocks.OAK_LOG);
+        companion.setItem(0, new ItemStack(Items.STONE_AXE));
+        companion.setItem(2, new ItemStack(Items.WOODEN_PICKAXE));
+        companion.setItem(1, new ItemStack(Items.COBBLED_DEEPSLATE, SOIL_SUPPLY));
+        int[] maximumSupports = {0};
+        helper.onEachTick(() -> maximumSupports[0] = Math.max(maximumSupports[0], companion.getTemporarySupportCount()));
+        companion.startGatheringLogs(18);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isRecoveringSupports(), diagnostic(companion));
+            helper.assertTrue(maximumSupports[0] == 6, "The climb did not use six supports: " + diagnostic(companion));
+            helper.assertTrue(companion.getTemporarySupportCount() == 0, "Support ownership was not cleared: " + diagnostic(companion));
+            for (int x = 10; x <= 22; x++) for (int z = 10; z <= 22; z++) for (int y = 1; y <= 18; y++)
+                helper.assertTrue(!helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.COBBLED_DEEPSLATE), "Deepslate left in the world at " + x + "," + y + "," + z);
+            helper.assertTrue(count(companion, Items.COBBLED_DEEPSLATE) == SOIL_SUPPLY, "Deepslate was lost: " + count(companion, Items.COBBLED_DEEPSLATE));
+            helper.assertTrue(companion.onGround(), "Work completed while companion was still falling");
+        });
+    }
+
     private static CompanionEntity setup(GameTestHelper helper, boolean giveSoil) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) {
             helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE);

@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
@@ -46,8 +47,11 @@ final class CompanionRecovery {
     private BlockPos stepUp, stepFrom;
     private int stepTicks;
     private final java.util.Set<Long> blockedStairs = new java.util.HashSet<>();
-    /** The player's height over the last 3 s (one slot a tick), and whether he fell: 8+ blocks down in that time. */
-    private final double[] playerHeights = new double[60];
+    /**
+     * The player's height over the last second (one slot a tick), and whether he fell: 8+ blocks down in that time. Free fall
+     * covers that in ~16 ticks; a ladder (0.15 a tick) or digging down only ~3 blocks, so those are followed.
+     */
+    private final double[] playerHeights = new double[20];
     { java.util.Arrays.fill(playerHeights, Double.NaN); }
     private boolean playerFell;
     CompanionRecovery(CompanionEntity owner) { this.owner = owner; breaking = new CompanionBlockBreaking(owner); }
@@ -56,7 +60,9 @@ final class CompanionRecovery {
     /** Skyblock probe 15.11: a player who fell off an island is waited for, not dug to; one who dug or walked down is followed. */
     private void watchFall() {
         var player = owner.getOwnerPlayer();
-        if (player == null || player.level() != owner.level()) { playerFell = false; java.util.Arrays.fill(playerHeights, Double.NaN); return; }
+        // No player yet (the world is loading): the saved flag is kept; another dimension forgets it.
+        if (player == null) { java.util.Arrays.fill(playerHeights, Double.NaN); return; }
+        if (player.level() != owner.level()) { playerFell = false; java.util.Arrays.fill(playerHeights, Double.NaN); return; }
         int slot = (int) (owner.level().getGameTime() % playerHeights.length);
         double top = player.getY();
         for (double height : playerHeights) if (!Double.isNaN(height)) top = Math.max(top, height);
@@ -64,6 +70,8 @@ final class CompanionRecovery {
         if (top - player.getY() >= 8) playerFell = true;
         else if (player.getY() >= owner.getY() - 1.25) playerFell = false;
     }
+    void save(CompoundTag tag) { tag.putBoolean("PlayerFell", playerFell); }
+    void load(CompoundTag tag) { playerFell = tag.getBoolean("PlayerFell"); } // absent in older saves: false
     private boolean waitsForFallenPlayer(BlockPos intent) {
         var player = owner.getOwnerPlayer();
         return playerFell && player != null && intent.distSqr(player.blockPosition()) <= 9;

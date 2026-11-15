@@ -206,6 +206,7 @@ public final class CompanionPillar {
         cleanupTicks++;
         if (cooldown > 0) cooldown--;
 
+        // The budget is per support (reset at each one taken): six stones with a wooden pickaxe take longer than one budget.
         if (cleanupTicks > MAX_ATTEMPT_TICKS && owner.onGround()) {
             // Another player may now be using this soil. Leave it without issuing any refund.
             // Relinquishing only this bounded list also prevents an endless recovery-goal loop.
@@ -249,10 +250,18 @@ public final class CompanionPillar {
         owner.selectToolForBlock(highest.state());
         if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.SHOVELS)
                 && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.PICKAXES)) owner.unequipForSupport("mainhand");
+        if (!canDrop(highest.state())) {
+            // The pickaxe is gone (broken, or taken): by hand the block would vanish without a drop. It stays where it is.
+            supports.clear();
+            failureReason = "Опоры оставил на месте: нечем их забрать";
+            clearColumn();
+            return true;
+        }
         if (!breaking.tick(level, pos)) return false;
         if (!breakAndStore(level, pos, highest.state())) return false;
         breaking.reset();
         supports.removeLast();
+        cleanupTicks = 0;
         cooldown = 5;
         return false;
     }
@@ -401,9 +410,15 @@ public final class CompanionPillar {
                 || block == Blocks.COBBLESTONE || block == Blocks.COBBLED_DEEPSLATE || block == Blocks.NETHERRACK;
     }
 
+    /** Whether the tool in his hand makes this block drop: a stone support broken without a pickaxe would be lost. */
+    private boolean canDrop(BlockState state) {
+        return !state.requiresCorrectToolForDrops() || owner.getMainHandItem().isCorrectToolForDrops(state);
+    }
+
     private boolean breakAndStore(ServerLevel level, BlockPos pos, BlockState state) {
         if (!level.hasChunkAt(pos) || level.getBlockState(pos) != state) return false;
         owner.selectToolForBlock(state);
+        if (!canDrop(state)) return false;
         ItemStack tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), owner, tool);
         if (!level.destroyBlock(pos, false, owner, 512)) return false;

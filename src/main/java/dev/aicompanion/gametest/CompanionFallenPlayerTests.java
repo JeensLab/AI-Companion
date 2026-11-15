@@ -6,6 +6,7 @@ import dev.aicompanion.entity.CompanionEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -52,7 +53,39 @@ public final class CompanionFallenPlayerTests {
                 if (!h.getBlockState(new BlockPos(x, y, z)).is(y == ISLAND_TOP ? Blocks.GRASS_BLOCK : Blocks.DIRT)) left++;
             h.assertTrue(left == 0, "Island blocks broken: " + left + " of " + total + " (" + companion.getLastTaskResult() + ")");
             h.assertTrue(companion.getY() > h.absolutePos(new BlockPos(0, ISLAND_TOP, 0)).getY(), "Off the island at " + h.relativePos(companion.blockPosition()));
+            // The wait survives a save: a world reloaded with the player still far below must not dig the island either.
+            CompoundTag saved = new CompoundTag();
+            companion.saveWithoutId(saved);
+            CompanionEntity reloaded = AICompanionMod.COMPANION.get().create(h.getLevel());
+            reloaded.load(saved);
+            CompoundTag again = new CompoundTag();
+            reloaded.saveWithoutId(again);
+            h.assertTrue(again.getBoolean("PlayerFell"), "The fall was forgotten by a save and reload");
             h.succeed();
         });
+    }
+
+    /**
+     * A player who goes down a shaft by himself is followed (the self-rescue digs to him): 10 blocks at a ladder's 0.15 a tick take
+     * ~67 ticks, and over 3 s that is 8+ blocks: only a window of a second tells it from a fall.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 600)
+    public static void aPlayerWhoClimbsDownAShaftIsFollowed(GameTestHelper h) {
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 30; y++)
+            h.setBlock(new BlockPos(x, y, z), y == 0 ? Blocks.BEDROCK : y < 15 ? Blocks.STONE : Blocks.AIR);
+        for (int y = 5; y <= 14; y++) h.setBlock(new BlockPos(20, y, 16), Blocks.AIR); // a shaft one block wide, ten deep
+        CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 14, 15, 16);
+        var owner = h.makeMockServerPlayerInLevel();
+        BlockPos rim = h.absolutePos(new BlockPos(20, 15, 16));
+        BlockPos bottom = h.absolutePos(new BlockPos(20, 5, 16));
+        owner.teleportTo(rim.getX() + .5, rim.getY(), rim.getZ() + .5);
+        companion.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        companion.setFollowing(true);
+        h.onEachTick(() -> {
+            if (h.getTick() > 20 && owner.getY() > bottom.getY()) owner.teleportTo(owner.getX(), Math.max(bottom.getY(), owner.getY() - .15), owner.getZ());
+        });
+        h.succeedWhen(() -> h.assertTrue(companion.isSelfRescuing(), "Not following into the shaft: " + companion.getLastTaskResult()));
     }
 }
