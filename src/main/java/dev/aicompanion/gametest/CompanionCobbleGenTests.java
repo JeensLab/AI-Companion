@@ -263,7 +263,7 @@ public final class CompanionCobbleGenTests {
             BlockPos stone = find(h, Blocks.COBBLESTONE).getFirst();
             for (var side : net.minecraft.core.Direction.Plane.HORIZONTAL) {
                 if (!h.getBlockState(stone.relative(side)).is(Blocks.LAVA)) continue;
-                for (BlockPos center : new BlockPos[]{stone, stone.relative(side)})
+                for (BlockPos center : new BlockPos[]{stone.relative(side)})
                     for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 0; dy <= 2; dy++) {
                         var state = h.getBlockState(center.offset(dx, dy, dz));
                         h.assertTrue(!state.is(Blocks.SHORT_GRASS) && !state.is(Blocks.POPPY) && !state.is(Blocks.DEAD_BUSH), "A plant is left at " + center.offset(dx, dy, dz));

@@ -216,7 +216,7 @@ final class CompanionCobbleGen {
         }
         if (!lava(level)) {
             // Wild plants within the lava's fire range are cut, as a player clears the grass before he sets lava.
-            for (BlockPos cell : flammable(level, plan.lava(), plan.stone())) {
+            for (BlockPos cell : flammable(level, plan.lava())) {
                 if (!level.getFluidState(cell).isEmpty()) continue;
                 return new Step(Kind.CLEAR, cell);
             }
@@ -406,7 +406,8 @@ final class CompanionCobbleGen {
             BlockState state = level.getBlockState(cell);
             if (site.test(cell) || !CompanionPortalBuild.natural(state, false) || !diggable(state, level, cell)) return -1;
         }
-        if (ignites(level, site, p.lava()) || ignites(level, site, p.stone())) return -1;
+        // Only the lava's own cell sets fire: what runs into the stone's cell sets into cobblestone at once (beside the water), never ticks as lava.
+        if (ignites(level, site, p.lava())) return -1;
         for (BlockPos cell : p.row()) if (!(CompanionPortalBuild.free(level, cell.above()) || clearable(level.getBlockState(cell.above()))) || !level.getFluidState(cell.above()).isEmpty()) return -1;
         for (BlockPos floor : p.floors()) {
             if (!level.hasChunkAt(floor)) return -1;
