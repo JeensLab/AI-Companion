@@ -239,9 +239,11 @@ final class CompanionEntityGoals {
                 // Not known yet (the search goes by the shares of the ticks): asked again next tick.
                 if (none == null) { waitingFor = null; retryAt = companion.level().getGameTime() + 1; }
                 else if (none) {
-                    // Said again only for a player standing at a new place, ten seconds after the last time: a falling one moves every tick.
+                    // Not to a player falling, flying or swimming; again only to one standing at a new place ten seconds after the last
+                    // time: a falling one moves every tick (skyblock probe: 24 lines in 3 s).
                     long now = companion.level().getGameTime();
-                    if (toldAbout == null || (owner.onGround() && toldAbout.distSqr(owner.blockPosition()) >= 9 && now - toldAt >= 200)) {
+                    boolean passing = owner.fallDistance > 1 || owner.isFallFlying() || owner.getAbilities().flying || owner.isSwimming();
+                    if (!passing && (toldAbout == null || owner.onGround() && toldAbout.distSqr(owner.blockPosition()) >= 9 && now - toldAt >= 200)) {
                         toldAbout = owner.blockPosition(); toldAt = now;
                         companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься.", companion.hasActiveWorkOrder());
                     }

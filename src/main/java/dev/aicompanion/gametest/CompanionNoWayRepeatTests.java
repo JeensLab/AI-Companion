@@ -36,19 +36,21 @@ public final class CompanionNoWayRepeatTests {
         BlockPos floor = h.absolutePos(new BlockPos(24, 2, 15));
         // Off the edge and down 20 blocks in a second. A mock player has no physics: onGround is set by hand (false in the air).
         h.runAtTickTime(20, () -> owner.teleportTo(floor.getX() + .5, owner.getY(), floor.getZ() + .5));
-        int[] said = {0};
+        int[] said = {0}, saidFalling = {0};
         int[] serial = {companion.autonomyLineSerial()};
         h.onEachTick(() -> {
             long t = h.getTick();
-            if (t > 20 && t <= 40) { owner.teleportTo(owner.getX(), Math.max(floor.getY(), owner.getY() - 1), owner.getZ()); owner.setOnGround(false); }
+            if (t > 20 && t <= 40) { owner.teleportTo(owner.getX(), Math.max(floor.getY(), owner.getY() - 1), owner.getZ()); owner.setOnGround(false); owner.fallDistance = t - 20; }
+            if (t > 40) { owner.setOnGround(true); owner.fallDistance = 0; } // landed
             if (companion.autonomyLineSerial() != serial[0]) {
                 serial[0] = companion.autonomyLineSerial();
-                if (companion.autonomyLine().startsWith("Не могу пройти к тебе")) said[0]++;
+                if (companion.autonomyLine().startsWith("Не могу пройти к тебе")) { said[0]++; if (t <= 40) saidFalling[0]++; }
             }
         });
-        // Counted up to the landing, before the 10 s of the repeat could pass.
-        h.runAtTickTime(45, () -> {
-            h.assertTrue(said[0] <= 1, "No-way lines said during the fall: " + said[0]);
+        // Silent while he falls, told once when he has landed, and not again before the 10 s of the repeat could pass.
+        h.runAtTickTime(100, () -> {
+            h.assertTrue(saidFalling[0] == 0, "No-way lines said during the fall: " + saidFalling[0]);
+            h.assertTrue(said[0] == 1, "No-way lines said after the landing: " + said[0]);
             h.succeed();
         });
     }
