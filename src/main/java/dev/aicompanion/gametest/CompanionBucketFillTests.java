@@ -47,14 +47,15 @@ public final class CompanionBucketFillTests {
     }
 
     /**
-     * «Добудь 2 ведра лавы» by a pool of lava in the ground: two of its sources in his buckets, and he did not burn. A layer of lava
+     * «Добудь 3 ведра лавы» by a pool of lava in the ground, two by two: three of its four sources in his buckets, and he did not burn. Each bucket
+     * stirs the sources beside the hole for a second or two: he waits for them, he does not give them up. A layer of lava
      * shut in the ground under him is nearer and none of his (in the Nether 15.11 such pockets in the rock were all he found first,
      * and he gave up: «Вижу лаву, но подойти не смог»).
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void lavaIsScoopedFromTheBank(GameTestHelper h) {
         ground(h);
-        for (int x = 18; x <= 20; x++) for (int z = 15; z <= 17; z++) {
+        for (int x = 18; x <= 19; x++) for (int z = 15; z <= 16; z++) {
             h.setBlock(new BlockPos(x, GROUND - 1, z), Blocks.STONE);
             h.setBlock(new BlockPos(x, GROUND, z), Blocks.LAVA);
         }
@@ -62,28 +63,32 @@ public final class CompanionBucketFillTests {
         // Magma on the near bank, as by the lava sea of the Nether: he does not stand on it.
         for (int x = 16; x <= 17; x++) for (int z = 13; z <= 19; z++) h.setBlock(new BlockPos(x, GROUND, z), Blocks.MAGMA_BLOCK);
         CompanionEntity c = spawn(h, 12, 16);
-        c.setItem(0, new ItemStack(Items.BUCKET, 2));
+        c.setItem(0, new ItemStack(Items.BUCKET, 3));
         // Lava set down has its flow tick due for a while; lava of the world lies still, so the order waits for it to settle.
         List<CompletableFuture<CompanionPlanRunner.Outcome>> order = new java.util.ArrayList<>();
-        h.runAfterDelay(40, () -> order.add(run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:lava_bucket\",\"count\":2}]")));
+        h.runAfterDelay(40, () -> order.add(run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:lava_bucket\",\"count\":3}]")));
         h.succeedWhen(() -> {
             h.assertTrue(!order.isEmpty(), "Not ordered yet");
             var future = order.getFirst();
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
-            h.assertTrue(count(c, Items.LAVA_BUCKET) == 2 && count(c, Items.BUCKET) == 0, "Lava " + count(c, Items.LAVA_BUCKET) + ": " + future.join().report());
+            h.assertTrue(count(c, Items.LAVA_BUCKET) == 3 && count(c, Items.BUCKET) == 0, "Lava " + count(c, Items.LAVA_BUCKET) + ": " + future.join().report());
             h.assertTrue(c.getHealth() == c.getMaxHealth() && !c.isOnFire(), "He burned: " + c.getHealth());
         });
     }
 
     /**
      * «Добудь 2 ведра рыхлого снега» by a patch of it: filled from the edge, he never stood in it (no frost on him). A strip of it
-     * lies flush with the ground across his way: the game takes the cell over it for floor, he goes round it.
+     * lies flush with the ground across his way, a player's trap: the game takes the cell over it for floor, he goes round it. The
+     * strip is no target of his (an invisible light block over it: no air there), so the way is the only thing it tests.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void powderSnowIsScoopedFromTheEdge(GameTestHelper h) {
         ground(h);
-        for (int x = 19; x <= 22; x++) for (int z = 14; z <= 18; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.POWDER_SNOW);
-        for (int z = 8; z <= 24; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(15, y, z), Blocks.POWDER_SNOW);
+        for (int x = 19; x <= 21; x++) for (int z = 15; z <= 17; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.POWDER_SNOW);
+        for (int z = 6; z <= 26; z++) {
+            h.setBlock(new BlockPos(14, GROUND, z), Blocks.POWDER_SNOW);
+            h.setBlock(new BlockPos(14, GROUND + 1, z), Blocks.LIGHT);
+        }
         CompanionEntity c = spawn(h, 12, 16);
         c.setItem(0, new ItemStack(Items.BUCKET, 2));
         int[] frozen = {0};
@@ -93,6 +98,7 @@ public final class CompanionBucketFillTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             h.assertTrue(count(c, Items.POWDER_SNOW_BUCKET) == 2 && count(c, Items.BUCKET) == 0, "Snow " + count(c, Items.POWDER_SNOW_BUCKET) + ": " + future.join().report());
             h.assertTrue(frozen[0] == 0, "He stood in the powder snow: frozen " + frozen[0]);
+            for (int z = 6; z <= 26; z++) h.assertBlockPresent(Blocks.POWDER_SNOW, new BlockPos(14, GROUND, z));
         });
     }
 

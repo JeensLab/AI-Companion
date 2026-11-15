@@ -206,12 +206,13 @@ final class CompanionChores {
 
     /**
      * Where it is filled from: firm ground within his reach and sight of it; never in powder snow nor with his head in it (he sinks
-     * and freezes), on magma (it burns, the shore of the Nether's lava has much of it) or by lava still running.
+     * and freezes) or on magma (it burns, the shore of the Nether's lava has much of it). By lava still running he does not stand
+     * either: fill() waits for it.
      */
     private static Set<BlockPos> banks(CompanionEntity c, ServerLevel level, BlockPos pool) {
         Set<BlockPos> cells = CompanionWaterFill.standsFor(c, level, List.of(pool));
         cells.removeIf(cell -> level.getBlockState(cell).is(Blocks.POWDER_SNOW) || level.getBlockState(cell.above()).is(Blocks.POWDER_SNOW)
-                || level.getBlockState(cell.below()).is(Blocks.MAGMA_BLOCK) || !CompanionLava.safeToFetch(level, cell));
+                || level.getBlockState(cell.below()).is(Blocks.MAGMA_BLOCK));
         return cells;
     }
 
@@ -457,10 +458,13 @@ final class CompanionChores {
         if (pool == null) {
             BlockPos found = skipped.size() >= SKIPS ? null : pool(c, level, item, skipped);
             if (found == null) { out(got, skipped.isEmpty() ? "Рядом нет " + pouredName(item) + "." : "Вижу " + (lava ? "лаву" : "рыхлый снег") + ", но подойти не смог."); return; }
-            Set<BlockPos> cells = banks(c, level, found);
+            Set<BlockPos> cells = banks(c, level, found), still = new HashSet<>(cells);
+            still.removeIf(cell -> !CompanionLava.safeToFetch(level, cell));
+            // Each bucket of his stirs the sources beside the hole (a flow tick for a second or two): waited for, not given up.
+            if (still.isEmpty() && !cells.isEmpty() && ++waited < WAIT) { c.workStatus("Жду, пока лава уляжется."); return; }
             // The middle of a lake of lava, snow over his head all round: this one is passed over, the next looked for at the next tick.
-            if (cells.isEmpty()) { skipped.add(found); return; }
-            pool = found; stands = cells; path = null; legs = waited = 0;
+            if (still.isEmpty()) { skipped.add(found); waited = 0; return; }
+            pool = found; stands = still; path = null; legs = waited = 0;
         }
         if (!stands.contains(c.blockPosition())) {
             c.workStatus(lava ? "Иду за лавой." : "Иду за рыхлым снегом.");
