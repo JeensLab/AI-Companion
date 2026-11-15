@@ -315,7 +315,7 @@ final class CompanionHouse {
     }
 
     private Result build(ServerLevel level) {
-        if (!owner.onGround()) return Result.working();
+        if (!owner.onGround() && !owner.isInWater()) return Result.working();
         if (template) materials.settle();
         Result unreadable = loadTemplate(level);
         if (unreadable != null) return unreadable;

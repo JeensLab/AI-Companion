@@ -45,7 +45,7 @@ final class CompanionFurnaces {
      */
     void prepareFurnace(ServerLevel level) {
         if (w.trip.walk()) return;
-        if (!w.owner.onGround()) return;
+        if (!w.owner.onGround() && !w.owner.isInWater()) return;
         int wanted = wantedFurnaces();
         while (w.lots.size() < wanted) {
             BlockPos free = findFurnace(level);
