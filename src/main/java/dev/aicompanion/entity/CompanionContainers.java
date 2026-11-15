@@ -84,14 +84,18 @@ public final class CompanionContainers {
     /**
      * «Сундуки рядом» for the model's snapshot: the chests and barrels within his chest search radius (at most 32), nearest first, a double
      * chest once (game 15.11: «сундука у нас нет» with a chest 4 blocks away). Where they stand, not what is inside: the client does not know
-     * that, and a take order looks for itself.
+     * that, and a take order looks for itself. Barrels only while other containers are allowed. Nothing at all while a chunk of the radius is
+     * not loaded here: «не видно» would then be a guess.
      */
-    public static String nearbyLine(Level level, BlockPos center, int searchRadius) {
+    public static String nearbyLine(Level level, BlockPos center, int searchRadius, boolean barrels) {
         int radius = Math.min(32, searchRadius);
+        for (int cx = (center.getX() - radius) >> 4; cx <= (center.getX() + radius) >> 4; cx++)
+            for (int cz = (center.getZ() - radius) >> 4; cz <= (center.getZ() + radius) >> 4; cz++)
+                if (level.getChunkSource().getChunkNow(cx, cz) == null) return "";
         List<BlockPos> found = new ArrayList<>();
         for (BlockPos pos : blockEntitiesNear(level, center, radius)) {
             Block block = level.getBlockState(pos).getBlock();
-            if (block instanceof ChestBlock || block == Blocks.BARREL) found.add(pos.immutable());
+            if (block instanceof ChestBlock || barrels && block == Blocks.BARREL) found.add(pos.immutable());
         }
         found.sort(Comparator.comparingDouble(pos -> pos.distSqr(center)));
         List<String> named = new ArrayList<>();
@@ -99,7 +103,7 @@ public final class CompanionContainers {
         for (BlockPos pos : found) {
             if (named.size() == NEARBY_NAMED) break;
             BlockState state = level.getBlockState(pos);
-            if (state.getBlock() instanceof ChestBlock && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE
+            if (state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE
                     && seen.contains(pos.relative(ChestBlock.getConnectedDirection(state)))) continue;
             seen.add(pos);
             named.add((state.is(Blocks.BARREL) ? "бочка (minecraft:barrel)" : "сундук") + " " + pos.getX() + "," + pos.getY() + "," + pos.getZ()

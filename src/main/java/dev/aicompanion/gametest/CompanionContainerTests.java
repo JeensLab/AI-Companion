@@ -380,7 +380,7 @@ public final class CompanionContainerTests {
         BlockState left = Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH);
         helper.setBlock(new BlockPos(20, 1, 24), left.setValue(ChestBlock.TYPE, ChestType.LEFT));
         helper.setBlock(new BlockPos(21, 1, 24), left.setValue(ChestBlock.TYPE, ChestType.RIGHT));
-        String line = CompanionContainers.nearbyLine(helper.getLevel(), companion.blockPosition(), companion.getSearchRadius());
+        String line = CompanionContainers.nearbyLine(helper.getLevel(), companion.blockPosition(), companion.getSearchRadius(), true);
         BlockPos chest = helper.absolutePos(NEAR), barrel = helper.absolutePos(new BlockPos(10, 1, 10));
         helper.assertTrue(line.contains("сундук " + chest.getX() + "," + chest.getY() + "," + chest.getZ() + " (6 блоков)"), "No chest: " + line);
         helper.assertTrue(line.contains("бочка (minecraft:barrel) " + barrel.getX() + "," + barrel.getY() + "," + barrel.getZ()), "No barrel: " + line);

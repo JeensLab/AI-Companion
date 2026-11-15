@@ -79,7 +79,7 @@ public final class GameContext {
                         + ", его экипировка=" + companions.getFirst().getEquipmentForAi()
                         + ", последний использованный сундук=" + companions.getFirst().getStorageForAi()
                         + dev.aicompanion.entity.CompanionContainers.nearbyLine(minecraft.level, companions.getFirst().blockPosition(),
-                                companions.getFirst().getSearchRadius())
+                                dev.aicompanion.OpenRouterConfig.SEARCH_RADIUS.get(), dev.aicompanion.OpenRouterConfig.OTHER_CONTAINERS.get())
                         + ", память о местах=" + companions.getFirst().getPlacesForAi()
                         + (companions.getFirst().getFurnacesForAi().isEmpty() ? "" : ", его печи=" + companions.getFirst().getFurnacesForAi())
                         + (companions.getFirst().getGoalForAi().isEmpty() ? "" : ", " + companions.getFirst().getGoalForAi())
