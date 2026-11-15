@@ -303,7 +303,7 @@ final class CompanionGatherGoals {
             c.woodBreaking.reset();
             // One failed climb is not proof that the whole crown is out of reach: try another log of it once more.
             // A crown that is simply too tall, or a second failure on the same tree, still ends with the honest skip.
-            if (skipHigherCrown && ++crownFailures < CROWN_ATTEMPTS && !reason.contains("слишком высокая")) skipHigherCrown = false;
+            if (skipHigherCrown && ++crownFailures < CROWN_ATTEMPTS && !reason.contains("слишком высокая") && !reason.contains("нечего подставить")) skipHigherCrown = false;
             if (skipHigherCrown) accessIssue = reason;
             if (target != null) {
                 unreachableLogs.add(target.immutable());
