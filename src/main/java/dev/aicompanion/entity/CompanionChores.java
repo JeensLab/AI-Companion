@@ -212,7 +212,7 @@ final class CompanionChores {
     private static Set<BlockPos> banks(CompanionEntity c, ServerLevel level, BlockPos pool) {
         Set<BlockPos> cells = CompanionWaterFill.standsFor(c, level, List.of(pool));
         cells.removeIf(cell -> level.getBlockState(cell).is(Blocks.POWDER_SNOW) || level.getBlockState(cell.above()).is(Blocks.POWDER_SNOW)
-                || level.getBlockState(cell.below()).is(Blocks.MAGMA_BLOCK));
+                || level.getBlockState(cell.below()).is(Blocks.POWDER_SNOW) || level.getBlockState(cell.below()).is(Blocks.MAGMA_BLOCK));
         return cells;
     }
 
@@ -460,10 +460,11 @@ final class CompanionChores {
             if (found == null) { out(got, skipped.isEmpty() ? "Рядом нет " + pouredName(item) + "." : "Вижу " + (lava ? "лаву" : "рыхлый снег") + ", но подойти не смог."); return; }
             Set<BlockPos> cells = banks(c, level, found), still = new HashSet<>(cells);
             still.removeIf(cell -> !CompanionLava.safeToFetch(level, cell));
-            // Each bucket of his stirs the sources beside the hole (a flow tick for a second or two): waited for, not given up.
+            // Each bucket of his stirs the sources beside the hole (a flow tick for a second or two): waited for, not given up; the
+            // wait is counted for the whole order, not anew for each source.
             if (still.isEmpty() && !cells.isEmpty() && ++waited < WAIT) { c.workStatus("Жду, пока лава уляжется."); return; }
             // The middle of a lake of lava, snow over his head all round: this one is passed over, the next looked for at the next tick.
-            if (still.isEmpty()) { skipped.add(found); waited = 0; return; }
+            if (still.isEmpty()) { skipped.add(found); return; }
             pool = found; stands = still; path = null; legs = waited = 0;
         }
         if (!stands.contains(c.blockPosition())) {
