@@ -473,7 +473,7 @@ public final class CompanionObtain {
         return switch (ore) {
             case COPPER -> 2;
             case LAPIS, REDSTONE -> 4; // raw drops one block gives without Fortune
-            case COAL, IRON, GOLD, DIAMOND, EMERALD -> 1;
+            case COAL, IRON, GOLD, DIAMOND, EMERALD, QUARTZ -> 1;
         };
     }
 

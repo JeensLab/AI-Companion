@@ -218,6 +218,37 @@ public final class CompanionOreTests {
         h.succeed();
     }
 
+    /** Nether quartz ore two blocks into a netherrack wall: dug through the netherrack with a wooden pickaxe; a second ore beside lava is left alone. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void quartzOreInNetherrackIsMinedThroughTheRock(GameTestHelper h) {
+        CompanionEntity companion = flat(h);
+        for (int x = 20; x <= 23; x++) for (int z = 10; z <= 22; z++) for (int y = 1; y <= 3; y++) h.setBlock(new BlockPos(x, y, z), Blocks.NETHERRACK);
+        BlockPos ore = new BlockPos(22, 1, 16); h.setBlock(ore, Blocks.NETHER_QUARTZ_ORE);
+        BlockPos lavaOre = new BlockPos(22, 1, 20); h.setBlock(lavaOre, Blocks.NETHER_QUARTZ_ORE);
+        h.setBlock(new BlockPos(23, 1, 20), Blocks.LAVA);
+        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE));
+        h.assertTrue(companion.startWork("mine_ore", "minecraft:quartz_ore", 1).success(), "Ore order not accepted");
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.QUARTZ) >= 1, report(companion) + " " + companion.getLastTaskResult());
+            h.assertTrue(h.getBlockState(ore).isAir() && h.getBlockState(lavaOre).is(Blocks.NETHER_QUARTZ_ORE) && h.getBlockState(new BlockPos(23, 1, 20)).is(Blocks.LAVA), "Ore not dug or lava touched");
+            h.assertTrue(count(companion, Items.NETHERRACK) > 0, "No tunnel through the netherrack: " + companion.getStoredItemsSummary());
+        });
+    }
+
+    /** Plan only: quartz is named by its item, its ore or its word; the plan and the codec dig one block of ore per quartz. */
+    @GameTest(template = "tall_tree")
+    public static void quartzIsAnOreKindAndPlannedAsMining(GameTestHelper h) {
+        for (String name : new String[]{"quartz", "minecraft:quartz", "minecraft:nether_quartz_ore"})
+            h.assertTrue(dev.aicompanion.entity.CompanionOre.Kind.of(name) == dev.aicompanion.entity.CompanionOre.Kind.QUARTZ, "Kind of " + name);
+        var plan = dev.aicompanion.entity.CompanionObtain.plan(h.getLevel(), java.util.List.of(), false, "minecraft:quartz", 5);
+        h.assertTrue(!plan.refused() && plan.steps().stream().anyMatch(step -> step.type().equals("mine_ore") && step.item().equals("minecraft:quartz_ore") && step.count() == 5),
+                "Quartz plan: " + plan);
+        h.assertTrue(CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"mine_ore\",\"item\":\"minecraft:quartz\"}]"))
+                .getFirst().item().equals("minecraft:quartz_ore"), "Codec does not take quartz");
+        h.succeed();
+    }
+
     private static CompanionEntity flat(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, 1, 16);

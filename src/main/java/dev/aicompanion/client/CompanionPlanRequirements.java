@@ -129,7 +129,7 @@ public final class CompanionPlanRequirements {
             case IRON -> "minecraft:raw_iron";
             case GOLD -> "minecraft:raw_gold";
             case COPPER -> "minecraft:raw_copper";
-            case COAL, LAPIS, REDSTONE, DIAMOND, EMERALD -> null;
+            case COAL, LAPIS, REDSTONE, DIAMOND, EMERALD, QUARTZ -> null;
         };
         if (raw == null || decoded.actions().size() >= CompanionPlanCodec.MAX_STEPS) return decoded;
         List<PlannedAction> result = new ArrayList<>(decoded.actions());
