@@ -524,7 +524,10 @@ final class CompanionCobbleGen {
     /** As a player's hand reaches a block: to its nearest face, and in sight (CompanionObsidian). */
     private boolean inReach(ServerLevel level, BlockPos cell) {
         Vec3 eyes = c.getEyePosition();
-        return new AABB(cell).distanceToSqr(eyes) <= REACH * REACH && CompanionWaterFill.seen(c, level, eyes, cell, REACH + 1);
+        if (new AABB(cell).distanceToSqr(eyes) <= REACH * REACH && CompanionWaterFill.seen(c, level, eyes, cell, REACH + 1)) return true;
+        // From the middle of the cell he stands in, as the places to stand were chosen (CompanionWaterFill.standsFor): his eyes off the
+        // middle saw the ground beside instead, every place he came to was dropped and the walk gave up at once (game 16.11, legs 9).
+        return CompanionWaterFill.seen(c, level, Vec3.atBottomCenterOf(c.blockPosition()).add(0, c.getEyeHeight(), 0), cell, REACH - .6);
     }
 
     /** One tick of the walk to the stand cells: false when there is no way (or no progress after {@link #LEGS} walks). */
