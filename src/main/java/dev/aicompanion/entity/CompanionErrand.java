@@ -60,6 +60,8 @@ final class CompanionErrand {
     /** The watch, not saved: ticks with no work, walks out tried, what he has said (the walk's reason, that he cannot get out). */
     private int idle, walks, started;
     private boolean told, stuck;
+    /** The last load found the mark of a crossing with no crossing alive: the world was left or loaded in the middle of it (not saved). */
+    private boolean lostInTransit;
     /** The portal the last walk out went to and how far from it he was when it began (not saved). */
     private BlockPos walkedTo;
     private double walkedFrom;
@@ -99,9 +101,12 @@ final class CompanionErrand {
      */
     CompanionActionResult orderAway(String action) {
         if (!action.equals("wait") && !action.equals("stop")) return CompanionActionResult.failed("Я в Незере по твоему поручению: сначала вернусь оттуда.");
-        if (c.work.isActive() && c.work.job != CompanionWork.Job.ERRAND) c.work.finish(CompanionActionResult.cancelled("Бросил добычу, возвращаюсь из Незера: " + gathered()));
+        boolean dig = c.work.isActive() && c.work.job != CompanionWork.Job.ERRAND;
+        if (dig) c.work.finish(CompanionActionResult.cancelled(stuck ? "Бросил добычу: " + gathered() : "Бросил добычу, возвращаюсь из Незера: " + gathered()));
+        // Given up on the way out, he stays: the answer is what he does, not a walk that is not going to happen.
+        if (stuck) return CompanionActionResult.ok("Не могу дойти до портала. Стою здесь.");
         idle = IDLE_BEFORE_WALK;
-        return CompanionActionResult.ok("Бросил добычу, возвращаюсь из Незера.");
+        return CompanionActionResult.ok(dig ? "Бросил добычу, возвращаюсь из Незера." : "Возвращаюсь из Незера.");
     }
 
     /** The steps a plan may run on him while he is in the Nether and the player is not: the digging there and the way back. */
@@ -188,7 +193,7 @@ final class CompanionErrand {
 
     /** True when this entity is the one the game made out of the crossing: its work is finished by the arrival, not marked as lost with a world. */
     boolean load(CompoundTag tag) {
-        home = exit = gate = null; since = deadline = 0; arrivedWork = 0; token = 0;
+        home = exit = gate = null; since = deadline = 0; arrivedWork = 0; token = 0; lostInTransit = false;
         if (tag.contains(KEY)) {
             CompoundTag errand = tag.getCompound(KEY);
             if (errand.contains("Home")) {
@@ -199,10 +204,13 @@ final class CompanionErrand {
         }
         if (!tag.contains(TRANSIT)) return false;
         CompoundTag transit = tag.getCompound(TRANSIT);
-        if (!CROSSING.remove(transit.getLong("Token"))) return false;
+        if (!CROSSING.remove(transit.getLong("Token"))) { lostInTransit = true; return false; }
         arrivedWork = transit.getLong("Work"); arrivedToNether = transit.getBoolean("ToNether");
         return true;
     }
+
+    /** The last load found a crossing begun and never finished: its work is answered as lost (CompanionEntityNbt). */
+    boolean lostInTransit() { return lostInTransit; }
 
     /** Every tick of the entity: the arrival after a crossing is finished once; a record found in the overworld is lifted. */
     void tick(ServerLevel level) {
@@ -222,6 +230,8 @@ final class CompanionErrand {
                 : level.getGameTime() >= deadline ? "Время вышло, возвращаюсь с тем, что есть" : null;
         if (c.work.isActive()) {
             idle = 0;
+            // A walk out stopped by the next step of a plan (autonomy.playerOrder) is not a failed one: only a walk with no work between counts.
+            walkedTo = null;
             // The walk back (the plan's own step) goes on; anything else he is digging stops with an honest count, and the plan stops with it.
             if (why != null && c.work.job != CompanionWork.Job.ERRAND) {
                 c.work.finish(CompanionActionResult.cancelled(why + ": " + gathered()));

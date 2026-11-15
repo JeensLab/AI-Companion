@@ -164,7 +164,7 @@ public final class CompanionNetherPitTests {
      * The arena as a solid mass of netherrack, a room round the portal (its entry cell is in it), and a pocket two high {@code pocket}
      * blocks from the portal, at its level: seven is four blocks of rock between the pocket and the room, four is one.
      */
-    private static void walledArena(ServerLevel nether, int cx, int cz, int pocket) {
+    static void walledArena(ServerLevel nether, int cx, int cz, int pocket) {
         CompanionNetherErrandTests.arena(nether, cx, cz);
         int floor = 149;
         for (int x = cx - 7; x <= cx + 7; x++) for (int z = cz - 7; z <= cz + 7; z++) for (int y = floor + 1; y <= floor + 8; y++)

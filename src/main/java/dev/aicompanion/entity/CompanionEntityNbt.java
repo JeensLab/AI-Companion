@@ -116,8 +116,8 @@ final class CompanionEntityNbt {
                     : "Работа прервалась выходом из мира. Вещи остались у меня.");
             // Pickup/navigation statuses soon replace the visible line. Keep the interruption in saved factual memory too.
             c.noteDeed(c.getEntityData().get(CompanionEntity.DATA_LAST_TASK_RESULT), false);
-            // The plan that polls the work's id is told the same: a world loaded, not another command.
-            if (tag.getBoolean("WorkActive") && !crossed) {
+            // The plan that polls the work's id is told the same: a world loaded in the middle of the errand's crossing, not another command.
+            if (tag.getBoolean("WorkActive") && c.errand.lostInTransit()) {
                 c.work.completedId = tag.getLong("WorkSequence");
                 c.work.completedResult = CompanionActionResult.failed(c.getEntityData().get(CompanionEntity.DATA_LAST_TASK_RESULT));
             }

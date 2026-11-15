@@ -11,6 +11,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
@@ -155,7 +156,8 @@ final class CompanionRecovery {
         }
         // Straight on through a wall at his own height (the Nether's rock between a pit's top and the portal): the passage is dug cell by cell
         // and stepped into; the cells round him below would be opened without ever getting him through more than one block of it.
-        if (Math.abs(destination.getY() - owner.getY()) <= 1.5 && tunnelStep(level)) return;
+        // Only on the errand's walk out: following the player or walking to work he never bores through the land (review 15.11).
+        if (Math.abs(destination.getY() - owner.getY()) <= 1.5 && level.dimension() == Level.NETHER && owner.portals.walking() && tunnelStep(level)) return;
         digTarget = findDigTarget(level);
         if (digTarget != null) { dig(level); return; }
         // An item just dislodged above the mob may still be falling toward pickup range.
@@ -269,10 +271,12 @@ final class CompanionRecovery {
     /**
      * A passage two cells high towards the destination: the cell in front and the one over it are dug if closed, then stepped into.
      * Only a cell nearer to the destination, on a floor that holds, with no fire, fluid or portal in it (a lit portal is no way for his
-     * own feet: called to the player behind a wall with a portal in it, he stays); none, and nothing is done here.
+     * own feet: called to the player behind a wall with a portal in it, he stays); none, and nothing is done here. Never into the player's
+     * building, a pressure plate, tripwire, berry bush or powder snow, or a cell with lava beside it.
      */
     private boolean tunnelStep(ServerLevel level) {
         BlockPos feet = owner.blockPosition();
+        java.util.function.Predicate<BlockPos> builds = CompanionPicking.sites(owner, level);
         java.util.List<Direction> directions = new java.util.ArrayList<>(Direction.Plane.HORIZONTAL.stream().toList());
         directions.sort(java.util.Comparator.comparingDouble((Direction direction) -> direction == stairDirection ? -1 : feet.relative(direction).distSqr(destination)));
         for (Direction direction : directions) {
@@ -280,7 +284,8 @@ final class CompanionRecovery {
             if (blockedStairs.contains(feet.asLong() * 4 + direction.get2DDataValue()) || step.distSqr(destination) >= feet.distSqr(destination)) continue;
             if (!level.hasChunkAt(step) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP) || hot(level.getBlockState(floor))
                     || !level.getFluidState(step).isEmpty() || !level.getFluidState(head).isEmpty() || nearFire(level, step) || nearFire(level, head)
-                    || gate(level.getBlockState(step)) || gate(level.getBlockState(head))) continue;
+                    || gate(level.getBlockState(step)) || gate(level.getBlockState(head))
+                    || builds.test(step) || builds.test(head) || trap(level, step) || trap(level, head)) continue;
             BlockPos closed = null;
             for (BlockPos cell : new BlockPos[]{step, head})
                 if (!level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) { closed = cell; break; }
@@ -356,6 +361,14 @@ final class CompanionRecovery {
      */
     private static boolean rock(BlockState state) {
         return CompanionWork.isStone(state) || state.is(Blocks.NETHERRACK) || state.is(Blocks.END_STONE);
+    }
+    /** A cell he must not walk into: a trigger, a bush that hurts, powder snow, lava beside it. */
+    private static boolean trap(ServerLevel level, BlockPos cell) {
+        BlockState state = level.getBlockState(cell);
+        if (state.is(net.minecraft.tags.BlockTags.PRESSURE_PLATES) || state.is(Blocks.TRIPWIRE) || state.is(Blocks.SWEET_BERRY_BUSH) || state.is(Blocks.POWDER_SNOW)) return true;
+        for (Direction direction : Direction.values())
+            if (level.getFluidState(cell.relative(direction)).is(net.minecraft.tags.FluidTags.LAVA)) return true;
+        return false;
     }
     private static boolean gate(BlockState state) {
         return state.is(Blocks.NETHER_PORTAL) || state.is(Blocks.END_PORTAL) || state.is(Blocks.END_GATEWAY);
