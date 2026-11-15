@@ -80,6 +80,60 @@ public final class CompanionCobbleGenTests {
     }
 
     /**
+     * No water bucket, a block of ice (ticket 02): he sets the ice in the water's cell and breaks it, it melts into a source as for a
+     * player, and the generator works. The ice is spent; the lava bucket is left empty.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aBlockOfIceMakesTheWater(GameTestHelper h) {
+        platform(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.LAVA_BUCKET));
+        c.setItem(1, new ItemStack(Items.ICE));
+        var future = run(h, c, "сделай генератор булыжника");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("Готово, генератор у"), "Not built: " + future.join().report());
+            h.assertTrue(find(h, Blocks.COBBLESTONE).size() == 1 && find(h, Blocks.ICE).isEmpty(), "Not one stone, or ice is left: " + find(h, Blocks.ICE));
+            h.assertTrue(count(c, Items.ICE) == 0 && count(c, Items.BUCKET) == 1, "Ice or bucket: " + c.getStoredItemsSummary());
+        });
+    }
+
+    /**
+     * No water bucket, his own empty one and a pond on the platform: he fills it there first, then builds (the ice he also carries is
+     * kept, spec Г5 order). Both buckets end empty in his bag.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void hisEmptyBucketIsFilledAtAPondNearby(GameTestHelper h) {
+        platform(h);
+        for (int x = 20; x <= 21; x++) for (int z = 20; z <= 21; z++) h.setBlock(new BlockPos(x, TOP, z), Blocks.WATER);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.LAVA_BUCKET));
+        c.setItem(1, new ItemStack(Items.BUCKET));
+        c.setItem(2, new ItemStack(Items.ICE));
+        var future = run(h, c, "сделай генератор булыжника");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("Готово, генератор у"), "Not built: " + future.join().report());
+            h.assertTrue(count(c, Items.BUCKET) == 2 && count(c, Items.ICE) == 1, "Buckets or ice: " + c.getStoredItemsSummary());
+        });
+    }
+
+    /** No water bucket, no ice, no empty bucket: he says what water he needs at once and digs nothing. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400)
+    public static void withNoWaterHeSaysWhatWaterHeNeeds(GameTestHelper h) {
+        platform(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.LAVA_BUCKET));
+        var future = run(h, c, "сделай генератор булыжника");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(report.contains("Нужна вода: ведро воды или лёд."), "Not said what water: " + report);
+            h.assertTrue(count(c, Items.LAVA_BUCKET) == 1 && find(h, Blocks.GRASS_BLOCK, TOP).size() == 256, "He dug or poured: " + c.getStoredItemsSummary());
+        });
+    }
+
+    /**
      * A strip of ground three wide and six long with one block missing beside the channel's only place: the gap would let the lava
      * out, so he sets a block of his bag in it (the softest: the earth he has just dug, not his cobblestone), and the generator still works. The player stands on a block
      * of his own away from the strip.

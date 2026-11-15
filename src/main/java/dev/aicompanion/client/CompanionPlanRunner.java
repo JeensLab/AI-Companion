@@ -222,7 +222,8 @@ public final class CompanionPlanRunner {
             // so an obtain_item given up drops it too; each thing is got once for each count: the same shortage again stops the plan,
             // a larger one (another frame, the player walked off meanwhile) is got once more.
             var short_ = result.evidence();
-            if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "build_portal".equals(action.type()) && short_ != null
+            // A cobble generator short of water fills his empty bucket the same way (CompanionCobbleGen).
+            if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && ("build_portal".equals(action.type()) || "build_cobble_gen".equals(action.type())) && short_ != null
                     && run.gotForPortal.add(short_.item() + " " + short_.count())) {
                 PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
                 CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);

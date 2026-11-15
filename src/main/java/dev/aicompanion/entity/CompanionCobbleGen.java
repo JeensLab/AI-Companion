@@ -37,12 +37,13 @@ import java.util.function.Predicate;
  * blocks from the player he digs a channel one block deep and sets his buckets in it, in a row: lava, the empty cell the stone grows
  * in, an empty cell with a hole one deep under it, water. The water falls into the hole and the lava that runs into the empty cell
  * meets it and sets, as probe 8 measured. What lets fluid out is walled in with blocks from his bag. Both buckets are his from the
- * bag (the lava one is never made or taken from the world), and they stay in it, empty. The next step is read from the world
+ * bag (the lava one is never made or taken from the world), and they stay in it, empty. Without a water bucket his empty one is
+ * filled at water about first, or a block of his ice is set and broken (ticket 02). The next step is read from the world
  * every tick: stopped half way, nothing is built twice and no bucket is lost.
  */
 final class CompanionCobbleGen {
     static final String NO_LAVA = "Нужно ведро лавы.";
-    static final String NO_WATER = "Нужно ведро воды.";
+    static final String NO_WATER = "Нужна вода: ведро воды или лёд.";
     static final String NO_WALL = "Нечем сделать бортики — нужны блоки (булыжник или земля).";
     static final String NO_PLACE = "Не нашёл ровного твёрдого места рядом для генератора.";
     static final String NO_WAY = "Не могу подойти к месту генератора.";
@@ -62,7 +63,8 @@ final class CompanionCobbleGen {
 
     private static final net.minecraft.world.level.BlockGetter EMPTY = net.minecraft.world.level.EmptyBlockGetter.INSTANCE;
 
-    private enum Kind { DIG, CLEAR, PICK, WALL, WATER, LAVA }
+    /** ICE: a block of ice set in the water's cell; MELT: that ice broken, which leaves a source as it does for a player. */
+    private enum Kind { DIG, CLEAR, PICK, WALL, WATER, ICE, MELT, LAVA }
     private record Step(Kind kind, BlockPos cell) { }
 
     /**
@@ -113,12 +115,24 @@ final class CompanionCobbleGen {
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для работы нужен загруженный мир.");
         if (level.dimensionType().ultraWarm()) return CompanionActionResult.failed(NETHER);
         if (w.items.countCarried(Items.LAVA_BUCKET) < 1) return CompanionActionResult.failed(NO_LAVA);
-        if (w.items.countCarried(Items.WATER_BUCKET) < 1) return CompanionActionResult.failed(NO_WATER);
+        // Water (spec Г5): his bucket of water; else his empty bucket filled at living water about (the plan gets it first, as a
+        // portal its obsidian); else ice of his bag, set and broken. An empty bucket with no water about is still sent for it: the
+        // fill says honestly that there is none, unless he has ice.
+        boolean fetch = false;
+        if (w.items.countCarried(Items.WATER_BUCKET) < 1) {
+            boolean ice = w.items.countCarried(Items.ICE) > 0;
+            fetch = w.items.countCarried(Items.BUCKET) > 0 && (!ice || waterAbout(level));
+            if (!fetch && !ice) return CompanionActionResult.failed(NO_WATER);
+        }
         ServerPlayer player = c.getOwnerPlayer();
         Predicate<BlockPos> site = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
         plan = choose(level, CompanionPortalBuild.center(c), site, player == null || player.level() != level ? null : player.getBoundingBox());
         if (plan == null) return CompanionActionResult.failed(NO_PLACE);
         if (needed(level, plan) > blocks()) { plan = null; return CompanionActionResult.failed(NO_WALL); }
+        if (fetch) {
+            plan = null;
+            return CompanionActionResult.shortage(NO_WATER).withEvidence(new CompanionActionResult.Evidence(0, "build_cobble_gen", "minecraft:water_bucket", 1, null, null, null));
+        }
         event("cobble_gen_site", "lava", plan.lava().toShortString(), "along", plan.along(), "walls", needed(level, plan));
         return null;
     }
@@ -139,7 +153,7 @@ final class CompanionCobbleGen {
         if (step.kind() == Kind.DIG || step.kind() == Kind.CLEAR) { pickingSince = 0; retried = false; }
         if (step.kind() == Kind.PICK) { pick(level, step.cell()); return; }
         // Pouring from a cell over the row would be standing over the lava: out of its columns, with the cell in his reach and sight.
-        boolean pouring = step.kind() == Kind.WATER || step.kind() == Kind.LAVA;
+        boolean pouring = step.kind() == Kind.WATER || step.kind() == Kind.ICE || step.kind() == Kind.MELT || step.kind() == Kind.LAVA;
         if (pouring && plan.over(c.blockPosition()) || !inReach(level, step.cell())) {
             c.workStatus("Иду строить генератор.");
             if (!step.cell().equals(aimed)) { aimed = step.cell(); stands = standsFor(level, step.cell(), pouring); legs = 0; path = null; }
@@ -157,6 +171,13 @@ final class CompanionCobbleGen {
             case CLEAR -> dig(level, step.cell(), "Срезаю траву у генератора.");
             case WALL -> wall(level, step.cell());
             case WATER -> pour(level, Items.WATER_BUCKET, plan.water());
+            case ICE -> {
+                ItemStack ice = ItemStack.EMPTY;
+                for (ItemStack stack : w.items.carriedItems()) if (stack.is(Items.ICE)) ice = stack;
+                if (ice.isEmpty()) { w.finish(false, NO_WATER); return; }
+                place(level, step.cell(), ice, NO_WATER);
+            }
+            case MELT -> melt(level, step.cell());
             case LAVA -> pour(level, Items.LAVA_BUCKET, plan.lava());
             case PICK -> { }
         }
@@ -172,7 +193,8 @@ final class CompanionCobbleGen {
             for (BlockPos cell : plan.dig()) {
                 BlockState state = level.getBlockState(cell);
                 if (!level.getFluidState(cell).isEmpty()) { w.finish(false, TAKEN); return null; }
-                if (state.isAir()) continue;
+                // His ice set for the water stays to be broken (MELT), not dug out as ground.
+                if (state.isAir() || cell.equals(plan.water()) && state.is(Blocks.ICE)) continue;
                 if (!diggable(state, level, cell)) { w.finish(false, TAKEN); return null; }
                 return new Step(Kind.DIG, cell);
             }
@@ -182,7 +204,10 @@ final class CompanionCobbleGen {
                 return new Step(Kind.WALL, wall);
             }
         }
-        if (!water(level)) return new Step(Kind.WATER, plan.water());
+        if (!water(level)) {
+            if (level.getBlockState(plan.water()).is(Blocks.ICE)) return new Step(Kind.MELT, plan.water());
+            return new Step(w.items.countCarried(Items.WATER_BUCKET) > 0 ? Kind.WATER : Kind.ICE, plan.water());
+        }
         if (!lava(level)) {
             // Wild plants within the lava's fire range are cut, as a player clears the grass before he sets lava.
             for (BlockPos cell : flammable(level, plan.lava(), plan.stone())) {
@@ -202,6 +227,11 @@ final class CompanionCobbleGen {
         if (level.getGameTime() - grownFrom > GROW_TICKS) { event("cobble_gen_no_stone", "stone", level.getBlockState(plan.stone())); w.finish(false, NO_STONE); return null; }
         c.workStatus("Жду, пока образуется булыжник.");
         return null;
+    }
+
+    /** Living water his bucket may be filled at, as an order to fill it looks for it (CompanionWaterFill). */
+    private boolean waterAbout(ServerLevel level) {
+        return CompanionWaterFill.refusal(level) == null && !CompanionWaterFill.living(level, c.blockPosition(), c.getSearchRadius(), 32, Set.of()).body().isEmpty();
     }
 
     private boolean water(ServerLevel level) { return level.getFluidState(plan.water()).isSourceOfType(Fluids.WATER); }
@@ -268,10 +298,15 @@ final class CompanionCobbleGen {
         ItemStack best = ItemStack.EMPTY;
         for (ItemStack stack : w.items.carriedItems()) if (wallBlock(stack) && (best.isEmpty() || hardness(stack) < hardness(best))) best = stack;
         if (best.isEmpty()) { w.finish(false, NO_WALL); return; }
-        BlockState state = ((BlockItem) best.getItem()).getBlock().defaultBlockState();
-        if (!level.isUnobstructed(state, cell, CollisionContext.empty())) { c.workStatus("Жду, пока освободится место для бортика."); return; }
-        Item item = best.getItem();
-        if (!c.getMainHandItem().is(item) && !c.equipForWork(BuiltInRegistries.ITEM.getKey(item).toString()).success()) { w.finish(false, NO_WALL); return; }
+        place(level, cell, best, NO_WALL);
+    }
+
+    /** A block of this stack of his set in the cell from his hand. */
+    private void place(ServerLevel level, BlockPos cell, ItemStack stack, String none) {
+        BlockState state = ((BlockItem) stack.getItem()).getBlock().defaultBlockState();
+        if (!level.isUnobstructed(state, cell, CollisionContext.empty())) { c.workStatus("Жду, пока освободится место для блока."); return; }
+        Item item = stack.getItem();
+        if (!c.getMainHandItem().is(item) && !c.equipForWork(BuiltInRegistries.ITEM.getKey(item).toString()).success()) { w.finish(false, none); return; }
         ItemStack held = c.getMainHandItem();
         if (!held.is(item) || !level.setBlock(cell, state, 3)) { w.finish(false, TAKEN); return; }
         c.animateAction(1, cell, held);
@@ -281,6 +316,23 @@ final class CompanionCobbleGen {
         level.playSound(null, cell, state.getSoundType().getPlaceSound(), SoundSource.BLOCKS, .65F, 1F);
         level.gameEvent(c, GameEvent.BLOCK_PLACE, cell);
         w.cooldown = 4;
+    }
+
+    /**
+     * His ice in the water's cell broken as a player breaks it: over the firm floor it leaves a water source, and nothing drops
+     * (vanilla IceBlock.playerDestroy). A tool that keeps ice whole (silk touch) is put away first, as it would not melt.
+     */
+    private void melt(ServerLevel level, BlockPos cell) {
+        ItemStack held = c.getMainHandItem();
+        if (net.minecraft.world.item.enchantment.EnchantmentHelper.hasTag(held, net.minecraft.tags.EnchantmentTags.PREVENTS_ICE_MELTING)
+                && !c.unequipForSupport("mainhand").success()) { w.finish(false, NO_WATER); return; }
+        c.workStatus("Разбиваю лёд — будет вода.");
+        if (!w.breaking.tick(level, cell)) return;
+        if (!level.destroyBlock(cell, false, c, 512) || !level.setBlockAndUpdate(cell, Blocks.WATER.defaultBlockState())) { w.finish(false, TAKEN); return; }
+        held = c.getMainHandItem();
+        if (!held.isEmpty()) held.getItem().mineBlock(held, level, Blocks.ICE.defaultBlockState(), cell, c);
+        w.cooldown = 8;
+        event("cobble_gen_melted", "cell", cell.toShortString());
     }
 
     /** His bucket emptied into the cell as a player's is; the empty one stays in the bag (or the hand) the full one came from. */
