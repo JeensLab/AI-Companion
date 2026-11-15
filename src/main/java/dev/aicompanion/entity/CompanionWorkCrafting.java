@@ -219,23 +219,32 @@ final class CompanionWorkCrafting {
     }
 
     /**
-     * A bench of his own is set down on land: afloat (game 15.11, a pit of water), he first climbs out onto the nearest dry cell
-     * a few blocks off, as a player would. With none, or no way up onto it, the craft is tried where he is and says so honestly.
+     * A bench of his own is set down on land: afloat (game 15.11, a pit of water) with no bank in reach for it, he first climbs out
+     * onto a dry cell a few blocks off that a way leads to, as a player would. With none, the craft is tried where he is and says so.
      */
     private boolean ashore(ServerLevel level) {
-        if (!w.owner.isInWater()) { if (w.shore != null) { w.shore = null; w.owner.travel().reset(); } return false; }
-        if (w.shore == null) {
+        if (!w.owner.isInWater()) { leaveShore(); return false; }
+        // A bank within reach takes the bench from where he floats: no walk.
+        if (w.shore == null && w.owner.placement.findPlacementPosition(level, Blocks.CRAFTING_TABLE, w.owner.blockPosition(), pos -> true) != null) return false;
+        // A cell from an earlier round of this order (he went for wood meanwhile) is no bank near him now.
+        if (w.shore == null || w.shore.distSqr(w.owner.blockPosition()) > 6 * 6) {
             BlockPos here = w.owner.blockPosition();
-            double best = Double.MAX_VALUE;
-            for (BlockPos pos : BlockPos.betweenClosed(here.offset(-4, -1, -4), here.offset(4, 2, 4))) {
-                if (!level.getFluidState(pos).isEmpty() || !CompanionMiningNavigation.standable(w.owner, pos)) continue;
-                double distance = pos.distSqr(here);
-                if (distance < best) { best = distance; w.shore = pos.immutable(); }
-            }
-            if (w.shore == null) return false;
+            java.util.Set<BlockPos> dry = new java.util.HashSet<>();
+            for (BlockPos pos : BlockPos.betweenClosed(here.offset(-4, -1, -4), here.offset(4, 2, 4)))
+                if (level.getFluidState(pos).isEmpty() && CompanionMiningNavigation.standable(w.owner, pos)) dry.add(pos.immutable());
+            // The nearest dry cell may be leaves over the water or a ledge two blocks up: only one a way leads to.
+            var way = w.route.cells(dry, 0);
+            if (way.busy()) return true;
+            if (way.path() == null || !way.path().canReach()) { leaveShore(); return false; }
+            w.shore = way.path().getTarget();
         }
-        if (w.owner.travel().toward(w.shore, .8D) != CompanionTravel.Step.WALKING) return false;
-        w.owner.workStatus("Выбираюсь из воды: верстак ставят на суше.");
-        return true;
+        if (w.owner.travel().toward(w.shore, .8D) == CompanionTravel.Step.WALKING) { w.owner.workStatus("Выбираюсь из воды: верстак ставят на суше."); return true; }
+        leaveShore();
+        return false;
+    }
+
+    private void leaveShore() {
+        if (w.shore == null) return;
+        w.shore = null; w.owner.travel().reset();
     }
 }

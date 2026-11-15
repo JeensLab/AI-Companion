@@ -62,25 +62,27 @@ public final class CompanionBenchTests {
      * «Сейчас подготовлюсь» and stood 90 s until the stall stop, the bench never set down nor the pickaxe made.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
-    public static void afloatHeStillMakesThePickaxe(GameTestHelper h) { afloatPickaxe(h, false); }
+    public static void afloatHeStillMakesThePickaxe(GameTestHelper h) { afloatPickaxe(h, false, 4, 40); }
 
-    /** A bench known at the base makes his new one a travelling bench: afloat, he takes it back too, not stands waiting for ground. */
+    /** A bench known at the base makes his new one a travelling bench: set down from the water by a bank in reach, he takes it back afloat too. */
     @GameTest(template = "tall_tree", timeoutTicks = 900)
-    public static void afloatHeTakesHisTravellingBenchBack(GameTestHelper h) { afloatPickaxe(h, true); }
+    public static void afloatHeTakesHisTravellingBenchBack(GameTestHelper h) { afloatPickaxe(h, true, 2, 0); }
 
-    private static void afloatPickaxe(GameTestHelper h, boolean baseBench) {
+    private static void afloatPickaxe(GameTestHelper h, boolean baseBench, int depth, int settle) {
         CompanionEntity companion = setup(h);
-        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= 4; y++)
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= depth; y++)
             h.setBlock(new BlockPos(x, y, z), x >= 24 && x <= 28 && z >= 24 && z <= 28 ? Blocks.WATER : Blocks.STONE);
-        if (baseBench) { h.setBlock(new BlockPos(8, 5, 8), Blocks.CRAFTING_TABLE); companion.rememberPlaced(h.absolutePos(new BlockPos(8, 5, 8))); }
-        companion.teleportTo(h.absolutePos(new BlockPos(26, 4, 26)).getX() + .5, h.absolutePos(new BlockPos(26, 4, 26)).getY(), h.absolutePos(new BlockPos(26, 4, 26)).getZ() + .5);
-        owner(h, companion).teleportTo(h.absolutePos(new BlockPos(26, 5, 21)).getX() + .5, h.absolutePos(new BlockPos(26, 5, 21)).getY(), h.absolutePos(new BlockPos(26, 5, 21)).getZ() + .5);
+        if (baseBench) { h.setBlock(new BlockPos(8, depth + 1, 8), Blocks.CRAFTING_TABLE); companion.rememberPlaced(h.absolutePos(new BlockPos(8, depth + 1, 8))); }
+        companion.teleportTo(h.absolutePos(new BlockPos(26, depth, 26)).getX() + .5, h.absolutePos(new BlockPos(26, depth, 26)).getY(), h.absolutePos(new BlockPos(26, depth, 26)).getZ() + .5);
+        owner(h, companion).teleportTo(h.absolutePos(new BlockPos(26, depth + 1, 21)).getX() + .5, h.absolutePos(new BlockPos(26, depth + 1, 21)).getY(), h.absolutePos(new BlockPos(26, depth + 1, 21)).getZ() + .5);
         companion.setItem(0, new ItemStack(Items.SPRUCE_PLANKS, 4));
         companion.setItem(1, new ItemStack(Items.SPRUCE_LOG, 5));
-        // Settled afloat first, bobbing a little under the surface as in the game: the bank is then two blocks over his feet.
-        h.runAfterDelay(40, () -> h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:wooden_pickaxe", 1).success(), "Craft order refused"));
+        // Settled afloat in deep water (40 ticks), bobbing a little under the surface as in the game, the bank is two blocks over his feet:
+        // out of reach for the bench. Ordered at once in shallow water, it is in reach and the bench is set down from the water.
+        Runnable order = () -> h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "craft_item", "minecraft:wooden_pickaxe", 1).success(), "Craft order refused");
+        if (settle == 0) order.run(); else h.runAfterDelay(settle, order);
         h.succeedWhen(() -> {
-            h.assertTrue(h.getTick() > 40 && !companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
+            h.assertTrue(h.getTick() >= settle && !companion.isGatheringTask() && !companion.isWorking(), "Work still active: " + companion.getLastTaskResult());
             h.assertTrue(companion.didLastTaskSucceed() && count(companion, Items.WOODEN_PICKAXE) == 1, companion.getLastTaskResult());
             if (baseBench) h.assertTrue(companion.getLastTaskResult().contains("забрал"), companion.getLastTaskResult());
         });
