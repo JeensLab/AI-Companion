@@ -165,7 +165,7 @@ final class CompanionWorkCrafting {
         // Afloat he goes on, as to the stonecutter (game 15.11, a pit under dark oak crowns: 90 s of «Сейчас подготовлюсь»).
         if (!w.owner.onGround() && !w.owner.isInWater()) return true;
         if (!(w.owner.level() instanceof ServerLevel level) || w.owner.hasCraftingTableNearby()) return false;
-        if (w.benchHere) return ashore(level);
+        if (w.benchHere) return ashore(level, Blocks.CRAFTING_TABLE, "верстак");
         if (w.craftingStation == null || !level.hasChunkAt(w.craftingStation) || !level.getBlockState(w.craftingStation).is(Blocks.CRAFTING_TABLE)) {
             w.craftingStation = null;
             for (BlockPos pos : w.owner.knownCraftingTables()) {
@@ -184,7 +184,7 @@ final class CompanionWorkCrafting {
                 if (canMakeBench()) return useOwnBench("к известному верстаку сейчас нет пути");
                 w.finish(false, "Помню верстак неподалёку, но пройти к нему сейчас не могу, а дерева на новый у меня нет."); return true;
             }
-            return ashore(level);
+            return ashore(level, Blocks.CRAFTING_TABLE, "верстак");
         }
         w.owner.movementIntent(w.craftingStation);
         if (!w.approach(level, w.craftingStation, 2.8D)) {
@@ -215,17 +215,17 @@ final class CompanionWorkCrafting {
         w.benchHere = true; w.craftingStation = null; w.resetApproach();
         w.owner.allowNewBench(true);
         w.owner.workStatus("Ладно, " + why + " — поставлю новый верстак здесь.");
-        return w.owner.level() instanceof ServerLevel level && ashore(level);
+        return w.owner.level() instanceof ServerLevel level && ashore(level, Blocks.CRAFTING_TABLE, "верстак");
     }
 
     /**
-     * A bench of his own is set down on land: afloat (game 15.11, a pit of water) with no bank in reach for it, he first climbs out
+     * A bench (or furnace) of his own is set down on land: afloat (game 15.11, a pit of water) with no bank in reach for it, he first climbs out
      * onto a dry cell a few blocks off that a way leads to, as a player would. With none, the craft is tried where he is and says so.
      */
-    private boolean ashore(ServerLevel level) {
+    boolean ashore(ServerLevel level, net.minecraft.world.level.block.Block block, String what) {
         if (!w.owner.isInWater()) { leaveShore(); return false; }
         // A bank within reach takes the bench from where he floats: no walk.
-        if (w.shore == null && w.owner.placement.findPlacementPosition(level, Blocks.CRAFTING_TABLE, w.owner.blockPosition(), pos -> true) != null) return false;
+        if (w.shore == null && w.owner.placement.findPlacementPosition(level, block, w.owner.blockPosition(), pos -> true) != null) return false;
         // A cell from an earlier round of this order (he went for wood meanwhile) is no bank near him now.
         if (w.shore == null || w.shore.distSqr(w.owner.blockPosition()) > 6 * 6) {
             BlockPos here = w.owner.blockPosition();
@@ -238,7 +238,7 @@ final class CompanionWorkCrafting {
             if (way.path() == null || !way.path().canReach()) { leaveShore(); return false; }
             w.shore = way.path().getTarget();
         }
-        if (w.owner.travel().toward(w.shore, .8D) == CompanionTravel.Step.WALKING) { w.owner.workStatus("Выбираюсь из воды: верстак ставят на суше."); return true; }
+        if (w.owner.travel().toward(w.shore, .8D) == CompanionTravel.Step.WALKING) { w.owner.workStatus("Выбираюсь из воды: " + what + " ставят на суше."); return true; }
         leaveShore();
         return false;
     }

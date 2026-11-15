@@ -72,18 +72,36 @@ public final class CompanionAfloatTests {
         });
     }
 
-    /** Stone to {@link #DEPTH} with a 5×5 pond in it; he floats in the middle, the owner stands on the bank. */
-    private static CompanionEntity pond(GameTestHelper h) {
+    /** His own furnace from the bag, the bank out of reach and the owner swimming beside him: he climbs out and sets it down there. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void afloatHeTakesHisOwnFurnaceAshore(GameTestHelper h) {
+        CompanionEntity companion = pond(h, 3);
+        BlockPos swim = h.absolutePos(new BlockPos(26, DEPTH, 24));
+        owner(h, companion).teleportTo(swim.getX() + .5, swim.getY(), swim.getZ() + .5);
+        companion.setItem(0, new ItemStack(Items.RAW_IRON, 1));
+        companion.setItem(1, new ItemStack(Items.COAL, 1));
+        companion.setItem(2, new ItemStack(Items.FURNACE, 1));
+        h.runAfterDelay(40, () -> h.assertTrue(CompanionEvents.executeAction(owner(h, companion), "smelt_items", "minecraft:raw_iron", 1).success(), "Smelt order refused"));
+        h.succeedWhen(() -> {
+            done(h, companion);
+            h.assertTrue(count(companion, Items.IRON_INGOT) == 1, companion.getLastTaskResult());
+        });
+    }
+
+    private static CompanionEntity pond(GameTestHelper h) { return pond(h, 2); }
+
+    /** Stone to {@link #DEPTH} with a pond of {@code half} blocks each way round 26, 26; he floats in the middle, the owner stands on the bank. */
+    private static CompanionEntity pond(GameTestHelper h, int half) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 1; y <= DEPTH; y++)
-            h.setBlock(new BlockPos(x, y, z), x >= 24 && x <= 28 && z >= 24 && z <= 28 ? Blocks.WATER : Blocks.STONE);
+            h.setBlock(new BlockPos(x, y, z), Math.abs(x - 26) <= half && Math.abs(z - 26) <= half ? Blocks.WATER : Blocks.STONE);
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), 16, DEPTH + 1, 16);
         ServerPlayer player = h.makeMockServerPlayerInLevel();
         companion.setOwnerId(player.getUUID());
         player.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
         CompanionEvents.getOwnedCompanion(player);
         companion.setSearchRadius(16);
-        BlockPos water = h.absolutePos(new BlockPos(26, DEPTH, 26)), bank = h.absolutePos(new BlockPos(26, DEPTH + 1, 21));
+        BlockPos water = h.absolutePos(new BlockPos(26, DEPTH, 26)), bank = h.absolutePos(new BlockPos(26, DEPTH + 1, 23 - half));
         companion.teleportTo(water.getX() + .5, water.getY(), water.getZ() + .5);
         player.teleportTo(bank.getX() + .5, bank.getY(), bank.getZ() + .5);
         return companion;

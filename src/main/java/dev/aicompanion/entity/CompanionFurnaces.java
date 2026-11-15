@@ -70,6 +70,8 @@ final class CompanionFurnaces {
                     if (w.approach(level, w.furnaceRoom, 2.5D)) { w.owner.workStatus("Здесь тесно для печи, выхожу туда, где есть место."); return; }
                 }
                 if (w.lots.isEmpty() && w.furnaceRoom == null && w.trip.toHome()) return;
+                // Afloat with no bank in reach, out onto the nearest dry cell first, as for his own bench.
+                if (w.crafting.ashore(level, smoker ? Blocks.SMOKER : Blocks.FURNACE, smoker ? "коптильню" : "печь")) return;
                 CompanionActionResult placed = w.trip.place(smoker ? "minecraft:smoker" : "minecraft:furnace");
                 if (smoker) w.smokerTried = true;
                 if (placed.success() && w.owner.lastPlacedPosition() != null && smoker) {
