@@ -224,8 +224,10 @@ final class CompanionWorkCrafting {
      */
     boolean ashore(ServerLevel level, net.minecraft.world.level.block.Block block, String what) {
         if (!w.owner.isInWater()) { leaveShore(); return false; }
-        // A bank within reach takes the bench from where he floats: no walk.
-        if (w.shore == null && w.owner.placement.findPlacementPosition(level, block, w.owner.blockPosition(), pos -> true) != null) return false;
+        // A bank within reach takes the bench from where he floats: no walk. A cell in the corner of the placement square is
+        // farther than the bench is used from (15.11, the pen afloat: the fences made, the gate refused «я сейчас не у него»).
+        BlockPos bank = w.shore == null ? w.owner.placement.findPlacementPosition(level, block, w.owner.blockPosition(), pos -> true) : null;
+        if (bank != null && w.owner.distanceToSqr(bank.getCenter()) <= 3.2 * 3.2) return false;
         // A cell from an earlier round of this order (he went for wood meanwhile) is no bank near him now.
         if (w.shore == null || w.shore.distSqr(w.owner.blockPosition()) > 6 * 6) {
             BlockPos here = w.owner.blockPosition();
