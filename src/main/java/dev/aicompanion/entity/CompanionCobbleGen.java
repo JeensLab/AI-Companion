@@ -106,11 +106,13 @@ final class CompanionCobbleGen {
     private int legs;
     private long pickingSince, grownFrom, blockedSince;
     private boolean retried;
+    /** Why the last walk found no way, for the journal. */
+    private String why;
 
     CompanionCobbleGen(CompanionWork w) { this.w = w; this.c = w.owner; }
 
-    /** Null when the work may start, else why not: the buckets, the world, a place, blocks for the walls. */
-    CompanionActionResult begin() {
+    /** Null when the work may start, else why not: the buckets, the world, a place, blocks for the walls. {@code item} "ice": the water fetch gave up, no second one. */
+    CompanionActionResult begin(String item) {
         reset();
         if (!(c.level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для работы нужен загруженный мир.");
         if (level.dimensionType().ultraWarm()) return CompanionActionResult.failed(NETHER);
@@ -121,7 +123,7 @@ final class CompanionCobbleGen {
         boolean fetch = false;
         if (w.items.countCarried(Items.WATER_BUCKET) < 1) {
             boolean ice = w.items.countCarried(Items.ICE) > 0;
-            fetch = w.items.countCarried(Items.BUCKET) > 0 && (!ice || waterAbout(level));
+            fetch = !"ice".equals(item) && w.items.countCarried(Items.BUCKET) > 0 && (!ice || waterAbout(level));
             if (!fetch && !ice) return CompanionActionResult.failed(NO_WATER);
         }
         ServerPlayer player = c.getOwnerPlayer();
@@ -159,7 +161,7 @@ final class CompanionCobbleGen {
             if (!step.cell().equals(aimed)) { aimed = step.cell(); stands = standsFor(level, step.cell(), pouring); legs = 0; path = null; }
             // Come to a place it is still not seen from (a block set since hides it): that place is no good any more.
             if (path != null && w.route.legOver() && stands.remove(c.blockPosition())) path = null;
-            if (!walk()) { event("cobble_gen_no_way", "step", step); w.finish(false, NO_WAY); }
+            if (!walk()) { event("cobble_gen_no_way", "step", step, "stands", stands.size(), "legs", legs, "why", why); w.finish(false, NO_WAY); }
             return;
         }
         w.route.stop();
@@ -303,6 +305,8 @@ final class CompanionCobbleGen {
 
     /** A block of this stack of his set in the cell from his hand. */
     private void place(ServerLevel level, BlockPos cell, ItemStack stack, String none) {
+        // Not over a block set there since (the player's): only into a free cell.
+        if (!CompanionPortalBuild.free(level, cell)) { w.finish(false, TAKEN); return; }
         BlockState state = ((BlockItem) stack.getItem()).getBlock().defaultBlockState();
         if (!level.isUnobstructed(state, cell, CollisionContext.empty())) { c.workStatus("Жду, пока освободится место для блока."); return; }
         Item item = stack.getItem();
@@ -496,8 +500,9 @@ final class CompanionCobbleGen {
     private boolean walk() {
         CompanionRoute route = w.route;
         if (path != null && !route.legOver()) return true;
-        if (stands.isEmpty() || ++legs > LEGS) return false;
+        if (stands.isEmpty() || ++legs > LEGS) { why = stands.isEmpty() ? "no stand" : "legs"; return false; }
         CompanionRoute.Reach reach = route.cells(stands, 0);
+        why = reach.reason();
         if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return true; }
         if (!reach.found()) return false;
         path = reach.path();

@@ -118,6 +118,29 @@ public final class CompanionCobbleGenTests {
         });
     }
 
+    /**
+     * Review of ticket 02: water is seen but shut in glass, so the fill of his empty bucket gives up; the ice of his bag makes the
+     * water then, and the generator is built (spec Г5: the bucket, else the ice).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void waterHeCannotGetToLeavesTheIce(GameTestHelper h) {
+        platform(h);
+        for (int x = 19; x <= 22; x++) for (int z = 19; z <= 22; z++) for (int y = TOP + 1; y <= TOP + 3; y++) {
+            boolean inside = x >= 20 && x <= 21 && z >= 20 && z <= 21 && y < TOP + 3;
+            h.setBlock(new BlockPos(x, y, z), !inside ? Blocks.GLASS : y == TOP + 1 ? Blocks.WATER : Blocks.AIR);
+        }
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.LAVA_BUCKET));
+        c.setItem(1, new ItemStack(Items.BUCKET));
+        c.setItem(2, new ItemStack(Items.ICE));
+        var future = run(h, c, "сделай генератор булыжника");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(future.join().report().contains("Готово, генератор у"), "Not built: " + future.join().report());
+            h.assertTrue(count(c, Items.ICE) == 0 && count(c, Items.BUCKET) == 2, "Ice or buckets: " + c.getStoredItemsSummary());
+        });
+    }
+
     /** No water bucket, no ice, no empty bucket: he says what water he needs at once and digs nothing. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void withNoWaterHeSaysWhatWaterHeNeeds(GameTestHelper h) {

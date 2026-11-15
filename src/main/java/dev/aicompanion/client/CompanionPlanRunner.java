@@ -381,6 +381,12 @@ public final class CompanionPlanRunner {
         run.obtain = null;
         int from = Math.min(index, run.plan.size());
         run.plan.subList(from, Math.min(run.obtainEnd, run.plan.size())).clear();
+        // A cobble generator whose water could not be fetched goes on with the ice of his bag, if any ("ice": CompanionCobbleGen).
+        if (run.builtAfter != null && "build_cobble_gen".equals(run.builtAfter.type()) && obtain.item() != null && obtain.item().equals(run.builtFor)) {
+            int at = run.plan.subList(from, run.plan.size()).indexOf(run.builtAfter);
+            if (at >= 0) run.plan.set(from + at, new PlannedAction("build_cobble_gen", 0, 1, "ice"));
+            run.builtAfter = null;
+        }
         List<PlannedAction> same = new ArrayList<>();
         for (int i = run.plan.size() - 1; i >= from; i--)
             if (obtain.item() != null && obtain.item().equals(run.plan.get(i).item())) same.addFirst(run.plan.remove(i));
