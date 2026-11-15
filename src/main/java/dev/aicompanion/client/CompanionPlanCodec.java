@@ -240,9 +240,12 @@ public final class CompanionPlanCodec {
                     item = game == null ? item.equals("food") ? "food" : "any"
                             : (dev.aicompanion.entity.CompanionGame.foodRun(item) ? "food:" : "minecraft:") + game.key;
                 }
-                // Bone meal goes on the sapling nearest the player (one), or on young crops as harvest_crops names them.
-                if ("use_bone_meal".equals(type) && List.of("sapling", "tree", "minecraft:sapling").contains(item)) { item = "sapling"; count = 1; }
+                // Bone meal goes on the sapling nearest the player (one; «oak_sapling», «saplings» say the same), or on young crops as
+                // harvest_crops names them (the meal itself named: any crop).
+                String meal = "use_bone_meal".equals(type) ? item.toLowerCase(java.util.Locale.ROOT).replaceFirst("^minecraft:", "") : "";
+                if (meal.contains("sapling") || meal.contains("propagule") || meal.equals("tree")) { item = "sapling"; count = 1; }
                 else if ("farm_crops".equals(type) || "harvest_crops".equals(type) || "use_bone_meal".equals(type)) {
+                    if (meal.equals("bone_meal")) item = "any";
                     // One of the four crops (wheat is named by its seeds), or for a harvest any of them; anything else spoils the plan.
                     var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(item);
                     if (crop == null && !dev.aicompanion.entity.CompanionCrops.anyKind(item)) throw invalid();

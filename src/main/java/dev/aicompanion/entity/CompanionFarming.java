@@ -15,9 +15,11 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.BonemealableBlock;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
 import net.minecraft.world.level.block.LevelEvent;
+import net.minecraft.world.level.block.MangrovePropaguleBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.gameevent.GameEvent;
@@ -267,12 +269,13 @@ final class CompanionFarming {
         int radius = radius();
         List<BlockPos> ripe = new ArrayList<>(), young = new ArrayList<>();
         growing = crops(level, w.placementAnchor, radius, kind, ripe, young);
-        if (feed) todo.addAll(young);
-        else {
-            todo.addAll(ripe);
-            // A chain's harvest with too few ripe: as many young ones as are missing, ripened on the spot (harvestStep).
-            if (meal && ripe.size() < wanted && w.items.countCarried(Items.BONE_MEAL) > 0) todo.addAll(young.subList(0, Math.min(young.size(), wanted - ripe.size())));
-        }
+        // The young nearest the player first; those not taken stand in for one he cannot reach (letGo), a ripe one too.
+        young.sort(Comparator.comparingDouble(cell -> cell.distSqr(w.placementAnchor)));
+        if (!feed) todo.addAll(ripe);
+        // use_bone_meal: as many as were named (all, unnamed); a chain's harvest: as many as the ripe ones fall short, ripened on the spot (harvestStep).
+        int fed = feed ? Math.min(wanted, young.size()) : meal && w.items.countCarried(Items.BONE_MEAL) > 0 ? Math.max(0, Math.min(wanted - ripe.size(), young.size())) : 0;
+        todo.addAll(young.subList(0, fed));
+        if (feed || meal && w.items.countCarried(Items.BONE_MEAL) > 0) spare.addAll(young.subList(fed, young.size()));
         found = todo.size();
         if (todo.isEmpty()) {
             w.finish(CompanionActionResult.blocked(feed && !ripe.isEmpty() ? "Удобрять нечего: всё, что растёт рядом, уже созрело."
@@ -287,13 +290,36 @@ final class CompanionFarming {
     private void lookForSapling(ServerLevel level) {
         BlockPos centre = w.placementAnchor, best = null;
         int radius = radius();
-        for (BlockPos pos : BlockPos.betweenClosed(centre.offset(-radius, -8, -radius), centre.offset(radius, 6, radius)))
-            if (level.isLoaded(pos) && level.getBlockState(pos).is(BlockTags.SAPLINGS) && pos.distSqr(centre) <= (long) radius * radius
-                    && (best == null || pos.distSqr(centre) < best.distSqr(centre))) best = pos.immutable();
+        for (BlockPos pos : BlockPos.betweenClosed(centre.offset(-radius, -8, -radius), centre.offset(radius, 6, radius))) {
+            if (!level.isLoaded(pos) || pos.distSqr(centre) > (long) radius * radius || best != null && pos.distSqr(centre) >= best.distSqr(centre)) continue;
+            BlockState state = level.getBlockState(pos);
+            // A propagule hanging under the leaves only ripens to fall: no tree of it.
+            if (state.is(BlockTags.SAPLINGS) && !(state.hasProperty(MangrovePropaguleBlock.HANGING) && state.getValue(MangrovePropaguleBlock.HANGING))) best = pos.immutable();
+        }
         if (best == null) { w.finish(CompanionActionResult.blocked("Саженцев в " + radius + " блоках от тебя не вижу.")); return; }
+        if (level.getBlockState(best).is(Blocks.DARK_OAK_SAPLING) && !square(level, best, Blocks.DARK_OAK_SAPLING)) {
+            w.finish(CompanionActionResult.blocked("Тёмный дуб растёт только из четырёх саженцев квадратом 2×2, а этот стоит один."));
+            return;
+        }
         todo.add(best.below());
         found = 1;
         startWork();
+    }
+
+    /** Whether the sapling stands in a square of two by two of its kind, as a dark oak must to grow. */
+    private static boolean square(ServerLevel level, BlockPos sapling, Block kind) {
+        for (int dx = -1; dx <= 0; dx++) for (int dz = -1; dz <= 0; dz++) {
+            boolean all = true;
+            for (int x = 0; x <= 1 && all; x++) for (int z = 0; z <= 1 && all; z++) all = level.getBlockState(sapling.offset(dx + x, 0, dz + z)).is(kind);
+            if (all) return true;
+        }
+        return false;
+    }
+
+    /** A tree grew from the sapling's cell: its trunk there, or (a mangrove on its roots) a few blocks above it. */
+    private static boolean treeFrom(ServerLevel level, BlockPos cell) {
+        for (int up = 0; up <= 7; up++) if (level.getBlockState(cell.above(up)).is(BlockTags.LOGS)) return true;
+        return false;
     }
 
     /** «Добудь пшеницу»: whether harvest_crops would reap one round the player: a ripe crop of it, or a young one his bone meal ripens. */
@@ -402,7 +428,7 @@ final class CompanionFarming {
         BlockPos cell = soil.above();
         BlockState state = level.getBlockState(cell);
         if (tree) {
-            if (!state.is(BlockTags.SAPLINGS)) { grown = state.is(BlockTags.LOGS); finishWork(); return; }
+            if (!state.is(BlockTags.SAPLINGS)) { grown = treeFrom(level, cell); finishWork(); return; }
             if (meals >= TREE_MEALS) { finishWork(); return; }
         } else if (!(state.getBlock() instanceof CropBlock crop) || crop.isMaxAge(state)) { next(); return; }
         w.owner.workStatus(tree ? "Сыплю костную муку на саженец." : "Сыплю костную муку на грядки: дозрело " + ripened + " из " + total + ".");
@@ -441,11 +467,15 @@ final class CompanionFarming {
     /** A tile that cannot be worked is let go, and the next nearest one stands in for it. */
     private void letGo() {
         next();
-        if (!harvest && !feed && !spare.isEmpty()) todo.add(spare.removeFirst());
+        // Only the field, use_bone_meal and a harvest with bone meal keep spares (lookForField, lookForCrops).
+        if (!spare.isEmpty()) todo.add(spare.removeFirst());
     }
 
     /** One bone meal of the bag on the plant, as a player clicks it: the vanilla growth (a sapling's own chance), the green sparks, the meal gone. */
     private boolean throwMeal(ServerLevel level, BlockPos cell) {
+        BlockState state = level.getBlockState(cell);
+        // Asked first, so no meal is taken out of his hand for a plant it would not grow (a full bag could not take it back).
+        if (!(state.getBlock() instanceof BonemealableBlock plant) || !plant.isValidBonemealTarget(level, cell, state)) { letGo(); return true; }
         ItemStack one = w.items.takeCarried(Items.BONE_MEAL, 1);
         if (one.isEmpty()) return false;
         ItemStack shown = one.copy();
