@@ -667,8 +667,8 @@ public final class CompanionNetherErrandTests {
     }
 
     /** No lit portal within his reach, the leftovers of other tests' arenas (they overlap in the Nether) included. */
-    private static void noPortalsNear(ServerLevel nether, int[] cell) {
-        for (BlockPos pos : BlockPos.betweenClosed(cell[0] - 70, 150, cell[1] - 70, cell[0] + 70, 154, cell[1] + 70))
+    static void noPortalsNear(ServerLevel nether, int[] cell) {
+        for (BlockPos pos : BlockPos.betweenClosed(cell[0] - 70, 140, cell[1] - 70, cell[0] + 70, 165, cell[1] + 70))
             if (nether.hasChunkAt(pos) && nether.getBlockState(pos).is(Blocks.NETHER_PORTAL)) nether.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
     }
 

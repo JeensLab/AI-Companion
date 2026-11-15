@@ -60,6 +60,8 @@ final class CompanionErrand {
     /** The watch, not saved: ticks with no work, walks out tried, what he has said (the walk's reason, that he cannot get out). */
     private int idle, walks, started;
     private boolean told, stuck;
+    /** Why he stays, as he said it: no portal seen, or no way to it. */
+    private String stuckWhy = "";
     /** The last load found the mark of a crossing with no crossing alive: the world was left or loaded in the middle of it (not saved). */
     private boolean lostInTransit;
     /** The portal the last walk out went to and how far from it he was when it began (not saved). */
@@ -104,7 +106,7 @@ final class CompanionErrand {
         boolean dig = c.work.isActive() && c.work.job != CompanionWork.Job.ERRAND;
         if (dig) c.work.finish(CompanionActionResult.cancelled(stuck ? "Бросил добычу: " + gathered() : "Бросил добычу, возвращаюсь из Незера: " + gathered()));
         // Given up on the way out, he stays: the answer is what he does, not a walk that is not going to happen.
-        if (stuck) return CompanionActionResult.ok("Не могу дойти до портала. Стою здесь.");
+        if (stuck) return CompanionActionResult.ok(stuckWhy);
         idle = IDLE_BEFORE_WALK;
         return CompanionActionResult.ok(dig ? "Бросил добычу, возвращаюсь из Незера." : "Возвращаюсь из Незера.");
     }
@@ -259,11 +261,12 @@ final class CompanionErrand {
         BlockPos gate = exit != null && level.hasChunkAt(exit) && level.getBlockState(exit).is(Blocks.NETHER_PORTAL) ? exit : CompanionPortals.litNear(level, c.blockPosition());
         if (gate != null && gate.equals(walkedTo) && distanceTo(gate) > walkedFrom - PROGRESS) walks++;
         if (gate == null || walks >= MOST_WALKS || started >= MOST_STARTS) {
-            if (!stuck) say(owner, gate == null ? "Не вижу портала, чтобы вернуться в верхний мир. Стою здесь." : "Не могу дойти до портала. Стою здесь.");
-            stuck = true;
+            String why2 = gate == null ? "Не вижу портала, чтобы вернуться в верхний мир. Стою здесь." : "Не могу дойти до портала. Стою здесь.";
+            if (!stuck || !why2.equals(stuckWhy)) say(owner, why2);
+            stuck = true; stuckWhy = why2;
             return;
         }
-        started++;
+        started++; stuck = false;
         walkedTo = gate; walkedFrom = distanceTo(gate);
         if (!told) say(owner, why == null ? "Возвращаюсь из Незера." : why + ".");
         told = true;

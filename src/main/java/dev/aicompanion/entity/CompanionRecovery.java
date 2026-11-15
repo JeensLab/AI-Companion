@@ -66,9 +66,10 @@ final class CompanionRecovery {
         // within arm's reach is work, not a destination; and standing still is a failed route only if no route is found.
         boolean inHand = withinHand(intent);
         boolean trappedBelow = !inHand && walls >= 3 && intent.getY() - owner.getY() > 1.25 && intent.distSqr(owner.blockPosition()) < 32 * 32;
-        // A portal's entry is walked into from a cell before it, not stood near: a wall within four blocks of it is no «near enough».
+        // A portal's entry in the Nether is walked into from a cell before it, not stood near: a wall within four blocks of it is no «near
+        // enough». Elsewhere a portal walk keeps the old rule (a fence by the player's portal is no reason to dig round it).
         boolean failedRoute = !inHand && owner.getNavigation().isDone() && (intent.getY() - owner.getY() > .75
-                || intent.distSqr(owner.blockPosition()) > 16 || owner.portals.walking()) && routeMissing(intent);
+                || intent.distSqr(owner.blockPosition()) > 16 || owner.portals.walking() && owner.level().dimension() == Level.NETHER) && routeMissing(intent);
         if (trying || trappedBelow || failedRoute) stalled++; else stalled = 0;
     }
     private boolean withinHand(BlockPos intent) {
@@ -156,7 +157,8 @@ final class CompanionRecovery {
         }
         // Straight on through a wall at his own height (the Nether's rock between a pit's top and the portal): the passage is dug cell by cell
         // and stepped into; the cells round him below would be opened without ever getting him through more than one block of it.
-        // Only on the errand's walk out: following the player or walking to work he never bores through the land (review 15.11).
+        // Only on a walk to a portal in the Nether (the errand's walk out, or the player's «зайди в портал» there): following the player or
+        // walking to work he never bores through the land (review 15.11).
         if (Math.abs(destination.getY() - owner.getY()) <= 1.5 && level.dimension() == Level.NETHER && owner.portals.walking() && tunnelStep(level)) return;
         digTarget = findDigTarget(level);
         if (digTarget != null) { dig(level); return; }

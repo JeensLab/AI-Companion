@@ -134,12 +134,12 @@ public final class CompanionNetherErrandReviewTests {
         ServerPlayer owner = server.getPlayerList().getPlayer(there.getOwnerId());
         boolean[] added = {false};
         h.onEachTick(() -> {
-            if (!added[0] && CompanionNetherErrandTests.FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { nether.addFreshEntity(there); added[0] = true; }
+            if (!added[0] && CompanionNetherErrandTests.FORCED.stream().allMatch(chunk -> nether.areEntitiesLoaded(chunk.toLong()))) { CompanionNetherErrandTests.noPortalsNear(nether, cell); nether.addFreshEntity(there); added[0] = true; }
         });
         h.succeedWhen(() -> {
             h.assertTrue(added[0] && there.tickCount >= 100, "Ticked " + there.tickCount + " times only");
             var said = CompanionEvents.executeAction(owner, "wait", "", 1);
-            h.assertTrue(said.success() && said.message().equals("Не могу дойти до портала. Стою здесь."), "Said: " + said.message());
+            h.assertTrue(said.success() && said.message().startsWith("Не вижу портала"), "Said: " + said.message());
         });
     }
 
