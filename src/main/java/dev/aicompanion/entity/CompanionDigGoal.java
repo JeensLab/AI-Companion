@@ -196,6 +196,31 @@ final class CompanionDigGoal extends Goal {
         }
     }
 
+    /** Soil for a support is dug only from thick ground: a solid column of this many blocks under the block (not an island). */
+    static final int THICK_GROUND = 8;
+
+    static boolean thickBelow(net.minecraft.world.level.Level level, BlockPos pos) {
+        for (int i = 1; i <= THICK_GROUND; i++) {
+            BlockPos below = pos.below(i);
+            if (level.isOutsideBuildHeight(below) || !level.hasChunkAt(below)) return false;
+            var state = level.getBlockState(below);
+            if (state.getCollisionShape(level, below).isEmpty() || !state.getFluidState().isEmpty()) return false;
+        }
+        return true;
+    }
+
+    /** Whether any soil block within his dig range has thick ground under it, i.e. whether gathering soil for a support can work. */
+    static boolean thickSoilNear(CompanionEntity c) {
+        BlockPos origin = c.blockPosition();
+        MutableBlockPos cursor = new MutableBlockPos();
+        for (int x = origin.getX() - 12; x <= origin.getX() + 12; x++) for (int z = origin.getZ() - 12; z <= origin.getZ() + 12; z++)
+            for (int y = origin.getY() - 1; y <= origin.getY() + 5; y++) {
+                cursor.set(x, y, z);
+                if (c.level().hasChunkAt(cursor) && CompanionGround.SOIL.matches(c.level().getBlockState(cursor)) && thickBelow(c.level(), cursor)) return true;
+            }
+        return false;
+    }
+
     private BlockPos findNearestDirt() {
         BlockPos origin = c.blockPosition();
         BlockPos best = null;
@@ -207,6 +232,7 @@ final class CompanionDigGoal extends Goal {
                     cursor.set(x, y, z);
                     if (!c.level().hasChunkAt(cursor) || !ground().matches(c.level().getBlockState(cursor)) || !c.leashAllows(cursor)
                             || unreachable.contains(cursor) || (x == origin.getX() && z == origin.getZ() && y <= origin.getY())) continue;
+                    if (c.supportSoilTask && !thickBelow(c.level(), cursor)) continue;
                     double score = c.distanceToSqr(x + 0.5D, y + 0.5D, z + 0.5D)
                             + (ground().isLoose() && CompanionGround.isLooseBlock(c.level().getBlockState(cursor.above())) ? BURIED_PENALTY : 0);
                     if (score >= bestScore) continue;
