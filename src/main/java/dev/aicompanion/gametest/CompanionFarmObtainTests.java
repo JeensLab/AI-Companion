@@ -151,6 +151,10 @@ public final class CompanionFarmObtainTests {
     /** «Удобри две грядки»: the two nearest young crops ripen, the rest keep growing and his meal stays in the bag. */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void aNamedNumberOfCropsIsGrown(GameTestHelper h) {
+        // The direct phrases: the number said is kept (in game 16.11 «удобри две грядки» ripened all five), a sapling is one.
+        for (String[] phrase : new String[][]{{"удобри две грядки", "companion work use_bone_meal 2 any"}, {"Олег, удобри огород", "companion work use_bone_meal 64 any"},
+                {"посыпь грядки костной мукой", "companion work use_bone_meal 64 any"}, {"вырасти дерево", "companion work use_bone_meal 1 sapling"}})
+            h.assertTrue(phrase[1].equals(dev.aicompanion.client.CompanionLocalCommands.route(phrase[0], "Олег")), phrase[0] + ": " + dev.aicompanion.client.CompanionLocalCommands.route(phrase[0], "Олег"));
         ground(h);
         h.setBlock(new BlockPos(20, GROUND, 16), Blocks.WATER);
         for (int z = 14; z <= 18; z++) {

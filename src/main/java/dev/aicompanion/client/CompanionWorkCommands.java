@@ -238,9 +238,11 @@ public final class CompanionWorkCommands {
         // Bone meal of his bag: «удобри огород», «посыпь грядки мукой» on the young crops; «вырасти дерево» on the nearest sapling.
         if (bare.matches("^(?:удобри|подкорми)(?: мне| нам)?(?: весь)? (?:огород|грядки|грядку|урожай|посадки|ферму)(?: (?:костной )?мукой)?(?: рядом| вокруг)?$")
                 || bare.matches("^(?:посыпь|посыпай)(?: мне| нам)? (?:огород|грядки|грядку|посадки|урожай) (?:костной )?мукой$"))
-            return new PlannedAction("use_bone_meal", 0, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, "any");
-        if (bare.matches("^(?:вырасти|выращи|удобри|подкорми)(?: мне| нам)? (?:дерево|деревце|саженец)(?: (?:костной )?мукой)?(?: рядом)?$")
-                || bare.matches("^посыпь(?: мне| нам)? саженец (?:костной )?мукой$"))
+            return new PlannedAction("use_bone_meal", 0, Math.min(dev.aicompanion.entity.CompanionCrops.MAX_HARVEST,
+                    amount(said.count(), dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST, dev.aicompanion.entity.CompanionCrops.MAX_HARVEST)), "any");
+        // One sapling at a time: «вырасти два дерева» is left to the model, which can say so.
+        if (said.count() <= 1 && (bare.matches("^(?:вырасти|выращи|удобри|подкорми)(?: мне| нам)? (?:дерево|деревце|саженец)(?: (?:костной )?мукой)?(?: рядом)?$")
+                || bare.matches("^посыпь(?: мне| нам)? саженец (?:костной )?мукой$")))
             return new PlannedAction("use_bone_meal", 0, 1, "sapling");
         if (bare.matches("^(?:сделай|разбей|вскопай|создай)(?: мне| нам| себе)? (?:небольшой |маленький )?(?:огород|огородик|грядки|грядку|ферму(?: пшеницы)?)(?: у воды| рядом)?$"))
             return new PlannedAction("farm_crops", 0, dev.aicompanion.entity.CompanionCrops.DEFAULT_TILES, "minecraft:wheat_seeds");
