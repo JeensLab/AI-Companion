@@ -40,7 +40,7 @@ import java.util.regex.Pattern;
 public final class CompanionGolemTests {
     /** The top of the platform: three layers of earth (y 2..4) over empty air. */
     private static final int TOP = 4;
-    private static final Pattern WHERE = Pattern.compile("голем у (-?\\d+), (-?\\d+), (-?\\d+)\\.");
+    private static final Pattern WHERE = Pattern.compile("голем стоит на (-?\\d+), (-?\\d+), (-?\\d+)\\.");
 
     private CompanionGolemTests() { }
 
@@ -184,7 +184,7 @@ public final class CompanionGolemTests {
 
     /** The report names where the golem stood up: by the golem (it may have stepped since) and within six blocks of the player. */
     private static void near(GameTestHelper h, String report, AbstractGolem golem, String kind) {
-        h.assertTrue(report.contains("Готово, " + kind + " голем у "), "Not said: " + report);
+        h.assertTrue(report.contains("Готово, " + kind + " голем стоит на "), "Not said: " + report);
         var m = WHERE.matcher(report);
         h.assertTrue(m.find(), "No place in: " + report);
         BlockPos at = new BlockPos(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));

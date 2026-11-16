@@ -277,7 +277,8 @@ public final class CompanionGolem {
             return;
         }
         BlockPos at = site.base();
-        String said = "Готово, " + site.kind().word + " голем у " + at.getX() + ", " + at.getY() + ", " + at.getZ() + ".";
+        // «Стоит на» and not «у»: the spoken reply drops a place with its «на» (CompanionDialogue.speakable), «у» was left hanging (game 16.11).
+        String said = "Готово, " + site.kind().word + " голем стоит на " + at.getX() + ", " + at.getY() + ", " + at.getZ() + ".";
         // Decision 11: in the rain a snow golem is built and the player warned.
         if (site.kind() == Kind.SNOW && level.isRainingAt(at)) said += RAIN;
         event("golem_done", "kind", site.kind(), "base", at.toShortString());
