@@ -351,6 +351,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // game's price of water, and the part of it that came out led him off into the sea).
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 2.0F);
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
+        // The cell over powder snow is floor to the game (its trap for mobs): he sinks there and freezes, so it is never his way.
+        setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_POWDER_SNOW, -1.0F);
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));

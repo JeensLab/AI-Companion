@@ -50,10 +50,11 @@ import java.util.function.Predicate;
  * harvest_hive (a full hive or nest: three combs to his shears or honey into his bottle, only with a campfire burning under it, so
  * the bees stay calm; none burns there: his own is set under the hive first and left, a broken one gives but charcoal) and
  * scoop_mob (a fish under open water scooped alive into his bucket of water, as a player does; one let out of somebody's
- * bucket or named is not his, a pufferfish only while he is well enough for its sting).
+ * bucket or named is not his, a pufferfish only while he is well enough for its sting) and scoop_block (lava's own source or
+ * powder snow into an empty bucket of his, from the firm ground beside it: he never steps into either; in the Nether too).
  */
 final class CompanionChores {
-    private enum Mode { SHEAR, MILK, EGGS, STRIP, HIVE, SCOOP }
+    private enum Mode { SHEAR, MILK, EGGS, STRIP, HIVE, SCOOP, FILL }
     /**
      * scoop_mob: what swims into the bucket of each kind, and who is not seen about (as «Рядом нет …» says it). Fish only (the
      * player 15.11): a tadpole is always a bucket's to the game (it hatches of frogs a player bred), and an axolotl under the sky
@@ -75,6 +76,8 @@ final class CompanionChores {
     private static final int SMOKE = 5;
     /** Ticks the combs at his feet are given to be picked up, walks to one hive and ticks no search for the way comes about before it is passed over. */
     private static final int SETTLE = 40, LEGS = 8, WAIT = 100;
+    /** Lava and powder snow passed over in one order before he says he cannot get to any: a lake of lava has many cells. */
+    private static final int SKIPS = 64;
     private static final String LEFT = " Костёр под ульем оставил: с дымом пчёлы не злятся.";
     private static final String EGG = "minecraft:egg";
     private static final String STRIPPED = "stripped_";
@@ -109,7 +112,9 @@ final class CompanionChores {
     private Set<BlockPos> stands = Set.of();
     private BlockPos standsOf;
     private int legs, waited, crowded;
-    /** Hives he found no way to, and what he says of them. */
+    /** scoop_block: the lava or the powder snow he goes to fill his bucket from. */
+    private BlockPos pool;
+    /** Hives, lava and powder snow he found no way to, and what he says of them. */
     private final Set<BlockPos> skipped = new HashSet<>();
     private String missed;
 
@@ -136,8 +141,17 @@ final class CompanionChores {
         return caught == null ? null : caught.whom();
     }
 
+    /** scoop_block: the block an empty bucket takes for the item, null for any other. */
+    private static Block poured(Item bucket) {
+        return bucket == Items.LAVA_BUCKET ? Blocks.LAVA : bucket == Items.POWDER_SNOW_BUCKET ? Blocks.POWDER_SNOW : null;
+    }
+
+    /** What is not seen about when none is (as «Рядом не вижу …» says it). */
+    static String pouredName(Item bucket) { return bucket == Items.LAVA_BUCKET ? "лавы" : "рыхлого снега"; }
+
     /** Whether the item is to be had about him by one of these chores: a sheep of the colour to shear, a cow to milk, an egg that lies. */
     static boolean about(CompanionEntity c, ServerLevel level, Item wanted) {
+        if (poured(wanted) != null) return pool(c, level, wanted, Set.of()) != null;
         Catch caught = CATCHES.get(wanted);
         if (caught != null) return !swimmers(c, level, caught.kind(), Set.of()).isEmpty();
         DyeColor colour = fleece(wanted);
@@ -172,6 +186,34 @@ final class CompanionChores {
     private static boolean scoopable(CompanionEntity c, ServerLevel level, EntityType<?> kind, Mob mob) {
         return mob.getType() == kind && mob.isAlive() && !mob.hasCustomName() && mob instanceof Bucketable kept && !kept.fromBucket() && !mob.isPassenger()
                 && !mob.isLeashed() && c.leashAllows(mob.blockPosition()) && CompanionMobDrops.open(level, mob);
+    }
+
+    /**
+     * The nearest lava source (a flow fills no bucket) or powder snow, nowhere the player builds; a cauldron is a block of its own.
+     * Only one with air over it or beside it: a pocket shut in the rock is no player's to fill from either.
+     */
+    private static BlockPos pool(CompanionEntity c, ServerLevel level, Item bucket, Set<BlockPos> skipped) {
+        Block block = poured(bucket);
+        Predicate<BlockPos> site = CompanionPicking.sites(c, level);
+        return CompanionObsidian.nearest(c, level, DEPTH, state -> state.is(block), pos -> !skipped.contains(pos) && c.leashAllows(pos)
+                && (block != Blocks.LAVA || level.getFluidState(pos).isSource()) && !site.test(pos) && open(level, pos));
+    }
+
+    private static boolean open(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (side != Direction.DOWN && level.getBlockState(pos.relative(side)).isAir()) return true;
+        return false;
+    }
+
+    /**
+     * Where it is filled from: firm ground within his reach and sight of it; never in powder snow nor with his head in it (he sinks
+     * and freezes) or on magma (it burns, the shore of the Nether's lava has much of it). By lava still running he does not stand
+     * either: fill() waits for it.
+     */
+    private static Set<BlockPos> banks(CompanionEntity c, ServerLevel level, BlockPos pool) {
+        Set<BlockPos> cells = CompanionWaterFill.standsFor(c, level, List.of(pool));
+        cells.removeIf(cell -> level.getBlockState(cell).is(Blocks.POWDER_SNOW) || level.getBlockState(cell.above()).is(Blocks.POWDER_SNOW)
+                || level.getBlockState(cell.below()).is(Blocks.POWDER_SNOW) || level.getBlockState(cell.below()).is(Blocks.MAGMA_BLOCK));
+        return cells;
     }
 
     private static boolean full(BlockState state) {
@@ -221,7 +263,7 @@ final class CompanionChores {
         c = w.owner;
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
-        Mode chosen = switch (action) { case "shear_sheep" -> Mode.SHEAR; case "milk_animal" -> Mode.MILK; case "collect_eggs" -> Mode.EGGS; case "harvest_hive" -> Mode.HIVE; case "scoop_mob" -> Mode.SCOOP; default -> Mode.STRIP; };
+        Mode chosen = switch (action) { case "shear_sheep" -> Mode.SHEAR; case "milk_animal" -> Mode.MILK; case "collect_eggs" -> Mode.EGGS; case "harvest_hive" -> Mode.HIVE; case "scoop_mob" -> Mode.SCOOP; case "scoop_block" -> Mode.FILL; default -> Mode.STRIP; };
         DyeColor fleece = asked == null ? null : fleece(asked);
         Block grown = asked == null ? null : unstripped(asked);
         boolean fits = switch (chosen) {
@@ -231,6 +273,7 @@ final class CompanionChores {
             case STRIP -> grown != null;
             case HIVE -> asked == Items.HONEYCOMB || asked == Items.HONEY_BOTTLE;
             case SCOOP -> CATCHES.containsKey(asked);
+            case FILL -> poured(asked) != null;
         };
         if (!fits) return CompanionActionResult.failed("Такого я не умею: " + action + " " + id + ".");
         mode = chosen; item = asked; wanted = count; before = w.items.countCarried(item);
@@ -251,6 +294,7 @@ final class CompanionChores {
             case STRIP -> "обтёсывание брёвен";
             case HIVE -> item == Items.HONEYCOMB ? "сбор сот" : "сбор мёда";
             case SCOOP -> "ловля в ведро";
+            case FILL -> item == Items.LAVA_BUCKET ? "набор лавы" : "набор рыхлого снега";
         };
         return what + " (" + got() + " из " + wanted + ")";
     }
@@ -270,6 +314,7 @@ final class CompanionChores {
             case STRIP -> strip(level, got);
             case HIVE -> harvest(level, got);
             case SCOOP -> scoop(level, got);
+            case FILL -> fill(level, got);
         }
     }
 
@@ -393,6 +438,52 @@ final class CompanionChores {
         mob.playSound(kept.getPickupSound(), 1F, 1F);
         mob.discard();
         c.storeLoot(full);
+        c.setChanged();
+        w.cooldown = 8;
+        release();
+    }
+
+    /** scoop_block: one source at a time, walked to the bank of and filled into an empty bucket of his by the game's own bucket. */
+    private void fill(ServerLevel level, int got) {
+        // The game's bucket fills one of his bag (CompanionWaterBucket.scoopInto): one in his hand is said, not walked round the lava with.
+        if (!CompanionWaterBucket.roomToScoop(c)) {
+            boolean bagged = false;
+            for (int slot = 0; slot < c.getContainerSize(); slot++) bagged |= c.getItem(slot).is(Items.BUCKET);
+            String why = w.items.countCarried(Items.BUCKET) == 0 ? "Пустого ведра нет: набрать не во что." : bagged ? CompanionPicking.FULL_BAG : "Пустое ведро у меня в руке, а набираю я из сумки.";
+            end(CompanionActionResult.blocked(why + part(got)));
+            return;
+        }
+        boolean lava = item == Items.LAVA_BUCKET;
+        if (pool != null && !level.getBlockState(pool).is(poured(item))) release();
+        if (pool == null) {
+            BlockPos found = skipped.size() >= SKIPS ? null : pool(c, level, item, skipped);
+            if (found == null) { out(got, skipped.isEmpty() ? "Рядом нет " + pouredName(item) + "." : "Вижу " + (lava ? "лаву" : "рыхлый снег") + ", но подойти не смог."); return; }
+            Set<BlockPos> cells = banks(c, level, found), still = new HashSet<>(cells);
+            still.removeIf(cell -> !CompanionLava.safeToFetch(level, cell));
+            // Each bucket of his stirs the sources beside the hole (a flow tick for a second or two): waited for, not given up; the
+            // wait is counted for the whole order, not anew for each source.
+            if (still.isEmpty() && !cells.isEmpty() && ++waited < WAIT) { c.workStatus("Жду, пока лава уляжется."); return; }
+            // The middle of a lake of lava, snow over his head all round: this one is passed over, the next looked for at the next tick.
+            if (still.isEmpty()) { skipped.add(found); return; }
+            pool = found; stands = still; path = null; legs = waited = 0;
+        }
+        if (!stands.contains(c.blockPosition())) {
+            c.workStatus(lava ? "Иду за лавой." : "Иду за рыхлым снегом.");
+            CompanionRoute route = w.route;
+            if (path != null && !route.legOver()) return;
+            if (++legs <= LEGS) {
+                CompanionRoute.Reach reach = route.cells(stands, 0);
+                // He is in the air or the search goes on: asked again at the next tick, though not for ever.
+                if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; if (++waited < WAIT) return; }
+                else if (reach.found()) { waited = 0; path = reach.path(); route.walk(path); return; }
+            }
+            skipped.add(pool); release();
+            return;
+        }
+        c.getNavigation().stop();
+        c.getLookControl().setLookAt(pool.getX() + .5, pool.getY() + .5, pool.getZ() + .5);
+        // The game's own bucket, sound and all (CompanionWaterBucket.scoopInto, as for water); false with no room for the full one.
+        if (!CompanionWaterBucket.scoopInto(c, level, pool)) skipped.add(pool);
         c.setChanged();
         w.cooldown = 8;
         release();
@@ -543,7 +634,7 @@ final class CompanionChores {
 
     private void skip(String why) { missed = why; skipped.add(hive); release(); }
 
-    private void release() { target = null; path = null; nextPath = 0; hive = null; standsOf = null; stands = Set.of(); legs = waited = crowded = 0; reached = false; }
+    private void release() { target = null; path = null; nextPath = 0; hive = null; pool = null; standsOf = null; stands = Set.of(); legs = waited = crowded = 0; reached = false; }
 
     /** The order is called off: his log is not left standing. */
     void cancel() { takeBack(); }
