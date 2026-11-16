@@ -5,8 +5,10 @@ import dev.aicompanion.entity.CompanionActionResult;
 import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionMineSite;
+import dev.aicompanion.entity.CompanionShaftPlan;
 import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.Connection;
@@ -49,6 +51,9 @@ public final class CompanionCreeperGuardTests {
     private static final int STEP_CHECK_TICKS = 2400, OPEN_CAVE_TICKS = 600, CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3;
     private static final int TUNNEL_Y = 10, BEND_LEG = 3, BEND_LENGTH = 12, DEAD_END_LENGTH = 8, DEAD_END_CREEPER = 3, BLAST_TICKS = 200, SURFACE_GAP = 5, SURFACE_TICKS = 400;
     private static final float UNHURT = 10;
+    /** The short mine: its foot, the creeper's stand beyond it, how far into the next stand he stands (a quarter of his width), the pit under the foot. */
+    private static final int SHORT_FOOT = 10, BEYOND_FOOT = 4, SHUT_TICKS = 100, PIT_LENGTH = 4, PIT_DEPTH = 4;
+    private static final double ON_THE_EDGE = .07;
 
     private CompanionCreeperGuardTests() { }
 
@@ -192,6 +197,77 @@ public final class CompanionCreeperGuardTests {
             h.assertTrue(creeper.isAlive(), "The creeper blew up, it was not struck" + trace);
             h.assertTrue(h.getTick() - begun < SURFACE_TICKS, "The creeper was not struck in time" + trace);
         });
+    }
+
+    /**
+     * He stands half over the next stand down, as the guard stops his walk on the stairs (series m and n of PR #195), and a creeper that can walk
+     * up to him waits in sight beyond the foot. The block goes into the head of that stand once he has stepped back into his own; before, his own
+     * body was in the cell, every try was refused and the guard began again with the same cell for ever.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void onTheEdgeOfHisStandHeStepsBackToShutTheWay(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        List<BlockPos> stairs = shortMine(h, c, SHORT_FOOT + BEYOND_FOOT);
+        BlockPos stand = stairs.get(SHORT_FOOT - 1), shut = stairs.get(SHORT_FOOT).above();
+        c.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + ON_THE_EDGE);
+        h.assertTrue(c.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(shut)), "SETUP: he does not stand in the cell");
+        Creeper creeper = creeper(h, stairs.get(SHORT_FOOT + BEYOND_FOOT));
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        long begun = h.getTick();
+        h.onEachTick(() -> {
+            String trace = " | creeper " + (creeper.isAlive() ? "alive, fuse " + creeper.getSwellDir() + ", " + Math.round(creeper.distanceTo(c) * 10) / 10.0 + " off" : "gone")
+                    + ", he at " + c.position() + ", blocks " + c.mineSite().temporary().stream().map(cell -> rel(h, cell).toShortString()).toList() + " | " + report(c);
+            h.assertTrue(c.isAlive() && creeper.isAlive(), "SETUP: the creeper came to him" + trace);
+            if (!h.getLevel().getBlockState(shut).isAir() && c.mineSite().temporary().contains(shut)) { h.succeed(); return; }
+            h.assertTrue(h.getTick() - begun < SHUT_TICKS, "The way was not shut" + trace);
+        });
+    }
+
+    /**
+     * A creeper in sight in a pit below the foot of the stairs, four blocks down with no way up (series m and n of PR #195): no block is set
+     * against it. Before, the block went in, the walk took it up again with the creeper more than three blocks from it, and the guard set it again.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aCreeperInAPitItCannotClimbOutOfIsNoReasonToShutTheWay(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        List<BlockPos> stairs = shortMine(h, c, SHORT_FOOT);
+        BlockPos stand = stairs.get(SHORT_FOOT - 1), foot = stairs.get(SHORT_FOOT);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = 1; dz <= PIT_LENGTH; dz++) for (int dy = -PIT_DEPTH; dy <= 1; dy++) {
+            h.getLevel().setBlock(foot.offset(dx, dy, -dz), Blocks.AIR.defaultBlockState(), 2 | 16);
+        }
+        place(h, c, stand);
+        Creeper creeper = creeper(h, foot.offset(0, -PIT_DEPTH, -PIT_LENGTH + 1));
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        long begun = h.getTick();
+        boolean[] seen = {false};
+        h.onEachTick(() -> {
+            seen[0] |= c.hasLineOfSight(creeper) && c.distanceTo(creeper) < 9;
+            String trace = " | creeper " + (creeper.isAlive() ? "alive, fuse " + creeper.getSwellDir() + ", " + Math.round(creeper.distanceTo(c) * 10) / 10.0 + " off" : "gone")
+                    + ", he at " + rel(h, c.blockPosition()).toShortString() + ", blocks " + c.mineSite().temporary().stream().map(cell -> rel(h, cell).toShortString()).toList() + " | " + report(c);
+            h.assertTrue(c.isAlive() && creeper.isAlive() && creeper.getSwellDir() <= 0, "SETUP: the creeper got to him" + trace);
+            h.assertTrue(c.mineSite().temporary().isEmpty() && h.getLevel().getBlockState(foot.above()).isAir(), "A block was set against a creeper that cannot come" + trace);
+            if (h.getTick() - begun < SHUT_TICKS) return;
+            h.assertTrue(seen[0], "SETUP: the creeper was never in his sight" + trace);
+            h.succeed();
+        });
+    }
+
+    /**
+     * Stairs dug {@code dug} stands down, the record knowing them only to {@link #SHORT_FOOT}: the deeper stands of the guard's search are
+     * out of the route, so the one stand it can shut is the next one down.
+     */
+    private static List<BlockPos> shortMine(GameTestHelper h, CompanionEntity c, int dug) {
+        BlockPos entrance = h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER));
+        List<BlockPos> stairs = CompanionShaftPlan.stands(entrance, Direction.NORTH, dug);
+        for (BlockPos stand : stairs) for (BlockPos cell : CompanionShaftPlan.column(stand)) h.getLevel().setBlock(cell, Blocks.AIR.defaultBlockState(), 2 | 16);
+        CompanionMineSite site = c.mineSite();
+        site.start(entrance, Direction.NORTH);
+        for (BlockPos stand : stairs.subList(1, SHORT_FOOT + 1)) site.reached(stand);
+        return stairs;
     }
 
     private static BlockPos cell(GameTestHelper h, int x, int z) { return cell(h, x, 0, z); }

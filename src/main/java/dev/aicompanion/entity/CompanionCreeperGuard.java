@@ -8,7 +8,11 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.util.LandRandomPos;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.PathNavigationRegion;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.level.pathfinder.PathFinder;
+import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -31,7 +35,8 @@ import java.util.Set;
  * <p>
  * By the house a blast takes the walls with it: an unlit creeper there is first walked away from it, and a lit one there is run from with no
  * blow; one that would not be walked off is fought where it is for a while. On his own stairs or tunnel a blast takes the stands with it:
- * with blocks in the bag he first shuts the way between them (below), and fights only where that cannot be done.
+ * with blocks in the bag he first shuts the way between them (below), and fights only where that cannot be done. There an unlit creeper that
+ * cannot walk to him (in a pit or a cave below with no way up) is let be: neither shut out nor stepped away from.
  * <p>
  * The rest is the fallback, for when he cannot fight it (low health, too many retreats with no blow landed, nowhere to run): on his own
  * stairs or tunnel he shuts the way between them with a block from the bag, a few stands off, and waits behind it; anywhere else he walks
@@ -95,12 +100,17 @@ final class CompanionCreeperGuard {
     private static final int[] RING_RADII = {5, 9};
     /** How far the search for a way to a spot may go. */
     private static final float REACH_RANGE = 24;
+    /** The search for a creeper's walk to him: the blocks round it, and the nodes, of a vanilla creeper's own search (follow range 16). */
+    private static final int SEARCH_SPAN = 16, SEARCH_NODES = 256;
 
     private final CompanionEntity owner;
-    private boolean active, finished, noBlock, fighting, shielded, dashing, leading, mayStrike, room = true;
-    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt;
+    private boolean active, finished, noBlock, fighting, shielded, dashing, leading, mayStrike, room = true, walks;
+    private long begun, lastSeen, nextLook, nextPlan, nextProbe, lastRetreat, lastFlee, fuseSince, fuseLook, leadAgainAt, pathAgain;
+    private Creeper pathOf;
     private int tries, retreats, flees, leadTried;
     private List<BlockPos> cells = List.of();
+    /** His stand on the route when the cells were chosen: a step back is to it. */
+    private BlockPos stand;
     private Vec3 flee, house;
     private Creeper watched, fuseOf;
     private String shown = "";
@@ -277,10 +287,33 @@ final class CompanionCreeperGuard {
                 noBlock = true;
                 left.clear();
                 break;
+            } else if (owner.getBoundingBox().intersects(new AABB(cell))) {
+                // He stands half in the cell, on the edge of his stand where the guard stopped his walk: a step back onto the middle of it first.
+                Vec3 back = Vec3.atBottomCenterOf(stand);
+                faceTowards(owner, back);
+                owner.getMoveControl().setWantedPosition(back.x, back.y, back.z, FLEE_SPEED);
             }
         }
         cells = left;
         if (cells.isEmpty()) nextPlan = 0;
+    }
+
+    /**
+     * The creeper can walk to his stand, by its own rules of walking (a search of his own: its navigation, and with it where it is headed, is
+     * left alone), held for a few ticks. One in a pit or a cave below with no way up is no reason to act: a block set against it the walk takes
+     * up again with no creeper near it, and a step away from it he walks back from, both for ever.
+     */
+    private boolean walksTo(ServerLevel level, Creeper creeper, BlockPos stand) {
+        long now = level.getGameTime();
+        if (creeper != pathOf || now >= pathAgain) {
+            BlockPos from = creeper.blockPosition();
+            var region = new PathNavigationRegion(level, from.offset(-SEARCH_SPAN, -SEARCH_SPAN, -SEARCH_SPAN), from.offset(SEARCH_SPAN, SEARCH_SPAN, SEARCH_SPAN));
+            Path path = new PathFinder(new WalkNodeEvaluator(), SEARCH_NODES).findPath(region, creeper, Set.of(stand), SEARCH_SPAN, 1, 1);
+            walks = path != null && path.canReach();
+            pathOf = creeper;
+            pathAgain = now + PLAN_EVERY;
+        }
+        return walks;
     }
 
     /** The nearest creeper with a way to hurt him that he can see (one with a lit fuse first); one with its AI off can neither walk nor swell. */
@@ -311,8 +344,10 @@ final class CompanionCreeperGuard {
         List<BlockPos> way = mine.exists() && level.dimension() == net.minecraft.world.level.Level.OVERWORLD ? CompanionExpeditionClimb.wayUp(mine) : List.of();
         int at = indexOf(way, owner.blockPosition(), ON_ROUTE_SQR);
         boolean underground = at >= 0 && !level.canSeeSky(owner.blockPosition());
+        if (underground && !lit(creeper) && !walksTo(level, creeper, way.get(at))) return false;
         if (underground && !noBlock && CompanionSeal.available(owner) > 0) {
             cells = shutCells(mine, way, at, creeper);
+            stand = way.get(at);
             if (!cells.isEmpty()) return true;
         }
         if (fights()) {
