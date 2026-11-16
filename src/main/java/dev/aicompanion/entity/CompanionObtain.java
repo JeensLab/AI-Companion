@@ -5,6 +5,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -515,14 +516,19 @@ public final class CompanionObtain {
         return bag.getOrDefault("minecraft:shears", 0) > 0 || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:shears"));
     }
 
-    private boolean hasPickaxe() { return hasTool("_pickaxe"); }
+    private boolean hasPickaxe() { return hasTool(ItemTags.PICKAXES); }
 
-    private boolean hasShovel() { return hasTool("_shovel"); }
+    private boolean hasShovel() { return hasTool(ItemTags.SHOVELS); }
 
-    /** A tool of the kind ({@code _pickaxe}, {@code _shovel}) carried or made earlier in this plan. */
-    private boolean hasTool(String suffix) {
-        return bag.keySet().stream().anyMatch(id -> id.endsWith(suffix) && bag.get(id) > 0)
-                || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith(suffix));
+    /** A tool of the kind carried or made earlier in this plan, by the game's tag as elsewhere: a pickaxe of another mod is one too. */
+    private boolean hasTool(TagKey<Item> kind) {
+        return bag.keySet().stream().anyMatch(id -> bag.get(id) > 0 && tagged(id, kind))
+                || steps.stream().anyMatch(step -> step.type().equals("craft_item") && tagged(step.item(), kind));
+    }
+
+    private static boolean tagged(String id, TagKey<Item> kind) {
+        ResourceLocation key = ResourceLocation.tryParse(id);
+        return key != null && BuiltInRegistries.ITEM.getOptional(key).map(item -> new ItemStack(item).is(kind)).orElse(false);
     }
 
     private boolean hunted(Item item) {

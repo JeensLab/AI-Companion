@@ -95,6 +95,38 @@ public final class CompanionFishBucketTests {
         });
     }
 
+    /**
+     * A pond 18 blocks deep, he on its bank: a cod down by its floor is in the sea about him, not a cave under him (de-flandres
+     * #178/#179: deeper than 12 under him «рядом не вижу»). One is scooped into his bucket, the other fought for its meat.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3600)
+    public static void codDownByTheFloorOfDeepWaterAreScoopedAndFought(GameTestHelper h) {
+        int bank = 19;
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y < 24; y++) {
+            boolean border = x == 0 || x == 31 || z == 0 || z == 31, pond = x >= 16 && x <= 24 && z >= 12 && z <= 20 && y >= 1;
+            h.setBlock(new BlockPos(x, y, z), y == 0 || border ? Blocks.BEDROCK : pond && y <= bank ? Blocks.WATER : y < bank ? Blocks.DIRT : y == bank ? Blocks.GRASS_BLOCK : Blocks.AIR);
+        }
+        var scooped = h.spawnWithNoFreeWill(EntityType.COD, 17, 1, 14);
+        var fought = h.spawnWithNoFreeWill(EntityType.COD, 21, 2, 18);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 12, bank + 1, 16);
+        var owner = h.makeMockServerPlayerInLevel();
+        BlockPos stand = h.absolutePos(new BlockPos(10, bank + 1, 14));
+        owner.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
+        c.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", c.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        c.setSearchRadius(16);
+        c.setItem(0, new ItemStack(Items.WATER_BUCKET));
+        c.setItem(1, new ItemStack(Items.STONE_SWORD));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:cod_bucket\",\"count\":1},{\"action\":\"obtain_item\",\"item\":\"minecraft:cod\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.COD_BUCKET) == 1 && count(c, Items.COD) >= 1, "Cod bucket " + count(c, Items.COD_BUCKET) + ", cod " + count(c, Items.COD) + ": " + report);
+            h.assertTrue(scooped.isRemoved() && fought.isRemoved(), "Not the two cod down by the floor");
+        });
+    }
+
     private static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;

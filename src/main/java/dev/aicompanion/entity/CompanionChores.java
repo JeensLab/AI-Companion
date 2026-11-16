@@ -176,10 +176,9 @@ final class CompanionChores {
                 animal -> animal.isAlive() && !animal.isBaby() && !passed.contains(animal.getUUID()) && c.leashAllows(animal.blockPosition()) && fits.test(animal));
     }
 
-    /** Of the kind under open water about him (or on the bank by it), where his leash lets him go. */
+    /** Of the kind under open water about him (or on the bank by it), down to the floor of the sea, where his leash lets him go. */
     private static List<Mob> swimmers(CompanionEntity c, ServerLevel level, EntityType<?> kind, Set<UUID> passed) {
-        int radius = c.getSearchRadius();
-        return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID()) && scoopable(c, level, kind, mob));
+        return level.getEntitiesOfClass(Mob.class, CompanionMobDrops.around(c), mob -> !passed.contains(mob.getUUID()) && scoopable(c, level, kind, mob));
     }
 
     /** Alive, nobody's (no name, not let out of a bucket, not on a lead), under open water (not a lake in a cave). */
@@ -425,7 +424,7 @@ final class CompanionChores {
             if (mob.isInWater() && c.isInWater()) {
                 c.getNavigation().stop();
                 if (c.getAirSupply() > c.getMaxAirSupply() / 2) c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
-            } else if (w.route.follow(mob.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
+            } else if (CompanionMobDrops.wade(w, level, mob) != CompanionTravel.Step.WALKING) c.travel().reset();
             return;
         }
         c.getNavigation().stop();

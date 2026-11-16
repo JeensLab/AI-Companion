@@ -44,6 +44,11 @@ final class CompanionMobDrops {
     private static final int ROLLS = 48;
     /** Blocks above and below his feet that are looked at: the hill he stands on, not the cave under it. */
     private static final int DEPTH = 12;
+    /**
+     * Blocks of water over a fish or a squid looked up through for the sky (open), and as many more under the hill it is looked for
+     * at: a cod swims down to the floor of the sea, 20 to 30 blocks under it (de-flandres #178: deeper than 12 it was «not about»).
+     */
+    private static final int SEA = 32;
     /** Ticks with no step and no blow landed before the monster is passed over. */
     private static final int STALL = 300;
     // ponytail: built once for a server; a data pack reloaded in a running world keeps the old tables until the world is reopened.
@@ -126,10 +131,17 @@ final class CompanionMobDrops {
      */
     private static List<Mob> targets(CompanionEntity c, ServerLevel level, List<EntityType<?>> kinds, Set<UUID> passed, Set<UUID> engaged) {
         if (kinds.isEmpty() || level.dimension() != Level.OVERWORLD) return List.of();
-        int radius = c.getSearchRadius();
-        return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID())
-                && fought(c, kinds, mob) && (engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob) || swims(mob) && open(level, mob)
+        return level.getEntitiesOfClass(Mob.class, around(c), mob -> !passed.contains(mob.getUUID()) && fought(c, kinds, mob)
+                // Under the hill only a fish or a squid of the sea about him, never the cave.
+                && (mob.getBlockY() < c.getBlockY() - DEPTH ? swims(mob) && open(level, mob)
+                : engaged.contains(mob.getUUID()) || c.hasLineOfSight(mob) || swims(mob) && open(level, mob)
                 || mob.getBlockY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, mob.getBlockX(), mob.getBlockZ()) - 1));
+    }
+
+    /** Where a mob is looked for: within his search radius, DEPTH above and below his feet and SEA deeper for what swims (open). */
+    static AABB around(CompanionEntity c) {
+        int radius = c.getSearchRadius();
+        return new AABB(c.blockPosition()).inflate(radius, DEPTH, radius).expandTowards(0, -SEA, 0);
     }
 
     /**
@@ -137,9 +149,23 @@ final class CompanionMobDrops {
      * eyes on the shore (a squid at the foot of a pond's bank was «no one about» in a test); not a lake in a cave.
      */
     static boolean open(ServerLevel level, Mob mob) {
-        net.minecraft.core.BlockPos.MutableBlockPos cell = mob.blockPosition().mutable();
-        for (int up = 0; up < 32 && level.getFluidState(cell).is(net.minecraft.tags.FluidTags.WATER); up++) cell.move(0, 1, 0);
+        net.minecraft.core.BlockPos cell = surface(level, mob);
         return level.getFluidState(cell).isEmpty() && level.canSeeSky(cell);
+    }
+
+    /** The first cell over the water a fish or a squid is in (its own one out of the water), looked up through SEA blocks at most. */
+    private static net.minecraft.core.BlockPos surface(ServerLevel level, Mob mob) {
+        net.minecraft.core.BlockPos.MutableBlockPos cell = mob.blockPosition().mutable();
+        for (int up = 0; up < SEA && level.getFluidState(cell).is(net.minecraft.tags.FluidTags.WATER); up++) cell.move(0, 1, 0);
+        return cell.immutable();
+    }
+
+    /**
+     * Where he is walked to for a fish or a squid in the water while he is out of it: into the top of the water over it, not near it
+     * (no route goes down under the surface: 18 blocks down «no leg found», he stood on the bank). In the water he dives for it.
+     */
+    static CompanionTravel.Step wade(CompanionWork w, ServerLevel level, Mob mob) {
+        return mob.isInWater() ? w.route.follow(surface(level, mob).below(), 0) : w.route.follow(mob.blockPosition(), 2);
     }
 
     /** Of the kind, alive, nobody's (no name, not let out of a bucket), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
@@ -190,7 +216,7 @@ final class CompanionMobDrops {
         c.workStatus("Добываю «" + name() + "»: " + got + " из " + wanted + ".");
         // In the water with it he swims at it (watch); a route there would pull him back to the surface over it.
         if (swims(target) && target.isInWater() && c.isInWater()) c.getNavigation().stop();
-        else if (w.route.follow(target.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
+        else if ((swims(target) ? wade(w, level, target) : w.route.follow(target.blockPosition(), 2)) != CompanionTravel.Step.WALKING) c.travel().reset();
     }
 
     /**
