@@ -19,6 +19,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
@@ -38,7 +39,7 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class CompanionExpeditionTests {
     private static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2;
-    private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6, FIRST_ORE_STAND = 6, AFTER_BREAK = 3, DOWN_STAIRS = 4, SURFACE_DEPTH = 2, GIVEN_TORCHES = 16;
+    private static final int RING_FROM = 21, NO_RING = 99, LAVA_STEP = 8, JUNK_SLOTS = 17, FIRST_JUNK = 6, FIRST_ORE_STAND = 6, AFTER_BREAK = 3, LIT_STEPS = 6, DOWN_STAIRS = 4, SURFACE_DEPTH = 2, GIVEN_TORCHES = 16;
     private static final BlockPos WATER = new BlockPos(25, 4, 3);
     private static final String NO_PICKAXES = "кирок не осталось", OUT_OF_TORCHES = "Факелы кончились", STALL = "Полторы минуты";
 
@@ -132,6 +133,27 @@ public final class CompanionExpeditionTests {
         });
     }
 
+    /**
+     * Monsters spawn only at block light 0: where no sky reaches, every step of his stairs keeps block light 1 or more, and a torch
+     * lights about six steps, not the three of the old rule of light 7 (forty-odd torches on each way down to the diamonds, seed 7).
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 6000)
+    public static void lightsHisStairsAgainstSpawnsWithATorchForSixSteps(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(GIVEN_TORCHES));
+        CompanionEntity c = r.c();
+        start(h, c, 1);
+        int down = GROUND + 1 - DIAMOND_FEET;
+        h.succeedWhen(() -> {
+            h.assertTrue(depth(h, c) >= down, "Not down to the tunnels yet, depth " + depth(h, c) + " | " + report(c));
+            for (int k = 1; k < down; k++) {
+                BlockPos feet = h.absolutePos(stand(k));
+                if (!h.getLevel().getBlockState(feet).isAir() || h.getLevel().getBrightness(LightLayer.SKY, feet) > 0) continue;
+                h.assertTrue(h.getLevel().getBrightness(LightLayer.BLOCK, feet) >= 1, "Step " + k + " left at block light 0, torches " + torches(h));
+            }
+            h.assertTrue(torches(h) <= down / LIT_STEPS + 1, "Torches " + torches(h) + " on " + down + " steps");
+        });
+    }
+
     /** The last torch is gone deep in the mine, coal and spare sticks are in the bag: he makes more and keeps digging, no climb for supplies. */
     @GameTest(template = "marathon_cave", timeoutTicks = 9000)
     public static void makesTorchesWhenTheLastOneIsGoneAndKeepsDigging(GameTestHelper h) {
@@ -160,7 +182,7 @@ public final class CompanionExpeditionTests {
         h.onEachTick(() -> {
             deepest[0] = Math.max(deepest[0], depth(h, c));
             if (goneAt[0] < 0 && depth(h, c) >= DOWN_STAIRS) { goneAt[0] = depth(h, c); dropTorches(c); }
-            h.assertTrue(goneAt[0] < 0 || deepest[0] <= goneAt[0] + AFTER_BREAK, "Dug on in the dark to depth " + deepest[0] + " | " + report(c));
+            h.assertTrue(goneAt[0] < 0 || deepest[0] <= goneAt[0] + LIT_STEPS, "Dug on in the dark to depth " + deepest[0] + " | " + report(c));
         });
         h.succeedWhen(() -> {
             CompanionActionResult result = ended(h, c, id);
@@ -186,7 +208,7 @@ public final class CompanionExpeditionTests {
                 return;
             }
             deepest[0] = Math.max(deepest[0], depth(h, c));
-            h.assertTrue(deepest[0] <= goneAt[0] + AFTER_BREAK, "Dug on in the dark to depth " + deepest[0] + " | " + report(c));
+            h.assertTrue(deepest[0] <= goneAt[0] + LIT_STEPS, "Dug on in the dark to depth " + deepest[0] + " | " + report(c));
             if (c.workResult(second[0]) != null) h.assertTrue(depth(h, c) <= SURFACE_DEPTH, "Ended below the entrance: " + report(c));
         });
         h.succeedWhen(() -> {
