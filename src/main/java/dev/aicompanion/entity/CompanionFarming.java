@@ -86,7 +86,7 @@ final class CompanionFarming {
     private final Set<BlockPos> tilledNow = new HashSet<>();
     private final Map<BlockPos, Again> replant = new HashMap<>();
     private final Map<Item, Integer> bagBefore = new HashMap<>();
-    private int total, found, waterCells, tilled, planted, reused, cleared, grassCut, unreachable, unfit, changed, harvested, replanted, noSeeds, growing, spent, made;
+    private int byStems, total, found, waterCells, tilled, planted, reused, cleared, grassCut, unreachable, unfit, changed, harvested, replanted, noSeeds, growing, spent, made;
     private boolean seedShort, bagFull;
     /** Why the seeds of a stem could not be made of the fruit in the bag (no cell for them), or null. */
     private String craftWhy;
@@ -159,7 +159,8 @@ final class CompanionFarming {
             return;
         }
         if (soil.isEmpty()) {
-            w.finish(CompanionActionResult.blocked("У воды рядом нет подходящей земли: нужна земля или трава не дальше " + WET + " блоков от воды, со свободным местом и светом над ней."));
+            w.finish(CompanionActionResult.blocked("У воды рядом нет подходящей земли: нужна земля или трава не дальше " + WET + " блоков от воды, со свободным местом и светом над ней."
+                    + (byStems > 0 ? " У стеблей тыкв и арбузов не сажаю — там вырастут плоды." : "")));
             return;
         }
         // One compact patch: round the tile he reaches first among those nearest the player, and the ones nearest to that.
@@ -202,7 +203,7 @@ final class CompanionFarming {
         int x0 = centre.getX() - radius - WET, z0 = centre.getZ() - radius - WET, side = 2 * (radius + WET) + 1, rows = high - low + 2;
         BitSet water = new BitSet(side * side * rows);
         BlockPos.MutableBlockPos at = new BlockPos.MutableBlockPos();
-        waterCells = 0;
+        waterCells = byStems = 0;
         for (int dx = 0; dx < side; dx++) for (int dz = 0; dz < side; dz++) {
             if (!level.hasChunkAt(at.set(x0 + dx, low, z0 + dz))) continue;
             for (int y = low; y <= high + 1; y++) if (level.getFluidState(at.setY(y)).is(FluidTags.WATER)) { water.set((dx * side + dz) * rows + y - low); waterCells++; }
@@ -219,8 +220,8 @@ final class CompanionFarming {
                 BlockPos cell = at.above();
                 BlockState above = level.getBlockState(cell);
                 // A crop needs light to be planted at all (CropBlock.canSurvive): no tile is chosen in a cellar or under a thick roof.
-                if (!above.isAir() && (farmland || !clearable(above)) || nearFlower(level, cell) || besideStem(level, cell) || !CropBlock.hasSufficientLight(level, cell)
-                        || !wet(water, dx, dz, y - low, side, rows)) continue;
+                if (!above.isAir() && (farmland || !clearable(above)) || nearFlower(level, cell) || !CropBlock.hasSufficientLight(level, cell) || !wet(water, dx, dz, y - low, side, rows)) continue;
+                if (besideStem(level, cell)) { byStems++; continue; }
                 soil.add(at.immutable());
             }
         }
@@ -236,9 +237,18 @@ final class CompanionFarming {
         return false;
     }
 
-    /** Pumpkins and melons: every other row from the heart, a tile with room beside it for the fruit. */
+    /**
+     * Pumpkins and melons: every other row from the heart, a tile with room beside it (across the rows) for the fruit. The rows run
+     * whichever way gives more tiles: a strip of soil along the water is sown every other block along it.
+     */
     private static List<BlockPos> stemRows(ServerLevel level, List<BlockPos> soil, BlockPos heart) {
-        return soil.stream().filter(tile -> Math.floorMod(tile.getX() - heart.getX(), 2) == 0 && (room(level, tile.west()) || room(level, tile.east()))).toList();
+        List<BlockPos> best = List.of();
+        for (Direction.Axis axis : List.of(Direction.Axis.X, Direction.Axis.Z)) {
+            List<BlockPos> rows = soil.stream().filter(tile -> Math.floorMod(tile.get(axis) - heart.get(axis), 2) == 0
+                    && (room(level, tile.relative(axis, -1)) || room(level, tile.relative(axis, 1)))).toList();
+            if (rows.size() > best.size()) best = rows;
+        }
+        return best;
     }
 
     /** Where a ripe stem grows its fruit (vanilla StemBlock): farmland or dirt with nothing on it, or only grass he pulls out. */
@@ -531,7 +541,8 @@ final class CompanionFarming {
             return;
         }
         // The fruit's soil beside a stem is weeded: grass on it would keep the pumpkin from growing.
-        if (kind.stem()) for (BlockPos side : List.of(cell.west(), cell.east())) {
+        if (kind.stem()) for (Direction around : Direction.Plane.HORIZONTAL) {
+            BlockPos side = cell.relative(around);
             BlockState weed = level.getBlockState(side);
             if (!clearable(weed) || !room(level, side.below())) continue;
             w.owner.workStatus("Пропалываю место под " + kind.plant + ": " + planted + " из " + total + ".");
@@ -715,7 +726,7 @@ final class CompanionFarming {
         List<String> why = new ArrayList<>();
         if (bagFull) why.add(FULL_BAG);
         if (seedShort || noSeeds > 0) why.add(planted == 0 ? cap(kind.lacking) + " не хватило." : cap(kind.lacking) + " хватило только на " + planted + ".");
-        if (!ok && found < wanted) why.add("Подходящей земли у воды нашлось только на " + found + ".");
+        if (!ok && found < wanted) why.add("Подходящей земли у воды нашлось только на " + found + "." + (byStems > 0 ? " У стеблей тыкв и арбузов не сажаю — там вырастут плоды." : ""));
         if (unreachable > 0) why.add("До " + unreachable + " не смог дойти.");
         if (unfit > 0) why.add("На " + unfit + " слишком темно: там ничего не вырастет.");
         if (changed > 0) why.add(changed + " изменились по дороге, их пропустил.");

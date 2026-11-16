@@ -258,16 +258,16 @@ public final class CompanionStemTests {
         long id = order(h, companion, "farm_crops", "minecraft:pumpkin_seeds", 4);
         h.succeedWhen(() -> {
             CompanionActionResult result = result(h, companion, id);
-            h.assertTrue(!result.success() && result.message().contains("нет места") && !result.message().contains("ни тыквы"), "Report: " + result.message());
+            h.assertTrue(!result.success() && result.message().contains("ячейк") && !result.message().contains("ни тыквы"), "Report: " + result.message());
             h.assertTrue(count(companion, Items.PUMPKIN) == 3 && blocks(h, GROUND, Blocks.FARMLAND).isEmpty(), "The pumpkins or the ground were touched");
         });
     }
 
-    /** A strip of soil one block wide between stone: no stem would have room for its fruit, and he says so instead of «no seeds». */
+    /** One tile of soil by the water, stone all round: no stem would have room for its fruit, and he says so instead of «no seeds». */
     @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "farm")
     public static void soilWithNoRoomForTheFruitIsSaid(GameTestHelper h) {
         ground(h);
-        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) if (x != 12) h.setBlock(new BlockPos(x, GROUND, z), Blocks.STONE);
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) if (x != 12 || z != 15) h.setBlock(new BlockPos(x, GROUND, z), Blocks.STONE);
         h.setBlock(new BlockPos(12, GROUND, 16), Blocks.WATER);
         CompanionEntity companion = spawn(h, 10, 12, 10, 12, 16);
         give(companion, new ItemStack(Items.WOODEN_HOE), new ItemStack(Items.PUMPKIN, 1));
@@ -276,6 +276,23 @@ public final class CompanionStemTests {
             CompanionActionResult result = result(h, companion, id);
             h.assertTrue(!result.success() && result.message().contains("места под плод") && count(companion, Items.PUMPKIN) == 1, "Report: " + result.message());
             h.assertTrue(blocks(h, GROUND, Blocks.FARMLAND).isEmpty(), "Tilled where nothing would grow");
+        });
+    }
+
+    /** Review: a strip of soil one block wide along the water. The fruit grows on any side, so the stems go every other block along it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500, batch = "farm")
+    public static void aStripOfSoilIsSownEveryOtherBlockAlongIt(GameTestHelper h) {
+        ground(h);
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) if (x != 12) h.setBlock(new BlockPos(x, GROUND, z), Blocks.STONE);
+        h.setBlock(new BlockPos(12, GROUND, 16), Blocks.WATER);
+        CompanionEntity companion = spawn(h, 10, 12, 10, 12, 16);
+        give(companion, new ItemStack(Items.WOODEN_HOE), new ItemStack(Items.PUMPKIN_SEEDS, 4));
+        long id = order(h, companion, "farm_crops", "minecraft:pumpkin_seeds", 4);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            List<BlockPos> stems = blocks(h, GROUND + 1, Blocks.PUMPKIN_STEM);
+            h.assertTrue(result.success() && stems.size() == 4, "Stems " + stems.size() + ": " + result.message());
+            h.assertTrue(stems.stream().allMatch(stem -> roomBeside(h, stem)), "A stem with no room beside it: " + stems);
         });
     }
 
