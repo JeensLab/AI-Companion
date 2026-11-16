@@ -537,12 +537,15 @@ final class CompanionChores {
             return;
         }
         c.workStatus("Обтёсываю: " + name() + ".");
+        c.takeToolForBlock(state);
+        axe = c.getMainHandItem();
         if (!w.breaking.tick(level, placed)) return;
         var drops = CompanionTools.drops(state, level, placed, null, c, axe);
         if (level.destroyBlock(placed, false, c, 512)) {
             c.dropHarvest(placed, drops);
             axe.getItem().mineBlock(axe, level, state, placed, c);
         }
+        c.putToolAway();
         placed = null; stripped = false;
         w.breaking.reset();
     }

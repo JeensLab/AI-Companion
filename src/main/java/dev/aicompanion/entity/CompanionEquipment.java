@@ -166,18 +166,38 @@ final class CompanionEquipment {
         return score * 10000 + (stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : 0);
     }
 
-    public void selectToolForBlock(BlockState state) {
-        if (state.is(net.minecraft.tags.BlockTags.MINEABLE_WITH_SHOVEL)) {
-            if (!CompanionTools.equip(c, ItemTags.SHOVELS, state) && !c.getMainHandItem().isEmpty()) unequipForSupport("mainhand");
+    /** The hand item a tool for the block replaced, kept to be put back after the break (issue #105). */
+    private ItemStack handBeforeTool;
+
+    /** The tool that breaks this block best goes into his hand and stays there: for the paths that break many blocks in a row. */
+    public void selectToolForBlock(BlockState state) { takeToolForBlock(state, false); }
+
+    /** The same, keeping what was in his hand for {@link #putToolAway()} after the break. */
+    public void takeToolForBlock(BlockState state) { takeToolForBlock(state, true); }
+
+    /** Puts back what was in his hand before the tool for the block, as CompanionRecovery does: the tool goes into the bag. */
+    public void putToolAway() {
+        ItemStack previous = handBeforeTool;
+        handBeforeTool = null;
+        if (previous == null) return;
+        if (previous.isEmpty()) unequipForSupport("mainhand");
+        else equipForSupport(BuiltInRegistries.ITEM.getKey(previous.getItem()).toString());
+    }
+
+    private void takeToolForBlock(BlockState state, boolean keepPrevious) {
+        // The switch off: he breaks with whatever he happens to hold, as a player who does not bother changing tools.
+        if (!c.rightToolForBlock()) return;
+        ItemStack best = CompanionTools.bestToolForBlock(c, state);
+        if (best.isEmpty() || best == c.getMainHandItem()) return;
+        ItemStack previous = c.getMainHandItem().copy();
+        String id = BuiltInRegistries.ITEM.getKey(best.getItem()).toString();
+        boolean fromOffhand = best == c.getOffhandItem();
+        if (fromOffhand && !c.unequipForSupport("offhand").success()) return;
+        if (!equipForWork(id).success()) {
+            if (fromOffhand) equipItemInternal(id, "offhand");
             return;
         }
-        double best = c.getMainHandItem().getDestroySpeed(state);
-        ItemStack choice = ItemStack.EMPTY;
-        for (ItemStack stack : c.companionInventory) if (!stack.isEmpty() && stack.getDestroySpeed(state) > best) {
-            best = stack.getDestroySpeed(state);
-            choice = stack;
-        }
-        if (!choice.isEmpty()) equipItemInternal(BuiltInRegistries.ITEM.getKey(choice.getItem()).toString(), "mainhand");
+        if (keepPrevious && handBeforeTool == null) handBeforeTool = previous;
     }
 
     public void selectWeaponForCombat() {

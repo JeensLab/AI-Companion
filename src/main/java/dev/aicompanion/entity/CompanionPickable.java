@@ -45,24 +45,37 @@ final class CompanionPickable {
     // ponytail: built once for a server; a data pack reloaded in a running world keeps the old tables until the world is reopened.
     private static WeakReference<MinecraftServer> builtFor = new WeakReference<>(null);
     private static Map<Item, List<Source>> sources = Map.of();
+    /** The blocks that give their own item to shears only: grass, a fern, a dead bush, leaves set down where a hand gets nothing sure. */
+    private static Set<Block> shearsOnly = Set.of();
 
     /** The blocks that give the item when broken; empty for an item no block gives so. */
     static synchronized List<Source> sources(ServerLevel level, Item item) {
-        if (builtFor.get() != level.getServer()) {
-            sources = build(level);
-            builtFor = new WeakReference<>(level.getServer());
-        }
+        ensure(level);
         return sources.getOrDefault(item, List.of());
     }
 
     /** Whether the item is had with shears only: no block gives it to a hand. */
-    static boolean shorn(ServerLevel level, Item item) {
+    static synchronized boolean shorn(ServerLevel level, Item item) {
         List<Source> all = sources(level, item);
         return !all.isEmpty() && all.stream().allMatch(Source::shears);
     }
 
-    private static Map<Item, List<Source>> build(ServerLevel level) {
+    /** Whether the block itself is taken with shears only (grass, a fern, a dead bush): the right tool for it is no faster than a hand. */
+    static synchronized boolean shorn(ServerLevel level, BlockState state) {
+        ensure(level);
+        return shearsOnly.contains(state.getBlock());
+    }
+
+    private static void ensure(ServerLevel level) {
+        if (builtFor.get() != level.getServer()) {
+            build(level);
+            builtFor = new WeakReference<>(level.getServer());
+        }
+    }
+
+    private static void build(ServerLevel level) {
         Map<Item, List<Source>> found = new HashMap<>();
+        Set<Block> shornBlocks = new HashSet<>();
         // What a recipe makes is made (wool, planks, a clay block): only what the world alone gives is taken from it.
         Set<Item> made = new HashSet<>();
         for (var holder : level.getRecipeManager().getRecipes()) made.add(holder.value().getResultItem(level.registryAccess()).getItem());
@@ -75,8 +88,10 @@ final class CompanionPickable {
             if (shears) given = sure(level, state, new ItemStack(Items.SHEARS));
             if (given.isEmpty() || made.contains(given.getItem())) continue;
             found.computeIfAbsent(given.getItem(), key -> new ArrayList<>()).add(new Source(block, given.getCount(), shears));
+            if (shears) shornBlocks.add(block);
         }
-        return found;
+        sources = found;
+        shearsOnly = shornBlocks;
     }
 
     /** The one item the block gives to the tool every time, as many as the least of it; empty if there is none. */

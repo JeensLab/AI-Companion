@@ -38,6 +38,49 @@ final class CompanionTools {
         if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) return List.of();
         return Block.getDrops(state, level, pos, entity, breaker, tool);
     }
+    /**
+     * The tool of his that breaks this block fastest — a pickaxe for stone, an axe for wood, a shovel for earth, shears for leaves
+     * (issue #105, «ломает блок правильным инструментом») — from the bag or either hand; empty when a bare hand is as fast.
+     * The class comes from the game's own destroy-speed rule (a tool speeds up only the blocks of its tag), not from a list of blocks.
+     */
+    static ItemStack bestToolForBlock(CompanionEntity owner, BlockState state) {
+        ItemStack best = ItemStack.EMPTY;
+        float bestSpeed = 1;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) {
+            ItemStack stack = owner.getItem(slot);
+            float speed = breakSpeed(owner, stack, state);
+            if (speed > bestSpeed) { best = stack; bestSpeed = speed; }
+        }
+        for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
+            float speed = breakSpeed(owner, held, state);
+            if (speed > bestSpeed) { best = held; bestSpeed = speed; }
+        }
+        // What a hand takes by chance only (grass, a fern, a dead bush) gives itself to shears: no faster, but the only way to it.
+        if (best.isEmpty() && owner.level() instanceof ServerLevel level && CompanionPickable.shorn(level, state)) {
+            ItemStack shears = shears(owner);
+            if (!shears.isEmpty()) best = shears;
+        }
+        return best;
+    }
+
+    /** The shears he carries, from the hand first; empty when he has none. */
+    private static ItemStack shears(CompanionEntity owner) {
+        if (owner.getMainHandItem().is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR)) return owner.getMainHandItem();
+        for (int slot = 0; slot < owner.getContainerSize(); slot++)
+            if (owner.getItem(slot).is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR)) return owner.getItem(slot);
+        if (owner.getOffhandItem().is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR)) return owner.getOffhandItem();
+        return ItemStack.EMPTY;
+    }
+
+    /** Vanilla destroy speed with the tool's own Efficiency, as a player has it: the bonus only on the tool's own blocks. */
+    static float breakSpeed(CompanionEntity owner, ItemStack stack, BlockState state) {
+        if (stack.isEmpty()) return 1;
+        float speed = stack.getDestroySpeed(state);
+        if (speed <= 1) return speed;
+        int efficiency = net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
+                owner.level().registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.EFFICIENCY), stack);
+        return efficiency > 0 ? speed + efficiency * efficiency + 1 : speed;
+    }
     static boolean equip(CompanionEntity owner, TagKey<Item> tag, BlockState state) {
         ItemStack best = owner.getMainHandItem().is(tag) ? owner.getMainHandItem() : ItemStack.EMPTY;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {

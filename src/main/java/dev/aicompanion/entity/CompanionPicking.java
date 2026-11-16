@@ -7,7 +7,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
-import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -316,14 +315,13 @@ final class CompanionPicking {
         }
         if (shorn) {
             // From the bag or from the other hand.
+            c.takeToolForBlock(state);
             if (!c.getMainHandItem().is(Items.SHEARS) && !CompanionTools.equip(c, net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR, state)) { end(false, "Не могу взять ножницы в руку: в сумке нет места."); return; }
         } else if (w.items.prepareMiningTool(state)) return;
-        else if (state.is(BlockTags.MINEABLE_WITH_AXE)) CompanionTools.equip(c, ItemTags.AXES, state);
-        else if (state.is(BlockTags.MINEABLE_WITH_HOE)) CompanionTools.equip(c, ItemTags.HOES, state);
-        else if (state.is(BlockTags.MINEABLE_WITH_PICKAXE)) CompanionTools.equip(c, ItemTags.PICKAXES, state);
+        else c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
-        if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) { end(false, "Нечем взять «" + name() + "»: нужен инструмент."); return; }
-        if (!w.items.canStore(List.of(new ItemStack(item)))) { end(false, FULL_BAG + (got == 0 ? "" : " Собрал " + got + " из " + wanted + ".")); return; }
+        if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) { c.putToolAway(); end(false, "Нечем взять «" + name() + "»: нужен инструмент."); return; }
+        if (!w.items.canStore(List.of(new ItemStack(item)))) { c.putToolAway(); end(false, FULL_BAG + (got == 0 ? "" : " Собрал " + got + " из " + wanted + ".")); return; }
         c.workStatus("Собираю: " + name() + ".");
         if (!w.breaking.tick(level, target)) return;
         // A cane cut low comes down whole: what stands over the cut is his harvest too, from the top.
@@ -338,6 +336,7 @@ final class CompanionPicking {
             for (ItemStack drop : drops) if (drop.is(item)) due += drop.getCount();
         }
         tool.getItem().mineBlock(tool, level, state, target, c);
+        c.putToolAway();
         // A tool with Silk Touch brings the block itself (clay, not its balls): one is enough to see it, not every block about.
         if (due == dueBefore) { end(false, "С этим инструментом «" + name() + "» не выходит: в руке " + tool.getHoverName().getString() + "."); return; }
         release();

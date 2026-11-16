@@ -247,11 +247,10 @@ public final class CompanionPillar {
         }
         if (anotherEntityDependsOn(level, pos)) return false;
         owner.getLookControl().setLookAt(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
-        owner.selectToolForBlock(highest.state());
-        if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.SHOVELS)
-                && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.PICKAXES)) owner.unequipForSupport("mainhand");
+        owner.takeToolForBlock(highest.state());
         if (!canDrop(highest.state())) {
             // The pickaxe is gone (broken, or taken): by hand the block would vanish without a drop. It stays where it is.
+            owner.putToolAway();
             supports.clear();
             failureReason = "Опоры оставил на месте: нечем их забрать";
             clearColumn();
@@ -417,14 +416,15 @@ public final class CompanionPillar {
 
     private boolean breakAndStore(ServerLevel level, BlockPos pos, BlockState state) {
         if (!level.hasChunkAt(pos) || level.getBlockState(pos) != state) return false;
-        owner.selectToolForBlock(state);
-        if (!canDrop(state)) return false;
+        owner.takeToolForBlock(state);
+        if (!canDrop(state)) { owner.putToolAway(); return false; }
         ItemStack tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), owner, tool);
-        if (!level.destroyBlock(pos, false, owner, 512)) return false;
+        if (!level.destroyBlock(pos, false, owner, 512)) { owner.putToolAway(); return false; }
         tool.getItem().mineBlock(tool, level, state, pos, owner);
         owner.swing(InteractionHand.MAIN_HAND);
         owner.dropHarvest(pos, drops);
+        owner.putToolAway();
         return true;
     }
 
