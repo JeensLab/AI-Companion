@@ -192,6 +192,7 @@ public final class CompanionDialogue {
             case "milk_animal" -> "надоить молока (" + action.count() + " шт.)";
             case "collect_eggs" -> "подобрать яйца (" + action.count() + " шт.)";
             case "harvest_hive" -> "собрать с улья «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
+            case "scoop_mob" -> "зачерпнуть ведром «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "strip_log" -> "обтесать топором: «" + itemName(action.item()) + "» (" + action.count() + " шт.)";
             case "craft_item" -> "сделать «" + itemName(action.item()) + "»";
             case "place_block" -> "поставить «" + itemName(action.item()) + "»";

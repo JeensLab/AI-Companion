@@ -9,8 +9,11 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.entity.animal.Bucketable;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.Sheep;
 import net.minecraft.world.entity.animal.goat.Goat;
@@ -34,6 +37,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -44,10 +48,21 @@ import java.util.function.Predicate;
  * collect_eggs (the eggs that lie about the hens; none is waited for), strip_log (a log of his own set down, stripped with his
  * axe, broken and picked up: what stands in the world is never stripped, and his log is not left standing when the work ends) and
  * harvest_hive (a full hive or nest: three combs to his shears or honey into his bottle, only with a campfire burning under it, so
- * the bees stay calm; none burns there: his own is set under the hive first and left, a broken one gives but charcoal).
+ * the bees stay calm; none burns there: his own is set under the hive first and left, a broken one gives but charcoal) and
+ * scoop_mob (a fish under open water scooped alive into his bucket of water, as a player does; one let out of somebody's
+ * bucket or named is not his, a pufferfish only while he is well enough for its sting).
  */
 final class CompanionChores {
-    private enum Mode { SHEAR, MILK, EGGS, STRIP, HIVE }
+    private enum Mode { SHEAR, MILK, EGGS, STRIP, HIVE, SCOOP }
+    /**
+     * scoop_mob: what swims into the bucket of each kind, and who is not seen about (as «Рядом нет …» says it). Fish only (the
+     * player 15.11): a tadpole is always a bucket's to the game (it hatches of frogs a player bred), and an axolotl under the sky
+     * is somebody's pet or its young, the wild ones keep to the caves.
+     */
+    private record Catch(EntityType<?> kind, String whom) { }
+    private static final Map<Item, Catch> CATCHES = Map.of(Items.COD_BUCKET, new Catch(EntityType.COD, "трески"),
+            Items.SALMON_BUCKET, new Catch(EntityType.SALMON, "лосося"), Items.TROPICAL_FISH_BUCKET, new Catch(EntityType.TROPICAL_FISH, "тропической рыбы"),
+            Items.PUFFERFISH_BUCKET, new Catch(EntityType.PUFFERFISH, "иглобрюха"));
     /** Blocks above and below him the animals are looked for: the meadow he stands on. */
     private static final int DEPTH = 12;
     /** From his eye to the animal: a hand's reach, over a fence too. */
@@ -115,8 +130,16 @@ final class CompanionChores {
         return BuiltInRegistries.BLOCK.getOptional(id.withPath(id.getPath().substring(STRIPPED.length()))).orElse(null);
     }
 
+    /** Who of what swims into the bucket is not seen about, null for an item that is no such bucket. */
+    static String whom(Item bucket) {
+        Catch caught = CATCHES.get(bucket);
+        return caught == null ? null : caught.whom();
+    }
+
     /** Whether the item is to be had about him by one of these chores: a sheep of the colour to shear, a cow to milk, an egg that lies. */
     static boolean about(CompanionEntity c, ServerLevel level, Item wanted) {
+        Catch caught = CATCHES.get(wanted);
+        if (caught != null) return !swimmers(c, level, caught.kind(), Set.of()).isEmpty();
         DyeColor colour = fleece(wanted);
         if (colour != null) return !herd(c, level, shorn(colour), Set.of()).isEmpty();
         if (wanted == Items.MILK_BUCKET) return !herd(c, level, CompanionChores::milked, Set.of()).isEmpty();
@@ -137,6 +160,18 @@ final class CompanionChores {
         int radius = c.getSearchRadius();
         return level.getEntitiesOfClass(Animal.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius),
                 animal -> animal.isAlive() && !animal.isBaby() && !passed.contains(animal.getUUID()) && c.leashAllows(animal.blockPosition()) && fits.test(animal));
+    }
+
+    /** Of the kind under open water about him (or on the bank by it), where his leash lets him go. */
+    private static List<Mob> swimmers(CompanionEntity c, ServerLevel level, EntityType<?> kind, Set<UUID> passed) {
+        int radius = c.getSearchRadius();
+        return level.getEntitiesOfClass(Mob.class, new AABB(c.blockPosition()).inflate(radius, DEPTH, radius), mob -> !passed.contains(mob.getUUID()) && scoopable(c, level, kind, mob));
+    }
+
+    /** Alive, nobody's (no name, not let out of a bucket, not on a lead), under open water (not a lake in a cave). */
+    private static boolean scoopable(CompanionEntity c, ServerLevel level, EntityType<?> kind, Mob mob) {
+        return mob.getType() == kind && mob.isAlive() && !mob.hasCustomName() && mob instanceof Bucketable kept && !kept.fromBucket() && !mob.isPassenger()
+                && !mob.isLeashed() && c.leashAllows(mob.blockPosition()) && CompanionMobDrops.open(level, mob);
     }
 
     private static boolean full(BlockState state) {
@@ -186,7 +221,7 @@ final class CompanionChores {
         c = w.owner;
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
-        Mode chosen = switch (action) { case "shear_sheep" -> Mode.SHEAR; case "milk_animal" -> Mode.MILK; case "collect_eggs" -> Mode.EGGS; case "harvest_hive" -> Mode.HIVE; default -> Mode.STRIP; };
+        Mode chosen = switch (action) { case "shear_sheep" -> Mode.SHEAR; case "milk_animal" -> Mode.MILK; case "collect_eggs" -> Mode.EGGS; case "harvest_hive" -> Mode.HIVE; case "scoop_mob" -> Mode.SCOOP; default -> Mode.STRIP; };
         DyeColor fleece = asked == null ? null : fleece(asked);
         Block grown = asked == null ? null : unstripped(asked);
         boolean fits = switch (chosen) {
@@ -195,6 +230,7 @@ final class CompanionChores {
             case EGGS -> asked == Items.EGG;
             case STRIP -> grown != null;
             case HIVE -> asked == Items.HONEYCOMB || asked == Items.HONEY_BOTTLE;
+            case SCOOP -> CATCHES.containsKey(asked);
         };
         if (!fits) return CompanionActionResult.failed("Такого я не умею: " + action + " " + id + ".");
         mode = chosen; item = asked; wanted = count; before = w.items.countCarried(item);
@@ -214,6 +250,7 @@ final class CompanionChores {
             case EGGS -> "сбор яиц";
             case STRIP -> "обтёсывание брёвен";
             case HIVE -> item == Items.HONEYCOMB ? "сбор сот" : "сбор мёда";
+            case SCOOP -> "ловля в ведро";
         };
         return what + " (" + got() + " из " + wanted + ")";
     }
@@ -232,6 +269,7 @@ final class CompanionChores {
             case EGGS -> eggs(level, got);
             case STRIP -> strip(level, got);
             case HIVE -> harvest(level, got);
+            case SCOOP -> scoop(level, got);
         }
     }
 
@@ -310,6 +348,59 @@ final class CompanionChores {
         path = reach.path(); pathAt = animal.position();
         route.walk(path);
         return true;
+    }
+
+    /**
+     * The nearest of the kind, swum up to (and dived for: CompanionSwimming) until his hand reaches it, scooped into his bucket of
+     * water: the game's own Bucketable.bucketMobPickup, which wants a player, so its steps are taken here (the sound, the bucket
+     * that keeps the looks and the age, the mob gone into it). One he gets no nearer to is passed over.
+     */
+    private void scoop(ServerLevel level, int got) {
+        if (w.items.countCarried(Items.WATER_BUCKET) == 0) { end(CompanionActionResult.blocked("Ведра воды нет: черпать нечем." + part(got))); return; }
+        Catch caught = CATCHES.get(item);
+        // A pufferfish stings whoever comes near: hurt, he does not go (as he does not go striking first, CompanionMobDrops).
+        if (caught.kind() == EntityType.PUFFERFISH && c.getHealth() <= CompanionCreeperGuard.FIGHT_HEALTH) { end(CompanionActionResult.blocked("Я ранен: к иглобрюху сейчас не полезу, он жалит. Поем — тогда." + part(got))); return; }
+        long now = level.getGameTime();
+        Mob mob = target != null && level.getEntity(target) instanceof Mob found && scoopable(c, level, caught.kind(), found) ? found : null;
+        if (mob == null) {
+            release();
+            mob = swimmers(c, level, caught.kind(), passed).stream().min(Comparator.comparingDouble(c::distanceToSqr)).orElse(null);
+            if (mob == null) { out(got, passed.isEmpty() ? "Рядом нет " + caught.whom() + " под открытой водой." : "Вижу, кого черпать, но добраться не смог."); return; }
+            target = mob.getUUID(); since = now; best = Double.MAX_VALUE;
+        }
+        double distance = mob.getBoundingBox().distanceToSqr(c.getEyePosition());
+        // A player's bucket reaches what his eye sees, not a fish behind the glass of a pond or a block of the bank.
+        if (distance > REACH * REACH || !c.hasLineOfSight(mob)) {
+            if (distance + .05 < best) { best = distance; since = now; }
+            if (now - since > STALL) { passed.add(target); c.getNavigation().stop(); release(); return; }
+            c.workStatus("Ловлю в ведро.");
+            // In the water with it he swims straight at it (as for a fish to fight, CompanionMobDrops.watch): a route would pull him
+            // back to the surface over it. Not against the way up: with his air short the swim for air has him. Also out of sight
+            // (round a pillar of the bed): he swims on to it, and behind glass the stall gives it up.
+            if (mob.isInWater() && c.isInWater()) {
+                c.getNavigation().stop();
+                if (c.getAirSupply() > c.getMaxAirSupply() / 2) c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
+            } else if (w.route.follow(mob.blockPosition(), 2) != CompanionTravel.Step.WALKING) c.travel().reset();
+            return;
+        }
+        c.getNavigation().stop();
+        c.getLookControl().setLookAt(mob, 30, 30);
+        ItemStack water = w.items.takeCarried(Items.WATER_BUCKET, 1);
+        c.animateAction(3, mob.blockPosition(), water);
+        Bucketable kept = (Bucketable) mob;
+        ItemStack full = kept.getBucketItemStack();
+        kept.saveToBucketTag(full);
+        mob.playSound(kept.getPickupSound(), 1F, 1F);
+        mob.discard();
+        c.storeLoot(full);
+        c.setChanged();
+        w.cooldown = 8;
+        release();
+    }
+
+    /** scoop_mob: who he swims for, so the float lets him down to it (CompanionSwimming). */
+    Mob dive() {
+        return mode == Mode.SCOOP && target != null && c.level() instanceof ServerLevel level && level.getEntity(target) instanceof Mob mob ? mob : null;
     }
 
     /** The eggs that lie about are his to walk to and pick up, each gone for once; a hen lays in five to ten minutes, he does not wait. */

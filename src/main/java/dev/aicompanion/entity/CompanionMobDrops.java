@@ -136,7 +136,7 @@ final class CompanionMobDrops {
      * A fish or a squid under open water: the sea is about him, though the bank hides what swims at the bottom by it from his
      * eyes on the shore (a squid at the foot of a pond's bank was «no one about» in a test); not a lake in a cave.
      */
-    private static boolean open(ServerLevel level, Mob mob) {
+    static boolean open(ServerLevel level, Mob mob) {
         net.minecraft.core.BlockPos.MutableBlockPos cell = mob.blockPosition().mutable();
         for (int up = 0; up < 32 && level.getFluidState(cell).is(net.minecraft.tags.FluidTags.WATER); up++) cell.move(0, 1, 0);
         return level.getFluidState(cell).isEmpty() && level.canSeeSky(cell);

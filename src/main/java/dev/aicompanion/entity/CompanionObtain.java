@@ -31,7 +31,8 @@ import java.util.Set;
  * (wheat, carrots, potatoes, beetroot; none ripe is said, nothing is sown and waited for), and bone meal comes out of a composter,
  * of the scrap in his bag and the plants he picks for it, before any skeleton is fought. What a tool in hand gets (CompanionChores)
  * is got so: wool shorn off a sheep with shears he has, milk of a cow into his bucket, the eggs that lie about the hens, a log
- * of his stripped with an axe, the combs and the honey of a full hive over a campfire. What none of the skills can get
+ * of his stripped with an axe, the combs and the honey of a full hive over a campfire, a fish scooped into his bucket of water.
+ * What none of the skills can get
  * (an ink sac, a blaze rod…) is said before anything starts.
  */
 public final class CompanionObtain {
@@ -208,6 +209,15 @@ public final class CompanionObtain {
             case "minecraft:milk_bucket" -> {
                 if (!about(Items.MILK_BUCKET)) { absent.add("коровы, чтобы надоить молока"); return refuse(ABSENT + " коровы, чтобы надоить молока."); }
                 return need("minecraft:bucket", count, depth + 1) && add("milk_animal", key, count);
+            }
+            // A fish about him under open water, scooped alive into a bucket of water of his (or one filled now), one bucket each
+            // (CompanionChores). An axolotl or a tadpole under the sky is somebody's: said before anything starts.
+            case "minecraft:axolotl_bucket", "minecraft:tadpole_bucket" -> { return refuse("Аксолотлей и головастиков в ведро не черпаю: под открытым небом они чьи-то, а дикие аксолотли живут в пещерах."); }
+            case "minecraft:cod_bucket", "minecraft:salmon_bucket", "minecraft:tropical_fish_bucket", "minecraft:pufferfish_bucket" -> {
+                Item bucket = BuiltInRegistries.ITEM.get(ResourceLocation.parse(key));
+                String whom = CompanionChores.whom(bucket) + " под открытой водой";
+                if (!about(bucket)) { absent.add(whom); return refuse(ABSENT + " " + whom + "."); }
+                return need("minecraft:water_bucket", count, depth + 1) && add("scoop_mob", key, count);
             }
             // A full hive about him: three combs to his shears, honey into his bottle (CompanionChores), a campfire of his under it
             // unless one burns there. Shears are made by the whole chain: there is no other way to a comb, as a blow is to wool.
