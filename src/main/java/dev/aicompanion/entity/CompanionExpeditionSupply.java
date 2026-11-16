@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -14,10 +15,12 @@ final class CompanionExpeditionSupply {
     static final int STONE_RESERVE = PICKAXES_KEPT * PICKAXE_STONE;
     /** Free slots a pickaxe chain needs at most: planks, sticks and the bench in turn, then the pickaxe. */
     private static final int CRAFT_SLOTS = 3;
+    private static final int CRAFT_EVERY = 200;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
     private int failedPickaxes, swords;
+    private long nextCraft, nextArm;
 
     CompanionExpeditionSupply(CompanionWork w) {
         this.w = w;
@@ -119,5 +122,20 @@ final class CompanionExpeditionSupply {
         BlockPos bench = owner.placement.benchSetDown;
         if (bench != null) w.mine.temporary(bench);
         return made;
+    }
+
+    /** Torches are laid by the lighting as he works; here the stock the step started with is kept up from coal and sticks. */
+    void craftTorches(ServerLevel level) {
+        if (level.getGameTime() < nextCraft) return;
+        nextCraft = level.getGameTime() + CRAFT_EVERY;
+        if (w.items.countCarried(Items.TORCH) >= CompanionMilestones.TORCHES_STOCK) return;
+        if (canMakeTorch()) owner.craftFromBag("minecraft:torch", 4);
+    }
+
+    /** A sword in the bag, or one made from the stone and sticks he carries, at a bench set down and taken up like the pickaxe's. */
+    void arm(ServerLevel level) {
+        if (level.getGameTime() < nextArm) return;
+        nextArm = level.getGameTime() + CRAFT_EVERY;
+        if (!owner.equipment.hasMeleeWeapon() && spareForSword()) craftStoneSword();
     }
 }

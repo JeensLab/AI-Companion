@@ -18,13 +18,13 @@ import java.util.List;
 final class CompanionExpedition {
     private enum Stage { LOCATE, CHECK_NEAR, WALK_DOWN, DESCEND, BRANCH, BACKTRACK, DIG_OUT, CLIMB, RETREAT }
 
-    private enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
+    enum Ending { FOUND, SUPPLIES, BLOCKED, TIMEOUT, RETREAT }
 
     /** Extra time past the step's end for a cave episode under way to close its breach; a reserve used up ends the step anyway. */
     private static final int CAVE_RESERVE = 20 * 60;
     /** The most time the creeper guard may add to one step: a creeper that never leaves cannot hold the step open for ever. */
     private static final int GUARD_RESERVE = 20 * 120;
-    private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, CRAFT_EVERY = 200, LIGHT_CLIMB_RETRY = 600;
+    private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, LIGHT_CLIMB_RETRY = 600;
     private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, CLIMB_TICKS = 20 * 120, MAX_FRESH = 2;
     static final int UNDERGROUND_DEPTH = 2;
     private static final int WET_TICKS = 100;
@@ -32,17 +32,11 @@ final class CompanionExpedition {
     private static final int NEAR_ENTRANCE = 16;
     /** Afloat in a pool under a cliff, the surface lies above the reach of the entrance search from his height: it is looked for this much higher, up to the limit. */
     private static final int POOL_RISE = 8, MAX_POOL_RISE = 32;
-    /** Ticks waited for the float to bring him up to the top of the water, where the block under his feet goes. */
-    private static final int WADE_PATIENCE = 20 * 15;
     /** What the climb says of a way up it could not open (see {@link CompanionExpeditionClimb}). */
-    /** How long a meal is given to raise his health before the climb, and how recent a blow from a mob keeps the climb. */
-    private static final int MEAL_GRACE = 200, RECENT_HURT = 100;
-    private long mealStart = -1;
-    private float mealHealth;
     /** Wear of the iron pickaxe kept for the diamond itself, and how near a diamond in sight must be to spend the rest on rock. */
     private static final int DIAMOND_IRON = 4, DIAMOND_SIGHT = 8;
-    private static final double ENTRANCE_NEAR = 1.0;
-    private static final String CAVE_DANGER = "в пещере слишком опасно", NO_WAY_HERE = "Отсюда не свернуть и наверх не выйти.";
+    static final double ENTRANCE_NEAR = 1.0;
+    private static final String NO_WAY_HERE = "Отсюда не свернуть и наверх не выйти.";
     /** The item of an order that is only the way up his own stairs, for a goal whose step needs the surface (wood) while he is deep in the mine. */
     static final String SURFACE = "surface";
 
@@ -53,21 +47,20 @@ final class CompanionExpedition {
     private final CompanionExpeditionWalk lead;
     private final CompanionExpeditionOre ore;
     private final CompanionExpeditionCave cave;
+    private final CompanionExpeditionDanger hazard;
     private final CompanionExpeditionRetreat retreat;
     private final CompanionExpeditionBacktrack backtrack;
     private final CompanionExpeditionDigOut digOut;
     private final CompanionExpeditionSupply supply;
+    private final CompanionExpeditionPlugOut plugOut;
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
-    /** The way out of a pool with no walk to its bank: a block under his feet, then a staircase cut and laid up towards the goal of the walk. */
-    private final CompanionExpeditionStairsUp wadeStairs;
-    private boolean wading;
-    private int wadeTicks, wadeSteps;
+    private final CompanionExpeditionWade wade;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
     private boolean active, hadStone, unheld, joining, atFoot, towardOrigin, surfaceOnly;
-    private long stepEnd, nextCraft, nextArm, nextLightClimb;
+    private long stepEnd, nextLightClimb;
     /** The surface entrance of the mine whose way up ended closed: kept over the steps (not cleared by {@link #reset}) until a climb gets out, so no climb walks into the same trap again. */
     private BlockPos noWayUpFrom;
     /** The walk to the stairs' foot began under the ground off the stairs, so surfacing on the way is no arrival at them. */
@@ -82,12 +75,14 @@ final class CompanionExpedition {
         this.w = w;
         this.owner = w.owner;
         this.dig = new CompanionExpeditionDig(w);
-        this.wadeStairs = new CompanionExpeditionStairsUp(w, dig);
         this.supply = new CompanionExpeditionSupply(w);
+        this.plugOut = new CompanionExpeditionPlugOut(w, dig, supply, this::end);
+        this.wade = new CompanionExpeditionWade(w, dig, supply, this::end, this::restartHere);
         this.climb = new CompanionExpeditionClimb(w, dig, supply);
         this.lead = new CompanionExpeditionWalk(dig).sealingLiquid(w);
         this.ore = new CompanionExpeditionOre(w, dig);
         this.cave = new CompanionExpeditionCave(w, dig, ore, () -> gained() >= w.requestedCount, this::cutStone);
+        this.hazard = new CompanionExpeditionDanger(owner, cave);
         this.retreat = new CompanionExpeditionRetreat(w, dig);
         this.backtrack = new CompanionExpeditionBacktrack(w, dig);
         this.digOut = new CompanionExpeditionDigOut(w, dig);
@@ -183,9 +178,7 @@ final class CompanionExpedition {
         retreat.reset();
         backtrack.reset();
         digOut.reset();
-        wadeStairs.reset();
-        wading = false;
-        wadeTicks = wadeSteps = 0;
+        wade.reset();
         supply.reset();
         bench.reset();
         stock.reset();
@@ -240,11 +233,11 @@ final class CompanionExpedition {
         // A bench he set down on a step shuts the stairs: it comes up before anything else, a retreat apart.
         if (stage != Stage.LOCATE && stage != Stage.RETREAT && bench.tick(level)) return;
         // The first tick locates the mine and then takes his hands for a craft: with a mob on him at low health the climb comes first, not ten ticks later.
-        String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE ? null : dangerNow();
+        String danger = stage == Stage.CLIMB || stage == Stage.RETREAT || stage == Stage.LOCATE ? null : hazard.now();
         if (danger != null) { startRetreat(level, danger); return; }
         if (plan == null && digging && ore.pending() && mineOre(level, stage == Stage.BRANCH ? CompanionExpeditionOre.Mode.TUNNEL : CompanionExpeditionOre.Mode.NEAR)) return;
         if (plan == null && stage == Stage.DESCEND && stock.tick(level, stand, dir)) return;
-        if (plan == null) craftTorches(level);
+        if (plan == null) supply.craftTorches(level);
         if (plan == null && digging && level.getGameTime() >= nextLightClimb && outOfLight(level)) {
             if (climbForLight()) {
                 owner.workStatus("Факелы кончились, а сделать их не из чего: поднимаюсь за припасами.");
@@ -253,7 +246,7 @@ final class CompanionExpedition {
             nextLightClimb = level.getGameTime() + LIGHT_CLIMB_RETRY;
             owner.workStatus(w.mine.noCoalAbove() ? "Факелы кончились, а угля наверху не было: копаю дальше в темноте." : "Факелы кончились, а пути наверх нет: копаю дальше в темноте.");
         }
-        if (plan == null) arm(level);
+        if (plan == null) supply.arm(level);
         if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && stuckUnderwater()) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
         switch (stage) {
             case LOCATE -> locate(level);
@@ -274,39 +267,12 @@ final class CompanionExpedition {
         return stand != null && along != null && stock.tick((ServerLevel) owner.level(), owner.blockPosition(), along);
     }
 
-    /** Why he must go up now (a very dangerous cave dealt with, or health at the cave limit), or null. */
-    private String dangerNow() {
-        if (!cave.busy() && cave.takeRetreat()) return CAVE_DANGER;
-        // The cave sense reads a fire only inside a cave episode, and the goal no longer stops a step that owns the expedition for one.
-        if (owner.isOnFire() || owner.isInLava()) return "горю";
-        float health = owner.getHealth();
-        if (health > CompanionCaveSense.HEALTH_VERY) { mealStart = -1; return null; }
-        // With food in the bag and no mob on him he eats on the spot (a fall, a blast, /damage); climbing at once would give up the order for a meal.
-        // A living attacker that struck lately (a skeleton out of the fight's sight) or a harmful effect means a wound a meal does not end, and so does a meal that does not mend.
-        if (CompanionEating.hasFood(owner) && !hurtByMobLately() && !hasHarmfulEffect() && mealMends(health)) return null;
-        return "мало здоровья (" + (int) Math.ceil(health) + ")";
-    }
-
-    private boolean hurtByMobLately() { return owner.getLastHurtByMob() != null && owner.tickCount - owner.getLastHurtByMobTimestamp() < RECENT_HURT; }
-
-    private boolean hasHarmfulEffect() {
-        for (var effect : owner.getActiveEffects()) if (!effect.getEffect().value().isBeneficial()) return true;
-        return false;
-    }
-
-    /** True while the meal is young, or the health has risen since it began: the next check starts from the health now. */
-    private boolean mealMends(float health) {
-        long now = owner.level().getGameTime();
-        if (mealStart < 0 || health > mealHealth) { mealStart = now; mealHealth = health; return true; }
-        return now - mealStart < MEAL_GRACE;
-    }
-
     /** The rest of the step is the climb and the rest at the entrance: the step's time and the order's deadline grow to hold them. */
     private void startRetreat(ServerLevel level, String why) {
         // A repeat danger from a cave with health to spare is not climbed away from again: he backs up the stairs and turns off.
-        mealStart = -1;
+        hazard.reset();
         boolean bareHanded = cave.bareHanded();
-        boolean again = why.equals(CAVE_DANGER) && (w.mine.retreats() >= 1 || bareHanded) && owner.getHealth() > CompanionCaveSense.HEALTH_WARY;
+        boolean again = why.equals(CompanionExpeditionDanger.CAVE_DANGER) && (w.mine.retreats() >= 1 || bareHanded) && owner.getHealth() > CompanionCaveSense.HEALTH_WARY;
         CompanionExpeditionRecord.rememberMove(w.mine, stage == Stage.BRANCH ? tunnel : null, plan, stand, dir);
         plan = null;
         cave.close();
@@ -358,8 +324,8 @@ final class CompanionExpedition {
             if (onSurface) for (int i = mine.above().size() - 1; i >= 0; i--) route.add(mine.above().get(i));
             route.add(mine.entrance());
             route.addAll(mine.stands());
-            routeIndex = nearest(here);
-            if (routeIndex < 0 && atTunnel(here)) routeIndex = route.size() - 1;
+            routeIndex = CompanionExpeditionRecord.nearest(route, here);
+            if (routeIndex < 0 && CompanionExpeditionRecord.atTunnel(mine, here)) routeIndex = route.size() - 1;
             boolean nearEntrance = here.distSqr(mine.entrance()) <= NEAR_ENTRANCE * NEAR_ENTRANCE;
             if (routeIndex < 0 && !nearEntrance && !mine.stands().isEmpty() && here.getY() < mine.entrance().getY() - UNDERGROUND_DEPTH && !CompanionExpeditionRecord.underSky(level, here.above())) { joining = joinedBelow = true; stage = Stage.CHECK_NEAR; return; }
             if (routeIndex < 0 && onSurface) { stage = Stage.CHECK_NEAR; return; }
@@ -380,30 +346,17 @@ final class CompanionExpedition {
         stage = Stage.CHECK_NEAR;
     }
 
-    private int nearest(BlockPos here) {
-        int best = -1;
-        double bestDistance = CompanionMineSite.NEAR_STAND;
-        for (int i = 0; i < route.size(); i++) {
-            double distance = route.get(i).distSqr(here);
-            if (distance <= bestDistance) { best = i; bestDistance = distance; }
-        }
-        return best;
-    }
-
-    /** Standing in one of the dug tunnels, away from the stairs: the route's last stand leads on into it. */
-    private boolean atTunnel(BlockPos here) {
-        for (CompanionMineSite.Tunnel t : w.mine.tunnels()) {
-            for (int k = 0; k <= t.length(); k++) {
-                if (w.mine.foot().relative(t.direction(), k).distSqr(here) <= CompanionMineSite.NEAR_STAND) return true;
-            }
-        }
-        return false;
-    }
-
     private void walkDown(ServerLevel level) {
         if (level.getGameTime() < walkAgain) return;
         if (routeIndex < 0) {
-            if (wading) { wade(level, route.get(joining ? route.size() - 1 : 0)); return; }
+            if (wade.active()) {
+                switch (wade.tick(level, route.get(joining ? route.size() - 1 : 0))) {
+                    case DONE -> softFails = 0;
+                    case RETRY -> walkAgain = level.getGameTime() + WALK_RETRY;
+                    case WORKING -> { }
+                }
+                return;
+            }
             // A failed search can leave him on a partial path out to the surface: the way down is then his own stairs from the entrance, not the far foot.
             if (joining && joinedBelow && !w.mine.buried() && !belowTop((ServerLevel) owner.level()) && owner.getY() >= w.mine.entrance().getY() - UNDERGROUND_DEPTH) {
                 w.route.legsEnd(false);
@@ -413,22 +366,22 @@ final class CompanionExpedition {
             int target = joining ? route.size() - 1 : 0;
             // A search stops up to two blocks short of its goal: the last steps are his own.
             if (owner.blockPosition().distManhattan(route.get(target)) <= OWN_STEPS) {
-                if (dig.reach(route.get(target))) { routeIndex = target; softFails = 0; wadeStairs.reset(); }
-                else if (dig.walkStuck() && startWade()) return;
+                if (dig.reach(route.get(target))) { routeIndex = target; softFails = 0; wade.resetStairs(); }
+                else if (dig.walkStuck() && wade.begin(route.get(target))) return;
                 else if (dig.walkStuck() && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
                 else if (dig.walkStuck()) walkAgain = level.getGameTime() + WALK_RETRY;
                 return;
             }
             CompanionTravel.Step walk = w.route.legs(route.get(target), ENTRANCE_NEAR);
-            if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; wadeStairs.reset(); }
-            else if (walk == CompanionTravel.Step.FAILED && startWade()) return;
+            if (walk == CompanionTravel.Step.NEAR) { routeIndex = target; softFails = 0; wade.resetStairs(); }
+            else if (walk == CompanionTravel.Step.FAILED && wade.begin(route.get(target))) return;
             // A failed search can be a passing one (a mob in the way), and a restart gives up the whole staircase.
             else if (walk == CompanionTravel.Step.FAILED && ++softFails > SOFT_RETRIES) restartHere(joining ? "Не смог вернуться на свою лестницу." : "Не смог дойти до входа в шахту.");
             else if (walk == CompanionTravel.Step.FAILED) walkAgain = level.getGameTime() + WALK_RETRY;
             return;
         }
         if (routeIndex + 1 < route.size()) {
-            if (route.get(routeIndex + 1).equals(w.mine.plug())) { takeOutPlug(level); return; }
+            if (route.get(routeIndex + 1).equals(w.mine.plug())) { plugOut.takeOut(level, hadStone); return; }
             if (dig.reach(route.get(routeIndex + 1))) routeIndex++;
             // No way round to the next step (a chamber he cut beside the stairs): back to the stairs as a whole, the search of the walk finds a stand.
             else if (dig.walkStuck()) { joining = true; routeIndex = -1; softFails = 0; }
@@ -443,80 +396,6 @@ final class CompanionExpedition {
         ore.scan = true;
         stage = reachedDepth(level) ? Stage.BRANCH : Stage.DESCEND;
         if (stage == Stage.BRANCH) enterBranch();
-    }
-
-    /**
-     * Afloat with no walk to the goal, or on a staircase begun out of the water with none from there either: the way is a block under his feet and
-     * a staircase of his own cut and laid up towards the goal, as a player climbs out of a pool under a cliff (seed 7: a water-filled pit, its
-     * bank three blocks over the water). True when that is now his work.
-     */
-    private boolean startWade() {
-        if (!owner.isInWater() && wadeStairs.steps() == 0 || owner.isInLava()) return false;
-        w.route.legsEnd(false);
-        owner.getNavigation().stop();
-        dig.forget();
-        wadeStairs.begin(route.get(joining ? route.size() - 1 : 0));
-        wading = true;
-        wadeTicks = wadeSteps = 0;
-        owner.workStatus(owner.isInWater() ? "Я в воде, а на берег не выйти: кладу блок под ноги и прокапываю лестницу наверх." : "Дороги к цели и отсюда нет, прокапываю лестницу дальше.");
-        return true;
-    }
-
-    /** One tick of the way out of the water: the block under his feet at the top of the water, then the staircase; it ends once a step of it has a walk to the goal. */
-    private void wade(ServerLevel level, BlockPos goal) {
-        if (owner.isInWater()) {
-            BlockPos top = owner.blockPosition();
-            while (level.getFluidState(top.above()).is(FluidTags.WATER)) top = top.above();
-            BlockPos floor = top.below();
-            if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) {
-                CompanionSeal.Result placed = CompanionSeal.place(owner, floor);
-                if (placed.placed()) { w.mine.sealed(floor); wadeTicks = 0; }
-                else if (placed == CompanionSeal.Result.NO_BLOCK) { wading = false; end(Ending.BLOCKED, "Я в воде, берега рядом нет, а блоков, чтобы выбраться из неё, в сумке нет."); }
-                else if (++wadeTicks > WADE_PATIENCE) { wading = false; walkAgain = level.getGameTime() + WALK_RETRY; }
-                return;
-            }
-        }
-        switch (wadeStairs.tick(level)) {
-            case WORKING -> {
-                if (wadeStairs.steps() == wadeSteps) return;
-                wadeSteps = wadeStairs.steps();
-                if (w.route.legs(goal, ENTRANCE_NEAR) != CompanionTravel.Step.FAILED) { wading = false; softFails = 0; }
-            }
-            case ARRIVED -> { wading = false; softFails = 0; }
-            case NO_TOOL -> {
-                if (supply.craftStonePickaxe()) return;
-                if (dig.ironLeft(0) || dig.hardPickaxe() != null) { dig.ironForRock(0); return; }
-                wading = false;
-                end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, w.items.countCarried(Items.STONE_PICKAXE) > 0) + " Из воды наверх не выбраться.");
-            }
-            case STUCK -> { wading = false; restartHere("Из воды наверх не выбрался: " + wadeStairs.why() + "."); }
-        }
-    }
-
-    /** His own plug from the last retreat comes out of the step before he goes down it; the block drops and is picked up like any other. */
-    private void takeOutPlug(ServerLevel level) {
-        BlockPos plug = w.mine.plug();
-        CompanionExpeditionDig.Status status = dig.dig(level, plug);
-        switch (status) {
-            case WORKING -> { }
-            case DONE -> { dig.flush(); w.mine.plugged(null); }
-            case FULL -> end(Ending.BLOCKED, "Сумка полна, свою пробку на лестнице убрать некуда.");
-            case NO_TOOL -> {
-                // The plug is rock like any other: a stone pickaxe made on the spot, else the iron one while it has wear to spare.
-                if (supply.craftStonePickaxe()) return;
-                if (!dig.ironForRock && dig.spareIron()) { dig.ironForRock = true; return; }
-                CompanionExpeditionDig.Status taken = dig.takeOut(level, plug);
-                switch (taken) {
-                    case WORKING -> { }
-                    case DONE -> { dig.flush(); w.mine.plugged(null); }
-                    case NO_TOOL, NO_HAND, FULL, STUCK -> end(Ending.SUPPLIES, CompanionExpeditionClimb.shortage(false, hadStone) + " Свою пробку на лестнице убрать нечем.");
-                }
-            }
-            case NO_HAND, STUCK -> end(Ending.BLOCKED, "Свою пробку на лестнице убрать не смог (" + switch (status) {
-                case NO_HAND -> "не взял кирку в руку";
-                case WORKING, DONE, NO_TOOL, FULL, STUCK -> "не вижу её, не дотягиваюсь или не разбирается";
-            } + ").");
-        }
     }
 
     /** The direction of the last way down: the last move of the route, the stairs' own while there is none. */
@@ -808,12 +687,12 @@ final class CompanionExpedition {
                 stand = done.to;
                 w.mine.reached(stand);
                 turns++;
-                owner.workStatus("Лестницу пришлось повернуть на " + name(dir) + ".");
+                owner.workStatus("Лестницу пришлось повернуть на " + CompanionExpeditionReport.name(dir) + ".");
             }
             case TUNNEL -> {
                 w.mine.extendTunnel();
                 head = done.to;
-                owner.workStatus("Копаю тоннель на " + name(tunnel) + ", прошёл " + w.mine.tunnels().get(w.mine.tunnels().size() - 1).length() + ".");
+                owner.workStatus("Копаю тоннель на " + CompanionExpeditionReport.name(tunnel) + ", прошёл " + w.mine.tunnels().get(w.mine.tunnels().size() - 1).length() + ".");
             }
         }
     }
@@ -843,14 +722,6 @@ final class CompanionExpedition {
         }
     }
 
-    /** Torches are laid by the lighting as he works; here the stock the step started with is kept up from coal and sticks. */
-    private void craftTorches(ServerLevel level) {
-        if (level.getGameTime() < nextCraft) return;
-        nextCraft = level.getGameTime() + CRAFT_EVERY;
-        if (w.items.countCarried(Items.TORCH) >= CompanionMilestones.TORCHES_STOCK) return;
-        if (supply.canMakeTorch()) owner.craftFromBag("minecraft:torch", 4);
-    }
-
     /** Underground in the dark with no torch and nothing to make one of: the next stretch would be dug unlit, so the way up for supplies is taken. */
     private boolean outOfLight(ServerLevel level) {
         return w.items.countCarried(Items.TORCH) == 0 && underground() && !supply.canMakeTorch() && owner.lighting().dark(level);
@@ -874,17 +745,10 @@ final class CompanionExpedition {
         return true;
     }
 
-    /** A sword in the bag, or one made from the stone and sticks he carries, at a bench set down and taken up like the pickaxe's. */
-    private void arm(ServerLevel level) {
-        if (level.getGameTime() < nextArm) return;
-        nextArm = level.getGameTime() + CRAFT_EVERY;
-        if (!owner.equipment.hasMeleeWeapon() && supply.spareForSword()) supply.craftStoneSword();
-    }
-
     private void end(Ending ending, String why) {
         dig.flush();
         if (ending == Ending.FOUND) w.mine.retreatsForgotten();
-        String text = report() + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why + rememberStop(ending);
+        String text = CompanionExpeditionReport.of(w, gained(), stairSteps) + (cave.notes().isEmpty() ? "" : " " + cave.notes()) + " " + why + rememberStop(ending);
         if (ore.missedDiamond && gained() == 0) text += " Видел алмазную руду, но взять её нечем: нужна железная кирка.";
         if (unheld) text += " Чанки вокруг шахты удержать не удалось.";
         text = text.strip();
@@ -904,27 +768,5 @@ final class CompanionExpedition {
         if (ending == Ending.FOUND || gained() > 0 || !CompanionExpeditionRecord.deep((ServerLevel) owner.level(), w.mine, here)) { w.mine.stopForgotten(); return ""; }
         w.mine.stopped(here, ending.ordinal());
         return w.mine.stopFinal() ? " Лестницу заново отсюда и подъём наверх уже пробовал: сам отсюда не выберусь." : "";
-    }
-
-    private String report() {
-        StringBuilder text = new StringBuilder("Алмазов в сумке: " + w.items.countCarried(Items.DIAMOND) + " (добыто за вылазку: " + gained()
-                + ", нужно " + w.requestedCount + "). Ноги на высоте " + owner.blockPosition().getY() + ", ступеней вниз " + stairSteps + ".");
-        List<CompanionMineSite.Tunnel> tunnels = w.mine.tunnels();
-        if (tunnels.isEmpty()) return text.toString();
-        text.append(tunnels.size() == 1 ? " Тоннель " : " Тоннели ");
-        for (int i = 0; i < tunnels.size(); i++) {
-            text.append(i == 0 ? "" : ", ").append("на ").append(name(tunnels.get(i).direction())).append(' ').append(tunnels.get(i).length());
-        }
-        return text.append('.').toString();
-    }
-
-    private static String name(Direction direction) {
-        return switch (direction) {
-            case NORTH -> "север";
-            case EAST -> "восток";
-            case SOUTH -> "юг";
-            case WEST -> "запад";
-            default -> direction.getName();
-        };
     }
 }

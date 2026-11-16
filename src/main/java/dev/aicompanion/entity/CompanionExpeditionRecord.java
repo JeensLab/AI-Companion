@@ -233,4 +233,24 @@ public final class CompanionExpeditionRecord {
         }
         return best;
     }
+
+    static int nearest(List<BlockPos> route, BlockPos here) {
+        int best = -1;
+        double bestDistance = CompanionMineSite.NEAR_STAND;
+        for (int i = 0; i < route.size(); i++) {
+            double distance = route.get(i).distSqr(here);
+            if (distance <= bestDistance) { best = i; bestDistance = distance; }
+        }
+        return best;
+    }
+
+    /** Standing in one of the dug tunnels, away from the stairs: the route's last stand leads on into it. */
+    static boolean atTunnel(CompanionMineSite mine, BlockPos here) {
+        for (CompanionMineSite.Tunnel t : mine.tunnels()) {
+            for (int k = 0; k <= t.length(); k++) {
+                if (mine.foot().relative(t.direction(), k).distSqr(here) <= CompanionMineSite.NEAR_STAND) return true;
+            }
+        }
+        return false;
+    }
 }
