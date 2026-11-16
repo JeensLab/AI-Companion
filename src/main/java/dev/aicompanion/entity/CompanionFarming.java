@@ -9,12 +9,17 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.BoneMealItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.BonemealableBlock;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
+import net.minecraft.world.level.block.LevelEvent;
+import net.minecraft.world.level.block.MangrovePropaguleBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.gameevent.GameEvent;
@@ -36,6 +41,8 @@ import java.util.Set;
  * fall from the grass he tears out, carrots and potatoes are only the ones he carries. A harvest breaks the ripe crops only, picks
  * the drops up from the ground and sows the same farmland again. Every step is read from the world as it is, so a stopped or
  * interrupted order leaves nothing half done: farmland without a crop, or a crop, and the seeds in the bag are what is left.
+ * use_bone_meal throws the bone meal of his bag, as a player clicks it, on the young crops about the player or on the sapling
+ * nearest the player; a chain's harvest («meal:») does the same to young crops when the ripe ones are too few.
  */
 final class CompanionFarming {
     /** The field is looked for this far from the player at most: the whole search radius would be a world to scan. */
@@ -50,6 +57,12 @@ final class CompanionFarming {
     private static final int TARGET_TICKS = 20 * 20;
     /** Farther from the next tile than this he walks in legs first (CompanionTravel). */
     private static final int FAR = 12;
+    /** A sapling takes two lucky throws of 45%: twelve without a tree are no bad luck (one in a hundred) but no room for it. */
+    static final int TREE_MEALS = 12;
+    private static final int MEAL_TICKS = 8;
+    /** use_bone_meal's item for the sapling; a chain's harvest item with this before it may ripen young crops with his bone meal. */
+    static final String SAPLING = "sapling", MEAL = "meal:";
+    private static final String NO_MEAL = "Костной муки нет — дай мне или скажи сделать.";
     private enum Stage { LOOK, SEEDS, WORK }
     private enum Sowing { SOWN, NO_SEEDS, UNFIT }
     private record Again(Block crop, Item seed) { }
@@ -57,6 +70,9 @@ final class CompanionFarming {
     final CompanionWork w;
     private Stage stage = Stage.LOOK;
     private boolean harvest;
+    /** use_bone_meal (on a sapling), and whether young crops get his bone meal (that order, or a chain's harvest). */
+    private boolean feed, tree, meal, grown, mealShort;
+    private int ripened, meals;
     private CompanionCrops.Kind kind;
     private int wanted;
     /** The farmland (or soil to be) of what is left to do; the plant stands above it. */
@@ -75,27 +91,40 @@ final class CompanionFarming {
     /** Checks the order and forgets the one before; the problem in words, or null. */
     String begin(String action, String item, int count) {
         harvest = "harvest_crops".equals(action);
-        kind = CompanionCrops.Kind.of(item);
-        if (kind == null && !CompanionCrops.anyKind(item)) return "Не понял, " + (harvest ? "какой урожай собрать" : "что сажать") + ": пшеницу, морковь, картофель или свёклу.";
-        if (kind == null && !harvest) kind = CompanionCrops.Kind.WHEAT;
-        if (!harvest && count > CompanionCrops.MAX_TILES) return "За раз вскапываю до " + CompanionCrops.MAX_TILES + " клеток.";
+        feed = "use_bone_meal".equals(action);
+        meal = feed || item != null && item.startsWith(MEAL);
+        if (item != null && item.startsWith(MEAL)) item = item.substring(MEAL.length());
+        tree = feed && SAPLING.equals(item);
+        kind = tree ? null : CompanionCrops.Kind.of(item);
+        if (!tree && kind == null && !CompanionCrops.anyKind(item)) return feed ? "Не понял, что удобрить: грядки (пшеницу, морковь, картофель, свёклу) или саженец."
+                : "Не понял, " + (harvest ? "какой урожай собрать" : "что сажать") + ": пшеницу, морковь, картофель или свёклу.";
+        if (kind == null && !harvest && !feed) kind = CompanionCrops.Kind.WHEAT;
+        if (!harvest && !feed && count > CompanionCrops.MAX_TILES) return "За раз вскапываю до " + CompanionCrops.MAX_TILES + " клеток.";
+        if (feed && w.items.countCarried(Items.BONE_MEAL) == 0) return NO_MEAL;
         wanted = count;
         stage = Stage.LOOK;
         todo.clear(); spare.clear(); grass.clear(); tilledNow.clear(); replant.clear(); bagBefore.clear();
         total = found = waterCells = tilled = planted = reused = cleared = grassCut = unreachable = unfit = changed = harvested = replanted = noSeeds = growing = spent = 0;
-        seedShort = bagFull = false;
+        ripened = meals = 0;
+        seedShort = bagFull = grown = mealShort = false;
         current = null;
         for (ItemStack stack : w.items.carriedItems()) if (!stack.isEmpty()) bagBefore.merge(stack.getItem(), stack.getCount(), Integer::sum);
         return null;
     }
 
-    String describe() { return harvest ? "собирает урожай, собрал " + harvested : "делает грядки, посадил " + planted + " из " + wanted; }
-    String jobName() { return harvest ? "сбор урожая (" + harvested + ")" : "посадку на грядках (" + planted + " из " + wanted + ")"; }
+    String describe() {
+        return feed ? (tree ? "растит дерево костной мукой" : "удобряет грядки, дозрело " + ripened)
+                : harvest ? "собирает урожай, собрал " + harvested : "делает грядки, посадил " + planted + " из " + wanted;
+    }
+    String jobName() {
+        return feed ? (tree ? "рост дерева костной мукой" : "удобрение грядок (" + ripened + ")")
+                : harvest ? "сбор урожая (" + harvested + ")" : "посадку на грядках (" + planted + " из " + wanted + ")";
+    }
 
     void tick(ServerLevel level) {
         if (!w.owner.onGround() && !w.owner.isInWater()) return;
         switch (stage) {
-            case LOOK -> { if (harvest) lookForCrops(level); else lookForField(level); }
+            case LOOK -> { if (tree) lookForSapling(level); else if (harvest || feed) lookForCrops(level); else lookForField(level); }
             case SEEDS -> tearGrass(level);
             case WORK -> work(level);
         }
@@ -235,30 +264,81 @@ final class CompanionFarming {
         }
     }
 
-    /** Every crop within reach of the player: the ripe ones to reap, the rest only counted. */
+    /** Every crop within reach of the player: the ripe ones to reap, the rest only counted; with his bone meal, the young ones to feed. */
     private void lookForCrops(ServerLevel level) {
         int radius = radius();
-        growing = crops(level, w.placementAnchor, radius, kind, todo);
+        List<BlockPos> ripe = new ArrayList<>(), young = new ArrayList<>();
+        growing = crops(level, w.placementAnchor, radius, kind, ripe, young);
+        // The young nearest the player first; those not taken stand in for one he cannot reach (letGo), a ripe one too.
+        young.sort(Comparator.comparingDouble(cell -> cell.distSqr(w.placementAnchor)));
+        if (!feed) todo.addAll(ripe);
+        // use_bone_meal: as many as were named (all, unnamed); a chain's harvest: as many as the ripe ones fall short, ripened on the spot (harvestStep).
+        int fed = feed ? Math.min(wanted, young.size()) : meal && w.items.countCarried(Items.BONE_MEAL) > 0 ? Math.max(0, Math.min(wanted - ripe.size(), young.size())) : 0;
+        todo.addAll(young.subList(0, fed));
+        if (feed || meal && w.items.countCarried(Items.BONE_MEAL) > 0) spare.addAll(young.subList(fed, Math.min(young.size(), fed + CompanionCrops.MAX_TILES)));
         found = todo.size();
         if (todo.isEmpty()) {
-            w.finish(CompanionActionResult.blocked(growing > 0 ? "Пока нечего собирать: спелых нет, ещё растёт посадок: " + growing + "."
+            w.finish(CompanionActionResult.blocked(feed && !ripe.isEmpty() ? "Удобрять нечего: всё, что растёт рядом, уже созрело."
+                    : growing > 0 ? "Пока нечего собирать: спелых нет, ещё растёт посадок: " + growing + "."
                     : "Посадок в " + radius + " блоках от тебя не нашёл."));
             return;
         }
         startWork();
     }
 
-    /** «Добудь пшеницу»: whether a ripe crop of it stands where harvest_crops would look, round the player. */
-    static boolean ripeNear(CompanionEntity c, ServerLevel level, Item harvest) {
+    /** «Вырасти дерево»: the sapling nearest the player, within the reach of the field. */
+    private void lookForSapling(ServerLevel level) {
+        BlockPos centre = w.placementAnchor, best = null;
+        int radius = radius();
+        boolean lone = false;
+        for (BlockPos pos : BlockPos.betweenClosed(centre.offset(-radius, -8, -radius), centre.offset(radius, 6, radius))) {
+            if (!level.isLoaded(pos) || pos.distSqr(centre) > (long) radius * radius || best != null && pos.distSqr(centre) >= best.distSqr(centre)) continue;
+            BlockState state = level.getBlockState(pos);
+            // A propagule hanging under the leaves only ripens to fall, a dark oak grows of four in a square: no tree of either.
+            if (!state.is(BlockTags.SAPLINGS) || state.hasProperty(MangrovePropaguleBlock.HANGING) && state.getValue(MangrovePropaguleBlock.HANGING)) continue;
+            if (state.is(Blocks.DARK_OAK_SAPLING) && !square(level, pos, Blocks.DARK_OAK_SAPLING)) { lone = true; continue; }
+            best = pos.immutable();
+        }
+        if (best == null) {
+            w.finish(CompanionActionResult.blocked(lone ? "Тёмный дуб растёт только из четырёх саженцев квадратом 2×2, а тут он один."
+                    : "Саженцев в " + radius + " блоках от тебя не вижу."));
+            return;
+        }
+        todo.add(best.below());
+        found = 1;
+        startWork();
+    }
+
+    /** Whether the sapling stands in a square of two by two of its kind, as a dark oak must to grow. */
+    private static boolean square(ServerLevel level, BlockPos sapling, Block kind) {
+        for (int dx = -1; dx <= 0; dx++) for (int dz = -1; dz <= 0; dz++) {
+            boolean all = true;
+            for (int x = 0; x <= 1 && all; x++) for (int z = 0; z <= 1 && all; z++) all = level.getBlockState(sapling.offset(dx + x, 0, dz + z)).is(kind);
+            if (all) return true;
+        }
+        return false;
+    }
+
+    /** A tree grew from the sapling's cell: its trunk there, or (a mangrove on its roots) a few blocks above it. */
+    private static boolean treeFrom(ServerLevel level, BlockPos cell) {
+        for (int up = 0; up <= 7; up++) if (level.getBlockState(cell.above(up)).is(BlockTags.LOGS)) return true;
+        return false;
+    }
+
+    /** «Добудь пшеницу»: whether harvest_crops would reap one round the player: a ripe crop of it, or a young one his bone meal ripens. */
+    static boolean reapableNear(CompanionEntity c, ServerLevel level, Item harvest) {
         CompanionCrops.Kind kind = CompanionCrops.Kind.yielding(harvest);
         if (kind == null) return false;
         List<BlockPos> ripe = new ArrayList<>();
-        crops(level, c.getOwnerPlayer() == null ? c.blockPosition() : c.getOwnerPlayer().blockPosition(), Math.min(c.getSearchRadius(), SCAN_RADIUS), kind, ripe);
-        return !ripe.isEmpty();
+        int young = crops(level, c.getOwnerPlayer() == null ? c.blockPosition() : c.getOwnerPlayer().blockPosition(), Math.min(c.getSearchRadius(), SCAN_RADIUS), kind, ripe, null);
+        return !ripe.isEmpty() || young > 0 && (c.countItem(Items.BONE_MEAL) > 0 || c.getMainHandItem().is(Items.BONE_MEAL) || c.getOffhandItem().is(Items.BONE_MEAL));
     }
 
-    /** The farmland of the ripe crops of the kind (of any, with none named) round the centre goes into {@code ripe}; the count of those still growing. */
-    private static int crops(ServerLevel level, BlockPos centre, int radius, CompanionCrops.Kind kind, List<BlockPos> ripe) {
+    /**
+     * The farmland of the ripe crops of the kind (of any, with none named) round the centre goes into {@code ripe}, of the young ones
+     * into {@code young} if it is given; the count of those still growing.
+     */
+    private static int crops(ServerLevel level, BlockPos centre, int radius, CompanionCrops.Kind kind, List<BlockPos> ripe, List<BlockPos> young) {
         int growing = 0;
         int low = Math.max(level.getMinBuildHeight(), centre.getY() - 8), high = Math.min(level.getMaxBuildHeight() - 1, centre.getY() + 6);
         for (int cx = (centre.getX() - radius) >> 4; cx <= (centre.getX() + radius) >> 4; cx++) for (int cz = (centre.getZ() - radius) >> 4; cz <= (centre.getZ() + radius) >> 4; cz++) {
@@ -273,7 +353,9 @@ final class CompanionFarming {
                     if (!(state.getBlock() instanceof CropBlock crop) || kind != null && state.getBlock() != kind.crop) continue;
                     long ox = (cx << 4) + x - centre.getX(), oz = (cz << 4) + z - centre.getZ();
                     if (ox * ox + oz * oz > (long) radius * radius) continue;
-                    if (crop.isMaxAge(state)) ripe.add(new BlockPos((cx << 4) + x, y - 1, (cz << 4) + z)); else growing++;
+                    BlockPos soil = new BlockPos((cx << 4) + x, y - 1, (cz << 4) + z);
+                    if (crop.isMaxAge(state)) ripe.add(soil);
+                    else { growing++; if (young != null) young.add(soil); }
                 }
             }
         }
@@ -329,17 +411,31 @@ final class CompanionFarming {
             if (current == null) { finishWork(); return; }
         }
         BlockPos soil = current;
+        // A grown tree stands in the cell of the sapling: done, before the trunk is taken for a way that is blocked (in game 16.11).
+        if (tree && !level.getBlockState(soil.above()).is(BlockTags.SAPLINGS)) { feedStep(level, soil); return; }
         if (++spent > TARGET_TICKS) { unreachable++; letGo(); return; }
         if (w.owner.distanceToSqr(soil.getCenter()) > FAR * FAR) {
             var step = w.owner.travel().toward(soil, 8);
-            if (step == CompanionTravel.Step.WALKING) { w.owner.workStatus(harvest ? "Иду к посадкам." : "Иду к воде, где будут грядки."); return; }
+            if (step == CompanionTravel.Step.WALKING) { w.owner.workStatus(tree ? "Иду к саженцу." : harvest || feed ? "Иду к посадкам." : "Иду к воде, где будут грядки."); return; }
             w.owner.travel().reset();
             if (step == CompanionTravel.Step.FAILED) { unreachable++; letGo(); return; }
         }
         int reach = w.items.reachBlock(level, soil, false);
         if (reach < 0) { unreachable++; letGo(); return; }
-        if (reach == 0) { w.owner.workStatus(harvest ? "Иду к спелым посадкам." : "Иду к грядке."); return; }
-        if (harvest) harvestStep(level, soil); else farmStep(level, soil);
+        if (reach == 0) { w.owner.workStatus(tree ? "Иду к саженцу." : feed ? "Иду к посадкам." : harvest ? "Иду к спелым посадкам." : "Иду к грядке."); return; }
+        if (feed) feedStep(level, soil); else if (harvest) harvestStep(level, soil); else farmStep(level, soil);
+    }
+
+    /** One plant of use_bone_meal: his bone meal on it until it is ripe (a tree stands), then the next; no meal left ends the order. */
+    private void feedStep(ServerLevel level, BlockPos soil) {
+        BlockPos cell = soil.above();
+        BlockState state = level.getBlockState(cell);
+        if (tree) {
+            if (!state.is(BlockTags.SAPLINGS)) { grown = treeFrom(level, cell); finishWork(); return; }
+            if (meals >= TREE_MEALS) { finishWork(); return; }
+        } else if (!(state.getBlock() instanceof CropBlock crop) || crop.isMaxAge(state)) { next(); return; }
+        w.owner.workStatus(tree ? "Сыплю костную муку на саженец." : "Сыплю костную муку на грядки: дозрело " + ripened + " из " + total + ".");
+        if (!throwMeal(level, cell)) { mealShort = true; finishWork(); }
     }
 
     /** One tile: grass off it, the hoe in, the seed down — whichever the tile needs now. */
@@ -374,7 +470,28 @@ final class CompanionFarming {
     /** A tile that cannot be worked is let go, and the next nearest one stands in for it. */
     private void letGo() {
         next();
-        if (!harvest && !spare.isEmpty()) todo.add(spare.removeFirst());
+        // Only the field, use_bone_meal and a harvest with bone meal keep spares (lookForField, lookForCrops); a harvest takes one
+        // only if the ripe left fall short, so no meal goes on a young one while ripe ones will do.
+        if (!spare.isEmpty() && (!harvest || harvested + todo.size() < wanted)) todo.add(spare.removeFirst());
+    }
+
+    /** One bone meal of the bag on the plant, as a player clicks it: the vanilla growth (a sapling's own chance), the green sparks, the meal gone. */
+    private boolean throwMeal(ServerLevel level, BlockPos cell) {
+        BlockState state = level.getBlockState(cell);
+        // Asked first, so no meal is taken out of his hand for a plant it would not grow (a full bag could not take it back).
+        if (!(state.getBlock() instanceof BonemealableBlock plant) || !plant.isValidBonemealTarget(level, cell, state)) { letGo(); return true; }
+        ItemStack one = w.items.takeCarried(Items.BONE_MEAL, 1);
+        if (one.isEmpty()) return false;
+        ItemStack shown = one.copy();
+        if (!BoneMealItem.applyBonemeal(one, level, cell, null)) { w.owner.storeLoot(one); letGo(); return true; }
+        level.levelEvent(LevelEvent.PARTICLES_AND_SOUND_PLANT_GROWTH, cell, 15);
+        w.owner.swing(InteractionHand.MAIN_HAND);
+        w.owner.animateAction(1, cell, shown);
+        meals++; w.gathered++;
+        w.cooldown = MEAL_TICKS;
+        BlockState after = level.getBlockState(cell);
+        if (after.getBlock() instanceof CropBlock crop && crop.isMaxAge(after)) ripened++;
+        return true;
     }
 
     /** A hoe on dirt or grass makes farmland: a swing, the sound, and a notch off the hoe. */
@@ -439,6 +556,12 @@ final class CompanionFarming {
             }
             return;
         }
+        // A young one taken for a chain's harvest: ripened with his bone meal, then reaped by the branch above; no meal left, it stays.
+        if (meal && state.getBlock() instanceof CropBlock crop && !crop.isMaxAge(state) && again == null) {
+            w.owner.workStatus("Сыплю костную муку, чтобы дозрело: " + harvested + " из " + total + ".");
+            if (!throwMeal(level, cell)) { mealShort = true; next(); }
+            return;
+        }
         next();
     }
 
@@ -472,7 +595,24 @@ final class CompanionFarming {
 
     private void finishWork() {
         next();
-        if (harvest) finishHarvest(); else finishField();
+        if (feed) finishFeed(); else if (harvest) finishHarvest(); else finishField();
+    }
+
+    private void finishFeed() {
+        String text;
+        boolean ok;
+        if (tree) {
+            ok = grown;
+            text = grown ? "Готово: дерево выросло." : meals >= TREE_MEALS ? "Не растёт: похоже, ему мало места."
+                    : mealShort ? "Костная мука кончилась, а саженец так и не вырос." : unreachable > 0 ? "До саженца не смог дойти." : "Саженца на месте больше нет.";
+        } else {
+            ok = ripened > 0;
+            text = ripened == 0 ? "Ничего не дозрело." : (ripened >= found ? "Готово, дозрело посадок: " + ripened : "Дозрело посадок: " + ripened + " из " + found) + ".";
+            if (mealShort) text += " Костная мука кончилась.";
+            if (unreachable > 0) text += " До " + unreachable + " не смог дойти.";
+        }
+        w.finish(new CompanionActionResult(ok, text + " Муки ушло: " + meals + ". В сумке: " + w.owner.getStoredItemsSummary() + ".")
+                .withEvidence(new CompanionActionResult.Evidence(w.taskId, "use_bone_meal", tree ? SAPLING : kind == null ? "" : kind.seedId(), tree ? (grown ? 1 : 0) : ripened, w.owner.getUUID(), null, null)));
     }
 
     private void finishField() {
@@ -503,6 +643,7 @@ final class CompanionFarming {
         if (noSeeds > 0) why.add("Семян на " + noSeeds + " посадок не хватило: там пусто.");
         if (unfit > 0) why.add("На " + unfit + " посадить заново не вышло.");
         if (unreachable > 0) why.add("До " + unreachable + " спелых не смог дойти.");
+        if (meals > 0) why.add("Дозрело под костной мукой: " + ripened + ", муки ушло " + meals + ".");
         if (growing > 0) why.add("Ещё не созрело: " + growing + ".");
         w.finish(new CompanionActionResult(ok, text + (why.isEmpty() ? "" : " " + String.join(" ", why)) + " В сумке: " + w.owner.getStoredItemsSummary() + ".")
                 .withEvidence(new CompanionActionResult.Evidence(w.taskId, "harvest_crops", kind == null ? "" : kind.seedId(), harvested, w.owner.getUUID(), null, null)));

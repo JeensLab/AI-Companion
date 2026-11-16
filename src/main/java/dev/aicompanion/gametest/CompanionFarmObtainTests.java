@@ -47,6 +47,12 @@ public final class CompanionFarmObtainTests {
             var none = CompanionObtain.plan(level, List.of(), true, item, 1, thing -> false);
             h.assertTrue(none.refused() && none.steps().isEmpty() && none.refusal().contains("огород"), item + " with no ripe field: " + none);
         }
+        // Bone meal in his bag: the harvest may ripen young ones («meal:»), a step a model cannot order.
+        var meal = CompanionObtain.plan(level, List.of(new ItemStack(Items.BONE_MEAL, 8)), true, "minecraft:wheat", 3, thing -> true);
+        h.assertTrue(meal.steps().equals(List.of(new CompanionObtain.Step("harvest_crops", "meal:minecraft:wheat_seeds", 3))), "Wheat with meal: " + meal);
+        boolean mealTaken = true;
+        try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"harvest_crops\",\"item\":\"meal:minecraft:wheat_seeds\"}]")); } catch (RuntimeException refused) { mealTaken = false; }
+        h.assertTrue(!mealTaken, "meal: was taken from a model");
         // Seeds are his own business at sowing: no field is reaped for them.
         var seeds = CompanionObtain.plan(level, List.of(), true, "minecraft:wheat_seeds", 1, thing -> true);
         h.assertTrue(seeds.steps().stream().noneMatch(step -> step.type().equals("harvest_crops")), "Seeds: " + seeds);
@@ -117,6 +123,145 @@ public final class CompanionFarmObtainTests {
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             h.assertTrue(count(c, Items.BONE_MEAL) >= 1, "No bone meal: " + future.join().report());
+        });
+    }
+
+    /** «Удобри огород»: the bone meal of his bag on every young crop about the player until it is ripe; nothing is reaped. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void youngCropsAreGrownWithHisBoneMeal(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(20, GROUND, 16), Blocks.WATER);
+        for (int z = 14; z <= 18; z++) {
+            h.setBlock(new BlockPos(21, GROUND, z), Blocks.FARMLAND);
+            h.setBlock(new BlockPos(21, GROUND + 1, z), Blocks.WHEAT);
+        }
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.BONE_MEAL, 32));
+        var future = run(h, c, "[{\"action\":\"use_bone_meal\",\"item\":\"any\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            for (int z = 14; z <= 18; z++) {
+                var state = h.getBlockState(new BlockPos(21, GROUND + 1, z));
+                h.assertTrue(state.getBlock() instanceof CropBlock crop && crop.isMaxAge(state), "Not ripe at z=" + z + ": " + state + "; " + future.join().report());
+            }
+            h.assertTrue(count(c, Items.BONE_MEAL) < 32 && count(c, Items.WHEAT) == 0, "Meal " + count(c, Items.BONE_MEAL) + ", wheat " + count(c, Items.WHEAT));
+        });
+    }
+
+    /** «Удобри две грядки»: the two nearest young crops ripen, the rest keep growing and his meal stays in the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aNamedNumberOfCropsIsGrown(GameTestHelper h) {
+        // The direct phrases: the number said is kept (in game 16.11 «удобри две грядки» ripened all five), a sapling is one.
+        for (String[] phrase : new String[][]{{"удобри две грядки", "companion work use_bone_meal 2 any"}, {"Олег, удобри огород", "companion work use_bone_meal 64 any"},
+                {"посыпь грядки костной мукой", "companion work use_bone_meal 64 any"}, {"вырасти дерево", "companion work use_bone_meal 1 sapling"}})
+            h.assertTrue(phrase[1].equals(dev.aicompanion.client.CompanionLocalCommands.route(phrase[0], "Олег")), phrase[0] + ": " + dev.aicompanion.client.CompanionLocalCommands.route(phrase[0], "Олег"));
+        ground(h);
+        h.setBlock(new BlockPos(20, GROUND, 16), Blocks.WATER);
+        for (int z = 14; z <= 18; z++) {
+            h.setBlock(new BlockPos(21, GROUND, z), Blocks.FARMLAND);
+            h.setBlock(new BlockPos(21, GROUND + 1, z), Blocks.WHEAT);
+        }
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.BONE_MEAL, 32));
+        var future = run(h, c, "[{\"action\":\"use_bone_meal\",\"item\":\"any\",\"count\":2}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            int ripe = 0;
+            for (int z = 14; z <= 18; z++) if (h.getBlockState(new BlockPos(21, GROUND + 1, z)).getBlock() instanceof CropBlock crop && crop.isMaxAge(h.getBlockState(new BlockPos(21, GROUND + 1, z)))) ripe++;
+            h.assertTrue(ripe == 2, "Ripe " + ripe + " of the two asked; " + future.join().report());
+        });
+    }
+
+    /** «Вырасти дерево»: bone meal on the sapling nearest the player until a tree stands there. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aSaplingIsGrownIntoATree(GameTestHelper h) {
+        ground(h);
+        BlockPos sapling = new BlockPos(18, GROUND + 1, 16);
+        h.setBlock(sapling, Blocks.OAK_SAPLING.defaultBlockState().setValue(net.minecraft.world.level.block.SaplingBlock.STAGE, 1));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.BONE_MEAL, 32));
+        var future = run(h, c, "[{\"action\":\"use_bone_meal\",\"item\":\"sapling\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            // In game 16.11 the grown trunk stood in his way to the cell, and the tree that grew was reported as not reached.
+            h.assertTrue(h.getBlockState(sapling).is(Blocks.OAK_LOG) && report.contains("дерево выросло"), "No tree: " + h.getBlockState(sapling) + "; " + report);
+            h.assertTrue(count(c, Items.BONE_MEAL) < 32, "No meal spent");
+        });
+    }
+
+    /** A mangrove grows on its roots, its trunk above the cell of the propagule: that is a tree grown too. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aMangroveIsGrownOnItsRoots(GameTestHelper h) {
+        ground(h);
+        BlockPos sapling = new BlockPos(18, GROUND + 1, 16);
+        h.setBlock(sapling, Blocks.MANGROVE_PROPAGULE.defaultBlockState().setValue(net.minecraft.world.level.block.SaplingBlock.STAGE, 1));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.BONE_MEAL, 32));
+        var future = run(h, c, "[{\"action\":\"use_bone_meal\",\"item\":\"sapling\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(!h.getBlockState(sapling).is(Blocks.MANGROVE_PROPAGULE) && report.contains("дерево выросло"), h.getBlockState(sapling) + "; " + report);
+        });
+    }
+
+    /** A sapling under a roof never grows: at most twelve bone meal go on it, then he says so and keeps the rest. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aSaplingWithNoRoomIsGivenUp(GameTestHelper h) {
+        ground(h);
+        BlockPos sapling = new BlockPos(18, GROUND + 1, 16);
+        h.setBlock(sapling, Blocks.OAK_SAPLING);
+        h.setBlock(sapling.above(2), Blocks.STONE);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.BONE_MEAL, 32));
+        var future = run(h, c, "[{\"action\":\"use_bone_meal\",\"item\":\"sapling\"}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(h.getBlockState(sapling).is(Blocks.OAK_SAPLING) && report.contains("Не растёт"), "Report: " + report);
+            h.assertTrue(count(c, Items.BONE_MEAL) == 32 - 12, "Meal left " + count(c, Items.BONE_MEAL));
+        });
+    }
+
+    /** «Сделай хлеб» by a young field and bone meal in his bag: the meal ripens three, they are reaped, the bread is made. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1800)
+    public static void breadIsMadeOfAYoungFieldWithHisBoneMeal(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(20, GROUND, 16), Blocks.WATER);
+        for (int z = 14; z <= 18; z++) {
+            h.setBlock(new BlockPos(21, GROUND, z), Blocks.FARMLAND);
+            h.setBlock(new BlockPos(21, GROUND + 1, z), Blocks.WHEAT);
+        }
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.CRAFTING_TABLE));
+        c.setItem(1, new ItemStack(Items.BONE_MEAL, 32));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:bread\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.BREAD) >= 1, "No bread: " + future.join().report());
+        });
+    }
+
+    /** A ripe ear walled in where he cannot reach it does not stop «сделай хлеб»: the young ones by the water ripen in its place. */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aRipeCropOutOfReachIsMadeUpWithYoungOnes(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(20, GROUND, 16), Blocks.WATER);
+        for (int z = 14; z <= 18; z++) {
+            h.setBlock(new BlockPos(21, GROUND, z), Blocks.FARMLAND);
+            h.setBlock(new BlockPos(21, GROUND + 1, z), Blocks.WHEAT);
+        }
+        for (int x = 15; x <= 19; x++) for (int y = GROUND; y <= GROUND + 3; y++) for (int z = 21; z <= 25; z++) h.setBlock(new BlockPos(x, y, z), Blocks.BEDROCK);
+        h.setBlock(new BlockPos(17, GROUND + 1, 23), Blocks.FARMLAND);
+        h.setBlock(new BlockPos(17, GROUND + 2, 23), Blocks.WHEAT.defaultBlockState().setValue(CropBlock.AGE, CropBlock.MAX_AGE));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.CRAFTING_TABLE));
+        c.setItem(1, new ItemStack(Items.BONE_MEAL, 32));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:bread\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.BREAD) >= 1, "No bread: " + future.join().report());
         });
     }
 

@@ -392,7 +392,7 @@ public final class CompanionEvents {
             case "hunt_animals" -> companion.startWork("hunt_animals", item, count);
             // «Подбери»: what lies on the ground, taken by walking to it; nothing near falls back to the usual work.
             case "pick_up" -> companion.pickUpNearby(item, count);
-            case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
+            case "farm_crops", "harvest_crops", "use_bone_meal" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
             // «Почини кирку»: two alike folded where he stands, as in the crafting grid; no walk, so no work.
             case "repair_item" -> CompanionGrinding.repair(companion, item);

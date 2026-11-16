@@ -322,9 +322,11 @@ public final class CompanionObtain {
         // A recipe makes it: its ingredients, then the craft.
         if (craft(item, count, depth)) return true;
         // A field grows it: the ripe crops about him are reaped and sown again. None ripe: growing takes a day, he does not wait.
+        // With bone meal in his bag the harvest ripens young ones too, if the ripe are too few (CompanionFarming, «meal:»).
         CompanionCrops.Kind crop = CompanionCrops.Kind.yielding(item);
         if (crop != null) {
-            if (about(item)) return addSplit("harvest_crops", crop.seedId(), ceil(count, crop == CompanionCrops.Kind.CARROT || crop == CompanionCrops.Kind.POTATO ? 2 : 1), CompanionCrops.MAX_HARVEST);
+            if (about(item)) return addSplit("harvest_crops", (carried(carried, Items.BONE_MEAL) > 0 ? CompanionFarming.MEAL : "") + crop.seedId(),
+                    ceil(count, crop == CompanionCrops.Kind.CARROT || crop == CompanionCrops.Kind.POTATO ? 2 : 1), CompanionCrops.MAX_HARVEST);
             // Named among what is not about him too: a refusal inside a recipe (bread) is forgotten with the recipe.
             absent.add("спелой грядки, чтобы собрать " + crop.plant + " (могу сделать огород: вырастет — соберу)");
             return refuse(ABSENT + " спелой грядки, чтобы собрать " + crop.plant + ". Могу сделать огород: вырастет — соберу.");
