@@ -17,7 +17,7 @@ final class CompanionExpeditionStep {
     enum Result { WORKING, DONE, BLOCKED, NO_TOOL, FULL }
 
     private static final int MAX_SEALS = 24, SEAL_TRIES = 20, BUSY_TICKS = 5;
-    private static final String WALK = "застрял на ходу: не смог дойти до нужной клетки";
+    private static final String WALK = "застрял на ходу: не смог дойти до нужной клетки", LIQUID = "рядом жидкость, до которой не дотянуться, чтобы заделать";
 
     final Kind kind;
     final BlockPos from, to;
@@ -34,6 +34,8 @@ final class CompanionExpeditionStep {
     boolean lasting;
     /** True when the advance failed because he could not walk to the cell it needed: the stairs may be lost from under him. */
     boolean lost;
+    /** True when water or lava he cannot seal stopped the advance: a body of it lies under or beside the way, not one source. */
+    boolean liquid;
     private int index, tries, seals;
     /** The game time of the last pick swing at a cell or seal placed: the advance is working, not waiting. */
     private long busyAt = Long.MIN_VALUE;
@@ -93,7 +95,11 @@ final class CompanionExpeditionStep {
         switch (hazard.kind()) {
             case OK -> safe = true;
             case FLOOR -> { laying = new CompanionExpeditionFloor(hazard.cell()); safe = true; }
-            case BLOCKED -> { return refuse(diagnose(level)); }
+            case BLOCKED -> {
+                String why = diagnose(level);
+                liquid = why.equals(LIQUID);
+                return refuse(why);
+            }
             case SEAL -> { return seal(hazard.cell()); }
         }
         return Result.WORKING;
@@ -103,8 +109,8 @@ final class CompanionExpeditionStep {
         CompanionSeal.Result placed = CompanionSeal.place(w.owner, liquid);
         if (placed.placed()) { w.mine.sealed(liquid); tries = 0; seals++; busyAt = w.owner.level().getGameTime(); }
         else if (placed == CompanionSeal.Result.NO_BLOCK) return fail("жидкость надо заделать, а блоков для этого в сумке нет");
-        else if (++tries > SEAL_TRIES) return refuse("не смог заделать жидкость: не дотянулся или клетка занята");
-        if (seals > MAX_SEALS) return refuse("жидкости слишком много: заделок уже больше " + MAX_SEALS);
+        else if (++tries > SEAL_TRIES) { this.liquid = true; return refuse("не смог заделать жидкость: не дотянулся или клетка занята"); }
+        if (seals > MAX_SEALS) { this.liquid = true; return refuse("жидкости слишком много: заделок уже больше " + MAX_SEALS); }
         return Result.WORKING;
     }
 
@@ -114,7 +120,10 @@ final class CompanionExpeditionStep {
             case PLACED -> { w.mine.sealed(laying.cell); yield Result.WORKING; }
             case LAID -> { laying = null; yield null; }
             case NO_BLOCK -> fail("пол под новой ступенью надо уложить, а блоков для этого в сумке нет");
-            case FAILED -> refuse("не смог уложить пол под новой ступенью: не дотянулся или клетка занята");
+            case FAILED -> {
+                liquid = !level.getFluidState(laying.cell).isEmpty();
+                yield refuse("не смог уложить пол под новой ступенью: не дотянулся или клетка занята");
+            }
             case WORKING -> Result.WORKING;
         };
     }
@@ -161,7 +170,7 @@ final class CompanionExpeditionStep {
             if (w.mine.forbidden(cell)) return "в этой клетке моя пробка: там пещера";
             if (w.mine.carriesStand(cell)) return "в этой клетке пол моей же ступени";
             if (!level.hasChunkAt(cell) || !level.getWorldBorder().isWithinBounds(cell) || level.isOutsideBuildHeight(cell)) return "дальше граница мира или незагруженная земля";
-            if (liquidAround(level, cell)) return "рядом жидкость, до которой не дотянуться, чтобы заделать";
+            if (liquidAround(level, cell)) return LIQUID;
             if (!CompanionShaftPlan.open(level, cell) && !w.mine.seals().contains(cell) && !CompanionOre.tunnelable(level.getBlockState(cell))) return "на пути коренная порода или неподходящий блок";
             if (level.getBlockEntity(cell) != null || level.getBlockState(cell.above()).getBlock() instanceof FallingBlock) {
                 return level.getBlockEntity(cell) != null ? "на пути сундук или другой хозяйственный блок" : "над клеткой песок или гравий, он завалит ход";

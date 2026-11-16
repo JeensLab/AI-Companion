@@ -52,21 +52,62 @@ final class CompanionExpeditionBacktrack {
             if (mine.shunned(stand) || !dig.floored(stand)) continue;
             Direction turn = sideAt(level, mine, i);
             if (turn == null) continue;
-            at = i;
-            side = turn;
-            target = stand;
-            lowerStand = pos(mine, i + 1);
-            plugCell = lowerStand.above();
-            List<BlockPos> up = CompanionExpeditionClimb.wayUp(mine);
-            List<BlockPos> way = up.subList(0, up.size() - 1 - i);
-
-            // He may have been moved from the first cell of the way (a fight, a fall): the walk starts at the cell nearest to him.
-            BlockPos here = owner.blockPosition();
-            walk.set(way, CompanionExpeditionRecord.nearest(way, here, Double.POSITIVE_INFINITY));
-            mine.backtracked();
+            goBack(i, turn);
             return true;
         }
         return false;
+    }
+
+    /**
+     * As {@link #begin} for liquid under the way down: at least {@code rise} stands back up, and off to the side with the least liquid
+     * beside and under it within {@code reach}; a landing there is enough, the level way off goes on along it.
+     */
+    boolean beginAway(ServerLevel level, int rise, int reach) {
+        reset();
+        CompanionMineSite mine = w.mine;
+        if (!mine.exists() || mine.stands().isEmpty() || mine.backtracks() >= MAX_BACKTRACKS) return false;
+        for (int i = mine.stands().size() - 1 - rise; i >= -1; i--) {
+            BlockPos stand = pos(mine, i);
+            if (mine.shunned(stand) || !dig.floored(stand)) continue;
+            Direction turn = driestAt(level, mine, i, reach);
+            if (turn == null) continue;
+            goBack(i, turn);
+            return true;
+        }
+        return false;
+    }
+
+    private void goBack(int i, Direction turn) {
+        CompanionMineSite mine = w.mine;
+        at = i;
+        side = turn;
+        target = pos(mine, i);
+        lowerStand = pos(mine, i + 1);
+        plugCell = lowerStand.above();
+        List<BlockPos> up = CompanionExpeditionClimb.wayUp(mine);
+        List<BlockPos> way = up.subList(0, up.size() - 1 - i);
+
+        // He may have been moved from the first cell of the way (a fight, a fall): the walk starts at the cell nearest to him.
+        BlockPos here = owner.blockPosition();
+        walk.set(way, CompanionExpeditionRecord.nearest(way, here, Double.POSITIVE_INFINITY));
+        mine.backtracked();
+    }
+
+    /** Of the sides off the stand that are not the stairs and whose landing is open to him, the one with the fewest liquid cells within {@code reach} of it and down to the stairs' foot. */
+    private static Direction driestAt(ServerLevel level, CompanionMineSite mine, int i, int reach) {
+        BlockPos stand = pos(mine, i);
+        Direction down = toward(stand, pos(mine, i + 1)), up = i < 0 ? null : toward(stand, pos(mine, i - 1));
+        int depth = stand.getY() - mine.stands().getLast().getY() + 1;
+        Direction best = null;
+        int bestWet = Integer.MAX_VALUE;
+        for (Direction turn : Direction.Plane.HORIZONTAL) {
+            if (turn == down || turn == up || CompanionShaftPlan.turnCost(level, stand, turn, mine.seals(), mine.avoid()) == CompanionShaftPlan.NO_TURN) continue;
+            int wet = 0;
+            for (BlockPos pos : BlockPos.betweenClosed(stand.relative(turn).below(depth).relative(turn.getClockWise(), 2), stand.relative(turn, reach).relative(turn.getCounterClockWise(), 2)))
+                if (level.hasChunkAt(pos) && !level.getFluidState(pos).isEmpty()) wet++;
+            if (wet < bestWet) { best = turn; bestWet = wet; }
+        }
+        return best;
     }
 
     Result tick(ServerLevel level) {

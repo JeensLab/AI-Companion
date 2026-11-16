@@ -45,6 +45,25 @@ public final class CompanionExpeditionTests {
 
     private record Rig(CompanionEntity c, ServerPlayer owner) { }
 
+    /**
+     * Water under the way down, wider than a turn or two goes round (an aquifer: seed 7 at y 1): he goes a few steps back up, digs a level
+     * way off to the side, out from over it, and goes on down from there, never into the water and with no end above the tunnels.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 12000)
+    public static void movesTheStairsAwayFromWaterBelowThem(GameTestHelper h) {
+        Rig r = rig(h, NO_RING, standard(GIVEN_TORCHES, new ItemStack(Items.COBBLESTONE, 64)));
+        CompanionEntity c = r.c();
+        for (int x = CENTER - 6; x <= CENTER + 6; x++) for (int z = 2; z <= CENTER; z++) for (int y = 6; y <= 9; y++) h.setBlock(new BlockPos(x, y, z), Blocks.WATER);
+        long id = start(h, c, 1);
+        int down = GROUND + 1 - DIAMOND_FEET;
+        h.onEachTick(() -> {
+            h.assertTrue(!c.isEyeInFluid(FluidTags.WATER), "In the water at " + h.relativePos(c.blockPosition()).toShortString() + " | " + report(c));
+            CompanionActionResult result = c.workResult(id);
+            if (result != null) h.fail("Ended above the tunnels: " + result + " | " + report(c));
+        });
+        h.succeedWhen(() -> h.assertTrue(depth(h, c) >= down, "Not down to the tunnels, depth " + depth(h, c) + " | " + report(c)));
+    }
+
     /** A lava source open only from above, beside the column he opens next and in sight from his stand: it is plugged before that column is opened. */
     @GameTest(template = "marathon_cave", timeoutTicks = 9000)
     public static void sealsSeenLavaBesideTheStairsBeforeOpeningTheNextColumn(GameTestHelper h) {

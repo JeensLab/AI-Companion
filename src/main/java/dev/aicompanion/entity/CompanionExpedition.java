@@ -26,6 +26,8 @@ final class CompanionExpedition {
     private static final int GUARD_RESERVE = 20 * 120;
     private static final int STEP_TICKS = 20 * 540, NEAR_RADIUS = 12, LIGHT_CLIMB_RETRY = 600;
     private static final int SOFT_RETRIES = 3, WALK_RETRY = 40, OWN_STEPS = 4, MAX_TURNS = 8, FAR_ENTRANCE = 64, CLIMB_TICKS = 20 * 120, MAX_FRESH = 2;
+    /** Liquid under the way down: this many stands back up, a level way this long off to the side, at most this many times a step. */
+    private static final int WATER_RISE = 4, DRIFT = 16, MAX_DRIFTS = 3;
     static final int UNDERGROUND_DEPTH = 2;
     private static final int WET_TICKS = 100;
     /** Within this many blocks of the entrance he walks down his own stairs from it instead of searching a route to their far bottom. */
@@ -67,8 +69,11 @@ final class CompanionExpedition {
     private boolean joinedBelow;
     private long credited;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails, fresh;
+    /** Landings left of the level way off from liquid under the stairs, and how many such ways this step has dug. */
+    private int drift, drifts;
     private BlockPos stand, head, sealCell;
-    private Direction dir, tunnel;
+    /** The stairs' own direction while a way off liquid runs to a side: they go on in it once that way ends. */
+    private Direction dir, tunnel, driftAlong;
     private String tunnelWhy = "", digOutWhy = "", resurfaceWhy;
 
     CompanionExpedition(CompanionWork w) {
@@ -188,8 +193,8 @@ final class CompanionExpedition {
         plan = null;
         route = List.of();
         stand = head = sealCell = null;
-        dir = tunnel = null;
-        progress = stairSteps = turns = routeIndex = softFails = fresh = wetTicks = 0;
+        dir = tunnel = driftAlong = null;
+        progress = stairSteps = turns = routeIndex = softFails = fresh = wetTicks = drift = drifts = 0;
     }
 
     /** Ticks in water with nothing broken and no step walked since {@link #wetProgress}. */
@@ -411,6 +416,7 @@ final class CompanionExpedition {
     }
 
     private void descend() {
+        if (plan == null && drift > 0) plan = CompanionExpeditionStep.landing(w, dig, stand, dir);
         if (plan == null) {
             plan = CompanionExpeditionDetour.next(w, dig, (ServerLevel) owner.level(), stand, dir, turns < MAX_TURNS);
             if (plan == null) { startBacktrack("Дальше лестницу не прокопать: некуда свернуть"); return; }
@@ -425,6 +431,17 @@ final class CompanionExpedition {
         owner.workStatus("Лестница упёрлась, поднимаюсь по ней и сверну в сторону.");
     }
 
+    /** Liquid under the way down that a turn does not get round: a few stands back up, then a level way off to the side out from over it. */
+    private boolean moveOffLiquid() {
+        if (stage != Stage.DESCEND || drifts >= MAX_DRIFTS || !backtrack.beginAway((ServerLevel) owner.level(), WATER_RISE, DRIFT)) return false;
+        drifts++;
+        drift = 0;
+        if (driftAlong == null) driftAlong = dir;
+        stage = Stage.BACKTRACK;
+        owner.workStatus("Под лестницей вода или лава: поднимаюсь на пару ступеней и копаю ход в сторону.");
+        return true;
+    }
+
     private void backtrack() {
         CompanionExpeditionBacktrack.Result ticked = backtrack.tick((ServerLevel) owner.level());
         switch (ticked) {
@@ -434,6 +451,7 @@ final class CompanionExpedition {
                 stand = backtrack.target();
                 dir = backtrack.side();
                 turns = softFails = 0;
+                if (driftAlong != null) drift = DRIFT;
                 plan = CompanionExpeditionStep.landing(w, dig, stand, dir);
                 stage = Stage.DESCEND;
             }
@@ -686,6 +704,11 @@ final class CompanionExpedition {
                 dir = done.turn;
                 stand = done.to;
                 w.mine.reached(stand);
+                if (drift > 0) {
+                    owner.workStatus("Копаю ход в сторону: прошёл " + (DRIFT - drift + 1) + " из " + DRIFT + ".");
+                    if (--drift == 0) { dir = driftAlong; driftAlong = null; }
+                    return;
+                }
                 turns++;
                 owner.workStatus("Лестницу пришлось повернуть на " + CompanionExpeditionReport.name(dir) + ".");
             }
@@ -700,6 +723,9 @@ final class CompanionExpedition {
     private void blocked() {
         CompanionExpeditionStep failed = plan;
         plan = null;
+        if (failed.kind != CompanionExpeditionStep.Kind.TUNNEL && failed.liquid && moveOffLiquid()) return;
+        // A way off liquid that meets rock it cannot pass ends where it is: the stairs go on from there in their own direction.
+        if (drift > 0 && failed.lasting) { drift = 0; dir = driftAlong; driftAlong = null; return; }
         switch (failed.kind) {
             case STAIR -> {
                 if (!failed.lasting && ++softFails <= SOFT_RETRIES) return;
