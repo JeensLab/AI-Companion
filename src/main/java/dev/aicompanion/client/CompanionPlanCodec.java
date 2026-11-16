@@ -246,7 +246,7 @@ public final class CompanionPlanCodec {
                 if (meal.contains("sapling") || meal.contains("propagule") || meal.equals("tree")) { item = "sapling"; count = 1; }
                 else if ("farm_crops".equals(type) || "harvest_crops".equals(type) || "use_bone_meal".equals(type)) {
                     if (meal.equals("bone_meal")) item = "any";
-                    // One of the four crops (wheat is named by its seeds), or for a harvest any of them; anything else spoils the plan.
+                    // One of the crops, a pumpkin and a melon too (each named by its seeds), or for a harvest any of them; anything else spoils the plan.
                     var crop = dev.aicompanion.entity.CompanionCrops.Kind.of(item);
                     if (crop == null && !dev.aicompanion.entity.CompanionCrops.anyKind(item)) throw invalid();
                     item = crop != null ? crop.seedId() : "farm_crops".equals(type) ? "minecraft:wheat_seeds" : "any";

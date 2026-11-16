@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -13,13 +14,16 @@ import net.minecraft.world.item.BoneMealItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.AttachedStemBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.BonemealableBlock;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
+import net.minecraft.world.level.block.FarmBlock;
 import net.minecraft.world.level.block.LevelEvent;
 import net.minecraft.world.level.block.MangrovePropaguleBlock;
+import net.minecraft.world.level.block.StemBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.gameevent.GameEvent;
@@ -41,6 +45,8 @@ import java.util.Set;
  * fall from the grass he tears out, carrots and potatoes are only the ones he carries. A harvest breaks the ripe crops only, picks
  * the drops up from the ground and sows the same farmland again. Every step is read from the world as it is, so a stopped or
  * interrupted order leaves nothing half done: farmland without a crop, or a crop, and the seeds in the bag are what is left.
+ * Pumpkin and melon stems go every other row, each with free soil beside it for the fruit; their seeds are made of the pumpkin or
+ * the melon slices he carries if the bag has too few.
  * use_bone_meal throws the bone meal of his bag, as a player clicks it, on the young crops about the player or on the sapling
  * nearest the player; a chain's harvest («meal:») does the same to young crops when the ripe ones are too few.
  */
@@ -71,7 +77,7 @@ final class CompanionFarming {
     private Stage stage = Stage.LOOK;
     private boolean harvest;
     /** use_bone_meal (on a sapling), and whether young crops get his bone meal (that order, or a chain's harvest). */
-    private boolean feed, tree, meal, grown, mealShort;
+    private boolean feed, tree, meal, grown, mealShort, stemFed;
     private int ripened, meals;
     private CompanionCrops.Kind kind;
     private int wanted;
@@ -80,8 +86,10 @@ final class CompanionFarming {
     private final Set<BlockPos> tilledNow = new HashSet<>();
     private final Map<BlockPos, Again> replant = new HashMap<>();
     private final Map<Item, Integer> bagBefore = new HashMap<>();
-    private int total, found, waterCells, tilled, planted, reused, cleared, grassCut, unreachable, unfit, changed, harvested, replanted, noSeeds, growing, spent;
+    private int byStems, total, found, waterCells, tilled, planted, reused, cleared, grassCut, unreachable, unfit, changed, harvested, replanted, noSeeds, growing, spent, made;
     private boolean seedShort, bagFull;
+    /** Why the seeds of a stem could not be made of the fruit in the bag (no cell for them), or null. */
+    private String craftWhy;
     private long seedsUntil;
     /** The soil of the tile (or of the tuft of grass) he is at now. */
     private BlockPos current;
@@ -96,17 +104,18 @@ final class CompanionFarming {
         if (item != null && item.startsWith(MEAL)) item = item.substring(MEAL.length());
         tree = feed && SAPLING.equals(item);
         kind = tree ? null : CompanionCrops.Kind.of(item);
-        if (!tree && kind == null && !CompanionCrops.anyKind(item)) return feed ? "Не понял, что удобрить: грядки (пшеницу, морковь, картофель, свёклу) или саженец."
-                : "Не понял, " + (harvest ? "какой урожай собрать" : "что сажать") + ": пшеницу, морковь, картофель или свёклу.";
+        if (!tree && kind == null && !CompanionCrops.anyKind(item)) return feed ? "Не понял, что удобрить: грядки (пшеницу, морковь, картофель, свёклу, тыкву, арбуз) или саженец."
+                : "Не понял, " + (harvest ? "какой урожай собрать" : "что сажать") + ": пшеницу, морковь, картофель, свёклу, тыкву или арбуз.";
         if (kind == null && !harvest && !feed) kind = CompanionCrops.Kind.WHEAT;
         if (!harvest && !feed && count > CompanionCrops.MAX_TILES) return "За раз вскапываю до " + CompanionCrops.MAX_TILES + " клеток.";
         if (feed && w.items.countCarried(Items.BONE_MEAL) == 0) return NO_MEAL;
         wanted = count;
         stage = Stage.LOOK;
         todo.clear(); spare.clear(); grass.clear(); tilledNow.clear(); replant.clear(); bagBefore.clear();
-        total = found = waterCells = tilled = planted = reused = cleared = grassCut = unreachable = unfit = changed = harvested = replanted = noSeeds = growing = spent = 0;
+        total = found = waterCells = tilled = planted = reused = cleared = grassCut = unreachable = unfit = changed = harvested = replanted = noSeeds = growing = spent = made = 0;
         ripened = meals = 0;
-        seedShort = bagFull = grown = mealShort = false;
+        seedShort = bagFull = grown = mealShort = stemFed = false;
+        craftWhy = null;
         current = null;
         for (ItemStack stack : w.items.carriedItems()) if (!stack.isEmpty()) bagBefore.merge(stack.getItem(), stack.getCount(), Integer::sum);
         return null;
@@ -150,11 +159,17 @@ final class CompanionFarming {
             return;
         }
         if (soil.isEmpty()) {
-            w.finish(CompanionActionResult.blocked("У воды рядом нет подходящей земли: нужна земля или трава не дальше " + WET + " блоков от воды, со свободным местом и светом над ней."));
+            w.finish(CompanionActionResult.blocked("У воды рядом нет подходящей земли: нужна земля или трава не дальше " + WET + " блоков от воды, со свободным местом и светом над ней."
+                    + (byStems > 0 ? " У стеблей тыкв и арбузов не сажаю — там вырастут плоды." : "")));
             return;
         }
         // One compact patch: round the tile he reaches first among those nearest the player, and the ones nearest to that.
         BlockPos heart = nearestOnFoot(soil, centre);
+        if (kind.stem()) soil = stemRows(level, soil, heart);
+        if (soil.isEmpty()) {
+            w.finish(CompanionActionResult.blocked("У воды нет места под " + kind.plant + ": стеблю нужна свободная земля сбоку — там вырастет плод, а места под плод тут нет."));
+            return;
+        }
         List<BlockPos> nearest = soil.stream().sorted(Comparator.comparingDouble(tile -> spread(tile, heart))).toList();
         todo.addAll(nearest.subList(0, Math.min(wanted, nearest.size())));
         // The next nearest stand in for a tile that turns out unusable on the way (a bench set down on it, no route to it).
@@ -171,8 +186,10 @@ final class CompanionFarming {
             }
             if (have < todo.size()) { stage = Stage.SEEDS; seedsUntil = level.getGameTime() + SEEDS_TICKS; next(); return; }
         } else {
+            if (kind.stem() && have < todo.size()) have += seedsMade(todo.size() - have);
             if (have == 0) {
-                w.finish(CompanionActionResult.blocked("У меня нет " + kind.lacking + " для посадки. Дай мне их или попроси посадить пшеницу — семена возьму с травы."));
+                w.finish(CompanionActionResult.blocked(craftWhy != null ? craftWhy : kind.stem() ? "У меня нет ни " + kind.lacking + ", ни " + kind.produceLacking + ", чтобы их сделать. Дай одно из двух — посажу."
+                        : "У меня нет " + kind.lacking + " для посадки. Дай мне их или попроси посадить пшеницу — семена возьму с травы."));
                 return;
             }
             if (have < todo.size()) { todo.subList(have, todo.size()).clear(); seedShort = true; }
@@ -186,7 +203,7 @@ final class CompanionFarming {
         int x0 = centre.getX() - radius - WET, z0 = centre.getZ() - radius - WET, side = 2 * (radius + WET) + 1, rows = high - low + 2;
         BitSet water = new BitSet(side * side * rows);
         BlockPos.MutableBlockPos at = new BlockPos.MutableBlockPos();
-        waterCells = 0;
+        waterCells = byStems = 0;
         for (int dx = 0; dx < side; dx++) for (int dz = 0; dz < side; dz++) {
             if (!level.hasChunkAt(at.set(x0 + dx, low, z0 + dz))) continue;
             for (int y = low; y <= high + 1; y++) if (level.getFluidState(at.setY(y)).is(FluidTags.WATER)) { water.set((dx * side + dz) * rows + y - low); waterCells++; }
@@ -204,10 +221,49 @@ final class CompanionFarming {
                 BlockState above = level.getBlockState(cell);
                 // A crop needs light to be planted at all (CropBlock.canSurvive): no tile is chosen in a cellar or under a thick roof.
                 if (!above.isAir() && (farmland || !clearable(above)) || nearFlower(level, cell) || !CropBlock.hasSufficientLight(level, cell) || !wet(water, dx, dz, y - low, side, rows)) continue;
+                if (besideStem(level, cell)) { byStems++; continue; }
                 soil.add(at.immutable());
             }
         }
         return soil;
+    }
+
+    /** Beside a stem is the soil its fruit grows on (an older field, the player's): nothing is sown there, a stem would lose its fruit. */
+    private static boolean besideStem(ServerLevel level, BlockPos cell) {
+        for (Direction side : Direction.Plane.HORIZONTAL) {
+            BlockPos at = cell.relative(side);
+            if (level.isLoaded(at) && (level.getBlockState(at).getBlock() instanceof StemBlock || level.getBlockState(at).getBlock() instanceof AttachedStemBlock)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Pumpkins and melons: every other row from the heart, a tile with room beside it (across the rows) for the fruit. The rows run
+     * whichever way gives more tiles: a strip of soil along the water is sown every other block along it.
+     */
+    private static List<BlockPos> stemRows(ServerLevel level, List<BlockPos> soil, BlockPos heart) {
+        List<BlockPos> best = List.of();
+        for (Direction.Axis axis : List.of(Direction.Axis.X, Direction.Axis.Z)) {
+            List<BlockPos> rows = soil.stream().filter(tile -> Math.floorMod(tile.get(axis) - heart.get(axis), 2) == 0
+                    && (room(level, tile.relative(axis, -1)) || room(level, tile.relative(axis, 1)))).toList();
+            if (rows.size() > best.size()) best = rows;
+        }
+        return best;
+    }
+
+    /** Where a ripe stem grows its fruit (vanilla StemBlock): farmland or dirt with nothing on it, or only grass he pulls out. */
+    private static boolean room(ServerLevel level, BlockPos ground) {
+        if (!level.isLoaded(ground)) return false;
+        BlockState under = level.getBlockState(ground), cell = level.getBlockState(ground.above());
+        return (under.getBlock() instanceof FarmBlock || under.is(BlockTags.DIRT)) && (cell.isAir() || clearable(cell));
+    }
+
+    /** Seeds made of the pumpkins or melon slices of the bag (a pumpkin gives four, a slice one), about as many as wanted; how many. */
+    private int seedsMade(int wanted) {
+        int make = Math.min(wanted, w.items.countCarried(kind.produce) * kind.seedsOfOne), before = w.items.countCarried(kind.seed);
+        if (make > 0) { var crafted = w.owner.craftFromBag(kind.seedId(), make); if (!crafted.success()) craftWhy = crafted.message(); }
+        made = w.items.countCarried(kind.seed) - before;
+        return made;
     }
 
     /** The nearest tiles by the straight line are compared on foot in one route search: not the one across a river or a fence. */
@@ -278,7 +334,9 @@ final class CompanionFarming {
         if (feed || meal && w.items.countCarried(Items.BONE_MEAL) > 0) spare.addAll(young.subList(fed, Math.min(young.size(), fed + CompanionCrops.MAX_TILES)));
         found = todo.size();
         if (todo.isEmpty()) {
-            w.finish(CompanionActionResult.blocked(feed && !ripe.isEmpty() ? "Удобрять нечего: всё, что растёт рядом, уже созрело."
+            // Growing and nothing young for the meal: stems at full height, whose fruit no bone meal hastens.
+            w.finish(CompanionActionResult.blocked(feed && growing > 0 ? "Удобрять нечего: стебли уже в полный рост, а сами тыквы и арбузы вырастут со временем — мука их не ускорит."
+                    : feed && !ripe.isEmpty() ? "Удобрять нечего: всё, что растёт рядом, уже созрело."
                     : growing > 0 ? "Пока нечего собирать: спелых нет, ещё растёт посадок: " + growing + "."
                     : "Посадок в " + radius + " блоках от тебя не нашёл."));
             return;
@@ -336,7 +394,8 @@ final class CompanionFarming {
 
     /**
      * The farmland of the ripe crops of the kind (of any, with none named) round the centre goes into {@code ripe}, of the young ones
-     * into {@code young} if it is given; the count of those still growing.
+     * into {@code young} if it is given; the count of those still growing. A stem's harvest is its fruit: the soil under the pumpkin
+     * goes into {@code ripe}, a stem with none yet is growing.
      */
     private static int crops(ServerLevel level, BlockPos centre, int radius, CompanionCrops.Kind kind, List<BlockPos> ripe, List<BlockPos> young) {
         int growing = 0;
@@ -346,20 +405,40 @@ final class CompanionFarming {
             if (chunk == null) continue;
             for (int index = level.getSectionIndex(low); index <= level.getSectionIndex(high); index++) {
                 var section = chunk.getSection(index);
-                if (section.hasOnlyAir() || !section.maybeHas(state -> state.getBlock() instanceof CropBlock)) continue;
+                if (section.hasOnlyAir() || !section.maybeHas(CompanionFarming::planted)) continue;
                 int bottom = level.getSectionYFromSectionIndex(index) << 4;
                 for (int y = Math.max(low, bottom); y <= Math.min(high, bottom + 15); y++) for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
                     BlockState state = section.getBlockState(x, y & 15, z);
-                    if (!(state.getBlock() instanceof CropBlock crop) || kind != null && state.getBlock() != kind.crop) continue;
+                    Block block = state.getBlock();
+                    if (!planted(state) || kind != null && block != kind.crop && block != kind.attached) continue;
                     long ox = (cx << 4) + x - centre.getX(), oz = (cz << 4) + z - centre.getZ();
                     if (ox * ox + oz * oz > (long) radius * radius) continue;
                     BlockPos soil = new BlockPos((cx << 4) + x, y - 1, (cz << 4) + z);
-                    if (crop.isMaxAge(state)) ripe.add(soil);
-                    else { growing++; if (young != null) young.add(soil); }
+                    if (block instanceof AttachedStemBlock) {
+                        // Two stems may hold one pumpkin: it is reaped once.
+                        BlockPos fruit = soil.above().relative(state.getValue(AttachedStemBlock.FACING));
+                        if (CompanionCrops.onStem(level, fruit) && !ripe.contains(fruit.below())) ripe.add(fruit.below());
+                    } else if (grownUp(state)) ripe.add(soil);
+                    else { growing++; if (young != null && young(state)) young.add(soil); }
                 }
             }
         }
         return growing;
+    }
+
+    private static boolean planted(BlockState state) {
+        return state.getBlock() instanceof CropBlock || state.getBlock() instanceof StemBlock || state.getBlock() instanceof AttachedStemBlock;
+    }
+
+    /** A crop short of ripe, a stem short of its full height: what bone meal grows (a full stem's fruit only comes in time). */
+    private static boolean young(BlockState state) {
+        return state.getBlock() instanceof CropBlock crop ? !crop.isMaxAge(state)
+                : state.getBlock() instanceof StemBlock && state.getValue(StemBlock.AGE) < StemBlock.MAX_AGE;
+    }
+
+    /** A crop ripe to reap; for a stem, only one that bears (a full stem with no fruit yet is still growing). */
+    private static boolean grownUp(BlockState state) {
+        return state.getBlock() instanceof CropBlock crop && crop.isMaxAge(state) || state.getBlock() instanceof AttachedStemBlock;
     }
 
     // ---- wheat seeds from the grass -----------------------------------------------------------------------------------------
@@ -420,7 +499,9 @@ final class CompanionFarming {
             w.owner.travel().reset();
             if (step == CompanionTravel.Step.FAILED) { unreachable++; letGo(); return; }
         }
-        int reach = w.items.reachBlock(level, soil, false);
+        // A pumpkin is a whole block on its soil: he walks up to the fruit he breaks and sees it, as gather_block does, not the soil under it.
+        BlockPos aim = harvest && CompanionCrops.onStem(level, soil.above()) ? soil.above() : soil;
+        int reach = w.items.reachBlock(level, aim, aim != soil);
         if (reach < 0) { unreachable++; letGo(); return; }
         if (reach == 0) { w.owner.workStatus(tree ? "Иду к саженцу." : feed ? "Иду к посадкам." : harvest ? "Иду к спелым посадкам." : "Иду к грядке."); return; }
         if (feed) feedStep(level, soil); else if (harvest) harvestStep(level, soil); else farmStep(level, soil);
@@ -433,7 +514,7 @@ final class CompanionFarming {
         if (tree) {
             if (!state.is(BlockTags.SAPLINGS)) { grown = treeFrom(level, cell); finishWork(); return; }
             if (meals >= TREE_MEALS) { finishWork(); return; }
-        } else if (!(state.getBlock() instanceof CropBlock crop) || crop.isMaxAge(state)) { next(); return; }
+        } else if (!young(state)) { next(); return; }
         w.owner.workStatus(tree ? "Сыплю костную муку на саженец." : "Сыплю костную муку на грядки: дозрело " + ripened + " из " + total + ".");
         if (!throwMeal(level, cell)) { mealShort = true; finishWork(); }
     }
@@ -457,6 +538,17 @@ final class CompanionFarming {
             if (!w.owner.getMainHandItem().is(ItemTags.HOES)) { prepareHoe(); return; }
             w.owner.workStatus("Вскапываю грядку: " + planted + " из " + total + ".");
             till(level, soil);
+            return;
+        }
+        // The fruit's soil beside a stem is weeded: grass on it would keep the pumpkin from growing.
+        if (kind.stem()) for (Direction around : Direction.Plane.HORIZONTAL) {
+            BlockPos side = cell.relative(around);
+            BlockState weed = level.getBlockState(side);
+            if (!clearable(weed) || !room(level, side.below())) continue;
+            w.owner.workStatus("Пропалываю место под " + kind.plant + ": " + planted + " из " + total + ".");
+            if (!w.breaking.tick(level, side)) return;
+            if (!pluck(level, side, weed)) { finishWork(); return; }
+            cleared++; w.gathered++;
             return;
         }
         w.owner.workStatus("Сажу: " + planted + " из " + total + ".");
@@ -489,8 +581,9 @@ final class CompanionFarming {
         w.owner.animateAction(1, cell, shown);
         meals++; w.gathered++;
         w.cooldown = MEAL_TICKS;
+        stemFed |= state.getBlock() instanceof StemBlock;
         BlockState after = level.getBlockState(cell);
-        if (after.getBlock() instanceof CropBlock crop && crop.isMaxAge(after)) ripened++;
+        if (!tree && planted(after) && !young(after)) ripened++;
         return true;
     }
 
@@ -556,6 +649,14 @@ final class CompanionFarming {
             }
             return;
         }
+        // A pumpkin or a melon at its stem: broken and picked up like a crop, and the stem stays to bear again (nothing to sow).
+        if (CompanionCrops.onStem(level, cell)) {
+            w.owner.workStatus("Собираю урожай: " + harvested + " из " + total + ".");
+            if (!w.breaking.tick(level, cell)) return;
+            if (!pluck(level, cell, state)) { finishWork(); return; }
+            harvested++; w.gathered++;
+            return;
+        }
         // A young one taken for a chain's harvest: ripened with his bone meal, then reaped by the branch above; no meal left, it stays.
         if (meal && state.getBlock() instanceof CropBlock crop && !crop.isMaxAge(state) && again == null) {
             w.owner.workStatus("Сыплю костную муку, чтобы дозрело: " + harvested + " из " + total + ".");
@@ -609,6 +710,8 @@ final class CompanionFarming {
             ok = ripened > 0;
             text = ripened == 0 ? "Ничего не дозрело." : (ripened >= found ? "Готово, дозрело посадок: " + ripened : "Дозрело посадок: " + ripened + " из " + found) + ".";
             if (mealShort) text += " Костная мука кончилась.";
+            // Vanilla: bone meal brings a stem to its full height only, the pumpkin or the melon beside it comes by itself.
+            if (stemFed) text += " Сами тыквы и арбузы вырастут у стеблей со временем — мука их не ускорит.";
             if (unreachable > 0) text += " До " + unreachable + " не смог дойти.";
         }
         w.finish(new CompanionActionResult(ok, text + " Муки ушло: " + meals + ". В сумке: " + w.owner.getStoredItemsSummary() + ".")
@@ -623,12 +726,13 @@ final class CompanionFarming {
         List<String> why = new ArrayList<>();
         if (bagFull) why.add(FULL_BAG);
         if (seedShort || noSeeds > 0) why.add(planted == 0 ? cap(kind.lacking) + " не хватило." : cap(kind.lacking) + " хватило только на " + planted + ".");
-        if (!ok && found < wanted) why.add("Подходящей земли у воды нашлось только на " + found + ".");
+        if (!ok && found < wanted) why.add("Подходящей земли у воды нашлось только на " + found + "." + (byStems > 0 ? " У стеблей тыкв и арбузов не сажаю — там вырастут плоды." : ""));
         if (unreachable > 0) why.add("До " + unreachable + " не смог дойти.");
         if (unfit > 0) why.add("На " + unfit + " слишком темно: там ничего не вырастет.");
         if (changed > 0) why.add(changed + " изменились по дороге, их пропустил.");
         if (grassCut > 0) why.add("Траву рвал ради семян: " + grassCut + ".");
         if (reused > 0) why.add("Уже вскопанных грядок использовал: " + reused + ".");
+        if (made > 0) why.add("Семян сделал сам: " + made + ".");
         w.finish(new CompanionActionResult(ok, text + (why.isEmpty() ? "" : " " + String.join(" ", why)) + " В сумке: " + w.owner.getStoredItemsSummary() + ".")
                 .withEvidence(new CompanionActionResult.Evidence(w.taskId, "farm_crops", kind.seedId(), planted, w.owner.getUUID(), null, null)));
     }

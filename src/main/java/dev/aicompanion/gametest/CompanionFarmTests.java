@@ -479,7 +479,7 @@ public final class CompanionFarmTests {
                 && defaults.get(1).item().equals("any") && defaults.get(1).count() == 64, "Defaults: " + defaults);
         var carrots = CompanionPlanCodec.parsePlan(JsonParser.parseString("[{\"action\":\"farm_crops\",\"item\":\"minecraft:carrots\",\"count\":20}]"));
         h.assertTrue(carrots.size() == 2 && carrots.get(0).count() == 16 && carrots.get(1).count() == 4 && carrots.get(0).item().equals("minecraft:carrot"), "Twenty tiles: " + carrots);
-        for (String bad : new String[]{"{\"action\":\"farm_crops\",\"item\":\"minecraft:diamond\"}", "{\"action\":\"farm_crops\",\"item\":\"minecraft:pumpkin_seeds\"}",
+        for (String bad : new String[]{"{\"action\":\"farm_crops\",\"item\":\"minecraft:diamond\"}", "{\"action\":\"farm_crops\",\"item\":\"minecraft:torchflower_seeds\"}",
                 "{\"action\":\"harvest_crops\",\"item\":\"minecraft:stone\"}", "{\"action\":\"farm_crops\",\"count\":65}"}) {
             boolean rejected = false;
             try { CompanionPlanCodec.parsePlan(JsonParser.parseString("[" + bad + "]")); } catch (IllegalStateException expected) { rejected = true; }
@@ -535,7 +535,7 @@ public final class CompanionFarmTests {
         });
     }
 
-    private static void ground(GameTestHelper h) {
+    static void ground(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= GROUND + 6; y++) {
             boolean border = x == 0 || x == 31 || z == 0 || z == 31;
             if (y <= GROUND) h.setBlock(new BlockPos(x, y, z), y == 0 || border ? Blocks.BEDROCK : y == GROUND ? Blocks.GRASS_BLOCK : Blocks.DIRT);
@@ -544,7 +544,7 @@ public final class CompanionFarmTests {
     }
 
     /** Three by three, its surface level with the ground, in the ground's own layer: it holds still, nothing flows out of it. */
-    private static void pond(GameTestHelper h, int cx, int cz) {
+    static void pond(GameTestHelper h, int cx, int cz) {
         for (int x = cx - 1; x <= cx + 1; x++) for (int z = cz - 1; z <= cz + 1; z++) h.setBlock(new BlockPos(x, GROUND, z), Blocks.WATER);
     }
 
@@ -561,7 +561,7 @@ public final class CompanionFarmTests {
         return (int) blocks(h, GROUND + 1, Blocks.WHEAT).stream().filter(cell -> h.getBlockState(cell).getValue(CropBlock.AGE) == 7).count();
     }
 
-    private static CompanionEntity spawn(GameTestHelper h, int x, int z, int playerX, int playerZ, int radius) {
+    static CompanionEntity spawn(GameTestHelper h, int x, int z, int playerX, int playerZ, int radius) {
         CompanionEntity companion = h.spawn(AICompanionMod.COMPANION.get(), x, GROUND + 1, z);
         var owner = h.makeMockServerPlayerInLevel();
         BlockPos stand = h.absolutePos(new BlockPos(playerX, GROUND + 1, playerZ));
@@ -573,24 +573,24 @@ public final class CompanionFarmTests {
         return companion;
     }
 
-    private static void give(CompanionEntity companion, ItemStack... stacks) {
+    static void give(CompanionEntity companion, ItemStack... stacks) {
         for (int slot = 0; slot < stacks.length; slot++) companion.setItem(slot, stacks[slot]);
     }
 
-    private static long order(GameTestHelper h, CompanionEntity companion, String action, String item, int count) {
+    static long order(GameTestHelper h, CompanionEntity companion, String action, String item, int count) {
         var player = h.getLevel().getServer().getPlayerList().getPlayer(companion.getOwnerId());
         CompanionActionResult accepted = CompanionEvents.executeAction(player, action, item, count);
         h.assertTrue(accepted.success(), action + " not accepted: " + accepted.message());
         return companion.activeWorkId();
     }
 
-    private static CompanionActionResult result(GameTestHelper h, CompanionEntity companion, long id) {
+    static CompanionActionResult result(GameTestHelper h, CompanionEntity companion, long id) {
         CompanionActionResult result = companion.workResult(id);
         h.assertTrue(result != null && !companion.isWorking(), "Still working: " + companion.getLastTaskResult());
         return result;
     }
 
-    private static List<BlockPos> blocks(GameTestHelper h, int y, Block block) {
+    static List<BlockPos> blocks(GameTestHelper h, int y, Block block) {
         List<BlockPos> found = new ArrayList<>();
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) {
             BlockPos pos = new BlockPos(x, y, z);
@@ -614,7 +614,7 @@ public final class CompanionFarmTests {
     }
 
     /** Drops lying anywhere in this test's own box (the box of the test, wherever and however turned the game put it). */
-    private static List<ItemEntity> lying(GameTestHelper h) {
+    static List<ItemEntity> lying(GameTestHelper h) {
         return h.getLevel().getEntitiesOfClass(ItemEntity.class, h.getBounds(), ItemEntity::isAlive);
     }
 
@@ -624,7 +624,7 @@ public final class CompanionFarmTests {
         return ItemStack.EMPTY;
     }
 
-    private static int count(CompanionEntity companion, Item item) {
+    static int count(CompanionEntity companion, Item item) {
         int count = 0;
         for (int slot = 0; slot < companion.getContainerSize(); slot++) if (companion.getItem(slot).is(item)) count += companion.getItem(slot).getCount();
         for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) if (companion.getItemBySlot(slot).is(item)) count += companion.getItemBySlot(slot).getCount();

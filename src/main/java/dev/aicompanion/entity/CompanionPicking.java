@@ -33,7 +33,8 @@ import java.util.function.Predicate;
  * within his search radius is walked to, broken with the tool it wants and its drop picked up, until the bag holds as many as
  * ordered. Sugar cane, cactus and bamboo are cut at the block above the root: all that stands over the cut comes down with it and
  * the root is left to grow; cocoa is taken ripe; what only shears take (leaves, a vine, a cobweb) is cut with his shears, and a leaf
- * block someone set down (it does not fade) is left; nothing is taken where the player builds (his flower bed, his cane by the house) or outside
+ * block someone set down (it does not fade) is left; nothing is taken where the player builds (his flower bed, his cane by the house),
+ * but for a pumpkin or a melon at its stem there, his harvest (the stem stays to bear again), nor outside
  * the overworld, but for the Nether's own stone there (netherrack, basalt; never beside lava); the End is later work. What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
  * block) he swims over and dives for, as for a foe under water (CompanionSwimming): under open water no deeper than his breath
  * takes him, never under a roof; what only lies under water (clay in a pond) is left for the dry kind.
@@ -149,10 +150,10 @@ final class CompanionPicking {
         return false;
     }
 
-    /** A block of the kind he may take now: dry, not on a site of the player's, ripe, and not the root of a growing column. */
+    /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem), ripe, and not the root of a growing column. */
     private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
-        if (site.test(pos)) return false;
+        if (site.test(pos) && !CompanionCrops.onStem(level, pos)) return false;
         // Clay on the bed of a pond has no water in its own cell: the water over it counts too. Only what grows there is dived for.
         // A coral block under another one, or a sea pickle sat on it, is not under open water: none of it is dived for.
         if (wet(level, pos) ? !grows(state) || depth(level, pos) < 0 : state.is(BlockTags.CORAL_BLOCKS)) return false;
