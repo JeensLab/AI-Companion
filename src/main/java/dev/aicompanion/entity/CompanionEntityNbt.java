@@ -51,6 +51,7 @@ final class CompanionEntityNbt {
         tag.putInt("DeathRecoveryDeaths", c.deathRecoveryDeaths());
         c.goals.save(tag);
         c.social.save(tag);
+        c.errand.save(tag);
     }
 
     void load(CompoundTag tag) {
@@ -107,7 +108,9 @@ final class CompanionEntityNbt {
         c.parked.load(tag);
         c.batches().load(tag);
         c.setCanPickUpLoot(false);
-        if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {
+        // The work that walked into a portal is not lost: the new entity finishes it (CompanionErrand); a world loaded is another thing.
+        boolean crossed = c.errand.load(tag);
+        if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") && !crossed || tag.getBoolean("SupportSoilTask")) {
             c.setFollowing(true);
             c.lastTaskSucceeded = false;
             c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, c.temporaryPillar.isRecovering()
@@ -115,6 +118,11 @@ final class CompanionEntityNbt {
                     : "Работа прервалась выходом из мира. Вещи остались у меня.");
             // Pickup/navigation statuses soon replace the visible line. Keep the interruption in saved factual memory too.
             c.noteDeed(c.getEntityData().get(CompanionEntity.DATA_LAST_TASK_RESULT), false);
+            // The plan that polls the work's id is told the same: a world loaded in the middle of the errand's crossing, not another command.
+            if (tag.getBoolean("WorkActive") && c.errand.lostInTransit()) {
+                c.work.completedId = tag.getLong("WorkSequence");
+                c.work.completedResult = CompanionActionResult.failed(c.getEntityData().get(CompanionEntity.DATA_LAST_TASK_RESULT));
+            }
         }
         // His own harvest still lying round him (it carries his UUID) is picked up after the world is entered again, like a player
         // who comes back to the tree he was cutting (marathon 23.10: a log stayed on the ground after the reload).

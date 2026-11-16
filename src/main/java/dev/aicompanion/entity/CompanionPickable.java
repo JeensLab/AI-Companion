@@ -107,9 +107,12 @@ final class CompanionPickable {
         // a stripped block (stripping is not his skill, so one that stands was put there).
         if (state.getLightEmission() >= LAMP || state.getBlock() instanceof FallingBlock || state.is(Blocks.SNIFFER_EGG)
                 || BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().startsWith("stripped_")) return false;
-        // The mine has no coral: the block is mined here for the dead block it gives.
-        return !state.is(BlockTags.MINEABLE_WITH_PICKAXE) || state.is(BlockTags.CORAL_BLOCKS);
+        // The mine has no coral: the block is mined here for the dead block it gives. Nor has it the Nether's own stone, which any pickaxe takes.
+        return !state.is(BlockTags.MINEABLE_WITH_PICKAXE) || state.is(BlockTags.CORAL_BLOCKS) || nether(state.getBlock());
     }
+
+    /** The Nether's own stone: the only sources he takes there (CompanionPicking), the rest of this skill's kinds stay in the overworld. */
+    static boolean nether(Block block) { return block == Blocks.NETHERRACK || block == Blocks.BASALT; }
 
     /** Whether every block that gives the item wants a pickaxe (a coral block for the dead one). */
     static boolean mined(ServerLevel level, Item item) {

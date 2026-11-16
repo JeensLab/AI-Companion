@@ -1,6 +1,7 @@
 package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -33,7 +34,7 @@ import java.util.function.Predicate;
  * ordered. Sugar cane, cactus and bamboo are cut at the block above the root: all that stands over the cut comes down with it and
  * the root is left to grow; cocoa is taken ripe; what only shears take (leaves, a vine, a cobweb) is cut with his shears, and a leaf
  * block someone set down (it does not fade) is left; nothing is taken where the player builds (his flower bed, his cane by the house) or outside
- * the overworld (the Nether and the End are later work). What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
+ * the overworld, but for the Nether's own stone there (netherrack, basalt; never beside lava); the End is later work. What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
  * block) he swims over and dives for, as for a foe under water (CompanionSwimming): under open water no deeper than his breath
  * takes him, never under a roof; what only lies under water (clay in a pond) is left for the dry kind.
  */
@@ -72,6 +73,8 @@ final class CompanionPicking {
     private int legs, waited, dived;
     /** Blocks he found no way to. */
     private final Set<BlockPos> passed = new HashSet<>();
+    /** Blocks left alone this order, for the report: lava stands beside them (source or running, any of the six sides). */
+    private final Set<BlockPos> lavaKept = new HashSet<>();
 
     CompanionPicking(CompanionWork w) { this.w = w; }
 
@@ -80,11 +83,11 @@ final class CompanionPicking {
         c = w.owner;
         ResourceLocation key = ResourceLocation.tryParse(id == null ? "" : id);
         Item asked = key == null ? null : BuiltInRegistries.ITEM.getOptional(key).orElse(null);
-        sources = asked == null || !(c.level() instanceof ServerLevel level) || level.dimension() != Level.OVERWORLD ? List.of() : CompanionPickable.sources(level, asked);
+        sources = asked == null || !(c.level() instanceof ServerLevel level) ? List.of() : allowed(level, CompanionPickable.sources(level, asked));
         if (sources.isEmpty()) return CompanionActionResult.failed("Такое я с земли не собираю: " + id + ".");
         item = asked; wanted = count; before = w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
         release();
-        passed.clear();
+        passed.clear(); lavaKept.clear();
         return null;
     }
 
@@ -97,17 +100,43 @@ final class CompanionPicking {
 
     private int got() { return Math.max(0, w.items.countCarried(item) - before); }
 
+    /** What the order has brought so far: said when it is cut short (the errand's watch in the Nether). */
+    String progress() { return "в сумке прибавилось " + got() + " «" + CompanionWork.itemName(item) + "»."; }
+
     /** Whether one of these blocks stands within his search radius where he may take it. */
     static boolean near(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources) {
-        return !sources.isEmpty() && level.dimension() == Level.OVERWORLD && find(c, level, sources, sites(c, level), Set.of()) != null;
+        List<CompanionPickable.Source> here = allowed(level, sources);
+        return !here.isEmpty() && find(c, level, here, sites(c, level), Set.of(), new HashSet<>()) != null;
+    }
+
+    /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
+    private static List<CompanionPickable.Source> allowed(ServerLevel level, List<CompanionPickable.Source> all) {
+        if (level.dimension() == Level.OVERWORLD) return all.stream().filter(source -> !CompanionPickable.nether(source.block())).toList();
+        return level.dimension() == Level.NETHER ? all.stream().filter(source -> CompanionPickable.nether(source.block())).toList() : List.of();
+    }
+
+    /** The Nether's stone is taken only off solid ground, never the block he stands on: a floor over a cave or a lava lake stays shut. */
+    private static boolean grounded(CompanionEntity c, ServerLevel level, BlockPos pos) {
+        if (!CompanionPickable.nether(level.getBlockState(pos).getBlock())) return true;
+        return !pos.equals(c.blockPosition().below()) && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP);
+    }
+
+    private static boolean lavaBeside(ServerLevel level, BlockPos pos) {
+        for (Direction side : Direction.values()) if (CompanionLava.at(level, pos.relative(side))) return true;
+        return false;
     }
 
     static Predicate<BlockPos> sites(CompanionEntity c, ServerLevel level) {
         return c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
     }
 
-    private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site, Set<BlockPos> passed) {
-        return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> !passed.contains(pos) && takes(level, pos, site) && low(c, level, pos));
+    private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site, Set<BlockPos> passed, Set<BlockPos> lava) {
+        return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> {
+            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !low(c, level, pos) || !grounded(c, level, pos)) return false;
+            if (!lavaBeside(level, pos)) return true;
+            lava.add(pos.immutable());
+            return false;
+        });
     }
 
     private static int gives(List<CompanionPickable.Source> sources, BlockState state) {
@@ -250,15 +279,16 @@ final class CompanionPicking {
         if (got >= wanted) { end(true, "Собрал: «" + name() + "», " + got + " шт."); return; }
         if (due >= wanted) { collect(level, got); return; }
         Predicate<BlockPos> site = sites(c, level);
-        if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site))) release();
-        if (target == null) target = find(c, level, sources, site, passed);
+        if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
+        if (target == null) target = find(c, level, sources, site, passed, lavaKept);
         if (target == null) {
             // What he broke and has not picked up yet is picked up before he says how far he got.
             if (due > got) { collect(level, got); return; }
             String rest = passed.isEmpty() ? "больше рядом нет" : "до остального не добрался";
+            String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
-            if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + ".")); return; }
-            end(false, passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.");
+            if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
+            end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava);
             return;
         }
         BlockState state = level.getBlockState(target);

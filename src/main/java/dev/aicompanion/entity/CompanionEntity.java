@@ -129,6 +129,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionArchery archery = new CompanionArchery(this);
     final CompanionEndCrystals endCrystals = new CompanionEndCrystals(this);
     final CompanionPortals portals = new CompanionPortals(this);
+    /** The errand into the Nether: its record, and the crossing that keeps the work that walked in (CompanionErrand). */
+    final CompanionErrand errand = new CompanionErrand(this);
     private final CompanionEating meals = new CompanionEating(this);
     private final CompanionBag bag = new CompanionBag(this);
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
@@ -714,6 +716,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
+        // On a portal walk the way that may be blocked is the one to the portal (a pit his own tunnels dug), whoever he follows.
+        if (portals.walking()) return portals.entryCell();
         var player = getOwnerPlayer();
         // The player in the dragon's breath: its edge, not the player, or the breath's walls would look like a trap.
         if (!autonomy.staysAtWork() && (following || protecting) && player != null && (distanceToSqr(player) > 16 || player.getY() - getY() > 1.25)) return dragonBreath.meetingPoint(player, false);
@@ -1009,7 +1013,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         social.updateExpression();
         social.tick();
         lighting.tick();
-        if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
+        if (level() instanceof ServerLevel serverLevel) { portals.tick(serverLevel); errand.tick(serverLevel); }
         goals.tick();
         parked.tick();
         // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
@@ -1171,6 +1175,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void startGatheringDirtForWork(int count, CompanionGround ground) { gathering.startGatheringDirtForWork(count, ground); }
     public void stopGathering() { gathering.stopGathering(); }
     public void stopGatheringForPlayer() { parked.drop(); gathering.stopGathering(); }
+
+    /** A portal takes him: the game saves him and makes the entity of the other world, and the errand's walk goes over with it. */
+    @Override public Entity changeDimension(net.minecraft.world.level.portal.DimensionTransition transition) {
+        boolean marked = errand.crossing(transition.newLevel());
+        try { return super.changeDimension(transition); } finally { errand.crossed(marked); }
+    }
 
     ServerPlayer getOwnerPlayer() {
         if (!(level() instanceof ServerLevel serverLevel) || ownerId == null) return null;

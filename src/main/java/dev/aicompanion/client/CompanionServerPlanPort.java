@@ -30,7 +30,7 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     public static final int WORK_LIMIT_SECONDS = 660;
     public static final int GATHER_LIMIT_SECONDS = 185;
     private static final Set<String> TRACKED_WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block");
+            "build_house", "craft_item", "place_block", "come", "hunt_mobs", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "collect_smelt", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "compost_meal", "walk_heading", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
     private static final Set<String> PARKABLE_WORK = Set.of("smelt_items", "collect_smelt");
     private static final Queue<Sleeper> SLEEPERS = new ConcurrentLinkedQueue<>();
     private final MinecraftServer server;
@@ -45,6 +45,9 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
     private long missingSince = -1;
     /** Server tick at which the companion was first seen halted in a row; -1 while he is not. Written by the queue's tick only. */
     private long haltedSince = -1;
+    /** Server tick at which the companion was first missing while a work was waited for; -1 while he is there. Server thread only. */
+    private long absentSince = -1;
+    private static final int ABSENT_TICKS = 20 * 10;
     /** Whether a step was already dispatched: a «wait» after it is a pause inside the plan. Server thread only. */
     private boolean dispatched;
     /** Whether the request's first move already told the agenda (CompanionAgenda.requestStarted). Server thread only. */
@@ -313,7 +316,11 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         if (cancelled()) return parkable() ? parkedBeforeCancel(workId) : CompletableFuture.completedFuture(CompanionActionResult.cancelled("План отменён."));
         return onServer(player -> {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
+            // Just through a portal the new entity waits a few ticks for the entities of its chunk to load: not unloaded yet.
+            if (companion == null && absentSince < 0) absentSince = server.getTickCount();
+            if (companion == null && server.getTickCount() - absentSince < ABSENT_TICKS) return (CompanionActionResult) null;
             if (companion == null) return CompanionActionResult.failed("Компаньон выгружен из мира.");
+            absentSince = -1;
             if (parkable() && companion.activeWorkId() == workId) markParkable(companion, workId);
             CompanionActionResult result = companion.workResult(workId);
             if (result != null) {

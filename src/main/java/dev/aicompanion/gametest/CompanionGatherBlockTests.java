@@ -9,6 +9,7 @@ import dev.aicompanion.entity.CompanionEntity;
 import dev.aicompanion.entity.CompanionEvents;
 import dev.aicompanion.entity.CompanionObtain;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.item.Item;
@@ -292,6 +293,105 @@ public final class CompanionGatherBlockTests {
             String report = future.join().report();
             h.assertTrue(report.contains("Рядом не вижу") && count(c, Items.KELP) == 0 && count(c, Items.MANGROVE_ROOTS) == 0 && count(c, Items.DEAD_TUBE_CORAL_BLOCK) == 0, "Under a roof, roots, a covered coral: " + report);
             h.assertBlockPresent(Blocks.TUBE_CORAL_BLOCK, new BlockPos(7, 1, 23));
+        });
+    }
+
+    /**
+     * Plan only: the Nether's own stone is picked with any pickaxe, but only in the Nether: in the overworld (where it is almost always the
+     * player's) the plan is the portal's, and with no lit portal it is the portal's refusal. Blackstone is no new source.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void netherStoneIsPlannedAsPicking(GameTestHelper h) {
+        var level = h.getLevel();
+        var nether = level.getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        var pick = List.of(new ItemStack(Items.WOODEN_PICKAXE));
+        for (String item : List.of("minecraft:netherrack", "minecraft:basalt")) {
+            var plan = CompanionObtain.plan(nether, pick, false, item, 8, thing -> true, null, new CompanionObtain.Trip(null, true));
+            h.assertTrue(plan.steps().contains(new CompanionObtain.Step("gather_block", item, 8)), item + " in the Nether: " + plan);
+            var home = CompanionObtain.plan(level, pick, false, item, 8, thing -> true);
+            h.assertTrue(home.refused() && home.refusal().contains("портал") && home.steps().isEmpty(), item + " in the overworld with no portal: " + home);
+        }
+        var blackstone = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, "minecraft:blackstone", 8, thing -> true);
+        h.assertTrue(blackstone.steps().stream().noneMatch(step -> step.type().equals("gather_block")), "Blackstone is no source: " + blackstone);
+        h.succeed();
+    }
+
+    /** In the overworld the Nether's stone is no source: a netherrack block in reach is not taken (a player's portal surround stays whole). */
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void netherrackInTheOverworldIsNotGathered(GameTestHelper h) {
+        h.setBlock(new BlockPos(3, 2, 3), Blocks.NETHERRACK);
+        h.setBlock(new BlockPos(4, 2, 3), Blocks.BASALT);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), 2, 2, 2);
+        var owner = h.makeMockServerPlayerInLevel();
+        c.setOwnerId(owner.getUUID());
+        c.setSearchRadius(16);
+        c.setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        for (String item : List.of("minecraft:netherrack", "minecraft:basalt")) {
+            var started = c.startWork("gather_block", item, 1);
+            h.assertTrue(!started.success() && !c.hasActiveWorkOrder(), item + " was taken up as a source: " + started.message());
+        }
+        h.assertBlockPresent(Blocks.NETHERRACK, new BlockPos(3, 2, 3));
+        h.succeed();
+    }
+
+    /** In the Nether he takes eight netherrack with a wooden pickaxe; the ninth stands beside lava and is left whole, and he says so. */
+    @GameTest(template = "empty", timeoutTicks = 1500)
+    public static void netherrackIsMinedInTheNetherButNotBesideLava(GameTestHelper h) {
+        netherStone(h, Blocks.NETHERRACK, Items.NETHERRACK, new BlockPos(3008, 150, 3008));
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 1500)
+    public static void basaltIsMinedInTheNetherButNotBesideLava(GameTestHelper h) {
+        netherStone(h, Blocks.BASALT, Items.BASALT, new BlockPos(3008, 150, 3040));
+    }
+
+    private static void netherStone(GameTestHelper h, net.minecraft.world.level.block.Block block, Item item, BlockPos base) {
+        var nether = h.getLevel().getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+        h.assertTrue(nether != null, "No Nether to test with");
+        var chunk = new net.minecraft.world.level.ChunkPos(base);
+        nether.setChunkForced(chunk.x, chunk.z, true);
+        var area = new net.minecraft.world.phys.AABB(base).inflate(16, 0, 16).expandTowards(0, 12, 0);
+        CompanionEntity[] c = {null};
+        BlockPos[] kept = {null}, hung = {null};
+        h.onEachTick(() -> {
+            if (c[0] != null) return;
+            if (!nether.areEntitiesLoaded(chunk.toLong())) return;
+            nether.getEntities((net.minecraft.world.entity.Entity) null, area, e -> !(e instanceof net.minecraft.world.entity.player.Player)).forEach(net.minecraft.world.entity.Entity::discard);
+            // Above the Nether's roof, so no natural netherrack is in his search radius: a bedrock box 14 by 14: no wall of it is a source and no lava runs in.
+            for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) for (int y = 0; y <= 9; y++) {
+                boolean shell = x == 0 || x == 15 || z == 0 || z == 15 || y == 0 || y == 9;
+                nether.setBlockAndUpdate(base.offset(x, y, z), (shell ? Blocks.BEDROCK : Blocks.AIR).defaultBlockState());
+            }
+            for (int i = 0; i < 8; i++) nether.setBlockAndUpdate(base.offset(3 + i % 4, 1, 4 + i / 4), block.defaultBlockState());
+            // The lava is shut in by bedrock on every side but the stone's.
+            kept[0] = base.offset(10, 1, 10);
+            nether.setBlockAndUpdate(kept[0], block.defaultBlockState());
+            nether.setBlockAndUpdate(kept[0].east(), Blocks.LAVA.defaultBlockState());
+            for (BlockPos wall : List.of(kept[0].east(2), kept[0].east().north(), kept[0].east().south(), kept[0].east().above())) nether.setBlockAndUpdate(wall, Blocks.BEDROCK.defaultBlockState());
+            // One with nothing under it, within his reach: a floor over a cave in the real Nether, he never digs the way under him open.
+            hung[0] = base.offset(7, 3, 11);
+            nether.setBlockAndUpdate(hung[0], block.defaultBlockState());
+            c[0] = new CompanionEntity(AICompanionMod.COMPANION.get(), nether);
+            c[0].moveTo(base.getX() + 7.5, base.getY() + 1, base.getZ() + 8.5, 0, 0);
+            var owner = h.makeMockServerPlayerInLevel();
+            c[0].setOwnerId(owner.getUUID());
+            owner.getPersistentData().putUUID("aicompanion:canonical_companion", c[0].getUUID());
+            CompanionEvents.getOwnedCompanion(owner);
+            c[0].setSearchRadius(16);
+            nether.addFreshEntity(c[0]);
+            c[0].setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+            var started = c[0].startWork("gather_block", BuiltInRegistries.ITEM.getKey(item).toString(), 9);
+            h.assertTrue(started.success(), "Not started: " + started.message());
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(c[0] != null, "The Nether's entities are not loaded yet");
+            String report = c[0].getLastTaskResult();
+            h.assertTrue(count(c[0], item) == 8 && report.contains("лавой"), "Eight, and the lava one said: " + count(c[0], item) + ", " + report);
+            h.assertTrue(nether.getBlockState(kept[0]).is(block), "The block beside lava was broken");
+            h.assertTrue(nether.getBlockState(hung[0]).is(block), "The block with nothing under it was broken");
+            c[0].discard();
+            nether.setChunkForced(chunk.x, chunk.z, false);
         });
     }
 

@@ -1,5 +1,6 @@
 package dev.aicompanion.entity;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -9,6 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,13 +34,22 @@ import java.util.Set;
  * of the scrap in his bag and the plants he picks for it, before any skeleton is fought. What a tool in hand gets (CompanionChores)
  * is got so: wool shorn off a sheep with shears he has, milk of a cow into his bucket, the eggs that lie about the hens, a log
  * of his stripped with an axe, the combs and the honey of a full hive over a campfire, a fish scooped into his bucket of water,
- * lava and powder snow into an empty one.
+ * lava and powder snow into an empty one. What only the Nether has (quartz, netherrack, basalt) is fetched there through a lit portal
+ * (CompanionErrand): the preparation at home, nether_go, the digging at the exit portal, nether_back, and the rest of the chain at home.
  * What none of the skills can get
  * (an ink sac, a blaze rod…) is said before anything starts.
  */
 public final class CompanionObtain {
     /** One step of the chain: an allowlisted action, its item and count. */
     public record Step(String type, String item, int count) { }
+    /**
+     * What the world gives the plan about the Nether: the lit portal he can walk to from here (null: none within reach), and whether he is
+     * in the Nether on the errand now, and whether chunk loading would hold him there (CompanionChunks: his own switch and the player's).
+     * A null trip is a plan that knows nothing of it: no portal, no errand.
+     */
+    public record Trip(BlockPos portal, boolean away, boolean chunks) {
+        public Trip(BlockPos portal, boolean away) { this(portal, away, true); }
+    }
     /** The chain, or why there is none. */
     public record Plan(List<Step> steps, String refusal) {
         public boolean refused() { return refusal != null; }
@@ -67,6 +78,10 @@ public final class CompanionObtain {
     /** Whether a monster that drops the item is about him now; null when the world about him is not known: none is hunted then. */
     private final java.util.function.Predicate<Item> roams;
     private final Map<Item, Boolean> roamed = new HashMap<>();
+    private final Trip trip;
+    /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
+    private boolean viaNether;
+    private String errandRefusal;
     /** He carries a sword or an axe for a fight. */
     private final boolean blade;
     /** What he would pick and does not see about him: named when the plan is refused. */
@@ -77,8 +92,8 @@ public final class CompanionObtain {
     private static final int LAYERS = 7;
     private static final double SPARE = 1.25;
 
-    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams) {
-        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams;
+    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip;
         blade = carried.stream().anyMatch(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
@@ -95,10 +110,22 @@ public final class CompanionObtain {
     /** {@code roams}: whether a monster that drops the item is within his reach now. */
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
                             java.util.function.Predicate<Item> roams) {
+        return plan(level, carried, benchNearby, requested, count, grows, roams, null);
+    }
+
+    /** {@code trip}: the portal to the Nether he can walk to, and whether he is on the errand there now. */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                            java.util.function.Predicate<Item> roams, Trip trip) {
+        boolean[] viaNether = {false};
+        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether), level, trip, viaNether[0]);
+    }
+
+    private static Plan planned(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams);
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -120,13 +147,38 @@ public final class CompanionObtain {
         boolean ok = target.equals(PLANKS) || target.equals("minecraft:stick")
                 ? planner.need(target, count, 1) && planner.add("craft_item", id.toString(), count)
                 : planner.need(target, count, 0);
+        if (!ok && planner.errandRefusal != null) return new Plan(List.of(), planner.errandRefusal);
         if (!ok) {
             String reason = planner.why == null ? "Не знаю, как добыть «" + name(item) + "»." : planner.why;
             // «Красную краску» he looked for in every flower that gives it: all of them are named, not the first.
             return new Plan(List.of(), planner.absent.isEmpty() || reason.startsWith(ABSENT) ? reason : reason + " " + ABSENT + ": " + String.join(", ", planner.absent) + ".");
         }
         if (planner.steps.size() > MAX_STEPS) return new Plan(List.of(), "Для «" + name(item) + "» слишком длинная цепочка дел. Давай по частям.");
+        viaNether[0] = planner.viaNether;
         return new Plan(List.copyOf(merged(planner.steps)), null);
+    }
+
+    /**
+     * The errand's shape around the Nether-only steps of a plan: at home the preparation before the first of them, nether_go to the portal, those
+     * steps, nether_back, the rest; in the Nether on the errand those steps, nether_back, then everything else (it is made at home).
+     */
+    private static Plan errand(Plan made, ServerLevel level, Trip trip, boolean viaNether) {
+        boolean away = trip != null && trip.away() && level.dimension() == Level.NETHER;
+        if (made.refused() || !away && !(viaNether && trip != null && trip.portal() != null)) return made;
+        List<Step> before = new ArrayList<>(), dig = new ArrayList<>(), rest = new ArrayList<>();
+        for (Step step : made.steps()) (netherStep(step) ? dig : dig.isEmpty() ? before : rest).add(step);
+        if (!away && dig.isEmpty()) return made;
+        List<Step> steps = new ArrayList<>();
+        if (away) { steps.addAll(dig); steps.add(new Step("nether_back", "", 1)); steps.addAll(before); }
+        else { steps.addAll(before); steps.add(new Step("nether_go", trip.portal().toShortString(), 1)); steps.addAll(dig); steps.add(new Step("nether_back", "", 1)); }
+        steps.addAll(rest);
+        return new Plan(List.copyOf(steps), null);
+    }
+
+    /** What only the Nether has: quartz ore, netherrack, basalt. */
+    private static boolean netherStep(Step step) {
+        return step.type().equals("mine_ore") && step.item().equals("minecraft:quartz_ore")
+                || step.type().equals("gather_block") && (step.item().equals("minecraft:netherrack") || step.item().equals("minecraft:basalt"));
     }
 
     private static int carried(List<ItemStack> carried, Item item) {
@@ -258,6 +310,7 @@ public final class CompanionObtain {
         if (CompanionChores.fleece(item) != null && about(item) && shears(depth)) return addSplit("shear_sheep", key, count, 64);
         // A blow at a shorn sheep gives no wool: where the world about him is known, one is hunted for it only if it wears white wool.
         if (item == Items.WHITE_WOOL && grows != null && !about(item)) { absent.add("овцы с шерстью"); return refuse(ABSENT + " овцы, на которой есть шерсть."); }
+        if (viaPortal(item)) return nether(item, count, depth);
         for (CompanionOre.Kind ore : CompanionOre.Kind.values())
             if (ore.drop == item) return addSplit("mine_ore", "minecraft:" + ore.key() + "_ore", ceil(count, perOre(ore)), CompanionWork.MAX_ORE);
         CompanionGame.Kind game = animalFor(item);
@@ -295,6 +348,31 @@ public final class CompanionObtain {
         if (!CompanionPickable.sources(level, item).isEmpty()) { absent.add(name(item)); return refuse(ABSENT + ", где взять «" + name(item) + "»: отведи меня туда, где это есть."); }
         if (!prey.isEmpty()) { absent.add(name(item) + " (" + String.join(", ", prey) + ")"); return refuse(ABSENT + ", с кого добыть «" + name(item) + "» (" + String.join(", ", prey) + ")."); }
         return refuse("Не знаю, где взять «" + name(item) + "»: копать, охотиться, плавить и крафтить его я не умею" + (why == null ? "." : ". " + why));
+    }
+
+    /**
+     * Quartz, netherrack and basalt come from the Nether only, so from the overworld by the portal (what lies about him there is the player's:
+     * a portal's surround, a fireplace, never a source, CompanionPicking); in the Nether on the errand they are dug there, and with the player
+     * in the Nether it is any gathering.
+     */
+    private boolean viaPortal(Item item) {
+        if (item != Items.QUARTZ && item != Items.NETHERRACK && item != Items.BASALT) return false;
+        if (level.dimension() == Level.NETHER) return trip != null && trip.away();
+        return level.dimension() == Level.OVERWORLD;
+    }
+
+    /** The steps of the Nether trip for the item: a pickaxe made at home first (none can be made there), then the digging itself. */
+    private boolean nether(Item item, int count, int depth) {
+        boolean away = level.dimension() == Level.NETHER;
+        if (!away && (trip == null || trip.portal() == null)) { errandRefusal = CompanionErrand.NO_PORTAL; return refuse(CompanionErrand.NO_PORTAL); }
+        if (!away && !trip.chunks()) { errandRefusal = CompanionErrand.CHUNKS_OFF; return refuse(CompanionErrand.CHUNKS_OFF); }
+        if (!hasPickaxe()) {
+            if (away) return refuse("Кирки нет, а в Незере её не сделать.");
+            if (!need("minecraft:wooden_pickaxe", 1, depth + 1)) return false;
+        }
+        viaNether = true;
+        return item == Items.QUARTZ ? addSplit("mine_ore", "minecraft:quartz_ore", ceil(count, perOre(CompanionOre.Kind.QUARTZ)), CompanionWork.MAX_ORE)
+                : addSplit("gather_block", key(item), count, 64);
     }
 
     /** Of the recipes that make it, the cheapest: blue dye of the lapis he carries or the cornflower at hand rather than of a mine. */
@@ -473,7 +551,7 @@ public final class CompanionObtain {
         return switch (ore) {
             case COPPER -> 2;
             case LAPIS, REDSTONE -> 4; // raw drops one block gives without Fortune
-            case COAL, IRON, GOLD, DIAMOND, EMERALD -> 1;
+            case COAL, IRON, GOLD, DIAMOND, EMERALD, QUARTZ -> 1;
         };
     }
 
@@ -488,11 +566,11 @@ public final class CompanionObtain {
         for (Step step : steps) cost += switch (step.type()) { case "craft_item" -> 1; case "smelt_items" -> 2; default -> 3; };
         return cost;
     }
-    private record Saved(int steps, Map<String, Integer> bag, String why) { }
-    private Saved save() { return new Saved(steps.size(), new HashMap<>(bag), why); }
+    private record Saved(int steps, Map<String, Integer> bag, String why, boolean viaNether) { }
+    private Saved save() { return new Saved(steps.size(), new HashMap<>(bag), why, viaNether); }
     private void restore(Saved saved) {
         while (steps.size() > saved.steps()) steps.removeLast();
-        bag.clear(); bag.putAll(saved.bag()); why = saved.why();
+        bag.clear(); bag.putAll(saved.bag()); why = saved.why(); viaNether = saved.viaNether();
     }
 
     /** The same gathering one after another becomes one step: three «gather_wood 1» are «gather_wood 3». */

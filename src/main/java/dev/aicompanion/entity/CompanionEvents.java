@@ -279,7 +279,9 @@ public final class CompanionEvents {
     public static CompanionActionResult executeAction(ServerPlayer player, String action, String item, int count, String slot, String trace, String location) {
         dev.aicompanion.CompanionDiagnostics.event(trace, "server_dispatch", "action", action, "item", item, "count", count, "slot", slot);
         CompanionEntity companion = resolveCanonical(player, true);
-        if (companion == null || companion.level() != player.level()) {
+        // On the errand in the Nether the plan's own steps reach him there with the player in the overworld (CompanionErrand); any other order is answered there.
+        if (companion != null && companion.level() != player.level() && companion.errand.away() && !companion.errand.runs(action)) return companion.errand.orderAway(action);
+        if (companion == null || companion.level() != player.level() && !companion.errand.runs(action)) {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
@@ -338,7 +340,7 @@ public final class CompanionEvents {
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
             case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "compost_meal", "build_portal", "disenchant_item", "compost_items",
-                 "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block" -> companion.startWork(action, item, count, location);
+                 "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
