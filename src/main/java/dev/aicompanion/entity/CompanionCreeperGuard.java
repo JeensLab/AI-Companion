@@ -36,8 +36,8 @@ import java.util.Set;
  * The rest is the fallback, for when he cannot fight it (low health, too many retreats with no blow landed, nowhere to run): on his own
  * stairs or tunnel he shuts the way between them with a block from the bag, a few stands off, and waits behind it; anywhere else he walks
  * away from a creeper whose fuse is not lit (along his own passage when he is on it, or towards it if it is farther from the creeper than he
- * is), and dashes from one whose fuse is. The block is one of the mine's temporary blocks: it is taken up again when the walk reaches it
- * ({@link CompanionExpeditionDig}) and the creeper is gone.
+ * is), and dashes from one whose fuse is. In his mine the block is one of its temporary blocks: it is taken up again when the walk reaches it
+ * ({@link CompanionExpeditionDig}) and the creeper is gone. In a cave outside his mine it stays where it was set, as a player's would.
  */
 final class CompanionCreeperGuard {
     /** How near a creeper in sight is a reason to act: its fuse starts at three blocks and a blast kills from full health inside about 2.5. */
@@ -360,7 +360,7 @@ final class CompanionCreeperGuard {
     /**
      * The fuse is lit and he is to be out of its sight before it blows: along the way {@link CompanionFuseEscape} finds over the floor as it
      * is, a push at a time to the next cell. Where there is none, under rock a wall of blocks between him and the creeper (in his mine one of its
-     * temporary blocks, taken up again); by the house, or with no blocks, a blow at it: it throws it back, which is more than standing.
+     * temporary blocks, taken up again; in a cave outside it the wall stays); by the house, or with no blocks, a blow at it: it throws it back, which is more than standing.
      */
     private void retreat(ServerLevel level, Creeper creeper) {
         Vec3 step = escape.step(level, threats(level));

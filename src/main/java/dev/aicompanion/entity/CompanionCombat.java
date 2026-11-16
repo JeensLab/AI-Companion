@@ -64,13 +64,18 @@ final class CompanionCombat {
     }
 
     /**
-     * With no sword or axe a fist is no fight: a zombie has the better of it (one health a blow, half of them missing, against three). On an expedition
-     * or a long goal, where there is work to go on with, he leaves a monster alone and walks off from one that is on him (see {@link StepOffGoal}).
-     * Near the player, and with no goal, nothing changes. An ordered hunt is still fought.
+     * With no sword or axe a fist is no fight: a zombie has the better of it (one health a blow, half of them missing, against three). In his mine
+     * or on the diamond goal, alone and with work to go on with, he leaves a monster alone and walks off from one that is on him (see {@link StepOffGoal}).
+     * Anywhere else, the other long goals among them, nothing changes: he fights with his fists and stands up for the player. An ordered hunt is still fought.
      */
     boolean unarmedOnTask() {
-        if (c.work.isHunting() || !(c.work.expedition.active() || c.level() instanceof ServerLevel level && CompanionAgenda.goal(level.getServer(), c.ownerId) != null)) return false;
+        if (c.work.isHunting() || !(c.work.expedition.active() || c.level() instanceof ServerLevel level && diamondGoal(level))) return false;
         return !c.equipment.hasMeleeWeapon();
+    }
+
+    private boolean diamondGoal(ServerLevel level) {
+        var goal = CompanionAgenda.goal(level.getServer(), c.ownerId);
+        return goal != null && goal.state().outstanding() && goal.playbook().equals("find_diamonds");
     }
 
     /** Unarmed on a task he leaves a monster alone, save a creeper: that one is fought with the fists as anywhere, a blow and a run (CompanionCreeperGuard). */

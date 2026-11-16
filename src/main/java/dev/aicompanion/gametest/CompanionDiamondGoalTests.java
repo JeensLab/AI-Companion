@@ -48,6 +48,7 @@ public final class CompanionDiamondGoalTests {
     private static final int TIMEOUT = 24000, SAVE_TIMEOUT = 100, FIGHT_DEADLINE = 600, RETARGET_EVERY = 20, FORCED_RETREATS = 3, NEW_CELLS = 3;
     private static final int ROOF_HEIGHT = 3, ROOF_REACH = 2;
     private static final float LOW = 7;
+    private static final int DEFEND_TICKS = 200;
 
     @AfterBatch(batch = "diamond_goal_ends") public static void afterEnds(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
     @AfterBatch(batch = "diamond_goal_underfoot") public static void afterUnderfoot(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
@@ -348,6 +349,27 @@ public final class CompanionDiamondGoalTests {
         if (c.getMainHandItem().is(Items.STONE_SWORD)) return c.getMainHandItem().getDamageValue();
         for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(Items.STONE_SWORD)) return c.getItem(i).getDamageValue();
         return -1;
+    }
+
+    /**
+     * de-flandres on #98: with no sword only the diamond goal keeps him off a monster. On another long goal (gear_up here) a zombie that
+     * strikes the player is met with his fists, as in main.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = DEFEND_TICKS)
+    public static void unarmedOnAnotherGoalHeStillStandsUpForThePlayer(GameTestHelper h) {
+        Rig r = rig(h, false, new ItemStack(Items.BREAD, 8));
+        r.c().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        var accepted = CompanionEvents.executeAction(r.p(), "pursue_goal", "gear_up", 1);
+        h.assertTrue(accepted.status() == CompanionActionResult.Status.ACCEPTED, "Goal not accepted: " + accepted.message());
+        Zombie zombie = h.spawn(EntityType.ZOMBIE, new BlockPos(CENTER - 4, GROUND + 1, CENTER - 4));
+        zombie.setPersistenceRequired();
+        zombie.setNoAi(true);
+        r.p().setLastHurtByMob(zombie);
+        h.succeedWhen(() -> {
+            var goal = goal(h, r);
+            h.assertTrue(goal != null && goal.playbook().equals("gear_up") && goal.state().outstanding(), "SETUP: the gear_up goal is not running: " + (goal == null ? null : goal.playbook() + " " + goal.state()));
+            h.assertTrue(zombie.getLastHurtByMob() == r.c(), "He has not struck the zombie on the player | target " + r.c().getTarget() + ", he at " + r.c().blockPosition().toShortString());
+        });
     }
 
     static void start(GameTestHelper h, Rig r, int count) {

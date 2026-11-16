@@ -47,6 +47,7 @@ public final class CompanionMineFightTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
     private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 9, HALF = 10;
     private static final double THROWN = 0.6, REACHED = 3;
+    private static final int BLOW_GAP = 20;
     private static final int DROP_REACH = 10, PICKUP_UNDER_WAY = 8, ONE_BLOW = 1;
 
     private CompanionMineFightTests() { }
@@ -389,22 +390,38 @@ public final class CompanionMineFightTests {
         });
     }
 
-    /** A zombie struck by him is thrown back about as far as a running player's blow throws it (0.4 from any hit, 0.5 more from the blow), not only by the hit's own 0.4. */
+    /**
+     * A blow at a run throws a zombie back as a running player's does (0.4 from any hit, 0.5 more from the run); a blow from a standstill
+     * only by the hit's own 0.4, as a player's (Олег 16.11: «если бьёт с разбега, тогда и отбрасывает так же, а так как обычно»).
+     */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
-    public static void hisBlowThrowsAZombieBackAsARunningPlayersDoes(GameTestHelper h) {
+    public static void hisBlowThrowsAZombieBackFartherOnlyAtARun(GameTestHelper h) {
         mountain(h, false);
         CompanionEntity c = armed(h);
         BlockPos foot = chamber(h, carveMine(h, c, 0));
         place(c, foot.offset(OPEN_CAVE_STAND, 0, 0));
         Zombie zombie = zombie(h, foot.offset(OPEN_CAVE_STAND + 1, 0, 0));
-        h.runAfterDelay(2, () -> {
-            c.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, zombie.position());
-            zombie.setDeltaMovement(Vec3.ZERO);
-            h.assertTrue(c.doHurtTarget(zombie), "The blow did not land");
-            double thrown = zombie.getDeltaMovement().horizontalDistance();
-            h.assertTrue(thrown >= THROWN, "The zombie was thrown back by only " + thrown);
+        zombie.setNoAi(true);
+        double[] standing = new double[1];
+        h.runAfterDelay(2, () -> standing[0] = blow(h, c, zombie, false));
+        // Past the zombie's moment of invulnerability after the first blow, from the same place.
+        h.runAfterDelay(2 + BLOW_GAP, () -> {
+            double running = blow(h, c, zombie, true);
+            h.assertTrue(standing[0] < THROWN, "A blow from a standstill threw the zombie back by " + standing[0]);
+            h.assertTrue(running >= THROWN, "A blow at a run threw the zombie back by only " + running);
             h.succeed();
         });
+    }
+
+    /** One blow at the zombie put back beside him; how far it is thrown. */
+    private static double blow(GameTestHelper h, CompanionEntity c, Zombie zombie, boolean running) {
+        zombie.teleportTo(c.getX() + 1, c.getY(), c.getZ());
+        zombie.setDeltaMovement(Vec3.ZERO);
+        c.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, zombie.position());
+        c.setSprinting(running);
+        h.assertTrue(c.doHurtTarget(zombie), "The blow did not land");
+        c.setSprinting(false);
+        return zombie.getDeltaMovement().horizontalDistance();
     }
 
     static CompanionEntity armed(GameTestHelper h) {

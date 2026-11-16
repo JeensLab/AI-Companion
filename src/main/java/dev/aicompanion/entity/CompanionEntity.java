@@ -518,7 +518,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 .add(Attributes.MOVEMENT_SPEED, 0.316D)
                 .add(Attributes.FOLLOW_RANGE, 128.0D)
                 .add(Attributes.ATTACK_DAMAGE, 1.0D)
-                .add(Attributes.ATTACK_KNOCKBACK, 1.0D)
+                .add(Attributes.ATTACK_KNOCKBACK, 0.0D)
                 .build());
     }
 
@@ -1202,6 +1202,9 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     @Override public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps) {
         super.lerpTo(x, y, z, yRot, xRot, getY() - y > .8 ? 1 : steps);
     }
+
+    /** A blow at a run throws a foe back as a running player's does (Player.attack: one more while sprinting); from a standstill only the hit's own push. */
+    @Override protected float getKnockback(Entity target, net.minecraft.world.damagesource.DamageSource source) { return super.getKnockback(target, source) + (isSprinting() ? 1 : 0); }
 
     @Override public boolean doHurtTarget(Entity target) {
         boolean hit = super.doHurtTarget(target);
