@@ -45,12 +45,14 @@ public final class CompanionGolemTests {
     private CompanionGolemTests() { }
 
     /**
-     * Four iron blocks and a jack o'lantern in his bag, said in the player's words (no model): the lantern goes on last and a golem
-     * made by a player stands within six blocks of him; nothing of the blocks is left in the bag or the world.
+     * Four iron blocks and a jack o'lantern in his bag, said in the player's words (no model), on ground under a layer of snow: the
+     * snow beside the leg is knocked off (the game wants air there), the lantern goes on last and a golem made by a player stands within
+     * six blocks of him; nothing of the blocks is left in the bag or the world.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void anIronGolemStandsUpFromTheBlocksOfHisBag(GameTestHelper h) {
         platform(h);
+        for (int x = 8; x < 24; x++) for (int z = 8; z < 24; z++) h.setBlock(new BlockPos(x, TOP + 1, z), Blocks.SNOW);
         CompanionEntity c = spawn(h);
         c.setItem(0, new ItemStack(Items.IRON_BLOCK, 4));
         c.setItem(1, new ItemStack(Items.JACK_O_LANTERN));
@@ -108,6 +110,25 @@ public final class CompanionGolemTests {
         });
     }
 
+    /**
+     * One snow block of the two in his bag and four snowballs: the plan makes the other block of the snowballs, then he builds (the
+     * shortage names all he must hold, as obtain_item counts it; review).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void aPartOfTheBlocksIsMadeUpByThePlan(GameTestHelper h) {
+        platform(h);
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.SNOW_BLOCK));
+        c.setItem(1, new ItemStack(Items.SNOWBALL, 4));
+        c.setItem(2, new ItemStack(Items.CARVED_PUMPKIN));
+        var future = run(h, c, "слепи снеговика", "snow");
+        h.succeedWhen(() -> {
+            String report = report(h, future, c);
+            h.assertTrue(golems(h, SnowGolem.class).size() == 1, "No snow golem: " + report);
+            h.assertTrue(count(c, Items.SNOW_BLOCK) == 0 && count(c, Items.SNOWBALL) == 0 && count(c, Items.CARVED_PUMPKIN) == 0, "Bag: " + c.getStoredItemsSummary());
+        });
+    }
+
     /** With an empty bag the four blocks are the whole chain from the mine: 36 iron ore dug, smelted, crafted into blocks. */
     @GameTest(template = "empty")
     public static void fourIronBlocksAreGotFromTheMine(GameTestHelper h) {
@@ -116,6 +137,15 @@ public final class CompanionGolemTests {
         int ore = plan.steps().stream().filter(step -> step.type().equals("mine_ore") && step.item().equals("minecraft:iron_ore")).mapToInt(CompanionObtain.Step::count).sum();
         h.assertTrue(ore >= 36 && plan.steps().stream().anyMatch(step -> step.type().equals("smelt_items") && step.item().equals("minecraft:iron_ingot"))
                 && plan.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:iron_block", 4)), "Plan: " + plan.steps());
+        h.succeed();
+    }
+
+    /** Raw iron cooking in a parked smelt: an iron golem waits for those ingots rather than dig fresh ore; a snow golem does not wait (review). */
+    @GameTest(template = "empty")
+    public static void anIronGolemWaitsForTheIronInTheFurnace(GameTestHelper h) {
+        var iron = List.of(new dev.aicompanion.client.CompanionParkHold.Parked("minecraft:raw_iron", "minecraft:iron_ingot"));
+        h.assertTrue(dev.aicompanion.client.CompanionParkHold.held(List.of(new dev.aicompanion.client.PlannedAction("build_golem", 0, 1, "iron")), iron)
+                && !dev.aicompanion.client.CompanionParkHold.held(List.of(new dev.aicompanion.client.PlannedAction("build_golem", 0, 1, "snow")), iron), "Wrong wait for the parked iron");
         h.succeed();
     }
 
@@ -148,8 +178,8 @@ public final class CompanionGolemTests {
     }
 
     /**
-     * Stopped after two of the four iron blocks were set, then asked again: the same place is built on, only the two missing blocks
-     * are taken from his bag, and no more iron is sent for.
+     * Stopped after two of the four iron blocks were set, then asked again with the player come right up to it: the same place is
+     * built on (a new place would not be this near him), only the two missing blocks are taken from his bag, and no iron is sent for.
      */
     @GameTest(template = "tall_tree", timeoutTicks = 1600)
     public static void aStoppedGolemIsFinishedWhereItStands(GameTestHelper h) {
@@ -169,6 +199,11 @@ public final class CompanionGolemTests {
             if (again.get() == null) {
                 h.assertTrue(golems(h, IronGolem.class).isEmpty(), "A golem stood up before the stop settled");
                 h.assertTrue(count(c, Items.IRON_BLOCK) == 4 - find(h, Blocks.IRON_BLOCK).size(), "Blocks lost or doubled: " + c.getStoredItemsSummary());
+                // The leg is the lowest of the set blocks; the player steps up to stand two blocks off it on the diagonal, beside the golem's room.
+                BlockPos leg = find(h, Blocks.IRON_BLOCK).stream().min(java.util.Comparator.comparingInt(BlockPos::getY)).orElseThrow();
+                BlockPos stand = h.absolutePos(leg.offset(leg.getX() < 16 ? 2 : -2, 0, leg.getZ() < 16 ? 2 : -2));
+                var player = h.getLevel().getPlayerByUUID(c.getOwnerId());
+                player.teleportTo(stand.getX() + .5, stand.getY(), stand.getZ() + .5);
                 again.set(run(h, c, "сделай железного голема", "iron"));
             }
             report(h, again.get(), c);

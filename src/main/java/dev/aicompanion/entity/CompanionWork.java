@@ -47,7 +47,8 @@ public final class CompanionWork {
     private final CompanionHouse templateHouse;
     private boolean templateJob;
     final CompanionObsidian obsidian;
-    final CompanionCobbleGen cobbleGen; final CompanionGolem golem;
+    final CompanionCobbleGen cobbleGen;
+    final CompanionGolem golem;
     final CompanionPortalBuild portal;
     /** disenchant_item: the walk to a grindstone, or his own one, and the grinding. */
     final CompanionGrinding grinding = new CompanionGrinding(this);
@@ -385,7 +386,8 @@ public final class CompanionWork {
             case OBSIDIAN -> obsidian.jobName();
             case BLOCK -> picking.jobName();
             case PORTAL -> portal.jobName();
-            case COBBLE_GEN -> cobbleGen.jobName(); case GOLEM -> golem.jobName();
+            case COBBLE_GEN -> cobbleGen.jobName();
+            case GOLEM -> golem.jobName();
             case PICK_UP -> "подбор" + (pickUp == null ? " вещей" : " «" + pickUp.name() + "»");
             case PLACE -> placeHome ? "поход домой" : "поход к метке «" + placeName + "»";
             case GRIND -> grinding.jobName();
@@ -495,7 +497,8 @@ public final class CompanionWork {
             case "fill_bucket" -> { CompanionActionResult refusal = owner.waterFill.begin(count, CompanionEvents.goalDispatching()); if (refusal != null) return refusal; job = Job.WATER; phase = Phase.WATER; }
             case "gather_block" -> { CompanionActionResult refusal = picking.begin(item, count); if (refusal != null) return refusal; job = Job.BLOCK; phase = Phase.BLOCK; }
             case "mine_obsidian" -> { CompanionActionResult refusal = obsidian.begin(count); if (refusal != null) return refusal; job = Job.OBSIDIAN; phase = Phase.OBSIDIAN; }
-            case "build_cobble_gen" -> { CompanionActionResult refusal = cobbleGen.begin(item); if (refusal != null) return refusal; job = Job.COBBLE_GEN; phase = Phase.COBBLE; } case "build_golem" -> { CompanionActionResult refusal = golem.begin(item); if (refusal != null) return refusal; job = Job.GOLEM; phase = Phase.GOLEM; }
+            case "build_cobble_gen" -> { CompanionActionResult refusal = cobbleGen.begin(item); if (refusal != null) return refusal; job = Job.COBBLE_GEN; phase = Phase.COBBLE; }
+            case "build_golem" -> { CompanionActionResult refusal = golem.begin(item); if (refusal != null) return refusal; job = Job.GOLEM; phase = Phase.GOLEM; }
             case "build_portal" -> { CompanionActionResult answer = portal.begin(item); if (answer != null) return answer; job = Job.PORTAL; phase = Phase.PORTAL; }
             case "compost_items" -> { CompanionActionResult refusal = composting.begin(item, count); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
             case "compost_meal" -> { CompanionActionResult refusal = composting.begin(item, count, true); if (refusal != null) return refusal; job = Job.COMPOST; phase = Phase.COMPOST; }
@@ -717,7 +720,8 @@ public final class CompanionWork {
             case OBSIDIAN -> obsidian.tick(level);
             case BLOCK -> picking.tick(level);
             case PORTAL -> portal.tick(level);
-            case COBBLE -> cobbleGen.tick(level); case GOLEM -> golem.tick(level);
+            case COBBLE -> cobbleGen.tick(level);
+            case GOLEM -> golem.tick(level);
             case PICKUP -> pickUp(level);
             case PLACE -> walkToPlace(level);
             case GRIND -> grinding.tick(level);

@@ -62,6 +62,8 @@ public final class CompanionGolem {
     private static final int SITE = 6;
     /** Walks to one place before it is passed over; ticks a cell is waited for to be free, and the carved pumpkin's seeds to be picked up. */
     private static final int LEGS = 8, WAIT_TICKS = 200, PICK_TICKS = 100;
+    /** How near the player a golem stopped half way is built on (blocks); farther off, a new one is made. */
+    private static final double KEPT = 16;
 
     enum Kind {
         IRON(Items.IRON_BLOCK, Blocks.IRON_BLOCK, "железный"), SNOW(Items.SNOW_BLOCK, Blocks.SNOW_BLOCK, "снежный");
@@ -127,23 +129,31 @@ public final class CompanionGolem {
         // Decision 11: where a snow golem melts (desert, savanna, badlands, the Nether), it is not made.
         if (kind == Kind.SNOW && level.getBiome(center).is(BiomeTags.SNOW_GOLEM_MELTS)) return CompanionActionResult.failed(MELTS);
         ServerPlayer player = c.getOwnerPlayer();
-        AABB beside = player == null || player.level() != level ? null : player.getBoundingBox().inflate(1.5, 0, 1.5).expandTowards(0, -4, 0);
+        // Never where the player stands or under him; a new place not right beside him either (a stopped golem he came back to may be).
+        AABB under = player == null || player.level() != level ? null : player.getBoundingBox().expandTowards(0, -4, 0);
+        AABB beside = under == null ? null : under.inflate(1.5, 0, 1.5);
         Predicate<BlockPos> builds = c.getOwnerId() == null ? pos -> false : CompanionPlayerBuilds.get(level.getServer()).sites(c.getOwnerId(), level);
-        Site chosen = stopped != null && stopped.kind() == kind && level.dimension() == stoppedIn && started(level, stopped) && fits(level, stopped, builds, beside) ? stopped : null;
+        Site chosen = stopped != null && stopped.kind() == kind && level.dimension() == stoppedIn && stopped.base().closerThan(center, KEPT)
+                && started(level, stopped) && fits(level, stopped, builds, under) ? stopped : null;
         if (chosen == null) chosen = choose(level, kind, center, builds, beside);
         if (chosen == null) return CompanionActionResult.failed(kind == Kind.IRON ? NO_PLACE_IRON : NO_PLACE_SNOW);
+        // The place itself may lie over a biome's border from the player.
+        if (kind == Kind.SNOW && level.getBiome(chosen.base()).is(BiomeTags.SNOW_GOLEM_MELTS)) return CompanionActionResult.failed(MELTS);
         // What is set already (a stopped golem) is not asked for again.
         int body = (int) chosen.body().stream().filter(cell -> !level.getBlockState(cell).is(kind.block)).count();
-        int short_ = body - w.items.countCarried(kind.item);
-        if (short_ > 0) {
-            // Decision 10: the iron is told before it is gone for, when it is not just crafted of his ingots.
-            if (kind == Kind.IRON && w.items.countCarried(Items.IRON_INGOT) < short_ * 9)
+        int carried = w.items.countCarried(kind.item);
+        if (carried < body) {
+            // Decision 10: the iron is told before it is gone for, when it is not just smelted and crafted of what he carries.
+            int short_ = body - carried;
+            if (kind == Kind.IRON && w.items.countCarried(Items.IRON_INGOT) + w.items.countCarried(Items.RAW_IRON) < short_ * 9)
                 say(level, "Железных блоков для голема не хватает (нужно ещё " + short_ + ") — накопаю железной руды и переплавлю, это надолго.");
-            return shortage("Для голема не хватает блоков.", kind.item, short_);
+            // obtain_item counts what he should hold in all (review: the part missing was already held, and the plan stopped).
+            return shortage("Для голема не хватает блоков.", kind.item, body);
         }
-        boolean head = carvedCarried() || level.getBlockState(chosen.head()).is(Blocks.PUMPKIN) || w.items.countCarried(Items.PUMPKIN) > 0;
-        if (!head) return shortage("Для головы голема нужна тыква.", Items.PUMPKIN, 1);
-        if (!carvedCarried() && w.items.countCarried(Items.SHEARS) == 0) return shortage("Вырезать тыкву нечем — нужны ножницы.", Items.SHEARS, 1);
+        boolean onHead = level.getBlockState(chosen.head()).is(Blocks.PUMPKIN);
+        if (!carvedCarried() && !onHead && w.items.countCarried(Items.PUMPKIN) == 0) return shortage("Для головы голема нужна тыква.", Items.PUMPKIN, 1);
+        // His pumpkin already on the body is carved, whatever else he carries (next()).
+        if ((onHead || !carvedCarried()) && w.items.countCarried(Items.SHEARS) == 0) return shortage("Вырезать тыкву нечем — нужны ножницы.", Items.SHEARS, 1);
         site = chosen;
         event("golem_site", "kind", kind, "base", chosen.base().toShortString(), "axis", chosen.axis(), "resumed", chosen == stopped);
         return null;
@@ -151,11 +161,14 @@ public final class CompanionGolem {
 
     String jobName() { return site != null && site.kind() == Kind.SNOW ? "постройку снеговика" : "постройку голема"; }
 
-    /** Stopped: a golem with any of its blocks set is kept for the next order of its kind. */
+    /** Stopped by the player or another order: a golem with any of its blocks set is kept for the next order of its kind. */
     void cancel() {
         if (site != null && c.level() instanceof ServerLevel level && started(level, site)) { stopped = site; stoppedIn = level.dimension(); }
         reset();
     }
+
+    /** The order ends without a golem: the place is not kept either, the next order would fail the same way there (review). */
+    private void end(String message) { stopped = null; site = null; w.finish(false, message); }
 
     private void reset() { site = null; golem = null; stoodAt = waitingSince = 0; carved = false; aimed = null; stands = Set.of(); path = null; legs = 0; }
 
@@ -163,7 +176,7 @@ public final class CompanionGolem {
     void tick(ServerLevel level) {
         if (site == null) { w.finish(false, TAKEN); return; }
         if (golem != null) { pick(level); return; }
-        if (!level.hasChunkAt(site.base()) || !level.hasChunkAt(site.head())) { w.finish(false, TAKEN); return; }
+        if (!level.hasChunkAt(site.base()) || !level.hasChunkAt(site.head())) { end(TAKEN); return; }
         Step step = next(level);
         if (step == null) return;
         // Not from inside the room: his own body would be in the way of a block, and of the golem.
@@ -171,7 +184,7 @@ public final class CompanionGolem {
             c.workStatus(site.kind() == Kind.SNOW ? "Иду к месту снеговика." : "Иду к месту голема.");
             if (!step.cell().equals(aimed)) { aimed = step.cell(); stands = standsFor(level, step.cell()); legs = 0; path = null; }
             if (path != null && w.route.legOver() && stands.remove(c.blockPosition())) path = null;
-            if (!walk()) { event("golem_no_way", "step", step, "stands", stands.size(), "legs", legs); w.finish(false, NO_WAY); }
+            if (!walk()) { event("golem_no_way", "step", step, "stands", stands.size(), "legs", legs); end(NO_WAY); }
             return;
         }
         w.route.stop();
@@ -195,23 +208,25 @@ public final class CompanionGolem {
         for (BlockPos cell : site.air()) {
             BlockState state = level.getBlockState(cell);
             if (state.isAir()) continue;
-            if (!clearable(state)) { w.finish(false, TAKEN); return null; }
+            if (!clearable(state)) { end(TAKEN); return null; }
             return new Step(Act.CLEAR, cell);
         }
         for (BlockPos cell : site.body()) {
             if (level.getBlockState(cell).is(site.kind().block)) continue;
-            if (!CompanionPortalBuild.free(level, cell)) { w.finish(false, TAKEN); return null; }
-            if (w.items.countCarried(site.kind().item) == 0) { w.finish(false, "Блоки для голема кончились — их кто-то взял из сумки."); return null; }
+            if (!CompanionPortalBuild.free(level, cell)) { end(TAKEN); return null; }
+            if (w.items.countCarried(site.kind().item) == 0) { end("Блоки для голема кончились — их кто-то взял из сумки."); return null; }
             return new Step(Act.BODY, cell);
         }
         BlockState head = level.getBlockState(site.head());
         if (head.is(Blocks.PUMPKIN)) {
-            if (w.items.countCarried(Items.SHEARS) == 0) { w.finish(false, "Вырезать тыкву нечем — нужны ножницы."); return null; }
+            if (w.items.countCarried(Items.SHEARS) == 0) { end("Вырезать тыкву нечем — нужны ножницы."); return null; }
             return new Step(Act.CARVE, site.head());
         }
-        if (!CompanionPortalBuild.free(level, site.head())) { w.finish(false, head.is(Blocks.CARVED_PUMPKIN) || head.is(Blocks.JACK_O_LANTERN) ? NOT_ALIVE : TAKEN); return null; }
+        if (!CompanionPortalBuild.free(level, site.head())) { end(head.is(Blocks.CARVED_PUMPKIN) || head.is(Blocks.JACK_O_LANTERN) ? NOT_ALIVE : TAKEN); return null; }
+        // Blocks of its kind set since beside the head would make the game's golem of them instead (fits()).
+        if (stray(level, site)) { end(TAKEN); return null; }
         if (carvedCarried()) return new Step(Act.HEAD, site.head());
-        if (w.items.countCarried(Items.PUMPKIN) == 0) { w.finish(false, "Тыква для головы кончилась — её кто-то взял из сумки."); return null; }
+        if (w.items.countCarried(Items.PUMPKIN) == 0) { end("Тыква для головы кончилась — её кто-то взял из сумки."); return null; }
         return new Step(Act.PUMPKIN, site.head());
     }
 
@@ -221,14 +236,14 @@ public final class CompanionGolem {
     private boolean place(ServerLevel level, BlockPos cell, Item item, BlockState state) {
         if (!level.isUnobstructed(state, cell, CollisionContext.empty())) {
             if (waitingSince == 0) waitingSince = level.getGameTime();
-            if (level.getGameTime() - waitingSince > WAIT_TICKS) { w.finish(false, TAKEN); return false; }
+            if (level.getGameTime() - waitingSince > WAIT_TICKS) { end(TAKEN); return false; }
             c.workStatus("Жду, пока освободится место для блока.");
             return false;
         }
         waitingSince = 0;
-        if (!c.getMainHandItem().is(item) && !c.equipForWork(BuiltInRegistries.ITEM.getKey(item).toString()).success()) { w.finish(false, "Не могу взять блок в руку: в сумке нет места."); return false; }
+        if (!c.getMainHandItem().is(item) && !c.equipForWork(BuiltInRegistries.ITEM.getKey(item).toString()).success()) { end("Не могу взять блок в руку: в сумке нет места."); return false; }
         ItemStack held = c.getMainHandItem();
-        if (!held.is(item) || !level.setBlock(cell, state, 3)) { w.finish(false, TAKEN); return false; }
+        if (!held.is(item) || !level.setBlock(cell, state, 3)) { end(TAKEN); return false; }
         c.animateAction(1, cell, held);
         held.shrink(1);
         c.setChanged();
@@ -242,12 +257,12 @@ public final class CompanionGolem {
 
     /** His pumpkin on the body carved with his shears, as the game carves one for a player (PumpkinBlock.useItemOn): the golem stands up then. */
     private void carve(ServerLevel level, BlockPos cell) {
-        if (!c.getMainHandItem().is(Items.SHEARS) && !c.equipForWork("minecraft:shears").success()) { w.finish(false, "Не могу взять ножницы в руку: в сумке нет места."); return; }
+        if (!c.getMainHandItem().is(Items.SHEARS) && !c.equipForWork("minecraft:shears").success()) { end("Не могу взять ножницы в руку: в сумке нет места."); return; }
         ItemStack shears = c.getMainHandItem();
         Set<UUID> before = golemsAbout(level);
         c.getLookControl().setLookAt(Vec3.atCenterOf(cell));
         level.playSound(null, cell, SoundEvents.PUMPKIN_CARVE, SoundSource.BLOCKS, 1F, 1F);
-        if (!level.setBlock(cell, Blocks.CARVED_PUMPKIN.defaultBlockState().setValue(CarvedPumpkinBlock.FACING, toward(cell)), 11)) { w.finish(false, TAKEN); return; }
+        if (!level.setBlock(cell, Blocks.CARVED_PUMPKIN.defaultBlockState().setValue(CarvedPumpkinBlock.FACING, toward(cell)), 11)) { end(TAKEN); return; }
         c.animateAction(1, cell, shears);
         c.swing(InteractionHand.MAIN_HAND);
         shears.hurtAndBreak(1, c, EquipmentSlot.MAINHAND);
@@ -264,7 +279,7 @@ public final class CompanionGolem {
         Class<? extends AbstractGolem> type = site.kind() == Kind.IRON ? IronGolem.class : SnowGolem.class;
         golem = level.getEntitiesOfClass(type, site.room().inflate(2), mob -> mob.isAlive() && !before.contains(mob.getUUID())).stream().findFirst().orElse(null);
         event("golem_stood", "kind", site.kind(), "golem", golem == null ? "none" : golem.getUUID(), "head", level.getBlockState(site.head()));
-        if (golem == null) { w.finish(false, NOT_ALIVE); return; }
+        if (golem == null) { end(NOT_ALIVE); return; }
         stoodAt = level.getGameTime();
         w.cooldown = 4;
     }
@@ -287,13 +302,13 @@ public final class CompanionGolem {
         w.finish(true, said);
     }
 
-    /** A wild plant beside an iron golem cut as he cuts grass (CompanionCobbleGen), its drop picked up. */
+    /** A wild plant or a snow layer beside an iron golem broken as he cuts grass (CompanionCobbleGen), its drop picked up. */
     private void clear(ServerLevel level, BlockPos cell) {
-        c.workStatus("Срезаю траву у места голема.");
+        c.workStatus("Расчищаю место голема.");
         if (!w.breaking.tick(level, cell)) return;
         BlockState state = level.getBlockState(cell);
         var drops = CompanionTools.drops(state, level, cell, null, c, c.getMainHandItem());
-        if (!level.destroyBlock(cell, false, c, 512)) { w.finish(false, TAKEN); return; }
+        if (!level.destroyBlock(cell, false, c, 512)) { end(TAKEN); return; }
         c.dropHarvest(cell, drops);
     }
 
@@ -350,6 +365,7 @@ public final class CompanionGolem {
             if (!own && !CompanionPortalBuild.free(level, cell)) return false;
         }
         for (BlockPos cell : s.air()) if (!level.getBlockState(cell).isAir() && !clearable(level.getBlockState(cell))) return false;
+        if (stray(level, s)) return false;
         for (BlockPos floor : s.ground()) {
             if (!level.hasChunkAt(floor) || builds.test(floor)) return false;
             BlockState state = level.getBlockState(floor);
@@ -358,14 +374,25 @@ public final class CompanionGolem {
         return true;
     }
 
+    /**
+     * A block of the golem's kind beside its head or over it (a snow wall, an igloo, a stack of iron): the game looks for the golem's
+     * shape lying or upside down too and might take those, leaving his own blocks standing (BlockPattern.find; review).
+     */
+    private static boolean stray(ServerLevel level, Site s) {
+        BlockPos head = s.head();
+        for (BlockPos near : List.of(head.north(), head.south(), head.east(), head.west(), head.above())) if (level.getBlockState(near).is(s.kind().block)) return true;
+        return false;
+    }
+
     /** Some of the golem's blocks stand in its cells (a golem stopped half way). */
     private static boolean started(ServerLevel level, Site s) {
         for (BlockPos cell : s.body()) if (level.getBlockState(cell).is(s.kind().block)) return true;
         return level.getBlockState(s.head()).is(Blocks.PUMPKIN);
     }
 
-    /** A wild plant he cuts with one blow: no collision, breaks at once, no sapling or crop (CompanionCobbleGen). */
+    /** A wild plant he cuts with one blow (no collision, breaks at once, no sapling or crop; CompanionCobbleGen), or a layer of snow knocked off by hand. */
     private static boolean clearable(BlockState state) {
+        if (state.is(Blocks.SNOW)) return true;
         var empty = net.minecraft.world.level.EmptyBlockGetter.INSTANCE;
         return state.canBeReplaced() && state.getCollisionShape(empty, BlockPos.ZERO).isEmpty() && state.getDestroySpeed(empty, BlockPos.ZERO) == 0
                 && !state.hasBlockEntity() && state.getFluidState().isEmpty() && !state.is(BlockTags.SAPLINGS) && !state.is(BlockTags.CROPS);
