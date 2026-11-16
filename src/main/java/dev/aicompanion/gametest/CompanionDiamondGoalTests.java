@@ -372,6 +372,24 @@ public final class CompanionDiamondGoalTests {
         });
     }
 
+    /** Review of #98: the diamond goal held by «охраняй меня» is not the diamond work. Unarmed, he meets a zombie that strikes the player with his fists. */
+    @GameTest(template = "marathon_cave", timeoutTicks = DEFEND_TICKS)
+    public static void unarmedWithTheDiamondGoalHeldHeStillStandsUpForThePlayer(GameTestHelper h) {
+        Rig r = rig(h, false, new ItemStack(Items.BREAD, 8));
+        r.c().setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        start(h, r, 1);
+        var guard = CompanionEvents.executeAction(r.p(), "protect", "", 1);
+        h.assertTrue(guard.success(), "SETUP: «охраняй» refused: " + guard.message());
+        Zombie zombie = h.spawn(EntityType.ZOMBIE, new BlockPos(CENTER - 4, GROUND + 1, CENTER - 4));
+        zombie.setPersistenceRequired();
+        zombie.setNoAi(true);
+        r.p().setLastHurtByMob(zombie);
+        h.succeedWhen(() -> {
+            h.assertTrue(state(h, r) == CompanionAgenda.State.HELD, "SETUP: the diamond goal is not held: " + state(h, r));
+            h.assertTrue(zombie.getLastHurtByMob() == r.c(), "He has not struck the zombie on the player | target " + r.c().getTarget() + ", he at " + r.c().blockPosition().toShortString());
+        });
+    }
+
     static void start(GameTestHelper h, Rig r, int count) {
         var result = CompanionEvents.executeAction(r.p(), "pursue_goal", GOAL, count);
         h.assertTrue(result.status() == CompanionActionResult.Status.ACCEPTED, "Goal not accepted: " + result.message());

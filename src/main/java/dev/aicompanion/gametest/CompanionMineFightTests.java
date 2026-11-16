@@ -49,7 +49,8 @@ public final class CompanionMineFightTests {
     private static final double THROWN = 0.6, REACHED = 3;
     private static final int BLOW_GAP = 20;
     /** What he says when a creeper sends him off (CompanionCreeperGuard). */
-    private static final String SENT_OFF = "Рядом крипер, ухожу от него.";
+    private static final String SENT_OFF = "Рядом крипер, ухожу от него.", CREEPER_NEAR = "Рядом крипер, ";
+    private static final int FAR_ZOMBIE = 8, CREEPER_SIDE = 5;
     private static final int DROP_REACH = 10, PICKUP_UNDER_WAY = 8, ONE_BLOW = 1;
 
     private CompanionMineFightTests() { }
@@ -234,6 +235,31 @@ public final class CompanionMineFightTests {
             h.assertTrue(!c.getLastTaskResult().contains(SENT_OFF), "The creeper sent him off" + trace);
             if (!zombie.isAlive() || zombie.getHealth() <= zombie.getMaxHealth() - TWO_BLOWS) h.succeed();
             h.assertTrue(h.getTick() - begun < FIGHT_TICKS, "The zombie on him was not struck" + trace);
+        });
+    }
+
+    /**
+     * Review of #98: a zombie far from him (eight blocks, standing) does not hold him by an unlit creeper when he may not fight it (twelve
+     * health): the guard still sends him off or shuts the way.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void aZombieFarFromHimDoesNotHoldHimByAnUnlitCreeper(GameTestHelper h) {
+        mountain(h, false);
+        CompanionEntity c = armed(h);
+        BlockPos foot = chamber(h, carveMine(h, c, 0));
+        place(c, foot.offset(FAR_STAND, 0, 0));
+        c.setHealth(HURT);
+        Zombie zombie = zombie(h, foot.offset(FAR_STAND - FAR_ZOMBIE, 0, 0));
+        zombie.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        Creeper creeper = creeper(h, foot.offset(FAR_STAND, 0, CREEPER_SIDE));
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        long begun = h.getTick();
+        start(h, c, 1);
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died");
+            if (c.getLastTaskResult().contains(CREEPER_NEAR)) { h.succeed(); return; }
+            h.assertTrue(h.getTick() - begun < FIGHT_TICKS, "The far zombie held him by the creeper | creeper fuse " + creeper.getSwellDir() + ", he at "
+                    + rel(h, c.blockPosition()).toShortString() + ", target " + c.getTarget() + " | " + report(c));
         });
     }
 

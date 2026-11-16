@@ -34,8 +34,12 @@ public final class CompanionMineK17Tests {
     private static final double CREEPER_OFF = 3.1;
     /** The beat of his bob and the ticks of it they saw each other, too few for the fuse to burn down. */
     private static final int BEAT_TICKS = 20, SIGHT_TICKS = 8;
-    /** A fuse lasts 30 ticks: well past that, with some beats to strike in, it is over one way or the other. */
-    private static final int SETTLED_TICKS = 800;
+    /**
+     * A fuse lasts 30 ticks: well past that, with some beats to strike in, it is over one way or the other. He strikes once a guard episode
+     * (240 ticks) here, and a blow from a standstill does not throw the creeper off its ledge: four blows leave it at 2 health, the fifth
+     * comes at about 1000 ticks.
+     */
+    private static final int SETTLED_TICKS = 1200;
     private static final int IRON_WORN = 191;
 
     private CompanionMineK17Tests() { }
