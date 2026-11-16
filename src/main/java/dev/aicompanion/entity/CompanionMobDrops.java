@@ -233,8 +233,8 @@ final class CompanionMobDrops {
         w.huntTargets.add(target.getUUID());
         c.selectWeaponForCombat(); c.setTarget(target); c.movementIntent(target.blockPosition());
         c.workStatus("Добываю «" + name() + "»: " + got + " из " + wanted + ".");
-        // In the water with it he swims at it (watch); a route there would pull him back to the surface over it. One he strikes
-        // from where he stands is not waded onto (a pufferfish by the bank stings who comes into the water to it).
+        // In the water with it he swims at it (watch); a route there would pull him back to the surface over it. The work's own
+        // route does not wade him onto one he strikes from where he stands (a pufferfish by the bank stings who comes to it).
         if (swims(target) && (target.isInWater() && c.isInWater() || c.isWithinMeleeAttackRange(target) && c.hasLineOfSight(target))) c.getNavigation().stop();
         else if ((swims(target) ? wade(w, level, target) : w.route.follow(target.blockPosition(), 2)) != CompanionTravel.Step.WALKING) c.travel().reset();
     }
@@ -262,7 +262,9 @@ final class CompanionMobDrops {
         // legs move (Mob.serverAiStep: navigation, customServerAiStep, moveControl), so its step is undone here.
         if (swims(mob) && mob.isInWater() && c.isInWater() && !c.breath.active()) {
             c.getNavigation().stop();
-            if (!c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob) && c.getAirSupply() > c.getMaxAirSupply() / 2) swimAt(c, mob);
+            // Out of sight too (round a pillar of the bed, behind a coral): he swims on to it, as for the scoop; held still he only waited
+            // for the stall. Behind glass the stall gives it up.
+            if (!c.isWithinMeleeAttackRange(mob) && c.getAirSupply() > c.getMaxAirSupply() / 2) swimAt(c, mob);
             else c.getMoveControl().setWantedPosition(c.getX(), c.getY(), c.getZ(), 1);
         }
         // Out of his search radius across, as it is looked for (around): a cod down by the floor of the sea is farther from his eyes.
