@@ -31,6 +31,8 @@ final class CompanionExpeditionStairsUp {
     private final boolean recordsWay;
     private final String status;
     private final Set<Long> refused = new HashSet<>();
+    /** The stands this climb has stood on: a level step back onto one goes round a chamber with no way out, not up (a pit in bedrock). */
+    private final Set<BlockPos> stood = new HashSet<>();
     private BlockPos goal, from, to;
     private Direction dir;
     private List<BlockPos> cells = List.of();
@@ -82,6 +84,8 @@ final class CompanionExpeditionStairsUp {
         }
         dig.flush();
         if (recordsWay) w.mine.wayCut(to);
+        stood.add(from);
+        stood.add(to);
         steps++;
         stuck = 0;
         owner.workStatus(status != null ? status : "Своей лестницы наверх нет, прокапываю новую: ступень " + steps + ", ноги на высоте " + to.getY() + ".");
@@ -106,6 +110,7 @@ final class CompanionExpeditionStairsUp {
             for (Direction d : order(here)) {
                 if (refused.contains(key(here, d)) || sideways && dir != null && d == dir.getOpposite()) continue;
                 BlockPos step = up ? here.relative(d).above() : here.relative(d);
+                if (!up && stood.contains(step)) continue;
                 List<BlockPos> column = up ? List.of(here.above(2), step, step.above()) : List.of(step, step.above());
                 CompanionShaftPlan.Hazard hazard = CompanionShaftPlan.assess(level, here, column, List.of(step.below()), w.mine.seals(), avoid, true);
                 switch (hazard.kind()) {
@@ -192,6 +197,7 @@ final class CompanionExpeditionStairsUp {
 
     void reset() {
         refused.clear();
+        stood.clear();
         goal = from = to = null;
         dir = null;
         cells = List.of();
