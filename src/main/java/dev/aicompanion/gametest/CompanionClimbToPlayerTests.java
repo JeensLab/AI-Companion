@@ -29,7 +29,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionClimbToPlayerTests {
-    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, DEEP = 3, FOLLOW_RANGE_SHORT = 8;
+    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, DEEP = 3, FOLLOW_RANGE_SHORT = 8, FOLLOW_RANGE_PIT = 6;
 
     private CompanionClimbToPlayerTests() { }
 
@@ -112,7 +112,8 @@ public final class CompanionClimbToPlayerTests {
      * Run restart of seed 7 (16.11): with the diamond he came up his stairs into a narrow hole five deep under the sky, and the player stood
      * sixty blocks off at the entrance, a block lower than his feet. The stairs were cut only for a player no lower, so the hand-over ended
      * «Не смог к тебе подойти» five times and the goal «не получилось отдать алмазы». A hole three deep in andesite, the player in a dip of his
-     * own a block lower beyond its lip, with a step down to it: the stairs go up to the lip, and the walk goes on from there.
+     * own a block lower beyond its lip, with a step down to it, out of the range where «no way» can be told: the stairs go up out of the hole,
+     * and the walk goes on from there.
      */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void climbsOutOfAPitToAPlayerLowerThanHim(GameTestHelper h) {
@@ -127,6 +128,7 @@ public final class CompanionClimbToPlayerTests {
         for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(dip - 2, y, z), Blocks.AIR);
         CompanionEntity c = rig(h);
         c.setFollowing(false);
+        c.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).setBaseValue(FOLLOW_RANGE_PIT);
         BlockPos floor = h.absolutePos(new BlockPos(CENTER, GROUND - DEEP + 1, CENTER)), owner = h.absolutePos(new BlockPos(dip, GROUND - DEEP, CENTER));
         c.teleportTo(floor.getX() + .5, floor.getY(), floor.getZ() + .5);
         h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);

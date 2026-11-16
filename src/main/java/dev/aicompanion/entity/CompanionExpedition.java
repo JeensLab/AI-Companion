@@ -61,7 +61,7 @@ final class CompanionExpedition {
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
-    private boolean active, hadStone, unheld, joining, atFoot, towardOrigin, surfaceOnly;
+    private boolean active, hadStone, unheld, joining, atFoot, towardOrigin, surfaceOnly, wetTurn;
     private long stepEnd, nextLightClimb;
     /** The surface entrance of the mine whose way up ended closed: kept over the steps (not cleared by {@link #reset}) until a climb gets out, so no climb walks into the same trap again. */
     private BlockPos noWayUpFrom;
@@ -69,7 +69,7 @@ final class CompanionExpedition {
     private boolean joinedBelow;
     private long credited;
     private int startDiamonds, progress, stairSteps, turns, routeIndex, softFails, fresh;
-    /** Landings left of the level way off from liquid under the stairs, and how many such ways this step has dug. */
+    /** Landings left of the level way off from liquid under the stairs, and how many such ways this step has dug ({@link #wetTurn}: the last turn was for liquid). */
     private int drift, drifts;
     private BlockPos stand, head, sealCell;
     /** The stairs' own direction while a way off liquid runs to a side: they go on in it once that way ends. */
@@ -177,7 +177,7 @@ final class CompanionExpedition {
         climb.reset();
         lead.clear();
         CompanionChunkTicket.release(owner);
-        active = hadStone = unheld = joining = joinedBelow = atFoot = towardOrigin = surfaceOnly = false;
+        active = hadStone = unheld = joining = joinedBelow = atFoot = towardOrigin = surfaceOnly = wetTurn = false;
         ore.reset();
         cave.reset();
         retreat.reset();
@@ -363,7 +363,7 @@ final class CompanionExpedition {
                 return;
             }
             // A failed search can leave him on a partial path out to the surface: the way down is then his own stairs from the entrance, not the far foot.
-            if (joining && joinedBelow && !w.mine.buried() && !belowTop((ServerLevel) owner.level()) && owner.getY() >= w.mine.entrance().getY() - UNDERGROUND_DEPTH) {
+            if (joining && joinedBelow && !w.mine.buried() && !CompanionExpeditionRecord.belowTop((ServerLevel) owner.level(), w.mine, owner.blockPosition(), top()) && owner.getY() >= w.mine.entrance().getY() - UNDERGROUND_DEPTH) {
                 w.route.legsEnd(false);
                 joining = joinedBelow = false;
                 softFails = 0;
@@ -481,7 +481,7 @@ final class CompanionExpedition {
     /** No side is left where he stands: back to the entrance on the surface, once, to begin stairs to a side not tried from it. */
     private void restartAtOrigin(ServerLevel level, String why) {
         // A walk to the entrance that failed once is not tried again through yet another restart: the order ends instead of burning them all.
-        Direction side = towardOrigin || !originNear() ? null : CompanionExpeditionRecord.originSide(level, w.mine);
+        Direction side = towardOrigin || !CompanionExpeditionRecord.originNear(w.mine, FAR_ENTRANCE) ? null : CompanionExpeditionRecord.originSide(level, w.mine);
         if (side == null) {
             if (startDigOut(level)) digOutWhy = why;
             else if (!leaveForSurface(level, why, false)) end(Ending.BLOCKED, why);
@@ -491,12 +491,6 @@ final class CompanionExpedition {
         restartAt(level, w.mine.origin(), side, -1);
         joining = false;
         owner.workStatus("Здесь не свернуть, возвращаюсь ко входу и начну лестницу в другую сторону.");
-    }
-
-    /** The entrance on the surface is close enough to the pit for a way to it to be built; from further off the search finds no leg. */
-    private boolean originNear() {
-        BlockPos origin = w.mine.origin();
-        return origin != null && origin.distSqr(w.mine.entrance()) <= FAR_ENTRANCE * FAR_ENTRANCE;
     }
 
     /**
@@ -524,14 +518,9 @@ final class CompanionExpedition {
 
     private boolean noWayUp() { return w.mine.exists() && noWayUpFrom != null && noWayUpFrom.equals(top()); }
 
-    private boolean belowTop(ServerLevel level) {
-        BlockPos here = owner.blockPosition();
-        return w.mine.exists() && here.getY() < top().getY() - UNDERGROUND_DEPTH && !CompanionExpeditionRecord.underSky(level, here.above());
-    }
-
     private void climbed(ServerLevel level) {
         // A climb that ended closed, still under the ground, is no way up: the next lack of light digs on instead of walking into the same trap.
-        if (!belowTop(level)) noWayUpFrom = null;
+        if (!CompanionExpeditionRecord.belowTop(level, w.mine, owner.blockPosition(), top())) noWayUpFrom = null;
         else if (climb.text().contains(CompanionExpeditionClimb.CLOSED)) noWayUpFrom = top().immutable();
         if (surfaceOnly) {
             if (CompanionFacts.of(owner).belowMine()) end(Ending.BLOCKED, climb.text());
@@ -605,8 +594,10 @@ final class CompanionExpedition {
         w.mine.buried(!CompanionExpeditionRecord.underSky(level, at.above()));
         route = new ArrayList<>(List.of(at));
         routeIndex = index;
-        tunnel = null;
-        turns = softFails = 0;
+        // New stairs owe nothing to a way off liquid of the old ones (its landings left, its direction).
+        tunnel = driftAlong = null;
+        turns = softFails = drift = 0;
+        wetTurn = false;
         stage = Stage.CHECK_NEAR;
     }
 
@@ -673,7 +664,7 @@ final class CompanionExpedition {
                 if (!dig.lackedOre && !dig.ironForRock && dig.ironLeft(DIAMOND_IRON) && dig.diamondInSight((ServerLevel) owner.level(), DIAMOND_SIGHT)) { dig.ironForRock(DIAMOND_IRON); return; }
                 // A pit under the ground has no supplies above it, and its entrance leads nowhere: wood and stone are at the first entrance on the surface.
                 ServerLevel level = (ServerLevel) owner.level();
-                if (!dig.lackedOre && !towardOrigin && w.mine.buried() && originNear() && CompanionExpeditionRecord.originSide(level, w.mine) != null) {
+                if (!dig.lackedOre && !towardOrigin && w.mine.buried() && CompanionExpeditionRecord.originNear(w.mine, FAR_ENTRANCE) && CompanionExpeditionRecord.originSide(level, w.mine) != null) {
                     restartAtOrigin(level, CompanionExpeditionClimb.shortage(false, hadStone));
                     return;
                 }
@@ -697,6 +688,7 @@ final class CompanionExpedition {
                 stand = done.to;
                 w.mine.reached(stand);
                 stairSteps++;
+                wetTurn = false;
                 owner.workStatus("Спускаюсь по лестнице: ступень " + stairSteps + ", ноги на высоте " + stand.getY() + ".");
                 if (reachedDepth((ServerLevel) owner.level())) { stage = Stage.BRANCH; enterBranch(); }
             }
@@ -723,7 +715,10 @@ final class CompanionExpedition {
     private void blocked() {
         CompanionExpeditionStep failed = plan;
         plan = null;
-        if (failed.kind != CompanionExpeditionStep.Kind.TUNNEL && failed.liquid && moveOffLiquid()) return;
+        // Liquid a turn gets round (a pocket by the step) costs a landing, as before; met on that landing or right after it, it lies under the stairs.
+        boolean wet = failed.kind != CompanionExpeditionStep.Kind.TUNNEL && failed.liquid;
+        if (wet && (wetTurn || failed.kind == CompanionExpeditionStep.Kind.LANDING) && moveOffLiquid()) return;
+        wetTurn |= wet;
         // A way off liquid that meets rock it cannot pass ends where it is: the stairs go on from there in their own direction.
         if (drift > 0 && failed.lasting) { drift = 0; dir = driftAlong; driftAlong = null; return; }
         switch (failed.kind) {

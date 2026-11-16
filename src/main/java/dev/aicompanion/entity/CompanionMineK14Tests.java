@@ -173,6 +173,28 @@ public final class CompanionMineK14Tests {
         h.succeed();
     }
 
+    /**
+     * Review of the climb out of a pit to a lower player: beside a wall three high on flat ground he is in no pit and cuts no stairs (it would
+     * be a stair up the wall, away from the player shut in below); at the bottom of a hole three deep he does, the player as low as before.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 100)
+    public static void theClimbToALowerPlayerIsOnlyOutOfAPit(GameTestHelper h) {
+        mountain(h);
+        for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND + 1; y <= GROUND + 3; y++) h.setBlock(new BlockPos(CENTER + 1, y, z), Blocks.STONE);
+        int hole = CENTER - 10;
+        for (int x = hole - 1; x <= hole + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - 2; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        ServerPlayer player = survivalPlayer(h);
+        BlockPos below = h.absolutePos(new BlockPos(CENTER + 5, GROUND - 6, CENTER));
+        player.moveTo(below.getX() + .5, below.getY(), below.getZ() + .5);
+        h.assertFalse(new CompanionClimbToPlayer(c.work).startWhenStuck(player, true), "Stairs up beside a wall for a player out of reach below (no way)");
+        h.assertFalse(new CompanionClimbToPlayer(c.work).startWhenStuck(player, false), "Stairs up beside a wall for a player out of reach below (a failed walk)");
+        BlockPos bottom = h.absolutePos(new BlockPos(hole, GROUND - 2, CENTER));
+        c.moveTo(bottom.getX() + .5, bottom.getY(), bottom.getZ() + .5);
+        h.assertTrue(new CompanionClimbToPlayer(c.work).startWhenStuck(player, false), "No stairs out of a hole three deep for a player lower than him");
+        h.succeed();
+    }
+
     private static String rel(GameTestHelper h, BlockPos world) { return world == null ? "none" : h.relativePos(world).toShortString(); }
 
     private static void carve(GameTestHelper h, int x, int z) {

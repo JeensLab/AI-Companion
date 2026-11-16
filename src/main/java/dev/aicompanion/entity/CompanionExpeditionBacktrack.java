@@ -53,6 +53,7 @@ final class CompanionExpeditionBacktrack {
             Direction turn = sideAt(level, mine, i);
             if (turn == null) continue;
             goBack(i, turn);
+            mine.backtracked();
             return true;
         }
         return false;
@@ -60,7 +61,8 @@ final class CompanionExpeditionBacktrack {
 
     /**
      * As {@link #begin} for liquid under the way down: at least {@code rise} stands back up, and off to the side with the least liquid
-     * beside and under it within {@code reach}; a landing there is enough, the level way off goes on along it.
+     * beside and under it within {@code reach}; a landing there is enough, the level way off goes on along it. It is no backtrack of a dead
+     * end: it does not use up the mine's backtracks nor lengthen the jump of the next one.
      */
     boolean beginAway(ServerLevel level, int rise, int reach) {
         reset();
@@ -90,7 +92,6 @@ final class CompanionExpeditionBacktrack {
         // He may have been moved from the first cell of the way (a fight, a fall): the walk starts at the cell nearest to him.
         BlockPos here = owner.blockPosition();
         walk.set(way, CompanionExpeditionRecord.nearest(way, here, Double.POSITIVE_INFINITY));
-        mine.backtracked();
     }
 
     /** Of the sides off the stand that are not the stairs and whose landing is open to him, the one with the fewest liquid cells within {@code reach} of it and down to the stairs' foot. */

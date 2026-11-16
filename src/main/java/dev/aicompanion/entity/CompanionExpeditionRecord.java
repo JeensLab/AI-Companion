@@ -173,6 +173,17 @@ public final class CompanionExpeditionRecord {
         return mine.exists() && origin != null && here.getY() < origin.getY() - CompanionExpedition.UNDERGROUND_DEPTH && !underSky(level, here.above());
     }
 
+    /** Under the ground below {@code top}, the mine's entrance on the surface (or its first stand when that is unknown). */
+    static boolean belowTop(ServerLevel level, CompanionMineSite mine, BlockPos here, BlockPos top) {
+        return mine.exists() && here.getY() < top.getY() - CompanionExpedition.UNDERGROUND_DEPTH && !underSky(level, here.above());
+    }
+
+    /** The entrance on the surface is close enough to the pit ({@code far}) for a way to it to be built; from further off the search finds no leg. */
+    static boolean originNear(CompanionMineSite mine, int far) {
+        BlockPos origin = mine.origin();
+        return origin != null && origin.distSqr(mine.entrance()) <= far * far;
+    }
+
     /** The side the stairs start anew to in a change of way, or null: the refusals and restarts are forgotten by then, and a cave he fled from shuts its side here. */
     static Direction cleanSide(ServerLevel level, CompanionMineSite mine, BlockPos here) {
         return sideOf(level, mine, here, MAX_RESTARTS, false);
