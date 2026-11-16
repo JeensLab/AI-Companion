@@ -98,13 +98,16 @@ final class CompanionGathering {
         if (!(c.level() instanceof ServerLevel serverLevel)) return false;
         BlockState state = serverLevel.getBlockState(pos);
         if (!state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES)) return false;
+        // The tool of the block: the axe for a trunk, the shears for a leaf of the crown in the way of it.
+        c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();
         var drops = CompanionTools.drops(state, serverLevel, pos, serverLevel.getBlockEntity(pos), c, tool);
-        if (!canStoreDrops(drops)) return false;
-        if (!serverLevel.destroyBlock(pos, false, c, 512)) return false;
+        if (!canStoreDrops(drops)) { c.putToolAway(); return false; }
+        if (!serverLevel.destroyBlock(pos, false, c, 512)) { c.putToolAway(); return false; }
         tool.getItem().mineBlock(tool, serverLevel, state, pos, c);
         c.swing(InteractionHand.MAIN_HAND);
         c.dropHarvest(pos, drops);
+        c.putToolAway();
         if (state.is(BlockTags.LOGS)) c.observeEvent("wood", "Срубил и увидел выпавшее бревно. Добыча дерева ещё может продолжаться.");
         return true;
     }

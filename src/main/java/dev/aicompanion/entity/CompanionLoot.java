@@ -444,9 +444,15 @@ final class CompanionLoot {
         owner.workStatus("Раздвигаю листву, чтобы достать вещь.");
         lastProgress = level.getGameTime();
         if (!leafBreaking.tick(level, leaf)) return;
+        // The leaf is the shears' block: it comes down as itself, and fast, not to a pickaxe in his hand that gives only a sapling.
+        owner.takeToolForBlock(state);
         var tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, leaf, null, owner, tool);
-        if (owner.canStoreDrops(drops) && level.destroyBlock(leaf, false, owner, 512)) owner.dropHarvest(leaf, drops);
+        if (owner.canStoreDrops(drops) && level.destroyBlock(leaf, false, owner, 512)) {
+            tool.getItem().mineBlock(tool, level, state, leaf, owner);
+            owner.dropHarvest(leaf, drops);
+        }
+        owner.putToolAway();
         leafBreaking.reset(); leaf = null; path = null; nextRoute = 0;
     }
     private boolean gone(ServerLevel level, UUID id) {
