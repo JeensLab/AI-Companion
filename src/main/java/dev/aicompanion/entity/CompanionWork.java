@@ -120,6 +120,8 @@ public final class CompanionWork {
     BlockPos cutter;
     /** The remembered bench turned out unreachable on foot: this job sets down its own from the bag instead. */
     boolean benchHere;
+    /** Afloat when a bench of his own is due: the dry cell he climbs out onto first (a bench is set down on land). */
+    BlockPos shore;
     static final int NEAR_BENCH = 8;
     static final int BENCH_TRIP = 20;
     BlockPos placementAnchor;
@@ -593,7 +595,7 @@ public final class CompanionWork {
         lots.clear(); triedFurnaces.clear(); heading = furnaceRoom = null; ownFurnaceFailed = furnacesShort = smokerTried = false; furnacesPlaced = 0; benchClimbs = 0;
         stoneSearch = null; quarrySoil.clear(); quarryTried = selectingStone = false; exitCell = null; stairs = 0;
         resetTarget();
-        craftingStation = null; benchHere = false; owner.allowNewBench(false); cutter = "cutter_craft".equals(action) ? owner.cutterWalk(item, count) : null;
+        craftingStation = null; benchHere = false; shore = null; owner.allowNewBench(false); cutter = "cutter_craft".equals(action) ? owner.cutterWalk(item, count) : null;
         stallTicks = 0; stallAnchor = owner.position(); stallSignature = progressSignature(); stallSeen.clear();
         dryTicks = dryGathered = dryWalkTicks = 0; dryAnchor = null; dug.clear(); offFoot.clear(); stoneMining.endStoneChoice(); stoneTravel = null; stoneTravels = 0; travelFailed.clear(); owner.travel().reset(); trip.reset();
         oreOffFoot.clear(); oreNoTunnel.clear(); oreBlockedCells.clear(); pickaxeSense.reset(); shovelSense.reset();
