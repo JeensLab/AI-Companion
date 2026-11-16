@@ -42,7 +42,6 @@ import java.util.Set;
 final class CompanionCreeperGuard {
     /** How near a creeper in sight is a reason to act: its fuse starts at three blocks and a blast kills from full health inside about 2.5. */
     static final double NEAR = 9;
-    private static final double ON_HIM = 3;
     private static final int LOOK_EVERY = 5, FIGHT_LOOK_EVERY = 2, PLAN_EVERY = 10, EPISODE_TICKS = 20 * 12, CALM_TICKS = 20, PLACE_TRIES = 20;
     private static final int FLEE_CELLS = 6, SHUT_STANDS = 3, ON_ROUTE_SQR = 2, ROUTE_CREEPER_SQR = 4, PASSAGE_RANGE = 24, FLEE_RANGE = 12, FLEE_HEIGHT = 6;
     /** A step away from an unlit creeper keeps this near the player, when he is within the second range (else he is off on his own work). */
@@ -143,13 +142,14 @@ final class CompanionCreeperGuard {
     }
 
     /**
-     * Armed on an expedition with another hostile on him: a creeper whose fuse is not lit is no reason to turn his back on it, whatever his
-     * health. The turn is the fight's; the guard takes it back when the fuse is lit.
+     * Armed on an expedition with another hostile that the fight goes for (on him, coming for him, or near): a creeper whose fuse is not lit
+     * is no reason to turn his back on it. The turn is the fight's; the guard takes it back when the fuse is lit, or when the fight itself
+     * leaves its foes for a wound. Not only one within reach: the push of his blow takes a zombie out of it, and it comes straight back.
      */
     private boolean engaged() {
         if (!owner.work.expedition.active() || !owner.equipment.hasMeleeWeapon()) return false;
-        return !owner.level().getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(ON_HIM),
-                foe -> !(foe instanceof Creeper) && foe.isAlive() && !foe.isNoAi() && owner.hasLineOfSight(foe)).isEmpty();
+        return !owner.level().getEntitiesOfClass(Monster.class, owner.getBoundingBox().inflate(CompanionExpeditionFight.AWARE),
+                foe -> !(foe instanceof Creeper) && owner.work.expedition.fight.engages(foe)).isEmpty();
     }
 
     /** A creeper that can hurt him stands in sight within this many blocks, foe or not: a pickup or a torch must not take his turn then. */

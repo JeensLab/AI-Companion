@@ -28,7 +28,9 @@ import java.util.UUID;
  */
 final class CompanionExpeditionFight {
     /** How far a mob in sight is met, and how far one that has chosen him. */
-    private static final double ENGAGE = 9, AWARE = 16, CONTACT_SQR = 9, FALL_LIMIT = 3, FUSE_NEAR = 12, OUTRUN = .8, LONE_FOE = 5, PER_EXTRA_FOE = 3;
+    /** How far a mob that has chosen him is still his foe. */
+    static final double AWARE = 16;
+    private static final double ENGAGE = 9, CONTACT_SQR = 9, FALL_LIMIT = 3, FUSE_NEAR = 12, OUTRUN = .8, LONE_FOE = 5, PER_EXTRA_FOE = 3;
     private static final int LONGEST = 20 * 45, HURT_MEMORY = 100;
 
     private final CompanionWork w;

@@ -45,9 +45,11 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.start;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineFightTests {
     private static final int CHAMBER_REACH = 13, CHAMBER_HEIGHT = 4, OPEN_CAVE_STAND = 3, KILL_TICKS = 1200, FUSE_TICKS = 200, CRAFT_TICKS = 1200, BRIDGE_FROM = 4, BRIDGE_TO = 10, BRIDGE_SIDE = 5, CAVERN_DEPTH = 7, PASSAGE_LENGTH = 4, PASSAGE_OFFSET = 2, PASSAGE_HEIGHT = 2, STRIKE_TICKS = 60, FIGHT_TICKS = 100, FAR_STAND = 10;
-    private static final float SURVIVES = 1, HURT = 10, TWO_BLOWS = 9, HALF = 10;
+    private static final float SURVIVES = 1, HURT = 12, TWO_BLOWS = 9, HALF = 10;
     private static final double THROWN = 0.6, REACHED = 3;
     private static final int BLOW_GAP = 20;
+    /** What he says when a creeper sends him off (CompanionCreeperGuard). */
+    private static final String SENT_OFF = "Рядом крипер, ухожу от него.";
     private static final int DROP_REACH = 10, PICKUP_UNDER_WAY = 8, ONE_BLOW = 1;
 
     private CompanionMineFightTests() { }
@@ -206,7 +208,11 @@ public final class CompanionMineFightTests {
         });
     }
 
-    /** He is hurt (ten health, below what a creeper is fought at), a zombie is on him and a creeper stands in sight with its fuse out: the creeper is no reason to run, the zombie is struck twice within five seconds. */
+    /**
+     * He is hurt (twelve health: a creeper is fought only above it), a zombie is on him and a creeper stands in sight with its fuse out: the
+     * creeper is no reason to run, the zombie is struck twice within five seconds. The zombie may land the first blow (a blow from a standstill
+     * throws it back only by the hit's own push); twelve less its three stays above the health at which a wound sends him off anyway.
+     */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void aCreeperWithNoFuseDoesNotSendHimRunningFromAZombieOnHim(GameTestHelper h) {
         mountain(h, false);
@@ -225,12 +231,13 @@ public final class CompanionMineFightTests {
             String trace = " | zombie " + (zombie.isAlive() ? "health " + zombie.getHealth() : "dead") + ", creeper fuse " + creeper.getSwellDir() + ", he at " + rel(h, c.blockPosition()).toShortString()
                     + ", health " + c.getHealth() + ", target " + c.getTarget() + " | " + report(c);
             h.assertTrue(c.isAlive(), "Died" + trace);
+            h.assertTrue(!c.getLastTaskResult().contains(SENT_OFF), "The creeper sent him off" + trace);
             if (!zombie.isAlive() || zombie.getHealth() <= zombie.getMaxHealth() - TWO_BLOWS) h.succeed();
             h.assertTrue(h.getTick() - begun < FIGHT_TICKS, "The zombie on him was not struck" + trace);
         });
     }
 
-    /** Two zombies are on him at once and a skeleton shoots from afar, the stone sword is all he has: all three die and he is never brought below half his health (the blows he strikes throw a foe back, as a player's running blow does). */
+    /** Two zombies are on him at once and a skeleton shoots from afar, the stone sword is all he has: all three die and he is never brought below half his health. */
     @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
     public static void twoZombiesOnHimAndASkeletonAreKilledAndHeLives(GameTestHelper h) {
         mountain(h, false);
