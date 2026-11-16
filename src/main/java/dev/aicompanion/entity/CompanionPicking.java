@@ -316,7 +316,7 @@ final class CompanionPicking {
         if (shorn) {
             // From the bag or from the other hand.
             c.takeToolForBlock(state);
-            if (!c.getMainHandItem().is(Items.SHEARS) && !CompanionTools.equip(c, net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR, state)) { end(false, "Не могу взять ножницы в руку: в сумке нет места."); return; }
+            if (!c.getMainHandItem().is(Items.SHEARS) && !CompanionTools.equip(c, net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR, state)) { c.putToolAway(); end(false, "Не могу взять ножницы в руку: в сумке нет места."); return; }
         } else if (w.items.prepareMiningTool(state)) return;
         else c.takeToolForBlock(state);
         ItemStack tool = c.getMainHandItem();

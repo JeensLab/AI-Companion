@@ -4,6 +4,7 @@ import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.Entity;
@@ -41,17 +42,20 @@ final class CompanionTools {
     /**
      * The tool of his that breaks this block fastest — a pickaxe for stone, an axe for wood, a shovel for earth, shears for leaves
      * (issue #105, «ломает блок правильным инструментом») — from the bag or either hand; empty when a bare hand is as fast.
-     * The class comes from the game's own destroy-speed rule (a tool speeds up only the blocks of its tag), not from a list of blocks.
+     * The class comes from the game's own destroy-speed rule (a tool speeds up only the blocks of its tag), not from a list of blocks;
+     * a block that needs the right tool for its drop is left to a tool that gives it. What he carries for the player stays his.
      */
     static ItemStack bestToolForBlock(CompanionEntity owner, BlockState state) {
         ItemStack best = ItemStack.EMPTY;
         float bestSpeed = 1;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
             ItemStack stack = owner.getItem(slot);
+            if (owner.carriedForPlayer(stack) || !takesTheDrop(stack, state)) continue;
             float speed = breakSpeed(owner, stack, state);
             if (speed > bestSpeed) { best = stack; bestSpeed = speed; }
         }
         for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
+            if (!takesTheDrop(held, state)) continue;
             float speed = breakSpeed(owner, held, state);
             if (speed > bestSpeed) { best = held; bestSpeed = speed; }
         }
@@ -80,6 +84,29 @@ final class CompanionTools {
         int efficiency = net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
                 owner.level().registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.EFFICIENCY), stack);
         return efficiency > 0 ? speed + efficiency * efficiency + 1 : speed;
+    }
+
+    /**
+     * A tool of another class may be faster and still give nothing: on obsidian an Efficiency V wooden pickaxe (speed 28) beats a
+     * diamond one (8) and the block drops nothing. The game's own check keeps the tool that takes the drop.
+     */
+    private static boolean takesTheDrop(ItemStack stack, BlockState state) {
+        return !state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state);
+    }
+
+    /**
+     * A tool in his hand that is no faster than a bare hand on a block a tool is wanted for: a pickaxe held over earth. A player
+     * puts it away rather than digs with it in the way; what is not a tool (a block, food) stays in the hand.
+     */
+    static boolean wrongToolForBlock(CompanionEntity owner, ItemStack hand, BlockState state) {
+        if (hand.isEmpty() || !isTool(hand) || breakSpeed(owner, hand, state) > 1) return false;
+        return state.is(BlockTags.MINEABLE_WITH_PICKAXE) || state.is(BlockTags.MINEABLE_WITH_AXE)
+                || state.is(BlockTags.MINEABLE_WITH_SHOVEL) || state.is(BlockTags.MINEABLE_WITH_HOE);
+    }
+
+    private static boolean isTool(ItemStack stack) {
+        return stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES) || stack.is(ItemTags.SHOVELS) || stack.is(ItemTags.HOES)
+                || stack.is(net.neoforged.neoforge.common.Tags.Items.TOOLS_SHEAR);
     }
     static boolean equip(CompanionEntity owner, TagKey<Item> tag, BlockState state) {
         ItemStack best = owner.getMainHandItem().is(tag) ? owner.getMainHandItem() : ItemStack.EMPTY;

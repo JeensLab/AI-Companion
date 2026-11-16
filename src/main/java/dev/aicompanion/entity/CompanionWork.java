@@ -645,6 +645,8 @@ public final class CompanionWork {
             owner.noteDeed("Прервал: " + jobName() + " — остановили или дали другое дело." + furnaces.furnaceNote(), false);
         }
         lots.clear(); heading = null; chests.kind = null;
+        // A tool taken for a swing is the work's too: the hand it replaced comes back before the work ends, never into the next one.
+        owner.putToolAway();
         items.putHeldStackBack();
         clearCracks();
         closeChest();

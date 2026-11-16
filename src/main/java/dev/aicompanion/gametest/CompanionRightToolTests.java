@@ -11,6 +11,8 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -205,6 +207,121 @@ public final class CompanionRightToolTests {
         h.succeed();
     }
 
+    /** A plain pickaxe in the hand is no reason to leave the faster one in the bag: the stack itself is taken, and the hand comes back. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void anEnchantedPickaxeInTheBagBeatsThePlainOneHeHolds(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, enchanted(h, Items.STONE_PICKAXE, 2));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        List<ItemStack> drops = breakWithTool(h, c, stone);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.COBBLESTONE)), "Stone did not give its cobblestone: " + drops);
+        h.assertTrue(find(h, c, Items.STONE_PICKAXE, 2).getDamageValue() == 1,
+                "The enchanted pickaxe from the bag was not the one used: " + c.getStoredItemsSummary());
+        h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE) && efficiency(h, c.getMainHandItem()) == 0
+                && c.getMainHandItem().getDamageValue() == 0, "The plain pickaxe from his hand was not put back: " + c.getMainHandItem());
+        h.assertTrue(count(c, Items.STONE_PICKAXE) == 2, "A pickaxe was lost or duplicated: " + count(c, Items.STONE_PICKAXE));
+        h.succeed();
+    }
+
+    /** Two stacks of one tool: the faster one is the one that wears, not the first one of its item the bag happens to hold. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void theFastestStackOfTwoOfTheSameToolIsTheOneThatWears(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(1, enchanted(h, Items.STONE_PICKAXE, 1));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        List<ItemStack> drops = breakWithTool(h, c, stone);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.COBBLESTONE)), "Stone did not give its cobblestone: " + drops);
+        h.assertTrue(find(h, c, Items.STONE_PICKAXE, 1).getDamageValue() == 1,
+                "The enchanted pickaxe was not the one used: " + c.getStoredItemsSummary());
+        h.assertTrue(find(h, c, Items.STONE_PICKAXE, 0).getDamageValue() == 0, "The plain pickaxe was used instead");
+        h.succeed();
+    }
+
+    /** The tool breaks on the block it was taken for: what was in his hand comes back, and nothing of his is lost. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aToolThatBreaksMidBreakLeavesHisHandAndTheDrop(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        ItemStack worn = enchanted(h, Items.STONE_PICKAXE, 1);
+        worn.setDamageValue(worn.getMaxDamage() - 1);
+        c.setItem(0, worn);
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        List<ItemStack> drops = breakWithTool(h, c, stone);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.COBBLESTONE)), "Stone did not give its cobblestone: " + drops);
+        h.assertTrue(find(h, c, Items.STONE_PICKAXE, 1).isEmpty(), "The worn pickaxe did not break on the block it was taken for");
+        h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE) && efficiency(h, c.getMainHandItem()) == 0,
+                "The pickaxe from his hand was not put back after the tool broke: " + c.getMainHandItem());
+        h.assertTrue(count(c, Items.STONE_PICKAXE) == 1, "A pickaxe was lost or duplicated: " + count(c, Items.STONE_PICKAXE));
+        h.succeed();
+    }
+
+    /** A full bag has no cell for the tool once the swing is over: it stays in his hand rather than vanish. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aFullBagKeepsTheToolWhenItIsPutAway(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        for (int slot = 0; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE, 2));
+        BlockPos stone = new BlockPos(16, GROUND, 18);
+        h.setBlock(stone, Blocks.STONE);
+        List<ItemStack> drops = breakWithTool(h, c, stone);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.COBBLESTONE)), "Stone did not give its cobblestone: " + drops);
+        // The worn tool matches no cell and no stack of the full bag: it stays in his hand, and every pickaxe is still his.
+        h.assertTrue(count(c, Items.STONE_PICKAXE) == 2, "A pickaxe was lost in a full bag: " + count(c, Items.STONE_PICKAXE));
+        h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE) && c.getMainHandItem().getDamageValue() == 1,
+                "The worn tool left his hand with no cell for it: " + c.getMainHandItem());
+        h.assertTrue(count(c, Items.COBBLESTONE) == (c.getContainerSize() - 1) * 64, "His cobblestone was lost");
+        h.succeed();
+    }
+
+    /** An order stopped with the tool in his hand mid-swing: the hand it replaced comes back, the tool goes into the bag. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aCancelledBreakPutsTheToolAwayAndRestoresHisHand(GameTestHelper h) throws Exception {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIRT, 3));
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        c.takeToolForBlock(Blocks.STONE.defaultBlockState());
+        h.assertTrue(c.getMainHandItem().is(Items.STONE_PICKAXE), "The tool was not taken: " + c.getMainHandItem());
+        Object work = field(c, "work");
+        var cancel = work.getClass().getDeclaredMethod("cancel");
+        cancel.setAccessible(true);
+        cancel.invoke(work);
+        h.assertTrue(c.getMainHandItem().is(Items.DIRT), "His dirt was not put back after the cancel: " + c.getMainHandItem());
+        h.assertTrue(count(c, Items.DIRT) == 3 && count(c, Items.STONE_PICKAXE) == 1, "Items were lost or duplicated on the cancel");
+        h.succeed();
+    }
+
+    /** The path that keeps the tool in his hand for many blocks: a tool of another class is put away, the block is dug by hand. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void theWrongToolIsPutAwayForHandDigging(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE));
+        c.selectToolForBlock(Blocks.DIRT.defaultBlockState());
+        h.assertTrue(c.getMainHandItem().isEmpty(), "The pickaxe stayed in his hand over earth: " + c.getMainHandItem());
+        h.assertTrue(count(c, Items.WOODEN_PICKAXE) == 1, "The pickaxe was lost or duplicated");
+        h.succeed();
+    }
+
+    /** A faster tool of the wrong class gives no drop: the pickaxe that takes the drop is the one taken and worn. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void obsidianIsTakenWithThePickaxeThatGivesItsDrop(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, enchanted(h, Items.WOODEN_PICKAXE, 5));
+        c.setItem(1, new ItemStack(Items.DIAMOND_PICKAXE));
+        BlockPos obsidian = new BlockPos(16, GROUND, 18);
+        h.setBlock(obsidian, Blocks.OBSIDIAN);
+        List<ItemStack> drops = breakWithTool(h, c, obsidian);
+        h.assertTrue(drops.stream().anyMatch(drop -> drop.is(Items.OBSIDIAN)), "Obsidian gave no drop: " + drops);
+        h.assertTrue(find(h, c, Items.DIAMOND_PICKAXE, 0).getDamageValue() == 1, "The diamond pickaxe was not the one used");
+        h.assertTrue(find(h, c, Items.WOODEN_PICKAXE, 5).getDamageValue() == 0,
+                "The faster wooden pickaxe was used and the drop went with it");
+        h.succeed();
+    }
+
     private static CompanionEntity spawn(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.STONE);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), STAND.getX(), GROUND, STAND.getZ());
@@ -230,6 +347,35 @@ public final class CompanionRightToolTests {
     }
 
     private static float speedOf(Item item, BlockState state) { return new ItemStack(item).getDestroySpeed(state); }
+
+    private static ItemStack enchanted(GameTestHelper h, Item item, int level) {
+        ItemStack stack = new ItemStack(item);
+        stack.enchant(h.getLevel().registryAccess().holderOrThrow(Enchantments.EFFICIENCY), level);
+        return stack;
+    }
+
+    private static int efficiency(GameTestHelper h, ItemStack stack) {
+        return EnchantmentHelper.getItemEnchantmentLevel(h.getLevel().registryAccess().holderOrThrow(Enchantments.EFFICIENCY), stack);
+    }
+
+    /** The stack of this item with this Efficiency level, in the bag or in a hand: empty when he has none. */
+    private static ItemStack find(GameTestHelper h, CompanionEntity c, Item item, int efficiency) {
+        for (int slot = 0; slot < c.getContainerSize(); slot++) {
+            ItemStack stack = c.getItem(slot);
+            if (stack.is(item) && efficiency(h, stack) == efficiency) return stack;
+        }
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND}) {
+            ItemStack stack = c.getItemBySlot(slot);
+            if (stack.is(item) && efficiency(h, stack) == efficiency) return stack;
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static Object field(Object target, String name) throws ReflectiveOperationException {
+        var found = target.getClass().getDeclaredField(name);
+        found.setAccessible(true);
+        return found.get(target);
+    }
 
     private static int damage(CompanionEntity c, Item item) {
         int found = -1;

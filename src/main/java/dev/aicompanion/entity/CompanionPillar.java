@@ -189,6 +189,8 @@ public final class CompanionPillar {
     /** Cancel wood swings immediately; keep the pillar until normal descent has finished. */
     public void requestCleanup() {
         breaking.reset();
+        // A tool taken for the last swing goes back with the hand it replaced: the pillar may stand for a while before it is taken down.
+        owner.putToolAway();
         if (!recovering) cleanupTicks = 0;
         recovering = isActive();
         jumpCell = null;
