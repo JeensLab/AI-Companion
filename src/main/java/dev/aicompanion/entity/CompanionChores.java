@@ -423,7 +423,7 @@ final class CompanionChores {
             // (round a pillar of the bed): he swims on to it, and behind glass the stall gives it up.
             if (mob.isInWater() && c.isInWater()) {
                 c.getNavigation().stop();
-                if (c.getAirSupply() > c.getMaxAirSupply() / 2) c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
+                if (c.getAirSupply() > c.getMaxAirSupply() / 2) CompanionMobDrops.swimAt(c, mob);
             } else if (CompanionMobDrops.wade(w, level, mob) != CompanionTravel.Step.WALKING) c.travel().reset();
             return;
         }

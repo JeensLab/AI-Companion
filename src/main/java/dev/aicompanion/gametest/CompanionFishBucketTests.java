@@ -121,11 +121,24 @@ public final class CompanionFishBucketTests {
         c.setItem(0, new ItemStack(Items.WATER_BUCKET));
         c.setItem(1, new ItemStack(Items.STONE_SWORD));
         var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:cod\",\"count\":1},{\"action\":\"obtain_item\",\"item\":\"minecraft:cod_bucket\",\"count\":1}]");
+        // Down the water straight over a cod he spun on the spot (the player 17.11, «крутится как больной»): ticks under water
+        // with his body or his head turned more than 45 degrees at once. Spinning, some 160 of 500; turning to it, half a dozen.
+        float[] last = {c.getYRot(), c.getYHeadRot()};
+        int[] under = {0}, body = {0}, head = {0};
+        h.onEachTick(() -> {
+            if (c.isEyeInFluid(net.minecraft.tags.FluidTags.WATER)) {
+                under[0]++;
+                if (Math.abs(net.minecraft.util.Mth.wrapDegrees(c.getYRot() - last[0])) > 45) body[0]++;
+                if (Math.abs(net.minecraft.util.Mth.wrapDegrees(c.getYHeadRot() - last[1])) > 45) head[0]++;
+            }
+            last[0] = c.getYRot(); last[1] = c.getYHeadRot();
+        });
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(c, Items.COD_BUCKET) == 1 && count(c, Items.COD) >= 1, "Cod bucket " + count(c, Items.COD_BUCKET) + ", cod " + count(c, Items.COD) + ": " + report);
             h.assertTrue(first.isRemoved() && second.isRemoved(), "Not the two cod down by the floor");
+            h.assertTrue(body[0] * 10 < under[0] && head[0] * 10 < under[0], "Spun under water: body " + body[0] + ", head " + head[0] + " of " + under[0] + " ticks");
         });
     }
 

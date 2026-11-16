@@ -33,6 +33,19 @@ final class CompanionCombat {
         @Override public boolean canContinueToUse() { return !c.archery.wants(c.getTarget()) && super.canContinueToUse(); }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
         @Override public void start() { super.start(); c.selectWeaponForCombat(); }
+        /**
+         * A fish or a squid in the water with him: CompanionMobDrops.watch swims him at it and the dive takes him down. The goal's
+         * own route to it ends at the surface over it: it pulled him back up and spun him on the spot (the player 17.11). Only the
+         * look and the blow are the goal's then.
+         */
+        @Override public void tick() {
+            if (c.getTarget() instanceof net.minecraft.world.entity.Mob fish && CompanionMobDrops.swims(fish) && fish.isInWater() && c.isInWater()) {
+                c.getLookControl().setLookAt(fish, 30, 30);
+                checkAndPerformAttack(fish);
+                return;
+            }
+            super.tick();
+        }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
             c.combat.swung();

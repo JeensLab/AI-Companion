@@ -116,7 +116,7 @@ final class CompanionMobDrops {
     }
 
     /** What is fished for its drop: a fish (a tadpole drops nothing) or a squid, glowing or not. */
-    private static boolean swims(Mob mob) {
+    static boolean swims(Mob mob) {
         return mob instanceof net.minecraft.world.entity.animal.AbstractFish || mob instanceof net.minecraft.world.entity.animal.Squid;
     }
 
@@ -173,6 +173,16 @@ final class CompanionMobDrops {
     static CompanionTravel.Step wade(CompanionWork w, ServerLevel level, Mob mob) {
         net.minecraft.core.BlockPos top = surface(level, mob);
         return top.equals(mob.blockPosition()) ? w.route.follow(top, 2) : w.route.follow(top.below(), 0);
+    }
+
+    /**
+     * He swims at a fish or a squid in the water with him; straight over it he only goes down (the dive, CompanionSwimming). Steered
+     * at a point a hair across, the game turned his body up to a quarter round a tick, and he spun all the way down to a cod
+     * under him (the player 17.11, «крутится как больной»).
+     */
+    static void swimAt(CompanionEntity c, Mob mob) {
+        double dx = mob.getX() - c.getX(), dz = mob.getZ() - c.getZ();
+        if (dx * dx + dz * dz > .5 * .5) c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
     }
 
     /** Of the kind, alive, nobody's (no name, not let out of a bucket), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
@@ -247,7 +257,7 @@ final class CompanionMobDrops {
         // Not against the way up: with his air short the swim for air (CompanionBreath) and the float have him, not the fish.
         if (swims(mob) && mob.isInWater() && c.isInWater() && !c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob)
                 && c.getAirSupply() > c.getMaxAirSupply() / 2 && !c.breath.active())
-            c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
+            swimAt(c, mob);
         // Out of his search radius across, as it is looked for (around): a cod down by the floor of the sea is farther from his eyes.
         int radius = c.getSearchRadius();
         double dx = mob.getX() - c.getX(), dz = mob.getZ() - c.getZ();
