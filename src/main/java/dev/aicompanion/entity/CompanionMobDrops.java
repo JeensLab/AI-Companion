@@ -116,7 +116,7 @@ final class CompanionMobDrops {
     }
 
     /** What is fished for its drop: a fish (a tadpole drops nothing) or a squid, glowing or not. */
-    static boolean swims(Mob mob) {
+    private static boolean swims(Mob mob) {
         return mob instanceof net.minecraft.world.entity.animal.AbstractFish || mob instanceof net.minecraft.world.entity.animal.Squid;
     }
 
@@ -182,7 +182,9 @@ final class CompanionMobDrops {
      */
     static void swimAt(CompanionEntity c, Mob mob) {
         double dx = mob.getX() - c.getX(), dz = mob.getZ() - c.getZ();
+        // His own place: no step and no turn (the game's MoveControl does not turn a body that is already where it is wanted).
         if (dx * dx + dz * dz > .5 * .5) c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
+        else c.getMoveControl().setWantedPosition(c.getX(), c.getY(), c.getZ(), 1);
     }
 
     /** Of the kind, alive, nobody's (no name, not let out of a bucket), on land (a fish anywhere), on its own feet, and one he may fight by this order. */
@@ -255,9 +257,14 @@ final class CompanionMobDrops {
         // starts only within a blow, so he swims straight at it, as a player does; down to it is CompanionSwimming's dive
         // (in game 13.11 two squids in the sea were passed over, not one blow landed).
         // Not against the way up: with his air short the swim for air (CompanionBreath) and the float have him, not the fish.
-        if (swims(mob) && mob.isInWater() && c.isInWater() && !c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob)
-                && c.getAirSupply() > c.getMaxAirSupply() / 2 && !c.breath.active())
-            swimAt(c, mob);
+        // In the water with it the legs are this watch's, not the melee goal's: its route to the fish ends at the surface over it,
+        // pulled him back up and turned him round on the spot (the player 17.11). This runs after the route's step and before the
+        // legs move (Mob.serverAiStep: navigation, customServerAiStep, moveControl), so its step is undone here.
+        if (swims(mob) && mob.isInWater() && c.isInWater() && !c.breath.active()) {
+            c.getNavigation().stop();
+            if (!c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob) && c.getAirSupply() > c.getMaxAirSupply() / 2) swimAt(c, mob);
+            else c.getMoveControl().setWantedPosition(c.getX(), c.getY(), c.getZ(), 1);
+        }
         // Out of his search radius across, as it is looked for (around): a cod down by the floor of the sea is farther from his eyes.
         int radius = c.getSearchRadius();
         double dx = mob.getX() - c.getX(), dz = mob.getZ() - c.getZ();
