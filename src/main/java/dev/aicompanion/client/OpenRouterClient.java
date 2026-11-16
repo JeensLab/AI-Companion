@@ -478,10 +478,10 @@ public final class OpenRouterClient {
     private static String systemPrompt() {
         return buildSystemPrompt(personaPrompt(), OpenRouterConfig.LONG_TERM_MEMORY.get(), CompanionMemoryView.current().tier())
                 // The folder's recordings are read afresh for every request: the model may name only these, and the code names the
-                // one that really started, so it has no room to invent a title.
-                + "\nЗаписи, которые у тебя сейчас есть (настроение 0–999 и название): "
+                // one that really started, so it has no room to invent a title. With the guitar switched off there is nothing to name.
+                + (OpenRouterConfig.PLAYS_BY_THE_FIRE.get() ? "\nЗаписи, которые у тебя сейчас есть (настроение 0–999 и название): "
                 + dev.aicompanion.entity.CompanionMusicLibrary.recordingsLine()
-                + ". Называй запись только так (номер и название из этого списка) или не называй вовсе; других названий не выдумывай. ";
+                + ". Называй запись только так (номер и название из этого списка) или не называй вовсе; других названий не выдумывай. " : "");
     }
 
     /** {@code tier} is the bond tier label from the memory digest; empty when memory is off or nothing is known yet. */
