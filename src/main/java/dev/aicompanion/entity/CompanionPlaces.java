@@ -2,8 +2,11 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
 
@@ -84,6 +87,15 @@ final class CompanionPlaces {
         if (built != null) return new Home(built, "здесь строит игрок");
         BlockPos house = owner.work.house.finishedAnchor(level);
         return house == null ? null : new Home(house, "мой достроенный дом");
+    }
+    /**
+     * The home the player named when it stands in another dimension, as he reads it («nether»), or "" when the home is
+     * here or none was named: the walk home cannot cross, and the answer says where it is instead of staying silent.
+     */
+    String homeElsewhere() {
+        if (namedHome == null || namedHome.dimension.equals(dimension())) return "";
+        ResourceLocation id = ResourceLocation.tryParse(namedHome.dimension);
+        return id == null ? namedHome.dimension : CompanionMarkers.worldName(ResourceKey.create(Registries.DIMENSION, id));
     }
     /** Remembered blocks of this kind in this dimension, nearest first; the player's own chests count without a visit. */
     List<BlockPos> stations(String block) {

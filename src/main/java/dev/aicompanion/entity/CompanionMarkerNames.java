@@ -56,6 +56,14 @@ public final class CompanionMarkerNames {
         return window(tokens(markerName), tokens(said)) >= 0;
     }
 
+    /** «дом» and «домик» in any case form («дому», «домику»): the home he knows, which needs no marker of its own. */
+    public static boolean isHome(String said) {
+        for (String word : tokens(said)) {
+            if (matches("дом", word) || matches("домик", word)) return true;
+        }
+        return false;
+    }
+
     /**
      * The words of the phrase the name takes («дача» in «иди к даче, потом домой»), as the index of its first and last
      * word, or null when it fits none of them: the same window {@link #matches} finds.

@@ -666,6 +666,117 @@ public final class CompanionPlaceMarkerTests {
         });
     }
 
+    /**
+     * «Домой», «иди домой», «пойди домой», «сходи домой», «вернись домой»: the walk home is a local order, with a marker
+     * named «дом» and without one, and with the markers switched off. A second leg stays the model's.
+     */
+    @GameTest(template = "empty")
+    public static void theWalkHomeIsALocalOrderWithOrWithoutAMarker(GameTestHelper h) {
+        for (String phrase : List.of("домой", "иди домой", "давай домой", "пойди домой", "сходи домой", "вернись домой", "Олег, иди домой!")) {
+            String routed = CompanionLocalCommands.route(phrase, "Олег", List.of("дача"), true);
+            h.assertTrue("companion place go дом".equals(routed), "«" + phrase + "»: " + routed);
+        }
+        h.assertTrue("companion place go дом".equals(CompanionLocalCommands.route("иди домой", "Олег", List.of("дом"), true)),
+                "A marker named «дом» was not taken: " + CompanionLocalCommands.route("иди домой", "Олег", List.of("дом"), true));
+        // The home he knows needs no markers: the order works with the feature switched off too.
+        h.assertTrue("companion place go дом".equals(CompanionLocalCommands.route("иди домой", "Олег", List.of(), false)),
+                "A switched-off feature lost the walk home: " + CompanionLocalCommands.route("иди домой", "Олег", List.of(), false));
+        h.assertTrue(CompanionLocalCommands.route("иди домой, потом к даче", "Олег", List.of("дача"), true) == null,
+                "Two legs became one walk home: " + CompanionLocalCommands.route("иди домой, потом к даче", "Олег", List.of("дача"), true));
+        h.succeed();
+    }
+
+    /** «Иди домой» with a marker named «дом»: he walks to that marker by the normal path, not to the home. */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theWalkHomeGoesToAMarkerNamedHome(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        BlockPos marker = h.absolutePos(new BlockPos(18, 1, 8));
+        CompanionMarkers.get(h.getLevel().getServer()).add(c.getOwnerId(), "дом", h.getLevel().dimension(), marker, 1);
+        var result = CompanionEvents.executeAction(player(h, c), "go_to_place", "дом", 1);
+        h.assertTrue(result.success(), "The walk home was refused: " + result.message());
+        h.assertTrue(c.workPhase().startsWith("PLACE"), "Not the place walk: " + c.workPhase());
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isGatheringTask() && !c.isWorking(), "The walk home is still running: " + c.getLastTaskResult());
+            h.assertTrue(c.blockPosition().distSqr(marker) <= 4 * 4,
+                    "He did not arrive at the marker: " + c.blockPosition() + " marker " + marker + " " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().contains("Пришёл к метке «дом»"), "No honest arrival: " + c.getLastTaskResult());
+        });
+    }
+
+    /** «Иди домой» with no marker of that name: the walk goes to the home he knows («это наш дом»), as the store trip does. */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theWalkHomeGoesToTheHomeThePlayerNamed(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        h.assertTrue(CompanionEvents.executeAction(owner, "set_home", "", 1).success(), "Home not taken");
+        BlockPos home = owner.blockPosition();
+        h.assertTrue(!c.blockPosition().equals(home), "He already stands at home");
+        var result = CompanionEvents.executeAction(owner, "go_to_place", "дом", 1);
+        h.assertTrue(result.success(), "The walk home was refused: " + result.message());
+        h.assertTrue(c.workPhase().startsWith("PLACE"), "Not the place walk: " + c.workPhase());
+        h.succeedWhen(() -> {
+            h.assertTrue(!c.isGatheringTask() && !c.isWorking(), "The walk home is still running: " + c.getLastTaskResult());
+            h.assertTrue(c.blockPosition().distSqr(home) <= 4 * 4,
+                    "He did not arrive home: " + c.blockPosition() + " home " + home + " " + c.getLastTaskResult());
+            h.assertTrue(c.getLastTaskResult().contains("Пришёл домой."), "No honest arrival home: " + c.getLastTaskResult());
+        });
+    }
+
+    /** «Иди домой» when the home the player named stands in another dimension: said honestly, and no walk is begun. */
+    @GameTest(template = "empty")
+    public static void theHomeInAnotherDimensionIsAnsweredHonestly(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        h.assertTrue(CompanionEvents.executeAction(player(h, c), "set_home", "", 1).success(), "Home not taken");
+        // The same save with the home in the Nether: what the player named in another world, as it comes back from a load.
+        CompoundTag saved = new CompoundTag();
+        c.addAdditionalSaveData(saved);
+        CompoundTag home = saved.getCompound("HomePlace");
+        h.assertTrue(!home.isEmpty(), "No home saved");
+        home.putString("Dimension", "minecraft:the_nether");
+        saved.put("HomePlace", home);
+        c.readAdditionalSaveData(saved);
+        var result = c.goToPlace("дом");
+        h.assertTrue(!result.success(), "A walk home across dimensions reported success");
+        h.assertTrue(result.message().contains("в другом измерении") && result.message().contains("nether"),
+                "The other dimension is not said: " + result.message());
+        h.assertTrue(c.workPhase().isEmpty(), "He walked off: " + c.workPhase());
+        h.succeed();
+    }
+
+    /**
+     * A home named in the Nether while a building of the player's stands here: the named home is the home, so «иди домой»
+     * says the other dimension instead of walking to the build in this one, which CompanionPlaces.home() falls back to.
+     */
+    @GameTest(template = "large_search", timeoutTicks = 600)
+    public static void theNamedHomeInAnotherDimensionOutranksTheBuildHere(GameTestHelper h) {
+        arena(h);
+        CompanionEntity c = spawn(h);
+        ServerPlayer owner = player(h, c);
+        h.assertTrue(CompanionEvents.executeAction(owner, "set_home", "", 1).success(), "Home not taken");
+        // A chest of his on the surface: a building of his here, which CompanionPlaces.home() would take for a home.
+        placedByPlayer(h, owner, new BlockPos(18, 1, 8), Blocks.CHEST);
+        h.assertTrue(c.getPlacesForAi().contains("дом на "), "No home of his in this dimension to fall back to: " + c.getPlacesForAi());
+        // The same save with the named home in the Nether: what the player named in another world, as it comes back from a load.
+        CompoundTag saved = new CompoundTag();
+        c.addAdditionalSaveData(saved);
+        CompoundTag home = saved.getCompound("HomePlace");
+        h.assertTrue(!home.isEmpty(), "No home saved");
+        home.putString("Dimension", "minecraft:the_nether");
+        saved.put("HomePlace", home);
+        c.readAdditionalSaveData(saved);
+        h.assertTrue(c.getPlacesForAi().contains("дом на "), "The build here was lost, so nothing was skipped: " + c.getPlacesForAi());
+        var result = c.goToPlace("дом");
+        h.assertTrue(!result.success(), "A walk home across dimensions reported success");
+        h.assertTrue(result.message().contains("в другом измерении") && result.message().contains("nether"),
+                "The other dimension is not said: " + result.message());
+        h.assertTrue(c.workPhase().isEmpty(), "He walked off to the build here: " + c.workPhase());
+        String said = CompanionDialogue.summarize(List.of(new PlannedAction("go_to_place", 0, 1, "дом")), "План остановлен: " + result.message());
+        h.assertTrue(said.equals("Дом в другом измерении — туда пешком не дойти."), "Not said as the home: " + said);
+        h.succeed();
+    }
+
     /** A marker in the Nether while he is in the overworld: said as it is, no walk and no timeout. */
     @GameTest(template = "empty")
     public static void aMarkerInAnotherDimensionIsAnsweredHonestly(GameTestHelper h) {
@@ -1246,6 +1357,14 @@ public final class CompanionPlaceMarkerTests {
 
     private static void arena(GameTestHelper h) {
         for (int x = 0; x < 24; x++) for (int z = 0; z < 24; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.BEDROCK);
+    }
+
+    /** A block set down by the player, as the game tells it (CompanionPlayerBuilds learns his buildings so). */
+    private static void placedByPlayer(GameTestHelper h, ServerPlayer player, BlockPos cell, Block block) {
+        h.setBlock(cell, block);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(new net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent(
+                net.neoforged.neoforge.common.util.BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)),
+                Blocks.GRASS_BLOCK.defaultBlockState(), player));
     }
 
     /** One saved marker as the store writes it, for the load tests. */
