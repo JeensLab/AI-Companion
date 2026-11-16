@@ -23,8 +23,8 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
  * The deaths and the dead ends of the mine run K14: a way out of a fuse that ends beside lava, a body in lava with nothing that takes him out,
- * a goal that burns its tries on a wound it cannot mend, and the plug that hides under another one. The tests live beside the package-private
- * classes they call.
+ * a goal that burns its tries on a wound it cannot mend, and the plug that hides under another one; and, from a later run, the stairs up out
+ * of a lake. The tests live beside the package-private classes they call.
  */
 @GameTestHolder(AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
@@ -147,6 +147,29 @@ public final class CompanionMineK14Tests {
         var way = CompanionExpeditionPlugs.way(h.getLevel(), mine, stand, lower);
         h.assertTrue(way != null && way.walk().equals(List.of(stand)), "No walk of the stand alone to the step: " + way);
         h.assertTrue(upper.equals(way.cell()), "The plug to take out is " + rel(h, way == null ? null : way.cell()) + ", not the upper one at " + rel(h, upper));
+        h.succeed();
+    }
+
+    /**
+     * Run descent of seed 7 (16.11): with the diamond, the stairs up out of a lake at the bottom of a pit were planned while he bobbed a hair
+     * under the top of the water; the cell under it was taken for his stand, every side of it was water, and the climb said «путь наверх
+     * закрыт» until a higher bob. A pool three deep, its top three blocks under the turf: from the same bob the first step is under way.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = 100)
+    public static void theStairsUpOutOfAPoolStartAtTheTopOfTheWater(GameTestHelper h) {
+        mountain(h);
+        for (int x = CENTER - 2; x <= CENTER + 2; x++) for (int z = CENTER - 2; z <= CENTER + 2; z++) for (int y = GROUND - 4; y <= GROUND; y++) {
+            h.setBlock(new BlockPos(x, y, z), y <= GROUND - 2 ? Blocks.WATER : Blocks.AIR);
+        }
+        CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), CENTER, GROUND + 1, CENTER);
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.COBBLESTONE, 32));
+        BlockPos top = h.absolutePos(new BlockPos(CENTER, GROUND - 2, CENTER));
+        c.moveTo(top.getX() + .5, top.getY() - .05, top.getZ() + .5);
+        var stairs = new CompanionExpeditionStairsUp(c.work, new CompanionExpeditionDig(c.work), false, null);
+        stairs.begin(h.absolutePos(new BlockPos(CENTER, GROUND + 1, CENTER + 10)));
+        var result = stairs.tick(h.getLevel());
+        h.assertTrue(result == CompanionExpeditionStairsUp.Result.WORKING, "The stairs up out of the pool: " + result + " «" + stairs.why() + "»");
         h.succeed();
     }
 

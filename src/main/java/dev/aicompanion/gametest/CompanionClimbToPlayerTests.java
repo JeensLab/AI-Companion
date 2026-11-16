@@ -29,7 +29,7 @@ import static dev.aicompanion.gametest.CompanionMineBacktrackTests.rig;
 @GameTestHolder(dev.aicompanion.AICompanionMod.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class CompanionClimbToPlayerTests {
-    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, FOLLOW_RANGE_SHORT = 8;
+    private static final int PIT_DEPTH = 9, ROOF_HEIGHT = 5, PLAYER_EAST = 11, SHALLOW = 2, DEEP = 3, FOLLOW_RANGE_SHORT = 8;
 
     private CompanionClimbToPlayerTests() { }
 
@@ -105,6 +105,37 @@ public final class CompanionClimbToPlayerTests {
             CompanionActionResult result = ended(h, c, id);
             h.assertTrue(result.success(), "He said «" + result.message() + "» in the hole | " + report(c));
             h.assertTrue(c.distanceToSqr(h.getLevel().getPlayerByUUID(c.getOwnerId())) <= 9, "He is not beside the player at " + c.blockPosition().toShortString() + " | " + report(c));
+        });
+    }
+
+    /**
+     * Run restart of seed 7 (16.11): with the diamond he came up his stairs into a narrow hole five deep under the sky, and the player stood
+     * sixty blocks off at the entrance, a block lower than his feet. The stairs were cut only for a player no lower, so the hand-over ended
+     * «Не смог к тебе подойти» five times and the goal «не получилось отдать алмазы». A hole three deep in andesite, the player in a dip of his
+     * own a block lower beyond its lip, with a step down to it: the stairs go up to the lip, and the walk goes on from there.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void climbsOutOfAPitToAPlayerLowerThanHim(GameTestHelper h) {
+        mountain(h, false);
+        for (int x = CENTER - 3; x <= CENTER + 3; x++) for (int z = CENTER - 3; z <= CENTER + 3; z++) for (int y = GROUND - DEEP; y <= GROUND; y++) {
+            BlockPos wall = new BlockPos(x, y, z);
+            if (h.getBlockState(wall).is(Blocks.STONE) || h.getBlockState(wall).is(Blocks.DIRT) || h.getBlockState(wall).is(Blocks.GRASS_BLOCK)) h.setBlock(wall, Blocks.ANDESITE);
+        }
+        for (int x = CENTER - 1; x <= CENTER + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - DEEP + 1; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        int dip = CENTER + PLAYER_EAST;
+        for (int x = dip - 1; x <= dip + 1; x++) for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - DEEP; y <= GROUND; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int z = CENTER - 1; z <= CENTER + 1; z++) for (int y = GROUND - 1; y <= GROUND; y++) h.setBlock(new BlockPos(dip - 2, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        c.setFollowing(false);
+        BlockPos floor = h.absolutePos(new BlockPos(CENTER, GROUND - DEEP + 1, CENTER)), owner = h.absolutePos(new BlockPos(dip, GROUND - DEEP, CENTER));
+        c.teleportTo(floor.getX() + .5, floor.getY(), floor.getZ() + .5);
+        h.getLevel().getPlayerByUUID(c.getOwnerId()).teleportTo(owner.getX() + .5, owner.getY(), owner.getZ() + .5);
+        c.setItem(6, new ItemStack(Items.DIAMOND));
+        h.assertTrue(c.startWork("give_items", "minecraft:diamond", 1).success(), "Hand-over not accepted: " + c.getLastTaskResult());
+        long id = c.activeWorkId();
+        h.succeedWhen(() -> {
+            CompanionActionResult result = ended(h, c, id);
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) == 0, "He said «" + result.message() + "» in the hole | " + report(c));
         });
     }
 

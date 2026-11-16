@@ -22,7 +22,7 @@ import java.util.Set;
 final class CompanionExpeditionStairsUp {
     enum Result { WORKING, ARRIVED, STUCK, NO_TOOL }
 
-    private static final int MAX_STEPS = 256, STEP_PATIENCE = 20 * 40, MAX_SEALS = 32, MAX_STUCK = 6;
+    private static final int MAX_STEPS = 256, STEP_PATIENCE = 20 * 40, MAX_SEALS = 32, MAX_STUCK = 6, BOB = 2;
 
     private final CompanionWork w;
     private final CompanionEntity owner;
@@ -62,7 +62,7 @@ final class CompanionExpeditionStairsUp {
 
     Result tick(ServerLevel level) {
         if (to == null) {
-            BlockPos here = CompanionExpeditionRecord.standingCell(level, owner);
+            BlockPos here = stand(level);
             if (here.getY() >= goal.getY() && here.distManhattan(goal) <= 1) return Result.ARRIVED;
             if (!plan(level, here)) return Result.STUCK;
             // A seal placed this tick is no step: the side is looked at again next tick.
@@ -138,6 +138,18 @@ final class CompanionExpeditionStairsUp {
             }
         }
         return false;
+    }
+
+    /**
+     * The cell the step is cut from: in water, the top water cell of his column (no more than {@link #BOB} over his feet), where a swimmer's
+     * feet bob. Seed 7, a lake in a pit: bobbing a hair under its top, the cell under it was taken (or the floor of a shallow pool, the first
+     * one with firm ground under it), every side of it was water, and the way up was «закрыт» until a higher bob.
+     */
+    private BlockPos stand(ServerLevel level) {
+        BlockPos feet = owner.blockPosition();
+        if (!level.getFluidState(feet).is(FluidTags.WATER)) return CompanionExpeditionRecord.standingCell(level, owner);
+        for (int up = 0; up < BOB && level.getFluidState(feet.above()).is(FluidTags.WATER); up++) feet = feet.above();
+        return level.getFluidState(feet.above()).is(FluidTags.WATER) ? CompanionExpeditionRecord.standingCell(level, owner) : feet;
     }
 
     /** The water of his own stand, feet or head: he wades in it, as a player climbs out of a pool, and no block can go where he is. Lava is no wade. */
