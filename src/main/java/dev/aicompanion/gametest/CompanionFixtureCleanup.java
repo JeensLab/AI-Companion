@@ -3,6 +3,7 @@ package dev.aicompanion.gametest;
 import dev.aicompanion.AICompanionMod;
 import dev.aicompanion.entity.CompanionChunks;
 import dev.aicompanion.entity.CompanionEntity;
+import dev.aicompanion.entity.CompanionMusicLibrary;
 import net.minecraft.gametest.framework.AfterBatch;
 import net.minecraft.gametest.framework.GameTestServer;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +28,8 @@ public final class CompanionFixtureCleanup {
 
     static void clean(ServerLevel level) {
         if (!(level.getServer() instanceof GameTestServer)) return;
+        // A batch that read another folder leaves the player's own folder to the game again.
+        CompanionMusicLibrary.readFrom(null);
         List<CompanionEntity> completed = new ArrayList<>();
         for (var entity : level.getAllEntities()) if (entity instanceof CompanionEntity companion) completed.add(companion);
         for (var companion : completed) {

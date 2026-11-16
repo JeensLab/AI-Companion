@@ -34,6 +34,8 @@ bin/
 
 ### Project archives (handoff packages, release copies) ###
 dist/
+# The guitar tracks pack built by scripts/make-music-pack.sh (attached to a release, not kept in git)
+/oleg-guitar-tracks.zip
 
 ### Minecraft Modding ###
 run/

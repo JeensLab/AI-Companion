@@ -15,6 +15,14 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.event.AddPackFindersEvent;
+import net.minecraft.server.packs.PackLocationInfo;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.PackSelectionConfig;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.Pack;
+import net.minecraft.server.packs.repository.PackSource;
+import java.util.Optional;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.client.settings.KeyConflictContext;
@@ -68,16 +76,33 @@ public final class AICompanionClient {
         modEventBus.addListener(this::registerEntityRenderers);
         modEventBus.addListener(this::registerMenuScreens);
         modEventBus.addListener(this::registerGuiLayers);
+        modEventBus.addListener(this::addPackFinders);
         CompanionMarker.init();
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForge.EVENT_BUS.addListener(this::onLoggingIn);
         NeoForge.EVENT_BUS.addListener(this::onLoggingOut);
+        // What the sound engine really streams for the evening: the ground truth behind the tune's log lines.
+        NeoForge.EVENT_BUS.addListener(CompanionCampfireAudio::streamed);
+        // The game's own music is refused while the guitar sounds, not only the track it started with.
+        NeoForge.EVENT_BUS.addListener(CompanionCampfireAudio::selectMusic);
         NeoForge.EVENT_BUS.addListener(CompanionGhostPlacement::render);
+    }
+
+    /**
+     * Joining a world: the guitar folder is read again. A recording put there since the last resource reload needs the sound engine
+     * to see it, so the resources are reloaded once — only when the folder differs from what the last built pack declared, so an
+     * unchanged folder costs nothing.
+     */
+    private void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
+        if (!CompanionMusicPack.folderChanged()) return;
+        Minecraft.getInstance().reloadResourcePacks();
     }
 
     private void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         OpenRouterClient.resetSession();
         CompanionMemoryFlow.unbind();
         CompanionAmbientClient.forgetWorld();
+        CompanionCampfireAudio.forget();
         GameContext.forgetWorld();
         CompanionMoodPanel.forgetWorld();
         CompanionGhostPlacement.forgetWorld();
@@ -92,6 +117,23 @@ public final class AICompanionClient {
         CompanionGhostPlacement.KEYS.forEach(event::register);
     }
 
+    /**
+     * The guitar folder as a resource pack (CompanionMusicPack): the sound engine reads sounds.json only from packs, and this one is
+     * rebuilt from the folder on every resource reload. Always active, above the mod's own resources.
+     */
+    private void addPackFinders(AddPackFindersEvent event) {
+        if (event.getPackType() != PackType.CLIENT_RESOURCES) return;
+        event.addRepositorySource(packs -> {
+            PackLocationInfo location = new PackLocationInfo(CompanionMusicPack.ID,
+                    Component.literal("AI Companion: музыка из папки"), PackSource.BUILT_IN, Optional.empty());
+            Pack pack = Pack.readMetaAndCreate(location, new Pack.ResourcesSupplier() {
+                @Override public PackResources openPrimary(PackLocationInfo info) { return new CompanionMusicPack(info); }
+                @Override public PackResources openFull(PackLocationInfo info, Pack.Metadata metadata) { return new CompanionMusicPack(info); }
+            }, PackType.CLIENT_RESOURCES, new PackSelectionConfig(true, Pack.Position.TOP, true));
+            if (pack != null) packs.accept(pack);
+        });
+    }
+
     private void registerGuiLayers(RegisterGuiLayersEvent event) {
         event.registerAboveAll(CompanionMoodPanel.ID, CompanionMoodPanel::render);
         event.registerAboveAll(CompanionThinking.ID, CompanionThinking::render);
@@ -101,6 +143,7 @@ public final class AICompanionClient {
 
     private void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(dev.aicompanion.AICompanionMod.COMPANION.get(), CompanionRenderer::new);
+        event.registerEntityRenderer(dev.aicompanion.AICompanionMod.SEAT.get(), net.minecraft.client.renderer.entity.NoopRenderer::new);
     }
 
     private void registerMenuScreens(RegisterMenuScreensEvent event) {
@@ -116,8 +159,10 @@ public final class AICompanionClient {
             dev.aicompanion.CompanionDiagnostics.event("", "world_changed", "dimension",
                     minecraft.level == null ? "disconnected" : minecraft.level.dimension().location());
             CompanionActionExecutor.cancelPendingPlans("", "world_changed"); InworldTtsClient.resetPlaybackQueue();
+            CompanionCampfireAudio.forget();
         }
         CompanionVoiceAudio.tick();
+        CompanionCampfireAudio.tick();
         CompanionAmbientClient.tick();
         CompanionAmbientClient.autonomyLines();
         CompanionMarker.tick();

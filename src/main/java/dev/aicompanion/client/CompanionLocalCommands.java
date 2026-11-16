@@ -83,7 +83,9 @@ public final class CompanionLocalCommands {
                 || normalized.contains("перестань добывать") || normalized.contains("хватит копать") || normalized.contains("прекрати копать")
                 || normalized.contains("перестань строить") || normalized.contains("хватит строить") || normalized.contains("прекрати строить")
                 || normalized.contains("останови стройку") || normalized.contains("останови строительство")
-                || normalized.contains("останови задачу")) {
+                || normalized.contains("останови задачу")
+                // The music by the fire (CompanionCampfire): «хватит играть» puts the guitar away like any stop.
+                || normalized.matches("(?sU).*\\b(хватит|перестань|прекрати|кончай|заканчивай)\\s+(играть|бренчать|музыку)\\b.*") || normalized.contains("убери гитару")) {
             return "companion stop";
         }
         if (normalized.matches("(?sU).*\\b(продолжай|продолжи|возобнови)\\s+(работу|заказ|цель|дело)\\b.*")) return "companion goal resume";
@@ -91,6 +93,8 @@ public final class CompanionLocalCommands {
         if (normalized.matches("(?sU)\\s*(?:" + java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е')) + "[\\s,!]+)?(?:давай\\s+|ну\\s+)?(?:продолжай|продолжи|продолжаем)[\\s.!]*")) return "companion goal resume";
         if (normalized.matches("(?sU).*\\b(что ты (?:сейчас )?делаешь|чем ты (?:сейчас )?занят|как там (?:наши )?кирки|как идет (?:работа|заказ))\\b.*")) return "companion goal status";
         if (CompanionGoalCommands.pickaxesForTwo(normalized)) return "companion goal pickaxes";
+        // Before the work phrases: «поставь костёр и сыграй» is the evening by the fire, not a block to place.
+        if (campfireSong(normalized, companionName)) return "companion campfire" + tuneMood(normalized);
         // «Подбери» takes what lies on the ground here; «принеси» is the work orders below, where the thing may be far.
         // «Ещё» right after a pickup takes the rest of that same thing, not whatever the model guesses.
         PlannedAction more = CompanionPickUpCommands.more(text, companionName);
@@ -199,6 +203,7 @@ public final class CompanionLocalCommands {
             case "unguard" -> new PlannedAction("stop_protect", 0, 1);
             case "summon" -> new PlannedAction("come", 0, 1);
             case "roam" -> new PlannedAction("wander", 0, 1);
+            case "campfire" -> new PlannedAction("campfire_song", 0, 1, parts.length > 2 ? parts[2] : "");
             case "autonomy" -> new PlannedAction("autonomy", 0, 1, parts[2]);
             case "work" -> new PlannedAction(parts[2], 0, Integer.parseInt(parts[WORK_COUNT]), "build_house".equals(parts[2]) ? buildingName(parts[WORK_ITEM]) : parts[WORK_ITEM], "auto",
                     parts.length > WORK_LOCATION ? parts[WORK_LOCATION] : NEAR_PLAYER);
@@ -216,6 +221,54 @@ public final class CompanionLocalCommands {
         boolean give = command.endsWith(" give");
         PlannedAction action = action(give ? command.substring(0, command.length() - " give".length()) : command);
         return give ? java.util.List.of(action, new PlannedAction("give_items", 0, action.count(), action.item())) : java.util.List.of(action);
+    }
+
+    /**
+     * «Сыграй на гитаре», «сыграй что-нибудь», «поставь костёр и сыграй», «посидим у костра», or a bare «сыграй» (after his name too):
+     * the evening by the fire. «Не играй» and «сыграем в прятки» are not it. The change requests are local too, so a bare «другую»,
+     * «повеселее», «погрустнее», «самую грустную» or «самую весёлую» reaches the guitar without the model: the model used to answer
+     * some of them with a sentence and no step at all, and the sound did not change.
+     */
+    static boolean campfireSong(String normalized, String companionName) {
+        if (normalized.matches("(?sU).*\\bне\\s+(играй|сыграй|поиграй|надо|нужно)\\b.*")) return false;
+        String name = java.util.regex.Pattern.quote(companionName == null ? "" : companionName.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е'));
+        boolean play = normalized.matches("(?sU).*\\b(сыграй|сгырай|згырай|поиграй|сыграешь|поиграешь|сыграть|поиграть|сбацай|забацай|слабай)\\b.*");
+        boolean music = normalized.matches("(?sU).*(гитар|песн|песен|мелоди|музык|кост[её]?р|что[- ]?(нибудь|то)).*");
+        boolean bare = normalized.matches("(?sU)\\s*(?:" + name + "[\\s,!]+)?(?:давай\\s+|ну\\s+|а\\s+)?(?:сыграй|поиграй)(?:\\s+(?:нам|мне|пожалуйста))*[\\s.!]*");
+        boolean evening = normalized.matches("(?sU).*\\b(посидим|посиди|сядь|садись|присядь|присядем)\\b.{0,20}\\bу\\s+костр.*");
+        // «Давай другую мелодию», «следующую песню»: another tune, the verb left out; and a bare «другую» while he plays.
+        boolean another = normalized.matches("(?sU).*\\b(другую|другой|следующую|еще\\s+одну|смени)\\b.{0,12}(мелоди|песн|музык).*");
+        // A bare change request: «другую», «ещё одну», «ещё песню», with up to two words before it that only soften the order
+        // («ну», «давай», «а», «и») — «ну давай другую», «ну, давай другую», «давай ещё одну» reach the guitar the same way.
+        boolean anotherBare = normalized.matches("(?sU)\\s*(?:" + name + "[\\s,!]+)?(?:(?:а|и|ну|давай|ещё|еще)[\\s,]+){0,2}"
+                + "(?:другую|другой|следующую|(?:ещё|еще)\\s+(?:одну|песню|мелодию|музыку))(?:\\s+(?:мелодию|песню|музыку|пожалуйста|нам|мне))*[\\s.!]*");
+        // A comparative or the extreme asked for on its own: «повеселее», «погрустнее», «самую грустную».
+        boolean moodBare = normalized.matches("(?sU).*\\b(повеселее|веселее|погрустнее|грустнее|печальнее|тоскливее|пободрее|бодрее|самую\\s+грустную|самую\\s+вес[её]лую)\\b.*");
+        // «давай ещё сыграй»: the verb with a word of repetition, not the bare form.
+        boolean more = normalized.matches("(?sU).*\\b(ещё|еще)\\s+(сыграй|сгырай|поиграй|сбацай)\\b.*");
+        // «Сыграй из майнкрафта», «включи майнкрафт»: standard Minecraft music, whatever the folder holds.
+        boolean vanilla = normalized.contains("майнкрафт") || normalized.contains("minecraft");
+        boolean vanillaAsk = vanilla && normalized.matches("(?sU).*\\b(включи|включай|вруби|поставь|сыграй|поиграй|сбацай)\\b.*");
+        return play && (music || vanilla || !tuneMood(normalized).isEmpty()) || bare || evening || another || anotherBare || moodBare || more || vanillaAsk;
+    }
+
+    /**
+     * The kind of tune asked for, as the step's item after a space: the lowest («самую грустную»), the nearest lower («погрустнее»),
+     * the nearest higher («повеселее»), the highest («самую весёлую»), simply another, standard Minecraft music, or nothing named.
+     * The comparative and extreme words are read before the plain mood words, so «самую грустную» is not just a sad tune.
+     */
+    static String tuneMood(String normalized) {
+        // «Из майнкрафта» names the source, not a mood: it wins over a mood word beside it.
+        if (normalized.contains("майнкрафт") || normalized.contains("minecraft")) return " vanilla";
+        if (normalized.matches("(?sU).*(самую\\s+(грустную|печальную|тоскливую)|\\bсамая\\s+грустная\\b|\\bсамой\\s+грустной\\b).*")) return " saddest";
+        if (normalized.matches("(?sU).*(самую\\s+(вес[её]лую|радостную|зажигательную)|\\bсамая\\s+вес[её]лая\\b|\\bсамой\\s+вес[её]лой\\b).*")) return " happiest";
+        if (normalized.matches("(?sU).*\\b(погрустнее|грустнее|печальнее|тоскливее)\\b.*")) return " sadder";
+        if (normalized.matches("(?sU).*\\b(повеселее|веселее|порадостнее|радостнее|пободрее|бодрее)\\b.*")) return " happier";
+        if (normalized.matches("(?sU).*(грустн|печальн|тосклив|спокойн|тих|медленн|лиричн|нежн|задумчив).*")) return " saddest";
+        if (normalized.matches("(?sU).*(весел|бодр|задорн|быстр|танцевальн|зажигательн|радостн).*")) return " happiest";
+        if (normalized.matches("(?sU).*\\b(другую|другой|следующую|смени)\\b.*")
+                || normalized.matches("(?sU).*\\b(ещё|еще)\\s+(одну|песню|мелодию|музыку)\\b.*")) return " next";
+        return "";
     }
 
     /** «companion place remember|go|guard|carry <name>»: the name is the rest of the command and may hold spaces.

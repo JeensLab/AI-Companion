@@ -90,6 +90,11 @@ final class CompanionBehaviorScreen extends Screen {
             b.setMessage(boatClutchLabel()); CompanionPreferences.sync();
         }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
                 "Падение, которое ведро воды не ловит (Незер, нет ведра): он ставит под себя лодку из сумки, садится, потом ломает её и забирает. Выключено: падает как есть."))).build());
+        addRenderableWidget(Button.builder(campfireLabel(), b -> {
+            OpenRouterConfig.PLAYS_BY_THE_FIRE.set(!OpenRouterConfig.PLAYS_BY_THE_FIRE.get()); OpenRouterConfig.PLAYS_BY_THE_FIRE.save();
+            b.setMessage(campfireLabel()); CompanionPreferences.sync();
+        }).bounds(left, top, ROW_WIDTH, ROW_HEIGHT).tooltip(Tooltip.create(Component.literal(
+                "Олег сам садится с гитарой у костра, где ты постоял полминуты, и играет по просьбе «сыграй». Выключено: гитары нет, «сыграй» так и отвечает."))).build());
 
         addRenderableWidget(Button.builder(replantLabel(), b -> {
             OpenRouterConfig.REPLANT_SAPLINGS.set(!OpenRouterConfig.REPLANT_SAPLINGS.get()); OpenRouterConfig.REPLANT_SAPLINGS.save();
@@ -142,6 +147,7 @@ final class CompanionBehaviorScreen extends Screen {
     private Component containersLabel() { return Component.literal("Бочки, шалкеры, печи и другие контейнеры: " + (OpenRouterConfig.OTHER_CONTAINERS.get() ? "вкл." : "выкл.")); }
     private static Component replantLabel() { return Component.literal("Саженцы на месте срубленных деревьев: " + (OpenRouterConfig.REPLANT_SAPLINGS.get() ? "вкл." : "выкл.")); }
     private static Component boatClutchLabel() { return Component.literal("Лодка при падении: " + (OpenRouterConfig.BOAT_CLUTCH.get() ? "вкл." : "выкл.")); }
+    private static Component campfireLabel() { return Component.literal("Олег играет у костра: " + (OpenRouterConfig.PLAYS_BY_THE_FIRE.get() ? "вкл." : "выкл.")); }
     private static Component urgentLabel() { return Component.literal("Срочный приказ откладывает работу: " + (OpenRouterConfig.URGENT_ORDER.get() ? "вкл." : "выкл.")); }
     private static Component boatRideLabel() { return Component.literal("Лодка с игроком: " + (OpenRouterConfig.BOAT_RIDE.get() ? "вкл." : "выкл.")); }
     private static Component autonomyLabel(boolean on) {
