@@ -26,14 +26,15 @@ import java.util.Set;
  * player gets; one skill and the game's data instead of a list of two hundred blocks): sugar cane, a flower, a cactus, a pumpkin
  * give themselves, clay gives clay balls, a melon its slices, snow snowballs. Only what a hand or a tool he makes takes, and only
  * a block that gives the one item every time, and an item no recipe makes: leaves (a sapling now and then), grass (seeds sometimes) and a potted flower (the
- * pot comes with it) are no source.
+ * pot comes with it) are no source. What gives nothing sure to a hand but itself to shears (leaves, a vine, a cobweb, grass, a fern,
+ * a dead bush) is a source for shears.
  *
  * Left to other skills and later work: what a pickaxe mines (stone of every kind: the mine), crops and saplings (the farm and the
  * replanting are his own; a young crop broken for its seed is a loss), blocks that hold things, anything under water.
  */
 final class CompanionPickable {
-    /** A block and the least of the item one of it gives. */
-    record Source(Block block, int yield) { }
+    /** A block and the least of the item one of it gives; {@code shears}: to shears only. */
+    record Source(Block block, int yield, boolean shears) { }
 
     /** A drop that comes by chance is seen to fail within this many tries (a dead bush gives sticks two times in three). */
     private static final int ROLLS = 16;
@@ -52,6 +53,12 @@ final class CompanionPickable {
         return sources.getOrDefault(item, List.of());
     }
 
+    /** Whether the item is had with shears only: no block gives it to a hand. */
+    static boolean shorn(ServerLevel level, Item item) {
+        List<Source> all = sources(level, item);
+        return !all.isEmpty() && all.stream().allMatch(Source::shears);
+    }
+
     private static Map<Item, List<Source>> build(ServerLevel level) {
         Map<Item, List<Source>> found = new HashMap<>();
         // What a recipe makes is made (wool, planks, a clay block): only what the world alone gives is taken from it.
@@ -60,21 +67,30 @@ final class CompanionPickable {
         for (Block block : BuiltInRegistries.BLOCK) {
             BlockState state = block.defaultBlockState();
             if (!taken(state)) continue;
-            ItemStack tool = tool(state);
-            Item only = null;
-            int least = Integer.MAX_VALUE;
-            for (int roll = 0; roll < ROLLS && least > 0; roll++) {
-                int count = 0;
-                for (ItemStack drop : CompanionTools.drops(state, level, BlockPos.ZERO, null, null, tool)) {
-                    if (only == null) only = drop.getItem();
-                    if (drop.getItem() != only) { count = 0; break; }
-                    count += drop.getCount();
-                }
-                least = Math.min(least, count);
-            }
-            if (only != null && least > 0 && !made.contains(only)) found.computeIfAbsent(only, key -> new ArrayList<>()).add(new Source(block, least));
+            // Shears are tried only where a hand gets nothing sure: a leaf block gives a sapling now and then, shorn it gives itself.
+            ItemStack given = sure(level, state, tool(state));
+            boolean shears = given.isEmpty();
+            if (shears) given = sure(level, state, new ItemStack(Items.SHEARS));
+            if (given.isEmpty() || made.contains(given.getItem())) continue;
+            found.computeIfAbsent(given.getItem(), key -> new ArrayList<>()).add(new Source(block, given.getCount(), shears));
         }
         return found;
+    }
+
+    /** The one item the block gives to the tool every time, as many as the least of it; empty if there is none. */
+    private static ItemStack sure(ServerLevel level, BlockState state, ItemStack tool) {
+        Item only = null;
+        int least = Integer.MAX_VALUE;
+        for (int roll = 0; roll < ROLLS && least > 0; roll++) {
+            int count = 0;
+            for (ItemStack drop : CompanionTools.drops(state, level, BlockPos.ZERO, null, null, tool)) {
+                if (only == null) only = drop.getItem();
+                if (drop.getItem() != only) { count = 0; break; }
+                count += drop.getCount();
+            }
+            least = Math.min(least, count);
+        }
+        return only == null || least <= 0 ? ItemStack.EMPTY : new ItemStack(only, least);
     }
 
     private static boolean taken(BlockState state) {
