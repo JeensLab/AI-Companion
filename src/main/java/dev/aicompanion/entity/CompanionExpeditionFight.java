@@ -83,6 +83,20 @@ final class CompanionExpeditionFight {
         return null;
     }
 
+    /** The fight alone, for a tick in which the work waits for a drop: true when a foe is fought. */
+    boolean holdFight(ServerLevel level) { return w.expedition.active() && level.getGameTime() < w.expedition.stepEnd() && hold(level, w.expedition.retreating()); }
+
+    /** A mob the expedition fights now, wherever it stands within sight: the melee goal goes for it even from afar. */
+    boolean engages(LivingEntity target) { return w.expedition.active() && isFoe(target); }
+
+    void fightBegan() { if (w.expedition.active()) began(); }
+
+    void fightGoing() {
+        if (!w.expedition.active()) return;
+        going();
+        CompanionChunkTicket.follow(owner);
+    }
+
     /** The melee goal has taken the turn: from here on the fight is under way (called before the weapon is picked, so the tool in hand is still the work's). */
     void began() {
         if (since >= 0) return;

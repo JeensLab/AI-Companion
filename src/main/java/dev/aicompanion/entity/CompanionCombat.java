@@ -33,13 +33,13 @@ final class CompanionCombat {
         @Override public boolean canUse() {
             LivingEntity target = c.getTarget();
             if (c.archery.wants(target) || target == null || !target.isAlive() || c.work.expedition.shuns(target) || c.combat.leavesAlone(target)) return false;
-            return c.isWithinMeleeAttackRange(target) || c.work.expedition.engages(target) || super.canUse();
+            return c.isWithinMeleeAttackRange(target) || c.work.expedition.fight.engages(target) || super.canUse();
         }
         @Override public boolean canContinueToUse() {
             return !c.archery.wants(c.getTarget()) && super.canContinueToUse() && !c.work.expedition.shuns(c.getTarget()) && !c.combat.leavesAlone(c.getTarget());
         }
         /** The best weapon before the first swing, not after the ten-tick check: otherwise the first blow goes with the digging pickaxe. */
-        @Override public void start() { c.work.expedition.fightBegan(); c.combat.footwork.begin(); super.start(); c.selectWeaponForCombat(); }
+        @Override public void start() { c.work.expedition.fight.fightBegan(); c.combat.footwork.begin(); super.start(); c.selectWeaponForCombat(); }
         /** What is on him is struck before what is not; and between two swings he steps out of the foe's reach (CompanionFootwork). */
         @Override public void tick() {
             if (c.level() instanceof ServerLevel level) {
@@ -48,12 +48,12 @@ final class CompanionCombat {
                 LivingEntity target = c.getTarget();
                 if (target != null && c.combat.footwork.keepOut(level, c.combat.swingReady())) {
                     c.getLookControl().setLookAt(target);
-                    c.work.expedition.fightGoing();
+                    c.work.expedition.fight.fightGoing();
                     return;
                 }
             }
             super.tick();
-            c.work.expedition.fightGoing();
+            c.work.expedition.fight.fightGoing();
         }
         @Override protected void checkAndPerformAttack(LivingEntity target) {
             if (!c.combat.swingReady() || !c.isWithinMeleeAttackRange(target) || !c.getSensing().hasLineOfSight(target)) return;
@@ -185,7 +185,7 @@ final class CompanionCombat {
         if (!(c.level() instanceof ServerLevel serverLevel) || c.ownerId == null || c.inventoryViewers != 0 || c.work.isHunting()
                 || !hostile(target) || !(target instanceof Mob monster) || monster instanceof net.minecraft.world.entity.monster.Creeper && !c.creeperGuard.fights() || leavesAlone(monster)) return false;
         if (!fairTarget(monster, provokes(monster))) return false;
-        if (c.work.expedition.engages(monster)) return true;
+        if (c.work.expedition.fight.engages(monster)) return true;
         // Deep in his own mine, the player far above: a monster that has chosen him is met before its first blow, not after it;
         // waiting for the hit gives a zombie the lead in an even trade.
         if (monster.getTarget() == c && c.work.expedition.underground() && monster.distanceToSqr(c) <= MINE_RANGE * MINE_RANGE) return true;

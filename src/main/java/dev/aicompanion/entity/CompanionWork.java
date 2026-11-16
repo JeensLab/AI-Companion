@@ -686,7 +686,7 @@ public final class CompanionWork {
         if (job != Job.HOUSE && owner.actionAnimation() != 0) return;
         if (job != Job.COME && job != Job.COURSE && job != Job.HUNT && job != Job.PICK_UP && job != Job.PLACE && owner.hasPendingLoot() && !(job == Job.HOUSE && templateJob && templateHouse.scaffolding())) {
             // The pickup waits while a foe is on him (CompanionLoot.foeOnHim): with the expedition's fight skipped too, nothing turns him on it until it strikes.
-            if (phase == Phase.EXPEDITION) expedition.holdFight(level);
+            if (phase == Phase.EXPEDITION) expedition.fight.holdFight(level);
             return;
         }
         if (owner.getOwnerId() == null || level.getServer().getPlayerList().getPlayer(owner.getOwnerId()) == null) {

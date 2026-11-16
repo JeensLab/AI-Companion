@@ -17,6 +17,7 @@ final class CompanionExpeditionWade {
 
     /** Ticks waited for the float to bring him up to the top of the water, where the block under his feet goes. */
     private static final int WADE_PATIENCE = 20 * 15;
+    private static final int WET_TICKS = 100;
     private final CompanionWork w;
     private final CompanionEntity owner;
     private final CompanionExpeditionDig dig;
@@ -26,6 +27,8 @@ final class CompanionExpeditionWade {
     private final Consumer<String> restart;
     private boolean wading;
     private int ticks, steps;
+    /** Ticks in water with nothing broken and no step walked since {@link #wetProgress}. */
+    private int wetTicks, wetProgress;
 
     CompanionExpeditionWade(CompanionWork w, CompanionExpeditionDig dig, CompanionExpeditionSupply supply, BiConsumer<Ending, String> end, Consumer<String> restart) {
         this.w = w;
@@ -42,7 +45,21 @@ final class CompanionExpeditionWade {
     void reset() {
         stairs.reset();
         wading = false;
-        ticks = steps = 0;
+        ticks = steps = wetTicks = 0;
+    }
+
+    /**
+     * His eyes in water for {@link #WET_TICKS} ticks with no progress (see {@link CompanionExpedition#progress()}), no cell being hit ({@code busy})
+     * and no seal placed: the stairs are lost under the water, not a step to wait out. Mining in water is slow, so a cell under the pick is never idle time.
+     * On a walk along his tunnel (no plan), water at the feet is as much a stall as water at the eyes.
+     */
+    boolean stuck(int progress, boolean busy, boolean walkingTunnel) {
+        boolean wet = owner.isEyeInFluid(FluidTags.WATER) || walkingTunnel && owner.level().getFluidState(owner.blockPosition()).is(FluidTags.WATER);
+        if (!wet || busy || progress != wetProgress) { wetTicks = 0; wetProgress = progress; return false; }
+        if (++wetTicks <= WET_TICKS) return false;
+        wetTicks = 0;
+        wetProgress = -1;
+        return true;
     }
 
     /** The stairs of an arrival are forgotten. */

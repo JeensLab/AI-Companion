@@ -188,7 +188,7 @@ final class CompanionCreeperGuard {
         int path = -1;
         // Neither the melee goal nor the work (with the fight's hold) runs while the guard holds the turn, so they cannot bring a weapon out for it.
         if (fighting || dashing) {
-            owner.work.expedition.fightBegan();
+            owner.work.expedition.fight.fightBegan();
             owner.selectWeaponForCombat();
             path = escape.plan((ServerLevel) owner.level(), threats((ServerLevel) owner.level()));
         }

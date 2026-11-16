@@ -3,7 +3,6 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 
@@ -29,7 +28,6 @@ final class CompanionExpedition {
     /** Liquid under the way down: this many stands back up, a level way this long off to the side, at most this many times a step. */
     private static final int WATER_RISE = 4, DRIFT = 16, MAX_DRIFTS = 3;
     static final int UNDERGROUND_DEPTH = 2;
-    private static final int WET_TICKS = 100;
     /** Within this many blocks of the entrance he walks down his own stairs from it instead of searching a route to their far bottom. */
     private static final int NEAR_ENTRANCE = 16;
     /** Afloat in a pool under a cliff, the surface lies above the reach of the entrance search from his height: it is looked for this much higher, up to the limit. */
@@ -58,7 +56,7 @@ final class CompanionExpedition {
     private final CompanionExpeditionBench bench;
     private final CompanionExpeditionStock stock;
     private final CompanionExpeditionWade wade;
-    private final CompanionExpeditionFight fight;
+    final CompanionExpeditionFight fight;
     private List<BlockPos> route = List.of();
     private CompanionExpeditionStep plan;
     private Stage stage = Stage.LOCATE;
@@ -200,26 +198,7 @@ final class CompanionExpedition {
         route = List.of();
         stand = head = sealCell = null;
         dir = tunnel = driftAlong = null;
-        progress = stairSteps = turns = routeIndex = softFails = fresh = wetTicks = drift = drifts = 0;
-    }
-
-    /** Ticks in water with nothing broken and no step walked since {@link #wetProgress}. */
-    private int wetTicks, wetProgress;
-
-    /**
-     * His eyes in water for {@link #WET_TICKS} ticks with no progress (see {@link #progress()}), no cell being hit and no seal placed:
-     * the stairs are lost under the water, not a step to wait out. Mining in water is slow, so a cell under the pick is never idle time.
-     */
-    private boolean stuckUnderwater() {
-        int now = progress();
-        boolean busy = plan != null && plan.busy(owner.level().getGameTime());
-        // On a walk along his tunnel (no plan), water at the feet is as much a stall as water at the eyes.
-        boolean wet = owner.isEyeInFluid(FluidTags.WATER) || plan == null && stage == Stage.BRANCH && owner.level().getFluidState(owner.blockPosition()).is(FluidTags.WATER);
-        if (!wet || busy || now != wetProgress) { wetTicks = 0; wetProgress = now; return false; }
-        if (++wetTicks <= WET_TICKS) return false;
-        wetTicks = 0;
-        wetProgress = -1;
-        return true;
+        progress = stairSteps = turns = routeIndex = softFails = fresh = drift = drifts = 0;
     }
 
     /** The game time of the next try after a failed walk to the stairs. */
@@ -260,7 +239,7 @@ final class CompanionExpedition {
             owner.workStatus(w.mine.noCoalAbove() ? "Факелы кончились, а угля наверху не было: копаю дальше в темноте." : "Факелы кончились, а пути наверх нет: копаю дальше в темноте.");
         }
         if (plan == null) supply.arm(level);
-        if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && stuckUnderwater()) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
+        if ((digging || stage == Stage.CHECK_NEAR || stage == Stage.WALK_DOWN) && wade.stuck(progress(), plan != null && plan.busy(owner.level().getGameTime()), plan == null && stage == Stage.BRANCH)) { w.mine.underwaterStalled(); restartHere("Застрял в воде на своей лестнице."); return; }
         switch (stage) {
             case LOCATE -> locate(level);
             case CHECK_NEAR -> { if (!mineOre(level, CompanionExpeditionOre.Mode.WALK)) stage = Stage.WALK_DOWN; }
@@ -273,9 +252,6 @@ final class CompanionExpedition {
             case RETREAT -> { if (retreat.tick(level) == CompanionExpeditionRetreat.Result.DONE) end(Ending.RETREAT, retreat.text()); }
         }
     }
-
-    /** The fight alone, for a tick in which the work waits for a drop: true when a foe is fought. */
-    boolean holdFight(ServerLevel level) { return active && level.getGameTime() < stepEnd && fight.hold(level, stage == Stage.RETREAT); }
 
     /** Stone from the walls where he stands, for the plugs of a cave: true while it is being cut. */
     private boolean cutStone() {
@@ -318,17 +294,6 @@ final class CompanionExpedition {
     boolean shuns(net.minecraft.world.entity.LivingEntity target) {
         return active && (cave.shuns(target) || fight.avoids(target, stage == Stage.RETREAT)
                 || target instanceof net.minecraft.world.entity.monster.Creeper && !owner.creeperGuard.fights());
-    }
-
-    /** A mob the expedition fights now, wherever it stands within sight: the melee goal goes for it even from afar. */
-    boolean engages(net.minecraft.world.entity.LivingEntity target) { return active && fight.isFoe(target); }
-
-    void fightBegan() { if (active) fight.began(); }
-
-    void fightGoing() {
-        if (!active) return;
-        fight.going();
-        CompanionChunkTicket.follow(owner);
     }
 
     private int gained() { return w.items.countCarried(Items.DIAMOND) - startDiamonds; }
