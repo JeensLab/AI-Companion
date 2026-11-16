@@ -261,6 +261,43 @@ public final class CompanionGatherBlockTests {
     }
 
     /**
+     * The owner's bag one cell short of full: the leaf in the way comes down as it did before the tool rule (one cell free for what it
+     * gives, nothing carried lost), and its swing begins with the shears — not with the pickaxe in his hand, whose six ticks it used to
+     * spend first. The swap fills that cell and takes the shears out of their own, so the room is weighed before it.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
+    public static void aLeafInTheWayWithOneFreeCellIsBrokenWithTheShearsFromItsFirstTick(GameTestHelper h) {
+        ground(h);
+        BlockPos pit = new BlockPos(14, GROUND, 14);
+        h.setBlock(pit, Blocks.AIR);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (BlockPos cell : List.of(pit.above(), pit.west().above())) h.setBlock(cell, leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        // One cell free: the pickaxe goes into it and the shears out of their own cell into his hand.
+        for (int slot = 4; slot < c.getContainerSize() - 1; slot++) c.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        var at = h.absoluteVec(net.minecraft.world.phys.Vec3.atBottomCenterOf(pit).add(0, .1, 0));
+        var log = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), at.x, at.y, at.z, new ItemStack(Items.OAK_LOG));
+        log.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+        h.getLevel().addFreshEntity(log);
+        c.claimDrops(List.of(log));
+        h.succeedWhen(() -> {
+            String report = c.getLastTaskResult();
+            h.assertTrue(!h.getBlockState(pit.above()).is(Blocks.OAK_LEAVES) || !h.getBlockState(pit.west().above()).is(Blocks.OAK_LEAVES),
+                    "The leaf in the way was refused: " + report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) + leavesOnTheGround(h) >= 1, "The leaf's drop is gone: " + c.getStoredItemsSummary());
+            h.assertTrue(damage(c, Items.SHEARS) >= 1, "The leaf was not cut with the shears: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0, "The pickaxe broke the leaf: " + damage(c, Items.STONE_PICKAXE) + ", " + report);
+            h.assertTrue(count(c, Items.COBBLESTONE) == 22 * 64, "A stack he carried is gone: " + count(c, Items.COBBLESTONE));
+            List<String> swings = swingsAt(c, "oak_leaves");
+            h.assertTrue(swings.stream().filter(line -> line.contains("\"event\":\"mining_started\""))
+                            .allMatch(line -> line.contains("\"tool\":\"minecraft:shears\"")),
+                    "The leaf's swing began with another tool: " + swings);
+            h.assertTrue(swings.stream().anyMatch(line -> line.contains("\"event\":\"mining_duration_reached\"") && line.contains("\"ticks\":1}")),
+                    "The leaf did not come down on the shears' own tick: " + swings);
+        });
+    }
+
+    /**
      * The leaf that hides a log from his eyes while a tree is felled, with the owner's bag: it is cut with the shears — the leaf's tool —
      * not with the axe the trunk wants, and the pickaxe in his hand is not worn; the log itself is the axe's, and the axe is back in his
      * hand for it once the leaf is down.
@@ -283,6 +320,15 @@ public final class CompanionGatherBlockTests {
             h.assertTrue(damage(c, Items.IRON_AXE) >= 1, "The log was not the axe's: " + damage(c, Items.IRON_AXE) + ", " + report);
             h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
                     "A pickaxe broke a leaf: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+            // The swing itself: the leaf's first tick is journalled with the tool in his hand then, and it came down on that tool's own
+            // tick — a leaf is the only block here that comes down in one, the trunk takes eight with the axe.
+            List<String> swings = swingsAt(c, "oak_leaves");
+            h.assertTrue(swings.stream().anyMatch(line -> line.contains("\"event\":\"mining_started\"")), "No swing at a leaf was journalled: " + swings);
+            h.assertTrue(swings.stream().filter(line -> line.contains("\"event\":\"mining_started\""))
+                            .allMatch(line -> line.contains("\"tool\":\"minecraft:shears\"")),
+                    "The leaf's swing began with another tool: " + swings);
+            h.assertTrue(swings.stream().anyMatch(line -> line.contains("\"event\":\"mining_duration_reached\"") && line.contains("\"ticks\":1}")),
+                    "The leaf did not come down on the shears' own tick: " + swings);
         });
     }
 
@@ -591,5 +637,24 @@ public final class CompanionGatherBlockTests {
         for (net.minecraft.world.entity.EquipmentSlot hand : net.minecraft.world.entity.EquipmentSlot.values())
             if (hand.getType() == net.minecraft.world.entity.EquipmentSlot.Type.HAND && c.getItemBySlot(hand).is(item)) found = Math.max(found, c.getItemBySlot(hand).getDamageValue());
         return found;
+    }
+
+    /** The journalled swings of this companion: at this block (mining_started, with the tool in his hand then) and the tick they came down on. */
+    private static List<String> swingsAt(CompanionEntity c, String block) {
+        dev.aicompanion.CompanionDiagnostics.flush();
+        var directory = net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("logs").resolve("aicompanion");
+        List<String> lines = new java.util.ArrayList<>();
+        for (String name : List.of("companion-1.jsonl", "companion-latest.jsonl")) {
+            try { lines.addAll(java.nio.file.Files.readAllLines(directory.resolve(name))); } catch (java.io.IOException | java.io.UncheckedIOException ignored) { }
+        }
+        return lines.stream().filter(line -> line.contains(c.getUUID().toString())
+                && (line.contains("\"event\":\"mining_started\"") && line.contains(block) || line.contains("\"event\":\"mining_duration_reached\""))).toList();
+    }
+
+    /** Oak leaves lying in the walls of the test: what a leaf broken with no free cell for it gives, kept as a drop of his. */
+    private static int leavesOnTheGround(GameTestHelper h) {
+        var box = new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(1, 1, 1))).minmax(new net.minecraft.world.phys.AABB(h.absolutePos(new BlockPos(30, GROUND + 6, 30))));
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box, item -> item.getItem().is(Items.OAK_LEAVES)).stream()
+                .mapToInt(item -> item.getItem().getCount()).sum();
     }
 }

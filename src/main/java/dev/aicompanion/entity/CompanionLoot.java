@@ -361,8 +361,8 @@ final class CompanionLoot {
         if (path != null && path.canReach()) owner.work.route.walk(path);
     }
     void pause() { target = null; path = null; pickupPoint = null; dropLeaf(); }
-    /** Only a leaf really under way is let go: the reset also clears the mining look the other work may be showing. */
-    private void dropLeaf() { if (leaf != null) { leaf = null; leafBreaking.reset(); } }
+    /** Only a leaf really under way is let go: the reset also clears the mining look the other work may be showing, and the hand the tool replaced comes back. */
+    private void dropLeaf() { if (leaf != null) { leaf = null; leafBreaking.reset(); owner.putToolAway(); } }
 
     private static final int LEAVES_PER_DROP = 6;
     /** Where a leaf in the way is broken from: within reach and sight, off its own cell. */
@@ -422,11 +422,13 @@ final class CompanionLoot {
     private void clearLeaf(ServerLevel level) {
         var state = level.getBlockState(leaf);
         if (!naturalLeaves(state)) {
-            leafBreaking.reset(); leaf = null; path = null; return;
+            leafBreaking.reset(); owner.putToolAway(); leaf = null; path = null; return;
         }
         if (owner.getEyePosition().distanceToSqr(leaf.getCenter()) > REACH * REACH
                 || !CompanionMiningNavigation.visible(owner, owner.getEyePosition(), leaf)) {
             leafBreaking.reset();
+            // The swing is let go: the hand the tool replaced comes back while he walks to it.
+            owner.putToolAway();
             double distance = owner.distanceToSqr(leaf.getCenter());
             if (distance + .05 < leafBest) { leafBest = distance; leafProgress = level.getGameTime(); }
             if (level.getGameTime() - leafProgress > 45) { giveUpFromHere(level, target.getUUID()); leaf = null; path = null; owner.work.route.stop(); return; }
@@ -443,12 +445,23 @@ final class CompanionLoot {
         owner.getLookControl().setLookAt(leaf.getX() + .5, leaf.getY() + .5, leaf.getZ() + .5);
         owner.workStatus("Раздвигаю листву, чтобы достать вещь.");
         lastProgress = level.getGameTime();
+        // The leaf is the shears' block: the tool goes into his hand before the first swing, so the cracks and the break's own time
+        // are the tool's, and the leaf comes down as itself, not to a pickaxe in his hand that gives only a sapling. What it gives is
+        // weighed against the bag first: the hand item the tool replaces takes a cell of its own, and a leaf with one cell free was
+        // refused where it used to be broken (in game). With no room it stays, the drop under it with it, and the hand goes back.
+        if (!leafBreaking.swinging()) {
+            ItemStack forTheLeaf = CompanionTools.bestToolForBlock(owner, state);
+            if (!owner.canStoreDrops(CompanionTools.drops(state, level, leaf, null, owner, forTheLeaf.isEmpty() ? owner.getMainHandItem() : forTheLeaf))) {
+                owner.putToolAway();
+                leafBreaking.reset(); leaf = null; path = null; nextRoute = 0;
+                return;
+            }
+            owner.takeToolForBlock(state);
+        }
         if (!leafBreaking.tick(level, leaf)) return;
-        // The leaf is the shears' block: it comes down as itself, and fast, not to a pickaxe in his hand that gives only a sapling.
-        owner.takeToolForBlock(state);
         var tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, leaf, null, owner, tool);
-        if (owner.canStoreDrops(drops) && level.destroyBlock(leaf, false, owner, 512)) {
+        if (level.destroyBlock(leaf, false, owner, 512)) {
             tool.getItem().mineBlock(tool, level, state, leaf, owner);
             owner.dropHarvest(leaf, drops);
         }
