@@ -1,56 +1,57 @@
 package dev.aicompanion;
 
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.random.RandomGenerator;
+import dev.aicompanion.CompanionJokeBank.Joke;
+import dev.aicompanion.CompanionJokeBank.Theme;
 
-/** Local jokes share the conversation's free slots, but have their own slower cadence and hourly deduplication. */
+/** Local stories share conversation slots, with their own cadence and hourly history. */
 public final class CompanionJokes {
     public static final long HOUR = 20L * 60 * 60;
-    public static final List<String> ALL = List.of(
-            "Крипер пошёл обниматься. Дружба получилась взрывная.",
-            "Скелет решил подкачаться. Но так и остался костлявым.",
-            "Зомби открыл ресторан. Посетителям сразу начали выносить мозг.",
-            "Паук устроился ткачом. Сказал, опыт работы с сетями имеется.",
-            "Ведьма открыла аптеку. Побочные эффекты стали главным товаром.",
-            "Шахтёр нашёл выход из пещеры. Оказалось, это вход в следующую.",
-            "Кирка попросила отпуск. Начальство сказало: сначала разгреби завал.",
-            "Рыбак поймал сапог. Теперь ищет рыбу подходящего размера.",
-            "Курица решила стать шахтёром. С тех пор несёт только породу.",
-            "Лопата решила сменить профессию. Но её опять закопали в работу.",
-            "Факел устроился сторожем. Работает с огоньком.",
-            "Сундук пошёл к психологу. Слишком много всего держал в себе.",
-            "Бухгалтер перепутала зарплаты Пупы и Лупы: Лупа получил за Пупу, а Пупа за Лупу.",
-            "Шли папа-помидор, мама-помидор и сын-помидор. Сын отстал. Папа наступил на него: «Догоняй, кетчуп!»");
-    private final long[] toldAt = new long[ALL.size()];
+    public static final List<Joke> BUNDLED = CompanionJokeBank.defaults();
+    public static final List<String> ALL = BUNDLED.stream().map(Joke::text).toList();
+    private List<Joke> bank = BUNDLED;
+    private final HashMap<String, Long> toldAt = new HashMap<>();
     private long lastJoke;
-    private int delayJitter, previous = -1;
+    private int delayJitter;
+    private String previous;
 
+    public void reloadBank(List<Joke> lines) { bank = List.copyOf(lines); }
     public void reset(long now, int jitter) {
-        Arrays.fill(toldAt, Long.MIN_VALUE);
-        lastJoke = now; delayJitter = jitter; previous = -1;
+        toldAt.clear(); lastJoke = now; delayJitter = jitter; previous = null;
     }
-
-    /** Between the configured minimum and twice that time; one sampled delay, not a new lottery every tick. */
     public static long gap(int minutes, int jitter) {
         long minimum = Math.clamp(minutes, 1, 60) * 60L * 20;
         return minimum + Math.floorMod((long) jitter, minimum + 1);
     }
-
     public boolean due(long now, int minutes) { return now >= lastJoke + gap(minutes, delayJitter); }
-
-    /** Refused opportunities consume neither the interval nor a joke, so a quiet moment can use them later. */
+    public static int weight(Joke joke, Set<Theme> surroundings, Set<Theme> recent) {
+        if (joke.themes().stream().anyMatch(recent::contains)) return 5;
+        return joke.themes().stream().anyMatch(surroundings::contains) ? 3 : 1;
+    }
+    private boolean eligible(Joke joke, long now) {
+        Long last = toldAt.get(joke.text());
+        return !joke.text().equals(previous) && (last == null || now - last >= HOUR)
+                && CompanionJokeBank.valid(joke.text());
+    }
     public String poll(long now, int minutes, boolean allowed, int jitter) {
+        return poll(now, minutes, allowed, jitter, Set.of(), Set.of(), new java.util.Random(jitter));
+    }
+    public String poll(long now, int minutes, boolean allowed, int jitter,
+                       Set<Theme> surroundings, Set<Theme> recent, RandomGenerator random) {
         if (!allowed || !due(now, minutes)) return null;
-        int start = Math.floorMod(jitter, ALL.size());
-        for (int offset = 0; offset < ALL.size(); offset++) {
-            int index = (start + offset) % ALL.size();
-            if (index == previous || toldAt[index] != Long.MIN_VALUE && now - toldAt[index] < HOUR) continue;
-            String joke = ALL.get(index);
-            // Validate before delivery regardless of the ordinary murmur setting.
-            if (!CompanionConversation.fitsMurmur(joke)) continue;
-            toldAt[index] = now; previous = index; lastJoke = now; delayJitter = jitter;
-            return joke;
+        var eligible = bank.stream().filter(joke -> eligible(joke, now)).toList();
+        int total = eligible.stream().mapToInt(joke -> weight(joke, surroundings, recent)).sum();
+        if (total == 0) return null;
+        int selected = random.nextInt(total);
+        for (Joke joke : eligible) {
+            selected -= weight(joke, surroundings, recent);
+            if (selected >= 0) continue;
+            toldAt.put(joke.text(), now); previous = joke.text(); lastJoke = now; delayJitter = jitter;
+            return joke.text();
         }
-        return null;
+        throw new IllegalStateException("Weighted joke selection failed");
     }
 }

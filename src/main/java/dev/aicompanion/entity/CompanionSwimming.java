@@ -35,10 +35,30 @@ final class CompanionSwimming {
             var hand = c.getMainHandItem();
             boolean dives = target != null && target.isAlive() && c.isInWater() && !c.isInLava() && target.isInWater()
                     && target.getY() < c.getY() - .5 && c.getHealth() > c.getMaxHealth() / 2
-                    && (hand.is(net.minecraft.tags.ItemTags.SWORDS) || hand.is(net.minecraft.tags.ItemTags.AXES)) && !c.archery.armed()
+                    && (hand.is(net.minecraft.tags.ItemTags.SWORDS) || hand.is(net.minecraft.tags.ItemTags.AXES))
+                    // The bow is for a foe: a fish or a squid it never shoots, so a bow in the bag does not keep him from the dive for one.
+                    && (!c.archery.armed() || !(target instanceof net.minecraft.world.entity.monster.Enemy))
+                    && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
+            // «Подбери»: a drop that sank to the bottom of a pool is under him, and the float held him at the surface
+            // over it, out of reach (game 08.11: the pork on the bottom of a four-deep pond was given up as out of reach).
+            // Like the dive for a foe under water: down to it while the pickup is active and there is breath to come up.
+            var chased = c.work.job == CompanionWork.Job.PICK_UP ? c.loot.chaseTarget() : null;
+            boolean sinks = chased != null && chased.isAlive() && chased.isInWater() && c.isInWater() && !c.isInLava()
+                    && chased.getY() < c.getY() - .4
+                    && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
+            // gather_block: down to the kelp, the sea pickle, the coral on the bed, with breath for the way up; within reach of it he
+            // is not lifted off it, and the water lets him down slowly while he breaks it.
+            var bed = c.work.job == CompanionWork.Job.BLOCK ? c.work.picking.dive() : null;
+            boolean picks = bed != null && c.isInWater() && !c.isInLava()
+                    && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
+            boolean down = picks && c.getEyePosition().distanceTo(bed.getCenter()) > 2.5;
+            // scoop_mob: down to the fish under him, as for a foe, though with a bucket and not a blade in hand.
+            var caught = c.work.job == CompanionWork.Job.CHORE ? c.work.chores.dive() : null;
+            boolean scoops = caught != null && caught.isAlive() && caught.isInWater() && c.isInWater() && !c.isInLava() && caught.getY() < c.getY() - .5
                     && c.getAirSupply() > Math.max(c.getMaxAirSupply() / 2, waterOverhead(c) * TICKS_UP_A_BLOCK + 60);
             // The game's own sinking for a player's Shift in water (LivingEntity.goDownInWater).
-            if (dives) c.setDeltaMovement(c.getDeltaMovement().add(0, -.04, 0));
+            if (dives || sinks || down || scoops) c.setDeltaMovement(c.getDeltaMovement().add(0, -.04, 0));
+            else if (picks) return;
             else super.tick();
         }
     }

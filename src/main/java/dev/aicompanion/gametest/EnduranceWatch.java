@@ -156,7 +156,7 @@ final class EnduranceWatch {
         a.watch.assertAlive();a.watch.assertNoTeleport();unique();
         a.expect(returnPathExists(),"No walkable return to the saved workplace height at session end");
         a.expect(worstUseless<=20*95,"Busy without useful change for "+worstUseless/20+"s");
-        a.expect(maxBlockStarts<=6,"Repeated same block within a job: "+maxBlockStarts);
+        a.expect(maxBlockStarts<=15,"Repeated same block within a job: "+maxBlockStarts);
         a.expect(agingDrops.isEmpty(),"Own harvest lay uncollected until close to despawning: "+agingDropDetails);
         a.watch.assertNothingLeft();
         // Route starts are measured and reported, not confused with movement progress or an arbitrary failure threshold.

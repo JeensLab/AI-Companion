@@ -81,7 +81,7 @@ public enum CompanionGround {
     }
 
     boolean safeCell(ServerLevel level, BlockPos pos, CompanionEntity companion) {
-        return this == SOIL ? !CompanionMiningNavigation.supportsLivingEntity(companion, pos) && CompanionQuarry.safeCell(level, pos)
+        return this == SOIL ? !CompanionMiningNavigation.supportsLivingEntity(companion, pos) && !companion.work.buildingGround(pos) && CompanionQuarry.safeCell(level, pos)
                 : safeLooseCell(level, pos);
     }
 

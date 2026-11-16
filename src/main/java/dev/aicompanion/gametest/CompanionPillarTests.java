@@ -190,6 +190,88 @@ public final class CompanionPillarTests {
         });
     }
 
+    /** Skyblock probe 15.11: with an empty bag the support soil was dug out of the island itself. Thin ground is never dug for it. */
+    @GameTest(template = "tall_tree", timeoutTicks = 900)
+    public static void aTreeTopOverAnIslandIsNotReachedByDiggingTheIsland(GameTestHelper helper) {
+        final int top = 14; // three layers of soil in the air, nothing under them
+        final int trunk = 5; // the oak of the game: only its top log is out of reach from the ground
+        for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) for (int y = 0; y <= 30; y++)
+            helper.setBlock(new BlockPos(x, y, z), y == 0 ? Blocks.BEDROCK : Blocks.AIR);
+        for (int x = 10; x <= 22; x++) for (int z = 10; z <= 22; z++) for (int y = top - 2; y <= top; y++)
+            helper.setBlock(new BlockPos(x, y, z), y == top ? Blocks.GRASS_BLOCK : Blocks.DIRT);
+        for (int y = top + 1; y <= top + trunk; y++) helper.setBlock(new BlockPos(16, y, 16), Blocks.OAK_LOG);
+        for (int y = top + trunk; y <= top + trunk + 2; y++) {
+            int radius = y == top + trunk + 2 ? 1 : 2;
+            for (int x = 16 - radius; x <= 16 + radius; x++) for (int z = 16 - radius; z <= 16 + radius; z++) {
+                if (x == 16 && z == 16 && y <= top + trunk) continue;
+                helper.setBlock(new BlockPos(x, y, z), Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.PERSISTENT, true));
+            }
+        }
+        CompanionEntity companion = helper.spawn(AICompanionMod.COMPANION.get(), 14, top + 1, 16);
+        var owner = helper.makeMockServerPlayerInLevel();
+        owner.teleportTo(companion.getX() - 3, companion.getY(), companion.getZ() - 3);
+        companion.setOwnerId(owner.getUUID());
+        owner.getPersistentData().putUUID("aicompanion:canonical_companion", companion.getUUID());
+        CompanionEvents.getOwnedCompanion(owner);
+        companion.setSearchRadius(16);
+        companion.setItem(0, new ItemStack(Items.WOODEN_AXE));
+        // A small order, as in the game: the first failed climb already ends it, so the reason must be told the first time.
+        companion.startGatheringLogs(2);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isRecoveringSupports(), diagnostic(companion));
+            int broken = 0;
+            for (int x = 10; x <= 22; x++) for (int z = 10; z <= 22; z++) for (int y = top - 2; y <= top; y++)
+                if (!helper.getBlockState(new BlockPos(x, y, z)).is(y == top ? Blocks.GRASS_BLOCK : Blocks.DIRT)) broken++;
+            helper.assertTrue(broken == 0, "Island blocks dug for the support: " + broken + " (" + companion.getLastTaskResult() + ")");
+            helper.assertTrue(helper.getBlockState(new BlockPos(16, top + trunk, 16)).is(Blocks.OAK_LOG), "Out-of-reach top was cut");
+            helper.assertTrue(companion.getLastTaskResult().contains("нечего подставить"), "No honest result: " + companion.getLastTaskResult());
+        });
+    }
+
+    /** Cobblestone is a good support block: the pillar of it reaches the top, and the stones come back to the bag. */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500)
+    public static void cobblestoneFromTheBagMakesTheSupport(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper, false);
+        companion.setItem(0, new ItemStack(Items.STONE_AXE)); // a wooden axe would be upgraded out of the cobblestone
+        companion.setItem(2, new ItemStack(Items.STONE_PICKAXE)); // takes the stones back at a stone's pace
+        companion.setItem(1, new ItemStack(Items.COBBLESTONE, SOIL_SUPPLY));
+        boolean[] placed = {false};
+        helper.onEachTick(() -> placed[0] |= companion.getTemporarySupportCount() > 0);
+        companion.startGatheringLogs(TREE_HEIGHT);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isRecoveringSupports(), diagnostic(companion));
+            helper.assertTrue(placed[0] && remainingLogs(helper) == 0, "Top not reached on cobblestone: " + diagnostic(companion));
+            for (int x = 10; x <= 22; x++) for (int z = 10; z <= 22; z++) for (int y = 1; y <= 13; y++)
+                helper.assertTrue(!helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.COBBLESTONE), "Cobblestone left in the world");
+            helper.assertTrue(count(companion, Items.COBBLESTONE) == SOIL_SUPPLY, "Cobblestone was lost: " + count(companion, Items.COBBLESTONE));
+        });
+    }
+
+    /**
+     * Review of the skyblock fix: six stones taken back with a wooden pickaxe (~58 ticks each for deepslate) take longer than the
+     * one 10 s budget of a short cleanup; the rest used to be abandoned in the world. Every stone comes back.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void sixDeepslateSupportsAreAllTakenBackWithAWoodenPickaxe(GameTestHelper helper) {
+        CompanionEntity companion = setup(helper, false);
+        for (int y = 10; y <= 18; y++) helper.setBlock(new BlockPos(16, y, 16), Blocks.OAK_LOG);
+        companion.setItem(0, new ItemStack(Items.STONE_AXE));
+        companion.setItem(2, new ItemStack(Items.WOODEN_PICKAXE));
+        companion.setItem(1, new ItemStack(Items.COBBLED_DEEPSLATE, SOIL_SUPPLY));
+        int[] maximumSupports = {0};
+        helper.onEachTick(() -> maximumSupports[0] = Math.max(maximumSupports[0], companion.getTemporarySupportCount()));
+        companion.startGatheringLogs(18);
+        helper.succeedWhen(() -> {
+            helper.assertTrue(!companion.isGatheringTask() && !companion.isRecoveringSupports(), diagnostic(companion));
+            helper.assertTrue(maximumSupports[0] == 6, "The climb did not use six supports: " + diagnostic(companion));
+            helper.assertTrue(companion.getTemporarySupportCount() == 0, "Support ownership was not cleared: " + diagnostic(companion));
+            for (int x = 10; x <= 22; x++) for (int z = 10; z <= 22; z++) for (int y = 1; y <= 18; y++)
+                helper.assertTrue(!helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.COBBLED_DEEPSLATE), "Deepslate left in the world at " + x + "," + y + "," + z);
+            helper.assertTrue(count(companion, Items.COBBLED_DEEPSLATE) == SOIL_SUPPLY, "Deepslate was lost: " + count(companion, Items.COBBLED_DEEPSLATE));
+            helper.assertTrue(companion.onGround(), "Work completed while companion was still falling");
+        });
+    }
+
     private static CompanionEntity setup(GameTestHelper helper, boolean giveSoil) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) {
             helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE);

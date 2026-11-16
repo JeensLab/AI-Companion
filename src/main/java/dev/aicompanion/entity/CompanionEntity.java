@@ -85,6 +85,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     static final EntityDataAccessor<Integer> DATA_EXPRESSION = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     static final EntityDataAccessor<Boolean> DATA_SOCIAL_SAFE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
     static final EntityDataAccessor<Boolean> DATA_FIGHTING = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.BOOLEAN);
+    /** By the fire: standing, sitting with the guitar, or playing it (CompanionCampfire); drawn by CompanionRenderer. */
+    static final EntityDataAccessor<Integer> DATA_CAMPFIRE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+    /** The sound id of the tune he plays now, empty between tunes: the client plays it from this (client/CompanionCampfireAudio). */
+    static final EntityDataAccessor<String> DATA_CAMPFIRE_TUNE = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
+    /** Counts tune starts, so the client restarts the recording even when the same one is asked for again. */
+    static final EntityDataAccessor<Integer> DATA_CAMPFIRE_TUNE_START = SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
     final dev.aicompanion.CompanionExpressionState expressions = new dev.aicompanion.CompanionExpressionState();
     boolean nearbySocialThreat;
     boolean nearbyExplosiveThreat;
@@ -130,6 +136,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionArchery archery = new CompanionArchery(this);
     final CompanionEndCrystals endCrystals = new CompanionEndCrystals(this);
     final CompanionPortals portals = new CompanionPortals(this);
+    /** The errand into the Nether: its record, and the crossing that keeps the work that walked in (CompanionErrand). */
+    final CompanionErrand errand = new CompanionErrand(this);
     private final CompanionEating meals = new CompanionEating(this);
     private final CompanionBag bag = new CompanionBag(this);
     final CompanionBlockBreaking woodBreaking = new CompanionBlockBreaking(this);
@@ -137,14 +145,20 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     final CompanionLoot loot = new CompanionLoot(this);
     public final CompanionDeathTrip deathTrip = new CompanionDeathTrip(this);
     private boolean deathRecovery = true;
+    private boolean boatRideOn = true;
     private boolean guardByPlayer = true;
     private boolean otherContainers = true;
     private boolean boatClutchOn = true;
+    /** Whether he plays by the fire at all (the player's switch, on in old saves: CompanionEntityNbt). */
+    private boolean playsByTheFire = true;
+    private boolean replantOn = true;
     /** Whether «подбери» looks at the ground first, and how far around him (the player's setting, not saved). */
     private boolean pickUpNearby = true;
     private int pickUpRadius = 16;
     /** Whether the long goal of a diamond mine may be taken (the player's setting, not saved: it is sent again on joining). */
     private boolean diamondMine = true;
+    /** Whether named map markers work at all: recognition, remembering and walks (the player's setting, not saved). */
+    private boolean markersEnabled = true;
     private int deathRecoveryAttempts = 5, deathRecoveryDeaths = 10;
     public final CompanionPlayersThings playersThings = new CompanionPlayersThings(this);
     final CompanionRecovery recovery = new CompanionRecovery(this);
@@ -152,8 +166,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private final CompanionShieldDefense shieldDefense = new CompanionShieldDefense(this);
     final CompanionBreath breath = new CompanionBreath(this);
     final CompanionDragonBreath dragonBreath = new CompanionDragonBreath(this);
+    final CompanionBoatRide boatRide = new CompanionBoatRide(this);
     final CompanionWaterBucket waterBucket = new CompanionWaterBucket(this);
     final CompanionBoatClutch boatClutch = new CompanionBoatClutch(this);
+    /** Saplings for the stumps of the trees he fells (RYVTB). */
+    final CompanionReplant replant = new CompanionReplant(this);
     final CompanionWaterFill waterFill = new CompanionWaterFill(this);
     final CompanionTravel travel = new CompanionTravel(this);
     CompanionTravel travel() { return travel; }
@@ -165,6 +182,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     private net.minecraft.world.phys.Vec3 previousActivityPosition;
     private boolean activityMoved;
     BlockPos lastPlacedPosition;
+    /** Game tick of that placement: the hint of «the chest I just set down» is good for a limited time only. */
+    long lastPlacedTick;
     BlockPos lastPlacedPosition() { return lastPlacedPosition; }
     final CompanionSocial social = new CompanionSocial(this);
     final CompanionDiagnosticState diagnostics = new CompanionDiagnosticState(this);
@@ -180,6 +199,27 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public boolean urgentOrder() { return parked.enabled(); }
     public void setUrgentOrder(boolean on) { parked.enable(on); }
     private final CompanionLighting lighting = new CompanionLighting(this);
+    final CompanionCampfire campfire = new CompanionCampfire(this);
+    /** An evening by the fire with the guitar (CompanionCampfire). */
+    public CompanionCampfire campfire() { return campfire; }
+    /** Client and server: CompanionCampfire.STANDING, SITTING or PLAYING. */
+    public int campfirePose() { return entityData.get(DATA_CAMPFIRE); }
+    /** Client and server: the sound id of the tune playing now (aicompanion:guitar_folder/… or a vanilla minecraft:music…), or empty. */
+    public String campfireTune() { return entityData.get(DATA_CAMPFIRE_TUNE); }
+    /** Client and server: counts the tunes started, so a recording asked for again is started over, not left sounding. */
+    public int campfireTuneStart() { return entityData.get(DATA_CAMPFIRE_TUNE_START); }
+    void setCampfireTune(String soundId) {
+        if (level().isClientSide) return;
+        if (!soundId.isEmpty()) entityData.set(DATA_CAMPFIRE_TUNE_START, entityData.get(DATA_CAMPFIRE_TUNE_START) + 1);
+        entityData.set(DATA_CAMPFIRE_TUNE, soundId);
+    }
+    /** Whether he plays by the fire at all — by himself or on «сыграй» (the player's switch in «Поведение», on in old saves). */
+    public boolean playsByTheFire() { return playsByTheFire; }
+    public void setPlaysByTheFire(boolean on) {
+        playsByTheFire = on;
+        // Turned off in the middle of an evening: the guitar goes away at once.
+        if (!on) campfire.end("switch_off");
+    }
     public CompanionLighting lighting() { return lighting; }
     /** «Порядок и запас»: deeds of his own while the player asks for nothing (CompanionAutonomy). */
     public CompanionAutonomy autonomy() { return autonomy; }
@@ -253,6 +293,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 + "; маршрут=" + (getNavigation().isDone() ? "сейчас не выполняется" : "выполняется")
                 + "; добыча=" + (isMiningAnimation() ? "есть анимация" : "нет анимации")
                 + "; здоровье=" + Math.round(getHealth()) + "/" + Math.round(getMaxHealth())
+                + (campfire.active() ? "; музыка=" + campfire.forAi() : "")
                 + (inventoryViewers > 0 ? "; открыт инвентарь, действия приостановлены" : "")
                 + "; самостоятельность=" + (!autonomy.enabled() ? "выкл." : autonomy.running() ? "вкл., сейчас своё дело без просьбы: " + autonomy.deedName()
                         : autonomy.held() ? "вкл., на паузе по приказу игрока" : "вкл., работает на месте")
@@ -353,6 +394,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
         // Before the float and the guard (0): a goal of an equal priority does not push a running one out, and the guard may hold the turn in lava.
         this.goalSelector.addGoal(-1, new CompanionLavaExit(this));
+        // The cell over powder snow is floor to the game (its trap for mobs): he sinks there and freezes, so it is never his way.
+        setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_POWDER_SNOW, -1.0F);
         this.goalSelector.addGoal(0, new CompanionSwimming.WadingFloatGoal(this));
         this.goalSelector.addGoal(0, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         this.goalSelector.addGoal(0, new CompanionCreeperGuard.GuardGoal(this));
@@ -373,6 +416,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(3, new CompanionDigGoal(this));
         this.goalSelector.addGoal(3, new CompanionEntityGoals.WorkGoal(this));
         this.goalSelector.addGoal(3, new CompanionWaterFill.RefillGoal(this));
+        this.goalSelector.addGoal(3, new CompanionCampfire.SitGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.FollowPlayerGoal(this));
         this.goalSelector.addGoal(4, new CompanionEntityGoals.RoamGoal(this));
         this.goalSelector.addGoal(5, new LookAtPlayerGoal(this, ServerPlayer.class, 8.0F) {
@@ -463,6 +507,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         builder.define(DATA_SOCIAL, ""); builder.define(DATA_SOCIAL_SERIAL, 0); builder.define(DATA_SOCIAL_TIME, 0L);
         builder.define(DATA_AUTONOMY, false); builder.define(DATA_SAY, ""); builder.define(DATA_SAY_SERIAL, 0); builder.define(DATA_SAY_TIME, 0L);
         builder.define(DATA_EXPRESSION, 0); builder.define(DATA_SOCIAL_SAFE, false); builder.define(DATA_FIGHTING, false);
+        builder.define(DATA_CAMPFIRE, CompanionCampfire.STANDING); builder.define(DATA_CAMPFIRE_TUNE, "");
+        builder.define(DATA_CAMPFIRE_TUNE_START, 0);
     }
 
     public static void createAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
@@ -591,6 +637,14 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Read only: his own drops still to pick up (after «стоп» too: nothing of his is left lying). */
     public boolean isCollectingDrops() { return loot.hasPending(); }
     public String workPhase() { return work.watchPhase(); }
+    /** Read only, for the GameTest observer: the hands a stack is held in while the bag has no cell for a craft. */
+    public java.util.List<String> heldStackHands() { return work.items.heldHands(); }
+    /** Read only, for the GameTest observer: the block a grid craft left in the 3×3 grid for lack of a bag cell. */
+    public ItemStack gridBlockInGrid() { return work.items.gridBlock(); }
+    /** The work's own step, for the GameTest observer: one stack into a free hand while the bag has no cell for a craft. */
+    public boolean holdOneStackInHand() { return work.items.holdOneStack(java.util.Set.of()); }
+    /** The work's own craft step, for the GameTest observer: a stack into a hand only after the bag said it has no cell. */
+    public CompanionActionResult craftHoldingIfTheBagIsFull(String itemId, int count) { return work.items.craftFromBagMakingRoom(itemId, count); }
     public String watchDetail() { return diagnosticState(); }
     public boolean isVisiblyBusy() { return isSwingingAtBlock() || isMiningAnimation() || actionAnimation() != 0 || eatTicks > 0 || temporaryPillar.isActive() || temporaryPillar.isRecovering(); }
     public void enableProtectionForWork() { protecting = true; entityData.set(DATA_PROTECTING, true); }
@@ -645,15 +699,24 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     /** Whether he works with barrels, shulker boxes, furnaces, hoppers and dispensers, not only chests (the player can turn it off in the settings). */
     public boolean otherContainers() { return otherContainers; }
     public void setOtherContainers(boolean on) { otherContainers = on; }
+    /** Whether he gets into the player's boat and out of it with the player (the player can turn it off in the settings). */
+    public boolean boatRide() { return boatRideOn; }
+    public void setBoatRide(boolean on) { boatRideOn = on; }
     /** Whether a hurtful fall the bucket does not catch is caught in a boat from his bag (the player can turn it off in the settings). */
     public boolean boatClutch() { return boatClutchOn; }
     public void setBoatClutch(boolean on) { boatClutchOn = on; }
+    /** Whether a tree he felled gets a sapling of its wood back on the stump from his bag (the player can turn it off in the settings). */
+    public boolean replantSaplings() { return replantOn; }
+    public void setReplantSaplings(boolean on) { replantOn = on; }
     /** Whether «подбери» takes what lies on the ground around him, and how far the scan goes (the player's setting). */
     public boolean pickUpNearby() { return pickUpNearby; }
     public int pickUpRadius() { return pickUpRadius; }
     public void setPickUpNearby(boolean on, int radius) { pickUpNearby = on; pickUpRadius = Math.clamp(radius, CompanionPickUp.MIN_RADIUS, CompanionPickUp.MAX_RADIUS); }
     public boolean diamondMine() { return diamondMine; }
     public void setDiamondMine(boolean on) { diamondMine = on; }
+    /** Whether named map markers work at all (the player's setting): recognition, remembering and walks. */
+    public boolean markersEnabled() { return markersEnabled; }
+    public void setMarkersEnabled(boolean on) { markersEnabled = on; }
     public int deathRecoveryAttempts() { return deathRecoveryAttempts; }
     public int deathRecoveryDeaths() { return deathRecoveryDeaths; }
     public void setDeathRecoveryLimits(int attempts, int deaths) { deathRecoveryAttempts = attempts; deathRecoveryDeaths = deaths; }
@@ -703,6 +766,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     public String takeSortNote() { return work.sorting.takeLeftNote(); }
     boolean workWoodSpare() { return work.woodSpareForSupports() && !gatheringLogs; }
     BlockPos recoveryDestination() {
+        // Sitting with the guitar he is where he means to be, however far the player stands (owner 09.11: he got up between tunes).
+        if (campfirePose() != CompanionCampfire.STANDING) return null;
+        // On a portal walk the way that may be blocked is the one to the portal (a pit his own tunnels dug), whoever he follows.
+        if (portals.walking()) return portals.entryCell();
         var player = getOwnerPlayer();
         // The player in the dragon's breath: its edge, not the player, or the breath's walls would look like a trap.
         if (!autonomy.staysAtWork() && (following || protecting) && player != null && (distanceToSqr(player) > 16 || player.getY() - getY() > 1.25)) return dragonBreath.meetingPoint(player, false);
@@ -753,7 +820,88 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         String honest = "Рядом нет " + meaning.genitive() + ". " + CompanionPickUp.lying(level, blockPosition(), pickUpRadius, getOwnerId());
         if (!fallback) return CompanionActionResult.failed(honest);
         CompanionActionResult taken = startWork(meaning.fallbackAction(), meaning.fallbackItem(), wanted);
-        return CompanionActionResult.failed(honest + (taken.success() ? " " + meaning.fallbackNote() : ""));
+        if (!taken.success()) return CompanionActionResult.failed(honest);
+        // The fallback is the rest of this order, not a refusal of it: the workId is kept so the plan waits for that work,
+        // the honest answer stays in the report, and the following steps of the plan still run.
+        long workId = activeWorkId();
+        if (workId <= 0) return CompanionActionResult.failed(honest);
+        return recordActionResult(CompanionActionResult.accepted(honest + " " + meaning.fallbackNote())
+                .withEvidence(new CompanionActionResult.Evidence(workId, meaning.fallbackAction(), meaning.fallbackItem(),
+                        wanted, null, null, null)));
+    }
+
+    /**
+     * «Запомни это место, дача»: saves the point he stands on as a named marker of the player. The same name again
+     * moves that marker; a full list loses its oldest one, and the answer names it. Off: the word is not taken.
+     */
+    public CompanionActionResult rememberPlace(String name) {
+        if (!markersEnabled) return CompanionActionResult.failed("Метки на карте выключены.");
+        if (!(level() instanceof ServerLevel level)) return CompanionActionResult.failed("Для метки нужен загруженный мир.");
+        if (getOwnerId() == null) return CompanionActionResult.failed("У меня нет хозяина, метку запоминать не для кого.");
+        String clean = CompanionMarkerNames.clean(name);
+        if (clean.isEmpty()) return CompanionActionResult.failed("Как назвать это место? Скажи «запомни это место, название».");
+        if (!CompanionMarkerNames.valid(clean)) {
+            if (clean.length() > CompanionMarkerNames.MAX)
+                return CompanionActionResult.failed("Название метки — до " + CompanionMarkerNames.MAX + " символов.");
+            return CompanionActionResult.failed("«" + clean + "» — это координаты, а не название. Скажи «запомни это место, название».");
+        }
+        // The phrase promises the place the player stands on: his feet while he is here, mine only when he is away.
+        ServerPlayer owner = getOwnerPlayer();
+        BlockPos at = owner != null ? owner.blockPosition() : blockPosition();
+        CompanionMarkers.Added added = CompanionMarkers.get(level.getServer())
+                .add(getOwnerId(), clean, level.dimension(), at, level.getGameTime());
+        if (added.refused()) return CompanionActionResult.failed(added.refusal());
+        refreshPlaces();
+        String where = added.marker().pos().toShortString() + " в " + CompanionMarkers.worldName(added.marker().dimension());
+        String line = added.moved() ? "Метка «" + added.marker().name() + "» теперь здесь: " + where + "."
+                : "Запомнил место «" + added.marker().name() + "»: " + where + ".";
+        if (owner == null) line += " Тебя нет рядом, поэтому это место, где стою я.";
+        if (added.evicted() != null)
+            line += " Меток было " + CompanionMarkers.MOST + ", самую старую «" + added.evicted().name() + "» забыл.";
+        return CompanionActionResult.ok(line);
+    }
+
+    /**
+     * «Иди к колодцу»: walks to the marker the name means by the normal path. No marker or more than one is answered
+     * honestly with the names he knows, without a walk; another dimension is said as it is. «Дом» with no marker of that
+     * name is the home he knows — the point the player named, where the player builds, or his finished house.
+     */
+    public CompanionActionResult goToPlace(String name) {
+        PlaceTarget target = placeTarget(name);
+        if (!target.refusal().isEmpty()) return CompanionActionResult.failed(target.refusal());
+        return startWork("go_to_place", target.name(), 1);
+    }
+
+    /** Where a place order walks: the marker the name means, or the home for «дом», or the honest reason there is no walk. */
+    record PlaceTarget(BlockPos pos, String name, boolean home, String refusal) {
+        static PlaceTarget refused(String line) { return new PlaceTarget(null, "", false, line); }
+    }
+
+    PlaceTarget placeTarget(String name) {
+        if (!(level() instanceof ServerLevel level)) return PlaceTarget.refused("Для похода к метке нужен загруженный мир.");
+        if (getOwnerId() == null) return PlaceTarget.refused("У меня нет хозяина, идти к метке не для кого.");
+        boolean homeWord = CompanionMarkerNames.isHome(name);
+        if (markersEnabled) {
+            var store = CompanionMarkers.get(level.getServer());
+            var found = store.matching(getOwnerId(), name);
+            if (found.size() > 1) return PlaceTarget.refused(CompanionMarkers.questionFor(found));
+            if (found.size() == 1) {
+                CompanionMarkers.Marker marker = found.getFirst();
+                if (!marker.dimension().equals(level.dimension()))
+                    return PlaceTarget.refused("Метка «" + marker.name() + "» в другом измерении ("
+                            + CompanionMarkers.worldName(marker.dimension()) + "), пешком отсюда туда не дойти.");
+                return new PlaceTarget(marker.pos(), marker.name(), false, "");
+            }
+        } else if (!homeWord) return PlaceTarget.refused("Метки на карте выключены.");
+        if (!homeWord) return PlaceTarget.refused(CompanionMarkers.unknown(name, CompanionMarkers.get(level.getServer()).all(getOwnerId())));
+        // The player's word outranks what he worked out himself: a home named in another world is still the home, and the
+        // walk home cannot cross. Said as it is, even when a build of the player's stands here (CompanionPlaces.home()).
+        String elsewhere = places.homeElsewhere();
+        if (!elsewhere.isEmpty())
+            return PlaceTarget.refused("Дом в другом измерении (" + elsewhere + "), пешком отсюда туда не дойти.");
+        CompanionPlaces.Home home = places.home();
+        if (home != null) return new PlaceTarget(home.pos(), "дом", true, "");
+        return PlaceTarget.refused("Я ещё не знаю, где наш дом. Скажи «это наш дом», и я запомню.");
     }
 
     public CompanionActionResult startWork(String action, String item, int count, String location) {
@@ -907,6 +1055,20 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         super.travel(input);
     }
 
+    /**
+     * Sitting by the fire he faces it: the body keeps the direction he sat down in (CompanionCampfire sets it as his yaw, which the
+     * client receives too), and the head turns from it no further than a person's would, even to look at the player behind him.
+     */
+    @Override protected net.minecraft.world.entity.ai.control.BodyRotationControl createBodyControl() {
+        return new net.minecraft.world.entity.ai.control.BodyRotationControl(this) {
+            @Override public void clientTick() {
+                if (campfirePose() == CompanionCampfire.STANDING) { super.clientTick(); return; }
+                setYBodyRot(getYRot());
+                setYHeadRot(net.minecraft.util.Mth.rotateIfNecessary(getYHeadRot(), getYRot(), 75));
+            }
+        };
+    }
+
     /** The game advances the stroke the renderer draws only for players and monsters; a pathfinder mob is neither,
      * so without this his arm stayed still through every hit (Monster.aiStep does the same for the same reason). */
     @Override public void aiStep() {
@@ -929,6 +1091,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         }
         waterBucket.tick();
         boatClutch.tick();
+        boatRide.tick();
         waterFill.tick();
         swimming.stroke();
         swimming.climbOutOfWater();
@@ -942,12 +1105,16 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         social.updateExpression();
         social.tick();
         lighting.tick();
-        if (level() instanceof ServerLevel serverLevel) portals.tick(serverLevel);
+        campfire.tick();
+        if (level() instanceof ServerLevel serverLevel) { portals.tick(serverLevel); errand.tick(serverLevel); }
         if (work.mine.loadedHeld()) for (CompanionMineSite.Held drop : work.mine.takeHeld()) dropHarvest(drop.pos(), drop.drops());
         goals.tick();
         parked.tick();
         // He speaks: the eyes are on the player while he does, and an offended bond rests them on the ground ahead instead
         // (CompanionGaze, owner 29.10). Work and hunting keep the eyes entirely: he does not turn even to talk (owner 31.10).
+        // Sitting by the fire his eyes are on the fire only, even when the player speaks to him or looks at him (owner 09.11).
+        boolean seated = campfirePose() != CompanionCampfire.STANDING;
+        if (seated) gazeTalkTicks = 0;
         if (gazeTalkTicks > 0) {
             gazeTalkTicks--;
             var spokenTo = getOwnerPlayer();
@@ -964,7 +1131,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         // The player looks at him or touches him: he looks back while those eyes are on him, but never while he works
         // (CompanionGaze, owner 29.10).
         var lookingAtMe = getOwnerPlayer();
-        if (lookingAtMe != null && !level().isClientSide && gazeMeetsEyes()) {
+        if (lookingAtMe != null && !level().isClientSide && !seated && gazeMeetsEyes()) {
             // A body that touches his own counts as being addressed even in the middle of work (the owner asked for this, 31.10).
             if (distanceToSqr(lookingAtMe) < GAZE_TOUCH_RANGE_SQR) gazeTalk();
             // The gaze of the player only counts while his own work does not hold his eyes.
@@ -983,7 +1150,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
         // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.isHunting() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
+        var guardedOwner = protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && CompanionGuardWatch.strayed(this, guardedOwner, getTarget())) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();
@@ -1063,6 +1230,10 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         if (id == net.minecraft.world.entity.EntityEvent.ATTACK_BLOCKED) damageNumbers.blocked(tickCount);
     }
 
+    /** Not back into a vehicle right after getting out, as a player; switched on, into a boat only with the player (CompanionBoatRide). */
+    @Override protected boolean canRide(Entity vehicle) { return super.canRide(vehicle) && boatRide.mayRide(vehicle); }
+    boolean justGotOut() { return boardingCooldown > 0; }
+
     /**
      * Falling fast, his client draws him where the server has him, not eased in over three ticks: three ticks behind he was blocks
      * over the boat or water he had already landed in (08.11). Walking is eased as before.
@@ -1087,8 +1258,11 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     }
 
     public boolean benchWalkNeeded(String requestedItemId, int requestedCount) { return placement.benchWalkNeeded(requestedItemId, requestedCount); }
+    BlockPos cutterWalk(String requestedItemId, int requestedCount) { return placement.cutterWalk(requestedItemId, requestedCount); }
     public CompanionActionResult craftItemResult(String requestedItemId, int requestedCount) { return placement.craftItemResult(requestedItemId, requestedCount); }
     CompanionActionResult craftFromBag(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount); }
+    /** The same craft with the 3×3 grid as one more cell, for a bag with no free cell and no free hand. */
+    CompanionActionResult craftFromBagInGrid(String requestedItemId, int requestedCount) { return placement.craftFromBag(requestedItemId, requestedCount, true); }
     public CompanionActionResult placeBlockResult(String requestedBlockId) { return placement.placeBlockResult(requestedBlockId); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin) { return placement.placeBlockNearResult(requestedBlockId, origin); }
     CompanionActionResult placeBlockNearResult(String requestedBlockId, BlockPos origin, java.util.function.Predicate<BlockPos> allowed) { return placement.placeBlockNearResult(requestedBlockId, origin, allowed); }
@@ -1102,6 +1276,12 @@ public final class CompanionEntity extends PathfinderMob implements Container {
     void startGatheringDirtForWork(int count, CompanionGround ground) { gathering.startGatheringDirtForWork(count, ground); }
     public void stopGathering() { gathering.stopGathering(); }
     public void stopGatheringForPlayer() { parked.drop(); gathering.stopGathering(); }
+
+    /** A portal takes him: the game saves him and makes the entity of the other world, and the errand's walk goes over with it. */
+    @Override public Entity changeDimension(net.minecraft.world.level.portal.DimensionTransition transition) {
+        boolean marked = errand.crossing(transition.newLevel());
+        try { return super.changeDimension(transition); } finally { errand.crossed(marked); }
+    }
 
     ServerPlayer getOwnerPlayer() {
         if (!(level() instanceof ServerLevel serverLevel) || ownerId == null) return null;

@@ -2,8 +2,11 @@ package dev.aicompanion.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
 
@@ -85,6 +88,15 @@ final class CompanionPlaces {
         BlockPos house = owner.work.house.finishedAnchor(level);
         return house == null ? null : new Home(house, "мой достроенный дом");
     }
+    /**
+     * The home the player named when it stands in another dimension, as he reads it («nether»), or "" when the home is
+     * here or none was named: the walk home cannot cross, and the answer says where it is instead of staying silent.
+     */
+    String homeElsewhere() {
+        if (namedHome == null || namedHome.dimension.equals(dimension())) return "";
+        ResourceLocation id = ResourceLocation.tryParse(namedHome.dimension);
+        return id == null ? namedHome.dimension : CompanionMarkers.worldName(ResourceKey.create(Registries.DIMENSION, id));
+    }
     /** Remembered blocks of this kind in this dimension, nearest first; the player's own chests count without a visit. */
     List<BlockPos> stations(String block) {
         validateLoaded();
@@ -131,6 +143,13 @@ final class CompanionPlaces {
             Place place = other.get(i);
             entries.add(place.block + " на " + place.pos.toShortString() + " в " + place.dimension + " (поставил)"
                     + (place.dimension.equals(dimension()) && owner.level().hasChunkAt(place.pos) ? " (проверено)" : " (сейчас не проверено)"));
+        }
+        // The player's own named markers: the names the model may say and walk to (CompanionMarkers). Read on the server
+        // thread only, like the home: an entity is also read while its chunk loads.
+        if (owner.markersEnabled() && owner.getOwnerId() != null && owner.level() instanceof ServerLevel level && level.getServer().isSameThread()) {
+            var marks = CompanionMarkers.get(level.getServer()).all(owner.getOwnerId());
+            if (!marks.isEmpty()) entries.add("метки: " + String.join("; ", marks.stream()
+                    .map(mark -> "«" + mark.name() + "» на " + mark.pos().toShortString() + " в " + CompanionMarkers.worldName(mark.dimension())).toList()));
         }
         return entries.isEmpty() ? "известных рабочих мест нет" : "Известные места: " + String.join("; ", entries);
     }

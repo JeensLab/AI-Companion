@@ -32,7 +32,7 @@ public final class CompanionPlanRunner {
     public static final String NO_TREE = "Не нашёл доступного дерева";
     /** Orders that the server rejects while another work order is still active. */
     public static final Set<String> WORK = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "store_items", "take_items", "sort_chests",
-            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "fill_bucket", "mine_obsidian", "build_portal", "pick_up");
+            "build_house", "craft_item", "place_block", "give_items", "give_wood", "smelt_items", "mine_ore", "hunt_animals", "build_pen", "breed_animals", "farm_crops", "harvest_crops", "dig_for_diamonds", "use_bone_meal", "compost_meal", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "build_portal", "build_cobble_gen", "pick_up", "go_to_place", "disenchant_item", "compost_items", "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back");
     private static final Set<String> GATHER = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone");
     /** Steps that may run while a parked batch cooks, unless they produce its input (CompanionParkHold decides that). */
     private static final Set<String> RUN_AHEAD = Set.of("gather_wood", "gather_dirt", "gather_loose", "gather_stone", "mine_ore", "hunt_animals");
@@ -228,7 +228,8 @@ public final class CompanionPlanRunner {
             // so an obtain_item given up drops it too; each thing is got once for each count: the same shortage again stops the plan,
             // a larger one (another frame, the player walked off meanwhile) is got once more.
             var short_ = result.evidence();
-            if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && "build_portal".equals(action.type()) && short_ != null
+            // A cobble generator short of water fills his empty bucket the same way (CompanionCobbleGen).
+            if (!inObtain && !attempt.started() && result.status() == Status.SHORTAGE && ("build_portal".equals(action.type()) || "build_cobble_gen".equals(action.type())) && short_ != null
                     && run.gotForPortal.add(short_.item() + " " + short_.count())) {
                 PlannedAction obtain = new PlannedAction("obtain_item", 0, short_.count(), short_.item());
                 CompanionDiagnostics.event(port.trace(), "portal_to_obtain", "step", number, "action", action, "obtain", obtain);
@@ -390,6 +391,12 @@ public final class CompanionPlanRunner {
         run.obtain = null;
         int from = Math.min(index, run.plan.size());
         run.plan.subList(from, Math.min(run.obtainEnd, run.plan.size())).clear();
+        // A cobble generator whose water could not be fetched goes on with the ice of his bag, if any ("ice": CompanionCobbleGen).
+        if (run.builtAfter != null && "build_cobble_gen".equals(run.builtAfter.type()) && obtain.item() != null && obtain.item().equals(run.builtFor)) {
+            int at = run.plan.subList(from, run.plan.size()).indexOf(run.builtAfter);
+            if (at >= 0) run.plan.set(from + at, new PlannedAction("build_cobble_gen", 0, 1, "ice"));
+            run.builtAfter = null;
+        }
         List<PlannedAction> same = new ArrayList<>();
         for (int i = run.plan.size() - 1; i >= from; i--)
             // A mine step after a part of the kit that could not be got is not begun: the goal decides with the bag as it is.

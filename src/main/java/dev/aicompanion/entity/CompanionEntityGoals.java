@@ -177,14 +177,16 @@ final class CompanionEntityGoals {
             owner = serverLevel.getServer().getPlayerList().getPlayer(companion.ownerId);
             // Near him again (the following ends at four blocks, or was interrupted before): the next time he is out of reach is a new occasion to say so.
             if (owner != null && owner.level() == companion.level() && companion.distanceToSqr(owner) <= 16) toldAbout = null;
+            // The player in a boat with a seat for him: over to it from any distance, till he is in (CompanionBoatRide).
             return owner != null && owner.level() == companion.level()
-                    && companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64);
+                    && (companion.distanceToSqr(owner) > (companion.protecting ? 16 : 64) || companion.boatRide.boatToJoin(owner) != null);
         }
 
         @Override
         public boolean canContinueToUse() {
             return !companion.autonomy.staysAtWork() && (companion.following || companion.protecting) && companion.inventoryViewers == 0 && owner != null && owner.isAlive()
-                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D) || companion.onClimbable() && !companion.onGround());
+                    && owner.level() == companion.level() && (companion.distanceToSqr(owner) > (companion.protecting ? 6.25 : 16.0D) || companion.onClimbable() && !companion.onGround()
+                    || companion.boatRide.boatToJoin(owner) != null);
         }
 
         @Override
@@ -237,8 +239,15 @@ final class CompanionEntityGoals {
                 // Not known yet (the search goes by the shares of the ticks): asked again next tick.
                 if (none == null) { waitingFor = null; retryAt = companion.level().getGameTime() + 1; }
                 else if (none) {
-                    if (toldAbout == null || toldAbout.distSqr(owner.blockPosition()) >= 9) {
-                        toldAbout = owner.blockPosition();
+                    // Not to a player falling, flying or swimming; again only to one standing at a new place ten seconds after the last
+                    // time: a falling one moves every tick (skyblock probe: 24 lines in 3 s).
+                    long now = companion.level().getGameTime();
+                    boolean passing = owner.fallDistance > 1 || owner.isFallFlying() || owner.getAbilities().flying || owner.isSwimming();
+                    // Not waited for at a place he passes through: a fall ends within three blocks of its last place, and the wait
+                    // would keep the landing unsaid. Asked again in a second instead.
+                    if (passing) { waitingFor = null; retryAt = now + 20; }
+                    else if ((toldAbout == null || owner.onGround() && toldAbout.distSqr(owner.blockPosition()) >= 9 && now - toldAt >= 200)) {
+                        toldAbout = owner.blockPosition(); toldAt = now;
                         companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься.", companion.hasActiveWorkOrder());
                     }
                 } else { waitingFor = null; retryAt = companion.level().getGameTime() + 100; }
@@ -254,6 +263,7 @@ final class CompanionEntityGoals {
         private boolean travelling;
         // Where the player stood when he was told there is no way: kept while the goal is interrupted (self-rescue, pickup, fight, inventory).
         private BlockPos toldAbout;
+        private long toldAt;
         private long retryAt;
         // Where the player was when there was no way to him; he waits until the player is elsewhere.
         private BlockPos waitingFor;

@@ -1,11 +1,13 @@
 package dev.aicompanion.entity;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.AbstractFurnaceBlock;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
-import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 
 import java.util.List;
 
@@ -13,9 +15,16 @@ import java.util.List;
 final class CompanionFurnaceReader {
     private CompanionFurnaceReader() { }
 
+    /** A furnace, smoker or blast furnace: the lot was taken only where the block cooks the recipe (CompanionSmelting.cooks). */
     static AbstractFurnaceBlockEntity oven(ServerLevel level, CompanionWork.Lot lot) {
-        return level.hasChunkAt(lot.pos) && level.getBlockEntity(lot.pos) instanceof FurnaceBlockEntity oven ? oven : null;
+        return level.hasChunkAt(lot.pos) && level.getBlockEntity(lot.pos) instanceof AbstractFurnaceBlockEntity oven ? oven : null;
     }
+
+    /** A smoker or blast furnace: twice as fast as a furnace at its own kind of work. */
+    static boolean fast(ServerLevel level, BlockPos pos) { return level.getBlockState(pos).is(Blocks.SMOKER) || level.getBlockState(pos).is(Blocks.BLAST_FURNACE); }
+
+    /** The block's id, for the words the player reads: «в коптильню», «из плавильной печи» (CompanionContainers). */
+    static String kind(ServerLevel level, BlockPos pos) { return BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString(); }
 
     /** No oven because nobody has loaded the chunk is no oven that is gone: only a loaded chunk without the furnace says that. */
     static boolean gone(ServerLevel level, CompanionWork.Lot lot) { return level.hasChunkAt(lot.pos) && oven(level, lot) == null; }

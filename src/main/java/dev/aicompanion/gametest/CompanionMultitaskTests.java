@@ -502,7 +502,7 @@ public final class CompanionMultitaskTests {
     }
 
     /** The decision itself: only a cooked batch in his own dimension, within the leash and a few blocks of height, is worth a visit between two steps. */
-    @GameTest(template = "empty", batch = "multitask_dimension", timeoutTicks = 100)
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void furnaceInAnotherDimensionWaits(GameTestHelper h) {
         BlockPos from = new BlockPos(100, 64, 100);
         var ready = CompanionFurnaceBatches.Status.READY;
@@ -532,7 +532,7 @@ public final class CompanionMultitaskTests {
         @Override public CompletableFuture<Boolean> checkpoint() { calls.add("checkpoint"); return CompletableFuture.completedFuture(false); }
     }
     /** A placed bench or furnace is used from where it was made: the slot is not given away between place_block and the crafts or smelts after it. */
-    @GameTest(template = "empty", batch = "multitask_checkpoint_placement", timeoutTicks = 100)
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void noCheckpointBetweenPlacementAndItsUse(GameTestHelper h) {
         var port = new CheckpointPort();
         var future = CompanionPlanRunner.run(List.of(new PlannedAction("craft_item", 0, 1, "minecraft:stick"), new PlannedAction("place_block", 0, 1, "minecraft:crafting_table"),
@@ -543,7 +543,7 @@ public final class CompanionMultitaskTests {
         });
     }
     /** The same for a placed furnace: every smelt of the run stays closed, and a step that does not use it opens the checkpoint again. */
-    @GameTest(template = "empty", batch = "multitask_checkpoint_furnace_run", timeoutTicks = 100)
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void noCheckpointInsideAFurnaceRun(GameTestHelper h) {
         var port = new CheckpointPort();
         var future = CompanionPlanRunner.run(List.of(new PlannedAction("place_block", 0, 1, "minecraft:furnace"), new PlannedAction("smelt_items", 0, 1, "minecraft:raw_iron"),
@@ -554,7 +554,7 @@ public final class CompanionMultitaskTests {
         });
     }
     /** verify_item counts the bag as the plan left it: no collector fills it in between. */
-    @GameTest(template = "empty", batch = "multitask_checkpoint_verify", timeoutTicks = 100)
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void noCheckpointBeforeVerify(GameTestHelper h) {
         var port = new CheckpointPort();
         var future = CompanionPlanRunner.run(List.of(new PlannedAction("craft_item", 0, 1, "minecraft:stick"), new PlannedAction("craft_item", 0, 1, "minecraft:wooden_pickaxe"),

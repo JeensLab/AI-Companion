@@ -273,7 +273,7 @@ public final class CompanionPortalTests {
         }));
     }
 
-    @GameTest(template = "empty", timeoutTicks = 20, batch = "portal")
+    @GameTest(template = "empty", timeoutTicks = 20)
     public static void thePhrasesThatSendHimIn(GameTestHelper h) {
         for (String phrase : new String[] {"Олег, зайди в портал", "зайди в этот портал", "иди в портал", "войди в портал", "пройди через портал", "заходи в незер", "зайди в портал, жди там"}) {
             String routed = CompanionLocalCommands.route(phrase, "Олег");

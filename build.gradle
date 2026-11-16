@@ -65,6 +65,14 @@ neoForge {
             // Optional: `./gradlew runClient -PquickPlay=<world>` opens that world straight away, so a test run needs no clicks.
             def quickPlay = providers.gradleProperty('quickPlay').getOrNull()
             if (quickPlay != null) programArguments.addAll('--quickPlaySingleplayer', quickPlay)
+            // Optional: `./gradlew runClient -PcampfireProbe` runs the offline campfire QA (screenshots and tune changes) and quits.
+            if (providers.gradleProperty('campfireProbe').isPresent()) systemProperty 'aicompanion.campfireProbe', 'true'
+        }
+
+        responsesClientProbe {
+            client()
+            gameDirectory = project.file('build/responses-client')
+            systemProperty 'aicompanion.responsesProbe', 'true'
         }
 
         server {
@@ -79,6 +87,10 @@ neoForge {
         gameTestServer {
             type = "gameTestServer"
             gameDirectory = project.file(providers.gradleProperty('gameTestDirectory').orElse('run'))
+            // The whole pool in one process needs more than the JVM's ergonomic default on a small host (it was 1 GB here,
+            // and the run died with OutOfMemoryError on a full suite). A fixed ceiling keeps a full local run and CI's
+            // endurance job deterministic; the shards below get their own smaller one.
+            jvmArgument '-Xmx4G'
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
             // Optional comma-separated narrowing, read by gametest/CompanionTestSelection.
             systemProperty 'aicompanion.gameTests.classes', providers.gradleProperty('gameTestClasses').orElse('').get()
@@ -91,6 +103,8 @@ neoForge {
             create("gameTestShard$shard") {
                 type = "gameTestServer"
                 gameDirectory = project.file("run/shard-$shard")
+                // A quarter of the pool fits in this; the fixed ceiling keeps a shard from dying on a small host's default.
+                jvmArgument '-Xmx3G'
                 systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
                 systemProperty 'aicompanion.gameTests.skipMethods', 'twoHoursForestToolsStorageAndReturningPlayer,ninetyMinutesCaveFoodOreLightAndChangingPassage,hundredMinutesFullBagOrdersCancellationAndReloads'
                 systemProperty 'aicompanion.gameTests.shard', "$shard/$gameTestShards".toString()
@@ -260,9 +274,7 @@ tasks.withType(JavaCompile).configureEach {
 // Regression fixtures are available to development runs, not installed in players' worlds.
 tasks.named('jar', Jar).configure {
     exclude 'dev/aicompanion/gametest/**'
-    exclude 'dev/aicompanion/entity/CompanionStairApproachTests*.class'
-    exclude 'dev/aicompanion/entity/CompanionMineK14Tests*.class'
-    exclude 'dev/aicompanion/entity/CompanionMineDeathTests*.class'
+    exclude 'dev/aicompanion/entity/*Tests*.class'
     exclude 'data/aicompanion/structure/empty.nbt'
     exclude 'data/aicompanion/structure/large_search.nbt'
     exclude 'data/aicompanion/structure/tall_tree.nbt'

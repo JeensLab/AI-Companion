@@ -51,7 +51,8 @@ public final class CompanionGymTests {
     @GameTest(template = "tall_tree", timeoutTicks = 160)
     public static void visibleAttackerTriggersDefenseWithoutModelOrGuardOrder(GameTestHelper h) {
         var c=setup(h); var p=h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId()); c.setFollowing(false); c.setItem(0,new ItemStack(Items.WOODEN_SWORD));
-        var zombie=h.spawn(EntityType.ZOMBIE,19,1,16); zombie.setNoAi(true);
+        // Farther than 4 blocks from him and 6 from the player, so only the owner-defense goal can pick it as the target.
+        var zombie=h.spawn(EntityType.ZOMBIE,26,1,16); zombie.setNoAi(true);
         p.setLastHurtByMob(zombie);
         h.succeedWhen(() -> h.assertTrue(c.getTarget()==zombie && c.getMainHandItem().is(Items.WOODEN_SWORD),"Owner defense reflex did not take control"));
     }

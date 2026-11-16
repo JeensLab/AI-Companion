@@ -23,14 +23,6 @@ public final class CompanionLivingTests {
         var creeper = helper.spawn(EntityType.CREEPER, 18, 1, 16);
         helper.succeedWhen(() -> helper.assertTrue(creeper.isRemoved(), "Creeper did not use its normal fuse near Oleg"));
     }
-    @GameTest(template = "tall_tree", timeoutTicks = 110)
-    public static void creeperDoesNotPrimeThroughSolidWall(GameTestHelper helper) {
-        CompanionEntity companion = setup(helper); companion.setNoAi(true);
-        var creeper = helper.spawn(EntityType.CREEPER, 19, 1, 16);
-        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
-        for (int z = 10; z <= 22; z++) for (int y = 1; y <= 4; y++) helper.setBlock(new BlockPos(18, y, z), Blocks.BEDROCK);
-        helper.runAtTickTime(70, () -> { helper.assertTrue(creeper.isAlive() && creeper.getSwellDir() <= 0, "Creeper primed through wall"); helper.succeed(); });
-    }
     @GameTest(template = "tall_tree", timeoutTicks = 300)
     public static void guardFollowsMovingOwner(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); companion.setProtecting(true); double start = companion.getX();

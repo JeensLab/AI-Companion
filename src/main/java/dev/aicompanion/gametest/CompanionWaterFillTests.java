@@ -49,8 +49,8 @@ public final class CompanionWaterFillTests {
     public static void theDragonGoalWantsABucketOfWaterBeforeTheObsidian(GameTestHelper h) {
         var book = CompanionPlaybooks.of("defeat_ender_dragon", 0);
         List<String> labels = book.milestones().stream().map(milestone -> milestone.label(false)).toList();
-        int water = labels.indexOf("ведро воды");
-        h.assertTrue(water > 0 && labels.get(water - 1).equals("огниво") && labels.get(water + 1).equals("10 обсидиана"), "Not between the flint and the obsidian: " + labels);
+        int water = labels.indexOf("ведро воды"), flint = labels.indexOf("огниво");
+        h.assertTrue(flint >= 0 && flint < water && water < labels.indexOf("10 обсидиана"), "Not between the flint and the obsidian: " + labels);
         var milestone = book.milestones().get(water);
         h.assertTrue(milestone.supported(), "He is said not to know how to get water");
         h.assertTrue(CompanionPlaybooks.of("prepare_nether", 0).milestones().stream().noneMatch(m -> m.label(false).equals("ведро воды")), "The Nether goal wants water");

@@ -56,6 +56,38 @@ public final class CompanionObtainTests {
         h.succeed();
     }
 
+    /**
+     * Plan only: the plan ends in the item asked for or says it cannot. A wood block is logs of its species and a craft, a stripped
+     * log and a named stone of the cobblestone family are refused (they used to be planned as any log and any stone); white wool is
+     * found among the sixteen wools a dyeing recipe takes.
+     */
+    @GameTest(template = "empty")
+    public static void aPlanEndsInTheItemAskedFor(GameTestHelper h) {
+        var wood = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:birch_wood", 3);
+        h.assertTrue(!wood.refused() && wood.steps().size() == 2 && wood.steps().get(0).equals(new CompanionObtain.Step("gather_wood", "minecraft:birch_log", 4))
+                && wood.steps().get(1).equals(new CompanionObtain.Step("craft_item", "minecraft:birch_wood", 3)), "Birch wood: " + wood);
+        for (String item : List.of("minecraft:blackstone", "minecraft:cobbled_deepslate")) {
+            var plan = CompanionObtain.plan(h.getLevel(), List.of(), false, item, 1);
+            h.assertTrue(plan.refused() && plan.steps().isEmpty(), item + " is not what chopping or digging gives: " + plan);
+        }
+        // What he already carries is his: «набери и дай» goes on to the giving.
+        for (Item item : List.of(Items.STRIPPED_OAK_LOG, Items.STRIPPED_BIRCH_WOOD, Items.BLACKSTONE, Items.COBBLED_DEEPSLATE)) {
+            var plan = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(item, 10)), false, net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString(), 5);
+            h.assertTrue(!plan.refused() && plan.steps().isEmpty(), "Ten carried, five asked: " + item + " " + plan);
+        }
+        var hyphae = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.CRIMSON_STEM, 3)), false, "minecraft:crimson_hyphae", 4);
+        h.assertTrue(hyphae.steps().equals(List.of(new CompanionObtain.Step("gather_wood", "minecraft:crimson_stem", 5), new CompanionObtain.Step("craft_item", "minecraft:crimson_hyphae", 4))), "Hyphae: " + hyphae);
+        // Acacia wood carried is no acacia log: the logs asked for are still to be cut (a village temple needs both).
+        var logs = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.ACACIA_WOOD, 6), new ItemStack(Items.ACACIA_LOG, 1)), false, "minecraft:acacia_log", 4);
+        h.assertTrue(logs.steps().equals(List.of(new CompanionObtain.Step("gather_wood", "minecraft:acacia_log", 3))), "Wood counted as logs: " + logs);
+        var cobble = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:cobblestone", 5);
+        h.assertTrue(types(cobble).equals(List.of("gather_stone")), "Cobblestone: " + cobble);
+        var wool = CompanionObtain.plan(h.getLevel(), List.of(), false, "minecraft:blue_wool", 1);
+        h.assertTrue(!wool.refused() && indexOf(wool, "hunt_animals", "minecraft:sheep") >= 0 && indexOf(wool, "mine_ore", "minecraft:lapis_ore") >= 0
+                && wool.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:blue_wool", 1)), "Blue wool: " + wool);
+        h.succeed();
+    }
+
     /** Plan only: a flint and steel from an empty bag is iron ore, the furnace, flint dug out of gravel, then the craft. */
     @GameTest(template = "empty")
     public static void flintAndSteelIsPlannedFromOreAndGravel(GameTestHelper h) {
@@ -129,23 +161,10 @@ public final class CompanionObtainTests {
         });
     }
 
-    /** Iron ingots: the ore mined, the raw iron smelted in the furnace nearby. */
-    @GameTest(template = "tall_tree", timeoutTicks = 2400)
-    public static void ironIngotsFromOre(GameTestHelper h) {
-        ground(h);
-        h.setBlock(new BlockPos(20, GROUND + 1, 16), Blocks.IRON_ORE); h.setBlock(new BlockPos(20, GROUND + 1, 17), Blocks.IRON_ORE);
-        h.setBlock(new BlockPos(13, GROUND + 1, 19), Blocks.FURNACE);
-        CompanionEntity companion = spawn(h);
-        companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
-        companion.setItem(0, new ItemStack(Items.COAL, 2));
-        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:iron_ingot\",\"count\":2}]");
-        h.succeedWhen(() -> {
-            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + companion.getLastTaskResult());
-            h.assertTrue(count(companion, Items.IRON_INGOT) >= 2, future.join().report());
-        });
-    }
-
-    /** An ingot leaves the bag after the smelting (a pickaxe upgrade in the game): the missing ore is dug up and smelted too. */
+    /**
+     * Iron ingots: the ore mined, the raw iron smelted in the furnace nearby; an ingot then leaves the bag after the smelting
+     * (a pickaxe upgrade in the game): the missing ore is dug up and smelted too.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 3600)
     public static void ingotsLostOnTheWayAreMinedAgain(GameTestHelper h) {
         ground(h);
@@ -253,7 +272,7 @@ public final class CompanionObtainTests {
     public static void anUnobtainableItemIsRefusedAtOnce(GameTestHelper h) {
         ground(h);
         CompanionEntity companion = spawn(h);
-        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:ender_pearl\",\"count\":1}]");
+        var future = run(h, companion, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:blaze_rod\",\"count\":1}]");
         h.succeedWhen(() -> {
             h.assertTrue(future.isDone(), "Plan still running");
             var outcome = future.join();

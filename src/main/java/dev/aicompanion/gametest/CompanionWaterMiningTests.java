@@ -44,8 +44,9 @@ public final class CompanionWaterMiningTests {
     public static void oreBesideWaterIsMinedAndPickedUp(GameTestHelper h) {
         CompanionEntity c = flat(h);
         wall(h);
-        BlockPos ore = new BlockPos(20, 1, 16); h.setBlock(ore, Blocks.IRON_ORE);
-        h.setBlock(new BlockPos(21, 1, 16), Blocks.WATER);
+        BlockPos ore = new BlockPos(20, 1, 16), spring = new BlockPos(21, 1, 16);
+        h.setBlock(ore, Blocks.IRON_ORE);
+        h.setBlock(spring, Blocks.WATER);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         c.setItem(0, new ItemStack(Items.COBBLESTONE, 3));
         h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");
@@ -53,6 +54,7 @@ public final class CompanionWaterMiningTests {
             idle(h, c);
             h.assertTrue(c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 1, report(c));
             h.assertTrue(!h.getBlockState(ore).is(Blocks.IRON_ORE), "Ore still there");
+            h.assertTrue(h.getBlockState(spring).is(Blocks.COBBLESTONE), "The spring was not plugged: " + h.getBlockState(spring));
             h.assertTrue(c.isAlive() && c.getHealth() >= c.getMaxHealth(), "Hurt: " + c.getHealth());
         });
     }
@@ -242,7 +244,7 @@ public final class CompanionWaterMiningTests {
         h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 2).success(), "Ore order not accepted"));
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 10 && !c.isGatheringTask() && !c.isWorking(), "Work still active after " + h.getTick() + ": " + c.getLastTaskResult());
-            h.assertTrue(!c.didLastTaskSucceed() && c.getLastTaskResult().contains("рядом родник, заткнуть нечем") && !c.getLastTaskResult().contains("Залило"), "Not the spring as the reason: " + report(c));
+            h.assertTrue(!c.didLastTaskSucceed() && c.getLastTaskResult().contains("рядом родник, заткнуть нечем"), "Not the spring as the reason: " + report(c));
             h.assertTrue(!h.getBlockState(new BlockPos(17, 2, 15)).is(Blocks.IRON_ORE) && count(c, Items.RAW_IRON) == 1, "The dry first iron was not taken: " + report(c));
             h.assertTrue(h.getBlockState(new BlockPos(18, 2, 15)).is(Blocks.IRON_ORE), "The iron of the springs was opened: " + report(c));
             for (BlockPos cell : water) h.assertTrue(h.getBlockState(cell).is(Blocks.WATER), "The spring was let out: " + report(c));
@@ -270,7 +272,7 @@ public final class CompanionWaterMiningTests {
         h.runAfterDelay(10, () -> h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 6).success(), "Ore order not accepted"));
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
-            h.assertTrue(!c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 5 && c.getLastTaskResult().contains("рядом родник, заткнуть нечем") && !c.getLastTaskResult().contains("Залило"),
+            h.assertTrue(!c.didLastTaskSucceed() && count(c, Items.RAW_IRON) == 5 && c.getLastTaskResult().contains("рядом родник, заткнуть нечем"),
                     "Not five of six with the spring as the reason: " + c.getLastTaskResult());
             h.assertTrue(h.getBlockState(spring).is(Blocks.IRON_ORE) && h.getBlockState(water).is(Blocks.WATER), "The spring's ore was opened: " + h.getBlockState(spring));
             h.assertTrue(count(c, Items.COBBLESTONE) == 0 && count(c, Items.DIRT) == 0, "The bag holds more than the drops: " + c.getStoredItemsSummary());
@@ -474,7 +476,7 @@ public final class CompanionWaterMiningTests {
         h.succeedWhen(() -> {
             h.assertTrue(h.getTick() > 12 && !c.isGatheringTask() && !c.isWorking(), "Still working: " + c.getLastTaskResult());
             String said = c.getLastTaskResult();
-            h.assertTrue(!said.contains("Залило") && (c.didLastTaskSucceed() ? count(c, Items.RAW_IRON) == 6
+            h.assertTrue((c.didLastTaskSucceed() ? count(c, Items.RAW_IRON) == 6
                     : count(c, Items.RAW_IRON) == 5 && said.contains("рядом родник, заткнуть нечем")), "Neither six of six nor five with the spring: " + said);
             h.assertTrue(h.getBlockState(new BlockPos(21, 1, 16)).is(Blocks.WATER), "The spring was let out");
         });

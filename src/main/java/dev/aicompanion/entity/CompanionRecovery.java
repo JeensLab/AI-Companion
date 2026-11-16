@@ -3,6 +3,7 @@ package dev.aicompanion.entity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
@@ -11,6 +12,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.Path;
@@ -47,16 +49,45 @@ final class CompanionRecovery {
     private BlockPos stepUp, stepFrom;
     private int stepTicks;
     private final java.util.Set<Long> blockedStairs = new java.util.HashSet<>();
+    /**
+     * The player's height over the last second (one slot a tick), and whether he fell: 8+ blocks down in that time. Free fall
+     * covers that in ~16 ticks; a ladder (0.15 a tick) or digging down only ~3 blocks, so those are followed.
+     */
+    private final double[] playerHeights = new double[20];
+    { java.util.Arrays.fill(playerHeights, Double.NaN); }
+    private boolean playerFell;
     CompanionRecovery(CompanionEntity owner) { this.owner = owner; breaking = new CompanionBlockBreaking(owner); }
     boolean active() { return active; }
     /** How many rescues have started: a work paused by one reads the change once it runs again. */
     int begun() { return begun; }
 
+    /** Skyblock probe 15.11: a player who fell off an island is waited for, not dug to; one who dug or walked down is followed. */
+    private void watchFall() {
+        var player = owner.getOwnerPlayer();
+        // No player yet (the world is loading): the saved flag is kept; another dimension forgets it.
+        if (player == null) { java.util.Arrays.fill(playerHeights, Double.NaN); return; }
+        if (player.level() != owner.level()) { playerFell = false; java.util.Arrays.fill(playerHeights, Double.NaN); return; }
+        int slot = (int) (owner.level().getGameTime() % playerHeights.length);
+        double top = player.getY();
+        for (double height : playerHeights) if (!Double.isNaN(height)) top = Math.max(top, height);
+        playerHeights[slot] = player.getY();
+        if (top - player.getY() >= 8) playerFell = true;
+        else if (player.getY() >= owner.getY() - 1.25) playerFell = false;
+    }
+    void save(CompoundTag tag) { tag.putBoolean("PlayerFell", playerFell); }
+    void load(CompoundTag tag) { playerFell = tag.getBoolean("PlayerFell"); } // absent in older saves: false
+    private boolean waitsForFallenPlayer(BlockPos intent) {
+        var player = owner.getOwnerPlayer();
+        return playerFell && player != null && intent.distSqr(player.blockPosition()) <= 9;
+    }
+
     void observe() {
+        watchFall();
         if (active) return;
         BlockPos intent = owner.recoveryDestination();
         if (!owner.canRecoverRoute() || intent == null || owner.isMiningAnimation() || owner.actionAnimation() != 0) { stalled = 0; observed = owner.position(); return; }
         if (observed == null || owner.position().distanceToSqr(observed) > .25) { observed = owner.position(); stalled = 0; return; }
+        if (waitsForFallenPlayer(intent)) { stalled = 0; return; }
         boolean trying = !owner.getNavigation().isDone();
         int walls = 0;
         for (Direction direction : Direction.Plane.HORIZONTAL) {
@@ -68,8 +99,10 @@ final class CompanionRecovery {
         // within arm's reach is work, not a destination; and standing still is a failed route only if no route is found.
         boolean inHand = withinHand(intent);
         boolean trappedBelow = !inHand && walls >= 3 && intent.getY() - owner.getY() > 1.25 && intent.distSqr(owner.blockPosition()) < 32 * 32;
+        // A portal's entry in the Nether is walked into from a cell before it, not stood near: a wall within four blocks of it is no «near
+        // enough». Elsewhere a portal walk keeps the old rule (a fence by the player's portal is no reason to dig round it).
         boolean failedRoute = !inHand && owner.getNavigation().isDone() && (intent.getY() - owner.getY() > .75
-                || intent.distSqr(owner.blockPosition()) > 16) && routeMissing(intent);
+                || intent.distSqr(owner.blockPosition()) > 16 || owner.portals.walking() && owner.level().dimension() == Level.NETHER) && routeMissing(intent);
         if (trying || trappedBelow || failedRoute) stalled++; else stalled = 0;
     }
     private boolean withinHand(BlockPos intent) {
@@ -155,6 +188,11 @@ final class CompanionRecovery {
             owner.getNavigation().stop(); owner.getJumpControl().jump();
             owner.workStatus("Выбираюсь: подпрыгну и поставлю блок под ноги."); return;
         }
+        // Straight on through a wall at his own height (the Nether's rock between a pit's top and the portal): the passage is dug cell by cell
+        // and stepped into; the cells round him below would be opened without ever getting him through more than one block of it.
+        // Only on a walk to a portal in the Nether (the errand's walk out, or the player's «зайди в портал» there): following the player or
+        // walking to work he never bores through the land (review 15.11).
+        if (Math.abs(destination.getY() - owner.getY()) <= 1.5 && level.dimension() == Level.NETHER && owner.portals.walking() && tunnelStep(level)) return;
         digTarget = findDigTarget(level);
         if (digTarget != null) { dig(level); return; }
         // An item just dislodged above the mob may still be falling toward pickup range.
@@ -272,6 +310,37 @@ final class CompanionRecovery {
         }
         return false;
     }
+    /**
+     * A passage two cells high towards the destination: the cell in front and the one over it are dug if closed, then stepped into.
+     * Only a cell nearer to the destination, on a floor that holds, with no fire, fluid or portal in it (a lit portal is no way for his
+     * own feet: called to the player behind a wall with a portal in it, he stays); none, and nothing is done here. Never into the player's
+     * building, a pressure plate, tripwire, berry bush or powder snow, or a cell with lava beside it.
+     */
+    private boolean tunnelStep(ServerLevel level) {
+        BlockPos feet = owner.blockPosition();
+        java.util.function.Predicate<BlockPos> builds = CompanionPicking.sites(owner, level);
+        java.util.List<Direction> directions = new java.util.ArrayList<>(Direction.Plane.HORIZONTAL.stream().toList());
+        directions.sort(java.util.Comparator.comparingDouble((Direction direction) -> direction == stairDirection ? -1 : feet.relative(direction).distSqr(destination)));
+        for (Direction direction : directions) {
+            BlockPos step = feet.relative(direction), head = step.above(), floor = step.below();
+            if (blockedStairs.contains(feet.asLong() * 4 + direction.get2DDataValue()) || step.distSqr(destination) >= feet.distSqr(destination)) continue;
+            if (!level.hasChunkAt(step) || !level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP) || hot(level.getBlockState(floor))
+                    || !level.getFluidState(step).isEmpty() || !level.getFluidState(head).isEmpty() || nearFire(level, step) || nearFire(level, head)
+                    || gate(level.getBlockState(step)) || gate(level.getBlockState(head))
+                    || builds.test(step) || builds.test(head) || trap(level, step) || trap(level, head)) continue;
+            BlockPos closed = null;
+            for (BlockPos cell : new BlockPos[]{step, head})
+                if (!level.getBlockState(cell).getCollisionShape(level, cell).isEmpty()) { closed = cell; break; }
+            if (closed != null && !safeToDig(level, closed)) continue;
+            stairDirection = direction;
+            owner.workStatus("Выбираюсь: прокапываю проход к цели.");
+            if (closed != null) { digTarget = closed.immutable(); dig(level); return true; }
+            stepUp = step.immutable(); stepFrom = feet; stepTicks = 0;
+            owner.getNavigation().stop();
+            return true;
+        }
+        return false;
+    }
     /** Onto the step just cut; a step that cannot be taken is not tried again from the same cell. */
     private void stepUp() {
         owner.getMoveControl().setWantedPosition(stepUp.getX() + .5, stepUp.getY(), stepUp.getZ() + .5, .6);
@@ -337,6 +406,17 @@ final class CompanionRecovery {
      */
     private static boolean rock(BlockState state) {
         return CompanionWork.isStone(state) || state.is(Blocks.NETHERRACK) || state.is(Blocks.END_STONE);
+    }
+    /** A cell he must not walk into: a trigger, a bush that hurts, powder snow, lava beside it. */
+    private static boolean trap(ServerLevel level, BlockPos cell) {
+        BlockState state = level.getBlockState(cell);
+        if (state.is(net.minecraft.tags.BlockTags.PRESSURE_PLATES) || state.is(Blocks.TRIPWIRE) || state.is(Blocks.SWEET_BERRY_BUSH) || state.is(Blocks.POWDER_SNOW)) return true;
+        for (Direction direction : Direction.values())
+            if (level.getFluidState(cell.relative(direction)).is(net.minecraft.tags.FluidTags.LAVA)) return true;
+        return false;
+    }
+    private static boolean gate(BlockState state) {
+        return state.is(Blocks.NETHER_PORTAL) || state.is(Blocks.END_PORTAL) || state.is(Blocks.END_GATEWAY);
     }
     /** Burns or scorches where he would stand or drop: in the Nether fire lies on netherrack and magma in it (review 05.11). */
     private static boolean hot(BlockState state) {

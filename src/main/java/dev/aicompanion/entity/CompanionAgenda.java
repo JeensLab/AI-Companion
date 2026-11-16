@@ -75,7 +75,7 @@ public final class CompanionAgenda {
     /** Requests that leave the goal as it is: goals themselves, the bag check, the mode of his own deeds. */
     private static final Set<String> NEUTRAL = Set.of("pursue_goal", "verify_item", "autonomy");
     /** A request of only these (follow, stay, guard…) holds the goal until the player says to go on. */
-    public static final Set<String> MODES = Set.of("follow", "wait", "come", "walk_heading", "protect", "stop_protect", "stop", "wander", "enter_portal");
+    public static final Set<String> MODES = Set.of("follow", "wait", "come", "walk_heading", "protect", "stop_protect", "stop", "wander", "enter_portal", "campfire_song");
     private static final Map<UUID, Integer> LEASES = new ConcurrentHashMap<>();
     private static final Map<UUID, Boolean> REQUESTS = new ConcurrentHashMap<>();
     private static final Map<UUID, Run> RUNS = new HashMap<>();
@@ -402,6 +402,7 @@ public final class CompanionAgenda {
         }
         if (run != null) { goal.workTicks += 20; return; }
         if (leased(server, owner)) return;
+        if (c.level() != player.level()) { waiting(data, owner, goal, c, "жду, пока окажемся в одном мире"); return; }
         if (!free(c)) { waiting(data, owner, goal, c, "занят другим делом"); return; }
         if (c.batches().readyForQueue()) { waiting(data, owner, goal, c, "жду готовую партию из печи по твоей просьбе"); return; }
         if (c.level().getGameTime() < goal.waitUntil) return;

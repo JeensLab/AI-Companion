@@ -1,6 +1,7 @@
 package dev.aicompanion.client;
 
 import dev.aicompanion.CompanionHealth;
+import dev.aicompanion.entity.CompanionCampfire;
 import dev.aicompanion.entity.CompanionEntity;
 import net.minecraft.client.model.PlayerModel;
 import net.minecraft.client.model.HumanoidModel;
@@ -38,6 +39,9 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
                 if (entity.isUsingItem() && entity.getUsedItemHand() == net.minecraft.world.InteractionHand.OFF_HAND
                         && entity.getOffhandItem().canPerformAction(net.neoforged.neoforge.common.ItemAbilities.SHIELD_BLOCK)) leftArmPose = ArmPose.BLOCK;
                 if (entity.isUsingItem() && entity.getUsedItemHand() == net.minecraft.world.InteractionHand.MAIN_HAND && entity.getMainHandItem().getItem() instanceof net.minecraft.world.item.BowItem) rightArmPose = ArmPose.BOW_AND_ARROW;
+                int campfire = entity.campfirePose();
+                // By the fire he sits on the ground (the game's own seated legs) with both hands on the guitar.
+                if (campfire != CompanionCampfire.STANDING) { riding = true; rightArmPose = leftArmPose = ArmPose.EMPTY; }
                 super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
                 skin.animate(entity.expression(), CompanionVoiceAudio.mouthOpen(entity), ageInTicks + entity.getId() * 17);
                 if (entity.actionAnimation() != 0) {
@@ -47,6 +51,15 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
                     leftArm.xRot = entity.actionAnimation() == 2 ? -.95F - stroke * .15F : -.25F;
                     body.yRot = stroke * .045F;
                     rightSleeve.copyFrom(rightArm); leftSleeve.copyFrom(leftArm); jacket.copyFrom(body);
+                }
+                if (campfire != CompanionCampfire.STANDING) {
+                    // The right hand over the sound hole strums while he plays; the left holds the neck by the head of the guitar.
+                    // An unhurried stroke (owner 09.11: it twitched over the strings): a down-and-up in about 0.6 s, a little livelier to a cheerful tune.
+                    float pace = entity.expression() == dev.aicompanion.CompanionExpression.PLEASED ? .75F : .5F;
+                    float strum = campfire == CompanionCampfire.PLAYING ? net.minecraft.util.Mth.sin(ageInTicks * pace) : 0;
+                    rightArm.xRot = -.93F + strum * .13F; rightArm.yRot = -.28F; rightArm.zRot = 0;
+                    leftArm.xRot = -1.14F; leftArm.yRot = -.33F; leftArm.zRot = 0;
+                    rightSleeve.copyFrom(rightArm); leftSleeve.copyFrom(leftArm);
                 }
             }
         }, 0.5F);
@@ -60,6 +73,8 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
             }
             @Override public void render(com.mojang.blaze3d.vertex.PoseStack pose, net.minecraft.client.renderer.MultiBufferSource buffers, int light,
                     CompanionEntity entity, float limbSwing, float limbAmount, float partialTicks, float age, float yaw, float pitch) {
+                // Both hands are on the guitar: what he holds stays where it is, but is not drawn.
+                if (entity.campfirePose() != CompanionCampfire.STANDING) return;
                 if (!entity.actionItem().isEmpty()) {
                     renderArmWithItem(entity, entity.actionItem(), net.minecraft.world.item.ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
                             net.minecraft.world.entity.HumanoidArm.RIGHT, pose, buffers, light);
@@ -70,12 +85,40 @@ public final class CompanionRenderer extends HumanoidMobRenderer<CompanionEntity
         });
         addLayer(new HumanoidArmorLayer<>(this, new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
                 new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), context.getModelManager()));
+        addLayer(new GuitarLayer(this, context.getItemRenderer()));
+    }
+
+    /** His guitar across his lap while he sits by the fire (CompanionCampfire); it exists only here, in his hands. */
+    private static final class GuitarLayer extends net.minecraft.client.renderer.entity.layers.RenderLayer<CompanionEntity, PlayerModel<CompanionEntity>> {
+        private final net.minecraft.client.renderer.entity.ItemRenderer items;
+        private net.minecraft.world.item.ItemStack guitar;
+        GuitarLayer(CompanionRenderer parent, net.minecraft.client.renderer.entity.ItemRenderer items) { super(parent); this.items = items; }
+        @Override public void render(com.mojang.blaze3d.vertex.PoseStack pose, net.minecraft.client.renderer.MultiBufferSource buffers, int light,
+                CompanionEntity entity, float limbSwing, float limbAmount, float partialTicks, float age, float yaw, float pitch) {
+            if (entity.campfirePose() == CompanionCampfire.STANDING) return;
+            if (guitar == null) guitar = new net.minecraft.world.item.ItemStack(dev.aicompanion.AICompanionMod.GUITAR.get());
+            pose.pushPose();
+            // Model space (a pixel is 1/16, y down, his front at -z): the sound hole in front of his belly, the body on his right thigh.
+            pose.translate(-1.5F / 16, 7F / 16, -6.5F / 16);
+            // The item's own axes: x along the neck to his left, y up, z out of the top.
+            pose.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180));
+            pose.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(20));
+            pose.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-10));
+            pose.scale(1.15F, 1.15F, 1.15F);
+            // The model's sound hole is at (5.2, 8, 9) of its 16: brought to the point above.
+            pose.translate(2.8F / 16, 0, -1F / 16);
+            items.renderStatic(guitar, net.minecraft.world.item.ItemDisplayContext.FIXED, light, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY,
+                    pose, buffers, entity.level(), entity.getId());
+            pose.popPose();
+        }
     }
 
     /** The fast stroke lying flat, as the game turns a swimming player (PlayerRenderer); the arms are the model's own crawl. */
     @Override
     protected void setupRotations(CompanionEntity entity, com.mojang.blaze3d.vertex.PoseStack pose, float bob, float yBodyRot, float partialTick, float scale) {
         super.setupRotations(entity, pose, bob, yBodyRot, partialTick, scale);
+        // Seated on the ground, not on a mount: the whole model goes down until the legs lie on the ground.
+        if (entity.campfirePose() != CompanionCampfire.STANDING) pose.translate(0, -.55F, 0);
         float swim = entity.getSwimAmount(partialTick);
         if (swim <= 0) return;
         pose.mulPose(com.mojang.math.Axis.XP.rotationDegrees(net.minecraft.util.Mth.lerp(swim, 0.0F, entity.isInWater() ? -90.0F - entity.getXRot() : -90.0F)));

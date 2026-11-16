@@ -33,9 +33,11 @@ import java.util.concurrent.CompletableFuture;
 @EventBusSubscriber(modid = AICompanionMod.MOD_ID, value = Dist.CLIENT)
 public final class CompanionJokeClientProbe {
     private static boolean started, finished, soundStarted;
-    private static int phase, checks;
+    private static int phase, checks, loggedPhase = -1;
     private static long deadline;
     private static long beforeAudio;
+    private static final String LONG_STORY = "Проверка длинной байки. " + "Олег вспоминал старую шахту и дорогу домой. ".repeat(12) + "Конец истории номер 145.";
+    private static long deliveryStarted;
     private static CompletableFuture<Void> audio;
 
     @SubscribeEvent public static void sound(PlayStreamingSourceEvent event) {
@@ -43,11 +45,12 @@ public final class CompanionJokeClientProbe {
                 && event.getSound().getClass().getName().endsWith("CompanionVoiceAudio$Voice")) soundStarted = true;
     }
 
+    @SuppressWarnings("unchecked")
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) throws Exception {
         if (!Boolean.getBoolean("aicompanion.jokeProbe") || finished) return;
         var mc = Minecraft.getInstance();
         if (!started && mc.screen instanceof TitleScreen) {
-            started = true; deadline = System.nanoTime() + 120_000_000_000L;
+            started = true; deadline = System.nanoTime() + 240_000_000_000L;
             // Fail before any config mutation: the UI checks call save() on the entire config specification.
             if (!java.nio.file.Files.isRegularFile(mc.gameDirectory.toPath().resolve(".jokes-probe-disposable"))
                     || !OpenRouterConfig.API_KEY.get().isBlank() || !OpenRouterConfig.API_URL.get().isBlank()
@@ -55,7 +58,7 @@ public final class CompanionJokeClientProbe {
                 fail(mc, "Dedicated disposable directory with empty credentials is required"); return;
             }
             OpenRouterConfig.LONG_TERM_MEMORY.set(false);
-            OpenRouterConfig.WINDOWS_VOICE.set(false);
+            OpenRouterConfig.WINDOWS_VOICE.set(false); OpenRouterConfig.MACOS_VOICE.set(false);
             mc.createWorldOpenFlows().createFreshLevel("JokesQA-" + System.currentTimeMillis(),
                     new LevelSettings("Offline jokes QA", GameType.CREATIVE, false, Difficulty.PEACEFUL, true,
                             new GameRules(), WorldDataConfiguration.DEFAULT), new WorldOptions(0L, false, false),
@@ -63,8 +66,11 @@ public final class CompanionJokeClientProbe {
                             .value().createWorldDimensions(), mc.screen);
         }
         if (!started) return;
+        if (phase != loggedPhase) { AICompanionMod.LOGGER.info("JOKE_PROBE_PHASE: {}", phase); loggedPhase = phase; }
         if (System.nanoTime() > deadline) { fail(mc, "Probe timed out at phase " + phase); return; }
-        if (mc.level == null || mc.player == null || mc.level.getGameTime() % 20 != 0) return;
+        if (mc.level == null || mc.player == null) return;
+        // Menus pause world time: asynchronous file phases must still advance on client ticks.
+        if ((phase == 0 || phase == 1) && mc.level.getGameTime() % 20 != 0) return;
         var speaker = CompanionVoiceAudio.speaker();
         if (speaker == null) return;
         try {
@@ -81,7 +87,9 @@ public final class CompanionJokeClientProbe {
                 blocked(mc, speaker, "open menu", () -> mc.setScreen(new TitleScreen()));
                 prepare(mc, speaker);
                 invokeTick();
-                check(lastJoke() == mc.level.getGameTime(), "Quiet scene did not deliver a joke");
+                deliveryStarted = mc.level.getGameTime(); phase = 2;
+            } else if (phase == 2 && historyContainsJoke()) {
+                check(lastJoke() >= deliveryStarted, "Quiet scene did not deliver a joke: " + lastJoke() + " < " + deliveryStarted);
                 check(historyContainsJoke(), "Joke did not reach the actual conversation history");
                 check(!conversation().ready(mc.level.getGameTime()), "Joke did not reserve the conversation pause");
                 check(conversation().nextOpportunity() >= mc.level.getGameTime() + CompanionConversation.MIN_GAP,
@@ -100,8 +108,44 @@ public final class CompanionJokeClientProbe {
                 invokeTick();
                 check(lastJoke() == beforeAudio, "Joke interrupted actual local audio playback");
                 audio.cancel(false); InworldTtsClient.resetPlaybackQueue();
+                java.util.Locale.setDefault(java.util.Locale.ENGLISH);
+                mc.getLanguageManager().setSelected("en_us");
+                var files = Class.forName("dev.aicompanion.client.CompanionJokeFiles");
+                field(files, "russianPlayer").setBoolean(null, false);
+                java.nio.file.Files.writeString(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("aicompanion-jokes.txt"),
+                        "# format: blocks\n" + LONG_STORY + "\n");
+                openFileScreen(mc); press(mc, "Перезагрузить"); phase = 3;
+            } else if (phase == 3 && !filesLoading()) {
+                check(fileStatus().contains("Из файла: 1"), "File was not loaded through UI");
+                prepare(mc, speaker); OpenRouterConfig.MACOS_VOICE.set(true); OpenRouterConfig.MACOS_VOICE.save();
+                deliveryStarted = mc.level.getGameTime(); soundStarted = false; invokeTick(); phase = 4;
+            } else if (phase == 4 && lastJoke() >= deliveryStarted) {
+                check(field(OpenRouterClient.class, "HISTORY").get(null).toString().contains("Внимание, анекдот. " + LONG_STORY), "Custom story announcement or full text missing from history");
+                audio = (CompletableFuture<Void>) field(InworldTtsClient.class, "playbackQueue").get(null);
+                phase = 5;
+            } else if (phase == 5 && audio.isDone()) {
+                audio.join(); check(soundStarted, "Long story did not reach actual local speech playback");
+                java.nio.file.Files.write(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get().resolve("aicompanion-jokes.txt"), new byte[]{(byte)0xc3,0x28});
+                openFileScreen(mc); press(mc, "Перезагрузить"); phase = 6;
+            } else if (phase == 6 && !filesLoading()) {
+                check(fileStatus().contains("Прежний набор сохранён"), "Read error was not reported");
+                var bank = (java.util.List<?>) field(CompanionJokes.class, "bank").get(field(ambient(), "jokes").get(null));
+                check(bank.size() == 1 && bank.toString().contains(LONG_STORY), "Read error destroyed last working bank");
+                // An abandoned future must not be installed after leaving a world.
+                var files = Class.forName("dev.aicompanion.client.CompanionJokeFiles");
+                var abandoned = new CompletableFuture<dev.aicompanion.CompanionJokeBank.Bank>();
+                field(files,"loading").set(null,abandoned);
+                var reset = files.getDeclaredMethod("reset", boolean.class); reset.setAccessible(true); reset.invoke(null,false);
+                abandoned.complete(new dev.aicompanion.CompanionJokeBank.Bank(java.util.List.of(), dev.aicompanion.CompanionJokeBank.parse("")));
+                check(!filesLoading(), "Old world load survived reset");
+                mc.getLanguageManager().setSelected("ru_ru");
+                ((CompanionJokes) field(ambient(), "jokes").get(null)).reloadBank(java.util.List.of());
+                reset.invoke(null,true); phase = 7;
+            } else if (phase == 7 && !filesLoading()) {
+                var bank = (java.util.List<?>) field(CompanionJokes.class, "bank").get(field(ambient(), "jokes").get(null));
+                check(bank.size() == 40, "Invalid file on world entry lost Russian bundled fallback");
                 finished = true;
-                AICompanionMod.LOGGER.info("JOKE_CLIENT_PROBE_PASSED: {} checks; real client tick, UI buttons, local WAV playback; no provider requests", checks);
+                AICompanionMod.LOGGER.info("JOKE_CLIENT_PROBE_PASSED: {} checks; async file/UI reload, long local speech, error preservation, world reset; no provider requests", checks);
                 mc.stop();
             }
         } catch (Exception | AssertionError error) { fail(mc, error.toString()); }
@@ -117,6 +161,16 @@ public final class CompanionJokeClientProbe {
         conversation().reset(now - 100_000, 0); conversation().trackObservation(speaker.socialSequence());
         field(ambient(), "world").set(null, mc.level); field(ambient(), "companion").set(null, speaker.getUUID());
         ((CompanionJokes) field(ambient(), "jokes").get(null)).reset(now - 100_000, 0);
+    }
+    private static boolean filesLoading() throws Exception { return field(Class.forName("dev.aicompanion.client.CompanionJokeFiles"), "loading").get(null) != null; }
+    private static String fileStatus() throws Exception { return (String) field(Class.forName("dev.aicompanion.client.CompanionJokeFiles"), "status").get(null); }
+    private static void openFileScreen(Minecraft mc) throws Exception {
+        var constructor = Class.forName("dev.aicompanion.client.CompanionJokeScreen").getDeclaredConstructor(Screen.class);
+        constructor.setAccessible(true); mc.setScreen((Screen) constructor.newInstance((Screen)null));
+    }
+    private static void press(Minecraft mc, String text) {
+        mc.screen.children().stream().filter(c -> c instanceof Button b && b.getMessage().getString().equals(text))
+                .map(Button.class::cast).findFirst().orElseThrow().onPress();
     }
     private interface Change { void run() throws Exception; }
     private static void blocked(Minecraft mc, CompanionEntity speaker, String label, Change change) throws Exception {
@@ -145,7 +199,7 @@ public final class CompanionJokeClientProbe {
     private static void invokeTick() throws Exception { var method = ambient().getDeclaredMethod("tick"); method.setAccessible(true); method.invoke(null); }
     private static boolean historyContainsJoke() throws Exception {
         String history = field(OpenRouterClient.class, "HISTORY").get(null).toString();
-        return CompanionJokes.ALL.stream().anyMatch(history::contains);
+        return CompanionJokes.ALL.stream().anyMatch(joke -> history.contains("Внимание, анекдот. " + joke));
     }
     @SuppressWarnings("unchecked") private static void flag(CompanionEntity speaker, String name, boolean value) throws Exception {
         speaker.getEntityData().set((EntityDataAccessor<Boolean>) field(CompanionEntity.class, name).get(null), value);

@@ -66,6 +66,8 @@ public final class CompanionGazeTests {
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void anOffendedCompanionLooksAway(GameTestHelper h) {
         CompanionEntity companion = spawn(h);
+        // No stroll: a walk toward the player turns his body, and the eyes on the ground ahead of it, the player's way.
+        companion.setFollowing(false);
         var player = owner(h, companion);
         var bonds = CompanionBonds.get(h.getLevel().getServer());
         // Two hits a day is the daily cap, the score drifts a point a day toward the base, and hits closer than the gap are

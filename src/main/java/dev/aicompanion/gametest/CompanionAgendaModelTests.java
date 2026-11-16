@@ -39,7 +39,7 @@ public final class CompanionAgendaModelTests {
     @AfterBatch(batch = "agenda_model_dragon") public static void afterDragon(ServerLevel level) { CompanionFixtureCleanup.afterAtomicTests(level); }
 
     /** Only a catalog id with a level of 1 or 2 is a goal, and a goal is the whole plan: anything else is invalid and nothing runs. */
-    @GameTest(template = "tall_tree", batch = "agenda_model_codec", timeoutTicks = 100)
+    @GameTest(template = "empty", timeoutTicks = 100)
     public static void pursueGoalDecodesOnlyCatalogIdsAsASingleStep(GameTestHelper h) {
         var tiered = CompanionPlanCodec.parsePlan(JsonParser.parseString(plan(goal("gear_up", ",\"count\":2"))));
         h.assertTrue(tiered.equals(List.of(new PlannedAction("pursue_goal", 0, 2, "gear_up", "auto", "near_player"))), "Tier 2 goal decoded as " + tiered);

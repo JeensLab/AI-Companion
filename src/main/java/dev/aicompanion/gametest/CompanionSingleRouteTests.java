@@ -35,13 +35,7 @@ public final class CompanionSingleRouteTests {
      */
     @GameTest(template = "tall_tree", timeoutTicks = 3000)
     public static void oreBeyondOneSearchIsWalkedToInLegs(GameTestHelper h) {
-        box(h, 0, 0, 0, 31, 7, 31, Blocks.BEDROCK);
-        box(h, 4, 2, 4, 24, 3, 4, Blocks.AIR);
-        box(h, 24, 2, 5, 24, 3, 8, Blocks.AIR);
-        box(h, 4, 2, 8, 24, 3, 8, Blocks.AIR);
-        box(h, 4, 2, 9, 4, 3, 12, Blocks.AIR);
-        box(h, 4, 2, 12, 13, 3, 12, Blocks.AIR);
-        BlockPos ore = new BlockPos(14, 2, 12); h.setBlock(ore, Blocks.IRON_ORE);
+        BlockPos ore = labyrinth(h); h.setBlock(ore, Blocks.IRON_ORE);
         CompanionEntity c = spawn(h, 4, 2, 4);
         c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
         h.assertTrue(c.startWork("mine_ore", "minecraft:iron_ore", 1).success(), "Ore order not accepted");

@@ -30,14 +30,6 @@ final class CompanionTools {
         return count;
     }
     static boolean soilItem(ItemStack stack) { return stack.is(net.minecraft.world.item.Items.DIRT) || stack.is(net.minecraft.world.item.Items.COARSE_DIRT) || stack.is(net.minecraft.world.item.Items.ROOTED_DIRT); }
-    static int inventoryHash(CompanionEntity owner) {
-        int hash = 1;
-        for (int slot = 0; slot < owner.getContainerSize(); slot++) {
-            ItemStack stack = owner.getItem(slot);
-            hash = hash * 31 + BuiltInRegistries.ITEM.getId(stack.getItem()) * 67 + stack.getCount();
-        }
-        return hash;
-    }
     /**
      * What a block he breaks gives, as for a player (issue 65): a block that needs the right tool gives nothing without it, stone by
      * hand no cobblestone. The loot table does not check that; for a player the game checks it before the drops.

@@ -176,6 +176,7 @@ public final class CompanionRouteLimitsTests {
         var nav = (CompanionNavigation) c.getNavigation();
         nav.resetMaxTick();
         h.runAtTickTime(1400, () -> {
+            h.assertTrue(nav.maxTickCells() > 0, "He never searched toward the player");
             h.assertTrue(nav.maxTickCells() <= CompanionNavigation.CHOICE_CELLS, nav.maxTickCells() + " cells searched in one tick");
             h.succeed();
         });

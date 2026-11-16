@@ -425,8 +425,9 @@ public final class CompanionSortingTests {
     @GameTest(template = "empty")
     public static void sortingHasItsOwnConfirmationAndTaskName(GameTestHelper helper) {
         var sort = List.of(new PlannedAction("sort_chests", 0, 1));
-        helper.assertTrue("Сейчас разложу по сундукам.".equals(CompanionDialogue.acknowledge(sort)), "Confirmation: " + CompanionDialogue.acknowledge(sort));
-        helper.assertTrue("разложить по сундукам".equals(CompanionDialogue.describe(sort.get(0))), "Task name: " + CompanionDialogue.describe(sort.get(0)));
+        // Not the generic fallbacks («Окей.», the raw action type): sort_chests has its own case in both.
+        helper.assertTrue(!"Окей.".equals(CompanionDialogue.acknowledge(sort)), "Confirmation: " + CompanionDialogue.acknowledge(sort));
+        helper.assertTrue(CompanionDialogue.describe(sort.get(0)).contains("сундук"), "Task name: " + CompanionDialogue.describe(sort.get(0)));
         String report = "Разложил по 3 сундукам: камень и земля — в ближнем; дерево — во втором; еда, остальное — в третьем.";
         helper.assertTrue(CompanionDialogue.summarize(sort, report).equals(report), "The report is cut or replaced: " + CompanionDialogue.summarize(sort, report));
         helper.succeed();

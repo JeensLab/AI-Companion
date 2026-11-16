@@ -20,6 +20,7 @@ gradle.projectsEvaluated {
     rootProject.neoForge.runs.client {
         gameDirectory = rootProject.file('build/jokes-client')
         systemProperty 'aicompanion.jokeProbe', 'true'
+        if (System.getProperty('os.name').toLowerCase().startsWith('mac')) jvmArguments.add '-XstartOnFirstThread'
         programArguments.addAll '--width', '1100', '--height', '720'
     }
 }

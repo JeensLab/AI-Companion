@@ -111,7 +111,8 @@ public final class CompanionFurnaceBatches {
         long remaining = 0;
         for (CompanionWork.Lot lot : open) {
             AbstractFurnaceBlockEntity oven = CompanionFurnaceReader.oven(level, lot);
-            if (oven != null) remaining = Math.max(remaining, (long) CompanionFurnaceReader.left(w.smelt, oven) * w.smelt.cookTicks());
+            // A smoker or blast furnace cooks in half the furnace's time.
+            if (oven != null) remaining = Math.max(remaining, (long) CompanionFurnaceReader.left(w.smelt, oven) * w.smelt.cookTicks() / (CompanionFurnaceReader.fast(level, lot.pos) ? 2 : 1));
         }
         if (remaining <= PARK_MIN_TICKS) return false;
         Batch batch = new Batch(w.taskId, level.dimension(), w, new ArrayList<>(w.lots.stream().filter(lot -> lot.loaded).toList()));

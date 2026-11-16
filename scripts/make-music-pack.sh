@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Builds the release pack of Oleg's guitar tracks: oleg-guitar-tracks.zip with the ready structure
+# config/aicompanion/music/<recording>. The recordings live in music/ at the repository root, outside src/main/resources: nothing of
+# them ships in the JAR, so this script is the only way the pack is made. CI runs it in the build job and uploads the zip as an
+# artifact; the release attaches that artifact.
+#
+# The game reads the whole folder, subfolders included (entity/CompanionMusicLibrary), so this script packs every .ogg in music/ and
+# its subfolders at the same path inside config/aicompanion/music/: a recording in music/lute/ goes to
+# config/aicompanion/music/lute/, where the scan looks for it. The shipped set stays top-level.
+#
+# Every recording's mood is the integer its name starts with (entity/CompanionMusicLibrary): 0 (the saddest) to 999 (the
+# happiest). The number travels with the file into the pack, so «самую грустную», «погрустнее», «повеселее» and «самую весёлую»
+# find their place on that scale there.
+#
+# The archive is reproducible: every entry gets one fixed time and mode, and the entries are written in a sorted order without
+# extra fields, so two builds of the same music/ give the same bytes and the same sha256.
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+
+music="music"
+out="oleg-guitar-tracks.zip"
+folder="config/aicompanion/music"
+
+fail() { echo "make-music-pack: $*" >&2; exit 1; }
+
+[ -d "$music" ] || fail "no $music folder in $root"
+# Every .ogg in the folder and in its subfolders, by its path inside music/: the game reads the folder that way, so the pack keeps
+# the subfolder a recording sits in.
+mapfile -t tracks < <(find "$music" -type f -name '*.ogg' | LC_ALL=C sort)
+[ "${#tracks[@]}" -gt 0 ] || fail "no .ogg recordings in $music"
+
+command -v python3 >/dev/null 2>&1 || fail "python3 is needed to check the recordings"
+command -v zip >/dev/null 2>&1 || fail "zip is needed to build the pack"
+
+# Every recording must be what the game can play from where he sits: mono, 32 kHz, and small (about 34 kbps, as the pair the mod
+# used to carry). The check reads the file exactly as the game does — the Vorbis identification header and the last page's granule
+# position (entity/CompanionMusicLibrary) — so a file the evening would have to skip is refused here instead of shipping. The
+# shipped set must also carry a mood: a name that starts with no number, or with a number outside 0–999 (a year, say), is refused,
+# so the pack never loses the recordings «самую грустную», «погрустнее», «повеселее» and «самую весёлую» need.
+python3 - "$music" <<'PY'
+import sys, pathlib
+
+folder = pathlib.Path(sys.argv[1])
+marker = b"\x01vorbis"
+total = 0
+count = 0
+failed = False
+
+def mood(name):
+    digits = 0
+    while digits < len(name) and name[digits].isdigit():
+        digits += 1
+    if digits == 0:
+        return None
+    number = int(name[:digits])
+    return number if 0 <= number <= 999 else None
+
+# The whole folder, subfolders too, as the game reads it: every file is named by its path inside music/, and the mood comes from its
+# file name wherever it sits.
+for file in sorted(folder.rglob("*.ogg"), key=lambda path: path.relative_to(folder).as_posix()):
+    rel = file.relative_to(folder).as_posix()
+    data = file.read_bytes()
+    size = len(data)
+    head = data[:65536]
+    at = head.find(marker)
+    if at < 0 or at + 16 > len(head):
+        print(f"{rel}: not Ogg Vorbis", file=sys.stderr)
+        failed = True
+        continue
+    channels = data[at + 11]
+    rate = int.from_bytes(data[at + 12:at + 16], "little")
+    granule = -1
+    tail = data[-65536:]
+    page = tail.find(b"OggS")
+    while page >= 0 and page + 14 <= len(tail):
+        samples = int.from_bytes(tail[page + 6:page + 14], "little")
+        if samples >= 0:
+            granule = samples
+        page = tail.find(b"OggS", page + 4)
+    if rate <= 0 or granule <= 0:
+        print(f"{rel}: no sample rate or granule position", file=sys.stderr)
+        failed = True
+        continue
+    seconds = granule / rate
+    bps = size * 8 / seconds
+    kind = mood(file.name)
+    problems = []
+    if channels != 1:
+        problems.append(f"{channels} channels, mono is needed to sound from a place")
+    if rate != 32000:
+        problems.append(f"{rate} Hz, 32000 is the pack's sample rate")
+    if bps > 45000:
+        problems.append(f"{bps:.0f} bps, over the 45 kbps the pack keeps to")
+    if kind is None:
+        problems.append("no mood: the name must start with 0–999 (the number is the mood)")
+    print(f"{rel}: {seconds:.1f} s, {size} bytes, {bps:.0f} bps, mono 32 kHz, {str(kind) if kind is not None else 'no mood'}" if not problems
+          else f"{rel}: " + "; ".join(problems), file=sys.stderr if problems else sys.stdout)
+    failed = failed or bool(problems)
+    total += size
+    count += 1
+print(f"total: {total} bytes in {count} recordings")
+sys.exit(1 if failed else 0)
+PY
+
+stage="$(mktemp -d)"
+trap 'rm -rf "$stage"' EXIT
+mkdir -p "$stage/$folder"
+# Each recording keeps its path inside the folder: a subfolder of music/ becomes the same subfolder of config/aicompanion/music/.
+for track in "${tracks[@]}"; do
+    rel="${track#"$music"/}"
+    mkdir -p "$stage/$folder/$(dirname "$rel")"
+    cp "$track" "$stage/$folder/$rel"
+done
+# One fixed mode and one fixed time on every entry (1980-01-01 00:00 UTC, the earliest a zip can carry), then the entries in a
+# sorted order with no extra fields: two runs of this script give one archive, byte for byte.
+find "$stage" -mindepth 1 -type d -exec chmod 755 {} +
+find "$stage" -mindepth 1 -type f -exec chmod 644 {} +
+TZ=UTC find "$stage" -mindepth 1 -exec touch -h -t 198001010000 {} +
+rm -f "$out"
+(cd "$stage" && find . -mindepth 1 | LC_ALL=C sort | sed 's|^\./||' | TZ=UTC zip -X -q "$root/$out" -@)
+
+echo "built $root/$out"
+unzip -l "$out"

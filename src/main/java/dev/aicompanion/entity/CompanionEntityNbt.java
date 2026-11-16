@@ -34,6 +34,7 @@ final class CompanionEntityNbt {
         ContainerHelper.saveAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.save(tag);
         c.temporaryPillar.save(tag);
+        c.recovery.save(tag);
         c.work.save(tag);
         c.work.mine.save(tag);
         c.parked.save(tag);
@@ -42,13 +43,17 @@ final class CompanionEntityNbt {
         c.deeds.save(tag);
         c.autonomy.save(tag);
         tag.putBoolean("DeathRecovery", c.deathRecovery());
+        tag.putBoolean("BoatRide", c.boatRide());
         tag.putBoolean("GuardByPlayer", c.guardByPlayer());
         tag.putBoolean("OtherContainers", c.otherContainers());
         tag.putBoolean("BoatClutch", c.boatClutch());
+        tag.putBoolean("PlaysByTheFire", c.playsByTheFire());
+        tag.putBoolean("Replant", c.replantSaplings());
         tag.putInt("DeathRecoveryAttempts", c.deathRecoveryAttempts());
         tag.putInt("DeathRecoveryDeaths", c.deathRecoveryDeaths());
         c.goals.save(tag);
         c.social.save(tag);
+        c.errand.save(tag);
     }
 
     void load(CompoundTag tag) {
@@ -80,10 +85,14 @@ final class CompanionEntityNbt {
         c.satiety = Math.max(0, Math.min(40, tag.getInt("Satiety"))); // absent in older saves: 0
         ContainerHelper.loadAllItems(tag, c.companionInventory, c.level().registryAccess());
         c.playersThings.load(tag);
+        c.recovery.load(tag);
         c.deeds.load(tag); c.places.load(tag); c.autonomy.load(tag); c.setDeathRecovery(!tag.contains("DeathRecovery") || tag.getBoolean("DeathRecovery"));
+        c.setBoatRide(!tag.contains("BoatRide") || tag.getBoolean("BoatRide"));
         c.setGuardByPlayer(!tag.contains("GuardByPlayer") || tag.getBoolean("GuardByPlayer"));
         c.setOtherContainers(!tag.contains("OtherContainers") || tag.getBoolean("OtherContainers"));
         c.setBoatClutch(!tag.contains("BoatClutch") || tag.getBoolean("BoatClutch"));
+        c.setPlaysByTheFire(!tag.contains("PlaysByTheFire") || tag.getBoolean("PlaysByTheFire"));
+        c.setReplantSaplings(!tag.contains("Replant") || tag.getBoolean("Replant"));
         c.setDeathRecoveryLimits(tag.contains("DeathRecoveryAttempts") ? tag.getInt("DeathRecoveryAttempts") : 5,
                 tag.contains("DeathRecoveryDeaths") ? tag.getInt("DeathRecoveryDeaths") : 10); c.refreshPlaces();
         c.social.load(tag);
@@ -102,7 +111,9 @@ final class CompanionEntityNbt {
         c.parked.load(tag);
         c.batches().load(tag);
         c.setCanPickUpLoot(false);
-        if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") || tag.getBoolean("SupportSoilTask")) {
+        // The work that walked into a portal is not lost: the new entity finishes it (CompanionErrand); a world loaded is another thing.
+        boolean crossed = c.errand.load(tag);
+        if (c.temporaryPillar.isRecovering() || tag.getBoolean("WorkActive") && !crossed || tag.getBoolean("SupportSoilTask")) {
             c.setFollowing(true);
             c.lastTaskSucceeded = false;
             c.getEntityData().set(CompanionEntity.DATA_LAST_TASK_RESULT, c.temporaryPillar.isRecovering()
@@ -110,6 +121,11 @@ final class CompanionEntityNbt {
                     : "Работа прервалась выходом из мира. Вещи остались у меня.");
             // Pickup/navigation statuses soon replace the visible line. Keep the interruption in saved factual memory too.
             c.noteDeed(c.getEntityData().get(CompanionEntity.DATA_LAST_TASK_RESULT), false);
+            // The plan that polls the work's id is told the same: a world loaded in the middle of the errand's crossing, not another command.
+            if (tag.getBoolean("WorkActive") && c.errand.lostInTransit()) {
+                c.work.completedId = tag.getLong("WorkSequence");
+                c.work.completedResult = CompanionActionResult.failed(c.getEntityData().get(CompanionEntity.DATA_LAST_TASK_RESULT));
+            }
         }
         // His own harvest still lying round him (it carries his UUID) is picked up after the world is entered again, like a player
         // who comes back to the tree he was cutting (marathon 23.10: a log stayed on the ground after the reload).
@@ -132,7 +148,7 @@ final class CompanionEntityNbt {
         CompoundTag full = new CompoundTag(), memory = new CompoundTag();
         c.addAdditionalSaveData(full);
         for (String key : new String[]{"CompanionName", "SearchRadius", "ChunkLoading", "AutonomousSpeech", "KnownPlaces", "HomePlace", "Deeds",
-                "SmallHouse", "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY, CompanionMineSite.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
+                "SmallHouse", CompanionHouse.TEMPLATE_KEY, "StorageChest", "StorageDimension", "Autonomy", CompanionGoals.KEY, "WorkSequence", CompanionFurnaceBatchNbt.KEY, CompanionMineSite.KEY}) if (full.contains(key)) memory.put(key, full.get(key).copy());
         return memory;
     }
 

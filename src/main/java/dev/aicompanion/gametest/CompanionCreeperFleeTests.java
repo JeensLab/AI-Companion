@@ -82,23 +82,6 @@ public final class CompanionCreeperFleeTests {
         });
     }
 
-    /** The fuse lit two and a half blocks off: four blocks off in twenty ticks, and alive when it blows or goes out. */
-    @GameTest(template = "tall_tree", timeoutTicks = 300)
-    public static void aLitFuseGetsHimFourBlocksOffInTwentyTicks(GameTestHelper h) {
-        CompanionEntity c = setup(h);
-        Creeper creeper = creeper(h, new Vec3(19, 1, 16.5));
-        creeper.ignite();
-        long begun = h.getTick();
-        h.onEachTick(() -> {
-            long elapsed = h.getTick() - begun;
-            double gap = c.distanceTo(creeper);
-            String trace = " | tick " + elapsed + ", gap " + String.format("%.1f", gap) + (creeper.isAlive() ? "" : " (gone)") + ", health " + c.getHealth();
-            h.assertTrue(c.isAlive(), "Died" + trace);
-            if (elapsed == RUN_TICKS) h.assertTrue(!creeper.isAlive() || gap >= RUN_GAP, "Less than 4 blocks off in 20 ticks" + trace);
-            if (elapsed >= WATCH_TICKS) h.succeed();
-        });
-    }
-
     /** On a long goal with a sword in hand an unlit creeper is struck, not run from. */
     @GameTest(template = "tall_tree", batch = "creeper_flee_goal", timeoutTicks = 600)
     public static void anArmedGoalWorkerStrikesAnUnlitCreeper(GameTestHelper h) {
@@ -119,19 +102,22 @@ public final class CompanionCreeperFleeTests {
         });
     }
 
-    /** The fuse lit two and a half blocks off, a sword in hand and no order: a blow lands within half a second, and the blast does not reach him. */
+    /**
+     * The fuse lit two and a half blocks off, a sword in hand and no order: a blow lands within half a second, he is four blocks off
+     * in twenty ticks (or the creeper is gone), and the blast does not reach him.
+     */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
-    public static void aLitFuseIsStruckBeforeHeRuns(GameTestHelper h) { strikeBeforeTheRun(h, setup(h)); }
+    public static void aLitFuseIsStruckBeforeHeRuns(GameTestHelper h) { strikeBeforeTheRun(h, setup(h), true); }
 
     /** The same with no weapon at all: the blow is a punch. */
     @GameTest(template = "tall_tree", timeoutTicks = 300)
     public static void aLitFuseIsPunchedBeforeHeRunsWithNoWeapon(GameTestHelper h) {
         CompanionEntity c = setup(h);
         c.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
-        strikeBeforeTheRun(h, c);
+        strikeBeforeTheRun(h, c, false);
     }
 
-    private static void strikeBeforeTheRun(GameTestHelper h, CompanionEntity c) {
+    private static void strikeBeforeTheRun(GameTestHelper h, CompanionEntity c, boolean gapAtRun) {
         Creeper creeper = creeper(h, new Vec3(19, 1, 16.5));
         creeper.ignite();
         long begun = h.getTick();
@@ -141,6 +127,7 @@ public final class CompanionCreeperFleeTests {
                     + ", health " + c.getHealth();
             h.assertTrue(c.isAlive(), "Died" + trace);
             if (elapsed == BLOW_TICKS) h.assertTrue(creeper.isDeadOrDying() || creeper.getHealth() < creeper.getMaxHealth(), "No blow before the run" + trace);
+            if (gapAtRun && elapsed == RUN_TICKS) h.assertTrue(!creeper.isAlive() || c.distanceTo(creeper) >= RUN_GAP, "Less than 4 blocks off in 20 ticks" + trace);
             if (elapsed >= WATCH_TICKS) {
                 h.assertTrue(c.getHealth() >= c.getMaxHealth(), "The blast reached him" + trace);
                 h.succeed();
@@ -179,11 +166,26 @@ public final class CompanionCreeperFleeTests {
     }
 
     /**
-     * A creeper by the house, the player close enough for the melee goal to go for it too: no blow lands on it until it is walked off the
-     * house (it starts three blocks from it), then he kills it, and it never blows up.
+     * A creeper by the house, the player close enough for the melee goal to go for it too: the first blow lands only once it is walked off
+     * the house (it starts three blocks from it), and it does not blow up before that. The fight after that blow is not watched: it may
+     * come back to the house and end in the arena's corner, where there is nowhere to walk the creeper and it is fought where it stands,
+     * and a creeper that lost him is left alone and never killed.
      */
     @GameTest(template = "tall_tree", batch = "creeper_flee_goal", timeoutTicks = 1400)
     public static void byTheHouseHeWalksTheCreeperOffBeforeTheFirstBlow(GameTestHelper h) {
+        walkedOffBeforeTheFirstBlow(h, new BlockPos(8, 1, 16), new Vec3(3.5, 1, 13.5));
+    }
+
+    /**
+     * The same from the arena's edge, the creeper coming from the house side: the six spots farthest from the house hang past the edge
+     * and took all six searches for a way, so he found nowhere to walk it and fought it by the house, with the floor along the edge open.
+     */
+    @GameTest(template = "tall_tree", batch = "creeper_flee_goal", timeoutTicks = 1400)
+    public static void byTheHouseHeWalksTheCreeperOffAlongAnEdge(GameTestHelper h) {
+        walkedOffBeforeTheFirstBlow(h, new BlockPos(4, 1, 2), new Vec3(2.5, 1, 10.5));
+    }
+
+    private static void walkedOffBeforeTheFirstBlow(GameTestHelper h, BlockPos stand, Vec3 creeperAt) {
         CompanionEntity c = setup(h);
         ServerPlayer player = h.getLevel().getServer().getPlayerList().getPlayer(c.getOwnerId());
         player.setInvulnerable(true);
@@ -193,22 +195,25 @@ public final class CompanionCreeperFleeTests {
         h.assertTrue(named.status() != CompanionActionResult.Status.FAILED, "Home not named: " + named.message());
         BlockPos away = h.absolutePos(new BlockPos(2, 1, 2));
         player.teleportTo(away.getX() + .5, away.getY(), away.getZ() + .5);
-        c.teleportTo(h.absolutePos(new BlockPos(8, 1, 16)).getX() + .5, home.getY(), home.getZ() + .5);
-        Creeper creeper = h.spawn(EntityType.CREEPER, new Vec3(3.5, 1, 13.5));
+        BlockPos from = h.absolutePos(stand);
+        c.teleportTo(from.getX() + .5, from.getY(), from.getZ() + .5);
+        Creeper creeper = h.spawn(EntityType.CREEPER, creeperAt);
         creeper.setPersistenceRequired();
         Vec3 house = Vec3.atBottomCenterOf(home);
-        float[] health = {creeper.getHealth()};
+        float full = creeper.getHealth();
         long begun = h.getTick();
         h.onEachTick(() -> {
             double fromHouse = creeper.position().distanceTo(house);
             String trace = " | creeper " + (creeper.isAlive() ? "alive, health " + creeper.getHealth() + ", fuse " + creeper.getSwellDir() : "gone")
                     + ", " + String.format("%.1f", fromHouse) + " from the house, health " + c.getHealth();
             h.assertTrue(c.isAlive(), "Died" + trace);
-            if (creeper.getHealth() < health[0]) h.assertTrue(fromHouse >= HOUSE_NEAR, "Struck by the house" + trace);
-            health[0] = creeper.getHealth();
-            if (creeper.isDeadOrDying()) { h.succeed(); return; }
+            if (creeper.getHealth() < full) {
+                h.assertTrue(fromHouse >= HOUSE_NEAR, "Struck by the house" + trace);
+                h.succeed();
+                return;
+            }
             h.assertTrue(creeper.isAlive(), "The creeper blew up" + trace);
-            h.assertTrue(h.getTick() - begun < KILL_TICKS, "The creeper was not killed in time" + trace);
+            h.assertTrue(h.getTick() - begun < KILL_TICKS, "The creeper was not struck in time" + trace);
         });
     }
 

@@ -279,20 +279,22 @@ public final class CompanionEvents {
     public static CompanionActionResult executeAction(ServerPlayer player, String action, String item, int count, String slot, String trace, String location) {
         dev.aicompanion.CompanionDiagnostics.event(trace, "server_dispatch", "action", action, "item", item, "count", count, "slot", slot);
         CompanionEntity companion = resolveCanonical(player, true);
-        if (companion == null || companion.level() != player.level()) {
+        // On the errand in the Nether the plan's own steps reach him there with the player in the overworld (CompanionErrand); any other order is answered there.
+        if (companion != null && companion.level() != player.level() && companion.errand.away() && !companion.errand.runs(action)) return companion.errand.orderAway(action);
+        if (companion == null || companion.level() != player.level() && !companion.errand.runs(action)) {
             dev.aicompanion.CompanionDiagnostics.event(trace, "server_rejected", "reason", "companion_unloaded_or_other_dimension");
             return CompanionActionResult.failed("Компаньон не загружен рядом с тобой.");
         }
         // An order of the player comes before the walk back for his own things too: the walk gives way and waits (CompanionDeathTrip).
         // An order of his own (a goal step, a deed), naming the home and asking about a goal are not orders.
-        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("goal_status")
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("remember_place") && !action.equals("goal_status")
                 && !action.equals("goal_cancel") && !action.equals("goal_defer") && companion.deathTrip.active()) {
             companion.deathTrip.giveWay();
             dev.aicompanion.CompanionDiagnostics.event(trace, "death_recovery_gave_way", "action", action);
         }
         // An order of the player comes first: a deed of his own ends here, before the order is taken (CompanionAutonomy).
         // Naming the home is a word, not an order: whatever he is busy with goes on.
-        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home")) {
+        if (!autonomousDispatch && !goalDispatch && !action.equals("set_home") && !action.equals("remember_place")) {
             // The player's request comes before a long goal, the collection of his parked smelt too (the goal resumes by itself).
             CompanionAgenda.playerOrder(player, companion, action);
             // The dig is put aside before the goal hears the order and ends it; neither the agenda's, the goal's nor a deed's dig is parked.
@@ -300,12 +302,15 @@ public final class CompanionEvents {
             // The collection of a parked smelt continues his own work: it ends a deed of his, but neither pauses a goal nor undoes a «стой».
             if (action.equals("collect_smelt")) companion.autonomy().dropDeed(action);
             else {
-                // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order.
-                if (!action.equals("pursue_goal")) companion.goals().playerOrder(action);
+                // A long goal asked for while the pickaxe order runs is refused below; the asking must not pause that order. Nor does switching autonomy on: «будь самостоятельным» is a switch, not an order.
+                if (!action.equals("pursue_goal") && !(action.equals("autonomy") && "on".equals(item))) companion.goals().playerOrder(action);
                 // Asking about, cancelling or deferring a goal leaves the player's earlier «стой здесь» / «следуй» in force.
                 if (!action.equals("goal_status") && !action.equals("goal_cancel") && !action.equals("goal_defer")) companion.autonomy().playerOrder(action);
             }
         }
+        // The guitar goes away for an order of the player; naming the home, asking about a goal or the bag, or asking for the music again leave it.
+        boolean wasPlaying = !autonomousDispatch && !goalDispatch && !java.util.Set.of("set_home", "goal_status", "verify_item", "campfire_song").contains(action)
+                && companion.campfire().playerOrder(action);
         String previousTrace = companion.diagnosticTrace();
         boolean wasWorking = companion.isGatheringTask();
         companion.diagnosticBind(trace);
@@ -332,11 +337,13 @@ public final class CompanionEvents {
                 CompanionActionResult repeat = count == 1 && !goalDispatch ? companion.alreadyMade(item) : null;
                 if (repeat != null) yield repeat;
                 if (CompanionCraftCosts.supportsCraft(item, count)) yield companion.startWork("prepare_craft", item, count);
+                if (companion.cutterWalk(item, count) != null) yield companion.startWork("cutter_craft", item, count);
                 if (companion.benchWalkNeeded(item, count)) yield companion.startWork("bench_craft", item, count);
                 yield companion.craftItemResult(item, count);
             }
             case "place_block" -> companion.startWork("place_block", item, count, location);
-            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket", "mine_obsidian", "build_portal" -> companion.startWork(action, item, count, location);
+            case "gather_stone", "gather_dirt", "gather_loose", "store_items", "take_items", "sort_chests", "build_house", "build_pen", "breed_animals", "fill_bucket", "mine_obsidian", "gather_block", "hunt_drop", "compost_meal", "build_portal", "build_cobble_gen", "disenchant_item", "compost_items",
+                 "shear_sheep", "milk_animal", "collect_eggs", "strip_log", "harvest_hive", "scoop_mob", "scoop_block", "nether_go", "nether_back" -> companion.startWork(action, item, count, location);
             case "hunt_mobs" -> {
                 companion.setFollowing(false);
                 yield companion.startWork(action, item, count);
@@ -354,11 +361,17 @@ public final class CompanionEvents {
                 companion.refreshPlaces();
                 yield CompanionActionResult.ok("Запомнил: наш дом здесь.");
             }
+            // «Запомни это место, дача»: a named marker of this player, at the point the companion stands on.
+            case "remember_place" -> companion.rememberPlace(item);
+            // «Иди к колодцу»: a real walk to the named marker by the normal path, or the honest reason it cannot happen.
+            case "go_to_place" -> companion.goToPlace(item);
             case "follow" -> { companion.setFollowing(true); yield CompanionActionResult.ok("Следую за тобой."); }
             case "wait" -> { companion.setFollowing(false); yield CompanionActionResult.ok("Остановился и жду."); }
             case "wander" -> { companion.startRoaming(); yield CompanionActionResult.ok("Осмотрюсь вокруг."); }
             case "enter_portal" -> companion.portals.enter((ServerLevel) companion.level());
-            case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok("Ладно, остановился."); }
+            case "stop" -> { companion.stopGatheringForPlayer(); yield CompanionActionResult.ok(wasPlaying ? "Ладно, убираю гитару." : "Ладно, остановился."); }
+            // By a lit fire near the player, or by his own one set down from the bag: he sits down and plays (CompanionCampfire).
+            case "campfire_song" -> companion.campfire().request(player, item);
             case "come" -> {
                 companion.setFollowing(false);
                 yield companion.startWork("come", "", 1);
@@ -373,7 +386,7 @@ public final class CompanionEvents {
                 yield CompanionActionResult.ok("protect".equals(action) ? "Защищаю тебя." : "Закончил охрану.");
             }
             case "gather_wood" -> {
-                yield companion.startWork("gather_wood", "", count);
+                yield companion.startWork("gather_wood", item, count);
             }
             // Handed over physically: walked to the player and tossed at their feet, never put into their inventory.
             case "give_wood" -> companion.startWork("give_items", "logs", 64);
@@ -385,8 +398,10 @@ public final class CompanionEvents {
             case "dig_for_diamonds" -> companion.startWork(action, item, count);
             // «Подбери»: what lies on the ground, taken by walking to it; nothing near falls back to the usual work.
             case "pick_up" -> companion.pickUpNearby(item, count);
-            case "farm_crops", "harvest_crops" -> companion.startWork(action, item, count);
+            case "farm_crops", "harvest_crops", "use_bone_meal" -> companion.startWork(action, item, count);
             case "verify_item" -> companion.carriedCheck(item, count);
+            // «Почини кирку»: two alike folded where he stands, as in the crafting grid; no walk, so no work.
+            case "repair_item" -> CompanionGrinding.repair(companion, item);
             // «Будь самостоятельным» / «хватит, просто будь рядом»: a local command of the player, never a step of the model's plan.
             case "autonomy" -> companion.autonomy().setEnabled("on".equals(item));
             default -> CompanionActionResult.failed("Неподдерживаемое действие: " + action);

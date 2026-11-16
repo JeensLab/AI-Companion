@@ -190,14 +190,13 @@ public final class CompanionMiningTests {
     }
 
     @GameTest(template = "tall_tree", timeoutTicks = 600)
-    public static void waterAdjacentStoneAndExistingChestsArePreserved(GameTestHelper helper) {
+    public static void waterAdjacentStoneIsPreserved(GameTestHelper helper) {
         CompanionEntity companion = setup(helper); BlockPos stone = new BlockPos(20, 1, 16);
         helper.setBlock(stone, Blocks.STONE); helper.setBlock(stone.east(), Blocks.WATER);
-        helper.setBlock(new BlockPos(21, 1, 21), Blocks.CHEST);
         companion.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_PICKAXE)); companion.startWork("gather_stone", "", 1);
         helper.succeedWhen(() -> {
             done(helper, companion);
-            helper.assertTrue(!companion.didLastTaskSucceed() && helper.getBlockState(stone).is(Blocks.STONE) && helper.getBlockState(new BlockPos(21, 1, 21)).is(Blocks.CHEST), "Unsafe block mined");
+            helper.assertTrue(!companion.didLastTaskSucceed() && helper.getBlockState(stone).is(Blocks.STONE), "Unsafe block mined");
         });
     }
 

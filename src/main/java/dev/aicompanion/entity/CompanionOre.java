@@ -32,7 +32,8 @@ public final class CompanionOre {
         GOLD("золото", "золотая руда", "золота", BlockTags.GOLD_ORES, Blocks.GOLD_ORE, Items.RAW_GOLD, Items.IRON_PICKAXE),
         REDSTONE("редстоун", "редстоуновая руда", "редстоуна", BlockTags.REDSTONE_ORES, Blocks.REDSTONE_ORE, Items.REDSTONE, Items.IRON_PICKAXE),
         DIAMOND("алмазы", "алмазная руда", "алмазов", BlockTags.DIAMOND_ORES, Blocks.DIAMOND_ORE, Items.DIAMOND, Items.IRON_PICKAXE),
-        EMERALD("изумруды", "изумрудная руда", "изумрудов", BlockTags.EMERALD_ORES, Blocks.EMERALD_ORE, Items.EMERALD, Items.IRON_PICKAXE);
+        EMERALD("изумруды", "изумрудная руда", "изумрудов", BlockTags.EMERALD_ORES, Blocks.EMERALD_ORE, Items.EMERALD, Items.IRON_PICKAXE),
+        QUARTZ("кварц", "кварцевая руда", "кварца", net.neoforged.neoforge.common.Tags.Blocks.ORES_QUARTZ, Blocks.NETHER_QUARTZ_ORE, Items.QUARTZ, Items.WOODEN_PICKAXE);
 
         public final String word;
         public final String oreName;
@@ -70,6 +71,7 @@ public final class CompanionOre {
                 case "redstone" -> REDSTONE;
                 case "diamond", "diamonds" -> DIAMOND;
                 case "emerald", "emeralds" -> EMERALD;
+                case "quartz" -> QUARTZ;
                 default -> null;
             };
         }
@@ -82,11 +84,11 @@ public final class CompanionOre {
     private CompanionOre() { }
 
     /**
-     * Natural ground a tunnel may go through: stone of the world, soil, the calcite and smooth basalt shell of a geode and any ore.
+     * Natural ground a tunnel may go through: stone of the world (netherrack and basalt too), soil, the calcite and smooth basalt shell of a geode and any ore.
      * Built blocks are never dug; amethyst is not dug either, so the geode inside stays a wall like any cave.
      */
     static boolean tunnelable(BlockState state) {
-        return state.is(BlockTags.BASE_STONE_OVERWORLD) || CompanionQuarry.soil(state) || state.is(Blocks.DRIPSTONE_BLOCK)
+        return state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.BASE_STONE_NETHER) || CompanionQuarry.soil(state) || state.is(Blocks.DRIPSTONE_BLOCK)
                 || state.is(Blocks.CALCITE) || state.is(Blocks.SMOOTH_BASALT)
                 || state.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
     }

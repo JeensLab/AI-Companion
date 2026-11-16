@@ -224,7 +224,8 @@ public final class CompanionAutonomy {
     private static final Map<String, String> REASONS = Map.of(
             "not_following", "Пока охраняю тебя. Скажи «прекрати защищать» — займусь делом.",
             "monsters", "Рядом монстры — сначала прикрою тебя, делом займусь потом.",
-            "player_fighting", "Ты в бою — сначала прикрою тебя, делом займусь потом.");
+            "player_fighting", "Ты в бою — сначала прикрою тебя, делом займусь потом.",
+            "campfire", "Играю на гитаре — делом займусь потом.");
 
     private String nothingToDo() {
         List<String> notes = new ArrayList<>();
@@ -241,6 +242,8 @@ public final class CompanionAutonomy {
         if (player.isSpectator() || !player.isAlive() || player.level() != owner.level()) return "player_unavailable";
         if (!here()) return "different_work_dimension";
         if (!owner.isFollowing() || owner.isProtecting() || owner.isRoaming()) return "not_following";
+        // The music is not cut short for a deed: the deeds go on after it.
+        if (owner.campfire().active()) return "campfire";
         String danger = danger(level, player);
         if (danger != null) return danger;
         if (owner.hasActiveWorkOrder() || owner.hasPendingLoot() || owner.isSelfRescuing() || owner.getTarget() != null || !owner.canCollectItems()) return "busy";
