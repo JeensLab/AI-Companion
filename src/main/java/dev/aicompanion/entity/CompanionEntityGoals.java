@@ -243,7 +243,10 @@ final class CompanionEntityGoals {
                     // time: a falling one moves every tick (skyblock probe: 24 lines in 3 s).
                     long now = companion.level().getGameTime();
                     boolean passing = owner.fallDistance > 1 || owner.isFallFlying() || owner.getAbilities().flying || owner.isSwimming();
-                    if (!passing && (toldAbout == null || owner.onGround() && toldAbout.distSqr(owner.blockPosition()) >= 9 && now - toldAt >= 200)) {
+                    // Not waited for at a place he passes through: a fall ends within three blocks of its last place, and the wait
+                    // would keep the landing unsaid. Asked again in a second instead.
+                    if (passing) { waitingFor = null; retryAt = now + 20; }
+                    else if ((toldAbout == null || owner.onGround() && toldAbout.distSqr(owner.blockPosition()) >= 9 && now - toldAt >= 200)) {
                         toldAbout = owner.blockPosition(); toldAt = now;
                         companion.autonomySay("Не могу пройти к тебе. Подожду, пока ты сдвинешься.", companion.hasActiveWorkOrder());
                     }
