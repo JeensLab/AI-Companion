@@ -268,7 +268,11 @@ final class CompanionGatherGoals {
         private void tryClimbing() {
             CompanionPillar.Outcome outcome = c.temporaryPillar.tickToward(target);
             if (switchToBranch()) return;
-            if (outcome == CompanionPillar.Outcome.FAILED && c.temporaryPillar.failureReason().contains("земли") && soilAttempts++ < 2) {
+            if (outcome == CompanionPillar.Outcome.FAILED && c.temporaryPillar.failureReason().contains("земли") && !CompanionDigGoal.thickSoilNear(c)) {
+                // Nothing in the bag to stand on and no thick ground to dig it from (an island is never dug for it): chop what he reaches.
+                rejectTarget(true, "Верхушку не достал — нечего подставить");
+            }
+            else if (outcome == CompanionPillar.Outcome.FAILED && c.temporaryPillar.failureReason().contains("земли") && soilAttempts++ < 2) {
                 c.savedWoodRequested = c.requestedLogs; c.savedWoodRemaining = c.logsRemaining;
                 c.supportSoilTask = true;
                 c.startGatheringDirtForWork(Math.max(1, 6 - CompanionTools.soil(c)));
@@ -293,12 +297,13 @@ final class CompanionGatherGoals {
             return true;
         }
 
-        private void rejectTarget(boolean skipHigherCrown) {
+        private void rejectTarget(boolean skipHigherCrown) { rejectTarget(skipHigherCrown, c.temporaryPillar.failureReason()); }
+
+        private void rejectTarget(boolean skipHigherCrown, String reason) {
             c.woodBreaking.reset();
             // One failed climb is not proof that the whole crown is out of reach: try another log of it once more.
             // A crown that is simply too tall, or a second failure on the same tree, still ends with the honest skip.
-            String reason = c.temporaryPillar.failureReason();
-            if (skipHigherCrown && ++crownFailures < CROWN_ATTEMPTS && !reason.contains("слишком высокая")) skipHigherCrown = false;
+            if (skipHigherCrown && ++crownFailures < CROWN_ATTEMPTS && !reason.contains("слишком высокая") && !reason.contains("нечего подставить")) skipHigherCrown = false;
             if (skipHigherCrown) accessIssue = reason;
             if (target != null) {
                 unreachableLogs.add(target.immutable());

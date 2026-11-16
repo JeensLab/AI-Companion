@@ -206,6 +206,7 @@ public final class CompanionPillar {
         cleanupTicks++;
         if (cooldown > 0) cooldown--;
 
+        // The budget is per support (reset at each one taken): six stones with a wooden pickaxe take longer than one budget.
         if (cleanupTicks > MAX_ATTEMPT_TICKS && owner.onGround()) {
             // Another player may now be using this soil. Leave it without issuing any refund.
             // Relinquishing only this bounded list also prevents an endless recovery-goal loop.
@@ -247,11 +248,20 @@ public final class CompanionPillar {
         if (anotherEntityDependsOn(level, pos)) return false;
         owner.getLookControl().setLookAt(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
         owner.selectToolForBlock(highest.state());
-        if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.SHOVELS)) owner.unequipForSupport("mainhand");
+        if (!owner.getMainHandItem().isEmpty() && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.SHOVELS)
+                && !owner.getMainHandItem().is(net.minecraft.tags.ItemTags.PICKAXES)) owner.unequipForSupport("mainhand");
+        if (!canDrop(highest.state())) {
+            // The pickaxe is gone (broken, or taken): by hand the block would vanish without a drop. It stays where it is.
+            supports.clear();
+            failureReason = "Опоры оставил на месте: нечем их забрать";
+            clearColumn();
+            return true;
+        }
         if (!breaking.tick(level, pos)) return false;
         if (!breakAndStore(level, pos, highest.state())) return false;
         breaking.reset();
         supports.removeLast();
+        cleanupTicks = 0;
         cooldown = 5;
         return false;
     }
@@ -382,18 +392,33 @@ public final class CompanionPillar {
         return isSoil(owner.getMainHandItem());
     }
 
-    private static boolean isSoil(ItemStack stack) {
-        return !stack.isEmpty() && stack.getItem() instanceof BlockItem item
-                && isSoilBlock(item.getBlock());
+    /** Stone goes under his feet only with a pickaxe at hand: broken by hand it would drop nothing, and the support would be lost. */
+    private boolean isSoil(ItemStack stack) {
+        return !stack.isEmpty() && stack.getItem() instanceof BlockItem item && isSoilBlock(item.getBlock())
+                && (item.getBlock() == Blocks.DIRT || item.getBlock() == Blocks.COARSE_DIRT || item.getBlock() == Blocks.ROOTED_DIRT || hasPickaxe());
+    }
+
+    private boolean hasPickaxe() {
+        if (owner.getMainHandItem().is(net.minecraft.tags.ItemTags.PICKAXES)) return true;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) if (owner.getItem(slot).is(net.minecraft.tags.ItemTags.PICKAXES)) return true;
+        return false;
     }
 
     private static boolean isSoilBlock(Block block) {
-        return block == Blocks.DIRT || block == Blocks.COARSE_DIRT || block == Blocks.ROOTED_DIRT;
+        // Not planks, logs, gravel or sand: those are worth more in the bag than under his feet (skyblock probe 15.11).
+        return block == Blocks.DIRT || block == Blocks.COARSE_DIRT || block == Blocks.ROOTED_DIRT
+                || block == Blocks.COBBLESTONE || block == Blocks.COBBLED_DEEPSLATE || block == Blocks.NETHERRACK;
+    }
+
+    /** Whether the tool in his hand makes this block drop: a stone support broken without a pickaxe would be lost. */
+    private boolean canDrop(BlockState state) {
+        return !state.requiresCorrectToolForDrops() || owner.getMainHandItem().isCorrectToolForDrops(state);
     }
 
     private boolean breakAndStore(ServerLevel level, BlockPos pos, BlockState state) {
         if (!level.hasChunkAt(pos) || level.getBlockState(pos) != state) return false;
         owner.selectToolForBlock(state);
+        if (!canDrop(state)) return false;
         ItemStack tool = owner.getMainHandItem();
         var drops = CompanionTools.drops(state, level, pos, level.getBlockEntity(pos), owner, tool);
         if (!level.destroyBlock(pos, false, owner, 512)) return false;
