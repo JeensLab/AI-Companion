@@ -193,6 +193,145 @@ public final class CompanionGatherBlockTests {
         });
     }
 
+    /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */
+    private static CompanionEntity withTheOwnersTools(GameTestHelper h) {
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        c.setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        c.setItem(1, new ItemStack(Items.IRON_AXE));
+        c.setItem(2, new ItemStack(Items.SHEARS));
+        c.setItem(3, new ItemStack(Items.IRON_SHOVEL));
+        return c;
+    }
+
+    /**
+     * The owner's own run (16.11): a sapling bonemealed into a tree, its leaves natural and fading; Oleg holds a pickaxe and his bag
+     * carries a pickaxe, an axe, shears and a shovel. «Добудь листву»: the leaves are cut with the shears — fifteen times a bare hand
+     * on a leaf, and the only tool that brings the leaf itself — and the shears are what wears; no pickaxe touches a leaf.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void naturallyGrownLeavesAreCutWithTheShearsWhileAPickaxeIsHeld(GameTestHelper h) {
+        ground(h);
+        BlockPos sapling = new BlockPos(18, GROUND + 1, 16);
+        var state = Blocks.OAK_SAPLING.defaultBlockState().setValue(net.minecraft.world.level.block.SaplingBlock.STAGE, 1);
+        h.setBlock(sapling, state);
+        ((net.minecraft.world.level.block.BonemealableBlock) Blocks.OAK_SAPLING)
+                .performBonemeal(h.getLevel(), h.getLevel().getRandom(), h.absolutePos(sapling), state);
+        CompanionEntity c = withTheOwnersTools(h);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_leaves\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LEAVES) >= 3, "The leaves did not drop: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) >= 3, "The shears were not the tool that cut the leaves: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
+                    "A pickaxe broke the leaves: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
+     * The pickup of a harvest lying in a dip under a bush of natural leaves, with the owner's bag: the leaves shut every cell it could
+     * be taken from, so a leaf or two are broken out of the way — as a player breaks into a bush — and the leaf is the shears' block,
+     * not the pickaxe's in his hand: it comes down as itself, fifteen times faster, and the pickaxe is not worn.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 800)
+    public static void aLeafInTheWayOfADropIsCutWithTheShearsNotThePickaxeInHisHand(GameTestHelper h) {
+        ground(h);
+        BlockPos pit = new BlockPos(14, GROUND, 14);
+        h.setBlock(pit, Blocks.AIR);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (int x = 13; x <= 15; x++) for (int z = 13; z <= 15; z++) for (int y = GROUND + 1; y <= GROUND + 2; y++)
+            h.setBlock(new BlockPos(x, y, z), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        var at = h.absoluteVec(net.minecraft.world.phys.Vec3.atBottomCenterOf(pit).add(0, .1, 0));
+        var log = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), at.x, at.y, at.z, new ItemStack(Items.OAK_LOG));
+        log.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+        h.getLevel().addFreshEntity(log);
+        c.claimDrops(List.of(log));
+        h.succeedWhen(() -> {
+            String report = c.getLastTaskResult();
+            h.assertTrue(count(c, Items.OAK_LOG) == 1, "The log stays under the bush: " + report);
+            h.assertTrue(damage(c, Items.SHEARS) >= 1, "The leaf in the way was not cut with the shears: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
+                    "A pickaxe broke the leaf in the way: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
+     * The leaf that hides a log from his eyes while a tree is felled, with the owner's bag: it is cut with the shears — the leaf's tool —
+     * not with the axe the trunk wants, and the pickaxe in his hand is not worn; the log itself is the axe's, and the axe is back in his
+     * hand for it once the leaf is down.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void leavesInTheWayOfALogAreCutWithTheShearsWhileThePickaxeIsHeld(GameTestHelper h) {
+        ground(h);
+        BlockPos trunk = new BlockPos(18, GROUND + 1, 16);
+        for (int up = 0; up < 3; up++) h.setBlock(trunk.above(up), Blocks.OAK_LOG);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (int x = 17; x <= 19; x++) for (int z = 15; z <= 17; z++) for (int y = 1; y <= 3; y++)
+            if (x != trunk.getX() || z != trunk.getZ()) h.setBlock(new BlockPos(x, GROUND + y, z), leaves);
+        CompanionEntity c = withTheOwnersTools(h);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:oak_log\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.OAK_LOG) >= 1, "No log: " + count(c, Items.OAK_LOG) + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) >= 1, "The leaf in the way was not cut with the shears: " + damage(c, Items.SHEARS) + ", " + report);
+            h.assertTrue(damage(c, Items.IRON_AXE) >= 1, "The log was not the axe's: " + damage(c, Items.IRON_AXE) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0,
+                    "A pickaxe broke a leaf: stone " + damage(c, Items.STONE_PICKAXE) + ", iron " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
+     * The same bag, stone: a pickaxe is the tool the game's own rule gives stone's drop to, so it comes out of the bag for the axe in
+     * his hand — the shears and the shovel stay in it, and nothing but the pickaxe wears.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 2400)
+    public static void thePickaxeIsTakenForStoneWithAShearsAnAxeAndAShovelInTheBag(GameTestHelper h) {
+        ground(h);
+        for (int x = 15; x <= 19; x++) for (int z = 13; z <= 17; z++) for (int y = GROUND - 2; y <= GROUND - 1; y++)
+            h.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+        CompanionEntity c = withTheOwnersTools(h);
+        // As after felling: the axe in his hand, the pickaxe in the bag.
+        c.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:cobblestone\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.COBBLESTONE) >= 1, "No cobblestone: " + count(c, Items.COBBLESTONE) + ", " + report);
+            h.assertTrue(damage(c, Items.IRON_PICKAXE) >= 1, "The pickaxe was not the tool that mined the stone: " + damage(c, Items.IRON_PICKAXE) + ", " + report);
+            h.assertTrue(damage(c, Items.SHEARS) == 0 && damage(c, Items.IRON_SHOVEL) == 0 && damage(c, Items.STONE_PICKAXE) == 0,
+                    "Another tool wore on stone: shears " + damage(c, Items.SHEARS) + ", shovel " + damage(c, Items.IRON_SHOVEL)
+                            + ", stone pickaxe " + damage(c, Items.STONE_PICKAXE) + ", " + report);
+        });
+    }
+
+    /**
+     * A ripe crop, with the same bag: no tool is faster on a crop and its drop comes to a bare hand, so the pickaxe in his hand is not
+     * put away for it and nothing in the bag is swapped in — the harvest is reaped as a player reaps it, and no tool wears.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void aRipeCropIsReapedWithTheHandAndNoToolIsSwapped(GameTestHelper h) {
+        ground(h);
+        h.setBlock(new BlockPos(20, GROUND, 16), Blocks.WATER);
+        for (int z = 14; z <= 18; z++) {
+            h.setBlock(new BlockPos(21, GROUND, z), Blocks.FARMLAND);
+            h.setBlock(new BlockPos(21, GROUND + 1, z), Blocks.CARROTS.defaultBlockState().setValue(net.minecraft.world.level.block.CropBlock.AGE, net.minecraft.world.level.block.CropBlock.MAX_AGE));
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:carrot\",\"count\":3}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.CARROT) >= 3, "Not three carrots: " + count(c, Items.CARROT) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_PICKAXE) == 0 && damage(c, Items.IRON_PICKAXE) == 0 && damage(c, Items.SHEARS) == 0
+                            && damage(c, Items.IRON_AXE) == 0 && damage(c, Items.IRON_SHOVEL) == 0,
+                    "A tool wore on a crop: pickaxe " + damage(c, Items.STONE_PICKAXE) + ", shears " + damage(c, Items.SHEARS)
+                            + ", axe " + damage(c, Items.IRON_AXE) + ", shovel " + damage(c, Items.IRON_SHOVEL) + ", " + report);
+        });
+    }
+
     /** A crown high over the ground is out of his reach: said at once, and the two ingots he carries are not spent on shears for it. */
     @GameTest(template = "tall_tree", timeoutTicks = 400)
     public static void leavesOutOfReachAreNotPlanned(GameTestHelper h) {
@@ -439,5 +578,14 @@ public final class CompanionGatherBlockTests {
         for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) count += c.getItem(slot).getCount();
         if (c.getMainHandItem().is(item)) count += c.getMainHandItem().getCount();
         return count;
+    }
+
+    /** The wear on the stack of this item, in the bag or in either hand; -1 when he has none. */
+    private static int damage(CompanionEntity c, Item item) {
+        int found = -1;
+        for (int slot = 0; slot < c.getContainerSize(); slot++) if (c.getItem(slot).is(item)) found = Math.max(found, c.getItem(slot).getDamageValue());
+        for (net.minecraft.world.entity.EquipmentSlot hand : net.minecraft.world.entity.EquipmentSlot.values())
+            if (hand.getType() == net.minecraft.world.entity.EquipmentSlot.Type.HAND && c.getItemBySlot(hand).is(item)) found = Math.max(found, c.getItemBySlot(hand).getDamageValue());
+        return found;
     }
 }
