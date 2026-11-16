@@ -45,10 +45,16 @@ public final class CompanionGatherBlockTests {
         var brick = CompanionObtain.plan(level, List.of(), true, "minecraft:brick", 2, item -> true);
         h.assertTrue(!brick.refused() && brick.steps().contains(new CompanionObtain.Step("gather_block", "minecraft:clay_ball", 2))
                 && brick.steps().getLast().equals(new CompanionObtain.Step("smelt_items", "minecraft:brick", 2)), "Brick: " + brick);
-        for (String item : List.of("minecraft:cactus", "minecraft:pumpkin", "minecraft:melon_slice", "minecraft:brown_mushroom", "minecraft:snowball", "minecraft:bamboo", "minecraft:dandelion")) {
+        for (String item : List.of("minecraft:cactus", "minecraft:pumpkin", "minecraft:melon_slice", "minecraft:brown_mushroom", "minecraft:bamboo", "minecraft:dandelion")) {
             var plan = CompanionObtain.plan(level, List.of(), false, item, 2, thing -> true);
             h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 2))), item + ": " + plan);
         }
+        // Snow gives snowballs to a shovel only: any shovel of his, else a wooden one is made first, not found missing at the block.
+        var shovel = CompanionObtain.plan(level, List.of(new ItemStack(Items.STONE_SHOVEL)), false, "minecraft:snowball", 2, thing -> true);
+        h.assertTrue(shovel.steps().equals(List.of(new CompanionObtain.Step("gather_block", "minecraft:snowball", 2))), "Snowball with a shovel: " + shovel);
+        var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:snowball", 2, thing -> true);
+        h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:snowball", 2))
+                && bare.steps().contains(new CompanionObtain.Step("craft_item", "minecraft:wooden_shovel", 1)), "Snowball with no shovel: " + bare);
         // Chance drops, the mine's stone, crops and saplings, someone's lamp, egg or trap: no block is broken for them.
         for (String item : List.of("minecraft:tuff", "minecraft:wheat_seeds", "minecraft:oak_sapling", "minecraft:apple",
                 "minecraft:glowstone_dust", "minecraft:prismarine_crystals", "minecraft:dragon_egg", "minecraft:sniffer_egg", "minecraft:ochre_froglight", "minecraft:stripped_bamboo_block", "minecraft:string")) {

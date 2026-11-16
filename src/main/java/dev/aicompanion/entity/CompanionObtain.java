@@ -284,9 +284,10 @@ public final class CompanionObtain {
         }
         // A block gives it when broken (sugar cane, a flower, clay): found and picked, if one is to be had here.
         // What only shears take (leaves, a vine, a cobweb): his shears, made by the whole chain if he has none, as for a comb.
-        // A coral block is mined for the dead one: any pickaxe of his, else a wooden one.
+        // A coral block is mined for the dead one: any pickaxe of his, else a wooden one. Snow gives snowballs to a shovel only: the same.
         if (picked(item)) return (!CompanionPickable.shorn(level, item) || hasShears() || need("minecraft:shears", 1, depth + 1))
-                && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1)) && addSplit("gather_block", key, count, 64);
+                && (!CompanionPickable.mined(level, item) || hasPickaxe() || need("minecraft:wooden_pickaxe", 1, depth + 1))
+                && (!CompanionPickable.shoveled(level, item) || hasShovel() || need("minecraft:wooden_shovel", 1, depth + 1)) && addSplit("gather_block", key, count, 64);
         // A monster drops it (string, a bone, gunpowder): fought for, if one is about.
         List<String> prey = CompanionMobDrops.names(level, item);
         // Not with bare hands (in game 12.11: five spiders, one killed, and he was dead): a wooden sword first, unless he carries a blade.
@@ -434,9 +435,14 @@ public final class CompanionObtain {
         return bag.getOrDefault("minecraft:shears", 0) > 0 || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().equals("minecraft:shears"));
     }
 
-    private boolean hasPickaxe() {
-        return bag.keySet().stream().anyMatch(id -> id.endsWith("_pickaxe") && bag.get(id) > 0)
-                || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith("_pickaxe"));
+    private boolean hasPickaxe() { return hasTool("_pickaxe"); }
+
+    private boolean hasShovel() { return hasTool("_shovel"); }
+
+    /** A tool of the kind ({@code _pickaxe}, {@code _shovel}) carried or made earlier in this plan. */
+    private boolean hasTool(String suffix) {
+        return bag.keySet().stream().anyMatch(id -> id.endsWith(suffix) && bag.get(id) > 0)
+                || steps.stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith(suffix));
     }
 
     private boolean hunted(Item item) {
