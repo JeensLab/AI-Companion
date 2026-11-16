@@ -409,6 +409,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(1, new CompanionWaterExit(this));
         this.goalSelector.addGoal(2, new CompanionArchery.BowAttackGoal(this));
         this.goalSelector.addGoal(2, new CompanionCombat.PlayerPaceAttackGoal(this));
+        this.goalSelector.addGoal(2, new CompanionCombat.StepOffGoal(this));
         this.goalSelector.addGoal(2, new CompanionEntityGoals.PickupLootGoal(this));
         this.goalSelector.addGoal(3, new CompanionEndCrystals.CrystalGoal(this));
         this.goalSelector.addGoal(3, new CompanionPortals.FollowThroughPortalGoal(this));
@@ -436,7 +437,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
         this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
         // Review 22.10, В1: vanilla «hit back whoever hurt me» also hit back the player after a stray blow.
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this) {
-            @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true); }
+            @Override public boolean canUse() { return super.canUse() && fairTarget(getLastHurtByMob(), true) && !combat.leavesAlone(getLastHurtByMob()); }
         });
         this.targetSelector.addGoal(1, new CompanionCombat.OwnerDefenseGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, net.minecraft.world.entity.Mob.class, 10,
@@ -517,7 +518,7 @@ public final class CompanionEntity extends PathfinderMob implements Container {
                 .add(Attributes.MOVEMENT_SPEED, 0.316D)
                 .add(Attributes.FOLLOW_RANGE, 128.0D)
                 .add(Attributes.ATTACK_DAMAGE, 1.0D)
-                .add(Attributes.ATTACK_KNOCKBACK, 0.0D)
+                .add(Attributes.ATTACK_KNOCKBACK, 1.0D)
                 .build());
     }
 
@@ -1109,8 +1110,8 @@ public final class CompanionEntity extends PathfinderMob implements Container {
             activityMoved = previousActivityPosition != null && position().distanceToSqr(previousActivityPosition) > .01;
             previousActivityPosition = position(); entityData.set(DATA_ACTIVITY, getActivityForAi());
         }
-        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt.
-        var guardedOwner = protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget()) ? getOwnerPlayer() : null;
+        // A fight for the player does not lead away from him: guard order, or any monster outside a hunt and outside his mine.
+        var guardedOwner = (protecting || !work.fightsByOrder() && CompanionCombat.hostile(getTarget())) && !work.expedition.underground() ? getOwnerPlayer() : null;
         if (guardedOwner != null && getTarget() != null && CompanionGuardWatch.strayed(this, guardedOwner, getTarget())) setTarget(null);
         if (getTarget() instanceof net.minecraft.world.entity.FlyingMob && !archery.armed()) setTarget(null);
         if (inventoryViewers == 0 && getTarget() != null && tickCount % 10 == 0) selectWeaponForCombat();

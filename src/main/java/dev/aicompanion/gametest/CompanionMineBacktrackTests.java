@@ -11,7 +11,12 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -32,7 +37,7 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class CompanionMineBacktrackTests {
     static final int SIZE = 48, CENTER = 24, GROUND = 21, DEEPSLATE_TOP = 8, DIAMOND_FEET = 2, RING_FROM = 12, TIMEOUT = 12000, DEAD_END = 12;
-    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10,
+    private static final int CHAMBER_X0 = 22, CHAMBER_X1 = 26, CHAMBER_Z0 = 14, CHAMBER_Z1 = 18, CHAMBER_Y = 12, WEST_LODE = 12, RECOVERED = 18, FOOT_Z = 4, PIT = 11, RETARGET_EVERY = 20, SPARE_PICKAXES = 6, LONG_TUNNEL = 18, NEAR_END_TICKS = 40, STEP_AWAY_TICKS = 200, CREEPER_STAND = 14, START_STAND = 10, LANDING_AT = 6, WEST_RUN = 6, PRIOR_BACKTRACKS = 3, FLOOR_GONE_AFTER = 10,
             CAVITY_X0 = 2, CAVITY_X1 = 45, CAVITY_Z0 = 6, CAVITY_Z1 = 20, CAVITY_Y0 = 10, CAVITY_Y1 = 20, CAVITY_STAND = 12, SURFACE_MARGIN = 2;
 
 
@@ -56,6 +61,52 @@ public final class CompanionMineBacktrackTests {
             h.assertTrue(!h.getBlockState(dead.above()).isAir(), "No plug behind him at " + dead.above().toShortString() + " | " + report(c));
             h.assertTrue(c.mineSite().stands().contains(h.absolutePos(before.west())) || c.mineSite().stands().contains(h.absolutePos(before.east())), "No branch off stand 11: " + c.mineSite().stands().size() + " stands | " + report(c));
             h.assertTrue(c.mineSite().backtracks() == 1, "Backtracks " + c.mineSite().backtracks());
+        });
+    }
+
+    /** Four zombies in a chamber the stairs break into: after the retreat the next order does not dig back into that cave but turns off above it and goes round it to the ore in the west wall. */
+    @GameTest(template = "marathon_cave", timeoutTicks = 2 * TIMEOUT)
+    public static void doesNotReturnToACrowdedCaveAfterARetreat(GameTestHelper h) {
+        mountain(h, false);
+        for (int z = 1; z < SIZE - 1; z++) for (int x = 1; x <= WEST_LODE; x++) h.setBlock(new BlockPos(x, DIAMOND_FEET - 1, z), Blocks.DEEPSLATE_DIAMOND_ORE);
+        for (int x = CHAMBER_X0; x <= CHAMBER_X1; x++) for (int z = CHAMBER_Z0; z <= CHAMBER_Z1; z++) for (int y = CHAMBER_Y; y <= CHAMBER_Y + 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        CompanionEntity c = rig(h);
+        // Two orders on one bag: this is about the cave, not about running out of pickaxes.
+        for (int slot = 6; slot < 6 + SPARE_PICKAXES; slot++) c.setItem(slot, new ItemStack(Items.STONE_PICKAXE));
+        List<Zombie> zombies = new ArrayList<>();
+        for (int[] at : new int[][]{{23, 15}, {24, 16}, {25, 17}, {23, 17}}) {
+            Zombie zombie = h.spawn(EntityType.ZOMBIE, at[0], CHAMBER_Y, at[1]);
+            zombie.setPersistenceRequired();
+            // The sky light of a freshly built mountain lags behind it: by day a mob in the chamber can burn before the cave opens.
+            zombie.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, MobEffectInstance.INFINITE_DURATION));
+            zombies.add(zombie);
+        }
+        long first = start(h, c, 1);
+        long[] second = {-1};
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            for (Zombie zombie : zombies) if (zombie.isAlive() && zombie.getTarget() == null && h.getTick() % RETARGET_EVERY == 0) zombie.setTarget(c);
+            if (c.isWorking() || c.isGatheringTask()) {
+                BlockPos at = rel(h, c.blockPosition());
+                boolean inCave = at.getX() >= CHAMBER_X0 && at.getX() <= CHAMBER_X1 && at.getZ() >= CHAMBER_Z0 && at.getZ() <= CHAMBER_Z1 && at.getY() >= CHAMBER_Y && at.getY() <= CHAMBER_Y + 2;
+
+                h.assertTrue(second[0] < 0 || !inCave, "Back in the cave at " + at.toShortString() + " | " + report(c));
+                return;
+            }
+            if (second[0] < 0) {
+                CompanionActionResult result = c.workResult(first);
+                if (result == null) return;
+                h.assertTrue(result.message().contains("отступил") && c.getHealth() >= RECOVERED, "The first order did not end in a retreat: " + report(c));
+                h.assertTrue(c.mineSite().retreats() == 1, "Retreats after the first order " + c.mineSite().retreats() + " | " + report(c));
+                second[0] = start(h, c, 1);
+                return;
+            }
+            CompanionActionResult result = c.workResult(second[0]);
+            if (result == null) return;
+            h.assertTrue(result.success() && count(c, Items.DIAMOND) >= 1, "The second order found nothing, retreats " + c.mineSite().retreats() + ", stands " + c.mineSite().stands().size() + ", first shut " + c.mineSite().firstShunned() + ": " + report(c));
+            h.assertTrue(c.mineSite().retreats() == 0, "A found diamond leaves retreats " + c.mineSite().retreats() + " | " + report(c));
+            for (BlockPos stand : c.mineSite().stands()) h.assertTrue(!c.mineSite().shunned(stand), "A stand in the cave box at " + rel(h, stand).toShortString());
+            h.succeed();
         });
     }
 
@@ -331,6 +382,40 @@ public final class CompanionMineBacktrackTests {
         int limit = dev.aicompanion.client.CompanionServerPlanPort.limitSeconds(new dev.aicompanion.client.PlannedAction("dig_for_diamonds", 0, 1, ""));
         h.assertTrue(limit >= stepSeconds + caveSeconds + climbSeconds + restSeconds, "The client gives up on a retreat after " + limit + " s");
         h.succeed();
+    }
+
+    /**
+     * A creeper that stands still (alive, its speed is nil) waits four stairs below him: he shuts the stairs with a block of his own
+     * between them; once it is gone he takes the block up again and digs on.
+     */
+    @GameTest(template = "marathon_cave", timeoutTicks = TIMEOUT)
+    public static void shutsTheStairsOnACreeperBelowAndTakesTheBlockUp(GameTestHelper h) {
+        mountain(h);
+        CompanionEntity c = rig(h);
+        List<BlockPos> stairs = carveMine(h, c, 0);
+        BlockPos from = stairs.get(START_STAND), at = stairs.get(CREEPER_STAND);
+        c.teleportTo(from.getX() + .5, from.getY(), from.getZ() + .5);
+        Creeper creeper = h.spawn(EntityType.CREEPER, rel(h, at));
+        creeper.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED).setBaseValue(0);
+        creeper.setPersistenceRequired();
+        CompanionMineSite site = c.mineSite();
+        long id = start(h, c, 1);
+        long begun = h.getTick();
+        boolean[] shut = {false};
+        h.onEachTick(() -> {
+            h.assertTrue(c.isAlive(), "Died at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+            if (!shut[0]) {
+                shut[0] = !site.temporary().isEmpty();
+                h.assertTrue(shut[0] || h.getTick() - begun < STEP_AWAY_TICKS, "He did not shut the stairs against the creeper: at " + rel(h, c.blockPosition()).toShortString() + " | " + report(c));
+                if (shut[0]) creeper.discard();
+                return;
+            }
+            if (c.isWorking() || c.isGatheringTask()) return;
+            CompanionActionResult result = c.workResult(id);
+            h.assertTrue(result != null && result.success() && count(c, Items.DIAMOND) >= 1, "He did not dig on after the creeper: " + report(c));
+            h.assertTrue(site.temporary().isEmpty(), "His block is still on the stairs: " + site.temporary() + " | " + report(c));
+            h.succeed();
+        });
     }
 
     /**
