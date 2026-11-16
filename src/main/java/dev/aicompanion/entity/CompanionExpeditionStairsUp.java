@@ -141,13 +141,14 @@ final class CompanionExpeditionStairsUp {
     }
 
     /**
-     * The cell the step is cut from: in water, the top water cell of his column (no more than {@link #BOB} over his feet), where a swimmer's
-     * feet bob. Seed 7, a lake in a pit: bobbing a hair under its top, the cell under it was taken (or the floor of a shallow pool, the first
-     * one with firm ground under it), every side of it was water, and the way up was «закрыт» until a higher bob.
+     * The cell the step is cut from: bobbing under the top of water (the cell over his feet is water too), the top water cell of his column
+     * (no more than {@link #BOB} over his feet). Seed 7, a lake in a pit: bobbing a hair under its top, the cell under it was taken (or the floor
+     * of a shallow pool, the first one with firm ground under it), every side of it was water, and the way up was «закрыт» until a higher bob.
+     * With his feet in the top water cell the cell is found as on land: a bank beside him is the better stand (the same lake, run water of seed 7).
      */
     private BlockPos stand(ServerLevel level) {
         BlockPos feet = owner.blockPosition();
-        if (!level.getFluidState(feet).is(FluidTags.WATER)) return CompanionExpeditionRecord.standingCell(level, owner);
+        if (!level.getFluidState(feet).is(FluidTags.WATER) || !level.getFluidState(feet.above()).is(FluidTags.WATER)) return CompanionExpeditionRecord.standingCell(level, owner);
         for (int up = 0; up < BOB && level.getFluidState(feet.above()).is(FluidTags.WATER); up++) feet = feet.above();
         return level.getFluidState(feet.above()).is(FluidTags.WATER) ? CompanionExpeditionRecord.standingCell(level, owner) : feet;
     }
