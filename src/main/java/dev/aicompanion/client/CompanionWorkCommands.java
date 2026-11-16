@@ -154,6 +154,9 @@ public final class CompanionWorkCommands {
         if (value.matches("^(?:построй|сделай|сооруди)(?: мне| нам| себе)? (?:(?:каменный|булыжниковый) генератор|генератор (?:булыжника|булыжников|булыжник|камня|камней))"
                 + "(?: рядом| здесь| тут)?$"))
             return new PlannedAction("build_cobble_gen", 0, 1);
+        // «Сделай железного голема», «слепи снеговика» (decisions 9–12): one golem, iron unless snow is said; a number is the model's.
+        if (value.matches("^(?:построй|сделай|создай|собери|слепи)(?: мне| нам| себе)? (?:(?:железного |снежного )?голема|снеговика)(?: рядом| здесь| тут)?$"))
+            return new PlannedAction("build_golem", 0, 1, value.matches(".*(?:снежного|снеговика).*") ? "snow" : "iron");
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;

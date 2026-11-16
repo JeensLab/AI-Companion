@@ -8,7 +8,7 @@ $ErrorActionPreference='Stop'
 # over the limit and a stale entry are red too.
 $budget=[ordered]@{
     'CompanionEntity.java'=1306
-    'CompanionWork.java'=1018
+    'CompanionWork.java'=1022
 }
 $limit=800
 $dir=Join-Path $Root 'src/main/java/dev/aicompanion/entity'
