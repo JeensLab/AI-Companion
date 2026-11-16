@@ -316,16 +316,18 @@ final class CompanionPortalBuild {
     /** The ground under the bottom, a prop or a plant inside the frame: broken as he breaks blocks, what it drops picked up. */
     private void dig(ServerLevel level, BlockPos cell) {
         BlockState state = level.getBlockState(cell);
-        // Taken once: a tool put in his hand again every tick would start the swing over.
-        if (state.is(BlockTags.MINEABLE_WITH_SHOVEL) && !c.getMainHandItem().is(ItemTags.SHOVELS)) CompanionTools.equip(c, ItemTags.SHOVELS, state);
-        else if (state.is(BlockTags.MINEABLE_WITH_PICKAXE) && !c.getMainHandItem().is(ItemTags.PICKAXES)) CompanionTools.equip(c, ItemTags.PICKAXES, state);
+        // The tool of the block goes into his hand before the first swing, as on every break (issue #105): a leaf inside the frame is
+        // the shears' block, not the pickaxe's in his hand, and the cracks and the break's own time are the tool's. It stays in the
+        // hand while the swing goes on — a tool put back every tick starts the cracks over — and the hand it replaced comes back after.
+        c.takeToolForBlock(state);
         c.workStatus("Расчищаю место под портал.");
         if (!w.breaking.tick(level, cell)) return;
         ItemStack tool = c.getMainHandItem();
         var drops = CompanionTools.drops(state, level, cell, level.getBlockEntity(cell), c, tool);
-        if (!level.destroyBlock(cell, false, c, 512)) { w.finish(false, TAKEN); return; }
+        if (!level.destroyBlock(cell, false, c, 512)) { c.putToolAway(); w.finish(false, TAKEN); return; }
         tool.getItem().mineBlock(tool, level, state, cell, c);
         c.dropHarvest(cell, drops);
+        c.putToolAway();
         event("portal_dug", "cell", cell.toShortString(), "block", BuiltInRegistries.BLOCK.getKey(state.getBlock()));
     }
 
