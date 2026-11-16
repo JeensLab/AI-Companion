@@ -51,6 +51,11 @@ final class CompanionMobDrops {
     private static final int SEA = 32;
     /** Ticks with no step and no blow landed before the monster is passed over. */
     private static final int STALL = 300;
+    /**
+     * The same for a fish or a squid while he is in the water: one way up for air and back down is in it. A cod 18 down, gone for
+     * with his breath short after the one before, was passed over on the way back (CompanionBreath, some 340 ticks).
+     */
+    static final int SWIM_STALL = 2 * STALL;
     // ponytail: built once for a server; a data pack reloaded in a running world keeps the old tables until the world is reopened.
     private static WeakReference<MinecraftServer> builtFor = new WeakReference<>(null);
     private static Map<Item, List<EntityType<?>>> sources = Map.of();
@@ -241,13 +246,13 @@ final class CompanionMobDrops {
         // (in game 13.11 two squids in the sea were passed over, not one blow landed).
         // Not against the way up: with his air short the swim for air (CompanionBreath) and the float have him, not the fish.
         if (swims(mob) && mob.isInWater() && c.isInWater() && !c.isWithinMeleeAttackRange(mob) && c.hasLineOfSight(mob)
-                && c.getAirSupply() > c.getMaxAirSupply() / 2)
+                && c.getAirSupply() > c.getMaxAirSupply() / 2 && !c.breath.active())
             c.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 1.15);
         // Out of his search radius across, as it is looked for (around): a cod down by the floor of the sea is farther from his eyes.
         int radius = c.getSearchRadius();
         double dx = mob.getX() - c.getX(), dz = mob.getZ() - c.getZ();
         boolean gone = !fought(c, kinds, mob) || dx * dx + dz * dz > radius * radius;
-        if (now - since <= STALL && !gone) return;
+        if (now - since <= (swims(mob) && c.isInWater() ? SWIM_STALL : STALL) && !gone) return;
         passed.add(mob.getUUID()); chased = null;
         c.setTarget(null);
         c.getNavigation().stop();

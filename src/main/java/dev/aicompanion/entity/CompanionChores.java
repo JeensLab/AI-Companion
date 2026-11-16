@@ -416,7 +416,7 @@ final class CompanionChores {
         // A player's bucket reaches what his eye sees, not a fish behind the glass of a pond or a block of the bank.
         if (distance > REACH * REACH || !c.hasLineOfSight(mob)) {
             if (distance + .05 < best) { best = distance; since = now; }
-            if (now - since > STALL) { passed.add(target); c.getNavigation().stop(); release(); return; }
+            if (now - since > (c.isInWater() ? CompanionMobDrops.SWIM_STALL : STALL)) { passed.add(target); c.getNavigation().stop(); release(); return; }
             c.workStatus("Ловлю в ведро.");
             // In the water with it he swims straight at it (as for a fish to fight, CompanionMobDrops.watch): a route would pull him
             // back to the surface over it. Not against the way up: with his air short the swim for air has him. Also out of sight
