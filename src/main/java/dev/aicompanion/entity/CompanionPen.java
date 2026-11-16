@@ -81,7 +81,7 @@ final class CompanionPen {
     void cancel() { target = null; path = null; cooldown = 0; waitingSince = 0; }
 
     void tick(ServerLevel level) {
-        if (!w.owner.onGround()) return;
+        if (!w.owner.onGround() && !w.owner.isInWater()) return;
         // The fences are made first, where he stands: a bench set down while he walks round the ring could land in it.
         if (!prepared) {
             if (!prepare(level)) return;

@@ -117,7 +117,7 @@ final class CompanionChests {
 
     /** An explicit placement order always places new blocks, even if storage already exists. */
     private void placeRequestedChests() {
-        if (!w.owner.onGround()) return;
+        if (!w.owner.onGround() && !w.owner.isInWater()) return;
         if (w.newChests >= w.requestedCount) { finishPlacedChests(); return; }
         boolean hasItem = w.items.carriedItems().stream().anyMatch(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(w.requestedItem) && !stack.isEmpty())
                 || w.items.gridBlockIs(w.requestedItem);
@@ -193,7 +193,7 @@ final class CompanionChests {
 
     private void retrieve(ServerLevel level) {
         if (w.trip.walk()) return;
-        if (!w.owner.onGround()) return;
+        if (!w.owner.onGround() && !w.owner.isInWater()) return;
         if (w.target == null) { w.target = findChest(level); w.resetApproach(); }
         if (w.target == null) {
             // «Забери всё» that has found something ends there; a chest elsewhere is for what is still missing.
