@@ -180,6 +180,8 @@ public final class CompanionStemTests {
                 && plan.get(2).item().equals("minecraft:melon_seeds"), "Plan: " + plan);
         h.assertTrue("companion work farm_crops 8 minecraft:pumpkin_seeds".equals(CompanionLocalCommands.route("Олег, посади тыкву", "Олег")), "Pumpkin phrase: " + CompanionLocalCommands.route("Олег, посади тыкву", "Олег"));
         h.assertTrue("companion work farm_crops 4 minecraft:melon_seeds".equals(CompanionLocalCommands.route("посади 4 арбуза", "Олег")), "Melon phrase: " + CompanionLocalCommands.route("посади 4 арбуза", "Олег"));
+        // Said otherwise, it goes to the model, which must answer it with a plan, not words alone.
+        h.assertTrue(dev.aicompanion.client.OpenRouterClient.requiresAction("посади тыкву у пруда") && dev.aicompanion.client.OpenRouterClient.requiresAction("засади арбузы"), "A melon field taken for small talk");
         String words = CompanionDialogue.describeAll(List.of(new PlannedAction("farm_crops", 0, 8, "minecraft:pumpkin_seeds")));
         h.assertTrue(words.contains("тыкву") && words.contains("грядок: 8"), "Steps in words: " + words);
         h.succeed();
@@ -212,6 +214,86 @@ public final class CompanionStemTests {
         h.setBlock(cell, block);
         var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)), Blocks.GRASS_BLOCK.defaultBlockState(), player));
+    }
+
+    /**
+     * Review: a second order beside an older field. The soil next to the old stems is where their pumpkins grow: no new stem is
+     * sown on it, so none stands right beside an old one.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1500, batch = "farm")
+    public static void aNewFieldLeavesTheOldStemsTheirRoom(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        List<BlockPos> old = new java.util.ArrayList<>();
+        for (int x : new int[]{11, 13}) for (int z = 11; z <= 14; z++) {
+            BlockPos stem = new BlockPos(x, GROUND + 1, z);
+            h.setBlock(stem.below(), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+            h.setBlock(stem, Blocks.PUMPKIN_STEM.defaultBlockState().setValue(StemBlock.AGE, 2));
+            old.add(stem);
+        }
+        CompanionEntity companion = spawn(h, 10, 10, 10, 10, 16);
+        give(companion, new ItemStack(Items.WOODEN_HOE), new ItemStack(Items.PUMPKIN_SEEDS, 4));
+        long id = order(h, companion, "farm_crops", "minecraft:pumpkin_seeds", 4);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            List<BlockPos> stems = blocks(h, GROUND + 1, Blocks.PUMPKIN_STEM);
+            h.assertTrue(result.success() && stems.size() == 12, "Stems " + stems.size() + ": " + result.message());
+            for (BlockPos stem : stems) {
+                if (old.contains(stem)) continue;
+                for (Direction side : Direction.Plane.HORIZONTAL) h.assertTrue(!old.contains(stem.relative(side)), "A new stem right beside an old one: " + stem);
+                h.assertTrue(roomBeside(h, stem), "No room beside the new stem: " + stem);
+            }
+        });
+    }
+
+    /** A bag with no free cell: the pumpkin is there but its seeds have nowhere to go, and that is what he says. */
+    @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "farm")
+    public static void aFullBagSaysSoInsteadOfNoPumpkin(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        CompanionEntity companion = spawn(h, 12, 12, 10, 10, 16);
+        ItemStack[] bag = new ItemStack[companion.getContainerSize()];
+        bag[0] = new ItemStack(Items.WOODEN_HOE);
+        bag[1] = new ItemStack(Items.PUMPKIN, 3);
+        for (int slot = 2; slot < bag.length; slot++) bag[slot] = new ItemStack(Items.COBBLESTONE, 64);
+        give(companion, bag);
+        long id = order(h, companion, "farm_crops", "minecraft:pumpkin_seeds", 4);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(!result.success() && result.message().contains("нет места") && !result.message().contains("ни тыквы"), "Report: " + result.message());
+            h.assertTrue(count(companion, Items.PUMPKIN) == 3 && blocks(h, GROUND, Blocks.FARMLAND).isEmpty(), "The pumpkins or the ground were touched");
+        });
+    }
+
+    /** A strip of soil one block wide between stone: no stem would have room for its fruit, and he says so instead of «no seeds». */
+    @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "farm")
+    public static void soilWithNoRoomForTheFruitIsSaid(GameTestHelper h) {
+        ground(h);
+        for (int x = 1; x < 31; x++) for (int z = 1; z < 31; z++) if (x != 12) h.setBlock(new BlockPos(x, GROUND, z), Blocks.STONE);
+        h.setBlock(new BlockPos(12, GROUND, 16), Blocks.WATER);
+        CompanionEntity companion = spawn(h, 10, 12, 10, 12, 16);
+        give(companion, new ItemStack(Items.WOODEN_HOE), new ItemStack(Items.PUMPKIN, 1));
+        long id = order(h, companion, "farm_crops", "minecraft:pumpkin_seeds", 4);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(!result.success() && result.message().contains("места под плод") && count(companion, Items.PUMPKIN) == 1, "Report: " + result.message());
+            h.assertTrue(blocks(h, GROUND, Blocks.FARMLAND).isEmpty(), "Tilled where nothing would grow");
+        });
+    }
+
+    /** «Удобри огород» when the stems are already full-grown: bone meal does nothing more there, and he says that, not «nothing to reap». */
+    @GameTest(template = "tall_tree", timeoutTicks = 400, batch = "farm")
+    public static void fullGrownStemsAreNoWorkForBoneMeal(GameTestHelper h) {
+        ground(h); pond(h, 16, 16);
+        BlockPos stem = new BlockPos(12, GROUND + 1, 12);
+        h.setBlock(stem.below(), Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 7));
+        h.setBlock(stem, Blocks.MELON_STEM.defaultBlockState().setValue(StemBlock.AGE, StemBlock.MAX_AGE));
+        CompanionEntity companion = spawn(h, 10, 10, 10, 10, 16);
+        give(companion, new ItemStack(Items.BONE_MEAL, 8));
+        long id = order(h, companion, "use_bone_meal", "any", 64);
+        h.succeedWhen(() -> {
+            CompanionActionResult result = result(h, companion, id);
+            h.assertTrue(!result.success() && result.message().contains("Удобрять нечего") && result.message().contains("со временем"), "Report: " + result.message());
+            h.assertTrue(count(companion, Items.BONE_MEAL) == 8, "Bone meal spent: " + count(companion, Items.BONE_MEAL));
+        });
     }
 
     /** A ripe stem on watered farmland, its fruit grown on the dirt east of it. */
