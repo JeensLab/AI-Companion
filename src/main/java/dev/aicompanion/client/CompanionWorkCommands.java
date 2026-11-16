@@ -150,6 +150,10 @@ public final class CompanionWorkCommands {
             return new PlannedAction("build_portal", 0, 1,
                     value.matches(".*(?:новый|другой|еще один|не хочу|не пойду|не надо).*") ? "new"
                             : value.matches(".*(?:здесь|тут|возле меня|рядом со мной).*") ? "here" : "");
+        // «Сделай генератор булыжника»: lava, stone and water set in a dug channel from his buckets; the buckets are not got by it.
+        if (value.matches("^(?:построй|сделай|сооруди)(?: мне| нам| себе)? (?:(?:каменный|булыжниковый) генератор|генератор (?:булыжника|булыжников|булыжник|камня|камней))"
+                + "(?: рядом| здесь| тут)?$"))
+            return new PlannedAction("build_cobble_gen", 0, 1);
         // Numbers as people say them («пять», «двадцать», «сколько сможешь»), and the spoken «дабудь(-ка)» of the voice transcript.
         var said = CompanionNumbers.parse(value);
         if (said.count() == CompanionNumbers.UNCLEAR) return null;

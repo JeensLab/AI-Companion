@@ -520,14 +520,14 @@ final class CompanionPortalBuild {
      * Ground as the world made it: earth, sand, gravel, stone, netherrack and the like; the player's floors are not dug. Stone,
      * sandstone and terracotta are floors too: where the player builds ({@code site}), they are taken for his (review 09.11).
      */
-    private static boolean natural(BlockState state, boolean site) {
+    static boolean natural(BlockState state, boolean site) {
         if (state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(Blocks.SANDSTONE) || state.is(Blocks.RED_SANDSTONE) || state.is(BlockTags.TERRACOTTA)) return !site;
         return state.is(BlockTags.DIRT) || state.is(BlockTags.SAND) || state.is(Blocks.GRAVEL) || state.is(BlockTags.BASE_STONE_NETHER)
                 || state.is(BlockTags.NYLIUM) || state.is(Blocks.SOUL_SAND) || state.is(Blocks.SOUL_SOIL) || state.is(Blocks.CLAY);
     }
 
     /** Air or a plant a block is set over, without water or lava. */
-    private static boolean free(ServerLevel level, BlockPos cell) {
+    static boolean free(ServerLevel level, BlockPos cell) {
         BlockState state = level.getBlockState(cell);
         return state.canBeReplaced() && state.getFluidState().isEmpty();
     }

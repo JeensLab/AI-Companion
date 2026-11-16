@@ -76,6 +76,7 @@ public final class CompanionDialogue {
             case "take_items" -> "Сейчас заберу " + CompanionContainers.from(actions.getFirst().location()) + ".";
             case "build_house" -> actions.getFirst().item().isEmpty() ? "Окей, построю нам небольшой деревянный дом." : actions.getFirst().item().startsWith("resume") ? "Окей, дострою." : "Окей, построю: " + dev.aicompanion.entity.CompanionBuildPlacement.Site.nameOf(actions.getFirst().item()) + ".";
             case "build_portal" -> "Окей, займусь порталом в Незер.";
+            case "build_cobble_gen" -> "Окей, сделаю генератор булыжника.";
             case "craft_item" -> "Сейчас сделаю.";
             case "equip_item" -> "Сейчас возьму.";
             case "unequip_item" -> "Ага, уберу.";
@@ -206,6 +207,7 @@ public final class CompanionDialogue {
             case "take_items" -> "забрать вещи " + CompanionContainers.from(action.location());
             case "build_house" -> "построить дом";
             case "build_portal" -> "построить портал в Незер";
+            case "build_cobble_gen" -> "построить генератор булыжника";
             case "hunt_mobs" -> "разобраться с монстрами";
             case "give_wood" -> "отдать тебе дерево";
             case "give_items" -> "отдать тебе «" + itemName(action.item()) + "»";
