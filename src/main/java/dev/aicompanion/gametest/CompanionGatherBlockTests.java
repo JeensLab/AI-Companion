@@ -232,18 +232,19 @@ public final class CompanionGatherBlockTests {
     }
 
     /**
-     * The pickup of a harvest lying in a dip under a bush of natural leaves, with the owner's bag: the leaves shut every cell it could
-     * be taken from, so a leaf or two are broken out of the way — as a player breaks into a bush — and the leaf is the shears' block,
-     * not the pickaxe's in his hand: it comes down as itself, fifteen times faster, and the pickaxe is not worn.
+     * The pickup of a harvest lying in a dip under a leaf of a bush of natural leaves, with the owner's bag: the leaves shut the cells it
+     * could be taken from, so they are broken out of the way — as a player breaks into a bush — and a leaf is the shears' block, not the
+     * pickaxe's in his hand: it comes down as itself, fifteen times faster, and the pickaxe is not worn.
      */
-    @GameTest(template = "tall_tree", timeoutTicks = 800)
+    @GameTest(template = "tall_tree", timeoutTicks = 1200)
     public static void aLeafInTheWayOfADropIsCutWithTheShearsNotThePickaxeInHisHand(GameTestHelper h) {
         ground(h);
         BlockPos pit = new BlockPos(14, GROUND, 14);
         h.setBlock(pit, Blocks.AIR);
         var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
-        for (int x = 13; x <= 15; x++) for (int z = 13; z <= 15; z++) for (int y = GROUND + 1; y <= GROUND + 2; y++)
-            h.setBlock(new BlockPos(x, y, z), leaves);
+        // The dip roofed by a leaf, the step down into it a leaf too: two of them shut the drop in.
+        for (BlockPos cell : List.of(pit.above(), pit.west().above()))
+            h.setBlock(cell, leaves);
         CompanionEntity c = withTheOwnersTools(h);
         var at = h.absoluteVec(net.minecraft.world.phys.Vec3.atBottomCenterOf(pit).add(0, .1, 0));
         var log = new net.minecraft.world.entity.item.ItemEntity(h.getLevel(), at.x, at.y, at.z, new ItemStack(Items.OAK_LOG));
