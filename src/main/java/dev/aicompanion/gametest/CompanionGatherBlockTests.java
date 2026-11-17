@@ -440,7 +440,8 @@ public final class CompanionGatherBlockTests {
 
     /**
      * Plan only: what grows on the bed of the sea is picked too: kelp, a sea pickle, seagrass (with shears), and a coral block
-     * mined with a pickaxe for the dead block it gives. A coral itself and its fan give anything only to Silk Touch: no source.
+     * mined with a pickaxe for the dead block it gives. A coral itself and its fan give anything only to Silk Touch: they are
+     * sources of themselves for a silk tool, so the chain goes for them as they stand (the picking says when silk is missing).
      */
     @GameTest(template = "empty", timeoutTicks = 40)
     public static void whatGrowsUnderWaterIsPlannedAsPicking(GameTestHelper h) {
@@ -458,10 +459,15 @@ public final class CompanionGatherBlockTests {
         var bare = CompanionObtain.plan(level, List.of(), false, "minecraft:dead_tube_coral_block", 1, thing -> true);
         h.assertTrue(!bare.refused() && bare.steps().getLast().equals(new CompanionObtain.Step("gather_block", "minecraft:dead_tube_coral_block", 1))
                 && bare.steps().stream().anyMatch(step -> step.type().equals("craft_item") && step.item().endsWith("_pickaxe")), "Dead coral block with no pickaxe: " + bare);
-        for (String item : List.of("minecraft:tube_coral", "minecraft:tube_coral_fan", "minecraft:dead_tube_coral", "minecraft:tube_coral_block")) {
+        // A coral block and its fan are taken as they stand with Silk Touch: the source table knows them, and the chain goes for them.
+        for (String item : List.of("minecraft:tube_coral", "minecraft:tube_coral_fan", "minecraft:tube_coral_block")) {
             var plan = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, item, 1, thing -> true);
-            h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals(item)), item + " is not picked: " + plan);
+            h.assertTrue(plan.steps().equals(List.of(new CompanionObtain.Step("gather_block", item, 1))), item + " is picked with silk: " + plan);
         }
+        // The dead coral plant is the mine's own block (any pickaxe takes it): no source of the plant itself.
+        var deadCoral = CompanionObtain.plan(level, List.of(new ItemStack(Items.WOODEN_PICKAXE)), false, "minecraft:dead_tube_coral", 1, thing -> true);
+        h.assertTrue(deadCoral.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals("minecraft:dead_tube_coral")),
+                "Dead tube coral is not picked: " + deadCoral);
         h.succeed();
     }
 
@@ -633,6 +639,51 @@ public final class CompanionGatherBlockTests {
         h.setBlock(cell, block);
         var player = (net.minecraft.server.level.ServerPlayer) h.getLevel().getPlayerByUUID(c.getOwnerId());
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(h.getLevel().dimension(), h.getLevel(), h.absolutePos(cell)), Blocks.GRASS_BLOCK.defaultBlockState(), player));
+    }
+
+    /**
+     * The layers a snow golem leaves (not the block): «добудь снег» finds them. A layer of snow gives its snowballs to a shovel,
+     * but its loot table asks for the entity that broke it, and the source table weighed the drops of a bare null breaker: it
+     * saw nothing of a layer at all, so the chain refused «Рядом не вижу снежок» beside a golem's trail. The layer is a source
+     * of snowballs now, and the order goes for them with the shovel it has (here a stone one).
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void theSnowLayersAGolemLeavesAreASourceOfSnowballs(GameTestHelper h) {
+        ground(h);
+        for (BlockPos cell : List.of(new BlockPos(18, GROUND + 1, 16), new BlockPos(19, GROUND + 1, 16), new BlockPos(18, GROUND + 1, 17)))
+            h.setBlock(cell, Blocks.SNOW.defaultBlockState().setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, 3));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_SHOVEL));
+        var plan = c.obtainPlan("minecraft:snow", 4);
+        h.assertTrue(!plan.refused(), "«Добудь снег» was refused beside the layers: " + plan.refusal());
+        h.assertTrue(plan.steps().stream().anyMatch(step -> step.type().equals("gather_block") && step.item().equals("minecraft:snowball")),
+                "No snowball is picked from the layers: " + plan);
+        h.assertTrue(plan.steps().stream().noneMatch(step -> step.type().equals("gather_block") && step.item().equals("minecraft:snow_block")),
+                "A snow block was picked where only layers stand: " + plan);
+        h.assertTrue(plan.steps().getLast().equals(new CompanionObtain.Step("craft_item", "minecraft:snow", 4)), "The chain does not end in snow: " + plan);
+        h.succeed();
+    }
+
+    /**
+     * «Добудь снежков» from the layers a golem leaves: the order walks to them and digs them with the shovel it has, the
+     * snowballs are picked up and the shovel wears. A layer gives three snowballs at three layers, so two of them are enough.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void snowballsAreGatheredFromTheLayersAGolemLeaves(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> layers = List.of(new BlockPos(18, GROUND + 1, 16), new BlockPos(19, GROUND + 1, 16), new BlockPos(18, GROUND + 1, 17));
+        for (BlockPos cell : layers)
+            h.setBlock(cell, Blocks.SNOW.defaultBlockState().setValue(net.minecraft.world.level.block.SnowLayerBlock.LAYERS, 3));
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_SHOVEL));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:snowball\",\"count\":4}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            h.assertTrue(count(c, Items.SNOWBALL) >= 4, "No four snowballs: " + count(c, Items.SNOWBALL) + ", " + report);
+            h.assertTrue(damage(c, Items.STONE_SHOVEL) >= 1, "The shovel did not dig a layer: " + damage(c, Items.STONE_SHOVEL) + ", " + report);
+            h.assertTrue(layers.stream().anyMatch(cell -> h.getBlockState(cell).isAir()), "No layer was broken: " + report);
+        });
     }
 
     private static void ground(GameTestHelper h) {

@@ -409,6 +409,65 @@ public final class CompanionRightToolTests {
         breaksInVanillaTicks(h, c, stone, 2);
     }
 
+    /**
+     * The owner's bag while a tree is felled: the axe in his hand, the shears in the bag, and no free cell — the leaves he has
+     * cut already fill one stack to the brim. The leaf in the way of the trunk is cut with the shears all the same: the hand
+     * item takes the shears' own cell, as a player swaps them, and no cell is needed for it. Before, the swap was refused for
+     * want of a cell and the axe broke the leaf, its drop a sapling or nothing and the axe worn.
+     */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aLeafIsCutWithTheShearsThoughTheBagHasNoFreeCell(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        for (int slot = 2; slot < c.getContainerSize(); slot++) c.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        c.setItem(1, new ItemStack(Items.OAK_LEAVES, 32));
+        c.setItem(0, new ItemStack(Items.SHEARS));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
+        BlockPos leaves = new BlockPos(16, GROUND, 18);
+        h.setBlock(leaves, Blocks.OAK_LEAVES);
+        h.assertTrue(mineLog(h, c, leaves), "The leaf in the way was not broken");
+        h.assertTrue(damage(c, Items.SHEARS) == 1, "The shears were not the tool used: damage " + damage(c, Items.SHEARS));
+        h.assertTrue(damage(c, Items.IRON_AXE) == 0, "The axe broke the leaf: damage " + damage(c, Items.IRON_AXE));
+        h.assertTrue(droppedLeaves(h) == 1, "The leaf itself did not come down: " + c.getStoredItemsSummary());
+        h.assertTrue(count(c, Items.OAK_LEAVES) == 32, "The leaves he cut already were lost: " + count(c, Items.OAK_LEAVES));
+        h.assertTrue(c.getMainHandItem().is(Items.IRON_AXE), "The axe was not put back into his hand: " + c.getMainHandItem());
+        h.succeed();
+    }
+
+    /** The same leaf with the axe in his hand and the shears in the bag, a free cell for the swap: the shears are the tool that wears. */
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void aLeafIsCutWithTheShearsThoughTheAxeIsHeld(GameTestHelper h) {
+        CompanionEntity c = spawn(h);
+        c.setItem(0, new ItemStack(Items.IRON_AXE));
+        c.setItem(1, new ItemStack(Items.SHEARS));
+        c.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
+        BlockPos leaves = new BlockPos(16, GROUND, 18);
+        h.setBlock(leaves, Blocks.OAK_LEAVES);
+        h.assertTrue(mineLog(h, c, leaves), "The leaf in the way was not broken");
+        h.assertTrue(damage(c, Items.SHEARS) == 1, "The shears were not the tool used: damage " + damage(c, Items.SHEARS));
+        h.assertTrue(damage(c, Items.IRON_AXE) == 0, "The axe broke the leaf: damage " + damage(c, Items.IRON_AXE));
+        h.assertTrue(droppedLeaves(h) == 1, "The leaf itself did not come down: " + c.getStoredItemsSummary());
+        h.assertTrue(c.getMainHandItem().is(Items.IRON_AXE), "The axe was not put back into his hand: " + c.getMainHandItem());
+        h.succeed();
+    }
+
+    /** Leaf items of his harvest lying in the test: what a cut leaf leaves on the ground for a while. */
+    private static int droppedLeaves(GameTestHelper h) {
+        return h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, h.getBounds().inflate(3),
+                item -> item.getItem().is(Items.OAK_LEAVES)).stream().mapToInt(item -> item.getItem().getCount()).sum();
+    }
+
+    /** A leaf broken as the wood path breaks one: through CompanionGathering.mineLog, the tool of the block in his hand. */
+    private static boolean mineLog(GameTestHelper h, CompanionEntity c, BlockPos at) {
+        try {
+            Object gathering = field(c, "gathering");
+            var mineLog = gathering.getClass().getDeclaredMethod("mineLog", BlockPos.class);
+            mineLog.setAccessible(true);
+            return (boolean) mineLog.invoke(gathering, h.absolutePos(at));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private static CompanionEntity spawn(GameTestHelper h) {
         for (int x = 0; x < 32; x++) for (int z = 0; z < 32; z++) h.setBlock(new BlockPos(x, 0, z), Blocks.STONE);
         CompanionEntity c = h.spawn(AICompanionMod.COMPANION.get(), STAND.getX(), GROUND, STAND.getZ());

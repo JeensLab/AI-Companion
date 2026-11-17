@@ -46,6 +46,12 @@ final class CompanionTools {
      * a block that needs the right tool for its drop is left to a tool that gives it. What he carries for the player stays his.
      */
     static ItemStack bestToolForBlock(CompanionEntity owner, BlockState state) {
+        // What only shears give (a leaf, a vine, grass, a cobweb) is cut with them: a faster axe on grass gives seeds where the
+        // plant was wanted. The rule is the tool that gives the block, not only the quickest one.
+        if (owner.level() instanceof ServerLevel level && CompanionPickable.shorn(level, state)) {
+            ItemStack shears = shears(owner);
+            if (!shears.isEmpty()) return shears;
+        }
         ItemStack best = ItemStack.EMPTY;
         float bestSpeed = 1;
         for (int slot = 0; slot < owner.getContainerSize(); slot++) {
@@ -59,12 +65,34 @@ final class CompanionTools {
             float speed = breakSpeed(owner, held, state);
             if (better(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
         }
-        // What a hand takes by chance only (grass, a fern, a dead bush) gives itself to shears: no faster, but the only way to it.
-        if (best.isEmpty() && owner.level() instanceof ServerLevel level && CompanionPickable.shorn(level, state)) {
-            ItemStack shears = shears(owner);
-            if (!shears.isEmpty()) best = shears;
+        return best;
+    }
+
+    /**
+     * The tool of his with Silk Touch that gives the block itself (a grass block, a coral block) — the fastest of them; empty
+     * when he has none. Silk is not a speed but the drop: only a stack that carries it takes the block as it stands.
+     */
+    static ItemStack bestSilkToolForBlock(CompanionEntity owner, BlockState state) {
+        ItemStack best = ItemStack.EMPTY;
+        float bestSpeed = 1;
+        for (int slot = 0; slot < owner.getContainerSize(); slot++) {
+            ItemStack stack = owner.getItem(slot);
+            if (owner.carriedForPlayer(stack) || !silkTouch(owner, stack) || !takesTheDrop(stack, state)) continue;
+            float speed = breakSpeed(owner, stack, state);
+            if (better(stack, speed, best, bestSpeed)) { best = stack; bestSpeed = speed; }
+        }
+        for (ItemStack held : new ItemStack[]{owner.getMainHandItem(), owner.getOffhandItem()}) {
+            if (!silkTouch(owner, held) || !takesTheDrop(held, state)) continue;
+            float speed = breakSpeed(owner, held, state);
+            if (better(held, speed, best, bestSpeed)) { best = held; bestSpeed = speed; }
         }
         return best;
+    }
+
+    /** Whether the stack carries Silk Touch. */
+    private static boolean silkTouch(CompanionEntity owner, ItemStack stack) {
+        return !stack.isEmpty() && net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
+                owner.level().registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), stack) > 0;
     }
 
     /**

@@ -27,7 +27,15 @@ final class CompanionMiningNavigation {
         double x = Math.clamp(eye.x, block.getX() + .01, block.getX() + .99);
         double y = Math.clamp(eye.y, block.getY() + .01, block.getY() + .99);
         double z = Math.clamp(eye.z, block.getZ() + .01, block.getZ() + .99);
-        for (Vec3 point : new Vec3[]{block.getCenter(), new Vec3(x, y, z), new Vec3(x, block.getY() + .5, z)}) {
+        // The middle of the block's own shape: a layer of snow or a carpet is lower than its cell, and the middle of the cell
+        // lies over it, so a ray aimed there passes above the block and sees nothing of it.
+        var shape = level.getBlockState(block).getCollisionShape(level, block);
+        Vec3 middle = block.getCenter();
+        if (!shape.isEmpty()) {
+            var box = shape.bounds();
+            middle = new Vec3(block.getX() + (box.minX + box.maxX) / 2, block.getY() + (box.minY + box.maxY) / 2, block.getZ() + (box.minZ + box.maxZ) / 2);
+        }
+        for (Vec3 point : new Vec3[]{block.getCenter(), middle, new Vec3(x, y, z), new Vec3(x, block.getY() + .5, z)}) {
             var hit = level.clip(new ClipContext(eye, point, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, owner));
             if (hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(block)) return true;
         }

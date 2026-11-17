@@ -181,6 +181,26 @@ final class CompanionEquipment {
     /** The same, keeping what was in his hand for {@link #putToolAway()} after the break. */
     public void takeToolForBlock(BlockState state) { takeToolForBlock(state, true); }
 
+    /**
+     * The Silk Touch tool that gives the block itself goes into his hand, keeping the hand for {@link #putToolAway()}; false when
+     * he carries none of the kind. A plain tool of the same kind would give the block's drop, not the block.
+     */
+    public boolean takeSilkToolForBlock(BlockState state) {
+        ItemStack best = CompanionTools.bestSilkToolForBlock(c, state);
+        if (best.isEmpty()) return false;
+        if (best == c.getMainHandItem()) return true;
+        ItemStack previous = c.getMainHandItem().copy();
+        if (best == c.getOffhandItem()) {
+            if (!c.unequipForSupport("offhand").success()) return false;
+            best = CompanionTools.bestSilkToolForBlock(c, state);
+            if (best.isEmpty()) return false;
+            if (best == c.getMainHandItem()) return true;
+        }
+        if (!equipStackForWork(best).success()) return false;
+        if (handBeforeTool == null) handBeforeTool = previous;
+        return true;
+    }
+
     /** Puts back what was in his hand before the tool for the block: that same stack goes into the hand again, the tool into the bag. */
     public void putToolAway() {
         ItemStack previous = handBeforeTool;
@@ -201,26 +221,46 @@ final class CompanionEquipment {
 
     /**
      * The chosen stack itself goes into his hand, not a stack of the same item: the one the work picked (the fastest, the enchanted
-     * one) is the one that wears. The hand item it replaces goes into the bag first; with no room for it nothing moves.
+     * one) is the one that wears. The hand item it replaces goes into the bag first; with no room for it the two trade places, as a
+     * player swaps them: the hand item takes the cell the tool leaves and no cell is needed. Only a tool of the other hand (no cell
+     * of its own) is refused then.
      */
     CompanionActionResult equipStackForWork(ItemStack chosen) {
         if (c.level().isClientSide) return CompanionActionResult.failed("Экипировка меняется на сервере мира.");
         if (chosen.isEmpty()) return CompanionActionResult.failed("В руке нечего взять.");
         NonNullList<ItemStack> before = copyBag();
         ItemStack previous = c.getMainHandItem();
+        int slot = bagSlotOf(chosen);
         ItemStack toStore = previous.copy();
+        ItemStack incoming;
         if (!toStore.isEmpty() && !c.storeInCompanionInventory(toStore)) {
+            // The bag has no cell for what his hand held (a full bag, a stack that only half fits): the tool leaves its own cell
+            // for it. One tool at a time: a stack of several stays in the bag, its cell still taken.
+            if (slot < 0 || before.get(slot).getCount() != 1) {
+                restoreBag(before);
+                return CompanionActionResult.failed("В сумке нет места для прежнего предмета. Освободи ячейку.");
+            }
+            incoming = before.get(slot);
             restoreBag(before);
-            return CompanionActionResult.failed("В сумке нет места для прежнего предмета. Освободи ячейку.");
+            c.companionInventory.set(slot, previous);
+            c.setItemSlot(EquipmentSlot.MAINHAND, incoming);
+        } else {
+            incoming = chosen.split(1);
+            c.setItemSlot(EquipmentSlot.MAINHAND, incoming);
         }
-        ItemStack incoming = chosen.split(1);
-        c.setItemSlot(EquipmentSlot.MAINHAND, incoming);
         String id = BuiltInRegistries.ITEM.getKey(incoming.getItem()).toString();
         dev.aicompanion.CompanionDiagnostics.event(c.diagnostics.trace(), "equipment_changed", "entity", c.getUUID(), "slot", "mainhand",
                 "before", previous.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(previous.getItem()),
                 "after", id, "requested", id);
         c.refreshInventorySummary();
         return CompanionActionResult.ok("Взял в правую руку: " + incoming.getHoverName().getString() + ".");
+    }
+
+    /** The bag cell this very stack lies in, or -1 for a stack of a hand. */
+    private int bagSlotOf(ItemStack stack) {
+        for (int slot = 0; slot < c.companionInventory.size(); slot++)
+            if (c.companionInventory.get(slot) == stack) return slot;
+        return -1;
     }
 
     private void takeToolForBlock(BlockState state, boolean keepPrevious) {
