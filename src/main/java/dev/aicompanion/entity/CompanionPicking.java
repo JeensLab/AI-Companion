@@ -36,7 +36,8 @@ import java.util.function.Predicate;
  * but for a pumpkin or a melon at its stem there, his harvest (the stem stays to bear again), nor outside
  * the overworld, but for the Nether's own stone there (netherrack, basalt; never beside lava); the End is later work. What grows on the bed of the water (kelp, seagrass, a sea pickle, a coral
  * block) he swims over and dives for, as for a foe under water (CompanionSwimming): under open water no deeper than his breath
- * takes him, never under a roof; what only lies under water (clay in a pond) is left for the dry kind.
+ * takes him, never under a roof; what only lies under water (clay in a pond) is left for the dry kind. A crown above every
+ * stand cell is no block out of reach: he builds up to it on his own soil (CompanionPillar) and cuts it from the top.
  */
 final class CompanionPicking {
     static final String FULL_BAG = "Сумка забита — некуда класть.";
@@ -142,7 +143,7 @@ final class CompanionPicking {
 
     private static BlockPos find(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources, Predicate<BlockPos> site, Set<BlockPos> passed, Set<BlockPos> lava) {
         return CompanionObsidian.nearest(c, level, DEPTH, state -> gives(sources, state) > 0, pos -> {
-            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !low(c, level, pos) || !grounded(c, level, pos)) return false;
+            if (passed.contains(pos) || !c.errand.within(pos) || !takes(level, pos, site) || !atHand(c, level, pos) || !grounded(c, level, pos)) return false;
             if (!lavaBeside(level, pos)) return true;
             lava.add(pos.immutable());
             return false;
@@ -209,8 +210,9 @@ final class CompanionPicking {
     }
 
     /**
-     * Leaves he reaches from the ground: a crown high over it is no source (a spruce, a tall oak), or iron would be mined for
-     * shears he then stands under the tree with. He builds no stair to a leaf and does not walk the crowns.
+     * Leaves he reaches from the ground: a crown high over it is no source (a spruce, a tall oak) unless he builds up to it.
+     * A standable cell within three below the leaf is the coarse ground reach; a stand on top of the trunk alone is no such
+     * reach — nothing walks up there without a column.
      */
     private static boolean low(CompanionEntity c, ServerLevel level, BlockPos pos) {
         if (!level.getBlockState(pos).is(BlockTags.LEAVES)) return true;
@@ -219,6 +221,15 @@ final class CompanionPicking {
             if (!level.getBlockState(cell.below()).is(BlockTags.LEAVES) && CompanionMiningNavigation.standable(c, cell)) return true;
         }
         return false;
+    }
+
+    /**
+     * Whether this block is his to take: from a stand under it (the ground reach of before), or — for a crown above every
+     * stand cell (a tree grown with bone meal) — up a short column of his own soil (CompanionPillar). Nothing else is a
+     * source of his: a leaf high over the ground with no soil to stand on is no leaf he can come at.
+     */
+    private static boolean atHand(CompanionEntity c, ServerLevel level, BlockPos pos) {
+        return (low(c, level, pos) && !standsFor(c, level, pos).isEmpty()) || !c.temporaryPillar.buildCells(pos).isEmpty();
     }
 
     private static boolean column(BlockState state) { return state.is(Blocks.SUGAR_CANE) || state.is(Blocks.CACTUS) || state.is(Blocks.BAMBOO) || kelp(state); }
@@ -232,7 +243,7 @@ final class CompanionPicking {
      * The cells he takes the block from. A block with a body is worked like ore: in sight, and from where its drop is picked up.
      * A flower or a cane has no body for the eye to rest on (the game's sight goes through it): from the ground at it or beside it.
      */
-    private Set<BlockPos> standsFor(ServerLevel level, BlockPos block) {
+    private static Set<BlockPos> standsFor(CompanionEntity c, ServerLevel level, BlockPos block) {
         Set<BlockPos> cells = new HashSet<>();
         // On the bed of the water: the open water straight over it (depth), the surface the way comes to and the dive down from there.
         // Not the columns beside it: from the floor by a drop-off he could not sink to it (in game 13.11, 45 s on the spot).
@@ -281,6 +292,46 @@ final class CompanionPicking {
         return true;
     }
 
+    /**
+     * A crown that stands above every stand cell: he walks to the cells beside the trunk, builds up on his own soil until the
+     * block is within a swing, and cuts it from the top of the column — the same supports the wood path raises (CompanionPillar),
+     * never a teleport. False when he cannot build up to it at all: no soil, a ceiling, or a crown too high for six steps.
+     */
+    private boolean climb() {
+        // Already within a swing from the top of his own column: no more steps up, the crown is cut from here.
+        if (c.temporaryPillar.isActive() && c.temporaryPillar.inReach(target)) { stands = Set.of(c.blockPosition()); return true; }
+        Set<BlockPos> feet = c.temporaryPillar.buildCells(target);
+        if (feet.isEmpty()) return false;
+        // The pillar plans its column beside him: from farther off he walks to the trunk's foot first, as the wood path walks
+        // to a tree. While it already stands he lets it plan from where he is.
+        if (!c.temporaryPillar.isActive() && !feet.contains(c.blockPosition())) return approach(feet);
+        CompanionPillar.Outcome outcome = c.temporaryPillar.tickToward(target, false);
+        if (outcome == CompanionPillar.Outcome.FAILED) return false;
+        if (outcome == CompanionPillar.Outcome.READY) { stands = Set.of(c.blockPosition()); return true; }
+        c.workStatus("Поднимаюсь на опоре: " + name() + ".");
+        return true;
+    }
+
+    /** Walking to the cells beside the trunk, as {@link #walk()} walks to a stand: false when there is no way there. */
+    private boolean approach(Set<BlockPos> feet) {
+        if (++legs > LEGS) return false;
+        CompanionRoute.Reach reach = w.route.cells(feet, 0);
+        if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return ++waited < WAIT; }
+        if (!reach.found()) return false;
+        waited = 0;
+        w.route.walk(reach.path());
+        c.workStatus("Иду к стволу: " + name() + ".");
+        return true;
+    }
+
+    /** His own column is taken back before the drops on the ground are walked to: the pickup waits while it stands. */
+    private boolean down() {
+        if (!c.temporaryPillar.isActive()) return false;
+        boolean stood = c.temporaryPillar.hasSupports();
+        c.temporaryPillar.requestCleanup();
+        return stood;
+    }
+
     /** The block on the bed he is over now: the swimmer sinks to it while his breath allows (CompanionSwimming). */
     BlockPos dive() { return target != null && stands.contains(c.blockPosition()) && c.level() instanceof ServerLevel level && wet(level, target) ? target : null; }
 
@@ -295,11 +346,13 @@ final class CompanionPicking {
     void tick(ServerLevel level) {
         int got = got();
         if (got >= wanted) { end(true, "Собрал: «" + name() + "», " + got + " шт."); return; }
-        if (due >= wanted) { collect(level, got); return; }
+        if (due >= wanted) { down(); collect(level, got); return; }
         Predicate<BlockPos> site = sites(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
         if (target == null) target = find(c, level, sources, site, passed, lavaKept);
         if (target == null) {
+            // On his own column nothing else is in reach: the soil comes back before the drops on the ground are walked to.
+            if (down()) return;
             // What he broke and has not picked up yet is picked up before he says how far he got.
             if (due > got) { collect(level, got); return; }
             String rest = passed.isEmpty() ? "больше рядом нет" : "до остального не добрался";
@@ -319,8 +372,16 @@ final class CompanionPicking {
             end(false, "Ножниц нет: срезать «" + name() + "» нечем.");
             return;
         }
-        if (stands.isEmpty()) stands = standsFor(level, target);
+        if (stands.isEmpty()) stands = standsFor(c, level, target);
+        if (stands.isEmpty()) {
+            // A crown above every stand cell: he builds up to it on the wood path's own soil supports, cuts it from the top
+            // of the column, and the soil comes back when he is down (requestCleanup, the descent of RecoverSupportsGoal).
+            if (!climb()) { passed.add(target); release(); }
+            return;
+        }
         if (!stands.contains(c.blockPosition())) {
+            // He is on his own column and this block needs the ground: down first, then the walk, not off the edge.
+            if (down()) return;
             c.workStatus("Иду за: " + name() + ".");
             if (!walk()) { passed.add(target); release(); }
             return;

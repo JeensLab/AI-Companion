@@ -8,8 +8,9 @@ import net.minecraft.server.level.ServerLevel;
  * «Листва»/«листья» as the world has them: the leaf block of a tree he can really gather from, whatever species grows
  * here — never a log, and no species of its own hardcoded. A leaf a player set down (persistent) is no tree's crown.
  * The nearest leaf is not enough: a tall crown may hang over him out of reach while another tree's leaves stand by
- * (the owner, 17.11: «Рядом не вижу … oak leaves» under a tall tree he could gather from). So the target is chosen by
- * the picking path's own rule, and with no reachable leaf of any tree the order names none.
+ * (the owner, 17.11: «Рядом не вижу … oak leaves» under a tall tree he could gather from). A crown above every stand
+ * cell is no loss either: with soil in the bag he builds up to it (CompanionPillar) and cuts it from the column. So the
+ * target is chosen by the picking path's own rule, and with no leaf of any tree he can come at the order names none.
  */
 public final class CompanionLeaves {
     /** The word an order carries instead of a species: resolved where the world is known (CompanionServerPlanPort). */
