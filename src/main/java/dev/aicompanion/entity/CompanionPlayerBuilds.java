@@ -115,6 +115,8 @@ public final class CompanionPlayerBuilds extends SavedData {
             stones.put(player, placed);
             placed.remove(pos.asLong());
             placed.add(pos.asLong());
+            // Full: the cells where his stone is gone (a pillar climbed and broken again) go first, then the oldest.
+            if (placed.size() > MAX_STONES) placed.removeIf(cell -> level.isLoaded(BlockPos.of(cell)) && !CompanionPickable.stone(level.getBlockState(BlockPos.of(cell)).getBlock()));
             while (placed.size() > MAX_STONES) placed.remove(placed.iterator().next());
             while (stones.size() > MAX_OWNERS) stones.remove(stones.keySet().iterator().next());
             setDirty();
@@ -171,7 +173,9 @@ public final class CompanionPlayerBuilds extends SavedData {
     /** The stone he set down himself in the overworld (a path, a wall of andesite), as a test of a cell: never dug by name for him. */
     java.util.function.Predicate<BlockPos> placedStone(UUID player, ServerLevel level) {
         LinkedHashSet<Long> placed = stones.get(player);
-        return placed == null || level.dimension() != Level.OVERWORLD ? pos -> false : pos -> placed.contains(pos.asLong());
+        // Only while his stone stands there: a flower grown later where he once set a block is no stone of his.
+        return placed == null || level.dimension() != Level.OVERWORLD ? pos -> false
+                : pos -> placed.contains(pos.asLong()) && CompanionPickable.stone(level.getBlockState(pos).getBlock());
     }
 
     /** His buildings in this dimension (sites that reach a home), as a test of a cell: what lies there is his (CompanionObsidian leaves it). Taken once for many cells. */

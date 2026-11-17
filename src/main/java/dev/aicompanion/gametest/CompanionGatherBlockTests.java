@@ -436,6 +436,11 @@ public final class CompanionGatherBlockTests {
         h.assertTrue(given.size() == 5 && given.get(0).type().equals("obtain_item") && given.get(0).item().equals("minecraft:diorite") && given.get(0).count() == 2
                 && given.get(1).type().equals("obtain_item") && given.get(1).item().equals("minecraft:granite")
                 && given.subList(2, 5).stream().allMatch(step -> step.type().equals("gather_stone")), "Stone named to gather_stone: " + given);
+        // In game 17.11 a longer line was heard as «С этим пока не справился»: with the longest name the ask is said whole.
+        String line = "«Колотый глубинный сланец» вижу только у лавы, не трогал: отведи меня к склону или в пещеру.";
+        String said = dev.aicompanion.client.CompanionDialogue.summarize(List.of(new dev.aicompanion.client.PlannedAction("gather_block", 0, 2, "minecraft:cobbled_deepslate")),
+                "План остановлен: " + line);
+        h.assertTrue(said.equals(line), "Said: " + said);
         h.succeed();
     }
 
@@ -469,11 +474,36 @@ public final class CompanionGatherBlockTests {
             h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
             String report = future.join().report();
             h.assertTrue(count(c, Items.GRANITE) == 2, "Not two granite: " + count(c, Items.GRANITE) + ", " + report);
-            h.assertTrue(count(c, Items.TUFF) == 0 && report.contains("склону"), "Tuff in a sealed hollow: " + report);
+            h.assertTrue(count(c, Items.TUFF) == 0 && report.contains("подойти не смог") && report.contains("склону"), "Tuff in a sealed hollow: " + report);
             for (BlockPos cell : shown) h.assertBlockNotPresent(Blocks.GRANITE, cell);
             for (BlockPos cell : List.of(hidden, path, lit, shore)) h.assertBlockPresent(Blocks.GRANITE, cell);
             h.assertBlockPresent(Blocks.WALL_TORCH, torch);
             h.assertBlockPresent(Blocks.TUFF, tuff);
+        });
+    }
+
+    /**
+     * «Добудь туф»: a sealed hollow under the ground nearer to him is lined with twelve faces of tuff, a block of it stands on the
+     * ground farther off. The first face he finds no way to marks the whole hollow: its other faces are passed without a search and
+     * do not end the order, and the tuff on the ground is dug. The hollow is left whole.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 1600)
+    public static void tuffBeyondASealedHollowIsReached(GameTestHelper h) {
+        ground(h);
+        List<BlockPos> lining = new java.util.ArrayList<>();
+        for (int x = 6; x <= 8; x++) for (int z = 10; z <= 12; z++) for (int y = GROUND - 3; y <= GROUND - 2; y++) h.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+        for (int y = GROUND - 3; y <= GROUND - 2; y++) for (int i = 0; i < 3; i++) { lining.add(new BlockPos(5, y, 10 + i)); lining.add(new BlockPos(6 + i, y, 9)); }
+        for (BlockPos cell : lining) h.setBlock(cell, Blocks.TUFF);
+        BlockPos shown = new BlockPos(22, GROUND + 1, 22);
+        h.setBlock(shown, Blocks.TUFF);
+        CompanionEntity c = spawn(h, 12, 16);
+        c.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        var future = run(h, c, "[{\"action\":\"obtain_item\",\"item\":\"minecraft:tuff\",\"count\":1}]");
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            h.assertTrue(count(c, Items.TUFF) == 1, "Not the tuff on the ground: " + count(c, Items.TUFF) + ", " + future.join().report());
+            h.assertBlockNotPresent(Blocks.TUFF, shown);
+            for (BlockPos cell : lining) h.assertBlockPresent(Blocks.TUFF, cell);
         });
     }
 

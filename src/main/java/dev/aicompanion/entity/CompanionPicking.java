@@ -22,6 +22,7 @@ import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -59,10 +60,12 @@ final class CompanionPicking {
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
     /**
-     * Faces of the stone dug by name he looked for a way to and found none, before he says so: one seen in a sealed hollow under him
-     * shows many. A face with no cell to work it from (its drop would fall into running water) is passed at once and not counted.
+     * Searches for a way to the stone dug by name that found none, before he says so. Each marks the hollow behind the face, so its
+     * other faces are passed without another search: this counts the hollows (and the faces of a cave too big to mark), not faces.
      */
     private static final int STONE_TRIES = 8;
+    /** Open cells a hollow is marked up to: more is no hollow but the open ground or a cave system, and only the face's cells are. */
+    private static final int HOLLOW = 2048;
 
     private final CompanionWork w;
     /** The work is made before it knows its owner: taken at the order. */
@@ -71,8 +74,11 @@ final class CompanionPicking {
     private List<CompanionPickable.Source> sources = List.of();
     /** The order is for the stone dug by name (granite, tuff…). */
     private boolean stone;
-    /** Stone faces he looked for a way to and found none. */
+    /** Searches for a way to a stone face that found none, and the cells no way leads to: the hollows behind those faces. */
     private int missed;
+    private final Set<BlockPos> unreached = new HashSet<>();
+    /** The last walk ended because the search found no way (not a wait, not walks without progress). */
+    private boolean noWay;
     /** Ordered, in his bag at the order, dropped by the blocks he broke (picked up or not). */
     private int wanted, before, due;
     private long settleAt;
@@ -100,7 +106,7 @@ final class CompanionPicking {
         stone = sources.stream().allMatch(source -> CompanionPickable.stone(source.block()));
         missed = 0;
         release();
-        passed.clear(); lavaKept.clear();
+        passed.clear(); lavaKept.clear(); unreached.clear();
         return null;
     }
 
@@ -286,7 +292,7 @@ final class CompanionPicking {
         // He is in the air or the search goes on: asked again at the next tick.
         // Not for ever: under a ledge in running water no search came about and he stood there until the watchdog (in game 12.11).
         if (reach.busy() || CompanionRoute.NOT_SEARCHED.equals(reach.reason())) { legs--; return ++waited < WAIT; }
-        if (!reach.found()) return false;
+        if (!reach.found()) { noWay = true; return false; }
         waited = 0;
         path = reach.path();
         route.walk(path);
@@ -318,9 +324,9 @@ final class CompanionPicking {
             String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
             if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
-            // The stone's ask said whole: a line this short is spoken as it is (CompanionDialogue), the lava on a line of its own.
-            if (stone) end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»" : "«" + name() + "» вижу, но подойти не смог")
-                    + ": отведи меня к склону или в пещеру." + (lava.isEmpty() ? "" : "\n" + lava.strip()));
+            // The stone's ask in one line short enough to be spoken whole with the longest name (CompanionDialogue).
+            if (stone) end(false, (!passed.isEmpty() ? "«" + name() + "» вижу, но подойти не смог" : !lavaKept.isEmpty() ? "«" + name() + "» вижу только у лавы, не трогал"
+                    : "Рядом не нашёл, где взять «" + name() + "»") + ": отведи меня к склону или в пещеру.");
             else end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava);
             return;
         }
@@ -333,10 +339,18 @@ final class CompanionPicking {
             end(false, "Ножниц нет: срезать «" + name() + "» нечем.");
             return;
         }
-        if (stands.isEmpty()) stands = standsFor(level, target);
+        if (stands.isEmpty()) {
+            stands = standsFor(level, target);
+            // A face of a hollow no way led to already: passed at once, without a search.
+            if (stone) stands.removeAll(unreached);
+        }
         if (!stands.contains(c.blockPosition())) {
             c.workStatus("Иду за: " + name() + ".");
-            if (!walk()) { if (!stands.isEmpty()) missed++; passed.add(target); release(); }
+            if (!walk()) {
+                if (stone && noWay) { missed++; unreached.addAll(hollow(level, stands)); }
+                passed.add(target);
+                release();
+            }
             return;
         }
         c.getNavigation().stop();
@@ -384,7 +398,21 @@ final class CompanionPicking {
         due = got; settleAt = 0; retried = false;
     }
 
-    private void release() { target = null; stands = Set.of(); path = null; legs = waited = dived = 0; w.breaking.reset(); w.resetApproach(); }
+    private void release() { target = null; stands = Set.of(); path = null; legs = waited = dived = 0; noWay = false; w.breaking.reset(); w.resetApproach(); }
+
+    /** The open cells joined to these, if they make a hollow smaller than {@link #HOLLOW}; else only these cells. */
+    private static Set<BlockPos> hollow(ServerLevel level, Set<BlockPos> cells) {
+        Set<BlockPos> seen = new HashSet<>(cells);
+        ArrayDeque<BlockPos> open = new ArrayDeque<>(cells);
+        while (!open.isEmpty() && seen.size() < HOLLOW) {
+            BlockPos at = open.poll();
+            for (Direction side : Direction.values()) {
+                BlockPos next = at.relative(side);
+                if (!seen.contains(next) && level.isLoaded(next) && level.getBlockState(next).getCollisionShape(level, next).isEmpty()) { seen.add(next); open.add(next); }
+            }
+        }
+        return seen.size() < HOLLOW ? seen : cells;
+    }
 
     /** A failure ends obtain_item at once with what he says (BLOCKED): planned again, the same ground was looked over twice more. */
     private void end(boolean success, String message) {
