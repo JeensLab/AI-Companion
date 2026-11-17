@@ -79,6 +79,8 @@ public final class CompanionObtain {
     private final java.util.function.Predicate<Item> roams;
     private final Map<Item, Boolean> roamed = new HashMap<>();
     private final Trip trip;
+    /** Whether a stack he carries is his to use now: what he carries for the player (a sort) is not. */
+    private final java.util.function.Predicate<ItemStack> his;
     /** A step of the chain is Nether-only and is fetched through the portal; and why the trip cannot be made (no portal, no chunk loading: said instead of any other refusal). */
     private boolean viaNether;
     private String errandRefusal;
@@ -92,8 +94,9 @@ public final class CompanionObtain {
     private static final int LAYERS = 7;
     private static final double SPARE = 1.25;
 
-    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip) {
-        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip;
+    private CompanionObtain(ServerLevel level, List<ItemStack> carried, boolean bench, java.util.function.Predicate<Item> grows, java.util.function.Predicate<Item> roams, Trip trip,
+                            java.util.function.Predicate<ItemStack> his) {
+        this.level = level; this.carried = carried; this.bench = bench; this.grows = grows; this.roams = roams; this.trip = trip; this.his = his;
         blade = carried.stream().anyMatch(stack -> stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES));
         for (ItemStack stack : carried) if (!stack.isEmpty()) bag.merge(key(stack.getItem()), stack.getCount(), Integer::sum);
     }
@@ -116,16 +119,25 @@ public final class CompanionObtain {
     /** {@code trip}: the portal to the Nether he can walk to, and whether he is on the errand there now. */
     public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
                             java.util.function.Predicate<Item> roams, Trip trip) {
+        return plan(level, carried, benchNearby, requested, count, grows, roams, trip, stack -> true);
+    }
+
+    /**
+     * {@code his}: whether a stack he carries is his to use now — what he carries for the player during a sort is not, and no
+     * tool of it is promised for a block only that tool would give (CompanionTools skips it too).
+     */
+    public static Plan plan(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
+                            java.util.function.Predicate<Item> roams, Trip trip, java.util.function.Predicate<ItemStack> his) {
         boolean[] viaNether = {false};
-        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether), level, trip, viaNether[0]);
+        return errand(planned(level, carried, benchNearby, requested, count, grows, roams, trip, viaNether, his), level, trip, viaNether[0]);
     }
 
     private static Plan planned(ServerLevel level, List<ItemStack> carried, boolean benchNearby, String requested, int count, java.util.function.Predicate<Item> grows,
-                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether) {
+                                java.util.function.Predicate<Item> roams, Trip trip, boolean[] viaNether, java.util.function.Predicate<ItemStack> his) {
         var id = ResourceLocation.tryParse(requested == null ? "" : requested.trim());
         Item item = id == null ? null : BuiltInRegistries.ITEM.getOptional(id).orElse(null);
         if (item == null || item == Items.AIR) return new Plan(List.of(), "Не понял, какой предмет нужен.");
-        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip);
+        CompanionObtain planner = new CompanionObtain(level, carried, benchNearby || carried.stream().anyMatch(stack -> stack.is(Items.CRAFTING_TABLE)), grows, roams, trip, his);
         // Logs the player asked for by name are that species, wherever the plan goes on; inside a chain wood stays a family (key).
         var species = CompanionWoodKind.of(id.toString());
         if (species != null && plainLog(id.getPath())) {
@@ -534,7 +546,7 @@ public final class CompanionObtain {
     /** Whether he carries a tool with Silk Touch that takes one of the blocks giving the item as it stands (silk is never made). */
     private boolean carriesSilk(Item item) {
         for (ItemStack stack : carried) {
-            if (stack.isEmpty() || net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
+            if (stack.isEmpty() || !his.test(stack) || net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(
                     level.registryAccess().holderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH), stack) <= 0) continue;
             for (CompanionPickable.Source source : CompanionPickable.sources(level, item)) {
                 var state = source.block().defaultBlockState();
