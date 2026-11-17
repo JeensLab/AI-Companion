@@ -58,7 +58,7 @@ public final class CompanionLeavesTests {
         }
         List<PlannedAction> actions = CompanionLocalCommands.actions(first);
         h.assertTrue(actions.getFirst().type().equals("obtain_item"), "Not an obtain order: " + actions);
-        String item = CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), actions.getFirst().item());
+        String item = CompanionLeaves.resolve(c, h.getLevel(), actions.getFirst().item());
         Item resolved = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(item)).orElse(Items.AIR);
         h.assertTrue(new ItemStack(resolved).is(ItemTags.LEAVES), "No leaf block in the order: " + item + ", " + actions);
         var plan = CompanionObtain.plan(h.getLevel(), List.of(new ItemStack(Items.SHEARS)), false, item, actions.getFirst().count(), thing -> true);
@@ -124,24 +124,65 @@ public final class CompanionLeavesTests {
         for (BlockPos cell : List.of(trunk.above(2).west(), trunk.above(2).east(), trunk.above(3).north(), trunk.above(3).south()))
             h.setBlock(cell, Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1));
         CompanionEntity c = spawn(h, 12, 16);
-        String found = CompanionLeaves.nearest(h.getLevel(), c.blockPosition(), c.getSearchRadius());
+        String found = CompanionLeaves.nearest(c, h.getLevel());
         h.assertTrue("minecraft:spruce_leaves".equals(found), "The spruce is not named: " + found);
-        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), CompanionLeaves.FAMILY)),
+        h.assertTrue("minecraft:spruce_leaves".equals(CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY)),
                 "The order did not resolve to the spruce");
         h.succeed();
     }
 
-    /** Nothing of a tree about: no species is invented, and the order falls back to oak alone. */
+    /** Nothing of a tree about: no species is invented, and an item of its own is left as it was. */
     @GameTest(template = "tall_tree", timeoutTicks = 100)
-    public static void noTreeAboutFallsBackToOak(GameTestHelper h) {
+    public static void noTreeAboutNamesNoSpecies(GameTestHelper h) {
         ground(h);
         CompanionEntity c = spawn(h, 12, 16);
-        h.assertTrue(CompanionLeaves.nearest(h.getLevel(), c.blockPosition(), c.getSearchRadius()) == null, "A tree was found in the open");
-        h.assertTrue("minecraft:oak_leaves".equals(CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), CompanionLeaves.FAMILY)),
-                "No fallback: " + CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), CompanionLeaves.FAMILY));
-        h.assertTrue("minecraft:birch_leaves".equals(CompanionLeaves.resolve(h.getLevel(), c.blockPosition(), c.getSearchRadius(), "minecraft:birch_leaves")),
+        h.assertTrue(CompanionLeaves.nearest(c, h.getLevel()) == null, "A tree was found in the open");
+        h.assertTrue(CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY) == null,
+                "A species was invented: " + CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY));
+        h.assertTrue("minecraft:birch_leaves".equals(CompanionLeaves.resolve(c, h.getLevel(), "minecraft:birch_leaves")),
                 "An item of its own was rewritten");
         h.succeed();
+    }
+
+    /**
+     * The owner's tall tree (17.11): a tall spruce whose crown hangs over him out of reach stands nearest, while the oak
+     * beside it has leaves he can stand by. The order must name the oak — the reachable tree, not the nearest block in the
+     * air — and really gather, without «Рядом не вижу» and without the species lecture.
+     */
+    @GameTest(template = "tall_tree", timeoutTicks = 3000)
+    public static void aTallTreeOutOfReachLeavesTheReachableTreeAsTheTarget(GameTestHelper h) {
+        ground(h);
+        BlockPos spruce = new BlockPos(18, GROUND + 1, 16);
+        // The trunk runs through the whole crown, as a grown spruce's does: no stand cell on its top, so the crown is above his reach.
+        for (int up = 0; up < 8; up++) h.setBlock(spruce.above(up), Blocks.SPRUCE_LOG);
+        var spruceLeaves = Blocks.SPRUCE_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = 5; dy <= 7; dy++) {
+            BlockPos cell = spruce.offset(dx, dy, dz);
+            if (!cell.equals(spruce.above(dy))) h.setBlock(cell, spruceLeaves);
+        }
+        BlockPos oak = new BlockPos(24, GROUND + 1, 16);
+        for (int up = 0; up < 2; up++) h.setBlock(oak.above(up), Blocks.OAK_LOG);
+        var oakLeaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, 1);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int dy = 1; dy <= 2; dy++) {
+            BlockPos cell = oak.offset(dx, dy, dz);
+            if (!cell.equals(oak.above(dy))) h.setBlock(cell, oakLeaves);
+        }
+        CompanionEntity c = withTheOwnersTools(h);
+        String command = CompanionLocalCommands.route("добудь листву", "Олег");
+        h.assertTrue(command != null, "«добудь листву» went to the model");
+        List<PlannedAction> plan = CompanionLocalCommands.actions(command);
+        h.assertTrue("minecraft:oak_leaves".equals(CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY)),
+                "The tall spruce's unreachable leaves were named: " + CompanionLeaves.resolve(c, h.getLevel(), CompanionLeaves.FAMILY));
+        var future = CompanionPlanRunner.run(plan, new CompanionServerPlanPort(h.getLevel().getServer(), c.getOwnerId(), "gametest-leaves-tall", () -> false));
+        h.succeedWhen(() -> {
+            h.assertTrue(future.isDone() && !future.isCompletedExceptionally(), "Plan still running: " + c.getLastTaskResult());
+            String report = future.join().report();
+            String said = dev.aicompanion.client.CompanionDialogue.summarize(plan, report);
+            h.assertTrue(count(c, Items.OAK_LEAVES) == 16, "No sixteen oak leaves: " + count(c, Items.OAK_LEAVES) + ", " + report);
+            h.assertTrue(said.equals("Собрал 16 листьев."), "The answer is not the count: " + said);
+            h.assertTrue(!said.contains("Рядом листвы не вижу") && !report.contains("Рядом не вижу"), "The leaves were refused: " + report);
+            h.assertTrue(!report.contains("Еловая"), "The spruce was named in the failure: " + report);
+        });
     }
 
     /** The owner's bag (in game 16.11): the stone pickaxe in his hand, an iron pickaxe, an axe, shears and a shovel in the bag. */

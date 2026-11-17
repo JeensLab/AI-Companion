@@ -109,6 +109,16 @@ final class CompanionPicking {
         return !here.isEmpty() && find(c, level, here, sites(c, level), Set.of(), new HashSet<>()) != null;
     }
 
+    /**
+     * The leaf block the picking can really work from: the nearest leaf of any tree in his search that he can stand by
+     * (the gather's own rule — a stand cell under the crown, never merely the nearest block in the air). Null when no
+     * tree's leaves are within reach at all — the order is then refused short instead of naming a species he cannot come at.
+     */
+    static BlockPos nearestLeaf(CompanionEntity c, ServerLevel level) {
+        List<CompanionPickable.Source> all = allowed(level, CompanionPickable.leaves(level));
+        return all.isEmpty() ? null : find(c, level, all, sites(c, level), Set.of(), new HashSet<>());
+    }
+
     /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
     private static List<CompanionPickable.Source> allowed(ServerLevel level, List<CompanionPickable.Source> all) {
         if (level.dimension() == Level.OVERWORLD) return all.stream().filter(source -> !CompanionPickable.nether(source.block())).toList();

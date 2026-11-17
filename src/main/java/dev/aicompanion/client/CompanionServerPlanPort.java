@@ -240,9 +240,10 @@ public final class CompanionServerPlanPort implements CompanionPlanRunner.Port {
         return onServer(player -> {
             CompanionEntity companion = CompanionEvents.getOwnedCompanion(player);
             if (companion == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Компаньон выгружен из мира.");
-            // «Листва» is no item of its own: the leaf block of the tree nearest him, whatever species grows here (CompanionLeaves).
-            String item = dev.aicompanion.entity.CompanionLeaves.resolve((net.minecraft.server.level.ServerLevel) companion.level(),
-                    companion.blockPosition(), companion.getSearchRadius(), action.item());
+            // «Листва» is no item of its own: the leaf block of a tree he can really gather from, whatever species grows here (CompanionLeaves).
+            String item = dev.aicompanion.entity.CompanionLeaves.resolve(companion, (net.minecraft.server.level.ServerLevel) companion.level(), action.item());
+            // No reachable leaf of any tree: one short line, no tree or species he cannot come at.
+            if (item == null) return new CompanionPlanRunner.Expansion(java.util.List.of(), "Рядом листвы не вижу.");
             var plan = companion.obtainPlan(item, action.count());
             if (plan.refused()) return new CompanionPlanRunner.Expansion(java.util.List.of(), plan.refusal());
             java.util.List<PlannedAction> steps = new java.util.ArrayList<>();
