@@ -347,7 +347,7 @@ final class CompanionPicking {
         if (!stands.contains(c.blockPosition())) {
             c.workStatus("Иду за: " + name() + ".");
             if (!walk()) {
-                if (stone && noWay) { missed++; unreached.addAll(hollow(level, stands)); }
+                if (stone && noWay) { missed++; unreached.addAll(hollow(level, stands, c.blockPosition())); }
                 passed.add(target);
                 release();
             }
@@ -400,8 +400,11 @@ final class CompanionPicking {
 
     private void release() { target = null; stands = Set.of(); path = null; legs = waited = dived = 0; noWay = false; w.breaking.reset(); w.resetApproach(); }
 
-    /** The open cells joined to these, if they make a hollow smaller than {@link #HOLLOW}; else only these cells. */
-    private static Set<BlockPos> hollow(ServerLevel level, Set<BlockPos> cells) {
+    /**
+     * The open cells joined to these, if they make a hollow smaller than {@link #HOLLOW} and he does not stand in it (a mine whose
+     * way out is shut: a ledge in it is no way, the rest is); else only these cells.
+     */
+    private static Set<BlockPos> hollow(ServerLevel level, Set<BlockPos> cells, BlockPos here) {
         Set<BlockPos> seen = new HashSet<>(cells);
         ArrayDeque<BlockPos> open = new ArrayDeque<>(cells);
         while (!open.isEmpty() && seen.size() < HOLLOW) {
@@ -411,7 +414,7 @@ final class CompanionPicking {
                 if (!seen.contains(next) && level.isLoaded(next) && level.getBlockState(next).getCollisionShape(level, next).isEmpty()) { seen.add(next); open.add(next); }
             }
         }
-        return seen.size() < HOLLOW ? seen : cells;
+        return seen.size() < HOLLOW && !seen.contains(here) ? seen : cells;
     }
 
     /** A failure ends obtain_item at once with what he says (BLOCKED): planned again, the same ground was looked over twice more. */
