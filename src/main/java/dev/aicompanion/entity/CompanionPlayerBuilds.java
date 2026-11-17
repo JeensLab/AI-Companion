@@ -9,6 +9,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -21,6 +22,7 @@ import net.minecraft.world.level.saveddata.SavedData;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,6 +45,8 @@ public final class CompanionPlayerBuilds extends SavedData {
     private static final int MAX_OWNERS = 64;
     private static final int MAX_SITES = 8;
     private static final int MAX_CHESTS = 16;
+    /** Raw stone set down that is remembered block by block, the newest kept: his paths and walls of granite or andesite. */
+    private static final int MAX_STONES = 1024;
 
     private static final class Site {
         final String dimension;
@@ -96,6 +100,8 @@ public final class CompanionPlayerBuilds extends SavedData {
     }
 
     private final Map<UUID, List<Site>> owners = new LinkedHashMap<>();
+    /** The cells of the overworld where he set down the stone Oleg digs by name (CompanionPickable.stone), as BlockPos longs. */
+    private final Map<UUID, LinkedHashSet<Long>> stones = new LinkedHashMap<>();
 
     public static CompanionPlayerBuilds get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, "aicompanion_player_builds");
@@ -103,6 +109,16 @@ public final class CompanionPlayerBuilds extends SavedData {
 
     /** A block the player set down himself. Filling a hole, a pillar of soil and torches in a mine say nothing about a home. */
     void record(UUID player, ServerLevel level, BlockPos pos, BlockState state) {
+        if (level.dimension() == Level.OVERWORLD && CompanionPickable.stone(state.getBlock())) {
+            LinkedHashSet<Long> placed = stones.remove(player);
+            if (placed == null) placed = new LinkedHashSet<>();
+            stones.put(player, placed);
+            placed.remove(pos.asLong());
+            placed.add(pos.asLong());
+            while (placed.size() > MAX_STONES) placed.remove(placed.iterator().next());
+            while (stones.size() > MAX_OWNERS) stones.remove(stones.keySet().iterator().next());
+            setDirty();
+        }
         boolean chest = state.getBlock() instanceof ChestBlock;
         if (!chest && (filler(state) || state.getCollisionShape(level, pos).isEmpty())) return;
         String dimension = level.dimension().location().toString();
@@ -152,6 +168,12 @@ public final class CompanionPlayerBuilds extends SavedData {
         return here(player, level).stream().flatMap(site -> Stream.concat(site.chests.stream(), site.stashes.stream())).toList();
     }
 
+    /** The stone he set down himself in the overworld (a path, a wall of andesite), as a test of a cell: never dug by name for him. */
+    java.util.function.Predicate<BlockPos> placedStone(UUID player, ServerLevel level) {
+        LinkedHashSet<Long> placed = stones.get(player);
+        return placed == null || level.dimension() != Level.OVERWORLD ? pos -> false : pos -> placed.contains(pos.asLong());
+    }
+
     /** His buildings in this dimension (sites that reach a home), as a test of a cell: what lies there is his (CompanionObsidian leaves it). Taken once for many cells. */
     java.util.function.Predicate<BlockPos> sites(UUID player, ServerLevel level) {
         // A few cobblestones set by a lava flow are no building: they hid the lava from him (second review 08.11).
@@ -183,6 +205,16 @@ public final class CompanionPlayerBuilds extends SavedData {
             for (int j = 0; j < Math.min(MAX_SITES, list.size()); j++) sites.add(Site.load(list.getCompound(j)));
             data.owners.put(entry.getUUID("Id"), sites);
         }
+        // Saves before 17.11 have none: the stone set down before then is known by the home sites only.
+        ListTag stones = tag.getList("Stones", Tag.TAG_COMPOUND);
+        for (int i = 0; i < Math.min(MAX_OWNERS, stones.size()); i++) {
+            CompoundTag entry = stones.getCompound(i);
+            if (!entry.hasUUID("Id")) continue;
+            LinkedHashSet<Long> placed = new LinkedHashSet<>();
+            long[] cells = entry.getLongArray("Cells");
+            for (int j = Math.max(0, cells.length - MAX_STONES); j < cells.length; j++) placed.add(cells[j]);
+            data.stones.put(entry.getUUID("Id"), placed);
+        }
         return data;
     }
 
@@ -197,6 +229,14 @@ public final class CompanionPlayerBuilds extends SavedData {
             saved.add(entry);
         });
         tag.put("Owners", saved);
+        ListTag placed = new ListTag();
+        stones.forEach((id, cells) -> {
+            CompoundTag entry = new CompoundTag();
+            entry.putUUID("Id", id);
+            entry.put("Cells", new LongArrayTag(cells.stream().mapToLong(Long::longValue).toArray()));
+            placed.add(entry);
+        });
+        tag.put("Stones", placed);
         return tag;
     }
 }

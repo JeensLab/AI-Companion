@@ -58,12 +58,16 @@ final class CompanionPicking {
     private static final double REACH = 4.5;
     /** Ticks over the block, down and up for air, before it is passed over. */
     private static final int DIVE = 900;
+    /** Faces of the stone dug by name he found no way to before he says so: one seen in a sealed hollow under him shows many. */
+    private static final int STONE_TRIES = 8;
 
     private final CompanionWork w;
     /** The work is made before it knows its owner: taken at the order. */
     private CompanionEntity c;
     private Item item;
     private List<CompanionPickable.Source> sources = List.of();
+    /** The order is for the stone dug by name (granite, tuff…). */
+    private boolean stone;
     /** Ordered, in his bag at the order, dropped by the blocks he broke (picked up or not). */
     private int wanted, before, due;
     private long settleAt;
@@ -88,6 +92,7 @@ final class CompanionPicking {
         sources = asked == null || !(c.level() instanceof ServerLevel level) ? List.of() : allowed(level, CompanionPickable.sources(level, asked));
         if (sources.isEmpty()) return CompanionActionResult.failed("Такое я с земли не собираю: " + id + ".");
         item = asked; wanted = count; before = w.items.countCarried(item); due = 0; settleAt = 0; retried = false;
+        stone = sources.stream().allMatch(source -> CompanionPickable.stone(source.block()));
         release();
         passed.clear(); lavaKept.clear();
         return null;
@@ -108,7 +113,7 @@ final class CompanionPicking {
     /** Whether one of these blocks stands within his search radius where he may take it. */
     static boolean near(CompanionEntity c, ServerLevel level, List<CompanionPickable.Source> sources) {
         List<CompanionPickable.Source> here = allowed(level, sources);
-        return !here.isEmpty() && find(c, level, here, sites(c, level), Set.of(), new HashSet<>()) != null;
+        return !here.isEmpty() && find(c, level, here, kept(c, level), Set.of(), new HashSet<>()) != null;
     }
 
     /** What is taken in this dimension: the overworld's own, not the Nether's stone (put there by the player), in the Nether only that stone, nothing elsewhere. */
@@ -126,6 +131,13 @@ final class CompanionPicking {
     private static boolean lavaBeside(ServerLevel level, BlockPos pos) {
         for (Direction side : Direction.values()) if (CompanionLava.at(level, pos.relative(side))) return true;
         return false;
+    }
+
+    /** What he leaves where it stands: the player's buildings, and the stone the player set down anywhere (a path, a wall of andesite). */
+    private static Predicate<BlockPos> kept(CompanionEntity c, ServerLevel level) {
+        if (c.getOwnerId() == null) return pos -> false;
+        Predicate<BlockPos> site = sites(c, level), stone = CompanionPlayerBuilds.get(level.getServer()).placedStone(c.getOwnerId(), level);
+        return pos -> site.test(pos) || stone.test(pos);
     }
 
     static Predicate<BlockPos> sites(CompanionEntity c, ServerLevel level) {
@@ -154,8 +166,10 @@ final class CompanionPicking {
     /** A block of the kind he may take now: dry, not on a site of the player's (but the fruit of a stem), ripe, and not the root of a growing column. */
     private static boolean takes(ServerLevel level, BlockPos pos, Predicate<BlockPos> site) {
         BlockState state = level.getBlockState(pos);
-        // Stone dug by name where a face of it shows, as a player sees it: one hidden in the ground is not dug for (the player 17.11).
-        if (CompanionPickable.stone(state.getBlock()) && !shows(level, pos)) return false;
+        // Stone dug by name where a face of it shows, as a player sees it: one hidden in the ground is not dug for (the player 17.11);
+        // nor one that holds a torch or a pond back, as gather_stone leaves them.
+        if (CompanionPickable.stone(state.getBlock()) && (!shows(level, pos) || CompanionLighting.supportsLight(level, pos) || CompanionLava.floods(level, pos, List.of())))
+            return false;
         if (site.test(pos) && !CompanionCrops.onStem(level, pos)) return false;
         // Clay on the bed of a pond has no water in its own cell: the water over it counts too. Only what grows there is dived for.
         // A coral block under another one, or a sea pickle sat on it, is not under open water: none of it is dived for.
@@ -288,9 +302,9 @@ final class CompanionPicking {
         int got = got();
         if (got >= wanted) { end(true, "Собрал: «" + name() + "», " + got + " шт."); return; }
         if (due >= wanted) { collect(level, got); return; }
-        Predicate<BlockPos> site = sites(c, level);
+        Predicate<BlockPos> site = kept(c, level);
         if (target != null && (gives(sources, level.getBlockState(target)) == 0 || !takes(level, target, site) || lavaBeside(level, target))) release();
-        if (target == null) target = find(c, level, sources, site, passed, lavaKept);
+        if (target == null && !(stone && passed.size() >= STONE_TRIES)) target = find(c, level, sources, site, passed, lavaKept);
         if (target == null) {
             // What he broke and has not picked up yet is picked up before he says how far he got.
             if (due > got) { collect(level, got); return; }
@@ -298,7 +312,8 @@ final class CompanionPicking {
             String lava = lavaKept.isEmpty() ? "" : " Рядом с лавой " + CompanionWorkItems.blocks(lavaKept.size()) + " — не трогал.";
             // Some gathered: obtain_item plans the rest again (red dye goes on with the tulips once the poppies are out). None: it ends here.
             if (got > 0) { release(); w.finish(CompanionActionResult.failed("Собрал «" + name() + "»: " + got + " из " + wanted + ", " + rest + "." + lava)); return; }
-            end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava);
+            String ask = stone ? " Отведи меня к склону или в пещеру, где он есть." : "";
+            end(false, (passed.isEmpty() ? "Рядом не нашёл, где взять «" + name() + "»." : "Вижу, где взять «" + name() + "», но подойти не смог.") + lava + ask);
             return;
         }
         BlockState state = level.getBlockState(target);
